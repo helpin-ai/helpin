@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 )
 
@@ -103,6 +104,7 @@ func (s *DockChatService) analyzeDockChatMedia(ctx context.Context, workspaceID,
 	defer cancel()
 	response, err := completeAI(callCtx, s.mediaLLM, AICompletionRequest{
 		WorkspaceID:    workspaceID,
+		ActionKey:      aipolicy.ActionAskMediaEnrichment,
 		FeatureKey:     BillingFeatureAskChat,
 		OperationKey:   AIUsageOperationMediaEnrichment,
 		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureAskChat, "media", strings.Join(attachmentIDs, ",")),

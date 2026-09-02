@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -42,7 +43,7 @@ func TestAIActionExecutionRepositoryStartAndFinishAreIdempotent(t *testing.T) {
 	}
 
 	completed := started.Add(2 * time.Second)
-	result := AIActionExecutionResult{
+	result := aipolicy.ExecutionResult{
 		Status:       model.AIActionExecutionSucceeded,
 		InputTokens:  100,
 		OutputTokens: 25,
@@ -76,7 +77,7 @@ func TestAIActionExecutionRepositoryDoesNotMutateRequestIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if err := repo.Finish(context.Background(), execution.ID, AIActionExecutionResult{
+	if err := repo.Finish(context.Background(), execution.ID, aipolicy.ExecutionResult{
 		Status: model.AIActionExecutionFailed, FailureClass: "llm_provider",
 		FailureMessage: "provider unavailable", CompletedAt: time.Now().UTC(),
 	}); err != nil {

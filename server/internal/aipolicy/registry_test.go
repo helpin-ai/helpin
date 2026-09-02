@@ -32,6 +32,31 @@ func TestCoverageActionsAreSupportAI(t *testing.T) {
 	}
 }
 
+func TestRegistryCoversSharedEmbeddingAndRerankActions(t *testing.T) {
+	registry := DefaultRegistry()
+	for _, key := range []string{
+		ActionDocsEmbed,
+		ActionSupportKnowledgeEmbed,
+		ActionHelpcenterSearchEmbed,
+		ActionCuratedGuidanceEmbed,
+		ActionPlatformRerank,
+	} {
+		if _, ok := registry.Lookup(key); !ok {
+			t.Errorf("Lookup(%q) missing", key)
+		}
+	}
+}
+
+func TestAskMediaEnrichmentHasDirectCompletionAction(t *testing.T) {
+	action, ok := DefaultRegistry().Lookup(ActionAskMediaEnrichment)
+	if !ok {
+		t.Fatal("Ask media-enrichment action missing")
+	}
+	if action.Modality != ModalityChat || action.FeatureKey != "ask_chat" {
+		t.Fatalf("Ask media action = %+v", action)
+	}
+}
+
 func TestRegistryRejectsCoverageCategorizedAsDocsAI(t *testing.T) {
 	registry := NewRegistry([]Action{{
 		Key:             ActionSupportCoverageAnalyze,

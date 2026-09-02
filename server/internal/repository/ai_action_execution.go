@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -14,18 +15,6 @@ import (
 
 // AIActionExecutionRepository stores governed AI attempt audits.
 type AIActionExecutionRepository struct{ db *gorm.DB }
-
-// AIActionExecutionResult contains mutable completion fields for an AI attempt.
-type AIActionExecutionResult struct {
-	Status            string
-	FailureClass      string
-	FailureMessage    string
-	InputTokens       int
-	OutputTokens      int
-	ReasoningTokens   int
-	CachedInputTokens int
-	CompletedAt       time.Time
-}
 
 // NewAIActionExecutionRepository creates an AI execution audit repository.
 func NewAIActionExecutionRepository(db *gorm.DB) *AIActionExecutionRepository {
@@ -73,7 +62,7 @@ func (r *AIActionExecutionRepository) Start(ctx context.Context, execution *mode
 }
 
 // Finish idempotently completes an AI attempt without changing request identity.
-func (r *AIActionExecutionRepository) Finish(ctx context.Context, id string, result AIActionExecutionResult) error {
+func (r *AIActionExecutionRepository) Finish(ctx context.Context, id string, result aipolicy.ExecutionResult) error {
 	if r == nil || r.db == nil || strings.TrimSpace(id) == "" {
 		return fmt.Errorf("AI action execution repository and id are required")
 	}

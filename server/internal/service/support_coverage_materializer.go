@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -269,7 +270,13 @@ func (s *SupportCoverageDailyAnalyzer) embedMaterializationFindings(ctx context.
 	for _, analysis := range analyses {
 		inputs = append(inputs, coverageFindingEmbeddingText(analysis))
 	}
-	resp, err := s.embeddingProvider.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+	embedCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID: analyses[0].WorkspaceID, ActionKey: aipolicy.ActionSupportCoverageEmbed,
+		FeatureKey:     BillingFeatureCoverageGapAnalysis,
+		IdempotencyKey: aiUsageIdempotencyKey(analyses[0].WorkspaceID, "coverage_materialization_embed", analyses[0].RunID),
+		Metadata:       map[string]interface{}{"run_id": analyses[0].RunID},
+	})
+	resp, err := s.embeddingProvider.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 		Provider: coverageEmbeddingProviderName,
 		Model:    modelName,
 		Inputs:   inputs,

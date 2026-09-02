@@ -11,6 +11,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 type SupportRerankCandidate struct {
@@ -27,6 +30,74 @@ type SupportRerankScore struct {
 type SupportKnowledgeReranker interface {
 	Rerank(ctx context.Context, query string, candidates []SupportRerankCandidate) ([]SupportRerankScore, error)
 	Name() string
+}
+
+type governedSupportKnowledgeReranker struct {
+	base     SupportKnowledgeReranker
+	registry *aipolicy.Registry
+	audit    aipolicy.ExecutionAudit
+}
+
+// NewGovernedSupportKnowledgeReranker wraps reranking with the same action
+// policy and audit boundary used by chat and embeddings.
+func NewGovernedSupportKnowledgeReranker(base SupportKnowledgeReranker, registry *aipolicy.Registry, audit aipolicy.ExecutionAudit) SupportKnowledgeReranker {
+	if base == nil {
+		return nil
+	}
+	return &governedSupportKnowledgeReranker{base: base, registry: registry, audit: audit}
+}
+
+func (r *governedSupportKnowledgeReranker) Name() string { return r.base.Name() }
+
+func (r *governedSupportKnowledgeReranker) Rerank(ctx context.Context, query string, candidates []SupportRerankCandidate) ([]SupportRerankScore, error) {
+	metering, ok := AIUsageMeteringFromContext(ctx)
+	if !ok {
+		return nil, ErrAIUsageMeteringRequired
+	}
+	action, err := aipolicy.ResolveExecution(r.registry, aipolicy.ExecutionContext{
+		WorkspaceID: metering.WorkspaceID, ActionKey: metering.ActionKey,
+		FeatureKey: metering.FeatureKey, IdempotencyKey: metering.IdempotencyKey,
+		Attempt: metering.Attempt, Metadata: metering.Metadata,
+	}, aipolicy.Route{})
+	if err != nil {
+		return nil, err
+	}
+	if action.Modality != aipolicy.ModalityRerank {
+		return nil, fmt.Errorf("%w: action %s is not a rerank action", aipolicy.ErrInvalidExecutionContext, action.Key)
+	}
+	inputTokens := estimateRerankInputTokens(query, candidates)
+	var execution *model.AIActionExecution
+	if r.audit != nil {
+		execution, err = r.audit.Start(ctx, &model.AIActionExecution{
+			WorkspaceID: metering.WorkspaceID, ActionKey: action.Key, PolicyVersion: action.PolicyVersion,
+			FeatureKey: action.FeatureKey, Category: string(action.Category), Origin: action.Origin,
+			Modality: string(action.Modality), Provider: action.DefaultProvider, Model: action.DefaultModel,
+			IdempotencyKey: metering.IdempotencyKey, Attempt: max(1, metering.Attempt),
+			Status: model.AIActionExecutionRunning, Metadata: mustJSONMetadata(metering.Metadata), StartedAt: time.Now().UTC(),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("start rerank audit: %w", err)
+		}
+	}
+	scores, callErr := r.base.Rerank(ctx, query, candidates)
+	if r.audit != nil && execution != nil {
+		result := aipolicy.ExecutionResult{Status: model.AIActionExecutionSucceeded, InputTokens: inputTokens, CompletedAt: time.Now().UTC()}
+		if callErr != nil {
+			result.Status = model.AIActionExecutionFailed
+			result.FailureClass = aiActionFailureClass(callErr)
+			result.FailureMessage = sanitizeAIActionFailure(callErr)
+		}
+		_ = r.audit.Finish(ctx, execution.ID, result)
+	}
+	return scores, callErr
+}
+
+func estimateRerankInputTokens(query string, candidates []SupportRerankCandidate) int {
+	characters := len(query)
+	for _, candidate := range candidates {
+		characters += len(candidate.Text)
+	}
+	return (characters + 3) / 4
 }
 
 // HTTPSupportKnowledgeReranker speaks the common text-embeddings-inference
@@ -140,7 +211,7 @@ func (r *HTTPSupportKnowledgeReranker) Rerank(ctx context.Context, query string,
 	return scores, nil
 }
 
-func (s *SupportAIService) semanticRerankKnowledgeResults(ctx context.Context, query string, results []KnowledgeSearchResult) []KnowledgeSearchResult {
+func (s *SupportAIService) semanticRerankKnowledgeResults(ctx context.Context, workspaceID, query string, results []KnowledgeSearchResult) []KnowledgeSearchResult {
 	if s == nil || s.knowledgeReranker == nil || len(results) < 2 || strings.TrimSpace(query) == "" {
 		return results
 	}
@@ -161,6 +232,9 @@ func (s *SupportAIService) semanticRerankKnowledgeResults(ctx context.Context, q
 	startedAt := time.Now()
 	rerankCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
 	defer cancel()
+	rerankCtx = withAIActionMetering(rerankCtx, workspaceID, aipolicy.ActionPlatformRerank, "support_knowledge_rerank", query, map[string]interface{}{
+		"surface": "support_knowledge", "candidate_count": len(candidates),
+	})
 	scores, err := s.knowledgeReranker.Rerank(rerankCtx, query, candidates)
 	if err != nil {
 		slog.WarnContext(ctx, "support semantic reranker failed; retaining fused order",

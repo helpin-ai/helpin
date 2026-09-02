@@ -24,6 +24,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
@@ -186,6 +187,12 @@ func main() {
 	}
 	aiUsageRepo := repository.NewAIUsageRepository(db)
 	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
+	aiUsageMeter := service.NewTokenPricedAIUsageMeter(aiUsageService)
+	aiActionExecutionRepo := repository.NewAIActionExecutionRepository(db)
+	aiActionRegistry := aipolicy.DefaultRegistry()
+	if err := aiActionRegistry.Validate(); err != nil {
+		fatalWithSentry("validate AI action registry", err)
+	}
 	docsAssetReferenceRepo := repository.NewDocsAssetReferenceRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
@@ -245,6 +252,10 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
+	supportEmbeddingProvider = service.NewGovernedEmbeddingProvider(
+		supportEmbeddingProvider, aiUsageMeter, aiActionRegistry, aiActionExecutionRepo,
+	)
+	coverageEmbeddingProvider := supportEmbeddingProvider
 	completionRoutes := service.NewAICompletionRouteRegistry(service.CRMCompletionRouteConfig{
 		Primary: service.AICompletionRoute{
 			Provider: cfg.CRMLLMProvider, Model: cfg.CRMLLMModel,
@@ -269,7 +280,8 @@ func main() {
 	if issues := agentTierResolver.ValidateSelectable(); len(issues) != 0 {
 		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
 	}
-	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes)
+	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes).
+		SetGovernance(aiActionRegistry, aiActionExecutionRepo)
 	var llmProvider llm.Provider = supportLLMProvider
 	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
 	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
@@ -300,10 +312,10 @@ func main() {
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
 	supportCoverageEnrichmentService := service.NewSupportCoverageEnrichmentService(db, llmProvider)
-	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
+	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel)
 	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
 		SetCoverageRepositories(supportCoverageRepo, supportCoverageAnalysisRepo).
-		SetEmbeddingProvider(supportEmbeddingProvider, cfg.OpenAIEmbeddingModel).
+		SetEmbeddingProvider(coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel).
 		SetConversationRepositories(conversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)

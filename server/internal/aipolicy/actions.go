@@ -7,6 +7,12 @@ const (
 	ActionSupportCoverageRefine      = "support.coverage.refine.v1"
 	ActionSupportCoverageEmbed       = "support.coverage.embed.v1"
 	ActionSupportCoverageAssignTopic = "support.coverage.assign_topic.v1"
+	ActionDocsEmbed                  = "docs.embedding.index.v1"
+	ActionSupportKnowledgeEmbed      = "support.knowledge.embed.v1"
+	ActionHelpcenterSearchEmbed      = "support.helpcenter.search_embed.v1"
+	ActionCuratedGuidanceEmbed       = "support.curated_guidance.embed.v1"
+	ActionPlatformRerank             = "platform.rerank.v1"
+	ActionAskMediaEnrichment         = "agents.ask.media_enrichment.v1"
 )
 
 type featureSeed struct {
@@ -25,6 +31,27 @@ func defaultActions() []Action {
 		coverageChatAction(ActionSupportCoverageRefine, "Coverage recommendation refinement"),
 		coverageEmbeddingAction(),
 		coverageChatAction(ActionSupportCoverageAssignTopic, "Coverage topic assignment"),
+		embeddingAction(ActionDocsEmbed, "Docs semantic embedding", CategoryDocsAI, "docs"),
+		embeddingAction(ActionSupportKnowledgeEmbed, "Support knowledge embedding", CategorySupportAI, "support"),
+		embeddingAction(ActionHelpcenterSearchEmbed, "Help-center search embedding", CategorySupportAI, "helpcenter"),
+		embeddingAction(ActionCuratedGuidanceEmbed, "Curated guidance embedding", CategorySupportAI, "support"),
+		{
+			Key: ActionAskMediaEnrichment, PolicyVersion: "v1", FeatureKey: "ask_chat",
+			Label: "Ask media enrichment", Category: CategoryAgents, Origin: "ask",
+			Modality: ModalityChat, DefaultProvider: "openrouter", DefaultModel: "google/gemini-3.7-flash",
+			AllowedModels: defaultChatModels(), Timeout: 2 * time.Minute,
+			MaxInputTokens: 200000, MaxOutputTokens: 700, MaxReasoningTokens: 32000,
+			RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
+			DataClass: DataClassWorkspaceData, FloorUnits: 40, Chargeable: true,
+		},
+		{
+			Key: ActionPlatformRerank, PolicyVersion: "v1", FeatureKey: "ai_rerank",
+			Label: "AI search reranking", Category: CategorySupportAI, Origin: "search",
+			Modality: ModalityRerank, DefaultProvider: "cohere", DefaultModel: "rerank-v3.5",
+			AllowedModels: map[string][]string{"cohere": {"rerank-v3.5"}},
+			Timeout:       15 * time.Second, MaxInputTokens: 32000, RetryClass: RetryTransient,
+			Autonomy: AutonomyAnalyze, DataClass: DataClassWorkspaceData, Chargeable: false,
+		},
 	}
 	seeds := []featureSeed{
 		{"ai_routing", "AI triage and routing", CategorySupportAI, "support", 2, true, ModalityChat},
@@ -84,13 +111,22 @@ func coverageChatAction(key, label string) Action {
 }
 
 func coverageEmbeddingAction() Action {
+	action := embeddingAction(ActionSupportCoverageEmbed, "Coverage semantic embedding", CategorySupportAI, "coverage")
+	action.FeatureKey = "coverage_gap_analysis"
+	action.FloorUnits = 2
+	action.Chargeable = true
+	action.DataClass = DataClassCustomerContent
+	return action
+}
+
+func embeddingAction(key, label string, category Category, origin string) Action {
 	return Action{
-		Key: ActionSupportCoverageEmbed, PolicyVersion: "v1", FeatureKey: "coverage_gap_analysis",
-		Label: "Coverage semantic embedding", Category: CategorySupportAI, Origin: "coverage",
-		Modality: ModalityEmbedding, DefaultProvider: "openai", DefaultModel: "text-embedding-3-small",
+		Key: key, PolicyVersion: "v1", FeatureKey: "semantic_embedding", Label: label,
+		Category: category, Origin: origin, Modality: ModalityEmbedding,
+		DefaultProvider: "openai", DefaultModel: "text-embedding-3-small",
 		AllowedModels: map[string][]string{"openai": {"text-embedding-3-small"}},
 		Timeout:       30 * time.Second, MaxInputTokens: 8191, RetryClass: RetryTransient,
-		Autonomy: AutonomyAnalyze, DataClass: DataClassCustomerContent, FloorUnits: 2, Chargeable: true,
+		Autonomy: AutonomyAnalyze, DataClass: DataClassWorkspaceData, Chargeable: false,
 	}
 }
 
@@ -117,6 +153,6 @@ func defaultChatModels() map[string][]string {
 	return map[string][]string{
 		"anthropic":  {"claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8"},
 		"openai":     {"gpt-5-mini", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-terra"},
-		"openrouter": {"openai/gpt-5.6-luna", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5", "google/gemini-3.7-flash"},
+		"openrouter": {"deepseek/deepseek-v4-flash-0731", "openai/gpt-5.6-luna", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5", "google/gemini-3.7-flash"},
 	}
 }

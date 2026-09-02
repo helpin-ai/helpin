@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -50,7 +51,13 @@ func (m *CoverageKnowledgeMatcher) MatchKnowledge(ctx context.Context, workspace
 		if embeddingModel == "" {
 			embeddingModel = defaultDocsEmbeddingModel
 		}
-		resp, err := m.embeddingProvider.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+		embedCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+			WorkspaceID: workspaceID, ActionKey: aipolicy.ActionSupportCoverageEmbed,
+			FeatureKey:     BillingFeatureCoverageGapAnalysis,
+			IdempotencyKey: aiUsageIdempotencyKey(workspaceID, "coverage_knowledge_embed", aiUsageStableHash(query)),
+			Metadata:       map[string]interface{}{"surface": "coverage_knowledge_match"},
+		})
+		resp, err := m.embeddingProvider.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 			Model:  embeddingModel,
 			Inputs: []string{query},
 		})

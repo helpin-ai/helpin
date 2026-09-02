@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -823,6 +824,7 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 	}
 	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    input.WorkspaceID,
+		ActionKey:      aipolicy.ActionSupportCoverageAnalyze,
 		FeatureKey:     BillingFeatureCoverageGapAnalysis,
 		IdempotencyKey: aiUsageIdempotencyKey(input.WorkspaceID, BillingFeatureCoverageGapAnalysis, "analyze", input.ConversationID, input.TranscriptHash),
 		Metadata: map[string]interface{}{
@@ -874,7 +876,8 @@ func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.
 	}
 	metering, _ := AIUsageMeteringFromContext(ctx)
 	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
-		WorkspaceID: metering.WorkspaceID, FeatureKey: BillingFeatureCoverageGapAnalysis,
+		WorkspaceID: metering.WorkspaceID, ActionKey: aipolicy.ActionSupportCoverageRefine,
+		FeatureKey:     BillingFeatureCoverageGapAnalysis,
 		IdempotencyKey: metering.IdempotencyKey, Metadata: metering.Metadata,
 		Chat: llm.ChatRequest{
 			SystemPrompt: coverageFixBundleRefinementSystemPrompt(),
@@ -1118,7 +1121,13 @@ func (s *SupportCoverageDailyAnalyzer) populateLegacyFindingGapEmbedding(ctx con
 		return nil
 	}
 	modelName := coverageEmbeddingModel(s.embeddingModel)
-	resp, err := s.embeddingProvider.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+	embedCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID: gap.WorkspaceID, ActionKey: aipolicy.ActionSupportCoverageEmbed,
+		FeatureKey:     BillingFeatureCoverageGapAnalysis,
+		IdempotencyKey: aiUsageIdempotencyKey(gap.WorkspaceID, "coverage_embed", gap.ID, aiUsageStableHash(text)),
+		Metadata:       map[string]interface{}{"gap_id": gap.ID},
+	})
+	resp, err := s.embeddingProvider.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 		Provider: coverageEmbeddingProviderName,
 		Model:    modelName,
 		Inputs:   []string{text},

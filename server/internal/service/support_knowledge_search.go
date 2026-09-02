@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -35,7 +36,10 @@ func (s *SupportAIService) searchSingleQuery(
 		embeddingModel = defaultDocsEmbeddingModel
 	}
 	if s.embeddingProvider != nil {
-		resp, err := s.embeddingProvider.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+		embedCtx := withAIActionMetering(ctx, workspaceID, aipolicy.ActionSupportKnowledgeEmbed, "support_knowledge_embed", query, map[string]interface{}{
+			"surface": "support_knowledge", "agent_id": agentID,
+		})
+		resp, err := s.embeddingProvider.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 			Model:  embeddingModel,
 			Inputs: []string{query},
 		})
@@ -204,7 +208,7 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 	deduped := dedupeKnowledgeResults(allResults)
 
 	reranked := rerankKnowledgeResults(queries[0], deduped)
-	reranked = s.semanticRerankKnowledgeResults(ctx, queries[0], reranked)
+	reranked = s.semanticRerankKnowledgeResults(ctx, workspaceID, queries[0], reranked)
 	reranked = applyKnowledgeAuthorityRanking(queries[0], reranked)
 	var err error
 	reranked, err = s.ensureCanonicalPricingLeadChunks(ctx, workspaceID, "", queries[0], reranked)

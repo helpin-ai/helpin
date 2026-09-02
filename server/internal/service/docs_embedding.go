@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -262,7 +263,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 			continue
 		}
 
-		vectors, err := s.createEmbeddingsBatched(ctx, structuredChunkSearchInputs(chunks))
+		vectors, err := s.createEmbeddingsBatched(ctx, workspaceID, structuredChunkSearchInputs(chunks))
 		if err != nil {
 			_ = s.markSourcesFailed(ctx, sources, err, &startedAt)
 			return err
@@ -326,7 +327,7 @@ func (s *DocsEmbeddingService) syncSpace(ctx context.Context, workspaceID, space
 	return s.updateScopedSyncStates(ctx, sources, eligibleDocs, chunksByDocumentID, model.KnowledgeSourceSyncReady, 100, nil, &startedAt, &completedAt)
 }
 
-func (s *DocsEmbeddingService) createEmbeddingsBatched(ctx context.Context, inputs []string) ([][]float32, error) {
+func (s *DocsEmbeddingService) createEmbeddingsBatched(ctx context.Context, workspaceID string, inputs []string) ([][]float32, error) {
 	if s == nil || s.embedder == nil {
 		return nil, fmt.Errorf("embedding provider is not configured")
 	}
@@ -338,7 +339,10 @@ func (s *DocsEmbeddingService) createEmbeddingsBatched(ctx context.Context, inpu
 		var batchVectors [][]float32
 		var batchErr error
 		for attempt := 1; attempt <= docsEmbeddingBatchAttempts; attempt++ {
-			resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+			embedCtx := withAIActionMetering(ctx, workspaceID, aipolicy.ActionDocsEmbed, "docs_embedding_batch", strings.Join(batch, "\n"), map[string]interface{}{
+				"surface": "docs_index", "batch_start": start, "attempt": attempt,
+			})
+			resp, err := s.embedder.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 				Provider: "openai",
 				Model:    s.embeddingModel,
 				Inputs:   batch,

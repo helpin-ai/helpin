@@ -18,6 +18,7 @@ import (
 
 	"github.com/ledongthuc/pdf"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -223,7 +224,10 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 			return s.chunkRepo.ReplacePageChunks(ctx, savedPage.ID, nil)
 		}
 
-		resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+		embedCtx := withAIActionMetering(ctx, source.WorkspaceID, aipolicy.ActionSupportKnowledgeEmbed, "support_content_crawl_embed", savedPage.ContentHash, map[string]interface{}{
+			"surface": "support_content_sync", "source_id": source.ID, "page_id": savedPage.ID,
+		})
+		resp, err := s.embedder.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 			Provider: "openai",
 			Model:    s.embeddingModel,
 			Inputs:   structuredChunkSearchInputs(chunks),
@@ -432,7 +436,10 @@ func (s *SupportContentSyncService) runFileSourceSync(ctx context.Context, sourc
 		return s.sourceRepo.UpdateSyncState(ctx, source.ID, model.KnowledgeSourceSyncReady, 100, 1, 0, nil, nil, &startedAt, &completedAt)
 	}
 
-	resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+	embedCtx := withAIActionMetering(ctx, source.WorkspaceID, aipolicy.ActionSupportKnowledgeEmbed, "support_upload_embed", savedPage.ContentHash, map[string]interface{}{
+		"surface": "support_content_upload", "source_id": source.ID, "page_id": savedPage.ID,
+	})
+	resp, err := s.embedder.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 		Provider: "openai",
 		Model:    s.embeddingModel,
 		Inputs:   chunks,
@@ -569,7 +576,10 @@ func (s *SupportContentSyncService) RunSourceReindex(ctx context.Context, worksp
 			continue
 		}
 
-		resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+		embedCtx := withAIActionMetering(ctx, source.WorkspaceID, aipolicy.ActionSupportKnowledgeEmbed, "support_content_reindex_embed", page.ContentHash, map[string]interface{}{
+			"surface": "support_content_reindex", "source_id": source.ID, "page_id": page.ID,
+		})
+		resp, err := s.embedder.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 			Provider: "openai",
 			Model:    s.embeddingModel,
 			Inputs:   structuredChunkSearchInputs(chunks),

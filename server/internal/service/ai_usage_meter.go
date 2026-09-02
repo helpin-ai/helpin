@@ -11,6 +11,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
@@ -125,17 +126,21 @@ var ErrAIUsageMeteringRequired = errors.New("AI usage metering context is requir
 // AIUsageMeteringContext marks one LLM call for usage metering.
 type AIUsageMeteringContext struct {
 	WorkspaceID    string
+	ActionKey      string
 	FeatureKey     string
 	OperationKey   string
 	IdempotencyKey string
+	Attempt        int
 	Metadata       map[string]interface{}
 }
 
 // MeteredLLMProvider wraps an LLM provider and charges AI usage for calls that
 // opt in through WithAIUsageMetering.
 type MeteredLLMProvider struct {
-	base  llm.Provider
-	meter *AIUsageMeter
+	base     llm.Provider
+	meter    *AIUsageMeter
+	registry *aipolicy.Registry
+	audit    aipolicy.ExecutionAudit
 }
 
 var aiUsageFeatures = aiUsageFeaturesFromRegistry(aipolicy.DefaultRegistry())
@@ -143,7 +148,10 @@ var aiUsageFeatures = aiUsageFeaturesFromRegistry(aipolicy.DefaultRegistry())
 func aiUsageFeaturesFromRegistry(registry *aipolicy.Registry) map[string]AIUsageFeatureDefinition {
 	features := make(map[string]AIUsageFeatureDefinition)
 	for _, action := range registry.Actions() {
-		if _, exists := features[action.FeatureKey]; exists {
+		_, exists := features[action.FeatureKey]
+		// The feature-level action owns the customer-facing label/category.
+		// Specialized sub-actions only supply execution policy and audit detail.
+		if exists && !strings.HasPrefix(action.Key, "feature.") {
 			continue
 		}
 		features[action.FeatureKey] = AIUsageFeatureDefinition{
@@ -171,6 +179,14 @@ func NewMeteredLLMProvider(base llm.Provider, meter *AIUsageMeter) llm.Provider 
 		return base
 	}
 	return &MeteredLLMProvider{base: base, meter: meter}
+}
+
+// NewGovernedLLMProvider wraps chat execution with policy validation, usage metering, and audit.
+func NewGovernedLLMProvider(base llm.Provider, meter *AIUsageMeter, registry *aipolicy.Registry, audit aipolicy.ExecutionAudit) llm.Provider {
+	if base == nil {
+		return nil
+	}
+	return &MeteredLLMProvider{base: base, meter: meter, registry: registry, audit: audit}
 }
 
 func WithAIUsageMetering(ctx context.Context, input AIUsageMeteringContext) context.Context {
@@ -206,8 +222,53 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 	if !ok && !AIUsageMeteringExemptFromContext(ctx) {
 		return nil, ErrAIUsageMeteringRequired
 	}
+	var auditExecution *model.AIActionExecution
+	if p.registry != nil {
+		if !ok {
+			return nil, aipolicy.ErrInvalidExecutionContext
+		}
+		action, err := aipolicy.ResolveExecution(p.registry, aipolicy.ExecutionContext{
+			WorkspaceID: metering.WorkspaceID, ActionKey: metering.ActionKey,
+			FeatureKey: metering.FeatureKey, IdempotencyKey: metering.IdempotencyKey,
+			Attempt: metering.Attempt, Metadata: metering.Metadata,
+		}, aipolicy.Route{Provider: req.Provider, Model: req.Model})
+		if err != nil {
+			return nil, err
+		}
+		if req.Provider == "" {
+			req.Provider = action.DefaultProvider
+		}
+		if req.Model == "" {
+			req.Model = action.DefaultModel
+		}
+		if p.audit != nil {
+			attempt := metering.Attempt
+			if attempt <= 0 {
+				attempt = 1
+			}
+			auditExecution, err = p.audit.Start(ctx, &model.AIActionExecution{
+				WorkspaceID: metering.WorkspaceID, ActionKey: action.Key,
+				PolicyVersion: action.PolicyVersion, FeatureKey: action.FeatureKey,
+				Category: string(action.Category), Origin: action.Origin,
+				Modality: string(action.Modality), Provider: req.Provider, Model: req.Model,
+				IdempotencyKey: metering.IdempotencyKey, Attempt: attempt,
+				Status: model.AIActionExecutionRunning, Metadata: mustJSONMetadata(metering.Metadata),
+				StartedAt: time.Now().UTC(),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("start AI action audit: %w", err)
+			}
+		}
+	}
+	if p.meter == nil {
+		resp, err := p.base.ChatCompletion(ctx, req)
+		p.finishAIActionAudit(ctx, auditExecution, resp, err)
+		return resp, err
+	}
 	if ok && p.meter.usage != nil {
-		return p.chatCompletionTokenPriced(ctx, req, metering)
+		resp, err := p.chatCompletionTokenPriced(ctx, req, metering)
+		p.finishAIActionAudit(ctx, auditExecution, resp, err)
+		return resp, err
 	}
 	if ok {
 		if err := p.meter.Preflight(ctx, AIUsageMeterInput{
@@ -222,6 +283,7 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 
 	resp, err := p.base.ChatCompletion(ctx, req)
 	if err != nil || resp == nil {
+		p.finishAIActionAudit(ctx, auditExecution, resp, err)
 		return resp, err
 	}
 	if !ok {
@@ -238,9 +300,65 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 		CacheWriteTokens:  resp.TokensUsed.CacheWriteTokens,
 		Metadata:          metering.Metadata,
 	}); err != nil {
+		p.finishAIActionAudit(ctx, auditExecution, resp, err)
 		return nil, err
 	}
+	p.finishAIActionAudit(ctx, auditExecution, resp, nil)
 	return resp, nil
+}
+
+func (p *MeteredLLMProvider) finishAIActionAudit(ctx context.Context, execution *model.AIActionExecution, resp *llm.ChatResponse, callErr error) {
+	if p == nil || p.audit == nil || execution == nil {
+		return
+	}
+	result := aipolicy.ExecutionResult{Status: model.AIActionExecutionSucceeded, CompletedAt: time.Now().UTC()}
+	if resp != nil {
+		result.InputTokens = resp.TokensUsed.InputTokens
+		result.OutputTokens = resp.TokensUsed.OutputTokens
+		result.ReasoningTokens = resp.TokensUsed.ReasoningTokens
+		result.CachedInputTokens = resp.TokensUsed.CachedInputTokens
+	}
+	if callErr != nil {
+		result.Status = model.AIActionExecutionFailed
+		result.FailureClass = aiActionFailureClass(callErr)
+		result.FailureMessage = sanitizeAIActionFailure(callErr)
+	}
+	if err := p.audit.Finish(ctx, execution.ID, result); err != nil {
+		slog.ErrorContext(ctx, "finish AI action audit", "execution_id", execution.ID, "error", err)
+	}
+}
+
+func mustJSONMetadata(metadata map[string]interface{}) json.RawMessage {
+	if len(metadata) == 0 {
+		return []byte("{}")
+	}
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		return []byte("{}")
+	}
+	return raw
+}
+
+func aiActionFailureClass(err error) string {
+	if errors.Is(err, model.ErrPricingConfigurationMissing) {
+		return "configuration"
+	}
+	var providerErr *llm.ProviderError
+	if errors.As(err, &providerErr) {
+		return "llm_provider"
+	}
+	return "llm_preflight"
+}
+
+func sanitizeAIActionFailure(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	if len(message) > 500 {
+		message = message[:500]
+	}
+	return message
 }
 
 func (p *MeteredLLMProvider) chatCompletionTokenPriced(ctx context.Context, req llm.ChatRequest, input AIUsageMeteringContext) (*llm.ChatResponse, error) {
