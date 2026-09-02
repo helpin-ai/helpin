@@ -43,19 +43,26 @@ actor authorization, and command execution.
 ## Runtime behavior
 
 - Registry precedence is runtime-global, app-static, then app providers in
-  configuration order. Provider refresh replaces one complete app-provider
-  layer atomically.
+  configuration order. Writes premerge immutable per-app views and publish one
+  atomic snapshot, so definition, execution, alias, and allowlist reads neither
+  rebuild the catalog nor contend with refresh writes.
 - `tool_namespace` defaults to `provider`; Usermaven therefore keeps its
   `usermaven__...` names. Helpin uses `none` and keeps bare `snake_case` names.
 - Provider aliases live in an app-scoped alias-to-canonical map. They are
   accepted by lookup, execution, and allowlist normalization but never appear
   as duplicate model definitions.
-- Helpin refreshes every 30 seconds. Failures retain the last-known-good
-  snapshot, or the declared static fallback before the first successful load.
-  Empty and invalid catalogs are rejected.
+- Helpin refreshes every 30 seconds with jitter. Scheduled refresh and
+  unknown-alias recovery use the same single-flight path, so an older request
+  cannot overwrite a newer catalog or provider-health result. Failures retain
+  the last-known-good snapshot, or the declared static fallback before the
+  first successful load. Empty catalogs, nil handlers, duplicate names, and
+  alias/canonical collisions reject the whole candidate.
 - `/healthz` remains process-only. `/readyz` reports provider readiness.
-  Workers do not poll Temporal until required provider catalogs or declared
-  fallbacks are ready.
+  Required providers retry API startup with jittered exponential backoff for up
+  to 90 seconds and then fail startup. Workers stay alive and expose process
+  liveness plus provider readiness on port 8091, retry in the background, and
+  do not poll Temporal until required catalogs or declared fallbacks are ready.
+  This keeps Usermaven fail-closed without worker CrashLoopBackOff.
 - Discovery is not authorization. New commands must still be added to Helpin
   presets or customer-agent `allowed_tools`. Active executions retain their
   cloned snapshot; the next new or resumed execution sees a successful refresh.
@@ -92,6 +99,8 @@ legacy endpoint and makes the Helpin provider required.
 
 - SDK JSON compatibility for risk, aliases, and structured content.
 - Race-tested concurrent registry listing, lookup, clone, execute, and refresh.
+- Scheduled and unknown-alias refreshes are single-flight, with bounded startup
+  retries, cooldown coverage, and jittered replica scheduling.
 - Complete Helpin catalog validation, including non-exposed non-nil tool blocks,
   duplicate aliases, executable commands, and `create_collection` presence.
 - Canonical/legacy alias resolution without duplicate model tools.
@@ -100,5 +109,5 @@ legacy endpoint and makes the Helpin provider required.
 - Usermaven namespace, startup-only discovery, text-result shape, sensitive
   mutation fallback, app isolation, and intentionally un-enforced target
   metadata remain unchanged.
-- Readiness failure cannot fail liveness or allow workers to poll with a missing
-  required catalog.
+- API, worker, raw-manifest, and Helm readiness failure cannot fail liveness or
+  allow workers to poll with a missing required catalog.
