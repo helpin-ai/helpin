@@ -6,7 +6,7 @@ import { supportService } from '@/lib/services/supportService';
 import { supportAttachmentService } from '@/lib/services/supportAttachmentService';
 import { agentService } from '@/lib/services/agentService';
 import { workspacesService } from '@/lib/services/workspacesService';
-import { unwrap } from '@/lib/queryUtils';
+import { nextCursor, unwrap, unwrapRequired } from '@/lib/queryUtils';
 import { isUpgradeRequiredError } from '@/lib/upgradeRequired';
 import {
   extractConversationListConversations,
@@ -868,14 +868,17 @@ export function useConversationAssignees(workspaceId: string, conversationId: st
 export function useConversationMessages(workspaceId: string, conversationId: string | null) {
   return useInfiniteQuery<SupportMessagePage, Error, SupportMessagePages, QueryKey, string | undefined>({
     queryKey: queryKeys.support.messages(workspaceId, conversationId ?? ''),
-    queryFn: async ({ pageParam }) => unwrap(await supportService.listConversationMessagePage(
-      workspaceId,
-      conversationId!,
-      20,
-      pageParam,
-    )),
+    queryFn: async ({ pageParam }) => unwrapRequired(
+      await supportService.listConversationMessagePage(
+        workspaceId,
+        conversationId!,
+        20,
+        pageParam,
+      ),
+      'Support message page',
+    ),
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    getNextPageParam: nextCursor,
     enabled: !!workspaceId && !!conversationId,
     staleTime: 60_000,
   });

@@ -481,7 +481,7 @@ export function useConversationMessages(workspaceId: string, conversationId: str
         ),
       ),
     initialPageParam: undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    getNextPageParam: (lastPage) => lastPage?.next_cursor ?? undefined,
     enabled: !!workspaceId && !!conversationId,
     staleTime: 5_000,
   })

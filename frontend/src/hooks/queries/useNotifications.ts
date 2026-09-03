@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { notificationsService } from '@/lib/services/notificationsService'
-import { unwrap } from '@/lib/queryUtils'
+import { nextCursor, unwrap, unwrapRequired } from '@/lib/queryUtils'
 import type { NotificationFilter, UpdateNotificationPreferencesRequest, UpdateUserNotificationSettingsRequest } from '@/lib/notificationTypes'
 
 // Account-level notification settings (no workspace scope)
@@ -31,9 +31,12 @@ export function useNotifications(wsId: string, filter: NotificationFilter = 'all
   return useInfiniteQuery({
     queryKey: queryKeys.notifications.list(wsId, filter),
     queryFn: async ({ pageParam }) =>
-      unwrap(await notificationsService.list(wsId, { filter, limit: 20, cursor: pageParam as string | undefined })),
+      unwrapRequired(
+        await notificationsService.list(wsId, { filter, limit: 20, cursor: pageParam as string | undefined }),
+        'Notification page',
+      ),
     initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    getNextPageParam: nextCursor,
     enabled: !!wsId,
     staleTime: 30_000,
   })
