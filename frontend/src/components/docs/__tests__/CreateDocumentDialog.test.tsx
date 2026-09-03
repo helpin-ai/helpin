@@ -8,7 +8,7 @@ const testState = vi.hoisted(() => ({
     { id: 'space-1', name: 'General', icon: '', type: 'internal' },
     { id: 'space-2', name: 'Support', icon: '', type: 'internal' },
   ],
-  collections: [],
+  collections: [] as Array<{ id: string; name: string }>,
   mutateAsync: vi.fn(),
 }))
 
@@ -108,6 +108,26 @@ vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
   }) => open ? <button type="button" onClick={onUpgrade}>Mock upgrade</button> : null,
 }))
 
+vi.mock('@/components/docs/CollectionTreePicker', () => ({
+  CollectionTreePicker: ({
+    collections,
+    value,
+    onChange,
+  }: {
+    collections: Array<{ id: string; name: string }>
+    value: string | null
+    onChange: (next: string | null) => void
+  }) => (
+    <div>
+      <span data-testid="collection-value">{value ?? 'none'}</span>
+      <button type="button" onClick={() => onChange(null)}>pick-none</button>
+      {collections.map((c) => (
+        <button key={c.id} type="button" onClick={() => onChange(c.id)}>pick-{c.id}</button>
+      ))}
+    </div>
+  ),
+}))
+
 vi.mock('@/lib/icons', () => ({
   FolderOpenIcon: () => null,
   Folder01Icon: () => null,
@@ -143,6 +163,85 @@ describe('CreateDocumentDialog', () => {
       root.unmount()
     })
     container.remove()
+    testState.collections = []
+    testState.spaces = [
+      { id: 'space-1', name: 'General', icon: '', type: 'internal' },
+      { id: 'space-2', name: 'Support', icon: '', type: 'internal' },
+    ]
+  })
+
+  const typeTitle = async (value: string) => {
+    const titleInput = container.querySelector('input')
+    await act(async () => {
+      if (titleInput instanceof HTMLInputElement) {
+        const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+        valueSetter?.call(titleInput, value)
+        titleInput.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+  }
+
+  const clickButton = async (label: string) => {
+    const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === label)
+    expect(button).toBeTruthy()
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  const collectionValue = () => container.querySelector('[data-testid="collection-value"]')?.textContent
+
+  it('keeps the collection the user picked when the collections query refetches', async () => {
+    testState.collections = [
+      { id: 'col-1', name: 'Guides' },
+      { id: 'col-2', name: 'Runbooks' },
+    ]
+    const onOpenChange = vi.fn()
+    const render = () => act(async () => {
+      root.render(<CreateDocumentDialog wsId="ws-1" open onOpenChange={onOpenChange} />)
+    })
+
+    await render()
+    expect(collectionValue()).toBe('col-1')
+
+    await clickButton('pick-col-2')
+    expect(collectionValue()).toBe('col-2')
+
+    // A background refetch returns a new array instance with the same rows.
+    testState.collections = testState.collections.map((c) => ({ ...c }))
+    await render()
+    expect(collectionValue()).toBe('col-2')
+
+    // An explicit "Uncategorized" pick must survive a refetch too.
+    await clickButton('pick-none')
+    testState.collections = testState.collections.map((c) => ({ ...c }))
+    await render()
+    expect(collectionValue()).toBe('none')
+
+    await typeTitle('Runbook')
+    await act(async () => {
+      container.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(testState.mutateAsync).toHaveBeenCalledWith({
+      title: 'Runbook',
+      space_id: 'space-1',
+      collection_id: undefined,
+    })
+  })
+
+  it('keeps the typed title when the spaces query refetches while open', async () => {
+    const onOpenChange = vi.fn()
+    const render = () => act(async () => {
+      root.render(<CreateDocumentDialog wsId="ws-1" open onOpenChange={onOpenChange} />)
+    })
+
+    await render()
+    await typeTitle('Keep me')
+
+    testState.spaces = testState.spaces.map((s) => ({ ...s }))
+    await render()
+
+    expect(container.querySelector('input')?.value).toBe('Keep me')
   })
 
   it('resets to the provided default space when reopened from a selected space context', async () => {
