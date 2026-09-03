@@ -126,6 +126,7 @@ function toolTurn(
   toolName: string,
   durationMs: number,
   status: 'running' | 'completed' | 'failed' = 'completed',
+  argsText = '{}',
 ): CodingSessionLiveTurnSegment {
   return {
     segment_id: id,
@@ -133,7 +134,7 @@ function toolTurn(
     tool_call: {
       tool_call_id: id,
       tool_name: toolName,
-      args_text: '{}',
+      args_text: argsText,
       status,
       duration_ms: durationMs,
     },
@@ -520,7 +521,7 @@ describe('DockTranscript', () => {
     liveStream.live_turn_segments = [
       assistantTurn('assistant-progress', 'I will inspect the conversation.'),
       toolTurn('tool-live', 'repository_search', 100, 'running'),
-      toolTurn('tool-live-extra', 'read_files', 100, 'running'),
+      toolTurn('tool-live-extra', 'read_files', 100, 'running', '{"files":[{"path":"src/ChatView.tsx"}]}'),
     ];
     act(() => {
       root.render(
@@ -535,7 +536,11 @@ describe('DockTranscript', () => {
     const liveGroup = container.querySelector('[data-working-group-id="work:tool-live"]');
     expect(liveGroup).not.toBeNull();
     expect(liveGroup?.getAttribute('data-working-group-id')).toBe('work:tool-live');
-    expect(liveGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('true');
+    expect(liveGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+    expect(liveGroup?.textContent).toContain('Read src/ChatView.tsx');
+    expect(liveGroup?.textContent).toContain('1 previous');
+    expect(liveGroup?.className).not.toContain('rounded-lg');
+    expect(liveGroup?.className).not.toContain('bg-muted');
 
     const persistedMessage = {
       ...assistantMessage('assistant-persisted', '', 2),
@@ -562,17 +567,19 @@ describe('DockTranscript', () => {
     expect(container.textContent).toContain('The final finding.');
   });
 
-  it('auto-collapses the previous live group when the next group starts', () => {
+  it('keeps tool history collapsed while the contextual latest action advances', () => {
     const firstStream = streamWithMessages([userMessage('user-1', 'Investigate it.', 1)]);
     firstStream.live_turn_segments = [
       assistantTurn('progress-1', 'Checking the conversation.'),
       toolTurn('tool-1', 'list_conversation_messages', 100, 'running'),
-      toolTurn('tool-1b', 'read_files', 100, 'running'),
+      toolTurn('tool-1b', 'read_files', 100, 'running', '{"files":[{"path":"src/conversation.ts"}]}'),
     ];
     act(() => {
       root.render(<DockTranscript stream={firstStream} active workspaceId="ws-1" compactAssistantProgress />);
     });
-    expect(container.querySelector('[data-agent-working-group] button')?.getAttribute('aria-expanded')).toBe('true');
+    const firstGroup = container.querySelector('[data-agent-working-group]');
+    expect(firstGroup?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+    expect(firstGroup?.textContent).toContain('Read src/conversation.ts');
 
     const nextStream = streamWithMessages([userMessage('user-1', 'Investigate it.', 1)]);
     nextStream.live_turn_segments = [
@@ -581,7 +588,7 @@ describe('DockTranscript', () => {
       toolTurn('tool-1b', 'read_files', 100),
       assistantTurn('progress-2', 'Checking the repository.'),
       toolTurn('tool-2', 'repository_search', 100, 'running'),
-      toolTurn('tool-2b', 'read_files', 100, 'running'),
+      toolTurn('tool-2b', 'read_files', 100, 'running', '{"files":[{"path":"src/repository.ts"}]}'),
     ];
     act(() => {
       root.render(<DockTranscript stream={nextStream} active workspaceId="ws-1" compactAssistantProgress />);
@@ -590,7 +597,8 @@ describe('DockTranscript', () => {
     const toggles = container.querySelectorAll('[data-agent-working-group] > button');
     expect(toggles).toHaveLength(2);
     expect(toggles[0]?.getAttribute('aria-expanded')).toBe('false');
-    expect(toggles[1]?.getAttribute('aria-expanded')).toBe('true');
+    expect(toggles[1]?.getAttribute('aria-expanded')).toBe('false');
+    expect(toggles[1]?.textContent).toContain('Read src/repository.ts');
   });
 
   it('allows multiple completed working groups to remain manually expanded', () => {
@@ -818,10 +826,10 @@ describe('DockTranscript', () => {
       root.render(<DockTranscript stream={streamWithMessages([message])} active={false} workspaceId="ws-1" />);
     });
 
-    expect(container.textContent).toContain('browser_act ×2 · Browser act');
+    expect(container.textContent).toContain('Browser Act ×2 · browser_act');
     expect(container.textContent).not.toContain('2s');
-    expect(container.textContent?.match(/Browser act/g)).toHaveLength(3);
+    expect(container.textContent?.match(/Browser Act/g)).toHaveLength(3);
     expect(container.textContent).not.toContain('browser_act ×3');
-    expect(container.textContent).toContain('Browser open');
+    expect(container.textContent).toContain('Browser Open');
   });
 });

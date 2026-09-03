@@ -40,7 +40,7 @@ const (
 // Native SDK tool-step limits mirror the bounds enforced by Agent Runtime.
 const (
 	MinNativeToolSteps = 1
-	MaxNativeToolSteps = 1000
+	MaxNativeToolSteps = 2000
 )
 
 // Agent represents an LLM agent in a workspace.

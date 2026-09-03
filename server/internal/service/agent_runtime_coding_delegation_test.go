@@ -470,7 +470,7 @@ func TestRuntimeAgentFromHelpinAgentPropagatesNativeToolBudget(t *testing.T) {
 		{
 			name:  "ask agent",
 			agent: &model.Agent{IsSystem: true, PresetKey: model.AgentPresetAskAgent, RuntimeKind: "native_sdk"},
-			want:  1000,
+			want:  2000,
 		},
 		{
 			name:  "custom agent",

@@ -601,10 +601,10 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 				wantProvider, wantModel = model.AgentModelProviderOpenAI, defaultScribeAgentModel
 			case model.AgentPresetDocumentationAgent:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultQuillAgentModel
-			case model.AgentPresetAskAgent, model.AgentPresetSupportAgent:
-				// The dock orchestrator and support agent default to a
-				// flash-tier OpenRouter model.
+			case model.AgentPresetAskAgent:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAskAgentModel
+			case model.AgentPresetSupportAgent:
+				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultFastOpenRouterAgentModel
 			case model.AgentPresetCommandAgent:
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultCommandAgentModel
 			}
@@ -674,8 +674,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if supportAgent.Provider == nil || *supportAgent.Provider != model.AgentModelProviderOpenRouter {
 		t.Fatalf("expected support agent provider openrouter, got %+v", supportAgent.Provider)
 	}
-	if supportAgent.Model == nil || *supportAgent.Model != defaultAskAgentModel {
-		t.Fatalf("expected support agent model %s, got %+v", defaultAskAgentModel, supportAgent.Model)
+	if supportAgent.Model == nil || *supportAgent.Model != defaultFastOpenRouterAgentModel {
+		t.Fatalf("expected support agent model %s, got %+v", defaultFastOpenRouterAgentModel, supportAgent.Model)
 	}
 	docsAgent, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetDocumentationAgent)
 	if err != nil {
@@ -876,7 +876,7 @@ func TestEnsureBuiltInAgent_UpgradesLegacyScribeDefaultRouting(t *testing.T) {
 	}
 }
 
-func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToDeepSeekNitro(t *testing.T) {
+func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToCurrentRoutes(t *testing.T) {
 	presetKeys := []string{
 		model.AgentPresetEpicPlanner,
 		model.AgentPresetDocumentationAgent,
@@ -887,6 +887,7 @@ func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToDeepSeekNitro(t *testi
 	legacyModels := []string{
 		"deepseek/deepseek-v4-flash",
 		"deepseek/deepseek-v4-flash-0731",
+		"deepseek/deepseek-v4-flash-0731:nitro",
 		"z-ai/glm-5.3-flash:exacto",
 	}
 
@@ -916,14 +917,25 @@ func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToDeepSeekNitro(t *testi
 				if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
 					t.Fatalf("provider = %+v, want openrouter", reconciled.Provider)
 				}
-				if reconciled.Model == nil || *reconciled.Model != defaultFastOpenRouterAgentModel {
-					t.Fatalf("model = %+v, want %s", reconciled.Model, defaultFastOpenRouterAgentModel)
+				wantModel := defaultFastOpenRouterAgentModel
+				managedAssistant := presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetCommandAgent
+				if presetKey == model.AgentPresetAskAgent {
+					wantModel = defaultAskAgentModel
+				} else if presetKey == model.AgentPresetCommandAgent {
+					wantModel = defaultCommandAgentModel
+				}
+				if reconciled.Model == nil || *reconciled.Model != wantModel {
+					t.Fatalf("model = %+v, want %s", reconciled.Model, wantModel)
 				}
 				config, err := model.ParseAgentExecutionConfig(reconciled.ExecutionConfig)
 				if err != nil {
 					t.Fatalf("parse execution config: %v", err)
 				}
-				if config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
+				if managedAssistant {
+					if config.MaxToolSteps == nil || *config.MaxToolSteps != managedAssistantMaxToolSteps || config.OpenRouter != nil {
+						t.Fatalf("execution config = %s, want only max_tool_steps=%d", reconciled.ExecutionConfig, managedAssistantMaxToolSteps)
+					}
+				} else if config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
 					!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
 					t.Fatalf("execution config = %s, want OpenRouter quantizations %v", reconciled.ExecutionConfig, defaultFastOpenRouterQuantizations)
 				}

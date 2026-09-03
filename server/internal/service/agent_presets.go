@@ -25,10 +25,13 @@ const (
 	defaultQuillAgentModel = defaultFastOpenRouterAgentModel
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
-	defaultAskAgentModel = defaultFastOpenRouterAgentModel
+	defaultAskAgentModel = "z-ai/glm-5.3-flash:nitro"
 	// defaultCommandAgentModel keeps delegated sub-agent work on the Small
 	// native model route and its runtime-hosted tool surface.
 	defaultCommandAgentModel = defaultAskAgentModel
+	// managedAssistantMaxToolSteps gives Ask Agent and Sub-agent enough room
+	// for long, tool-heavy research and execution loops.
+	managedAssistantMaxToolSteps = 2000
 )
 
 var defaultFastOpenRouterQuantizations = []string{"fp8", "fp16", "bf16", "fp32"}
@@ -40,6 +43,13 @@ func defaultFastOpenRouterExecutionConfig() model.JSONBlob {
 				Quantizations: slices.Clone(defaultFastOpenRouterQuantizations),
 			},
 		},
+	})
+}
+
+func defaultManagedAssistantExecutionConfig() model.JSONBlob {
+	maxToolSteps := managedAssistantMaxToolSteps
+	return model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
+		MaxToolSteps: &maxToolSteps,
 	})
 }
 
@@ -438,6 +448,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		ServiceTier:     &standardServiceTier,
 	})
 	fastOpenRouterExecutionConfig := defaultFastOpenRouterExecutionConfig()
+	managedAssistantExecutionConfig := defaultManagedAssistantExecutionConfig()
 
 	epicPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	taskPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
@@ -452,6 +463,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	atlasDefaultModel := defaultAtlasAgentModel
 	scribeDefaultModel := defaultScribeAgentModel
 	quillDefaultModel := defaultQuillAgentModel
+	supportDefaultModel := defaultFastOpenRouterAgentModel
 	askAgentDefaultModel := defaultAskAgentModel
 	commandAgentDefaultModel := defaultCommandAgentModel
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
@@ -560,7 +572,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			DefaultRole:           "Support Agent",
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
-			Model:                 &askAgentDefaultModel,
+			Model:                 &supportDefaultModel,
 			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
@@ -716,7 +728,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &commandAgentDefaultModel,
-			ExecutionConfig:       fastOpenRouterExecutionConfig,
+			ExecutionConfig:       managedAssistantExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          commandAgentPresetTools(),
@@ -740,7 +752,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &askAgentDefaultModel,
-			ExecutionConfig:       fastOpenRouterExecutionConfig,
+			ExecutionConfig:       managedAssistantExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          askAgentPresetTools(),

@@ -162,8 +162,9 @@ function DockWorkDisclosure({
  * one-shot agent's result is readable in the bar without opening the full
  * session sheet. The main chat also shows user turns; embedded execution
  * strips remain assistant/tool-only. All shared segments stay flat and
- * Tool-call rows remain permanently concise; long prose and reasoning can
- * still disclose when the surrounding surface permits it.
+ * The current tool stays visible with context while earlier calls sit behind
+ * a flat disclosure; long prose and reasoning can still disclose when the
+ * surrounding surface permits it.
  */
 export function DockTranscript({
   stream,
@@ -343,7 +344,10 @@ export function DockTranscript({
                   active={workingGroup.active}
                   completedDurationMs={workingGroup.durationMs}
                 >
-                  {workingGroup.segments.map((segment) => (
+                  {(workingGroup.active
+                    ? workingGroup.segments.slice(0, -1)
+                    : workingGroup.segments
+                  ).map((segment) => (
                     <TranscriptSegmentView
                       key={segment.id}
                       segment={segment}
@@ -351,6 +355,7 @@ export function DockTranscript({
                         expandable: true,
                         collapseLongAssistantContent: false,
                         showToolDetails: true,
+                        showToolContext: true,
                         showReasoningDetails: true,
                         assistantPresentation: segment.kind === 'assistant' ? 'progress' : undefined,
                         fallbackUserLabel: 'You',
@@ -363,6 +368,7 @@ export function DockTranscript({
                   segment={entry.segment}
                   options={{
                     expandable: true,
+                    showToolContext: true,
                     toolGroup: 'toolGroup' in entry ? entry.toolGroup : undefined,
                     collapseLongAssistantContent: assistantPresentation?.presentation !== 'final'
                       && (entry.segment.kind !== 'assistant' || entry.segment.id !== latestAssistantSegmentId),
