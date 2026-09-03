@@ -709,6 +709,7 @@ describe('useRealtimeSync task ordering events', () => {
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queryKeys.support.conversations('ws-1') })
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queryKeys.support.inboxScopes('ws-1') })
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queryKeys.support.inboxViewCounts('ws-1') })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queryKeys.support.workspaceUnread() })
 
     act(() => root.unmount())
     container.remove()
@@ -805,6 +806,41 @@ describe('useRealtimeSync task ordering events', () => {
     }))
     const messagePages = client.getQueryData<SupportMessagePages>(queryKeys.support.messages('ws-1', 'conv-replied'))
     expect(flattenSupportMessagePages(messagePages).map((message) => message.id)).toEqual(['msg-0', 'msg-1'])
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('refreshes workspace unread after a customer message', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>)
+    })
+
+    await act(async () => {
+      captured.onEvent?.({
+        action: 'created',
+        entity: 'support_conversation_message',
+        entity_id: 'msg-customer',
+        workspace_id: 'ws-1',
+        actor_id: 'widget:visitor',
+        parent_id: 'conv-1',
+        data: {
+          content: 'I still need help.',
+          sender_type: 'customer',
+          message_type: 'reply',
+          is_internal: false,
+        },
+      })
+      vi.advanceTimersByTime(250)
+      await Promise.resolve()
+    })
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queryKeys.support.workspaceUnread() })
 
     act(() => root.unmount())
     container.remove()

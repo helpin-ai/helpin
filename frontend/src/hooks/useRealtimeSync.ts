@@ -231,6 +231,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const agentRunInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const supportCounterInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const supportWorkspaceUnreadPending = useRef(false)
   const pendingAgentRunInvalidations = useRef<Map<string, readonly unknown[]>>(new Map())
   const selfId = useAuthStore((state) => state.user?.id)
   const selfIdRef = useRef<string | undefined>(selfId)
@@ -260,13 +261,18 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     }, AGENT_RUN_INVALIDATE_MS)
   }, [queryClient])
 
-  const scheduleSupportCounterInvalidation = useCallback(() => {
+  const scheduleSupportCounterInvalidation = useCallback((refreshWorkspaceUnread = false) => {
+    supportWorkspaceUnreadPending.current ||= refreshWorkspaceUnread
     if (supportCounterInvalidateTimer.current) return
     supportCounterInvalidateTimer.current = setTimeout(() => {
       supportCounterInvalidateTimer.current = null
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) })
+      if (supportWorkspaceUnreadPending.current) {
+        supportWorkspaceUnreadPending.current = false
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() })
+      }
     }, SUPPORT_COUNTER_INVALIDATE_MS)
   }, [queryClient, workspaceId])
 
@@ -502,6 +508,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         queryKeys.support.conversation(workspaceId, event.entity_id),
         (current) => patchConversationDetailPersonalRead(current, patch),
       )
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() })
     } else if (event.entity === 'support_conversation') {
       if (event.action === 'typing_started' || event.action === 'typing_stopped') {
         if (!event.entity_id) return
@@ -594,6 +601,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           ) {
             inboxStore.showReopenedConversationInInbox(event.entity_id, statusPatch.mailboxId)
           }
+          queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() })
         }
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
@@ -683,7 +691,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // Coalesce message bursts into one counter refresh. Core counts are
         // materialized; custom views remain exact and converge after the same
         // short trailing window.
-        scheduleSupportCounterInvalidation()
+        scheduleSupportCounterInvalidation(
+          messageData?.sender_type === 'customer' && !messageData.is_internal,
+        )
       }
     }
 
@@ -807,6 +817,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       clearTimeout(debounceTimer.current ?? undefined)
       clearTimeout(agentRunInvalidateTimer.current ?? undefined)
       clearTimeout(supportCounterInvalidateTimer.current ?? undefined)
+      supportWorkspaceUnreadPending.current = false
       pendingAgentRunInvalidations.current.clear()
       timers.forEach((t) => clearTimeout(t))
       timers.clear()

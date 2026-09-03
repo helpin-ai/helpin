@@ -2323,6 +2323,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 	var stats model.UnreadStats
 	humanInboxCondition := conversationHumanInboxCondition("sc")
 	aiActiveCondition := conversationAIActiveCondition("sc")
+	supportUnreadScopeCondition := `NOT (` + conversationResolvedByAICondition("sc") + `)`
 	mineCondition := `(` + conversationHumanInboxCondition("sc") + ` OR sc.status = 'waiting_on_customer')
 		AND COALESCE(personal_state.relevance_mask, 0) <> 0`
 	unreadCondition := `(COALESCE(personal_state.unread_customer_message_count, 0) > 0 OR COALESCE(personal_state.manually_unread, false))`
@@ -2389,7 +2390,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		 AND personal_state.user_id = ?
 		WHERE sc.workspace_id = ?
 		  AND sc.status NOT IN ('resolved', 'spam')
-	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition, humanInboxCondition, mineCondition, aiActiveCondition, humanInboxCondition, mineCondition, aiActiveCondition)
+	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, supportUnreadScopeCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition, humanInboxCondition, mineCondition, aiActiveCondition, humanInboxCondition, mineCondition, aiActiveCondition)
 
 	args := []any{userID, workspaceID}
 	if mailboxID != nil {
@@ -2424,6 +2425,7 @@ func (r *SupportConversationRepository) getLegacyUnreadStats(ctx context.Context
 	var stats model.UnreadStats
 	humanInboxCondition := conversationHumanInboxCondition("sc")
 	aiActiveCondition := conversationAIActiveCondition("sc")
+	supportUnreadScopeCondition := `NOT (` + conversationResolvedByAICondition("sc") + `)`
 	mentionCondition, mentionArgs := r.mentionExistsCondition("sc", userID)
 	mineCondition := `(` + conversationHumanInboxCondition("sc") + ` OR sc.status = 'waiting_on_customer') AND (
 		sc.assigned_user_id = ? OR sc.opened_by_user_id = ? OR ` + mentionCondition + `)`
@@ -2457,7 +2459,7 @@ func (r *SupportConversationRepository) getLegacyUnreadStats(ctx context.Context
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ? AND sc.status NOT IN ('resolved', 'spam')
 	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition,
-		unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition,
+		unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, supportUnreadScopeCondition,
 		unreadCondition, mineCondition, unreadCondition, humanInboxCondition,
 		humanInboxCondition, mineCondition, aiActiveCondition, humanInboxCondition, mineCondition, aiActiveCondition)
 	args := make([]any, 0, 20)
@@ -2513,7 +2515,7 @@ func (r *SupportConversationRepository) getUnreadStatsFromCoreBuckets(
 			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'mine'), 0) AS mine,
 			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'waiting'), 0) AS waiting,
 			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'ai_active'), 0) AS ai_active,
-			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'inbox'), 0) AS total,
+			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'support'), 0) AS total,
 			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'mine'), 0) AS my_inbox,
 			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'unassigned'), 0) AS unassigned,
 			COALESCE(SUM(total_count) FILTER (WHERE audience_type = 'shared' AND bucket_id = 'inbox'), 0) AS inbox_total,

@@ -1081,6 +1081,9 @@ export function useUpdateConversationStatus(workspaceId: string) {
       const invalidateAfterStatusChange = () => {
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() });
         invalidateSupportInboxViewCounts(queryClient, workspaceId);
       };
 
@@ -1276,6 +1279,7 @@ export function useMarkConversationUnread(workspaceId: string) {
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
@@ -1307,6 +1311,7 @@ export function useMarkConversationRead(workspaceId: string) {
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {

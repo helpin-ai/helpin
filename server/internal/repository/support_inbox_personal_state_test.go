@@ -188,6 +188,29 @@ func TestGetUnreadStatsUsesRequestingUsersMaterializedState(t *testing.T) {
 	}
 }
 
+func TestGetUnreadStatsTotalIncludesAIHandlingUnread(t *testing.T) {
+	db := setupSupportPersonalStateTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	for _, statement := range []string{
+		`INSERT INTO support_conversations (id, workspace_id, status, flow_state) VALUES ('ai-active', 'w1', 'open', 'ai_handling')`,
+		`INSERT INTO support_conversations (id, workspace_id, status, flow_state) VALUES ('ai-resolved', 'w1', 'open', 'resolved_by_ai')`,
+		`INSERT INTO support_conversation_user_states (workspace_id, conversation_id, user_id, unread_customer_message_count) VALUES ('w1', 'ai-active', 'u1', 1)`,
+		`INSERT INTO support_conversation_user_states (workspace_id, conversation_id, user_id, unread_customer_message_count) VALUES ('w1', 'ai-resolved', 'u1', 1)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stats, err := repo.GetUnreadStats(context.Background(), "w1", "u1", "", model.RoleOwner, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Total != 1 || stats.AIActive != 1 || stats.Inbox != 0 {
+		t.Fatalf("stats = %#v, want one total AI-handling unread and no human-inbox unread", stats)
+	}
+}
+
 func TestCountByParamsReturnsPersonalUnreadForSavedViews(t *testing.T) {
 	db := setupSupportPersonalStateTestDB(t)
 	repo := NewSupportConversationRepository(db)

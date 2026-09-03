@@ -626,8 +626,8 @@ func TestSupportConversationRepository(t *testing.T) {
 		if got := stats.Waiting - baseStats.Waiting; got != 0 {
 			t.Fatalf("expected waiting unread count delta 0, got %d", got)
 		}
-		if got := stats.Total - baseStats.Total; got != 1 {
-			t.Fatalf("expected total unread human inbox count delta 1, got %d", got)
+		if got := stats.Total - baseStats.Total; got != 2 {
+			t.Fatalf("expected total unread support count delta 2, got %d", got)
 		}
 		if got := stats.MyInbox - baseStats.MyInbox; got != 1 {
 			t.Fatalf("expected my inbox count delta 1, got %d", got)
