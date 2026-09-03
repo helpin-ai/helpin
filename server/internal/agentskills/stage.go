@@ -3,7 +3,6 @@ package agentskills
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -190,35 +189,9 @@ func StageInto(
 				return Resolution{}, fmt.Errorf("stage built-in skill %q: %w", definition.Key, err)
 			}
 		}
-		if err := rewriteStagedSkillRuntimeToolNames(stageDir); err != nil {
-			return Resolution{}, err
-		}
 	}
 
 	return resolution, nil
-}
-
-func rewriteStagedSkillRuntimeToolNames(stageDir string) error {
-	return filepath.WalkDir(stageDir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || strings.ToLower(filepath.Ext(path)) != ".md" {
-			return nil
-		}
-		payload, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("read staged skill markdown %q: %w", path, err)
-		}
-		rendered := agentcontract.RenderRuntimeToolNamesInInstructions(string(payload))
-		if rendered == string(payload) {
-			return nil
-		}
-		if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
-			return fmt.Errorf("write staged skill markdown %q: %w", path, err)
-		}
-		return nil
-	})
 }
 
 func stagedSkillDirName(index int, key string) string {

@@ -67,11 +67,16 @@ Doppler:
       "app_id": "helpin",
       "context_endpoint": "https://stage.helpin.ai/api/internal/agent-runtime/target-context",
       "context_token": "<HELPIN_INTERNAL_API_SECRET>",
-      "command_provider": {
+      "mcp_providers": [{
+        "name": "helpin",
         "transport": "http",
-        "base_url": "https://stage.helpin.ai/api/internal/agent-runtime/commands",
-        "token": "<HELPIN_INTERNAL_API_SECRET>"
-      },
+        "url": "https://stage.helpin.ai/api/internal/agent-runtime/mcp/helpin",
+        "token": "<HELPIN_INTERNAL_API_SECRET>",
+        "tool_namespace": "none",
+        "refresh_interval": "30s",
+        "startup_policy": "required",
+        "unknown_refresh_cooldown": "30s"
+      }],
       "skill_provider": {
         "transport": "http",
         "base_url": "https://stage.helpin.ai/api/internal/agent-runtime/skills",
@@ -105,7 +110,7 @@ Doppler:
   (`${HELPIN_INTERNAL_API_SECRET}`) inside the JSON so the literal exists once.
 - The runtime appends fixed path suffixes; the base URLs above resolve to
   exactly the routes Helpin registers in `internal/router/router.go`:
-  `/target-context`, `/commands/execute`, `/workspace/repository-spec`,
+  `/target-context`, `/mcp/helpin/tools`, `/mcp/helpin/call`, `/workspace/repository-spec`,
   `/skills/by-id`, `/skills/active-by-key`, `/skill-packages/objects/*`, and
   `/artifacts`.
 - `allowed_domains: ["*"]` permits authenticated navigation to any HTTP(S)
@@ -141,8 +146,8 @@ locked down from the public internet:
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" -X POST \
   https://stage.helpin.ai/api/internal/agent-runtime/target-context   # expect 401
-curl -s -o /dev/null -w "%{http_code}\n" -X POST \
-  https://stage.helpin.ai/api/internal/agent-runtime/commands/execute # expect 401
+curl -s -o /dev/null -w "%{http_code}\n" \
+  https://stage.helpin.ai/api/internal/agent-runtime/mcp/helpin/tools # expect 401
 curl -s -o /dev/null -w "%{http_code}\n" -X POST \
   https://stage.helpin.ai/api/internal/agent-runtime/workspace/repository-spec # expect 401
 

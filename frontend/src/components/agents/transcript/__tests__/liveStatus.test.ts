@@ -32,12 +32,13 @@ describe('deriveLiveStatusLabel', () => {
     expect(label).toContain('Dockerfile');
   });
 
-  it('ignores update_plan and completed tools, falling back to reasoning', () => {
+  it('ignores runtime-control and completed tools, falling back to reasoning', () => {
     const label = deriveLiveStatusLabel(
       {
         live_turn_segments: [
           toolSegment('read_file', 'completed'),
           toolSegment('update_plan', 'running'),
+          toolSegment('finish_turn', 'running'),
         ],
         live_reasoning_message: {
           message_id: 'r1',

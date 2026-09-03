@@ -53,6 +53,7 @@ type AgentRuntimeHostService struct {
 	crmCompanyRepo   *repository.CRMCompanyRepository
 	crmDealRepo      *repository.CRMDealRepository
 	commandService   *InternalCommandService
+	providerCommands map[string]string
 	gitService       *GitService
 	skillRepo        *repository.WorkspaceSkillRepository
 	skillStore       skillPackageStore
@@ -299,18 +300,19 @@ func NewAgentRuntimeHostService(
 	gitService *GitService,
 ) *AgentRuntimeHostService {
 	return &AgentRuntimeHostService{
-		appID:          strings.TrimSpace(appID),
-		runRepo:        runRepo,
-		workspaceRepo:  workspaceRepo,
-		taskRepo:       taskRepo,
-		epicRepo:       epicRepo,
-		supportRepo:    supportRepo,
-		docsRepo:       docsRepo,
-		crmContactRepo: crmContactRepo,
-		crmCompanyRepo: crmCompanyRepo,
-		crmDealRepo:    crmDealRepo,
-		commandService: commandService,
-		gitService:     gitService,
+		appID:            strings.TrimSpace(appID),
+		runRepo:          runRepo,
+		workspaceRepo:    workspaceRepo,
+		taskRepo:         taskRepo,
+		epicRepo:         epicRepo,
+		supportRepo:      supportRepo,
+		docsRepo:         docsRepo,
+		crmContactRepo:   crmContactRepo,
+		crmCompanyRepo:   crmCompanyRepo,
+		crmDealRepo:      crmDealRepo,
+		commandService:   commandService,
+		providerCommands: providerCommandNames(commandService),
+		gitService:       gitService,
 	}
 }
 

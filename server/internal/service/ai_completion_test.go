@@ -90,10 +90,10 @@ func TestAICompletionServiceUsesFeatureDefaultAndReconcilesExactRoute(t *testing
 		t.Fatalf("response=%#v requests=%d", response, len(provider.requests))
 	}
 	request := provider.requests[0]
-	if request.Provider != "openrouter" || request.Model != "deepseek/deepseek-v4-flash-0731" {
+	if request.Provider != "openrouter" || request.Model != "z-ai/glm-5.3-flash:exacto" {
 		t.Fatalf("resolved request = %q/%q", request.Provider, request.Model)
 	}
-	if store.reconcile.Entry.Provider != "openrouter" || store.reconcile.Entry.CanonicalModel != "deepseek-v4-flash-0731" {
+	if store.reconcile.Entry.Provider != "openrouter" || store.reconcile.Entry.CanonicalModel != "glm-5.3-flash" {
 		t.Fatalf("ledger route = %#v", store.reconcile.Entry)
 	}
 }
@@ -101,7 +101,7 @@ func TestAICompletionServiceUsesFeatureDefaultAndReconcilesExactRoute(t *testing
 func TestAICompletionServiceRetriesDeclaredFallbackAfterRetryableProviderFailure(t *testing.T) {
 	store := &fakeAIUsageStore{}
 	provider := &scriptedAICompletionProvider{errors: map[string]error{
-		"deepseek/deepseek-v4-flash-0731": &llm.ProviderError{Provider: "openrouter", StatusCode: 429},
+		"z-ai/glm-5.3-flash:exacto": &llm.ProviderError{Provider: "openrouter", StatusCode: 429},
 	}}
 	service := newTestAICompletionService(t, provider, store)
 
@@ -122,7 +122,7 @@ func TestAICompletionServiceRetriesDeclaredFallbackAfterRetryableProviderFailure
 
 func TestAICompletionServiceDoesNotFallbackAfterNonRetryableProviderFailure(t *testing.T) {
 	provider := &scriptedAICompletionProvider{errors: map[string]error{
-		"deepseek/deepseek-v4-flash-0731": &llm.ProviderError{Provider: "openrouter", StatusCode: 400},
+		"z-ai/glm-5.3-flash:exacto": &llm.ProviderError{Provider: "openrouter", StatusCode: 400},
 	}}
 	service := newTestAICompletionService(t, provider, &fakeAIUsageStore{})
 
@@ -137,7 +137,7 @@ func TestAICompletionServiceDoesNotFallbackAfterNonRetryableProviderFailure(t *t
 
 func TestAICompletionServiceRejectsIncompleteOutputAndUsesFallback(t *testing.T) {
 	provider := &scriptedAICompletionProvider{responses: map[string]*llm.ChatResponse{
-		"deepseek/deepseek-v4-flash-0731": {
+		"z-ai/glm-5.3-flash:exacto": {
 			Content: "partial", FinishReason: "length",
 			TokensUsed: llm.TokenUsage{InputTokensTotal: 10, CompletionTokensTotal: 100, OutputTokens: 100},
 		},

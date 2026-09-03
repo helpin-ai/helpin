@@ -567,8 +567,8 @@ func TestBuildSystemPromptPlannerRunUsesReadOnlyRepoGuidance(t *testing.T) {
 	for _, expected := range []string{
 		"Use the provided tools to inspect the repository and search for relevant context. Keep repository interactions read-only.",
 		"This run is planning-only and read-only. Do not change code, create files, or alter git state.",
-		"After approval, call `" + RuntimeToolNameForPrompt("ensure_task_plan_doc") + "` with `{}` to create or load and attach the canonical task planning document",
-		"call `" + RuntimeToolNameForPrompt("write_document_content") + "` with the returned `document_id` and the full approved markdown",
+		"After approval, call `" + CanonicalToolName("ensure_task_plan_doc") + "` with `{}` to create or load and attach the canonical task planning document",
+		"call `" + CanonicalToolName("write_document_content") + "` with the returned `document_id` and the full approved markdown",
 		"Do not claim the planning document was persisted and do not finish the run until both product tool calls succeed.",
 	} {
 		if !strings.Contains(prompt, expected) {

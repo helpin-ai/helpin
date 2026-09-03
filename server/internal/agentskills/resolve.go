@@ -48,7 +48,7 @@ func Resolve(ctx context.Context, workspaceID string, refs model.AgentSkillRefs,
 func CompileInstructions(definitions []agentcontract.SkillDefinition) string {
 	sections := make([]string, 0, len(definitions))
 	for _, definition := range definitions {
-		instructions := agentcontract.RenderRuntimeToolNamesInInstructions(definition.Instructions)
+		instructions := strings.TrimSpace(definition.Instructions)
 		if instructions == "" {
 			continue
 		}

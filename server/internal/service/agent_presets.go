@@ -14,18 +14,27 @@ const (
 	defaultOpenAIAgentModel     = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
-	// preferred DeepSeek OpenRouter model.
-	defaultAtlasAgentModel = "deepseek/deepseek-v4-flash-0731"
+	// preferred fast OpenRouter model.
+	defaultAtlasAgentModel = "z-ai/glm-5.3-flash:exacto"
 	// defaultScribeAgentModel keeps interactive task planning on Codex's
 	// default OpenAI model.
 	defaultScribeAgentModel = defaultOpenAIAgentModel
 	// defaultQuillAgentModel keeps documentation work on the product's fast
 	// OpenRouter model.
-	defaultQuillAgentModel = "deepseek/deepseek-v4-flash"
+	defaultQuillAgentModel = "z-ai/glm-5.3-flash:exacto"
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
-	defaultAskAgentModel = "deepseek/deepseek-v4-flash-0731"
+	defaultAskAgentModel = "z-ai/glm-5.3-flash:exacto"
 )
+
+func isLegacyDeepSeekFlashModel(modelName string) bool {
+	switch strings.TrimSpace(modelName) {
+	case "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-flash-0731":
+		return true
+	default:
+		return false
+	}
+}
 
 var newPMReadToolAliases = []string{
 	"list_workspace_members",

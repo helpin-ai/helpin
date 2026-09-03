@@ -82,8 +82,8 @@ func normalizeInteractionContract(contract SkillInteractionContract) SkillIntera
 		}
 		transport.Type = strings.TrimSpace(transport.Type)
 		transport.ToolName = strings.TrimSpace(transport.ToolName)
-		if runtimeKind == "native_sdk" && transport.Type == InteractionTransportTypeToolCall && IsHelpinMCPToolAlias(transport.ToolName) {
-			transport.ToolName = HelpinMCPRuntimeToolName(transport.ToolName)
+		if transport.Type == InteractionTransportTypeToolCall {
+			transport.ToolName = CanonicalToolName(transport.ToolName)
 		}
 		transport.BlockLabel = strings.TrimSpace(transport.BlockLabel)
 		normalized[runtimeKind] = transport

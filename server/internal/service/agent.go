@@ -258,7 +258,7 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
 		Provider:              strings.TrimSpace(derefString(agent.Provider)),
 		Model:                 strings.TrimSpace(derefString(agent.Model)),
-		SystemPrompt:          agentcontract.RenderRuntimeToolNamesInInstructionsForRuntime(effectiveSystemPrompt, agent.RuntimeKind),
+		SystemPrompt:          effectiveSystemPrompt,
 		Skills:                runtimeSkillRefsFromHelpinAgent(agent),
 		AllowedTools:          parseJSONStringSlice(agent.AllowedTools),
 		AllowedTargets:        parseJSONStringSlice(agent.AllowedTargets),
@@ -574,6 +574,10 @@ func runtimeRunAllowedToolSubset(requested, agentAllowed []string) ([]string, er
 // Continuing an idle-expired chat starts a successor run in DockChatService.
 const defaultDockChatIdleTimeoutSeconds = 72 * 60 * 60
 
+// askAgentCompletionCorrections bounds model-level retries when an Ask turn
+// ends without explicitly declaring that the requested work is complete.
+const askAgentCompletionCorrections = 2
+
 // defaultSupportChatIdleTimeoutSeconds bounds support conversation chat runs
 // (24h): visitors rarely return later, and an idle-expired conversation gets
 // a successor run with carry-forward in SupportChatService.
@@ -612,8 +616,10 @@ func runtimeTurnPolicy(run *model.AgentRun, agent *model.Agent, mode string, doc
 			dockChatIdleSeconds = defaultDockChatIdleTimeoutSeconds
 		}
 		return AgentRuntimeTurnPolicy{
-			Mode:               agentRuntimeTurnPauseAfterAssist,
-			IdleTimeoutSeconds: dockChatIdleSeconds,
+			Mode:                     agentRuntimeTurnPauseAfterAssist,
+			IdleTimeoutSeconds:       dockChatIdleSeconds,
+			CompletionMode:           agentRuntimeTurnCompletionExplicit,
+			MaxCompletionCorrections: askAgentCompletionCorrections,
 		}
 	}
 	if strings.TrimSpace(run.TargetType) == "support_conversation" && runInputTriggerType(run) == supportChatTriggerType {
@@ -631,6 +637,22 @@ func runtimeTurnPolicy(run *model.AgentRun, agent *model.Agent, mode string, doc
 		return AgentRuntimeTurnPolicy{Mode: agentRuntimeTurnPauseAfterAssist}
 	}
 	return completeOnFinish
+}
+
+// runtimeResumeTurnPolicy upgrades existing Ask/dock runs when they next
+// resume. Other chat consumers omit the additive policy and retain the
+// runtime's legacy implicit end-of-turn behavior.
+func runtimeResumeTurnPolicy(run *model.AgentRun) *AgentRuntimeTurnPolicy {
+	if run == nil || run.DockChatID == nil || strings.TrimSpace(*run.DockChatID) == "" {
+		return nil
+	}
+	policy := AgentRuntimeTurnPolicy{
+		Mode:                     agentRuntimeTurnPauseAfterAssist,
+		IdleTimeoutSeconds:       defaultDockChatIdleTimeoutSeconds,
+		CompletionMode:           agentRuntimeTurnCompletionExplicit,
+		MaxCompletionCorrections: askAgentCompletionCorrections,
+	}
+	return &policy
 }
 
 func mapFromJSON(value interface{}) map[string]interface{} {
@@ -1014,6 +1036,7 @@ func (s *AgentService) ResumeRunsAfterExternalMCPAuth(ctx context.Context, works
 		}
 		if _, err := s.agentRuntimeClient.ResumeRun(ctx, update.RuntimeRunID, AgentRuntimeResumeRunRequest{
 			Intent: model.AgentRunResumeIntentAuthCompleted, ExternalActorID: actorID,
+			TurnPolicy: runtimeResumeTurnPolicy(run),
 		}); err != nil {
 			return fmt.Errorf("resume external MCP-authenticated run: %w", err)
 		}
@@ -1166,6 +1189,20 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		if (presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetSupportAgent) &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
 			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
+		// Product-managed flash defaults moved from DeepSeek to GLM 5.3 Flash
+		// Exacto. Migrate only the product default version and preserve workspace
+		// preset versions and other explicit routing choices.
+		if (presetKey == model.AgentPresetEpicPlanner ||
+			presetKey == model.AgentPresetDocumentationAgent ||
+			presetKey == model.AgentPresetAskAgent ||
+			presetKey == model.AgentPresetSupportAgent) &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenRouter &&
+			isLegacyDeepSeekFlashModel(derefString(existing.Model)) {
 			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true
@@ -5369,6 +5406,7 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 		ResponsePayload: responsePayload,
 		ExternalActorID: actorID,
 		ResumeID:        strings.TrimSpace(req.ClientMessageID),
+		TurnPolicy:      runtimeResumeTurnPolicy(run),
 	}); err != nil {
 		if message != nil {
 			_ = s.runMessageRepo.UpdateDeliveryStatus(ctx, workspaceID, message.ID, "failed")
@@ -5732,9 +5770,14 @@ func (s *AgentService) applyDelegatedCodexAuthState(ctx context.Context, workspa
 			if s.agentRuntimeClient == nil {
 				return fmt.Errorf("agent runtime client is not configured")
 			}
+			run, err := s.GetAgentRun(ctx, workspaceID, runID)
+			if err != nil {
+				return err
+			}
 			if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
 				Intent:          model.AgentRunResumeIntentAuthCompleted,
 				ExternalActorID: actorID,
+				TurnPolicy:      runtimeResumeTurnPolicy(run),
 			}); err != nil {
 				return err
 			}

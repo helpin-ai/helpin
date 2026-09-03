@@ -207,13 +207,14 @@ describe('collectSegments', () => {
     expect(segments).toMatchObject([{ kind: 'assistant', content: finalMessage }]);
   });
 
-  it('drops update_plan tool calls (including mcp-prefixed names)', () => {
+  it('drops runtime-control tool calls (including mcp-prefixed names)', () => {
     const segments = collectSegments(
       stream({
         transcript_messages: [message({
           turn_segments: [
             toolSegment('t1', toolCall({ tool_call_id: 'tc-keep', tool_name: 'read_file' })),
             toolSegment('t2', toolCall({ tool_call_id: 'tc-drop', tool_name: 'mcp__helpin__update_plan' })),
+            toolSegment('t3', toolCall({ tool_call_id: 'tc-finish', tool_name: 'finish_turn' })),
           ],
         })],
       }),
