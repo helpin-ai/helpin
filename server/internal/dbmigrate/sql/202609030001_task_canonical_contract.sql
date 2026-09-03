@@ -297,6 +297,178 @@ BEGIN
     END IF;
 END $$;
 
+-- Reconcile columns recreated by AutoMigrate after the original hard cut. The
+-- canonical column wins when it is populated; a legacy-only value is preserved,
+-- and conflicting non-null IDs stop the migration instead of losing data.
+CREATE OR REPLACE FUNCTION pg_temp.reconcile_task_id_column(
+    target_table text,
+    legacy_column text,
+    canonical_column text
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    target_relation regclass;
+    legacy_exists boolean;
+    canonical_exists boolean;
+    has_conflict boolean;
+BEGIN
+    target_relation := to_regclass(format('public.%I', target_table));
+    IF target_relation IS NULL THEN
+        RETURN;
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1
+          FROM pg_attribute
+         WHERE attrelid = target_relation
+           AND attname = legacy_column
+           AND NOT attisdropped
+    ) INTO legacy_exists;
+    IF NOT legacy_exists THEN
+        RETURN;
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1
+          FROM pg_attribute
+         WHERE attrelid = target_relation
+           AND attname = canonical_column
+           AND NOT attisdropped
+    ) INTO canonical_exists;
+    IF NOT canonical_exists THEN
+        EXECUTE format(
+            'ALTER TABLE %s RENAME COLUMN %I TO %I',
+            target_relation,
+            legacy_column,
+            canonical_column
+        );
+        RETURN;
+    END IF;
+
+    EXECUTE format(
+        'SELECT EXISTS (SELECT 1 FROM %s WHERE %I IS NOT NULL AND %I IS NOT NULL AND %I IS DISTINCT FROM %I)',
+        target_relation,
+        legacy_column,
+        canonical_column,
+        legacy_column,
+        canonical_column
+    ) INTO has_conflict;
+    IF has_conflict THEN
+        RAISE EXCEPTION 'task canonicalization failed: %.% conflicts with %',
+            target_table,
+            legacy_column,
+            canonical_column;
+    END IF;
+
+    EXECUTE format(
+        'UPDATE %s SET %I = %I WHERE %I IS NULL AND %I IS NOT NULL',
+        target_relation,
+        canonical_column,
+        legacy_column,
+        canonical_column,
+        legacy_column
+    );
+    EXECUTE format('ALTER TABLE %s DROP COLUMN %I', target_relation, legacy_column);
+END;
+$$;
+
+SELECT pg_temp.reconcile_task_id_column('agents', 'active_story_id', 'active_task_id');
+SELECT pg_temp.reconcile_task_id_column('agent_runs', 'story_id', 'task_id');
+SELECT pg_temp.reconcile_task_id_column('agent_handoffs', 'story_id', 'task_id');
+SELECT pg_temp.reconcile_task_id_column(
+    'pm_recurring_templates',
+    'created_from_story_id',
+    'created_from_task_id'
+);
+SELECT pg_temp.reconcile_task_id_column(
+    'pm_recurring_templates',
+    'last_generated_story_id',
+    'last_generated_task_id'
+);
+SELECT pg_temp.reconcile_task_id_column(
+    'pm_recurring_runs',
+    'generated_story_id',
+    'generated_task_id'
+);
+SELECT pg_temp.reconcile_task_id_column(
+    'support_conversations',
+    'linked_story_id',
+    'linked_task_id'
+);
+
+-- task_type is the application-owned field. A recreated story_type column may
+-- contain its own default values, so do not overwrite live task_type values.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+          FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'pm_team_field_visibility'
+           AND column_name = 'story_type'
+    ) THEN
+        IF EXISTS (
+            SELECT 1
+              FROM information_schema.columns
+             WHERE table_schema = 'public'
+               AND table_name = 'pm_team_field_visibility'
+               AND column_name = 'task_type'
+        ) THEN
+            ALTER TABLE pm_team_field_visibility DROP COLUMN story_type;
+        ELSE
+            ALTER TABLE pm_team_field_visibility RENAME COLUMN story_type TO task_type;
+        END IF;
+    END IF;
+END $$;
+
+-- Recreated legacy tables must be empty. Refuse to discard rows if an older
+-- application wrote to them after the original reconciliation migration.
+DO $$
+DECLARE
+    legacy_table text;
+    legacy_relation regclass;
+    has_rows boolean;
+BEGIN
+    FOREACH legacy_table IN ARRAY ARRAY[
+        'pm_stories',
+        'pm_story_followers',
+        'pm_story_labels',
+        'pm_story_links',
+        'pm_story_owners',
+        'pm_story_templates',
+        'story_delivery_targets',
+        'story_git_links'
+    ] LOOP
+        legacy_relation := to_regclass(format('public.%I', legacy_table));
+        IF legacy_relation IS NULL THEN
+            CONTINUE;
+        END IF;
+        EXECUTE format('SELECT EXISTS (SELECT 1 FROM %s)', legacy_relation)
+            INTO has_rows;
+        IF has_rows THEN
+            RAISE EXCEPTION 'task canonicalization failed: legacy table % contains rows',
+                legacy_table;
+        END IF;
+    END LOOP;
+END $$;
+
+DROP TABLE IF EXISTS pm_story_followers;
+DROP TABLE IF EXISTS pm_story_labels;
+DROP TABLE IF EXISTS pm_story_owners;
+DROP TABLE IF EXISTS pm_story_links;
+DROP TABLE IF EXISTS pm_story_templates;
+DROP TABLE IF EXISTS story_git_links;
+DROP TABLE IF EXISTS story_delivery_targets;
+DROP TABLE IF EXISTS pm_stories;
+DROP SEQUENCE IF EXISTS pm_story_display_id_seq;
+
+-- The old index name can survive the story_id -> task_id rename. Ensure the
+-- canonical index remains available before removing the duplicate.
+CREATE INDEX IF NOT EXISTS idx_agent_handoffs_task_id ON agent_handoffs (task_id);
+DROP INDEX IF EXISTS idx_agent_handoffs_story_id;
+
 DO $$
 BEGIN
     IF EXISTS (
