@@ -202,7 +202,7 @@ describe('ConversationList presence resync', () => {
     act(() => root.unmount())
   })
 
-  it('marks an unread conversation as read when selected', async () => {
+  it('waits for the rendered thread before marking an unread conversation read', async () => {
     const markRead = vi.fn()
     mockUseMarkConversationRead.mockReturnValue({ mutate: markRead })
     mockUseInfiniteConversations.mockReturnValue({
@@ -225,7 +225,7 @@ describe('ConversationList presence resync', () => {
       container.querySelector<HTMLButtonElement>('[data-conversation-id="conv-unread"]')?.click()
       await new Promise((resolve) => window.setTimeout(resolve, 25))
     })
-    expect(markRead).toHaveBeenCalledWith('conv-unread')
+    expect(markRead).not.toHaveBeenCalled()
 
     act(() => root.unmount())
   })

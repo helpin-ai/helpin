@@ -58,9 +58,10 @@ const (
 // ─── Gap statuses ──────────────────────────────────────────────────────────
 
 const (
-	SupportCoverageGapStatusOpen     = "open"
-	SupportCoverageGapStatusDone     = "done"
-	SupportCoverageGapStatusRejected = "rejected"
+	SupportCoverageGapStatusOpen       = "open"
+	SupportCoverageGapStatusDone       = "done"
+	SupportCoverageGapStatusRejected   = "rejected"
+	SupportCoverageGapStatusArchivedV1 = "archived_v1"
 
 	// Deprecated: kept for one release while old callers migrate to open/done/rejected.
 	SupportCoverageGapStatusDrafted = "drafted"
@@ -413,6 +414,7 @@ type SupportConversationCoverageState struct {
 	DocsIssueFeedbackSubmitted bool    `json:"docs_issue_feedback_submitted"`
 	DocsIssueValue             *bool   `json:"docs_issue_value"`
 	GapID                      *string `json:"gap_id"`
+	CanonicalTopicID           *string `json:"canonical_topic_id"`
 }
 
 // SupportCoverageSummary is returned by the summary endpoint.

@@ -32,7 +32,7 @@ import { flattenSupportMessagePages } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
-import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
+import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, type SupportReceiptStatus } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
@@ -607,19 +607,11 @@ export function MessageThread({
   }, [messages]);
 
   // Derive delivered/read status from conversation's contact_last_seen_at cursor
-  const receiptStatus = useMemo<'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
+  const receiptStatus = useMemo<SupportReceiptStatus>(() => {
     if (!receiptMessageId || !conversation) return null;
     const msg = messages.find((m) => m.id === receiptMessageId);
     if (!msg) return null;
-    if (msg.email_read_at) return 'read_email';
-    if (msg.email_delivery_status === 'opened') return 'read_email';
-    if (msg.email_delivery_status === 'delivered') return 'delivered_email';
-    if (msg.id.startsWith('optimistic-') && msg.via_channel === 'email') return 'sending_email';
-    const seen = conversation.contact_last_seen_at;
-    if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
-    if (msg.email_notified_at) return 'sent_email';
-    if (conversation.source === 'widget') return 'delivered';
-    return null;
+    return getSupportReceiptStatus(msg, conversation);
   }, [receiptMessageId, conversation, messages]);
 
   const groupedMessages = useMemo(() => {
@@ -661,6 +653,15 @@ export function MessageThread({
   const visibleGroupedMessages = groupedMessages;
 
   const lastMessageId = messages[messages.length - 1]?.id ?? null;
+  const lastRenderedCustomerMessageId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.sender_type === 'customer' && !message.is_internal && message.message_type === 'reply' && !message.system_event_type) {
+        return message.id;
+      }
+    }
+    return null;
+  }, [messages]);
   const initialScrollTargetMessageId = useMemo(
     () => getInitialThreadScrollTarget(messages, conversation?.team_last_seen_at),
     [conversation?.team_last_seen_at, messages],
@@ -780,11 +781,12 @@ export function MessageThread({
     })) {
       return;
     }
-    if (lastOpenThreadReadMessageIdRef.current === lastMessageId) return;
+    if (!lastRenderedCustomerMessageId) return;
+    if (lastOpenThreadReadMessageIdRef.current === lastRenderedCustomerMessageId) return;
 
-    lastOpenThreadReadMessageIdRef.current = lastMessageId;
-    markConversationRead.mutate(conversationId);
-  }, [conversation, conversationId, isThreadLoading, lastMessageId, markConversationRead]);
+	lastOpenThreadReadMessageIdRef.current = lastRenderedCustomerMessageId;
+	markConversationRead.mutate({ conversationId, throughMessageId: lastRenderedCustomerMessageId });
+  }, [conversation, conversationId, isThreadLoading, lastRenderedCustomerMessageId, markConversationRead]);
 
   useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;

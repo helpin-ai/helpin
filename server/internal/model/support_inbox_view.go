@@ -45,7 +45,8 @@ type UpdateSupportInboxBuiltinViewRequest struct {
 }
 
 type SupportInboxViewCount struct {
-	ViewID      string `json:"view_id"`
-	TotalCount  int    `json:"total_count"`
-	UnreadCount int    `json:"unread_count"`
+	ViewID               string `json:"view_id"`
+	TotalCount           int    `json:"total_count"`
+	UnreadCount          int    `json:"unread_count"`
+	NeedsHumanReplyCount int    `json:"needs_human_reply_count"`
 }

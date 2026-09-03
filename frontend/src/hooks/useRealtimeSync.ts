@@ -12,7 +12,7 @@ import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
 import { classifyAgentRunUpdate, type AgentRunUpdateKind } from '@/lib/agentRunRealtime'
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload'
-import { isSupportConversationListQueryKey, moveConversationToTopForMessageActivity, patchConversationDetailStatus, patchConversationStatusInCache, type SupportConversationListCache, type SupportConversationStatusPatch } from '@/lib/supportQueryCache'
+import { isSupportConversationListQueryKey, moveConversationToTopForMessageActivity, patchConversationDetailPersonalRead, patchConversationDetailStatus, patchConversationPersonalReadInCache, patchConversationStatusInCache, type SupportConversationListCache, type SupportConversationStatusPatch } from '@/lib/supportQueryCache'
 import { appendMessageToNewestPage, type SupportMessagePages } from '@/lib/supportMessagePages'
 import type { ConversationStatus, SupportConversation, SupportMessage, Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
 
@@ -35,6 +35,7 @@ function playNotificationSound() {
 const DEBOUNCE_MS = 200
 /** Trailing-window (ms) for coalescing bursty agent_run invalidations into a single flush. */
 const AGENT_RUN_INVALIDATE_MS = 400
+const SUPPORT_COUNTER_INVALIDATE_MS = 250
 /** Auto-clear typing indicator after this many ms without a refresh. */
 const TYPING_TIMEOUT_MS = 10_000
 const DOC_EDITING_TIMEOUT_MS = 20_000
@@ -229,6 +230,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const agentRunInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const supportCounterInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingAgentRunInvalidations = useRef<Map<string, readonly unknown[]>>(new Map())
   const selfId = useAuthStore((state) => state.user?.id)
   const selfIdRef = useRef<string | undefined>(selfId)
@@ -257,6 +259,16 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       })
     }, AGENT_RUN_INVALIDATE_MS)
   }, [queryClient])
+
+  const scheduleSupportCounterInvalidation = useCallback(() => {
+    if (supportCounterInvalidateTimer.current) return
+    supportCounterInvalidateTimer.current = setTimeout(() => {
+      supportCounterInvalidateTimer.current = null
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) })
+    }, SUPPORT_COUNTER_INVALIDATE_MS)
+  }, [queryClient, workspaceId])
 
   const onEvent = useCallback((event: WSEvent) => {
     // Task-level events → incremental patch when possible, debounced full refresh as fallback
@@ -476,6 +488,20 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       })
     } else if (event.entity === 'crm_deal') {
       queryClient.invalidateQueries({ queryKey: queryKeys.crm.deals(workspaceId) })
+    } else if (event.entity === 'support_personal_read') {
+      if (event.target_user_id && event.target_user_id !== selfIdRef.current) return
+      const unreadCount = typeof event.data?.unread_count === 'number' ? event.data.unread_count : null
+      const version = typeof event.data?.personal_state_version === 'number' ? event.data.personal_state_version : null
+      if (unreadCount === null || version === null || !event.entity_id) return
+      const patch = { conversationId: event.entity_id, unreadCount, version }
+      queryClient.setQueriesData<SupportConversationListCache>(
+        { predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId) },
+        (current) => patchConversationPersonalReadInCache(current, patch),
+      )
+      queryClient.setQueryData<SupportConversation>(
+        queryKeys.support.conversation(workspaceId, event.entity_id),
+        (current) => patchConversationDetailPersonalRead(current, patch),
+      )
     } else if (event.entity === 'support_conversation') {
       if (event.action === 'typing_started' || event.action === 'typing_stopped') {
         if (!event.entity_id) return
@@ -614,6 +640,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           },
           (current) => moveConversationToTopForMessageActivity(current, {
             conversationId: parentId,
+            messageId: event.entity_id,
             timestamp: event.sent_at ?? (typeof event.data?.created_at === 'string' ? event.data.created_at : new Date().toISOString()),
             message: event.data,
           }),
@@ -653,10 +680,10 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
             )
           },
         })
-        // New messages change unread counts
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) })
+        // Coalesce message bursts into one counter refresh. Core counts are
+        // materialized; custom views remain exact and converge after the same
+        // short trailing window.
+        scheduleSupportCounterInvalidation()
       }
     }
 
@@ -697,7 +724,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         })
       )
     }
-  }, [scheduleRefresh, scheduleAgentRunInvalidation, workspaceId, queryClient])
+  }, [scheduleRefresh, scheduleAgentRunInvalidation, scheduleSupportCounterInvalidation, workspaceId, queryClient])
 
   const onPresenceSnapshot = useCallback((snapshot: PresenceSnapshot) => {
     const convId = snapshot.conversation_id
@@ -779,6 +806,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     return () => {
       clearTimeout(debounceTimer.current ?? undefined)
       clearTimeout(agentRunInvalidateTimer.current ?? undefined)
+      clearTimeout(supportCounterInvalidateTimer.current ?? undefined)
       pendingAgentRunInvalidations.current.clear()
       timers.forEach((t) => clearTimeout(t))
       timers.clear()

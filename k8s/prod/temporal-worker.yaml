@@ -42,6 +42,8 @@ spec:
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: automation-default
+            - name: SUPPORT_COVERAGE_V2_MODE
+              value: "disabled"
           envFrom:
             - secretRef:
                 name: helpin-secrets

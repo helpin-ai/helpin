@@ -2,6 +2,7 @@ package temporalapp
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.temporal.io/sdk/activity"
@@ -44,6 +45,7 @@ func (a *CoverageAnalysisActivities) ListWorkspacesActivity(ctx context.Context)
 
 func (a *CoverageAnalysisActivities) RunWorkspaceAnalysisActivity(ctx context.Context, input CoverageWorkspaceAnalysisInput) error {
 	activity.GetLogger(ctx).Info("running workspace coverage daily analysis", "workspace_id", input.WorkspaceID)
+	activity.RecordHeartbeat(ctx, input.WorkspaceID, "started")
 	return a.analyzer.RunWorkspaceDailyAnalysis(ctx, input.WorkspaceID, input.WindowStart, input.WindowEnd)
 }
 
@@ -59,17 +61,13 @@ func CoverageDailyAnalysisWorkflow(ctx workflow.Context) error {
 	}
 
 	windowEnd := workflow.Now(ctx).UTC()
-	windowStart := windowEnd.Add(-24 * time.Hour)
+	windowStart := windowEnd.Add(-3 * time.Hour)
 	selector := workflow.NewSelector(ctx)
 	inflight := 0
-	var childErr error
 	for _, workspaceID := range workspaceIDs {
 		if inflight >= CoverageAnalysisMaxWorkspaceChildren {
 			selector.Select(ctx)
 			inflight--
-			if childErr != nil {
-				break
-			}
 		}
 		input := CoverageWorkspaceAnalysisInput{
 			WorkspaceID: workspaceID,
@@ -77,12 +75,12 @@ func CoverageDailyAnalysisWorkflow(ctx workflow.Context) error {
 			WindowEnd:   windowEnd,
 		}
 		childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
-			WorkflowID: "coverage-analysis-ws-" + workspaceID,
+			WorkflowID: fmt.Sprintf("coverage-analysis-ws-%s-%d", workspaceID, windowEnd.Unix()),
 		})
 		future := workflow.ExecuteChildWorkflow(childCtx, CoverageWorkspaceAnalysisWorkflowType, input)
 		selector.AddFuture(future, func(f workflow.Future) {
-			if err := f.Get(ctx, nil); err != nil && childErr == nil {
-				childErr = err
+			if err := f.Get(ctx, nil); err != nil {
+				workflow.GetLogger(ctx).Error("coverage workspace child failed", "error", err)
 			}
 		})
 		inflight++
@@ -90,9 +88,6 @@ func CoverageDailyAnalysisWorkflow(ctx workflow.Context) error {
 	for inflight > 0 {
 		selector.Select(ctx)
 		inflight--
-	}
-	if childErr != nil {
-		return childErr
 	}
 	return nil
 }

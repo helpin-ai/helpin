@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -21,6 +23,7 @@ type AICompleter interface {
 // AICompletionRequest carries product, pricing, routing, and prompt identity explicitly.
 type AICompletionRequest struct {
 	WorkspaceID        string
+	ActionKey          string
 	FeatureKey         string
 	OperationKey       string
 	IdempotencyKey     string
@@ -37,6 +40,18 @@ type AICompletionService struct {
 	provider llm.Provider
 	usage    *AIUsageService
 	routes   AICompletionRouteRegistry
+	policy   *aipolicy.Registry
+	audit    aipolicy.ExecutionAudit
+}
+
+// SetGovernance enables app-wide action policy and execution auditing.
+func (s *AICompletionService) SetGovernance(registry *aipolicy.Registry, audit aipolicy.ExecutionAudit) *AICompletionService {
+	if s == nil {
+		return nil
+	}
+	s.policy = registry
+	s.audit = audit
+	return s
 }
 
 // NewAICompletionService creates the single direct-completion execution boundary.
@@ -123,7 +138,8 @@ func completeAI(ctx context.Context, provider llm.Provider, input AICompletionRe
 			return nil, routeErr
 		}
 		legacyCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
-			WorkspaceID: input.WorkspaceID, FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
+			WorkspaceID: input.WorkspaceID, ActionKey: input.ActionKey,
+			FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
 			IdempotencyKey: fmt.Sprintf("%s:route:%d", input.IdempotencyKey, index), Metadata: input.Metadata,
 		})
 		response, err := provider.ChatCompletion(legacyCtx, chat)
@@ -163,6 +179,31 @@ func (s *AICompletionService) completeAttempt(
 		return nil, false, err
 	}
 	attemptKey := fmt.Sprintf("%s:route:%d:%s", input.IdempotencyKey, index, aiUsageStableHash(aiCompletionRouteKey(route)))
+	var auditExecution *model.AIActionExecution
+	if s.policy != nil {
+		action, policyErr := aipolicy.ResolveExecution(s.policy, aipolicy.ExecutionContext{
+			WorkspaceID: input.WorkspaceID, ActionKey: input.ActionKey,
+			FeatureKey: input.FeatureKey, IdempotencyKey: input.IdempotencyKey,
+			Attempt: index + 1, Metadata: input.Metadata,
+		}, aipolicy.Route{Provider: route.Provider, Model: route.Model})
+		if policyErr != nil {
+			return nil, false, policyErr
+		}
+		if s.audit != nil {
+			auditExecution, policyErr = s.audit.Start(ctx, &model.AIActionExecution{
+				WorkspaceID: input.WorkspaceID, ActionKey: action.Key,
+				PolicyVersion: action.PolicyVersion, FeatureKey: action.FeatureKey,
+				Category: string(action.Category), Origin: action.Origin,
+				Modality: string(action.Modality), Provider: route.Provider, Model: route.Model,
+				IdempotencyKey: attemptKey, Attempt: index + 1,
+				Status: model.AIActionExecutionRunning, Metadata: mustJSONMetadata(input.Metadata),
+				StartedAt: time.Now().UTC(),
+			})
+			if policyErr != nil {
+				return nil, false, fmt.Errorf("start AI completion audit: %w", policyErr)
+			}
+		}
+	}
 	feature, known := AIUsageFeature(input.FeatureKey)
 	promotional := known && !feature.Chargeable
 	preflight, err := s.usage.Preflight(ctx, PreflightRequest{Metering: MeteringRequest{
@@ -174,6 +215,7 @@ func (s *AICompletionService) completeAttempt(
 		IdempotencyKey: attemptKey, Promotional: promotional,
 	}})
 	if err != nil {
+		s.finishCompletionAudit(ctx, auditExecution, nil, "llm_preflight", err)
 		retry := input.PreferredRoute != nil && policy.PreferRequestRoute && errors.Is(err, model.ErrModelUnavailableUnderPricing)
 		return nil, retry, err
 	}
@@ -189,6 +231,7 @@ func (s *AICompletionService) completeAttempt(
 				Message: "provider returned no response",
 			}
 		}
+		s.finishCompletionAudit(ctx, auditExecution, response, "llm_provider", providerErr)
 		return nil, llm.IsRetryableProviderError(providerErr), providerErr
 	}
 
@@ -211,14 +254,39 @@ func (s *AICompletionService) completeAttempt(
 	}
 
 	if input.RequireComplete && isIncompleteFinishReason(response.FinishReason) {
-		return nil, true, fmt.Errorf("model output was incomplete (finish_reason=%s)", response.FinishReason)
+		completionErr := fmt.Errorf("model output was incomplete (finish_reason=%s)", response.FinishReason)
+		s.finishCompletionAudit(ctx, auditExecution, response, "llm_contract", completionErr)
+		return nil, true, completionErr
 	}
 	if input.ValidateResponse != nil {
 		if err := input.ValidateResponse(response); err != nil {
+			s.finishCompletionAudit(ctx, auditExecution, response, "llm_contract", err)
 			return nil, input.RetryInvalidOutput, err
 		}
 	}
+	s.finishCompletionAudit(ctx, auditExecution, response, "", nil)
 	return response, false, nil
+}
+
+func (s *AICompletionService) finishCompletionAudit(ctx context.Context, execution *model.AIActionExecution, response *llm.ChatResponse, failureClass string, executionErr error) {
+	if s == nil || s.audit == nil || execution == nil {
+		return
+	}
+	result := aipolicy.ExecutionResult{Status: model.AIActionExecutionSucceeded, CompletedAt: time.Now().UTC()}
+	if response != nil {
+		result.InputTokens = response.TokensUsed.InputTokensTotal
+		result.OutputTokens = response.TokensUsed.OutputTokens
+		result.ReasoningTokens = response.TokensUsed.ReasoningTokens
+		result.CachedInputTokens = response.TokensUsed.CacheReadTokens
+	}
+	if executionErr != nil {
+		result.Status = model.AIActionExecutionFailed
+		result.FailureClass = failureClass
+		result.FailureMessage = sanitizeAIActionFailure(executionErr)
+	}
+	if err := s.audit.Finish(ctx, execution.ID, result); err != nil {
+		slog.ErrorContext(ctx, "finish AI completion audit", "execution_id", execution.ID, "error", err)
+	}
 }
 
 func completionChatRequest(input llm.ChatRequest, route AICompletionRoute) (llm.ChatRequest, error) {

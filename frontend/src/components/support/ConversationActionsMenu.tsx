@@ -124,11 +124,17 @@ export function ConversationActionsMenu({
   }, [conversation.subject, onSubjectDialogOpenChange, subjectDialogOpen]);
 
   const handleToggleReadState = () => {
-    const mutation = isUnread ? markConversationRead : markConversationUnread;
-    mutation.mutate(conversation.id, {
-      onSuccess: () => {
-        toast.success(isUnread ? 'Marked as read' : 'Marked as unread');
-      },
+    if (isUnread) {
+      markConversationRead.mutate({
+        conversationId: conversation.id,
+        throughMessageId: conversation.last_customer_message_id ?? undefined,
+      }, {
+        onSuccess: () => toast.success('Marked as read'),
+      });
+      return;
+    }
+    markConversationUnread.mutate(conversation.id, {
+      onSuccess: () => toast.success('Marked as unread'),
     });
   };
 

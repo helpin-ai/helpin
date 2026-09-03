@@ -11,9 +11,10 @@ import (
 )
 
 type fakeCoverageDailyAnalyzer struct {
-	workspaces []string
-	runs       []coverageAnalysisRunCall
-	err        error
+	workspaces        []string
+	runs              []coverageAnalysisRunCall
+	err               error
+	errorsByWorkspace map[string]error
 }
 
 type coverageAnalysisRunCall struct {
@@ -27,10 +28,13 @@ func (f *fakeCoverageDailyAnalyzer) ListWorkspacesForDailyAnalysis(ctx context.C
 }
 
 func (f *fakeCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time) error {
+	f.runs = append(f.runs, coverageAnalysisRunCall{workspaceID: workspaceID, windowStart: windowStart, windowEnd: windowEnd})
+	if err := f.errorsByWorkspace[workspaceID]; err != nil {
+		return err
+	}
 	if f.err != nil {
 		return f.err
 	}
-	f.runs = append(f.runs, coverageAnalysisRunCall{workspaceID: workspaceID, windowStart: windowStart, windowEnd: windowEnd})
 	return nil
 }
 
@@ -115,15 +119,15 @@ func TestCoverageWorkspaceAnalysisWorkflow_FailsOnActivityError(t *testing.T) {
 	}
 }
 
-func TestCoverageDailyAnalysisWorkflow_FailsWhenWorkspaceChildFails(t *testing.T) {
+func TestCoverageDailyAnalysisWorkflow_WorkspaceFailureDoesNotStopLaterWorkspaces(t *testing.T) {
 	testSuite := &testsuite.WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 	start := time.Date(2026, 4, 29, 4, 30, 0, 0, time.UTC)
 	env.SetStartTime(start)
 
 	analyzer := &fakeCoverageDailyAnalyzer{
-		workspaces: []string{"ws-1"},
-		err:        errors.New("analysis failed"),
+		workspaces:        []string{"ws-1", "ws-2"},
+		errorsByWorkspace: map[string]error{"ws-1": errors.New("analysis failed")},
 	}
 	activities := NewCoverageAnalysisActivities(analyzer)
 	env.RegisterWorkflow(CoverageWorkspaceAnalysisWorkflow)
@@ -135,8 +139,34 @@ func TestCoverageDailyAnalysisWorkflow_FailsWhenWorkspaceChildFails(t *testing.T
 	if !env.IsWorkflowCompleted() {
 		t.Fatal("workflow did not complete")
 	}
-	if err := env.GetWorkflowError(); err == nil {
-		t.Fatal("expected workflow error")
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatalf("parent workflow should isolate child failures: %v", err)
+	}
+	seenWS2 := false
+	for _, run := range analyzer.runs {
+		seenWS2 = seenWS2 || run.workspaceID == "ws-2"
+	}
+	if !seenWS2 {
+		t.Fatalf("expected later workspace to run despite ws-1 retries, got %+v", analyzer.runs)
+	}
+}
+
+func TestCoverageDailyAnalysisWorkflow_UsesThreeHourWindow(t *testing.T) {
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	start := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	env.SetStartTime(start)
+	analyzer := &fakeCoverageDailyAnalyzer{workspaces: []string{"ws-1"}}
+	activities := NewCoverageAnalysisActivities(analyzer)
+	env.RegisterWorkflow(CoverageWorkspaceAnalysisWorkflow)
+	env.RegisterActivityWithOptions(activities.ListWorkspacesActivity, activity.RegisterOptions{Name: CoverageListAnalysisWorkspacesActivity})
+	env.RegisterActivityWithOptions(activities.RunWorkspaceAnalysisActivity, activity.RegisterOptions{Name: CoverageRunWorkspaceAnalysisActivityName})
+	env.ExecuteWorkflow(CoverageDailyAnalysisWorkflow)
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatal(err)
+	}
+	if len(analyzer.runs) != 1 || analyzer.runs[0].windowEnd.Sub(analyzer.runs[0].windowStart) != 3*time.Hour {
+		t.Fatalf("unexpected analysis window: %+v", analyzer.runs)
 	}
 }
 

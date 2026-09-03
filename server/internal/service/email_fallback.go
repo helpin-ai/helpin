@@ -1038,21 +1038,39 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if conv.CustomerEmail != nil {
 		customerEmail = strings.TrimSpace(*conv.CustomerEmail)
 	}
+	isTeammateReply := false
+	var teammate *model.WorkspaceMember
 	if !strings.EqualFold(customerEmail, fromEmail) {
 		replyToMatchesCustomer := replyToEmail != "" && strings.EqualFold(customerEmail, replyToEmail)
 		forwardedMatchesCustomer := forwardedAttribution.Applied && strings.EqualFold(customerEmail, strings.TrimSpace(forwardedAttribution.OriginalEmail))
 		if !replyToMatchesCustomer && !forwardedMatchesCustomer {
-			s.logger.InfoContext(ctx, "postmark inbound sender mismatch",
-				"message_id", strings.TrimSpace(payload.MessageID),
-				"conversation_id", conv.ID,
-			)
-			return nil
+			if s.workspaceRepo != nil && inboundPayloadIncludesRecipient(payload, customerEmail) {
+				teammate, err = s.workspaceRepo.GetActiveMembershipByEmail(ctx, conv.WorkspaceID, fromEmail)
+				if err != nil {
+					return err
+				}
+			}
+			if teammate == nil || teammate.UserID == nil {
+				s.logger.InfoContext(ctx, "postmark inbound sender mismatch",
+					"message_id", strings.TrimSpace(payload.MessageID),
+					"conversation_id", conv.ID,
+				)
+				return nil
+			}
+			isTeammateReply = true
+			senderName = strings.TrimSpace(teammate.DisplayName)
+			if senderName == "" {
+				senderName = strings.TrimSpace(payload.FromFull.Name)
+			}
+			if senderName == "" {
+				senderName = fromEmail
+			}
 		}
-		if forwardedMatchesCustomer && strings.TrimSpace(forwardedAttribution.OriginalName) != "" {
+		if !isTeammateReply && forwardedMatchesCustomer && strings.TrimSpace(forwardedAttribution.OriginalName) != "" {
 			senderName = strings.TrimSpace(forwardedAttribution.OriginalName)
-		} else if replyToMatchesCustomer && strings.TrimSpace(replyToName) != "" {
+		} else if !isTeammateReply && replyToMatchesCustomer && strings.TrimSpace(replyToName) != "" {
 			senderName = strings.TrimSpace(replyToName)
-		} else if conv.CustomerName != nil && strings.TrimSpace(*conv.CustomerName) != "" {
+		} else if !isTeammateReply && conv.CustomerName != nil && strings.TrimSpace(*conv.CustomerName) != "" {
 			senderName = strings.TrimSpace(*conv.CustomerName)
 		}
 	}
@@ -1077,11 +1095,25 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if forwardedAttribution.Applied {
 		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
 	}
+	if isTeammateReply {
+		messageMetadata = mergeExternalEmailReplyMetadata(messageMetadata)
+	}
+	senderType := "customer"
+	var senderUserID *string
+	emailDirection := "inbound"
+	emailStatus := "sent"
+	if isTeammateReply {
+		senderType = "user"
+		senderUserID = teammate.UserID
+		emailDirection = "outbound"
+		emailStatus = "external"
+	}
 	msg := &model.SupportMessage{
 		ID:                uuid.NewString(),
 		WorkspaceID:       conv.WorkspaceID,
 		ConversationID:    conv.ID,
-		SenderType:        "customer",
+		SenderType:        senderType,
+		SenderUserID:      senderUserID,
 		SenderDisplayName: &senderName,
 		Content:           content,
 		IsInternal:        false,
@@ -1089,10 +1121,17 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		Metadata:          messageMetadata,
 		ViaChannel:        &viaEmail,
 	}
+	if isTeammateReply {
+		if sentAt := parseInboundWebhookReceivedAt(payload); sentAt != nil {
+			msg.CreatedAt = *sentAt
+			msg.UpdatedAt = *sentAt
+		}
+	}
 
 	normalizedStatus := model.NormalizeSupportConversationStatus(conv.Status)
 	wasResolved := normalizedStatus == model.SupportConversationStatusResolved
-	shouldReopen := wasResolved || normalizedStatus == model.SupportConversationStatusWaitingOnCustomer
+	shouldReopenCustomerReply := !isTeammateReply && (wasResolved || normalizedStatus == model.SupportConversationStatusWaitingOnCustomer)
+	shouldMoveTeammateReplyToWaiting := isTeammateReply && wasResolved
 
 	var createdMsg *model.SupportMessage
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1127,7 +1166,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		logRow := &model.SupportEmailLog{
 			WorkspaceID:               conv.WorkspaceID,
 			ConversationID:            conv.ID,
-			Direction:                 "inbound",
+			Direction:                 emailDirection,
 			MessageIDs:                model.DocsStringArray{msg.ID},
 			FromEmail:                 fromEmail,
 			ToEmail:                   strings.TrimSpace(payload.To),
@@ -1148,7 +1187,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			EmailHasQuotedContent:     projection.HasQuotedContent,
 			EmailProjectionConfidence: projection.ProjectionConfidence,
 			EmailProjectionVersion:    projection.Version,
-			Status:                    "sent",
+			Status:                    emailStatus,
 		}
 		if route != nil {
 			logRow.EmailRouteID = &route.ID
@@ -1160,7 +1199,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			return err
 		}
 
-		if shouldReopen {
+		if shouldReopenCustomerReply {
 			reopenFlowState := supportEmailReopenFlowState(conv)
 			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
 				"status":      model.SupportConversationStatusOpen,
@@ -1182,6 +1221,31 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 				}
 			}
 		}
+		if isTeammateReply {
+			updates := map[string]any{
+				"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
+				"opened_by_user_id": teammate.UserID,
+				"human_takeover":    true,
+				"updated_at":        s.now(),
+			}
+			if shouldMoveTeammateReplyToWaiting {
+				updates["status"] = model.SupportConversationStatusWaitingOnCustomer
+				updates["resolved_at"] = nil
+				updates["closed_at"] = nil
+			}
+			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, updates); err != nil {
+				return err
+			}
+			flowState := model.SupportConversationFlowStateAssignedToHuman
+			conv.FlowState = &flowState
+			conv.OpenedByUserID = teammate.UserID
+			conv.HumanTakeover = boolPtr(true)
+			if shouldMoveTeammateReplyToWaiting {
+				conv.Status = model.SupportConversationStatusWaitingOnCustomer
+				conv.ResolvedAt = nil
+				conv.ClosedAt = nil
+			}
+		}
 
 		createdMsg = msg
 		return nil
@@ -1197,8 +1261,10 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		return txErr
 	}
 
-	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, content, senderName)
-	if s.supportInboxService != nil {
+	if !isTeammateReply {
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, content, senderName)
+	}
+	if !isTeammateReply && s.supportInboxService != nil {
 		s.supportInboxService.recordSupportEvent(SupportEventInput{
 			WorkspaceID: conv.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
 			ConversationID: &conv.ID, MessageID: &createdMsg.ID,
@@ -1214,8 +1280,12 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if route != nil && s.supportInboxService != nil && s.supportInboxService.emailRouteRepo != nil {
 		_ = s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, s.now())
 	}
-	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, "email:"+createdMsg.ID))
-	if shouldReopen {
+	actorID := "email:" + createdMsg.ID
+	if isTeammateReply && teammate.UserID != nil {
+		actorID = *teammate.UserID
+	}
+	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, actorID))
+	if shouldReopenCustomerReply || isTeammateReply {
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
 			Entity:      "support_conversation",
@@ -3678,6 +3748,33 @@ func inboundRecipientAddresses(payload model.PostmarkInboundPayload) []string {
 		candidates = append(candidates, addr.Email)
 	}
 	return normalizedEmailAddressList(candidates)
+}
+
+func inboundPayloadIncludesRecipient(payload model.PostmarkInboundPayload, email string) bool {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return false
+	}
+	for _, recipient := range inboundRecipientAddresses(payload) {
+		if strings.EqualFold(recipient, email) {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeExternalEmailReplyMetadata(existing string) string {
+	metadata := map[string]any{}
+	if strings.TrimSpace(existing) != "" {
+		_ = json.Unmarshal([]byte(existing), &metadata)
+	}
+	metadata["external_email_reply"] = true
+	metadata["external_email_capture"] = "support_email_copy"
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return existing
+	}
+	return string(encoded)
 }
 
 func inboundCCEmails(payload model.PostmarkInboundPayload) []string {

@@ -122,3 +122,47 @@ func TestSupportConversationRepository_ListCoverageAnalysisCandidatesDefaultLimi
 		t.Fatalf("expected all three conversations under default limit, got %d", len(conversations))
 	}
 }
+
+func TestSupportConversationRepository_CoverageCandidateCursorPaginationHasNoGaps(t *testing.T) {
+	db := setupSupportInboxCoverageAnalysisTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	ctx := context.Background()
+	windowStart := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.Add(24 * time.Hour)
+	for i := 0; i < 7; i++ {
+		insertCoverageCandidateConversation(t, db, fmt.Sprintf("conversation-%02d", i), "ws-1", model.SupportConversationStatusOpen, windowStart.Add(time.Duration(i/2)*time.Minute), nil, nil)
+	}
+	var cursor *CoverageAnalysisCandidateCursor
+	var got []string
+	for {
+		page, next, err := repo.ListCoverageAnalysisCandidatesPage(ctx, "ws-1", windowStart, windowEnd, cursor, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, conversation := range page {
+			got = append(got, conversation.ID)
+		}
+		if next == nil {
+			break
+		}
+		cursor = next
+	}
+	if len(got) != 7 {
+		t.Fatalf("candidate count = %d, want 7 (%v)", len(got), got)
+	}
+	seen := map[string]bool{}
+	for _, id := range got {
+		if seen[id] {
+			t.Fatalf("duplicate candidate %s", id)
+		}
+		seen[id] = true
+	}
+}
+
+func TestSupportConversationRepository_CoverageCandidateLimitIsExplicit(t *testing.T) {
+	repo := NewSupportConversationRepository(setupSupportInboxCoverageAnalysisTestDB(t))
+	_, _, err := repo.ListCoverageAnalysisCandidatesPage(context.Background(), "ws-1", time.Now().Add(-time.Hour), time.Now(), nil, CoverageAnalysisCandidatePageMax+1)
+	if err == nil {
+		t.Fatal("expected oversized candidate page to be rejected")
+	}
+}

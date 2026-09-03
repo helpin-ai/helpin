@@ -55,7 +55,7 @@ func (s *SupportInboxViewService) ListCounts(ctx context.Context, workspaceID, u
 	counts := make([]model.SupportInboxViewCount, 0, len(views))
 	for _, view := range views {
 		params := supportInboxViewConversationListParams(workspaceID, userID, view.Filters)
-		total, unread, err := s.conversationRepo.CountByParams(ctx, repository.ConversationRepositoryListParams{
+		total, unread, needsHumanReply, err := s.conversationRepo.CountByParamsWithAttention(ctx, repository.ConversationRepositoryListParams{
 			ConversationListParams: params,
 			WorkspaceMemberID:      workspaceMemberID,
 			Role:                   role,
@@ -64,9 +64,10 @@ func (s *SupportInboxViewService) ListCounts(ctx context.Context, workspaceID, u
 			return nil, err
 		}
 		counts = append(counts, model.SupportInboxViewCount{
-			ViewID:      view.ID,
-			TotalCount:  total,
-			UnreadCount: unread,
+			ViewID:               view.ID,
+			TotalCount:           total,
+			UnreadCount:          unread,
+			NeedsHumanReplyCount: needsHumanReply,
 		})
 	}
 	return counts, nil

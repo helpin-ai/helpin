@@ -22,8 +22,111 @@ type SupportCoverageHandler struct {
 	eventSvc          *service.SupportEventService
 	draftSvc          *service.SupportCoverageDraftService
 	clusterRebuildSvc *service.SupportCoverageClusterRebuildService
+	coverageV2Svc     *service.SupportCoverageV2Service
 	debounceMu        sync.Mutex
 	debounce          map[string]time.Time
+}
+
+func (h *SupportCoverageHandler) SetCoverageV2Service(v2 *service.SupportCoverageV2Service) *SupportCoverageHandler {
+	if h != nil {
+		h.coverageV2Svc = v2
+	}
+	return h
+}
+
+func (h *SupportCoverageHandler) ListTopicsV2(w http.ResponseWriter, r *http.Request) {
+	items, err := h.coverageV2Svc.ListTopics(r.Context(), middleware.GetWorkspaceID(r.Context()), queryInt(r, "limit", 25), queryInt(r, "offset", 0))
+	if err != nil {
+		if errors.Is(err, service.ErrCoverageV2ReadDisabled) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *SupportCoverageHandler) GetTopicV2(w http.ResponseWriter, r *http.Request) {
+	detail, err := h.coverageV2Svc.GetTopic(r.Context(), middleware.GetWorkspaceID(r.Context()), chi.URLParam(r, "topicId"))
+	if err != nil {
+		if errors.Is(err, service.ErrCoverageV2ReadDisabled) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if detail == nil {
+		writeError(w, http.StatusNotFound, "coverage topic not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (h *SupportCoverageHandler) ListSignalsV2(w http.ResponseWriter, r *http.Request) {
+	items, err := h.coverageV2Svc.ListSignals(r.Context(), middleware.GetWorkspaceID(r.Context()), queryInt(r, "limit", 25), queryInt(r, "offset", 0))
+	if err != nil {
+		if errors.Is(err, service.ErrCoverageV2ReadDisabled) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *SupportCoverageHandler) ReviewSignalV2(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		TopicID string `json:"topic_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	err := h.coverageV2Svc.ReviewSignal(r.Context(), middleware.GetWorkspaceID(r.Context()), chi.URLParam(r, "signalId"), input.TopicID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "attached"})
+}
+
+func (h *SupportCoverageHandler) DismissSignalV2(w http.ResponseWriter, r *http.Request) {
+	err := h.coverageV2Svc.DismissSignal(r.Context(), middleware.GetWorkspaceID(r.Context()), chi.URLParam(r, "signalId"), middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "dismissed"})
+}
+
+func (h *SupportCoverageHandler) PipelineHealthV2(w http.ResponseWriter, r *http.Request) {
+	health, err := h.coverageV2Svc.PipelineHealth(r.Context(), middleware.GetWorkspaceID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, health)
+}
+
+func (h *SupportCoverageHandler) ReplayAttemptV2(w http.ResponseWriter, r *http.Request) {
+	err := h.coverageV2Svc.ReplayAttempt(r.Context(), middleware.GetWorkspaceID(r.Context()), chi.URLParam(r, "attemptId"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+}
+
+func (h *SupportCoverageHandler) ListArchivedV1(w http.ResponseWriter, r *http.Request) {
+	items, err := h.coverageV2Svc.ListArchivedV1(r.Context(), middleware.GetWorkspaceID(r.Context()), queryInt(r, "limit", 25), queryInt(r, "offset", 0))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 // NewSupportCoverageHandler creates a new SupportCoverageHandler.

@@ -101,6 +101,7 @@ export function fetchHelpSearchResults(
   query: string,
   limit = 8,
   anonymousId?: string,
+	coverageSignal = false,
 ): Promise<HelpSearchResult[]> {
   const params = new URLSearchParams({
     q: query,
@@ -109,5 +110,8 @@ export function fetchHelpSearchResults(
   if (anonymousId) {
     params.set('anonymous_id', anonymousId);
   }
+	if (coverageSignal) {
+	  params.set('coverage_signal', '1');
+	}
   return fetchHelpJSON(host, widgetKey, `/widget/support/help/search?${params.toString()}`);
 }

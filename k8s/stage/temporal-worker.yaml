@@ -37,11 +37,13 @@ spec:
           emptyDir: {}
       containers:
         - name: temporal-worker
-          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.363-rc.1
+          image: ghcr.io/helpin-ai/helpin/temporal-worker:server-v0.95.364-rc.1
           command: ["./temporal-worker"]
           env:
             - name: TEMPORAL_WORKER_QUEUES
               value: automation-default
+            - name: SUPPORT_COVERAGE_V2_MODE
+              value: "shadow"
           envFrom:
             - secretRef:
                 name: helpin-secrets

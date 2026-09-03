@@ -536,6 +536,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		).Error; err != nil {
 			t.Fatalf("seed human unread message: %v", err)
 		}
+		mustExec(t, db, `INSERT INTO support_conversation_user_states (workspace_id, conversation_id, user_id, unread_customer_message_count, relevance_mask, version, created_at, updated_at) VALUES (?, ?, ?, 1, 3, 1, ?, ?)`, workspaceID, humanConv.ID, "user-123", now, now)
 
 		aiPending := "pending"
 		aiConv := &model.SupportConversation{
@@ -562,6 +563,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		).Error; err != nil {
 			t.Fatalf("seed AI unread message: %v", err)
 		}
+		mustExec(t, db, `INSERT INTO support_conversation_user_states (workspace_id, conversation_id, user_id, unread_customer_message_count, relevance_mask, version, created_at, updated_at) VALUES (?, ?, ?, 1, 2, 1, ?, ?)`, workspaceID, aiConv.ID, "user-123", now, now)
 
 		aiEscalated := "escalated"
 		escalatedConv := &model.SupportConversation{
@@ -615,23 +617,23 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("get unread stats: %v", err)
 		}
 
-		if got := stats.Inbox - baseStats.Inbox; got != 3 {
-			t.Fatalf("expected inbox unread count delta 3, got %d", got)
+		if got := stats.Inbox - baseStats.Inbox; got != 1 {
+			t.Fatalf("expected inbox unread count delta 1, got %d", got)
 		}
 		if got := stats.Mine - baseStats.Mine; got != 1 {
 			t.Fatalf("expected mine unread count delta 1, got %d", got)
 		}
-		if got := stats.Waiting - baseStats.Waiting; got != 1 {
-			t.Fatalf("expected waiting unread count delta 1, got %d", got)
+		if got := stats.Waiting - baseStats.Waiting; got != 0 {
+			t.Fatalf("expected waiting unread count delta 0, got %d", got)
 		}
-		if got := stats.Total - baseStats.Total; got != 3 {
-			t.Fatalf("expected total unread human inbox count delta 3, got %d", got)
+		if got := stats.Total - baseStats.Total; got != 1 {
+			t.Fatalf("expected total unread human inbox count delta 1, got %d", got)
 		}
 		if got := stats.MyInbox - baseStats.MyInbox; got != 1 {
 			t.Fatalf("expected my inbox count delta 1, got %d", got)
 		}
-		if got := stats.Unassigned - baseStats.Unassigned; got != 2 {
-			t.Fatalf("expected unassigned count delta 2, got %d", got)
+		if got := stats.Unassigned - baseStats.Unassigned; got != 0 {
+			t.Fatalf("expected unassigned count delta 0, got %d", got)
 		}
 		if got := stats.AIActive - baseStats.AIActive; got != 1 {
 			t.Fatalf("expected AI active unread count delta 1, got %d", got)

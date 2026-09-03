@@ -486,8 +486,13 @@ func (r *SupportInboxSessionRepository) Create(ctx context.Context, session *mod
 		values["created_at"] = session.CreatedAt
 	}
 
-	if err := r.db.WithContext(ctx).Model(&model.SupportWidgetSession{}).Create(values).Error; err != nil {
-		return fmt.Errorf("create widget session: %w", err)
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.SupportWidgetSession{}).Create(values).Error; err != nil {
+			return fmt.Errorf("create widget session: %w", err)
+		}
+		return projectWidgetSessionCountry(tx, session.WorkspaceID, session.ConversationID, session.AnonymousID)
+	}); err != nil {
+		return err
 	}
 
 	created, err := r.GetByToken(ctx, session.SessionToken)
@@ -503,8 +508,37 @@ func (r *SupportInboxSessionRepository) Create(ctx context.Context, session *mod
 
 // Update saves a session.
 func (r *SupportInboxSessionRepository) Update(ctx context.Context, session *model.SupportWidgetSession) error {
-	if err := r.db.WithContext(ctx).Save(session).Error; err != nil {
-		return fmt.Errorf("update widget session: %w", err)
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(session).Error; err != nil {
+			return fmt.Errorf("update widget session: %w", err)
+		}
+		return projectWidgetSessionCountry(tx, session.WorkspaceID, session.ConversationID, session.AnonymousID)
+	})
+}
+
+func projectWidgetSessionCountry(tx *gorm.DB, workspaceID string, conversationID *string, anonymousID string) error {
+	query := tx.Model(&model.SupportConversation{}).Where("workspace_id = ?", workspaceID)
+	if conversationID != nil && strings.TrimSpace(*conversationID) != "" {
+		query = query.Where("id = ?", strings.TrimSpace(*conversationID))
+	} else if strings.TrimSpace(anonymousID) != "" {
+		query = query.Where("anonymous_id = ?", strings.TrimSpace(anonymousID))
+	} else {
+		return nil
+	}
+	result := query.Updates(map[string]any{
+		"visitor_country_code": gorm.Expr(`(
+			SELECT country_code FROM support_widget_sessions
+			WHERE workspace_id = ? AND (conversation_id = support_conversations.id OR anonymous_id = support_conversations.anonymous_id)
+			ORDER BY created_at DESC LIMIT 1
+		)`, workspaceID),
+		"visitor_country_name": gorm.Expr(`(
+			SELECT country_name FROM support_widget_sessions
+			WHERE workspace_id = ? AND (conversation_id = support_conversations.id OR anonymous_id = support_conversations.anonymous_id)
+			ORDER BY created_at DESC LIMIT 1
+		)`, workspaceID),
+	})
+	if result.Error != nil {
+		return fmt.Errorf("project widget session country: %w", result.Error)
 	}
 	return nil
 }
@@ -953,25 +987,119 @@ func (r *SupportConversationRepository) mentionExistsCondition(alias string, use
 		return "1 = 0", nil
 	}
 	if r.db.Dialector.Name() == "sqlite" {
-		return fmt.Sprintf(`EXISTS (
-			SELECT 1
-			FROM support_messages sm_mention
-			WHERE sm_mention.conversation_id = %s.id
-			  AND sm_mention.workspace_id = %s.workspace_id
-			  AND sm_mention.deleted_at IS NULL
-			  AND sm_mention.metadata LIKE ?
-			  AND sm_mention.metadata LIKE ?
-		)`, alias, alias), []any{"%mentioned_user_ids%", "%" + userID + "%"}
+		return fmt.Sprintf(`(EXISTS (
+			SELECT 1 FROM support_conversation_user_states mention_state
+			WHERE mention_state.conversation_id = %s.id
+			  AND mention_state.workspace_id = %s.workspace_id
+			  AND mention_state.user_id = ?
+			  AND (mention_state.relevance_mask & %d) <> 0
+		) OR (%s.support_state_version = 0 AND EXISTS (
+			SELECT 1 FROM support_messages mention_message
+			WHERE mention_message.conversation_id = %s.id
+			  AND mention_message.workspace_id = %s.workspace_id
+			  AND mention_message.deleted_at IS NULL
+			  AND mention_message.metadata LIKE ?
+			  AND mention_message.metadata LIKE ?
+		)))`, alias, alias, model.SupportRelevanceMention, alias, alias, alias), []any{
+				userID, "%mentioned_user_ids%", "%" + userID + "%",
+			}
 	}
 	filterJSON, _ := json.Marshal(map[string][]string{"mentioned_user_ids": {userID}})
-	return fmt.Sprintf(`EXISTS (
+	return fmt.Sprintf(`(EXISTS (
 		SELECT 1
-		FROM support_messages sm_mention
-		WHERE sm_mention.conversation_id = %s.id
-		  AND sm_mention.workspace_id = %s.workspace_id
-		  AND sm_mention.deleted_at IS NULL
-		  AND sm_mention.metadata::jsonb @> ?::jsonb
-	)`, alias, alias), []any{string(filterJSON)}
+		FROM support_conversation_user_states mention_state
+		WHERE mention_state.conversation_id = %s.id
+		  AND mention_state.workspace_id = %s.workspace_id
+		  AND mention_state.user_id = ?
+		  AND (mention_state.relevance_mask & %d) <> 0
+	) OR (%s.support_state_version = 0 AND EXISTS (
+		SELECT 1
+		FROM support_messages mention_message
+		WHERE mention_message.conversation_id = %s.id
+		  AND mention_message.workspace_id = %s.workspace_id
+		  AND mention_message.deleted_at IS NULL
+		  AND mention_message.metadata::jsonb @> ?::jsonb
+	)))`, alias, alias, model.SupportRelevanceMention, alias, alias, alias), []any{
+			userID,
+			string(filterJSON),
+		}
+}
+
+func (r *SupportConversationRepository) conversationListProjectionSelect() string {
+	legacyUnreadCondition := "support_conversations.support_state_version = 0"
+	if r.db.Dialector.Name() == "postgres" {
+		legacyUnreadCondition += ` OR NOT EXISTS (
+			SELECT 1 FROM support_inbox_state_rollouts rollout
+			WHERE rollout.workspace_id = support_conversations.workspace_id AND rollout.mode = 'v2'
+		)`
+	}
+	projection := `support_conversations.*,
+		CASE WHEN support_conversations.support_state_version = 0 THEN (
+			SELECT CASE WHEN fallback_message.is_internal
+				THEN 'Note: ' || fallback_message.content ELSE fallback_message.content END
+			FROM support_messages fallback_message
+			WHERE fallback_message.conversation_id = support_conversations.id
+			  AND fallback_message.deleted_at IS NULL
+			  AND fallback_message.system_event_type IS NULL
+			  AND fallback_message.message_type = 'reply'
+			  AND (NOT fallback_message.is_internal OR TRIM(fallback_message.content) <> '')
+			ORDER BY fallback_message.created_at DESC, fallback_message.id DESC LIMIT 1
+		) ELSE CASE WHEN support_conversations.list_last_message_is_internal
+			THEN 'Note: ' || COALESCE(support_conversations.list_last_message_preview, '')
+			ELSE support_conversations.list_last_message_preview END END AS last_message,
+		CASE WHEN support_conversations.support_state_version = 0 THEN (
+			SELECT fallback_public.sender_type FROM support_messages fallback_public
+			WHERE fallback_public.conversation_id = support_conversations.id
+			  AND fallback_public.deleted_at IS NULL AND fallback_public.system_event_type IS NULL
+			  AND fallback_public.message_type = 'reply' AND fallback_public.is_internal = false
+			ORDER BY fallback_public.created_at DESC, fallback_public.id DESC LIMIT 1
+		) ELSE support_conversations.last_public_sender_type END AS last_message_sender_type,
+		CASE WHEN support_conversations.support_state_version = 0 THEN (
+			SELECT fallback_public.sender_display_name FROM support_messages fallback_public
+			WHERE fallback_public.conversation_id = support_conversations.id
+			  AND fallback_public.deleted_at IS NULL AND fallback_public.system_event_type IS NULL
+			  AND fallback_public.message_type = 'reply' AND fallback_public.is_internal = false
+			ORDER BY fallback_public.created_at DESC, fallback_public.id DESC LIMIT 1
+		) ELSE support_conversations.last_public_sender_display_name END AS last_message_sender_display_name,
+		CASE
+			WHEN __LEGACY_UNREAD_CONDITION__ THEN (
+				SELECT COUNT(*) FROM support_messages fallback_unread
+				WHERE fallback_unread.conversation_id = support_conversations.id
+				  AND fallback_unread.deleted_at IS NULL AND fallback_unread.system_event_type IS NULL
+				  AND fallback_unread.is_internal = false AND fallback_unread.sender_type = 'customer'
+				  AND fallback_unread.message_type = 'reply'
+				  AND fallback_unread.created_at > COALESCE(support_conversations.team_last_seen_at, '1970-01-01 00:00:00')
+			)
+			WHEN COALESCE(scus.unread_customer_message_count, 0) > 0 THEN scus.unread_customer_message_count
+			WHEN COALESCE(scus.manually_unread, false) THEN 1
+			ELSE 0
+		END AS unread_count,
+		CASE WHEN __LEGACY_UNREAD_CONDITION__ THEN 0 ELSE COALESCE(scus.version, 0) END AS personal_state_version,
+		CASE WHEN support_conversations.support_state_version = 0 THEN COALESCE((
+			SELECT fallback_public.sender_type = 'customer' FROM support_messages fallback_public
+			WHERE fallback_public.conversation_id = support_conversations.id
+			  AND fallback_public.deleted_at IS NULL AND fallback_public.system_event_type IS NULL
+			  AND fallback_public.message_type = 'reply' AND fallback_public.is_internal = false
+			ORDER BY fallback_public.created_at DESC, fallback_public.id DESC LIMIT 1
+		), false) ELSE support_conversations.customer_awaiting_response END AS awaiting_reply,
+		CASE WHEN support_conversations.support_state_version = 0 THEN (
+			SELECT fallback_session.country_code FROM support_widget_sessions fallback_session
+			WHERE fallback_session.workspace_id = support_conversations.workspace_id
+			  AND (fallback_session.conversation_id = support_conversations.id
+				OR fallback_session.anonymous_id = support_conversations.anonymous_id)
+			ORDER BY fallback_session.created_at DESC LIMIT 1
+		) ELSE support_conversations.visitor_country_code END AS country_code,
+		CASE WHEN support_conversations.support_state_version = 0 THEN (
+			SELECT fallback_session.country_name FROM support_widget_sessions fallback_session
+			WHERE fallback_session.workspace_id = support_conversations.workspace_id
+			  AND (fallback_session.conversation_id = support_conversations.id
+				OR fallback_session.anonymous_id = support_conversations.anonymous_id)
+			ORDER BY fallback_session.created_at DESC LIMIT 1
+		) ELSE support_conversations.visitor_country_name END AS country_name,
+		sm.name AS mailbox_name,
+		sm.handle AS mailbox_handle,
+		sm.icon AS mailbox_icon`
+	return strings.ReplaceAll(projection, "__LEGACY_UNREAD_CONDITION__", legacyUnreadCondition)
 }
 
 func (r *SupportConversationRepository) applyMineFilter(query *gorm.DB, alias, userID string) *gorm.DB {
@@ -1620,68 +1748,8 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 	var conversations []model.SupportConversation
 	if err := fetch.
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
-		Select(fmt.Sprintf(`support_conversations.*, (
-			SELECT CASE WHEN m.is_internal THEN 'Note: ' || %s ELSE %s END
-			FROM support_messages m
-			WHERE m.conversation_id = support_conversations.id
-			  AND m.deleted_at IS NULL
-			  AND m.message_type = 'reply'
-			  AND m.system_event_type IS NULL
-			  AND (m.is_internal = false OR TRIM(m.content) <> '')
-			ORDER BY m.created_at DESC LIMIT 1
-		) AS last_message,
-		(SELECT m.sender_type
-			FROM support_messages m
-			WHERE m.conversation_id = support_conversations.id
-			  AND m.deleted_at IS NULL
-			  AND m.is_internal = false
-			  AND m.message_type = 'reply'
-			  AND m.system_event_type IS NULL
-			ORDER BY m.created_at DESC
-			LIMIT 1
-		) AS last_message_sender_type,
-		(SELECT m.sender_display_name
-			FROM support_messages m
-			WHERE m.conversation_id = support_conversations.id
-			  AND m.deleted_at IS NULL
-			  AND m.is_internal = false
-			  AND m.message_type = 'reply'
-			  AND m.system_event_type IS NULL
-			ORDER BY m.created_at DESC
-			LIMIT 1
-		) AS last_message_sender_display_name,
-		(SELECT COUNT(*)
-			FROM support_messages sm
-			WHERE sm.conversation_id = support_conversations.id
-			  AND sm.deleted_at IS NULL
-			  AND sm.is_internal = false
-			  AND sm.sender_type = 'customer'
-			  AND sm.message_type = 'reply'
-			  AND sm.system_event_type IS NULL
-			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
-		) AS unread_count,
-		COALESCE((
-			SELECT m.sender_type = 'customer'
-			FROM support_messages m
-			WHERE m.conversation_id = support_conversations.id
-			  AND m.deleted_at IS NULL
-			  AND m.is_internal = false
-			  AND m.message_type = 'reply'
-			  AND m.system_event_type IS NULL
-			ORDER BY m.created_at DESC
-			LIMIT 1
-		), false) AS awaiting_reply,
-		%s AS country_code,
-		%s AS country_name,
-		sm.name AS mailbox_name,
-		sm.handle AS mailbox_handle,
-		sm.icon AS mailbox_icon`,
-			r.textPrefixExpr("m.content", 500),
-			r.textPrefixExpr("m.content", 500),
-			r.epochExpr(),
-			r.latestSessionCountryExpr("country_code", "support_conversations"),
-			r.latestSessionCountryExpr("country_name", "support_conversations"),
-		)).
+		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", strings.TrimSpace(params.UserID)).
+		Select(r.conversationListProjectionSelect()).
 		Order(conversationListOrder(params.Sort)).Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
@@ -1697,6 +1765,13 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 
 // CountByParams returns total and unread counts for the same filter set used by List.
 func (r *SupportConversationRepository) CountByParams(ctx context.Context, params ConversationRepositoryListParams) (int, int, error) {
+	total, unread, _, err := r.CountByParamsWithAttention(ctx, params)
+	return total, unread, err
+}
+
+// CountByParamsWithAttention evaluates one saved-view predicate once and
+// derives all count domains from that same result set.
+func (r *SupportConversationRepository) CountByParamsWithAttention(ctx context.Context, params ConversationRepositoryListParams) (int, int, int, error) {
 	buildQuery := func() *gorm.DB {
 		query := r.db.WithContext(ctx).
 			Table("support_conversations AS sc").
@@ -1704,53 +1779,98 @@ func (r *SupportConversationRepository) CountByParams(ctx context.Context, param
 		return r.applyConversationListParams(query, "sc", params)
 	}
 
-	var total int64
-	if err := buildQuery().Count(&total).Error; err != nil {
-		return 0, 0, fmt.Errorf("count conversations: %w", err)
-	}
-
-	unreadCondition := fmt.Sprintf(`EXISTS (
+	unreadCondition := `EXISTS (
 		SELECT 1
-		FROM support_messages sm
-		WHERE sm.conversation_id = sc.id
-		  AND sm.deleted_at IS NULL
-		  AND sm.is_internal = false
-		  AND sm.sender_type = 'customer'
-		  AND sm.message_type = 'reply'
-		  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
-	)`, r.epochExpr())
-
-	var unread int64
-	if err := buildQuery().Where(unreadCondition).Count(&unread).Error; err != nil {
-		return 0, 0, fmt.Errorf("count unread conversations: %w", err)
+		FROM support_conversation_user_states personal_state
+		WHERE personal_state.conversation_id = sc.id
+		  AND personal_state.workspace_id = sc.workspace_id
+		  AND personal_state.user_id = ?
+		  AND (personal_state.unread_customer_message_count > 0 OR personal_state.manually_unread)
+	)`
+	if r.db.Dialector.Name() == "postgres" {
+		unreadCondition = `(
+			(EXISTS (SELECT 1 FROM support_inbox_state_rollouts rollout
+				WHERE rollout.workspace_id = sc.workspace_id AND rollout.mode = 'v2')
+			 AND ` + unreadCondition + `)
+			OR
+			(NOT EXISTS (SELECT 1 FROM support_inbox_state_rollouts rollout
+				WHERE rollout.workspace_id = sc.workspace_id AND rollout.mode = 'v2')
+			 AND EXISTS (
+				SELECT 1 FROM support_messages legacy_message
+				WHERE legacy_message.conversation_id = sc.id
+				  AND legacy_message.deleted_at IS NULL
+				  AND legacy_message.system_event_type IS NULL
+				  AND legacy_message.is_internal = FALSE
+				  AND legacy_message.sender_type = 'customer'
+				  AND legacy_message.message_type = 'reply'
+				  AND legacy_message.created_at > COALESCE(sc.team_last_seen_at, '1970-01-01 00:00:00')
+			))
+		)`
 	}
 
-	return int(total), int(unread), nil
+	type aggregate struct {
+		TotalCount           int `gorm:"column:total_count"`
+		UnreadCount          int `gorm:"column:unread_count"`
+		NeedsHumanReplyCount int `gorm:"column:needs_human_reply_count"`
+	}
+	var counts aggregate
+	if err := buildQuery().Select(fmt.Sprintf(`
+		COUNT(*) AS total_count,
+		COALESCE(SUM(CASE WHEN %s THEN 1 ELSE 0 END), 0) AS unread_count,
+		COALESCE(SUM(CASE WHEN sc.needs_human_reply THEN 1 ELSE 0 END), 0) AS needs_human_reply_count
+	`, unreadCondition), strings.TrimSpace(params.UserID)).Scan(&counts).Error; err != nil {
+		return 0, 0, 0, fmt.Errorf("count conversations: %w", err)
+	}
+
+	return counts.TotalCount, counts.UnreadCount, counts.NeedsHumanReplyCount, nil
+}
+
+const CoverageAnalysisCandidatePageMax = 200
+
+type CoverageAnalysisCandidateCursor struct {
+	UpdatedAt time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
 }
 
 func (r *SupportConversationRepository) ListCoverageAnalysisCandidates(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, limit int) ([]model.SupportConversation, error) {
+	conversations, _, err := r.ListCoverageAnalysisCandidatesPage(ctx, workspaceID, windowStart, windowEnd, nil, limit)
+	return conversations, err
+}
+
+func (r *SupportConversationRepository) ListCoverageAnalysisCandidatesPage(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, cursor *CoverageAnalysisCandidateCursor, limit int) ([]model.SupportConversation, *CoverageAnalysisCandidateCursor, error) {
 	if workspaceID == "" {
-		return nil, fmt.Errorf("workspace_id is required")
+		return nil, nil, fmt.Errorf("workspace_id is required")
 	}
-	if limit <= 0 || limit > 500 {
-		limit = 200
+	if limit <= 0 {
+		limit = CoverageAnalysisCandidatePageMax
+	}
+	if limit > CoverageAnalysisCandidatePageMax {
+		return nil, nil, fmt.Errorf("coverage candidate page limit %d exceeds maximum %d", limit, CoverageAnalysisCandidatePageMax)
 	}
 
 	var conversations []model.SupportConversation
-	err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Where("workspace_id = ?", workspaceID).
 		Where("status <> ?", model.SupportConversationStatusSpam).
 		Where(`(
 			(updated_at >= ? AND updated_at < ?)
 			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
-		)`, windowStart, windowEnd, windowStart, windowEnd).
+		)`, windowStart, windowEnd, windowStart, windowEnd)
+	if cursor != nil {
+		query = query.Where("(updated_at > ?) OR (updated_at = ? AND id > ?)", cursor.UpdatedAt, cursor.UpdatedAt, cursor.ID)
+	}
+	err := query.
 		Order("updated_at ASC, id ASC").
 		Limit(limit).
 		Find(&conversations).Error
 	if err != nil {
-		return nil, fmt.Errorf("list coverage analysis candidates: %w", err)
+		return nil, nil, fmt.Errorf("list coverage analysis candidates: %w", err)
 	}
-	return conversations, nil
+	if len(conversations) == 0 || len(conversations) < limit {
+		return conversations, nil, nil
+	}
+	last := conversations[len(conversations)-1]
+	return conversations, &CoverageAnalysisCandidateCursor{UpdatedAt: last.UpdatedAt, ID: last.ID}, nil
 }
 
 func (r *SupportConversationRepository) ListWorkspacesForCoverageAnalysisCandidates(ctx context.Context, windowStart, windowEnd time.Time, limit int) ([]string, error) {
@@ -1860,6 +1980,25 @@ func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get conversation: %w", err)
+	}
+	return &conversation, nil
+}
+
+// GetByIDForUser returns the same authorized detail with the requesting
+// agent's personal read state and materialized conversation projections.
+func (r *SupportConversationRepository) GetByIDForUser(ctx context.Context, workspaceID, id, userID, workspaceMemberID, role string) (*model.SupportConversation, error) {
+	var conversation model.SupportConversation
+	query := r.db.WithContext(ctx).
+		Table("support_conversations").
+		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
+		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", strings.TrimSpace(userID)).
+		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
+	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
+	if err := query.Select(r.conversationListProjectionSelect()).First(&conversation).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get conversation for user: %w", err)
 	}
 	return &conversation, nil
 }
@@ -2172,25 +2311,21 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 
 // GetUnreadStats returns aggregate unread conversation counts for an accessible inbox scope.
 func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, workspaceID, userID, workspaceMemberID, role string, mailboxID *string) (model.UnreadStats, error) {
+	if stats, enabled, err := r.getUnreadStatsFromCoreBuckets(ctx, workspaceID, userID, workspaceMemberID, role, mailboxID); err != nil {
+		return model.UnreadStats{}, err
+	} else if enabled {
+		return stats, nil
+	}
+	if r.db.Dialector.Name() == "postgres" {
+		return r.getLegacyUnreadStats(ctx, workspaceID, userID, workspaceMemberID, role, mailboxID)
+	}
+
 	var stats model.UnreadStats
 	humanInboxCondition := conversationHumanInboxCondition("sc")
 	aiActiveCondition := conversationAIActiveCondition("sc")
-	mentionCondition, mentionArgs := r.mentionExistsCondition("sc", userID)
-	mineCondition := `(` + conversationHumanInboxCondition("sc") + ` OR sc.status = 'waiting_on_customer') AND (
-		sc.assigned_user_id = ?
-		OR sc.opened_by_user_id = ?
-		OR ` + mentionCondition + `
-	)`
-	unreadCondition := fmt.Sprintf(`(
-		SELECT COUNT(*)
-		FROM support_messages sm
-		WHERE sm.conversation_id = sc.id
-		  AND sm.deleted_at IS NULL
-		  AND sm.is_internal = false
-		  AND sm.sender_type = 'customer'
-		  AND sm.message_type = 'reply'
-		  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
-	) > 0`, r.epochExpr())
+	mineCondition := `(` + conversationHumanInboxCondition("sc") + ` OR sc.status = 'waiting_on_customer')
+		AND COALESCE(personal_state.relevance_mask, 0) <> 0`
+	unreadCondition := `(COALESCE(personal_state.unread_customer_message_count, 0) > 0 OR COALESCE(personal_state.manually_unread, false))`
 	baseQuery := fmt.Sprintf(`
 		SELECT
 			COUNT(*) FILTER (
@@ -2234,20 +2369,29 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 			) AS waiting_total,
 			COUNT(*) FILTER (
 				WHERE %s
-			) AS ai_active_total
+			) AS ai_active_total,
+			COUNT(*) FILTER (
+				WHERE sc.needs_human_reply AND %s
+			) AS inbox_needs_human_reply,
+			COUNT(*) FILTER (
+				WHERE sc.needs_human_reply AND %s
+			) AS mine_needs_human_reply,
+			COUNT(*) FILTER (
+				WHERE sc.needs_human_reply AND sc.status = 'waiting_on_customer'
+			) AS waiting_needs_human_reply,
+			COUNT(*) FILTER (
+				WHERE sc.needs_human_reply AND %s
+			) AS ai_active_needs_human_reply
 		FROM support_conversations sc
+		LEFT JOIN support_conversation_user_states personal_state
+		  ON personal_state.conversation_id = sc.id
+		 AND personal_state.workspace_id = sc.workspace_id
+		 AND personal_state.user_id = ?
 		WHERE sc.workspace_id = ?
 		  AND sc.status NOT IN ('resolved', 'spam')
-	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition, humanInboxCondition, mineCondition, aiActiveCondition)
+	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition, humanInboxCondition, mineCondition, aiActiveCondition, humanInboxCondition, mineCondition, aiActiveCondition)
 
-	args := []any{}
-	args = append(args, userID, userID)
-	args = append(args, mentionArgs...)
-	args = append(args, userID, userID)
-	args = append(args, mentionArgs...)
-	args = append(args, userID, userID)
-	args = append(args, mentionArgs...)
-	args = append(args, workspaceID)
+	args := []any{userID, workspaceID}
 	if mailboxID != nil {
 		if *mailboxID == "" {
 			baseQuery += " AND sc.mailbox_id IS NULL"
@@ -2274,6 +2418,159 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		return stats, fmt.Errorf("get unread stats: %w", err)
 	}
 	return stats, nil
+}
+
+func (r *SupportConversationRepository) getLegacyUnreadStats(ctx context.Context, workspaceID, userID, workspaceMemberID, role string, mailboxID *string) (model.UnreadStats, error) {
+	var stats model.UnreadStats
+	humanInboxCondition := conversationHumanInboxCondition("sc")
+	aiActiveCondition := conversationAIActiveCondition("sc")
+	mentionCondition, mentionArgs := r.mentionExistsCondition("sc", userID)
+	mineCondition := `(` + conversationHumanInboxCondition("sc") + ` OR sc.status = 'waiting_on_customer') AND (
+		sc.assigned_user_id = ? OR sc.opened_by_user_id = ? OR ` + mentionCondition + `)`
+	unreadCondition := fmt.Sprintf(`EXISTS (
+		SELECT 1 FROM support_messages unread_message
+		WHERE unread_message.conversation_id = sc.id
+		  AND unread_message.deleted_at IS NULL
+		  AND unread_message.system_event_type IS NULL
+		  AND unread_message.is_internal = FALSE
+		  AND unread_message.sender_type = 'customer'
+		  AND unread_message.message_type = 'reply'
+		  AND unread_message.created_at > COALESCE(sc.team_last_seen_at, %s)
+	)`, r.epochExpr())
+	query := fmt.Sprintf(`
+		SELECT
+			COUNT(*) FILTER (WHERE %s AND %s) AS inbox,
+			COUNT(*) FILTER (WHERE %s AND %s) AS mine,
+			COUNT(*) FILTER (WHERE %s AND sc.status = 'waiting_on_customer') AS waiting,
+			COUNT(*) FILTER (WHERE %s AND %s) AS ai_active,
+			COUNT(*) FILTER (WHERE %s AND %s) AS total,
+			COUNT(*) FILTER (WHERE %s AND %s) AS my_inbox,
+			COUNT(*) FILTER (WHERE %s AND %s AND sc.assigned_agent_id IS NULL AND sc.assigned_user_id IS NULL) AS unassigned,
+			COUNT(*) FILTER (WHERE %s) AS inbox_total,
+			COUNT(*) FILTER (WHERE %s) AS mine_total,
+			COUNT(*) FILTER (WHERE sc.status = 'waiting_on_customer') AS waiting_total,
+			COUNT(*) FILTER (WHERE %s) AS ai_active_total,
+			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS inbox_needs_human_reply,
+			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS mine_needs_human_reply,
+			COUNT(*) FILTER (WHERE sc.needs_human_reply AND sc.status = 'waiting_on_customer') AS waiting_needs_human_reply,
+			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS ai_active_needs_human_reply
+		FROM support_conversations sc
+		WHERE sc.workspace_id = ? AND sc.status NOT IN ('resolved', 'spam')
+	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition,
+		unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition,
+		unreadCondition, mineCondition, unreadCondition, humanInboxCondition,
+		humanInboxCondition, mineCondition, aiActiveCondition, humanInboxCondition, mineCondition, aiActiveCondition)
+	args := make([]any, 0, 20)
+	for range 4 {
+		args = append(args, userID, userID)
+		args = append(args, mentionArgs...)
+	}
+	args = append(args, workspaceID)
+	if mailboxID != nil {
+		if strings.TrimSpace(*mailboxID) == "" {
+			query += " AND sc.mailbox_id IS NULL"
+		} else {
+			query += " AND sc.mailbox_id = ?"
+			args = append(args, strings.TrimSpace(*mailboxID))
+		}
+	}
+	if !isElevatedSupportRole(role) {
+		query += ` AND (sc.mailbox_id IS NULL OR sc.mailbox_id IN (
+			SELECT mailbox.id FROM support_mailboxes mailbox
+			WHERE mailbox.active = TRUE AND ` + supportMailboxAccessCondition("mailbox") + `))`
+		args = append(args, workspaceMemberID, workspaceMemberID)
+	}
+	if err := r.db.WithContext(ctx).Raw(query, args...).Scan(&stats).Error; err != nil {
+		return stats, fmt.Errorf("get legacy unread stats: %w", err)
+	}
+	return stats, nil
+}
+
+// getUnreadStatsFromCoreBuckets is the constant-work V2 counter read. The
+// workspace rollout row is the cutover boundary: legacy and shadow modes keep
+// returning the exact legacy aggregate while operators reconcile projections.
+func (r *SupportConversationRepository) getUnreadStatsFromCoreBuckets(
+	ctx context.Context,
+	workspaceID, userID, workspaceMemberID, role string,
+	mailboxID *string,
+) (model.UnreadStats, bool, error) {
+	var stats model.UnreadStats
+	if r.db.Dialector.Name() != "postgres" {
+		return stats, false, nil
+	}
+	var mode string
+	if err := r.db.WithContext(ctx).Table("support_inbox_state_rollouts").
+		Select("mode").Where("workspace_id = ?", workspaceID).Scan(&mode).Error; err != nil {
+		return stats, false, fmt.Errorf("load support inbox rollout mode: %w", err)
+	}
+	if mode != "v2" {
+		return stats, false, nil
+	}
+
+	query := `
+		SELECT
+			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'inbox'), 0) AS inbox,
+			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'mine'), 0) AS mine,
+			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'waiting'), 0) AS waiting,
+			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'ai_active'), 0) AS ai_active,
+			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'inbox'), 0) AS total,
+			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'mine'), 0) AS my_inbox,
+			COALESCE(SUM(unread_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'unassigned'), 0) AS unassigned,
+			COALESCE(SUM(total_count) FILTER (WHERE audience_type = 'shared' AND bucket_id = 'inbox'), 0) AS inbox_total,
+			COALESCE(SUM(total_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'mine'), 0) AS mine_total,
+			COALESCE(SUM(total_count) FILTER (WHERE audience_type = 'shared' AND bucket_id = 'waiting'), 0) AS waiting_total,
+			COALESCE(SUM(total_count) FILTER (WHERE audience_type = 'shared' AND bucket_id = 'ai_active'), 0) AS ai_active_total,
+			COALESCE(SUM(needs_human_reply_count) FILTER (WHERE audience_type = 'shared' AND bucket_id = 'inbox'), 0) AS inbox_needs_human_reply,
+			COALESCE(SUM(needs_human_reply_count) FILTER (WHERE audience_type = 'user' AND bucket_id = 'mine'), 0) AS mine_needs_human_reply,
+			COALESCE(SUM(needs_human_reply_count) FILTER (WHERE audience_type = 'shared' AND bucket_id = 'waiting'), 0) AS waiting_needs_human_reply,
+			COALESCE(SUM(needs_human_reply_count) FILTER (WHERE audience_type = 'shared' AND bucket_id = 'ai_active'), 0) AS ai_active_needs_human_reply
+		FROM support_inbox_counter_buckets bucket
+		WHERE bucket.workspace_id = ?
+		  AND bucket.bucket_type = 'core'
+		  AND ((bucket.audience_type = 'shared' AND bucket.audience_id = 'shared')
+		       OR (bucket.audience_type = 'user' AND bucket.audience_id = ?))`
+	args := []any{workspaceID, userID}
+	if mailboxID != nil {
+		scope := strings.TrimSpace(*mailboxID)
+		if scope == "" {
+			scope = "shared"
+		}
+		query += " AND bucket.mailbox_scope_id = ?"
+		args = append(args, scope)
+	} else if !isElevatedSupportRole(role) {
+		query += ` AND (
+			bucket.mailbox_scope_id = 'shared'
+			OR bucket.mailbox_scope_id IN (
+				SELECT mailbox.id::TEXT
+				FROM support_mailboxes mailbox
+				WHERE mailbox.workspace_id = ?
+				  AND mailbox.active = TRUE
+				  AND ` + supportMailboxAccessCondition("mailbox") + `
+			)
+		)`
+		args = append(args, workspaceID, workspaceMemberID, workspaceMemberID)
+	}
+	if err := r.db.WithContext(ctx).Raw(query, args...).Scan(&stats).Error; err != nil {
+		return stats, true, fmt.Errorf("get materialized unread stats: %w", err)
+	}
+	return stats, true, nil
+}
+
+// UsesV2SupportInboxState reports whether personal unread and materialized
+// counters are authoritative for this workspace. Non-Postgres test stores run
+// the V2 behavior directly because rollout tables are PostgreSQL-only.
+func (r *SupportConversationRepository) UsesV2SupportInboxState(ctx context.Context, workspaceID string) (bool, error) {
+	if r.db.Dialector.Name() != "postgres" {
+		return true, nil
+	}
+	var enabled bool
+	if err := r.db.WithContext(ctx).Raw(`SELECT EXISTS (
+		SELECT 1 FROM support_inbox_state_rollouts
+		WHERE workspace_id = ? AND mode = 'v2'
+	)`, workspaceID).Scan(&enabled).Error; err != nil {
+		return false, fmt.Errorf("load support inbox state mode: %w", err)
+	}
+	return enabled, nil
 }
 
 func (r *SupportConversationRepository) applyMailboxScope(query *gorm.DB, alias string, mailboxID *string) *gorm.DB {

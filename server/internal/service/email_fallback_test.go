@@ -3793,6 +3793,141 @@ func TestProcessInboundRouteThreadsByRFCHeaders(t *testing.T) {
 	}
 }
 
+func TestProcessInboundRouteThreadsActiveTeammatePersonalInboxReply(t *testing.T) {
+	ctx := context.Background()
+	env := setupEmailFallbackInboundTestEnv(t, model.SupportInboxSettings{})
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	ownerID := "22222222-2222-2222-2222-222222222222"
+	customerEmail := "buyer@example.com"
+	conversationID := "abababab-abab-abab-abab-abababababab"
+
+	if _, err := env.service.workspaceRepo.AddMember(ctx, workspaceID, ownerID, model.RoleOwner); err != nil {
+		t.Fatalf("add active workspace member: %v", err)
+	}
+	resolvedAt := time.Now().UTC().Add(-time.Hour)
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Status:        model.SupportConversationStatusResolved,
+		CustomerEmail: &customerEmail,
+		ResolvedAt:    &resolvedAt,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	previousRFCMessageID := "<customer-thread-message@example.com>"
+	if err := env.emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:             "cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		Direction:      "inbound",
+		RFCMessageID:   previousRFCMessageID,
+		FromEmail:      customerEmail,
+		Status:         "sent",
+	}); err != nil {
+		t.Fatalf("create prior email log: %v", err)
+	}
+
+	route := &model.SupportEmailRoute{
+		ID:             "dededede-dede-dede-dede-dededededede",
+		WorkspaceID:    workspaceID,
+		InboundAddress: "inbox@acme.on.helpin.email",
+		Active:         true,
+	}
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "owner@example.com", Name: "Owner"},
+		To:                "Buyer <buyer@example.com>",
+		ToFull:            []model.PostmarkAddress{{Email: customerEmail, Name: "Buyer"}},
+		Cc:                "Support <support@example.com>",
+		CcFull:            []model.PostmarkAddress{{Email: "support@example.com", Name: "Support"}},
+		OriginalRecipient: route.InboundAddress,
+		MailboxHash:       route.ID,
+		Subject:           "Re: Support conversation",
+		MessageID:         "pm-teammate-personal-reply",
+		Date:              "Thu, 03 Sep 2026 07:35:00 +0000",
+		TextBody:          "I sent this directly from my personal inbox.",
+		Headers: []model.PostmarkHeader{
+			{Name: "Message-ID", Value: "<teammate-personal-reply@example.com>"},
+			{Name: "In-Reply-To", Value: previousRFCMessageID},
+			{Name: "References", Value: previousRFCMessageID},
+		},
+	}
+
+	if err := env.service.processInboundRoute(ctx, route, payload, `{"MessageID":"pm-teammate-personal-reply"}`); err != nil {
+		t.Fatalf("process teammate personal inbox reply: %v", err)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected one teammate reply on the original conversation, got %d", len(messages))
+	}
+	if messages[0].SenderType != "user" || messages[0].SenderUserID == nil || *messages[0].SenderUserID != ownerID {
+		t.Fatalf("expected reply attributed to teammate %s, got sender_type=%q sender_user_id=%v", ownerID, messages[0].SenderType, messages[0].SenderUserID)
+	}
+	if messages[0].SenderDisplayName == nil || *messages[0].SenderDisplayName != "Owner" {
+		t.Fatalf("expected teammate display name, got %v", messages[0].SenderDisplayName)
+	}
+	if messages[0].ViaChannel == nil || *messages[0].ViaChannel != "email" {
+		t.Fatalf("expected email channel, got %v", messages[0].ViaChannel)
+	}
+	var messageMetadata map[string]any
+	if err := json.Unmarshal([]byte(messages[0].Metadata), &messageMetadata); err != nil {
+		t.Fatalf("unmarshal teammate reply metadata: %v", err)
+	}
+	if messageMetadata["external_email_reply"] != true || messageMetadata["external_email_capture"] != "support_email_copy" {
+		t.Fatalf("expected external email provenance metadata, got %#v", messageMetadata)
+	}
+	wantSentAt := time.Date(2026, 9, 3, 7, 35, 0, 0, time.UTC)
+	if !messages[0].CreatedAt.Equal(wantSentAt) {
+		t.Fatalf("created_at = %v, want external sent time %v", messages[0].CreatedAt, wantSentAt)
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 2 || logs[1].Direction != "outbound" || logs[1].Status != "external" {
+		t.Fatalf("expected copied teammate reply recorded as outbound, got %#v", logs)
+	}
+
+	updated, err := env.convRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if updated.Status != model.SupportConversationStatusWaitingOnCustomer {
+		t.Fatalf("expected resolved conversation to wait on customer, got %q", updated.Status)
+	}
+	if updated.OpenedByUserID == nil || *updated.OpenedByUserID != ownerID || updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("expected teammate ownership and human takeover, got opened_by=%v human_takeover=%v", updated.OpenedByUserID, updated.HumanTakeover)
+	}
+
+	forwardOnlyPayload := payload
+	forwardOnlyPayload.MessageID = "pm-teammate-forward-to-support"
+	forwardOnlyPayload.To = route.InboundAddress
+	forwardOnlyPayload.ToFull = []model.PostmarkAddress{{Email: route.InboundAddress}}
+	forwardOnlyPayload.Cc = ""
+	forwardOnlyPayload.CcFull = nil
+	forwardOnlyPayload.TextBody = "Forwarding this internally without the customer copied."
+	forwardOnlyPayload.Headers = []model.PostmarkHeader{
+		{Name: "Message-ID", Value: "<teammate-forward-to-support@example.com>"},
+		{Name: "In-Reply-To", Value: previousRFCMessageID},
+	}
+	if err := env.service.processInboundRoute(ctx, route, forwardOnlyPayload, `{"MessageID":"pm-teammate-forward-to-support"}`); err != nil {
+		t.Fatalf("process teammate forward without customer recipient: %v", err)
+	}
+	messages, err = env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		t.Fatalf("list messages after teammate forward: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected internal forward without customer recipient to be ignored, got %d messages", len(messages))
+	}
+}
+
 func TestResolveInboundFallbackConversationIsConservative(t *testing.T) {
 	ctx := context.Background()
 	env := setupEmailFallbackInboundTestEnv(t, model.SupportInboxSettings{})

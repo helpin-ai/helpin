@@ -1,5 +1,11 @@
 # Support Inbox Performance Design
 
+**Status:** Partially superseded
+**Superseded on:** 2026-09-03
+**Authoritative follow-up:** [First-Class Support Inbox State Design](./2026-09-02-first-class-support-inbox-state-design.md)
+
+> The September design and its implementation record are authoritative for inbox list projections, internal personal unread, blue-dot and human-attention semantics, core counters, database indexes, read-triggered invalidation, and rollout. This document remains useful for bounded message history, page-scoped hydration, lazy secondary surfaces, and other thread-loading improvements that the September work did not replace. Do not use this document's narrower index-only or shared read-invalidation assumptions to design new inbox counter work.
+
 ## Goal
 
 Make the Support inbox substantially faster on its first visit and when switching

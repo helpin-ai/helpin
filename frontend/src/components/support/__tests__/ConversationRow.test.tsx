@@ -295,11 +295,23 @@ describe('ConversationRow', () => {
     expect(getConversationRowVisualState(conversation({
       unread_count: 0,
       awaiting_reply: false,
+      customer_awaiting_response: true,
     }), true)).toEqual({
       isUnread: false,
-      needsTeamAction: false,
+      needsTeamAction: true,
       usesUnreadTypography: false,
       usesSelectionBar: true,
+    })
+
+    expect(getConversationRowVisualState(conversation({
+      unread_count: 4,
+      awaiting_reply: true,
+      customer_awaiting_response: false,
+    }))).toEqual({
+      isUnread: true,
+      needsTeamAction: false,
+      usesUnreadTypography: true,
+      usesSelectionBar: false,
     })
   })
 

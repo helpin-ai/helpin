@@ -63,11 +63,27 @@ type SupportEventInput struct {
 type SupportEventService struct {
 	eventRepo        *repository.SupportEventRepository
 	coverageSvc      *SupportCoverageService
+	coverageV2Repo   *repository.CoverageV2Repository
+	rolloutPolicy    *CoverageRolloutPolicy
 	summaryRefresh   CompanySummaryRefreshRequester
 	messageRepo      *repository.SupportMessageRepository
 	conversationRepo *repository.SupportConversationRepository
 	signalStarter    supportSignalStarter
 	logger           *slog.Logger
+}
+
+func (s *SupportEventService) SetCoverageV2Repository(repo *repository.CoverageV2Repository) *SupportEventService {
+	if s != nil {
+		s.coverageV2Repo = repo
+	}
+	return s
+}
+
+func (s *SupportEventService) SetCoverageRolloutPolicy(policy *CoverageRolloutPolicy) *SupportEventService {
+	if s != nil {
+		s.rolloutPolicy = policy
+	}
+	return s
 }
 
 // NewSupportEventService creates a new SupportEventService.
@@ -107,8 +123,28 @@ func (s *SupportEventService) RecordEvent(ctx context.Context, input SupportEven
 		return err
 	}
 
-	// Pass to coverage service for gap derivation.
-	if s.coverageSvc != nil {
+	isQualifiedWidgetSearch := event.EventType == model.SupportEventWidgetSearchPerformed && event.SourceSignal == "no_results"
+	routedWidgetSearchV2 := isQualifiedWidgetSearch && s.coverageV2Repo != nil && (s.rolloutPolicy == nil || s.rolloutPolicy.CaptureEnabled(event.WorkspaceID))
+	if routedWidgetSearchV2 {
+		sessionID := stringPointerValue(event.AnonymousID)
+		if sessionID == "" {
+			sessionID = stringPointerValue(event.WidgetSessionID)
+		}
+		normalized := strings.ToLower(strings.Join(strings.Fields(event.IssueSummary), " "))
+		signal := &model.CoverageUnreviewedSignal{
+			WorkspaceID: event.WorkspaceID, SourceKind: "widget_search", SourceID: event.ID,
+			SessionID: sessionID, NormalizedQuery: normalized,
+			SignalKey:        aiUsageStableHash(event.WorkspaceID + ":" + sessionID + ":" + normalized),
+			MeaningfulTokens: MeaningfulCoverageSearchTokens(normalized), Status: model.CoverageSignalUnreviewed,
+			ObservedAt: event.OccurredAt, Metadata: []byte(`{"surface":"widget_help","result_count":0}`),
+		}
+		if err := s.coverageV2Repo.UpsertUnreviewedSignal(ctx, signal); err != nil {
+			s.logger.WarnContext(ctx, "coverage widget signal enqueue failed", "error", err, "event_id", event.ID)
+		}
+	}
+	// Qualified searches enter the review queue and never become legacy open
+	// gaps merely because a visitor paused while typing.
+	if s.coverageSvc != nil && !routedWidgetSearchV2 {
 		if err := s.coverageSvc.ProcessSupportEvent(ctx, event); err != nil {
 			s.logger.WarnContext(ctx, "coverage processing failed",
 				"event_type", event.EventType, "error", err)

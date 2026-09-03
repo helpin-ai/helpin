@@ -144,6 +144,18 @@ export interface DocsEditingPresenceSignal {
   section?: string
 }
 
+function stableJSONSnapshot(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJSONSnapshot).join(',')}]`
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableJSONSnapshot(entry)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'undefined'
+}
+
 function formatLastSaved(date: Date): string {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
   if (seconds < 60) return 'a few seconds ago'
@@ -878,8 +890,9 @@ export function DocsEditor({
   const pendingImportedImageUploadsRef = useRef(new Set<string>())
   const importedImagePersistTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const lastSavedSnapshotRef = useRef<string | null>(
-    initialContent ? JSON.stringify(initialContent) : null,
+    initialContent ? stableJSONSnapshot(initialContent) : null,
   )
+  const submittedSaveSnapshotsRef = useRef(new Set<string>())
   const editorReadyRef = useRef(false)
   // Set when TipTap cannot parse the stored document into its schema. The
   // editor then holds a degraded (often empty) doc, so autosaving it would
@@ -931,7 +944,7 @@ export function DocsEditor({
   const doSave = useCallback(
     async (json: JSONContent) => {
       if (contentErrorRef.current) return
-      const snapshot = JSON.stringify(json)
+      const snapshot = stableJSONSnapshot(json)
       if (lastSavedSnapshotRef.current === snapshot) {
         setSaveStatus('idle')
         return
@@ -942,6 +955,7 @@ export function DocsEditor({
         return
       }
       savingRef.current = true
+      submittedSaveSnapshotsRef.current.add(snapshot)
       setSaveStatus('saving')
       try {
         await onSave(json)
@@ -951,6 +965,7 @@ export function DocsEditor({
         if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
         savedFadeTimerRef.current = setTimeout(() => setSaveStatus('idle'), 5000)
       } catch {
+        submittedSaveSnapshotsRef.current.delete(snapshot)
         setSaveStatus('unsaved')
       } finally {
         savingRef.current = false
@@ -1607,8 +1622,12 @@ export function DocsEditor({
       initialContentMountedRef.current = true
       return
     }
-    const currentJson = JSON.stringify(editor.getJSON())
-    const newJson = JSON.stringify(initialContent)
+    const currentJson = stableJSONSnapshot(editor.getJSON())
+    const newJson = stableJSONSnapshot(initialContent)
+    if (submittedSaveSnapshotsRef.current.delete(newJson)) {
+      lastSavedSnapshotRef.current = newJson
+      return
+    }
     if (currentJson !== newJson) {
       // Give the incoming document a clean slate; onContentError re-flags it
       // if this content does not parse either.
@@ -1657,7 +1676,7 @@ export function DocsEditor({
       })
       contentErrorRef.current = false
       setContentError(null)
-      lastSavedSnapshotRef.current = JSON.stringify(repaired)
+      lastSavedSnapshotRef.current = stableJSONSnapshot(repaired)
       const savedAt = new Date()
       setLastSavedAt(savedAt)
       setSaveStatus('saved')

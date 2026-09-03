@@ -277,6 +277,49 @@ func TestSupportMessageActionsInfoReturnsEmailCcAndBcc(t *testing.T) {
 	}
 }
 
+func TestSupportMessageActionsInfoLabelsCopiedTeammateEmailAsExternal(t *testing.T) {
+	ctx := context.Background()
+	svc, messageRepo, emailLogRepo, _, rdbServer := setupSupportMessageActionsTestEnv(t)
+	defer rdbServer.Close()
+
+	actorID := "22222222-2222-2222-2222-222222222222"
+	msg := createActionMessage(t, messageRepo, model.SupportMessage{
+		SenderUserID:      &actorID,
+		SenderDisplayName: strPtr("Waqar Azeem"),
+		ViaChannel:        strPtr("email"),
+		Metadata:          `{"external_email_reply":true,"external_email_capture":"support_email_copy"}`,
+		Content:           "Sent directly from Gmail",
+	})
+	if err := emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:             "78787878-7878-7878-7878-787878787878",
+		WorkspaceID:    msg.WorkspaceID,
+		ConversationID: msg.ConversationID,
+		Direction:      "outbound",
+		MessageIDs:     model.DocsStringArray{msg.ID},
+		FromEmail:      "waqar@example.com",
+		ToEmail:        "customer@example.com",
+		CCEmails:       model.DocsStringArray{"support@example.com"},
+		Status:         "external",
+		CreatedAt:      msg.CreatedAt,
+	}); err != nil {
+		t.Fatalf("create external email log: %v", err)
+	}
+
+	info, err := svc.Info(ctx, msg.WorkspaceID, msg.ConversationID, actorID, msg.ID)
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if !info.ExternalEmail || info.Origin != "External email" || info.CapturedVia != "Support email copy" {
+		t.Fatalf("unexpected external provenance: %#v", info)
+	}
+	if info.EmailDeliveryStatus != "unavailable" || info.EmailDeliveryStatusLabel != "Delivery status unavailable" {
+		t.Fatalf("unexpected external delivery status: %#v", info)
+	}
+	if info.ReadStatusLabel != "Read status unavailable" || info.Read || info.ReadAt != nil || info.Delivered != nil {
+		t.Fatalf("external email must not claim Helpin delivery/read tracking: %#v", info)
+	}
+}
+
 func TestSupportMessageActionsInfoDistinguishesEmailDeliveryStates(t *testing.T) {
 	ctx := context.Background()
 	svc, messageRepo, emailLogRepo, _, rdbServer := setupSupportMessageActionsTestEnv(t)

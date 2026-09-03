@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -206,7 +207,10 @@ func (s *CuratedGuidanceService) embed(ctx context.Context, item *model.CuratedG
 		return nil
 	}
 	input := strings.Join(append([]string{item.Title}, append([]string(item.QuestionPatterns), item.Answer)...), "\n")
-	response, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+	embedCtx := withAIActionMetering(ctx, item.WorkspaceID, aipolicy.ActionCuratedGuidanceEmbed, "curated_guidance_embed", input, map[string]interface{}{
+		"surface": "curated_guidance", "guidance_id": item.ID,
+	})
+	response, err := s.embedder.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 		Provider: "openai",
 		Model:    s.embeddingModel,
 		Inputs:   []string{input},

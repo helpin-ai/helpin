@@ -620,6 +620,19 @@ func seedMaterializerAnalysis(t *testing.T, repo *repository.SupportCoverageAnal
 	}
 }
 
+func TestCoverageMaterializationPreservesFindingsWhenEmbeddingUnavailable(t *testing.T) {
+	analyzer := NewSupportCoverageDailyAnalyzer(nil, "", "")
+	result := &CoverageMaterializationResult{}
+	analysis := model.SupportCoverageConversationAnalysis{ID: "analysis-1", WorkspaceID: "ws-1", CustomerNeed: "Reset password", AIFailure: "Missing steps"}
+	findings, err := analyzer.embedMaterializationFindings(context.Background(), []model.SupportCoverageConversationAnalysis{analysis}, result)
+	if err != nil {
+		t.Fatalf("embedding degradation should not fail materialization: %v", err)
+	}
+	if len(findings) != 1 || result.MissingEmbeddings != 1 {
+		t.Fatalf("degraded findings/result = %+v/%+v", findings, result)
+	}
+}
+
 func seedMaterializerDocsSpace(t *testing.T, db *gorm.DB, id, workspaceID string) {
 	t.Helper()
 	if err := db.Exec(`CREATE TABLE IF NOT EXISTS docs_spaces (

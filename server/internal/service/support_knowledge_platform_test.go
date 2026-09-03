@@ -289,7 +289,7 @@ func TestSemanticRerankerPreservesApplicableGuidanceAuthority(t *testing.T) {
 		{ID: "doc-b", SourceType: knowledgeSourceTypeContent},
 		{ID: "guidance", SourceType: knowledgeSourceTypeGuidance},
 	}
-	reranked := service.semanticRerankKnowledgeResults(context.Background(), "pricing", results)
+	reranked := service.semanticRerankKnowledgeResults(context.Background(), "workspace-1", "pricing", results)
 	if len(reranked) != 3 || reranked[0].ID != "guidance" || reranked[1].ID != "doc-b" {
 		t.Fatalf("unexpected semantic rerank order: %+v", reranked)
 	}

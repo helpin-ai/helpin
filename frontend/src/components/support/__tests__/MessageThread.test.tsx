@@ -222,7 +222,10 @@ describe('MessageThread', () => {
       vi.runAllTimers()
     })
 
-    expect(supportHooks.markConversationRead).toHaveBeenCalledWith('conv-1')
+    expect(supportHooks.markConversationRead).toHaveBeenCalledWith({
+      conversationId: 'conv-1',
+      throughMessageId: 'msg-1',
+    })
     const thread = container.querySelector('[data-support-message-thread]')
     expect(thread?.className).toContain('dark:bg-sidebar')
     const scrollArea = container.querySelector('[data-slot="scroll-area"]')

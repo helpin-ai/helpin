@@ -32,7 +32,7 @@ spec:
           emptyDir: {}
       containers:
         - name: helpin-server
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.363-rc.1
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.364-rc.1
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -46,6 +46,8 @@ spec:
               value: clickhouse://helpin_api:$(CLICKHOUSE_API_PASSWORD)@helpin-clickhouse.helpin.svc.cluster.local:9000/helpin
             - name: RUN_AUTO_MIGRATE
               value: "true"
+            - name: SUPPORT_COVERAGE_V2_MODE
+              value: "shadow"
             - name: MCP_PUBLIC_BASE_URL
               value: "https://mcp.stage.helpin.ai"
             - name: MCP_SERVER_ENABLED

@@ -28,6 +28,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
@@ -306,6 +307,15 @@ func main() {
 			&model.SupportCoverageDigestDelivery{},
 			&model.SupportCoverageAnalysisRun{},
 			&model.SupportCoverageConversationAnalysis{},
+			&model.AIActionExecution{},
+			&model.CoverageBatch{},
+			&model.CoverageAnalysisAttempt{},
+			&model.CoverageFinding{},
+			&model.CoverageTopicV2{},
+			&model.CoverageAssignmentAttempt{},
+			&model.CoverageTopicMembership{},
+			&model.CoverageUnreviewedSignal{},
+			&model.CoverageRebuildAudit{},
 			&model.SupportAIRetrievalTrace{},
 			&model.SupportCoverageRecommendation{},
 			&model.SupportCoverageClusterRebuildRun{},
@@ -787,6 +797,11 @@ func main() {
 		productAnalyticsWorker.Run(productAnalyticsCtx, 15*time.Second)
 	}()
 	aiUsageMeter := service.NewTokenPricedAIUsageMeter(aiUsageService)
+	aiActionExecutionRepo := repository.NewAIActionExecutionRepository(db)
+	aiActionRegistry := aipolicy.DefaultRegistry()
+	if err := aiActionRegistry.Validate(); err != nil {
+		fatalWithSentry("validate AI action registry", err)
+	}
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
 	gitCredentialRepo := repository.NewGitCredentialRepository(db)
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
@@ -986,6 +1001,10 @@ func main() {
 		cfg.OpenRouterAPIKey,
 		cfg.OpenRouterBaseURL,
 	)
+	supportEmbeddingProvider = service.NewGovernedEmbeddingProvider(
+		supportEmbeddingProvider, aiUsageMeter, aiActionRegistry, aiActionExecutionRepo,
+	)
+	coverageEmbeddingProvider := supportEmbeddingProvider
 	completionRoutes := service.NewAICompletionRouteRegistry(service.CRMCompletionRouteConfig{
 		Primary: service.AICompletionRoute{
 			Provider: cfg.CRMLLMProvider, Model: cfg.CRMLLMModel,
@@ -1010,7 +1029,8 @@ func main() {
 	if issues := agentTierResolver.ValidateSelectable(); len(issues) != 0 {
 		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
 	}
-	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes)
+	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes).
+		SetGovernance(aiActionRegistry, aiActionExecutionRepo)
 	supportInboxTriageService := service.NewSupportInboxTriageService(
 		supportInboxService,
 		supportConversationTriageRepo,
@@ -1611,7 +1631,7 @@ func main() {
 	supportAIService.SetLinkPreviewService(supportLinkPreviewService)
 	supportAIService.SetCuratedGuidanceRepository(curatedGuidanceRepo)
 	if reranker := service.NewHTTPSupportKnowledgeReranker(cfg.SupportRerankerURL, cfg.SupportRerankerModel, cfg.SupportRerankerAPIKey); reranker != nil {
-		supportAIService.SetKnowledgeReranker(reranker)
+		supportAIService.SetKnowledgeReranker(service.NewGovernedSupportKnowledgeReranker(reranker, aiActionRegistry, aiActionExecutionRepo))
 	}
 	supportInboxService.SetSupportAIService(supportAIService)
 
@@ -1619,6 +1639,15 @@ func main() {
 	supportEventRepo := repository.NewSupportEventRepository(db)
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	supportCoverageV2Repo := repository.NewCoverageV2Repository(db)
+	coverageV2Mode := strings.TrimSpace(os.Getenv("SUPPORT_COVERAGE_V2_MODE"))
+	if coverageV2Mode == "" {
+		coverageV2Mode = string(service.CoverageRolloutDisabled)
+	}
+	supportCoverageRolloutPolicy, err := service.NewCoverageRolloutPolicy(coverageV2Mode, os.Getenv("SUPPORT_COVERAGE_V2_WORKSPACE_MODES"))
+	if err != nil {
+		fatalWithSentry("invalid coverage v2 rollout policy", err)
+	}
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
 	commandService.SetSupportCoverageService(supportCoverageService)
 	agentRuntimeHostService.SetSupportCoverageService(supportCoverageService)
@@ -1628,16 +1657,20 @@ func main() {
 	agentService.SetSupportCoverageService(supportCoverageService)
 	supportCoverageService.SetDocsBlockService(docsBlockService)
 	supportCoverageService.SetTemporalClient(temporalClient)
-	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
-	supportCoverageClusterRebuildService := service.NewSupportCoverageClusterRebuildService(supportCoverageRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
+	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel)
+	supportCoverageClusterRebuildService := service.NewSupportCoverageClusterRebuildService(supportCoverageRepo, coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel)
 	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
 		SetCoverageRepositories(supportCoverageRepo, supportCoverageAnalysisRepo).
-		SetEmbeddingProvider(supportEmbeddingProvider, cfg.OpenAIEmbeddingModel).
+		SetCoverageV2Repository(supportCoverageV2Repo).
+		SetCoverageRolloutPolicy(supportCoverageRolloutPolicy).
+		SetEmbeddingProvider(coverageEmbeddingProvider, cfg.OpenAIEmbeddingModel).
 		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
+		SetCoverageV2Repository(supportCoverageV2Repo).
+		SetCoverageRolloutPolicy(supportCoverageRolloutPolicy).
 		SetCompanySummaryRefresh(crmSummaryService).
 		SetSignalDetection(supportMessageRepo, supportConversationRepo, crmsignal.NewTemporalStarter(temporalClient, temporalapp.QueueAutomation))
 	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)
@@ -1971,7 +2004,7 @@ func main() {
 			supportEventService,
 			service.NewSupportCoverageDraftService(supportCoverageRepo, docsDocumentService, docsContentService, docsVersionService, llmProvider),
 			supportCoverageClusterRebuildService,
-		),
+		).SetCoverageV2Service(service.NewSupportCoverageV2Service(supportCoverageV2Repo).SetRolloutPolicy(supportCoverageRolloutPolicy)),
 		TLSAsk: handler.NewTLSAskHandler(tlsAskService),
 	}
 

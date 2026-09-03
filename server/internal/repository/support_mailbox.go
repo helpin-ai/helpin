@@ -288,33 +288,224 @@ type WorkspaceUnreadCount struct {
 	UnreadCount int    `gorm:"column:unread_count"`
 }
 
-// CountUnreadByWorkspacesForUser returns one row per workspace where the user is
-// an active member and there is at least one open, non-AI-resolved conversation
-// with unread customer replies. Workspaces with zero unread are omitted.
+type SupportInboxScopeCounts struct {
+	ScopeID              string `gorm:"column:scope_id"`
+	TotalCount           int    `gorm:"column:total_count"`
+	UnreadCount          int    `gorm:"column:unread_count"`
+	NeedsHumanReplyCount int    `gorm:"column:needs_human_reply_count"`
+}
+
+// CountScopes derives every accessible mailbox counter in one aggregate query.
+// It replaces the previous three-query-per-mailbox loop.
+func (r *SupportMailboxRepository) CountScopes(ctx context.Context, workspaceID, userID string, mailboxIDs []string) (map[string]SupportInboxScopeCounts, error) {
+	if counts, enabled, err := r.countMaterializedScopes(ctx, workspaceID, userID, mailboxIDs); err != nil {
+		return nil, err
+	} else if enabled {
+		return counts, nil
+	}
+	if r.db.Dialector.Name() == "postgres" {
+		return r.countLegacyScopes(ctx, workspaceID, mailboxIDs)
+	}
+
+	humanCondition := conversationHumanInboxCondition("sc")
+	query := r.db.WithContext(ctx).
+		Table("support_conversations sc").
+		Joins(`LEFT JOIN support_conversation_user_states personal_state
+			ON personal_state.conversation_id = sc.id
+		   AND personal_state.workspace_id = sc.workspace_id
+		   AND personal_state.user_id = ?`, userID).
+		Where("sc.workspace_id = ?", workspaceID).
+		Where("sc.mailbox_id IS NULL OR sc.mailbox_id IN ?", mailboxIDs).
+		Group("COALESCE(CAST(sc.mailbox_id AS TEXT), 'shared')").
+		Select(fmt.Sprintf(`
+			COALESCE(CAST(sc.mailbox_id AS TEXT), 'shared') AS scope_id,
+			SUM(CASE WHEN %s THEN 1 ELSE 0 END) AS total_count,
+			SUM(CASE WHEN %s AND (COALESCE(personal_state.unread_customer_message_count, 0) > 0 OR COALESCE(personal_state.manually_unread, false)) THEN 1 ELSE 0 END) AS unread_count,
+			SUM(CASE WHEN sc.needs_human_reply THEN 1 ELSE 0 END) AS needs_human_reply_count
+		`, humanCondition, humanCondition))
+
+	var rows []SupportInboxScopeCounts
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("count support inbox scopes: %w", err)
+	}
+	counts := make(map[string]SupportInboxScopeCounts, len(rows))
+	for _, row := range rows {
+		counts[row.ScopeID] = row
+	}
+	return counts, nil
+}
+
+func (r *SupportMailboxRepository) countLegacyScopes(ctx context.Context, workspaceID string, mailboxIDs []string) (map[string]SupportInboxScopeCounts, error) {
+	humanCondition := conversationHumanInboxCondition("conversation")
+	query := fmt.Sprintf(`
+		SELECT COALESCE(conversation.mailbox_id::TEXT, 'shared') AS scope_id,
+			COUNT(*) FILTER (WHERE %s) AS total_count,
+			COUNT(*) FILTER (WHERE %s AND EXISTS (
+				SELECT 1 FROM support_messages message
+				WHERE message.conversation_id = conversation.id
+				  AND message.deleted_at IS NULL
+				  AND message.system_event_type IS NULL
+				  AND message.is_internal = FALSE
+				  AND message.sender_type = 'customer'
+				  AND message.message_type = 'reply'
+				  AND message.created_at > COALESCE(conversation.team_last_seen_at, '1970-01-01 00:00:00')
+			)) AS unread_count,
+			COUNT(*) FILTER (WHERE conversation.needs_human_reply) AS needs_human_reply_count
+		FROM support_conversations conversation
+		WHERE conversation.workspace_id = ?
+		  AND (conversation.mailbox_id IS NULL OR conversation.mailbox_id IN ?)
+		GROUP BY COALESCE(conversation.mailbox_id::TEXT, 'shared')`, humanCondition, humanCondition)
+	var rows []SupportInboxScopeCounts
+	if err := r.db.WithContext(ctx).Raw(query, workspaceID, mailboxIDs).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("count legacy support inbox scopes: %w", err)
+	}
+	counts := make(map[string]SupportInboxScopeCounts, len(rows))
+	for _, row := range rows {
+		counts[row.ScopeID] = row
+	}
+	return counts, nil
+}
+
+func (r *SupportMailboxRepository) countMaterializedScopes(ctx context.Context, workspaceID, userID string, mailboxIDs []string) (map[string]SupportInboxScopeCounts, bool, error) {
+	if r.db.Dialector.Name() != "postgres" {
+		return nil, false, nil
+	}
+	var mode string
+	if err := r.db.WithContext(ctx).Table("support_inbox_state_rollouts").
+		Select("mode").Where("workspace_id = ?", workspaceID).Scan(&mode).Error; err != nil {
+		return nil, false, fmt.Errorf("load support inbox rollout mode: %w", err)
+	}
+	if mode != "v2" {
+		return nil, false, nil
+	}
+	scopes := append([]string{"shared"}, mailboxIDs...)
+	var rows []SupportInboxScopeCounts
+	err := r.db.WithContext(ctx).Table("support_inbox_counter_buckets bucket").
+		Select(`bucket.mailbox_scope_id AS scope_id,
+			COALESCE(SUM(bucket.total_count) FILTER (WHERE bucket.audience_type = 'shared'), 0) AS total_count,
+			COALESCE(SUM(bucket.unread_count) FILTER (WHERE bucket.audience_type = 'user'), 0) AS unread_count,
+			COALESCE(SUM(bucket.needs_human_reply_count) FILTER (WHERE bucket.audience_type = 'shared'), 0) AS needs_human_reply_count`).
+		Where("bucket.workspace_id = ? AND bucket.bucket_type = 'core' AND bucket.bucket_id = 'inbox'", workspaceID).
+		Where("bucket.mailbox_scope_id IN ?", scopes).
+		Where("(bucket.audience_type = 'shared' AND bucket.audience_id = 'shared') OR (bucket.audience_type = 'user' AND bucket.audience_id = ?)", userID).
+		Group("bucket.mailbox_scope_id").Scan(&rows).Error
+	if err != nil {
+		return nil, true, fmt.Errorf("count materialized support inbox scopes: %w", err)
+	}
+	counts := make(map[string]SupportInboxScopeCounts, len(rows))
+	for _, row := range rows {
+		counts[row.ScopeID] = row
+	}
+	return counts, true, nil
+}
+
+// CountUnreadByWorkspacesForUser returns personal unread totals without
+// touching the messages table. Mailbox authorization is applied in the same
+// query so a revoked private inbox cannot leak through the workspace badge.
 func (r *SupportMailboxRepository) CountUnreadByWorkspacesForUser(ctx context.Context, userID string) ([]WorkspaceUnreadCount, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, nil
 	}
+	materializedRows := []WorkspaceUnreadCount{}
+	if r.db.Dialector.Name() == "postgres" {
+		if err := r.db.WithContext(ctx).Raw(`
+			SELECT bucket.workspace_id, COALESCE(SUM(bucket.unread_count), 0) AS unread_count
+			FROM support_inbox_counter_buckets bucket
+			JOIN support_inbox_state_rollouts rollout
+			  ON rollout.workspace_id = bucket.workspace_id AND rollout.mode = 'v2'
+			JOIN workspace_members member
+			  ON member.workspace_id = bucket.workspace_id
+			 AND member.user_id = ? AND member.status = 'active'
+			WHERE bucket.audience_type = 'user'
+			  AND bucket.audience_id = ?
+			  AND bucket.bucket_type = 'core'
+			  AND bucket.bucket_id = 'support'
+			  AND (bucket.mailbox_scope_id = 'shared' OR EXISTS (
+				SELECT 1 FROM support_mailboxes mailbox
+				WHERE mailbox.id::TEXT = bucket.mailbox_scope_id
+				  AND mailbox.active = TRUE
+				  AND (
+					EXISTS (SELECT 1 FROM support_mailbox_memberships membership
+						WHERE membership.mailbox_id = mailbox.id
+						  AND membership.workspace_member_id = member.id)
+					OR EXISTS (SELECT 1 FROM team_workspace_memberships team_membership
+						WHERE team_membership.team_id = mailbox.linked_team_id
+						  AND team_membership.workspace_member_id = member.id)
+				  )
+			  ))
+			GROUP BY bucket.workspace_id`, userID, userID).
+			Scan(&materializedRows).Error; err != nil {
+			return nil, fmt.Errorf("count materialized support unread by workspace: %w", err)
+		}
+		var legacyRows []WorkspaceUnreadCount
+		if err := r.db.WithContext(ctx).Raw(`
+			SELECT conversation.workspace_id, COUNT(*) AS unread_count
+			FROM support_conversations conversation
+			JOIN workspace_members member
+			  ON member.workspace_id = conversation.workspace_id
+			 AND member.user_id = ? AND member.status = 'active'
+			LEFT JOIN support_inbox_state_rollouts rollout
+			  ON rollout.workspace_id = conversation.workspace_id
+			WHERE COALESCE(rollout.mode, 'legacy') <> 'v2'
+			  AND conversation.status NOT IN ('resolved', 'spam')
+			  AND NOT (`+conversationResolvedByAICondition("conversation")+`)
+			  AND EXISTS (
+				SELECT 1 FROM support_messages message
+				WHERE message.conversation_id = conversation.id
+				  AND message.deleted_at IS NULL
+				  AND message.system_event_type IS NULL
+				  AND message.is_internal = FALSE
+				  AND message.sender_type = 'customer'
+				  AND message.message_type = 'reply'
+				  AND message.created_at > COALESCE(conversation.team_last_seen_at, '1970-01-01 00:00:00')
+			  )
+			  AND (conversation.mailbox_id IS NULL OR EXISTS (
+				SELECT 1 FROM support_mailboxes mailbox
+				WHERE mailbox.id = conversation.mailbox_id AND mailbox.active = TRUE
+				  AND (
+					EXISTS (SELECT 1 FROM support_mailbox_memberships membership
+						WHERE membership.mailbox_id = mailbox.id AND membership.workspace_member_id = member.id)
+					OR EXISTS (SELECT 1 FROM team_workspace_memberships team_membership
+						WHERE team_membership.team_id = mailbox.linked_team_id AND team_membership.workspace_member_id = member.id)
+				  )
+			  ))
+			GROUP BY conversation.workspace_id`, userID).Scan(&legacyRows).Error; err != nil {
+			return nil, fmt.Errorf("count legacy support unread by workspace: %w", err)
+		}
+		return append(materializedRows, legacyRows...), nil
+	}
 
 	query := r.db.WithContext(ctx).
-		Table("support_conversations sc").
-		Select("sc.workspace_id AS workspace_id, COUNT(*) AS unread_count").
+		Table("support_conversation_user_states personal_state").
+		Select("personal_state.workspace_id AS workspace_id, COUNT(*) AS unread_count").
+		Joins("INNER JOIN support_conversations sc ON sc.id = personal_state.conversation_id AND sc.workspace_id = personal_state.workspace_id").
 		Joins(`INNER JOIN workspace_members wm
-			ON wm.workspace_id = sc.workspace_id
+			ON wm.workspace_id = personal_state.workspace_id
 			AND wm.user_id = ?
 			AND wm.status = 'active'`, userID).
+		Where("personal_state.user_id = ?", userID).
+		Where("(personal_state.unread_customer_message_count > 0 OR personal_state.manually_unread = ?)", true).
 		Where("sc.status NOT IN ?", []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam}).
-		Where("NOT ("+conversationResolvedByAICondition("sc")+")").
-		Where(`(
-			SELECT COUNT(*)
-			FROM support_messages sm
-			WHERE sm.conversation_id = sc.id
-			  AND sm.is_internal = false
-			  AND sm.sender_type = 'customer'
-			  AND sm.message_type = 'reply'
-			  AND sm.created_at > COALESCE(sc.team_last_seen_at, ?)
-		) > 0`, "1970-01-01 00:00:00").
-		Group("sc.workspace_id")
+		Where("NOT (" + conversationResolvedByAICondition("sc") + ")").
+		Where(`sc.mailbox_id IS NULL OR EXISTS (
+			SELECT 1
+			FROM support_mailboxes allowed_mailbox
+			WHERE allowed_mailbox.id = sc.mailbox_id
+			  AND allowed_mailbox.active = true
+			  AND (
+				EXISTS (
+					SELECT 1 FROM support_mailbox_memberships smm
+					WHERE smm.mailbox_id = allowed_mailbox.id
+					  AND smm.workspace_member_id = wm.id
+				)
+				OR EXISTS (
+					SELECT 1 FROM team_workspace_memberships twm
+					WHERE twm.team_id = allowed_mailbox.linked_team_id
+					  AND twm.workspace_member_id = wm.id
+				)
+			  )
+		)`).
+		Group("personal_state.workspace_id")
 
 	var rows []WorkspaceUnreadCount
 	if err := query.Scan(&rows).Error; err != nil {
@@ -363,6 +554,26 @@ func (r *SupportMailboxRepository) CountWorkload(ctx context.Context, workspaceI
 	var count int64
 	if err := query.Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("count support mailbox workload: %w", err)
+	}
+	return int(count), nil
+}
+
+// CountNeedsHumanReply returns the shared customer-response workload for one
+// authorization-safe mailbox scope from the conversation projection.
+func (r *SupportMailboxRepository) CountNeedsHumanReply(ctx context.Context, workspaceID string, mailboxID *string) (int, error) {
+	query := r.db.WithContext(ctx).
+		Table("support_conversations sc").
+		Where("sc.workspace_id = ? AND sc.needs_human_reply = ?", workspaceID, true).
+		Where("sc.status NOT IN ?", []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam})
+	if mailboxID == nil {
+		query = query.Where("sc.mailbox_id IS NULL")
+	} else {
+		query = query.Where("sc.mailbox_id = ?", *mailboxID)
+	}
+
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count support mailbox human attention: %w", err)
 	}
 	return int(count), nil
 }

@@ -79,6 +79,23 @@ func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
 		team_last_seen_at DATETIME,
 		contact_last_seen_at DATETIME,
 		email_unsubscribed BOOLEAN NOT NULL DEFAULT 0,
+		list_last_message_id TEXT,
+		list_last_message_at DATETIME,
+		list_last_message_preview TEXT,
+		list_last_message_is_internal BOOLEAN NOT NULL DEFAULT 0,
+		last_public_message_id TEXT,
+		last_public_message_at DATETIME,
+		last_public_sender_type TEXT,
+		last_public_sender_display_name TEXT,
+		last_customer_message_id TEXT,
+		last_customer_message_at DATETIME,
+		unanswered_customer_message_count INTEGER NOT NULL DEFAULT 0,
+		customer_awaiting_response BOOLEAN NOT NULL DEFAULT 0,
+		needs_human_reply BOOLEAN NOT NULL DEFAULT 0,
+		support_state_version INTEGER NOT NULL DEFAULT 0,
+		visitor_country_code TEXT,
+		visitor_country_name TEXT,
+		view_search_document TEXT,
 		ai_state TEXT,
 		ai_resolved_at DATETIME,
 		ai_escalated_at DATETIME,
@@ -91,6 +108,23 @@ func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`).Error; err != nil {
 		t.Fatalf("create support_conversations: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE support_conversation_user_states (
+		workspace_id TEXT NOT NULL,
+		conversation_id TEXT NOT NULL,
+		user_id TEXT NOT NULL,
+		last_read_customer_message_id TEXT,
+		last_read_customer_message_at DATETIME,
+		unread_customer_message_count INTEGER NOT NULL DEFAULT 0,
+		manually_unread BOOLEAN NOT NULL DEFAULT 0,
+		mentioned_at DATETIME,
+		relevance_mask INTEGER NOT NULL DEFAULT 0,
+		version INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME,
+		updated_at DATETIME,
+		PRIMARY KEY (conversation_id, user_id)
+	)`).Error; err != nil {
+		t.Fatalf("create support_conversation_user_states: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE support_mailboxes (
 		id TEXT PRIMARY KEY,
@@ -208,6 +242,28 @@ func insertMessage(t *testing.T, db *gorm.DB, m model.SupportMessage) {
 	).Error; err != nil {
 		t.Fatalf("insert message %s: %v", m.ID, err)
 	}
+	var conversation model.SupportConversation
+	if err := db.Where("id = ?", m.ConversationID).First(&conversation).Error; err == nil {
+		conversation.ApplyMessageProjection(m)
+		if err := db.Model(&model.SupportConversation{}).Where("id = ?", m.ConversationID).Updates(map[string]any{
+			"list_last_message_id":              conversation.ListLastMessageID,
+			"list_last_message_at":              conversation.ListLastMessageAt,
+			"list_last_message_preview":         conversation.ListLastMessagePreview,
+			"list_last_message_is_internal":     conversation.ListLastMessageIsInternal,
+			"last_public_message_id":            conversation.LastPublicMessageID,
+			"last_public_message_at":            conversation.LastPublicMessageAt,
+			"last_public_sender_type":           conversation.LastPublicSenderType,
+			"last_public_sender_display_name":   conversation.LastPublicSenderDisplayName,
+			"last_customer_message_id":          conversation.LastCustomerMessageID,
+			"last_customer_message_at":          conversation.LastCustomerMessageAt,
+			"unanswered_customer_message_count": conversation.UnansweredCustomerMessageCount,
+			"customer_awaiting_response":        conversation.CustomerAwaitingResponse,
+			"needs_human_reply":                 conversation.NeedsHumanReply,
+			"support_state_version":             conversation.SupportStateVersion,
+		}).Error; err != nil {
+			t.Fatalf("project message %s: %v", m.ID, err)
+		}
+	}
 }
 
 func insertConversation(t *testing.T, db *gorm.DB, c model.SupportConversation) {
@@ -232,10 +288,10 @@ func insertConversation(t *testing.T, db *gorm.DB, c model.SupportConversation) 
 	}
 	if err := db.Exec(`INSERT INTO support_conversations
 		(id, workspace_id, anonymous_id, display_id, subject, status, priority,
-		 channel, source, contact_last_seen_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 channel, source, contact_last_seen_at, support_state_version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.ID, c.WorkspaceID, c.AnonymousID, c.DisplayID, c.Subject, c.Status,
-		c.Priority, c.Channel, c.Source, c.ContactLastSeenAt, c.CreatedAt, c.UpdatedAt,
+		c.Priority, c.Channel, c.Source, c.ContactLastSeenAt, c.SupportStateVersion, c.CreatedAt, c.UpdatedAt,
 	).Error; err != nil {
 		t.Fatalf("insert conversation %s: %v", c.ID, err)
 	}
@@ -503,6 +559,33 @@ func TestSupportConversationRepository_ListIncludesLatestPublicMessageSenderMeta
 	}
 	if got.LastMessageSenderDisplayName == nil || *got.LastMessageSenderDisplayName != displayName {
 		t.Fatalf("last_message_sender_display_name = %v, want %q", got.LastMessageSenderDisplayName, displayName)
+	}
+}
+
+func TestSupportConversationRepository_GetByIDForUserReturnsPersonalUnread(t *testing.T) {
+	db := setupSupportConversationMessageTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	insertConversation(t, db, model.SupportConversation{ID: "personal-detail", WorkspaceID: "w", DisplayID: 1, Subject: "detail", SupportStateVersion: 1})
+	if err := db.Exec(`INSERT INTO support_conversation_user_states
+		(workspace_id, conversation_id, user_id, unread_customer_message_count, manually_unread, relevance_mask, version)
+		VALUES ('w', 'personal-detail', 'u1', 2, 0, ?, 7)`, model.SupportRelevanceAssignee).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	conversation, err := repo.GetByIDForUser(context.Background(), "w", "personal-detail", "u1", "", model.RoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.UnreadCount != 2 || conversation.PersonalStateVersion != 7 {
+		t.Fatalf("personal detail = unread:%d version:%d", conversation.UnreadCount, conversation.PersonalStateVersion)
+	}
+
+	conversation, err = repo.GetByIDForUser(context.Background(), "w", "personal-detail", "u2", "", model.RoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.UnreadCount != 0 {
+		t.Fatalf("other user unread = %d, want 0", conversation.UnreadCount)
 	}
 }
 

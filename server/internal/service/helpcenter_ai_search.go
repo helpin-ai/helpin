@@ -23,6 +23,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -324,7 +325,8 @@ func (s *HelpcenterAISearchService) retrievePublicChunks(ctx context.Context, wo
 	}
 	queryEmbedding := ""
 	if s.embeddingProvider != nil {
-		resp, err := s.embeddingProvider.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+		embedCtx := withAIActionMetering(ctx, workspaceID, aipolicy.ActionHelpcenterSearchEmbed, "helpcenter_search_embed", query, map[string]interface{}{"surface": "helpcenter_search"})
+		resp, err := s.embeddingProvider.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 			Model:  s.embeddingModel,
 			Inputs: []string{query},
 		})

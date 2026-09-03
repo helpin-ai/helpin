@@ -69,11 +69,18 @@ export interface SupportConversation {
   ai_turn_count?: number;
   customer_requested_human_at?: string;
   human_takeover?: boolean | null;
+  list_last_message_id?: string | null;
+  list_last_message_at?: string | null;
   last_message?: string;
   last_message_sender_type?: MessageSenderType | null;
   last_message_sender_display_name?: string | null;
   unread_count?: number;
   awaiting_reply?: boolean;
+  customer_awaiting_response?: boolean;
+  needs_human_reply?: boolean;
+  state_version?: number;
+  personal_state_version?: number;
+  last_customer_message_id?: string | null;
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;
@@ -86,6 +93,19 @@ export interface SupportConversation {
   system_tags?: SupportSystemTag[];
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportConversationUserState {
+  workspace_id: string;
+  conversation_id: string;
+  user_id: string;
+  last_read_customer_message_id?: string | null;
+  last_read_customer_message_at?: string | null;
+  unread_customer_message_count: number;
+  manually_unread: boolean;
+  mentioned_at?: string | null;
+  relevance_mask: number;
+  version: number;
 }
 
 export interface SendSupportConversationTranscriptResponse {
@@ -103,6 +123,10 @@ export interface UnreadStats {
   mine_total?: number;
   waiting_total?: number;
   ai_active_total?: number;
+  inbox_needs_human_reply?: number;
+  mine_needs_human_reply?: number;
+  waiting_needs_human_reply?: number;
+  ai_active_needs_human_reply?: number;
   total?: number;
   my_inbox?: number;
   unassigned?: number;
@@ -117,6 +141,7 @@ export interface SupportInboxScope {
   is_default: boolean;
   total_count?: number;
   unread_count: number;
+  needs_human_reply_count?: number;
   active: boolean;
   linked_team_id?: string | null;
 }
@@ -140,6 +165,7 @@ export interface SupportInboxViewCount {
   view_id: string;
   total_count: number;
   unread_count: number;
+  needs_human_reply_count?: number;
 }
 
 export interface CreateSupportInboxViewRequest {
@@ -629,6 +655,8 @@ export interface SupportMessageInfo {
   cc_emails?: string[];
   bcc_emails?: string[];
   origin: string;
+  external_email?: boolean;
+  captured_via?: string;
   type: string;
   email_delivery_status?: string;
   email_delivery_status_label?: string;
@@ -639,6 +667,7 @@ export interface SupportMessageInfo {
   not_delivered_reason?: string | null;
   read: boolean;
   read_at?: string | null;
+  read_status_label?: string;
   edited: boolean;
   translated: boolean;
   automated: boolean;

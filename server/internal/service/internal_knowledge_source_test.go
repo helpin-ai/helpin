@@ -50,7 +50,7 @@ func TestDocsEmbeddingServiceBatchesAndRetriesEmbeddingRequests(t *testing.T) {
 		inputs[idx] = fmt.Sprintf("chunk-%d", idx)
 	}
 
-	vectors, err := service.createEmbeddingsBatched(context.Background(), inputs)
+	vectors, err := service.createEmbeddingsBatched(context.Background(), "workspace-1", inputs)
 	if err != nil {
 		t.Fatalf("createEmbeddingsBatched returned error: %v", err)
 	}

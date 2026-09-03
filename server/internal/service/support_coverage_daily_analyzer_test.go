@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -15,6 +16,14 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestMergeCoverageWorkspaceIDsPreservesCandidateFairnessAndAddsQueuedWork(t *testing.T) {
+	got := mergeCoverageWorkspaceIDs([]string{"ws-recent", "ws-both"}, []string{"ws-both", "ws-rebuild", ""}, 3)
+	want := []string{"ws-recent", "ws-both", "ws-rebuild"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("merged workspaces = %#v, want %#v", got, want)
+	}
+}
 
 func TestCoverageConversationAnalysisInputExcludesInternalAndParsesAIMetadata(t *testing.T) {
 	flowState := model.SupportConversationFlowStateAssignedToHuman
@@ -257,6 +266,15 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationRejectsMalformedJSON(t 
 	})
 	if err == nil {
 		t.Fatal("expected malformed JSON error")
+	}
+}
+
+func TestSupportCoverageDailyAnalyzer_AnalyzeConversationRejectsPartialRecommendationContract(t *testing.T) {
+	provider := &scriptedSupportPlannerLLM{responses: []llm.ChatResponse{{Content: `{"is_support_query":true,"conversation_type":"support_query","has_gap":true,"customer_need":"Reset password","ai_failure":"Missing steps","recommended_fixes":[{"type":"update_article"}],"confidence":0.9}`}}}
+	analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5")
+	_, _, err := analyzer.AnalyzeConversation(context.Background(), CoverageConversationAnalysisInput{WorkspaceID: "ws-1", ConversationID: "conversation-1", TranscriptHash: "hash-1"})
+	if !errors.Is(err, errCoverageLLMContract) {
+		t.Fatalf("AnalyzeConversation error = %v, want llm contract failure", err)
 	}
 }
 
@@ -585,13 +603,13 @@ func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutp
 		t.Fatalf("seed message: %v", err)
 	}
 
-	created, err := analyzer.runConversationCoverageAnalysis(ctx, "ws-1", "run-1", model.SupportConversation{
+	created, err := analyzer.runConversationCoverageAnalysis(ctx, "ws-1", "run-1", "", model.SupportConversation{
 		ID:          "conversation-no-human",
 		WorkspaceID: "ws-1",
 		Subject:     "Billing update",
 		Status:      model.SupportConversationStatusOpen,
 		UpdatedAt:   base,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("runConversationCoverageAnalysis: %v", err)
 	}
@@ -642,7 +660,7 @@ func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutp
 	}
 }
 
-func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesGapEvidenceRecommendationsAndSuggestion(t *testing.T) {
+func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesActionableRecommendationsWithoutDrafts(t *testing.T) {
 	db := setupCoverageFindingUpsertTestDB(t)
 	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	coverageRepo := repository.NewSupportCoverageRepository(db)
@@ -732,16 +750,14 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesGapEvidenceRecommendat
 	if len(recommendations) != 2 {
 		t.Fatalf("expected two recommendations, got %+v", recommendations)
 	}
-	if recommendations[0].SuggestionID == nil || *recommendations[0].SuggestionID == "" {
-		t.Fatalf("expected docs recommendation to link a suggestion: %+v", recommendations[0])
+	for _, recommendation := range recommendations {
+		if recommendation.SuggestionID != nil {
+			t.Fatalf("scheduled recommendation must not create/link a docs draft: %+v", recommendation)
+		}
 	}
-
-	var suggestion model.SupportGapSuggestion
-	if err := db.First(&suggestion, "id = ?", *recommendations[0].SuggestionID).Error; err != nil {
-		t.Fatalf("load suggestion: %v", err)
-	}
-	if !suggestion.IsActive || suggestion.TargetDocumentID == nil || *suggestion.TargetDocumentID != "doc-1" {
-		t.Fatalf("unexpected suggestion: %+v", suggestion)
+	var suggestionCount int64
+	if err := db.Model(&model.SupportGapSuggestion{}).Count(&suggestionCount).Error; err != nil || suggestionCount != 0 {
+		t.Fatalf("scheduled suggestion count = %d, %v; want 0", suggestionCount, err)
 	}
 
 	var analysis model.SupportCoverageConversationAnalysis

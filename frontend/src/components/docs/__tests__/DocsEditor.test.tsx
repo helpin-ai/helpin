@@ -376,6 +376,62 @@ describe('DocsEditor', () => {
     expect(onSave).toHaveBeenCalledTimes(1)
   })
 
+  it('does not replace newer local edits with an acknowledgement of an older save', async () => {
+    const initialContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'alpha beta gamma' }] }] }
+    const submittedContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'alpha beta' }] }] }
+    const acknowledgedContent = { content: [{ content: [{ text: 'alpha beta', type: 'text' }], type: 'paragraph' }], type: 'doc' }
+    const newerLocalContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'alpha' }] }] }
+    let resolveSave: (() => void) | undefined
+    const onSave = vi.fn(() => new Promise<void>((resolve) => { resolveSave = resolve }))
+
+    testState.editorBundle?.setCurrentJson(initialContent)
+    await act(async () => {
+      root.render(<DocsEditor initialContent={initialContent} onSave={onSave} autoSaveMs={25} />)
+    })
+    await markEditorReady()
+
+    testState.editorBundle?.setCurrentJson(submittedContent)
+    await act(async () => {
+      testState.editorOptions?.onUpdate?.({ editor: testState.editorBundle?.editor })
+      vi.advanceTimersByTime(25)
+    })
+    expect(onSave).toHaveBeenCalledWith(submittedContent)
+
+    testState.editorBundle?.setCurrentJson(newerLocalContent)
+    await act(async () => {
+      testState.editorOptions?.onUpdate?.({ editor: testState.editorBundle?.editor })
+      root.render(<DocsEditor initialContent={acknowledgedContent} onSave={onSave} autoSaveMs={25} />)
+    })
+
+    expect(testState.editorBundle?.editor.commands.setContent).not.toHaveBeenCalled()
+
+    await act(async () => resolveSave?.())
+    await act(async () => vi.advanceTimersByTime(25))
+
+    expect(onSave).toHaveBeenNthCalledWith(2, newerLocalContent)
+    await act(async () => resolveSave?.())
+  })
+
+  it('still applies incoming content that was not submitted by this editor', async () => {
+    const initialContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'initial' }] }] }
+    const localContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'local' }] }] }
+    const externalContent = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'restored version' }] }] }
+    const onSave = vi.fn().mockResolvedValue(undefined)
+
+    testState.editorBundle?.setCurrentJson(initialContent)
+    await act(async () => {
+      root.render(<DocsEditor initialContent={initialContent} onSave={onSave} />)
+    })
+    await markEditorReady()
+
+    testState.editorBundle?.setCurrentJson(localContent)
+    await act(async () => {
+      root.render(<DocsEditor initialContent={externalContent} onSave={onSave} />)
+    })
+
+    expect(testState.editorBundle?.editor.commands.setContent).toHaveBeenCalledWith(externalContent)
+  })
+
   it('does not scan the document for imported images on ordinary editor updates', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const content = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'steady' }] }] }

@@ -11,7 +11,9 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -124,57 +126,43 @@ var ErrAIUsageMeteringRequired = errors.New("AI usage metering context is requir
 // AIUsageMeteringContext marks one LLM call for usage metering.
 type AIUsageMeteringContext struct {
 	WorkspaceID    string
+	ActionKey      string
 	FeatureKey     string
 	OperationKey   string
 	IdempotencyKey string
+	Attempt        int
 	Metadata       map[string]interface{}
 }
 
 // MeteredLLMProvider wraps an LLM provider and charges AI usage for calls that
 // opt in through WithAIUsageMetering.
 type MeteredLLMProvider struct {
-	base  llm.Provider
-	meter *AIUsageMeter
+	base     llm.Provider
+	meter    *AIUsageMeter
+	registry *aipolicy.Registry
+	audit    aipolicy.ExecutionAudit
 }
 
-var aiUsageFeatures = map[string]AIUsageFeatureDefinition{
-	BillingFeatureAIRouting:               {FeatureKey: BillingFeatureAIRouting, Label: "AI triage and routing", Category: "Support AI", FloorUnits: 2, Chargeable: true},
-	BillingFeatureCoverageGapAnalysis:     {FeatureKey: BillingFeatureCoverageGapAnalysis, Label: "Coverage gap analysis", Category: "Docs AI", FloorUnits: 2, Chargeable: true},
-	BillingFeatureCRMSignalDetection:      {FeatureKey: BillingFeatureCRMSignalDetection, Label: "CRM signal detection", Category: "CRM AI", FloorUnits: 3, Chargeable: true},
-	BillingFeatureSupportReplyRewrite:     {FeatureKey: BillingFeatureSupportReplyRewrite, Label: "Support reply rewrite", Category: "Support AI", FloorUnits: 4, Chargeable: true},
-	BillingFeaturePMCommentRewrite:        {FeatureKey: BillingFeaturePMCommentRewrite, Label: "Project comment rewrite", Category: "Project AI", FloorUnits: 4, Chargeable: true},
-	BillingFeatureCRMEmailRewrite:         {FeatureKey: BillingFeatureCRMEmailRewrite, Label: "CRM email rewrite", Category: "CRM AI", FloorUnits: 4, Chargeable: true},
-	BillingFeatureDealAutomationInference: {FeatureKey: BillingFeatureDealAutomationInference, Label: "Deal automation inference", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
-	BillingFeatureMeetingIntelligence:     {FeatureKey: BillingFeatureMeetingIntelligence, Label: "Meeting intelligence", Category: "CRM AI", FloorUnits: 8, Chargeable: true},
-	BillingFeatureCRMSummary:              {FeatureKey: BillingFeatureCRMSummary, Label: "CRM summary", Category: "CRM AI", FloorUnits: 6, Chargeable: true},
-	BillingFeatureTaskStandingBrief:       {FeatureKey: BillingFeatureTaskStandingBrief, Label: "Task standing brief", Category: "Project AI", FloorUnits: 6, Chargeable: true},
-	BillingFeatureSupportAIReply:          {FeatureKey: BillingFeatureSupportAIReply, Label: "Support reply draft", Category: "Support AI", FloorUnits: 8, Chargeable: true},
-	BillingFeatureSupportTaskDraft:        {FeatureKey: BillingFeatureSupportTaskDraft, Label: "Support task draft", Category: "Support AI", FloorUnits: 8, Chargeable: true},
-	BillingFeatureDocsGeneration:          {FeatureKey: BillingFeatureDocsGeneration, Label: "Document generation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
-	BillingFeatureDocsArticleTranslation:  {FeatureKey: BillingFeatureDocsArticleTranslation, Label: "Help article translation", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
-	BillingFeatureDocsArticleGeneration:   {FeatureKey: BillingFeatureDocsArticleGeneration, Label: "Help article generation", Category: "Docs AI", FloorUnits: 20, Chargeable: true},
-	BillingFeatureDocsImportConversion:    {FeatureKey: BillingFeatureDocsImportConversion, Label: "Help article import formatting", Category: "Docs AI", FloorUnits: 15, Chargeable: true},
-	BillingFeatureHelpcenterAnswer:        {FeatureKey: BillingFeatureHelpcenterAnswer, Label: "Help-center answer generation", Category: "Docs AI", FloorUnits: 2, Chargeable: true},
-	BillingFeatureCRMAction:               {FeatureKey: BillingFeatureCRMAction, Label: "CRM / deal action", Category: "CRM AI", FloorUnits: 5, Chargeable: true},
-	BillingFeatureBuiltInLightAgentRun:    {FeatureKey: BillingFeatureBuiltInLightAgentRun, Label: "Built-in agent run", Category: "Agents", FloorUnits: 40, Chargeable: true},
-	BillingFeatureAskChat:                 {FeatureKey: BillingFeatureAskChat, Label: "Ask Chat", Category: "Agents", FloorUnits: 40, Chargeable: true},
-	BillingFeaturePlanningRun:             {FeatureKey: BillingFeaturePlanningRun, Label: "Planning run", Category: "Agents", FloorUnits: 80, Chargeable: true},
-	BillingFeatureScribeRun:               {FeatureKey: BillingFeatureScribeRun, Label: "Scribe task planning run", Category: "Agents", FloorUnits: 50, Chargeable: true},
-	BillingFeatureMiraRun:                 {FeatureKey: BillingFeatureMiraRun, Label: "Mira marketing run", Category: "Agents", FloorUnits: 50, Chargeable: true},
-	BillingFeatureQuillRun:                {FeatureKey: BillingFeatureQuillRun, Label: "Quill documentation run", Category: "Agents", FloorUnits: 60, Chargeable: true},
-	BillingFeatureCustomAgentRun:          {FeatureKey: BillingFeatureCustomAgentRun, Label: "Custom agent run", Category: "Agents", FloorUnits: 60, Chargeable: true},
-	BillingFeatureAtlasRun:                {FeatureKey: BillingFeatureAtlasRun, Label: "Atlas epic planning run", Category: "Agents", FloorUnits: 80, Chargeable: true},
-	BillingFeatureCodingRun:               {FeatureKey: BillingFeatureCodingRun, Label: "Coding / review run", Category: "Agents", FloorUnits: 100, Chargeable: true},
-	BillingFeatureForgeRun:                {FeatureKey: BillingFeatureForgeRun, Label: "Forge coding run", Category: "Agents", FloorUnits: 100, Chargeable: true},
-	BillingFeatureLensRun:                 {FeatureKey: BillingFeatureLensRun, Label: "Lens review run", Category: "Agents", FloorUnits: 100, Chargeable: true},
-	BillingFeatureCustomCodingReviewRun:   {FeatureKey: BillingFeatureCustomCodingReviewRun, Label: "Custom coding/review run", Category: "Agents", FloorUnits: 100, Chargeable: true},
-	BillingFeatureCustomAgentDraft:        {FeatureKey: BillingFeatureCustomAgentDraft, Label: "Custom agent draft", Category: "Setup", Chargeable: false},
-	BillingFeatureAutomationSetup:         {FeatureKey: BillingFeatureAutomationSetup, Label: "Automation setup", Category: "Setup", Chargeable: false},
-	BillingFeatureFlowSetup:               {FeatureKey: BillingFeatureFlowSetup, Label: "Flow setup", Category: "Setup", Chargeable: false},
-	BillingFeatureAgentPromptImprovement:  {FeatureKey: BillingFeatureAgentPromptImprovement, Label: "Agent prompt improvement", Category: "Setup", Chargeable: false},
-	BillingFeatureDataImportSetup:         {FeatureKey: BillingFeatureDataImportSetup, Label: "Data import setup", Category: "Setup", Chargeable: false},
-	BillingFeatureCompanyProductContext:   {FeatureKey: BillingFeatureCompanyProductContext, Label: "Company/product context generation", Category: "Setup", Chargeable: false},
-	BillingFeatureDockChatTitle:           {FeatureKey: BillingFeatureDockChatTitle, Label: "Dock chat title", Category: "Agents", Chargeable: false},
+var aiUsageFeatures = aiUsageFeaturesFromRegistry(aipolicy.DefaultRegistry())
+
+func aiUsageFeaturesFromRegistry(registry *aipolicy.Registry) map[string]AIUsageFeatureDefinition {
+	features := make(map[string]AIUsageFeatureDefinition)
+	for _, action := range registry.Actions() {
+		_, exists := features[action.FeatureKey]
+		// The feature-level action owns the customer-facing label/category.
+		// Specialized sub-actions only supply execution policy and audit detail.
+		if exists && !strings.HasPrefix(action.Key, "feature.") {
+			continue
+		}
+		features[action.FeatureKey] = AIUsageFeatureDefinition{
+			FeatureKey: action.FeatureKey,
+			Label:      action.Label,
+			Category:   string(action.Category),
+			FloorUnits: action.FloorUnits,
+			Chargeable: action.Chargeable,
+		}
+	}
+	return features
 }
 
 func NewAIUsageMeter(consumer aiUsageCreditConsumer) *AIUsageMeter {
@@ -191,6 +179,14 @@ func NewMeteredLLMProvider(base llm.Provider, meter *AIUsageMeter) llm.Provider 
 		return base
 	}
 	return &MeteredLLMProvider{base: base, meter: meter}
+}
+
+// NewGovernedLLMProvider wraps chat execution with policy validation, usage metering, and audit.
+func NewGovernedLLMProvider(base llm.Provider, meter *AIUsageMeter, registry *aipolicy.Registry, audit aipolicy.ExecutionAudit) llm.Provider {
+	if base == nil {
+		return nil
+	}
+	return &MeteredLLMProvider{base: base, meter: meter, registry: registry, audit: audit}
 }
 
 func WithAIUsageMetering(ctx context.Context, input AIUsageMeteringContext) context.Context {
@@ -226,8 +222,53 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 	if !ok && !AIUsageMeteringExemptFromContext(ctx) {
 		return nil, ErrAIUsageMeteringRequired
 	}
+	var auditExecution *model.AIActionExecution
+	if p.registry != nil {
+		if !ok {
+			return nil, aipolicy.ErrInvalidExecutionContext
+		}
+		action, err := aipolicy.ResolveExecution(p.registry, aipolicy.ExecutionContext{
+			WorkspaceID: metering.WorkspaceID, ActionKey: metering.ActionKey,
+			FeatureKey: metering.FeatureKey, IdempotencyKey: metering.IdempotencyKey,
+			Attempt: metering.Attempt, Metadata: metering.Metadata,
+		}, aipolicy.Route{Provider: req.Provider, Model: req.Model})
+		if err != nil {
+			return nil, err
+		}
+		if req.Provider == "" {
+			req.Provider = action.DefaultProvider
+		}
+		if req.Model == "" {
+			req.Model = action.DefaultModel
+		}
+		if p.audit != nil {
+			attempt := metering.Attempt
+			if attempt <= 0 {
+				attempt = 1
+			}
+			auditExecution, err = p.audit.Start(ctx, &model.AIActionExecution{
+				WorkspaceID: metering.WorkspaceID, ActionKey: action.Key,
+				PolicyVersion: action.PolicyVersion, FeatureKey: action.FeatureKey,
+				Category: string(action.Category), Origin: action.Origin,
+				Modality: string(action.Modality), Provider: req.Provider, Model: req.Model,
+				IdempotencyKey: metering.IdempotencyKey, Attempt: attempt,
+				Status: model.AIActionExecutionRunning, Metadata: mustJSONMetadata(metering.Metadata),
+				StartedAt: time.Now().UTC(),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("start AI action audit: %w", err)
+			}
+		}
+	}
+	if p.meter == nil {
+		resp, err := p.base.ChatCompletion(ctx, req)
+		p.finishAIActionAudit(ctx, auditExecution, resp, err)
+		return resp, err
+	}
 	if ok && p.meter.usage != nil {
-		return p.chatCompletionTokenPriced(ctx, req, metering)
+		resp, err := p.chatCompletionTokenPriced(ctx, req, metering)
+		p.finishAIActionAudit(ctx, auditExecution, resp, err)
+		return resp, err
 	}
 	if ok {
 		if err := p.meter.Preflight(ctx, AIUsageMeterInput{
@@ -242,6 +283,7 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 
 	resp, err := p.base.ChatCompletion(ctx, req)
 	if err != nil || resp == nil {
+		p.finishAIActionAudit(ctx, auditExecution, resp, err)
 		return resp, err
 	}
 	if !ok {
@@ -258,9 +300,65 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 		CacheWriteTokens:  resp.TokensUsed.CacheWriteTokens,
 		Metadata:          metering.Metadata,
 	}); err != nil {
+		p.finishAIActionAudit(ctx, auditExecution, resp, err)
 		return nil, err
 	}
+	p.finishAIActionAudit(ctx, auditExecution, resp, nil)
 	return resp, nil
+}
+
+func (p *MeteredLLMProvider) finishAIActionAudit(ctx context.Context, execution *model.AIActionExecution, resp *llm.ChatResponse, callErr error) {
+	if p == nil || p.audit == nil || execution == nil {
+		return
+	}
+	result := aipolicy.ExecutionResult{Status: model.AIActionExecutionSucceeded, CompletedAt: time.Now().UTC()}
+	if resp != nil {
+		result.InputTokens = resp.TokensUsed.InputTokens
+		result.OutputTokens = resp.TokensUsed.OutputTokens
+		result.ReasoningTokens = resp.TokensUsed.ReasoningTokens
+		result.CachedInputTokens = resp.TokensUsed.CachedInputTokens
+	}
+	if callErr != nil {
+		result.Status = model.AIActionExecutionFailed
+		result.FailureClass = aiActionFailureClass(callErr)
+		result.FailureMessage = sanitizeAIActionFailure(callErr)
+	}
+	if err := p.audit.Finish(ctx, execution.ID, result); err != nil {
+		slog.ErrorContext(ctx, "finish AI action audit", "execution_id", execution.ID, "error", err)
+	}
+}
+
+func mustJSONMetadata(metadata map[string]interface{}) json.RawMessage {
+	if len(metadata) == 0 {
+		return []byte("{}")
+	}
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		return []byte("{}")
+	}
+	return raw
+}
+
+func aiActionFailureClass(err error) string {
+	if errors.Is(err, model.ErrPricingConfigurationMissing) {
+		return "configuration"
+	}
+	var providerErr *llm.ProviderError
+	if errors.As(err, &providerErr) {
+		return "llm_provider"
+	}
+	return "llm_preflight"
+}
+
+func sanitizeAIActionFailure(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	if len(message) > 500 {
+		message = message[:500]
+	}
+	return message
 }
 
 func (p *MeteredLLMProvider) chatCompletionTokenPriced(ctx context.Context, req llm.ChatRequest, input AIUsageMeteringContext) (*llm.ChatResponse, error) {

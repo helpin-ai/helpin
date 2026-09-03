@@ -6,9 +6,24 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestCoverageAIUsageFeatureComesFromSupportAIPolicy(t *testing.T) {
+	feature, ok := AIUsageFeature(BillingFeatureCoverageGapAnalysis)
+	if !ok {
+		t.Fatal("coverage usage feature missing")
+	}
+	if feature.Category != string(aipolicy.CategorySupportAI) {
+		t.Fatalf("coverage category = %q, want %q", feature.Category, aipolicy.CategorySupportAI)
+	}
+	action, ok := aipolicy.DefaultRegistry().Lookup(aipolicy.ActionSupportCoverageAnalyze)
+	if !ok || action.FeatureKey != feature.FeatureKey || action.FloorUnits != feature.FloorUnits {
+		t.Fatalf("coverage action/feature drift: action=%+v feature=%+v", action, feature)
+	}
+}
 
 func TestCalculateAIUsageUnitsUsesSixXOutputAndReasoning(t *testing.T) {
 	units := CalculateAIUsageUnits(AIUsageCalculation{

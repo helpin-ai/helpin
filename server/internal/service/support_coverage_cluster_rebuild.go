@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -378,7 +379,14 @@ func (s *SupportCoverageClusterRebuildService) ensureGapEmbeddings(ctx context.C
 	for _, item := range pending {
 		inputs = append(inputs, item.text)
 	}
-	resp, err := s.embedder.CreateEmbeddings(ctx, llm.EmbeddingRequest{
+	workspaceID := candidates[pending[0].index].Gap.WorkspaceID
+	embedCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
+		WorkspaceID: workspaceID, ActionKey: aipolicy.ActionSupportCoverageEmbed,
+		FeatureKey:     BillingFeatureCoverageGapAnalysis,
+		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, "coverage_cluster_rebuild_embed", aiUsageStableHash(strings.Join(inputs, "\n"))),
+		Metadata:       map[string]interface{}{"surface": "coverage_cluster_rebuild"},
+	})
+	resp, err := s.embedder.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
 		Provider: coverageEmbeddingProviderName,
 		Model:    modelName,
 		Inputs:   inputs,

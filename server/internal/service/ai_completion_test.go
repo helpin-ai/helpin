@@ -6,10 +6,40 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestAICompletionServiceGovernanceRequiresAndAuditsCoverageAction(t *testing.T) {
+	provider := &scriptedAICompletionProvider{}
+	audit := &gatewayFakeAudit{}
+	service := newTestAICompletionService(t, provider, &fakeAIUsageStore{}).
+		SetGovernance(aipolicy.DefaultRegistry(), audit)
+	request := AICompletionRequest{
+		WorkspaceID: "ws-1", FeatureKey: BillingFeatureCoverageGapAnalysis,
+		IdempotencyKey: "coverage:1", Chat: llm.ChatRequest{MaxTokens: 100},
+	}
+	if _, err := service.Complete(context.Background(), request); !errors.Is(err, aipolicy.ErrActionRequired) {
+		t.Fatalf("missing action error = %v, want ErrActionRequired", err)
+	}
+	if len(provider.requests) != 0 {
+		t.Fatalf("provider requests = %d, want 0", len(provider.requests))
+	}
+
+	request.ActionKey = aipolicy.ActionSupportCoverageAnalyze
+	if _, err := service.Complete(context.Background(), request); err != nil {
+		t.Fatalf("Complete governed coverage: %v", err)
+	}
+	if len(audit.started) != 1 || len(audit.finished) != 1 {
+		t.Fatalf("audit start/finish = %d/%d, want 1/1", len(audit.started), len(audit.finished))
+	}
+	if audit.started[0].Category != string(aipolicy.CategorySupportAI) ||
+		audit.started[0].Origin != "coverage" {
+		t.Fatalf("coverage audit = %+v", audit.started[0])
+	}
+}
 
 type scriptedAICompletionProvider struct {
 	requests  []llm.ChatRequest

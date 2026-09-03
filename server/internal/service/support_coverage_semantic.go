@@ -116,20 +116,29 @@ func coverageJoinEmbeddingParts(parts ...string) string {
 }
 
 func IsMeaningfulCoverageSearchQuery(query string) bool {
+	return MeaningfulCoverageSearchTokens(query) >= 1
+}
+
+func IsEligibleCoverageWidgetSignal(query string) bool {
+	return MeaningfulCoverageSearchTokens(query) >= 3
+}
+
+func MeaningfulCoverageSearchTokens(query string) int {
 	query = normalizeForCluster(query)
 	if utf8.RuneCountInString(query) < 3 {
-		return false
+		return 0
 	}
 	tokens := strings.Fields(query)
 	if len(tokens) == 0 {
-		return false
+		return 0
 	}
+	meaningful := 0
 	for _, token := range tokens {
 		if utf8.RuneCountInString(token) >= 3 && !coverageSearchObjectStopword(token) {
-			return true
+			meaningful++
 		}
 	}
-	return false
+	return meaningful
 }
 
 func coverageNoSearchResultObject(title string) (string, bool) {
@@ -194,7 +203,7 @@ func coverageSearchObjectStopword(token string) bool {
 	// stopwords: they only filter no-search query objects, not all coverage
 	// gap normalization.
 	switch token {
-	case "the", "and", "for", "with", "how", "what", "why", "can", "use", "using", "into":
+	case "the", "and", "for", "with", "how", "what", "why", "can", "use", "using", "into", "do", "does", "did", "you", "your", "our", "my":
 		return true
 	default:
 		return false

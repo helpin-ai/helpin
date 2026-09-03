@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +15,23 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
+
+type markConversationReadRequest struct {
+	ThroughMessageID string `json:"through_message_id"`
+}
+
+func decodeMarkConversationReadRequest(reader io.Reader) (markConversationReadRequest, error) {
+	var request markConversationReadRequest
+	err := json.NewDecoder(reader).Decode(&request)
+	if errors.Is(err, io.EOF) {
+		return request, nil
+	}
+	if err != nil {
+		return request, err
+	}
+	request.ThroughMessageID = strings.TrimSpace(request.ThroughMessageID)
+	return request, nil
+}
 
 // SupportInboxHandler handles internal support HTTP endpoints.
 type SupportInboxHandler struct {
@@ -602,11 +621,17 @@ func (h *SupportInboxHandler) MarkConversationRead(w http.ResponseWriter, r *htt
 	conversationID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())
 
-	if err := h.supportService.MarkConversationRead(r.Context(), workspaceID, conversationID, userID); err != nil {
+	request, err := decodeMarkConversationReadRequest(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	state, err := h.supportService.MarkConversationReadThrough(r.Context(), workspaceID, conversationID, userID, request.ThroughMessageID)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, state)
 }
 
 // MarkConversationUnread handles POST /api/support/inbox/conversations/{id}/unread.
@@ -615,11 +640,12 @@ func (h *SupportInboxHandler) MarkConversationUnread(w http.ResponseWriter, r *h
 	conversationID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())
 
-	if err := h.supportService.MarkConversationUnread(r.Context(), workspaceID, conversationID, userID); err != nil {
+	state, err := h.supportService.MarkConversationUnreadForUser(r.Context(), workspaceID, conversationID, userID)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, state)
 }
 
 // UpdateConversationSubject handles PUT /api/support/inbox/conversations/{id}/subject.

@@ -36,11 +36,17 @@ export type ConversationRowVisualState = {
  * conversation objects satisfy it.
  */
 export function getConversationRowVisualState(
-  conversation: { unread_count?: number | null; awaiting_reply?: boolean; status: string },
+  conversation: {
+    unread_count?: number | null;
+    awaiting_reply?: boolean;
+    customer_awaiting_response?: boolean;
+    status: string;
+  },
   isSelected = false,
 ): ConversationRowVisualState {
   const isUnread = (conversation.unread_count ?? 0) > 0;
-  const needsTeamAction = conversation.status === 'open' && (isUnread || Boolean(conversation.awaiting_reply));
+  const customerAwaitingResponse = conversation.customer_awaiting_response ?? conversation.awaiting_reply ?? false;
+  const needsTeamAction = conversation.status === 'open' && customerAwaitingResponse;
   return {
     isUnread,
     needsTeamAction,
