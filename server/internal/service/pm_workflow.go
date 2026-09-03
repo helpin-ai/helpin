@@ -214,16 +214,16 @@ func (s *PMWorkflowService) Delete(ctx context.Context, id string) error {
 	if len(all) <= 1 {
 		return fmt.Errorf("cannot delete the last workflow")
 	}
-	var totalStories int64
+	var totalTasks int64
 	for _, state := range wf.States {
 		count, err := s.taskRepo.CountByWorkflowState(ctx, state.ID)
 		if err != nil {
 			return err
 		}
-		totalStories += count
+		totalTasks += count
 	}
-	if totalStories > 0 {
-		return fmt.Errorf("cannot delete workflow with %d active stories — move or archive them first", totalStories)
+	if totalTasks > 0 {
+		return fmt.Errorf("cannot delete workflow with %d active tasks — move or archive them first", totalTasks)
 	}
 	if err := s.workflowRepo.Delete(ctx, id); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete workflow", "error", err, "workflow_id", id)
@@ -398,7 +398,7 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 	return nil, fmt.Errorf("state not found")
 }
 
-// DeleteState deletes a state if no active stories and workflow remains valid.
+// DeleteState deletes a state if no active tasks and workflow remains valid.
 func (s *PMWorkflowService) DeleteState(ctx context.Context, workflowID, stateID string) error {
 	wf, err := s.workflowRepo.GetByID(ctx, workflowID)
 	if err != nil {
@@ -413,7 +413,7 @@ func (s *PMWorkflowService) DeleteState(ctx context.Context, workflowID, stateID
 		return err
 	}
 	if count > 0 {
-		return fmt.Errorf("cannot delete state with active stories")
+		return fmt.Errorf("cannot delete state with active tasks")
 	}
 
 	remaining := make([]model.PMWorkflowState, 0, len(wf.States)-1)
@@ -551,8 +551,8 @@ func (s *PMWorkflowService) CopyToTeam(ctx context.Context, sourceWorkflowID, ta
 	}
 	s.logger.InfoContext(ctx, "workflow copied to team", "source_workflow_id", sourceWorkflowID, "new_workflow_id", result.Workflow.ID, "team_id", targetTeamID)
 
-	// Migrate existing team stories from source workflow to new workflow.
-	s.migrateTeamStories(ctx, targetTeamID, source, result)
+	// Migrate existing team tasks from source workflow to new workflow.
+	s.migrateTeamTasks(ctx, targetTeamID, source, result)
 
 	return result, nil
 }
@@ -590,8 +590,8 @@ func (s *PMWorkflowService) SeedTeamWorkflow(ctx context.Context, workspaceID, t
 			}
 			s.logger.InfoContext(ctx, "team workflow seeded from default", "team_id", teamID, "workspace_id", workspaceID)
 
-			// Migrate existing team stories from old workflow to new workflow.
-			s.migrateTeamStories(ctx, teamID, defaultWf, newWf)
+			// Migrate existing team tasks from old workflow to new workflow.
+			s.migrateTeamTasks(ctx, teamID, defaultWf, newWf)
 			return nil
 		}
 	}
@@ -611,18 +611,18 @@ func (s *PMWorkflowService) SeedTeamWorkflow(ctx context.Context, workspaceID, t
 	return nil
 }
 
-// migrateTeamStories remaps stories from an old workflow to a new one by matching states.
-func (s *PMWorkflowService) migrateTeamStories(ctx context.Context, teamID string, oldWf, newWf *model.WorkflowWithStates) {
+// migrateTeamTasks remaps tasks from an old workflow to a new one by matching states.
+func (s *PMWorkflowService) migrateTeamTasks(ctx context.Context, teamID string, oldWf, newWf *model.WorkflowWithStates) {
 	stateMap := buildStateMapping(oldWf.States, newWf.States, newWf.Workflow.DefaultStateID)
-	migrated, err := s.taskRepo.MigrateStoriesToWorkflow(ctx, teamID, oldWf.Workflow.ID, newWf.Workflow.ID, stateMap)
+	migrated, err := s.taskRepo.MigrateTasksToWorkflow(ctx, teamID, oldWf.Workflow.ID, newWf.Workflow.ID, stateMap)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to migrate team stories to new workflow",
+		s.logger.ErrorContext(ctx, "failed to migrate team tasks to new workflow",
 			"error", err, "team_id", teamID,
 			"old_workflow_id", oldWf.Workflow.ID, "new_workflow_id", newWf.Workflow.ID)
 		return
 	}
 	if migrated > 0 {
-		s.logger.InfoContext(ctx, "migrated team stories to new workflow",
+		s.logger.InfoContext(ctx, "migrated team tasks to new workflow",
 			"team_id", teamID, "count", migrated,
 			"old_workflow_id", oldWf.Workflow.ID, "new_workflow_id", newWf.Workflow.ID)
 	}

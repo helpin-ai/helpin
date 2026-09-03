@@ -181,7 +181,7 @@ func (h *PMSprintHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "sprint deleted"})
 }
 
-// ListTasks handles GET /api/pm/sprints/{id}/stories.
+// ListTasks handles GET /api/pm/sprints/{id}/tasks.
 func (h *PMSprintHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tasks, err := h.sprintService.ListTasks(r.Context(), id)

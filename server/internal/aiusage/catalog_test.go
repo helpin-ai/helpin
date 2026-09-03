@@ -85,6 +85,26 @@ func TestCatalogResolvesGLM53FlashExactoRoute(t *testing.T) {
 	}
 }
 
+func TestCatalogResolveDefaultPrefersExactDeepSeekNitroRoute(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog() error = %v", err)
+	}
+
+	resolved, err := catalog.ResolveDefault(
+		"openrouter",
+		"deepseek/deepseek-v4-flash-0731:nitro",
+		"standard",
+	)
+	if err != nil {
+		t.Fatalf("ResolveDefault() error = %v", err)
+	}
+	if resolved.CanonicalModel != "deepseek-v4-flash-0731" ||
+		resolved.Route != "deepseek/deepseek-v4-flash-0731:nitro" {
+		t.Fatalf("ResolveDefault() = %#v, want exact Nitro route", resolved)
+	}
+}
+
 func TestCatalogResolvesClaudeSonnet5Route(t *testing.T) {
 	catalog, err := LoadCatalog()
 	if err != nil {
@@ -139,8 +159,8 @@ func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
 	}
 
 	pricing := catalog.PublicSnapshot()
-	if pricing.PricingVersion != "2026-09-02" {
-		t.Errorf("pricing version = %q, want 2026-09-02", pricing.PricingVersion)
+	if pricing.PricingVersion != "2026-09-03" {
+		t.Errorf("pricing version = %q, want 2026-09-03", pricing.PricingVersion)
 	}
 
 	wantAllowances := map[string]int64{

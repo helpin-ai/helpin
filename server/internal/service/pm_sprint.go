@@ -580,7 +580,7 @@ func (s *PMSprintService) ListPreviewTasksPage(ctx context.Context, sprintID str
 	return s.sprintRepo.ListPreviewTasksPage(ctx, sprintID, pagination)
 }
 
-// ComputeStats returns computed story/point stats for a sprint.
+// ComputeStats returns computed task/point stats for a sprint.
 func (s *PMSprintService) ComputeStats(ctx context.Context, sprintID string) (model.PMSprintStats, error) {
 	return s.sprintRepo.ComputeStats(ctx, sprintID)
 }

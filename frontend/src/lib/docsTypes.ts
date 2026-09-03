@@ -62,7 +62,7 @@ export interface UpdateDocsAPIReferenceRequest {
 export type SpaceVisibility = 'workspace_wide' | 'team_only';
 export type VersionType = 'manual' | 'auto' | 'publish' | 'revert' | 'proposal_apply';
 export type LinkContext = 'attached' | 'mentioned' | 'created_from' | 'linked_in_content';
-export type LinkedObjectType = 'epic' | 'task' | 'story' | 'project' | 'objective' | 'sprint' | 'support_conversation' | 'deal' | 'contact' | 'company';
+export type LinkedObjectType = 'epic' | 'task' | 'project' | 'objective' | 'sprint' | 'support_conversation' | 'deal' | 'contact' | 'company';
 
 // ─── Core models ────────────────────────────────────────────────────────────
 

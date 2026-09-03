@@ -965,8 +965,8 @@ type CreateMessageRequest struct {
 	BCCEmails       []string `json:"bcc_emails,omitempty"`
 }
 
-// LinkStoryRequest links a conversation to a task.
-type LinkStoryRequest struct {
+// LinkTaskRequest links a conversation to a task.
+type LinkTaskRequest struct {
 	TaskID string `json:"task_id"`
 }
 

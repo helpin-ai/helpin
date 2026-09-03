@@ -77,7 +77,7 @@ func (s *GitService) FinalizeDelegatedRunDelivery(ctx context.Context, run *mode
 // pull request can still be ensured from the run's own repository fields.
 func (s *GitService) delegatedRunDeliveryTargets(ctx context.Context, run *model.AgentRun) (*model.TaskDeliveryTarget, *model.EpicDeliveryTarget, error) {
 	switch run.TargetType {
-	case "task", "story":
+	case "task":
 		taskID := delegatedRunTaskID(run)
 		if taskID == "" || s.deliveryRepo == nil {
 			return nil, nil, nil
@@ -380,7 +380,7 @@ func (s *GitService) markDelegatedTaskDeliveryPRFailed(ctx context.Context, run 
 	}
 }
 
-// delegatedRunTaskID resolves the task a task/story run targets.
+// delegatedRunTaskID resolves the task targeted by a task run.
 func delegatedRunTaskID(run *model.AgentRun) string {
 	if taskID := strings.TrimSpace(run.TargetID); taskID != "" {
 		return taskID

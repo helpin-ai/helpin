@@ -1844,7 +1844,7 @@ export function TaskListView({
         if (stateInfo?.stateType === 'done') completedPoints += estimate;
       }
 
-      const storyCount = isPerGroupMode && subRows[0]
+      const taskCount = isPerGroupMode && subRows[0]
         ? (groupHasMore.get(subRows[0].original.workflow_state_id)?.total ?? subRows.length)
         : subRows.length;
 
@@ -1859,7 +1859,7 @@ export function TaskListView({
 
       summaries.set(row.id, {
         groupLabel,
-        storyCount,
+        taskCount,
         totalPoints,
         completedPoints,
         stateType,
@@ -2262,7 +2262,7 @@ function arePMGroupRowPropsEqual(prev: PMGroupRowProps, next: PMGroupRowProps): 
     prev.row.getIsExpanded() === next.row.getIsExpanded() &&
     prev.row.subRows.length === next.row.subRows.length &&
     prev.summary?.groupLabel === next.summary?.groupLabel &&
-    prev.summary?.storyCount === next.summary?.storyCount &&
+    prev.summary?.taskCount === next.summary?.taskCount &&
     prev.summary?.totalPoints === next.summary?.totalPoints &&
     prev.summary?.completedPoints === next.summary?.completedPoints &&
     prev.summary?.stateType === next.summary?.stateType
@@ -2273,7 +2273,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   row,
   summary,
 }: PMGroupRowProps) {
-  const storyCount = summary?.storyCount ?? row.subRows.length;
+  const taskCount = summary?.taskCount ?? row.subRows.length;
   const totalPoints = summary?.totalPoints ?? 0;
   const completedPoints = summary?.completedPoints ?? 0;
   const stateType = summary?.stateType;
@@ -2293,9 +2293,9 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
         {stateType && <TaskListStateTypeIcon stateType={stateType} className="h-4 w-4" />}
         <span>{groupLabel}</span>
         <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
-          <QuickTooltip label={`${storyCount} ${storyCount === 1 ? 'task' : 'tasks'}`}>
+          <QuickTooltip label={`${taskCount} ${taskCount === 1 ? 'task' : 'tasks'}`}>
             <span className="flex items-center gap-1">
-              <TaskListNoteIcon className="h-3 w-3" /> {storyCount}
+              <TaskListNoteIcon className="h-3 w-3" /> {taskCount}
             </span>
           </QuickTooltip>
           <QuickTooltip label={`${totalPoints} total ${totalPoints === 1 ? 'point' : 'points'}`}>
@@ -2316,7 +2316,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 
 interface PMGroupSummary {
   groupLabel: string;
-  storyCount: number;
+  taskCount: number;
   totalPoints: number;
   completedPoints: number;
   stateType?: StateType;
@@ -3145,19 +3145,19 @@ function InlineLabelsCell({
   onLabelsChange: (labels: Label[]) => void;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
 }) {
-  const storyLabels = task.labels ?? [];
+  const taskLabels = task.labels ?? [];
   return (
     <div className="w-full min-w-0 overflow-hidden" onClick={(e) => e.stopPropagation()}>
       <LabelPicker
         workspaceId={workspaceId}
         teamId={task.team_id || undefined}
         labels={allLabels}
-        selectedLabelIds={storyLabels.map((l) => l.id)}
+        selectedLabelIds={taskLabels.map((l) => l.id)}
         triggerClassName="text-[11px]"
         singleLine
         onLabelsChange={onLabelsChange}
         onChange={async (labelIds) => {
-          const currentIds = storyLabels.map((l) => l.id);
+          const currentIds = taskLabels.map((l) => l.id);
           setTasks((current) =>
             current.map((s) =>
               s.id === task.id

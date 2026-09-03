@@ -216,7 +216,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
     }
   };
 
-  const handleCreateAndLinkStory = async (payload: CreateTaskRequest) => {
+  const handleCreateAndLinkTask = async (payload: CreateTaskRequest) => {
     const response = await supportService.createTaskFromConversation(workspaceId, conversationId, payload);
     if (response.error) throw new Error(response.error);
 
@@ -562,7 +562,7 @@ export function SidebarAssociations({ workspaceId, conversationId, excludeCRMCom
           workspaceId={workspaceId}
           workflow={workflow}
           initialStateId={workflow.states?.[0]?.id ?? ''}
-          onCreate={handleCreateAndLinkStory}
+          onCreate={handleCreateAndLinkTask}
         />
       )}
     </div>

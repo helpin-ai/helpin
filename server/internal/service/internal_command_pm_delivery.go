@@ -22,7 +22,7 @@ type pmDeliveryCommandInput struct {
 func (s *InternalCommandService) registerPMDeliveryCommands() {
 	s.register(InternalCommandDefinition{
 		Name: "pm.update_task_delivery_target", Module: "pm", Mutating: true,
-		SupportedTargetTypes: []string{"workspace", "task", "story"},
+		SupportedTargetTypes: []string{"workspace", "task"},
 		Tool:                 mustCommandToolMetadata("pm.update_task_delivery_target"), Execute: s.executePMUpdateTaskDeliveryTarget,
 	})
 	s.register(InternalCommandDefinition{

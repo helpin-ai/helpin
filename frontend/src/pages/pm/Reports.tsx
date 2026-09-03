@@ -142,7 +142,7 @@ function SprintCloseoutsReport({ onBack }: { onBack: () => void }) {
     }), base)
   }, [displayItems])
 
-  // Hide points entirely when no stories have estimates
+  // Hide points entirely when no tasks have estimates
   const hasPoints = summary.committed_points > 0
 
   // Completion rate for the selected view
@@ -236,7 +236,7 @@ function SprintCloseoutsReport({ onBack }: { onBack: () => void }) {
               <div className="text-2xl font-semibold">
                 {summary[metric.countKey]}
                 <span className="text-sm font-normal text-muted-foreground ml-1">
-                  {summary[metric.countKey] === 1 ? 'story' : 'stories'}
+                  {summary[metric.countKey] === 1 ? 'task' : 'tasks'}
                 </span>
               </div>
               {hasPoints && (

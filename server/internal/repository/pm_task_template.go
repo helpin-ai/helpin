@@ -11,12 +11,12 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-// PMTaskTemplateRepository handles DB operations for story templates.
+// PMTaskTemplateRepository handles DB operations for task templates.
 type PMTaskTemplateRepository struct {
 	db *gorm.DB
 }
 
-// PMTaskTemplateListOptions aliases ScopeFilterOptions for story templates.
+// PMTaskTemplateListOptions aliases ScopeFilterOptions for task templates.
 type PMTaskTemplateListOptions = ScopeFilterOptions
 
 // NewPMTaskTemplateRepository creates a new PMTaskTemplateRepository.
@@ -24,30 +24,30 @@ func NewPMTaskTemplateRepository(db *gorm.DB) *PMTaskTemplateRepository {
 	return &PMTaskTemplateRepository{db: db}
 }
 
-// ListByWorkspace lists story templates by workspace.
+// ListByWorkspace lists task templates by workspace.
 func (r *PMTaskTemplateRepository) ListByWorkspace(ctx context.Context, workspaceID string, opts PMTaskTemplateListOptions) ([]model.PMTaskTemplate, error) {
 	var templates []model.PMTaskTemplate
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
 	query = ApplyScopeFilter(query, opts)
 	if err := query.Order("team_id IS NOT NULL ASC, team_id ASC, name ASC").Find(&templates).Error; err != nil {
-		return nil, fmt.Errorf("list story templates: %w", err)
+		return nil, fmt.Errorf("list task templates: %w", err)
 	}
 	return templates, nil
 }
 
-// GetByID returns a story template by ID.
+// GetByID returns a task template by ID.
 func (r *PMTaskTemplateRepository) GetByID(ctx context.Context, id string) (*model.PMTaskTemplate, error) {
 	var tmpl model.PMTaskTemplate
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&tmpl).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get story template: %w", err)
+		return nil, fmt.Errorf("get task template: %w", err)
 	}
 	return &tmpl, nil
 }
 
-// GetByName returns a story template by workspace/name within a scope.
+// GetByName returns a task template by workspace/name within a scope.
 func (r *PMTaskTemplateRepository) GetByName(ctx context.Context, workspaceID string, teamID *string, name string) (*model.PMTaskTemplate, error) {
 	var tmpl model.PMTaskTemplate
 	query := r.db.WithContext(ctx).
@@ -61,31 +61,31 @@ func (r *PMTaskTemplateRepository) GetByName(ctx context.Context, workspaceID st
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get story template by name: %w", err)
+		return nil, fmt.Errorf("get task template by name: %w", err)
 	}
 	return &tmpl, nil
 }
 
-// Create inserts a story template.
+// Create inserts a task template.
 func (r *PMTaskTemplateRepository) Create(ctx context.Context, tmpl *model.PMTaskTemplate) error {
 	if err := r.db.WithContext(ctx).Create(tmpl).Error; err != nil {
-		return fmt.Errorf("create story template: %w", err)
+		return fmt.Errorf("create task template: %w", err)
 	}
 	return nil
 }
 
-// Update updates a story template.
+// Update updates a task template.
 func (r *PMTaskTemplateRepository) Update(ctx context.Context, tmpl *model.PMTaskTemplate) error {
 	if err := r.db.WithContext(ctx).Save(tmpl).Error; err != nil {
-		return fmt.Errorf("update story template: %w", err)
+		return fmt.Errorf("update task template: %w", err)
 	}
 	return nil
 }
 
-// Delete hard-deletes a story template.
+// Delete hard-deletes a task template.
 func (r *PMTaskTemplateRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Delete(&model.PMTaskTemplate{}, "id = ?", id).Error; err != nil {
-		return fmt.Errorf("delete story template: %w", err)
+		return fmt.Errorf("delete task template: %w", err)
 	}
 	return nil
 }

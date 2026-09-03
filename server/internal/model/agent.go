@@ -704,8 +704,6 @@ type AgentRunWorkspaceContext struct {
 }
 
 // AgentRunInputPayload is the shared input contract for all agent runs.
-// It preserves legacy top-level IDs and planning fields while adding
-// explicit trigger/target/event metadata for generic launches.
 type AgentRunInputPayload struct {
 	Trigger             *AgentRunTriggerContext    `json:"trigger,omitempty"`
 	Target              *AgentRunTargetContext     `json:"target,omitempty"`
@@ -713,7 +711,7 @@ type AgentRunInputPayload struct {
 	Output              *AgentRunOutputContext     `json:"output,omitempty"`
 	WorkspaceContext    *AgentRunWorkspaceContext  `json:"workspace_context,omitempty"`
 	AttachedContexts    []AgentRunContextReference `json:"attached_contexts,omitempty"`
-	StoryID             string                     `json:"story_id,omitempty"`
+	TaskID              string                     `json:"task_id,omitempty"`
 	EpicID              string                     `json:"epic_id,omitempty"`
 	ConversationID      string                     `json:"conversation_id,omitempty"`
 	AdditionalContext   string                     `json:"additional_context,omitempty"`
@@ -735,6 +733,11 @@ func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
 	if targetType == "" || targetID == "" {
 		return
 	}
+	switch targetType {
+	case "workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "crm_company", "support_conversation", "repository":
+	default:
+		return
+	}
 
 	p.Target = &AgentRunTargetContext{
 		TargetType: targetType,
@@ -742,8 +745,8 @@ func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
 	}
 
 	switch targetType {
-	case "task", "story":
-		p.StoryID = targetID
+	case "task":
+		p.TaskID = targetID
 	case "epic":
 		p.EpicID = targetID
 	case "support_conversation":
@@ -832,9 +835,20 @@ type AgentModelProviderOption struct {
 }
 
 type AgentExecutionConfig struct {
-	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
-	ServiceTier     *string `json:"service_tier,omitempty"`
-	MaxToolSteps    *int    `json:"max_tool_steps,omitempty"`
+	ReasoningEffort *string                         `json:"reasoning_effort,omitempty"`
+	ServiceTier     *string                         `json:"service_tier,omitempty"`
+	MaxToolSteps    *int                            `json:"max_tool_steps,omitempty"`
+	OpenRouter      *AgentOpenRouterExecutionConfig `json:"openrouter,omitempty"`
+}
+
+// AgentOpenRouterExecutionConfig contains OpenRouter-only request controls.
+type AgentOpenRouterExecutionConfig struct {
+	Provider *AgentOpenRouterProviderPreferences `json:"provider,omitempty"`
+}
+
+// AgentOpenRouterProviderPreferences controls OpenRouter provider routing.
+type AgentOpenRouterProviderPreferences struct {
+	Quantizations []string `json:"quantizations,omitempty"`
 }
 
 type AgentSkillRef struct {
@@ -1050,12 +1064,42 @@ func (c AgentExecutionConfig) Normalize() AgentExecutionConfig {
 			c.ServiceTier = &value
 		}
 	}
+	if c.OpenRouter != nil {
+		quantizations := make([]string, 0, len(c.OpenRouter.providerQuantizations()))
+		seen := make(map[string]struct{}, len(c.OpenRouter.providerQuantizations()))
+		for _, quantization := range c.OpenRouter.providerQuantizations() {
+			quantization = strings.ToLower(strings.TrimSpace(quantization))
+			if quantization == "" {
+				continue
+			}
+			if _, exists := seen[quantization]; exists {
+				continue
+			}
+			seen[quantization] = struct{}{}
+			quantizations = append(quantizations, quantization)
+		}
+		if len(quantizations) == 0 {
+			c.OpenRouter = nil
+		} else {
+			c.OpenRouter = &AgentOpenRouterExecutionConfig{
+				Provider: &AgentOpenRouterProviderPreferences{Quantizations: quantizations},
+			}
+		}
+	}
 	return c
+}
+
+func (c *AgentOpenRouterExecutionConfig) providerQuantizations() []string {
+	if c == nil || c.Provider == nil {
+		return nil
+	}
+	return c.Provider.Quantizations
 }
 
 func (c AgentExecutionConfig) IsZero() bool {
 	normalized := c.Normalize()
-	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil && normalized.MaxToolSteps == nil
+	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil &&
+		normalized.MaxToolSteps == nil && normalized.OpenRouter == nil
 }
 
 func ParseAgentExecutionConfig(raw []byte) (AgentExecutionConfig, error) {

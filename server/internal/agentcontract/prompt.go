@@ -68,12 +68,12 @@ func defaultSystemPromptOptions() systemPromptOptions {
 }
 
 // BuildSystemPrompt assembles the system prompt from agent config, target context, and WORKFLOW.md.
-func BuildSystemPrompt(agent *model.Agent, story *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig) string {
-	return buildSystemPromptWithOptions(agent, story, epic, ticket, planningStage, planningMethodology, config, defaultSystemPromptOptions())
+func BuildSystemPrompt(agent *model.Agent, task *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig) string {
+	return buildSystemPromptWithOptions(agent, task, epic, ticket, planningStage, planningMethodology, config, defaultSystemPromptOptions())
 }
 
-func BuildRuntimeSystemPrompt(agent *model.Agent, story *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig, includeBehaviorInstructions, includeResolvedSkillText bool) string {
-	return buildSystemPromptWithOptions(agent, story, epic, ticket, planningStage, planningMethodology, config, systemPromptOptions{
+func BuildRuntimeSystemPrompt(agent *model.Agent, task *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig, includeBehaviorInstructions, includeResolvedSkillText bool) string {
+	return buildSystemPromptWithOptions(agent, task, epic, ticket, planningStage, planningMethodology, config, systemPromptOptions{
 		IncludeBehaviorInstructions: includeBehaviorInstructions,
 		IncludeResolvedSkillText:    includeResolvedSkillText,
 		IncludeTargetContext:        false,
@@ -81,7 +81,7 @@ func BuildRuntimeSystemPrompt(agent *model.Agent, story *model.PMTask, epic *mod
 	})
 }
 
-func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig, options systemPromptOptions) string {
+func buildSystemPromptWithOptions(agent *model.Agent, task *model.PMTask, epic *model.PMEpic, ticket *model.SupportConversation, planningStage, planningMethodology string, config *WorkflowConfig, options systemPromptOptions) string {
 	var parts []string
 	resolvedProfile := ResolveAgentProfile(agent)
 	toolSet := make(map[string]bool, len(resolvedProfile.Tools))
@@ -115,12 +115,12 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 	}
 
 	if options.IncludeTargetContext {
-		// Story context.
-		if story != nil {
+		// Task context.
+		if task != nil {
 			parts = append(parts, "\n## Current Task")
-			parts = append(parts, fmt.Sprintf("**Story**: %s", story.Name))
-			if story.Description != nil {
-				if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
+			parts = append(parts, fmt.Sprintf("**Task**: %s", task.Name))
+			if task.Description != nil {
+				if description := tiptap.RichTextToMarkdown(*task.Description); description != "" {
 					parts = append(parts, "**Description**:\n"+description)
 				}
 			}
@@ -182,10 +182,10 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 					CanonicalToolName("write_file"),
 				))
 				parts = append(parts, "- If an edit tool reports that a file changed or was not read first, re-read the file and retry with fresh context.")
-			} else if story != nil || epic != nil {
+			} else if task != nil || epic != nil {
 				parts = append(parts, "- This run is planning-only and read-only. Do not change code, create files, or alter git state.")
 			}
-			if story != nil || epic != nil {
+			if task != nil || epic != nil {
 				parts = append(parts, fmt.Sprintf("- When available, keep a short working execution checklist with `%s` instead of repeating plan status in prose. Do not use `%s` as a substitute for `%s`, `%s`, or `%s`.",
 					CanonicalToolName(ToolUpdatePlan),
 					CanonicalToolName(ToolUpdatePlan),
@@ -199,13 +199,13 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			parts = append(parts, "- Use find_skills when specialized workflow guidance would materially improve the task, then read only the selected instructions with read_skill.")
 		}
 	}
-	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageTaskPlanDoc {
+	if task != nil && strings.TrimSpace(planningStage) != model.PlanningStageTaskPlanDoc {
 		parts = append(parts, "- Run tests after making changes when possible.")
 		if options.UseNativeToolingRules {
 			parts = append(parts, "- Commit and push your changes when the task is complete.")
 		}
 	}
-	if story != nil && strings.TrimSpace(planningStage) == model.PlanningStageTaskPlanDoc {
+	if task != nil && strings.TrimSpace(planningStage) == model.PlanningStageTaskPlanDoc {
 		parts = append(parts, "- This is a planning-doc run, not an implementation run.")
 		parts = append(parts, "- Draft or refine the canonical task planning document in chat first, then request approval.")
 		parts = append(parts, fmt.Sprintf("- After approval, call `%s` with `{}` to create or load and attach the canonical task planning document, then call `%s` with the returned `document_id` and the full approved markdown.",
@@ -235,9 +235,9 @@ func availableSkillAccessGuidance(agent *model.Agent, toolSet map[string]bool) s
 // BuildUserPrompt creates the initial user message for the run.
 func BuildUserPrompt(
 	agent *model.Agent,
-	story *model.PMTask,
+	task *model.PMTask,
 	epic *model.PMEpic,
-	epicStories []model.PMTask,
+	epicTasks []model.PMTask,
 	ticket *model.SupportConversation,
 	ticketMessages []model.SupportMessage,
 	checklist []model.PMChecklistItem,
@@ -247,9 +247,9 @@ func BuildUserPrompt(
 ) string {
 	return BuildUserPromptWithRunInput(
 		agent,
-		story,
+		task,
 		epic,
-		epicStories,
+		epicTasks,
 		ticket,
 		ticketMessages,
 		checklist,
@@ -262,9 +262,9 @@ func BuildUserPrompt(
 
 func BuildUserPromptWithRunInput(
 	agent *model.Agent,
-	story *model.PMTask,
+	task *model.PMTask,
 	epic *model.PMEpic,
-	epicStories []model.PMTask,
+	epicTasks []model.PMTask,
 	ticket *model.SupportConversation,
 	ticketMessages []model.SupportMessage,
 	checklist []model.PMChecklistItem,
@@ -283,18 +283,18 @@ func BuildUserPromptWithRunInput(
 		contextParts = append(contextParts, workspaceContext)
 	}
 
-	if story != nil {
+	if task != nil {
 		if epic != nil && strings.TrimSpace(epic.Name) != "" {
-			contextParts = append(contextParts, fmt.Sprintf("Target task: **%s**", story.Name))
+			contextParts = append(contextParts, fmt.Sprintf("Target task: **%s**", task.Name))
 			contextParts = append(contextParts, "This run is scoped to the target task. Parent epic/PRD context below is background only.")
 		} else {
-			contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", story.Name))
+			contextParts = append(contextParts, fmt.Sprintf("Task: **%s**", task.Name))
 		}
 		if strings.TrimSpace(planningStage) == model.PlanningStageTaskPlanDoc {
 			contextParts = append(contextParts, "Planning stage: task_plan_doc")
 		}
-		if story.Description != nil {
-			if description := tiptap.RichTextToMarkdown(*story.Description); description != "" {
+		if task.Description != nil {
+			if description := tiptap.RichTextToMarkdown(*task.Description); description != "" {
 				if epic != nil && strings.TrimSpace(epic.Name) != "" {
 					contextParts = append(contextParts, "\nTarget task description:\n"+description)
 				} else {
@@ -304,23 +304,23 @@ func BuildUserPromptWithRunInput(
 		}
 	}
 	if epic != nil {
-		if story != nil {
+		if task != nil {
 			contextParts = append(contextParts, fmt.Sprintf("Parent epic background: **%s**", epic.Name))
 		} else {
 			contextParts = append(contextParts, fmt.Sprintf("Epic: **%s**", epic.Name))
 		}
 		if epic.Description != nil {
 			if description := tiptap.RichTextToMarkdown(*epic.Description); description != "" {
-				if story != nil {
+				if task != nil {
 					contextParts = append(contextParts, "\nParent epic description:\n"+description)
 				} else {
 					contextParts = append(contextParts, "\nDescription:\n"+description)
 				}
 			}
 		}
-		if len(epicStories) > 0 {
+		if len(epicTasks) > 0 {
 			contextParts = append(contextParts, "\nExisting tasks already linked to this epic:")
-			for _, task := range epicStories {
+			for _, task := range epicTasks {
 				taskType := task.TaskType
 				if taskType == "" {
 					taskType = "feature"

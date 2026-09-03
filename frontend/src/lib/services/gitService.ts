@@ -128,13 +128,4 @@ export const gitService = {
     api.put<EpicDeliveryTarget>(`/pm/epics/${epicId}/delivery-target${qs(workspaceId)}`, payload),
   createBranch: (workspaceId: string, taskId: string, payload: CreateBranchRequest) =>
     api.post<TaskGitLink>(`/pm/tasks/${taskId}/create-branch${qs(workspaceId)}`, payload),
-  /** @deprecated Use getTaskGitLinks instead */
-  getStoryGitLinks: (workspaceId: string, taskId: string) =>
-    api.get<TaskGitLink[]>(`/pm/tasks/${taskId}/git-links${qs(workspaceId)}`),
-  /** @deprecated Use getTaskDeliveryTarget instead */
-  getStoryDeliveryTarget: (workspaceId: string, taskId: string) =>
-    api.get<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`),
-  /** @deprecated Use updateTaskDeliveryTarget instead */
-  updateStoryDeliveryTarget: (workspaceId: string, taskId: string, payload: UpdateTaskDeliveryTargetRequest) =>
-    api.put<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`, payload),
 };

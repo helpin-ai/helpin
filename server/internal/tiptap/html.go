@@ -237,7 +237,7 @@ func renderNode(b *strings.Builder, n *Node) {
 		entityType := strAttr(n.Attrs, "entityType")
 		entityID := strAttr(n.Attrs, "entityId")
 		switch entityType {
-		case "task", "story", "epic", "support_conversation", "deal", "contact", "company", "reference":
+		case "task", "epic", "support_conversation", "deal", "contact", "company", "reference":
 		default:
 			entityType = "task"
 		}

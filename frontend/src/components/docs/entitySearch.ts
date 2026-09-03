@@ -20,8 +20,6 @@ export type DocsEntitySearchItem = {
 export const DOCS_ENTITY_TYPE_ALIASES: Record<string, DocsEntitySearchType> = {
   task: 'task',
   tasks: 'task',
-  story: 'story',
-  stories: 'story',
   epic: 'epic',
   epics: 'epic',
   deal: 'deal',
@@ -46,14 +44,12 @@ export function entityTypeLabel(type: DocsEntitySearchType) {
   if (type === 'deal') return 'Deal'
   if (type === 'contact') return 'Contact'
   if (type === 'company') return 'Company'
-  if (type === 'story') return 'Story'
   if (type === 'document') return 'Doc'
   return 'Task'
 }
 
 export function entityTypePluralLabel(type: DocsEntitySearchType) {
   if (type === 'company') return 'companies'
-  if (type === 'story') return 'stories'
   return `${entityTypeLabel(type).toLowerCase()}s`
 }
 
@@ -77,7 +73,7 @@ export function parseEntityMentionQuery(rawQuery: string): {
 
 export function entityMentionHref(workspaceSlug: string | undefined, item: Pick<DocsEntitySearchItem, 'entityType' | 'entityId'>) {
   if (!workspaceSlug) return undefined
-  if (item.entityType === 'task' || item.entityType === 'story') return `/w/${workspaceSlug}/pm/tasks/${item.entityId}`
+  if (item.entityType === 'task') return `/w/${workspaceSlug}/pm/tasks/${item.entityId}`
   if (item.entityType === 'epic') return `/w/${workspaceSlug}/pm/epics/${item.entityId}`
   if (item.entityType === 'support_conversation') return `/w/${workspaceSlug}/support/${item.entityId}`
   if (item.entityType === 'deal') return `/w/${workspaceSlug}/crm/deals/${item.entityId}`
@@ -209,10 +205,10 @@ export async function searchDocsEntityItems({
   let error: string | null = null
   const limit = fixedEntityType ? fixedLimit : broadLimit
 
-  if (!fixedEntityType || fixedEntityType === 'task' || fixedEntityType === 'epic' || fixedEntityType === 'story' || fixedEntityType === 'document') {
+  if (!fixedEntityType || fixedEntityType === 'task' || fixedEntityType === 'epic' || fixedEntityType === 'document') {
     const searchRes = await searchService.search(workspaceId, trimmed)
     if (searchRes.data) {
-      if (!fixedEntityType || fixedEntityType === 'task' || fixedEntityType === 'story') {
+      if (!fixedEntityType || fixedEntityType === 'task') {
         next.push(...(searchRes.data.tasks ?? []).slice(0, fixedEntityType ? fixedLimit : 6).map((item) => taskSearchItem(item, workspaceSlug)))
       }
       if (!fixedEntityType || fixedEntityType === 'epic') {

@@ -90,15 +90,18 @@ func (c *Catalog) Resolve(provider, model, route, serviceTier string) (ResolvedR
 	return ResolvedRoute{}, ErrModelUnavailable
 }
 
-// ResolveDefault resolves the single approved standard route for a curated
-// provider/model pair. It is used for agent records, whose persisted contract
-// predates exact-route storage; ambiguous catalogs fail closed.
+// ResolveDefault resolves an exact route when the stored model is already a
+// route ID, then falls back to the single approved route for older canonical
+// model records. Ambiguous canonical-only records fail closed.
 func (c *Catalog) ResolveDefault(provider, model, serviceTier string) (ResolvedRoute, error) {
 	provider = canonicalKey(provider)
 	model = canonicalKey(model)
 	serviceTier = canonicalKey(serviceTier)
 	if serviceTier == "" {
 		serviceTier = "standard"
+	}
+	if exact, err := c.Resolve(provider, model, model, serviceTier); err == nil {
+		return exact, nil
 	}
 	var match *ResolvedRoute
 	for _, route := range c.Routes {

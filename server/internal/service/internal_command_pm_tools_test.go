@@ -520,6 +520,9 @@ func TestPMCommandGetTaskAcceptsHumanTaskKey(t *testing.T) {
 
 func TestPMCommandParentChild(t *testing.T) {
 	env := newPMCommandTestEnv(t)
+	if _, ok := env.service.Definition("pm.create_followup_stories"); ok {
+		t.Fatal("Story-era follow-up command must not be registered")
+	}
 	seedPMCommandTask(t, env.db, "task-a", "ws-1", "team-a", "wf-a", "state-a", "epic-a", "sprint-a", 1)
 	seedPMCommandTask(t, env.db, "task-b", "ws-1", "team-b", "wf-b", "state-b", "epic-b", "sprint-b", 2)
 	memberCtx := authorization.WithActor(context.Background(), &authorization.Actor{UserID: env.actorID, WorkspaceID: env.workspaceID, Role: model.RoleMember, TeamMemberships: []authorization.TeamRole{{TeamID: "team-a", Role: "member"}}})

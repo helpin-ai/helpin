@@ -40,7 +40,7 @@ var allowedMIMETypes = map[string]bool{
 const entityTypeEditorUpload = "editor_upload"
 
 var allowedEntityTypes = map[string]bool{
-	"task": true, "story": true, "task_template": true, "epic": true, "objective": true, "sprint": true, "comment": true, entityTypeEditorUpload: true,
+	"task": true, "task_template": true, "epic": true, "objective": true, "sprint": true, "comment": true, entityTypeEditorUpload: true,
 }
 
 // PMAttachmentService contains attachment business logic.
@@ -139,7 +139,7 @@ func (s *PMAttachmentService) prepareAttachment(ctx context.Context, req model.C
 		return nil, fmt.Errorf("entity_type and entity_id are required")
 	}
 	if !allowedEntityTypes[req.EntityType] {
-		return nil, fmt.Errorf("invalid entity_type: must be task, story, task_template, epic, objective, sprint, comment, or editor_upload")
+		return nil, fmt.Errorf("invalid entity_type: must be task, task, task_template, epic, objective, sprint, comment, or editor_upload")
 	}
 	if strings.TrimSpace(req.FileName) == "" {
 		return nil, fmt.Errorf("file_name is required")

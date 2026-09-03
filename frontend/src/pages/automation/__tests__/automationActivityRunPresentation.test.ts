@@ -69,9 +69,8 @@ describe('automation activity run presentation', () => {
     expect(presentation.clickable).toBe(true);
   });
 
-  it('normalizes legacy target type names', () => {
+  it('normalizes prefixed task target type names', () => {
     expect(normalizeActivityTargetType('pm_task')).toBe('task');
-    expect(normalizeActivityTargetType('story')).toBe('task');
   });
 
   it('keeps automation flow names separate from trigger labels', () => {

@@ -641,7 +641,7 @@ func TestPMTaskService_Create(t *testing.T) {
 			t.Errorf("workflow_state_id = %q, want %q", story.Task.WorkflowStateID, env.stTodo)
 		}
 		if story.Task.TaskType != model.PMTaskTypeFeature {
-			t.Errorf("story_type = %q, want %q", story.Task.TaskType, model.PMTaskTypeFeature)
+			t.Errorf("task_type = %q, want %q", story.Task.TaskType, model.PMTaskTypeFeature)
 		}
 		if story.Task.Priority != model.PMTaskPriorityNone {
 			t.Errorf("priority = %q, want %q", story.Task.Priority, model.PMTaskPriorityNone)
@@ -701,7 +701,7 @@ func TestPMTaskService_Create(t *testing.T) {
 			t.Fatalf("Create bug: %v", err)
 		}
 		if story.Task.TaskType != model.PMTaskTypeBug {
-			t.Errorf("story_type = %q, want %q", story.Task.TaskType, model.PMTaskTypeBug)
+			t.Errorf("task_type = %q, want %q", story.Task.TaskType, model.PMTaskTypeBug)
 		}
 	})
 
@@ -973,7 +973,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid story_type", func(t *testing.T) {
+	t.Run("invalid task_type", func(t *testing.T) {
 		_, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Bad Type",
@@ -983,7 +983,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 			TaskType:        "invalid_type",
 		}, env.userID)
 		if err == nil {
-			t.Fatal("expected error for invalid story_type")
+			t.Fatal("expected error for invalid task_type")
 		}
 	})
 
@@ -1275,16 +1275,16 @@ func TestPMTaskService_Update(t *testing.T) {
 		}
 	})
 
-	t.Run("update story_type", func(t *testing.T) {
+	t.Run("update task_type", func(t *testing.T) {
 		st := model.PMTaskTypeChore
 		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			TaskType: &st,
 		}, env.userID)
 		if err != nil {
-			t.Fatalf("Update story_type: %v", err)
+			t.Fatalf("Update task_type: %v", err)
 		}
 		if updated.Task.TaskType != model.PMTaskTypeChore {
-			t.Errorf("story_type = %q, want %q", updated.Task.TaskType, model.PMTaskTypeChore)
+			t.Errorf("task_type = %q, want %q", updated.Task.TaskType, model.PMTaskTypeChore)
 		}
 	})
 
@@ -1444,13 +1444,13 @@ func TestPMTaskService_Update(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid story_type rejected", func(t *testing.T) {
+	t.Run("invalid task_type rejected", func(t *testing.T) {
 		badType := "epic_story"
 		_, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
 			TaskType: &badType,
 		}, env.userID)
 		if err == nil {
-			t.Fatal("expected error for invalid story_type")
+			t.Fatal("expected error for invalid task_type")
 		}
 	})
 
@@ -1541,7 +1541,7 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Update team: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "moved this story from team Story Team to Growth" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "moved this task from team Story Team to Growth" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
@@ -1580,7 +1580,7 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Update epic: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "added this story to epic Launch" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "added this task to epic Launch" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
@@ -1593,7 +1593,7 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Update sprint: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "added this story to sprint Sprint 8" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "added this task to sprint Sprint 8" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})

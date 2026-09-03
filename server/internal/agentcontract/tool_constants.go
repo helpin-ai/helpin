@@ -58,9 +58,6 @@ func CanonicalToolName(name string) string {
 var legacyToolAliases = map[string]string{
 	ToolRequestHumanInput:     ToolRequestUserInput,
 	ToolRequestHumanApproval:  ToolRequestApproval,
-	"add_story_comment":       "add_task_comment",
-	"list_story_checklist":    "list_task_checklist",
-	"update_story_state":      "update_task_state",
 	"run_semgrep":             ToolScanSemgrep,
 	"run_trivy":               ToolScanTrivy,
 	"run_gitleaks":            ToolScanGitleaks,

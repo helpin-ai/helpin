@@ -844,11 +844,7 @@ function parseApprovalTaskPlanPreview(preview?: PublishedPreview | null) {
   if (!preview || preview.format !== 'json') return null;
   const record = asRecord(preview.content);
   if (!record) return null;
-  const proposedTasks = Array.isArray(record.proposed_tasks)
-    ? record.proposed_tasks
-    : Array.isArray(record.proposed_stories)
-      ? record.proposed_stories
-      : [];
+  const proposedTasks = Array.isArray(record.proposed_tasks) ? record.proposed_tasks : [];
   const tasks = proposedTasks.flatMap((entry) => {
     const task = asRecord(entry);
     if (!task) return [];

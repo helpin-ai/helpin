@@ -98,8 +98,8 @@ func (s *GitService) buildDelegatedRunPullRequestContent(ctx context.Context, ru
 	if prContext.TargetLabel != "" {
 		label := "Target"
 		switch prContext.TargetKind {
-		case "story":
-			label = "Story"
+		case "task":
+			label = "Task"
 		case "epic":
 			label = "Epic"
 		}
@@ -143,7 +143,7 @@ func (s *GitService) delegatedRunPullRequestContext(ctx context.Context, run *mo
 
 	result := delegatedRunPRContext{}
 	switch run.TargetType {
-	case "task", "story":
+	case "task":
 		taskID := delegatedRunTaskID(run)
 		if taskID != "" && s.taskRepo != nil {
 			if task, err := s.taskRepo.GetRawByID(ctx, taskID); err == nil && task != nil {
@@ -163,7 +163,7 @@ func (s *GitService) delegatedRunPullRequestContext(ctx context.Context, run *mo
 				default:
 					result.TargetLabel = taskName
 				}
-				result.TargetKind = "story"
+				result.TargetKind = "task"
 				result.TargetURL = s.helpinURL(workspaceSlug, "pm", "tasks", task.ID)
 			}
 		}

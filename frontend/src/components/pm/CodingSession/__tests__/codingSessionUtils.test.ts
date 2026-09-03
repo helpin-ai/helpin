@@ -34,7 +34,7 @@ describe('codingSessionApprovalStatesByPreviewKey', () => {
         status: 'pending',
         request_schema_version: 'helpin.v1',
         request_payload: {
-          preview_panel_key: 'story_plan_doc',
+          preview_panel_key: 'task_plan_doc',
           title: 'Approve planning document',
         },
       }),
@@ -44,7 +44,7 @@ describe('codingSessionApprovalStatesByPreviewKey', () => {
         status: 'resolved',
         request_schema_version: 'helpin.v1',
         request_payload: {
-          preview_panel_key: 'story_plan_doc',
+          preview_panel_key: 'task_plan_doc',
           title: 'Approve planning document',
         },
         response_payload: {

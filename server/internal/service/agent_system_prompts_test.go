@@ -245,7 +245,7 @@ func TestCodeBuilderSystemPromptIncludesGenericExecutionContextGuidance(t *testi
 	}
 	for _, snippet := range []string{
 		"You are Forge, the workspace code builder.",
-		"Implement the requested story or task directly in the repository",
+		"Implement the requested task directly in the repository",
 		"Finish with a local commit only",
 	} {
 		if !strings.Contains(*prompt, snippet) {

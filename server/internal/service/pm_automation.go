@@ -158,14 +158,14 @@ func (s *PMAutomationService) Delete(ctx context.Context, req model.DeleteAutoma
 	return nil
 }
 
-// OnStoryStateChange is called after a story's workflow state changes.
+// OnTaskStateChange is called after a task's workflow state changes.
 // It evaluates epic automations (auto-start, auto-complete).
-func (s *PMAutomationService) OnStoryStateChange(ctx context.Context, story *model.PMTask, newStateID string) {
-	if story.EpicID == nil || *story.EpicID == "" {
+func (s *PMAutomationService) OnTaskStateChange(ctx context.Context, task *model.PMTask, newStateID string) {
+	if task.EpicID == nil || *task.EpicID == "" {
 		return
 	}
 
-	epicID := *story.EpicID
+	epicID := *task.EpicID
 
 	// Resolve the new state's type
 	newState, err := s.workflowRepo.GetStateByID(ctx, newStateID)
@@ -175,20 +175,20 @@ func (s *PMAutomationService) OnStoryStateChange(ctx context.Context, story *mod
 
 	// Only check epic automations relevant to the new state type
 	if newState.StateType == model.PMStateTypeStarted {
-		if auto, _ := s.automationRepo.GetByType(ctx, story.WorkspaceID, model.PMAutomationTypeEpicAutoStart, nil); auto != nil && auto.Enabled {
+		if auto, _ := s.automationRepo.GetByType(ctx, task.WorkspaceID, model.PMAutomationTypeEpicAutoStart, nil); auto != nil && auto.Enabled {
 			mutated, err := s.handleEpicAutoStart(ctx, *auto, epicID, newState)
 			if err != nil {
-				s.observeFailure(ctx, story.WorkspaceID, "pm.epic_auto_start", model.AutomationScopeWorkspace, story.WorkspaceID, err, model.JSONB{
+				s.observeFailure(ctx, task.WorkspaceID, "pm.epic_auto_start", model.AutomationScopeWorkspace, task.WorkspaceID, err, model.JSONB{
 					"epic_id":   epicID,
-					"story_id":  story.ID,
+					"task_id":   task.ID,
 					"state_id":  newState.ID,
 					"mutated":   false,
 					"triggered": true,
 				})
 			} else {
-				s.observeSuccess(ctx, story.WorkspaceID, "pm.epic_auto_start", model.AutomationScopeWorkspace, story.WorkspaceID, model.JSONB{
+				s.observeSuccess(ctx, task.WorkspaceID, "pm.epic_auto_start", model.AutomationScopeWorkspace, task.WorkspaceID, model.JSONB{
 					"epic_id":   epicID,
-					"story_id":  story.ID,
+					"task_id":   task.ID,
 					"state_id":  newState.ID,
 					"mutated":   mutated,
 					"triggered": true,
@@ -196,20 +196,20 @@ func (s *PMAutomationService) OnStoryStateChange(ctx context.Context, story *mod
 			}
 		}
 	} else if newState.StateType == model.PMStateTypeDone {
-		if auto, _ := s.automationRepo.GetByType(ctx, story.WorkspaceID, model.PMAutomationTypeEpicAutoComplete, nil); auto != nil && auto.Enabled {
+		if auto, _ := s.automationRepo.GetByType(ctx, task.WorkspaceID, model.PMAutomationTypeEpicAutoComplete, nil); auto != nil && auto.Enabled {
 			mutated, err := s.handleEpicAutoComplete(ctx, *auto, epicID, newState)
 			if err != nil {
-				s.observeFailure(ctx, story.WorkspaceID, "pm.epic_auto_complete", model.AutomationScopeWorkspace, story.WorkspaceID, err, model.JSONB{
+				s.observeFailure(ctx, task.WorkspaceID, "pm.epic_auto_complete", model.AutomationScopeWorkspace, task.WorkspaceID, err, model.JSONB{
 					"epic_id":   epicID,
-					"story_id":  story.ID,
+					"task_id":   task.ID,
 					"state_id":  newState.ID,
 					"mutated":   false,
 					"triggered": true,
 				})
 			} else {
-				s.observeSuccess(ctx, story.WorkspaceID, "pm.epic_auto_complete", model.AutomationScopeWorkspace, story.WorkspaceID, model.JSONB{
+				s.observeSuccess(ctx, task.WorkspaceID, "pm.epic_auto_complete", model.AutomationScopeWorkspace, task.WorkspaceID, model.JSONB{
 					"epic_id":   epicID,
-					"story_id":  story.ID,
+					"task_id":   task.ID,
 					"state_id":  newState.ID,
 					"mutated":   mutated,
 					"triggered": true,
@@ -333,7 +333,7 @@ func (s *PMAutomationService) RunSprintAutoCreate(ctx context.Context) {
 	s.runSprintAutoCreate(ctx)
 }
 
-// RunSprintMoveUnfinished runs only the move-unfinished-stories logic.
+// RunSprintMoveUnfinished runs only the move-unfinished-tasks logic.
 func (s *PMAutomationService) RunSprintMoveUnfinished(ctx context.Context) {
 	s.runSprintMoveUnfinished(ctx)
 }
@@ -537,29 +537,29 @@ func (s *PMAutomationService) runSprintMoveUnfinished(ctx context.Context) {
 			continue
 		}
 
-		// Move non-done stories from ended sprint to next sprint
-		stories, err := s.sprintRepo.ListTasks(ctx, endedSprint.ID)
+		// Move non-done tasks from ended sprint to next sprint
+		tasks, err := s.sprintRepo.ListTasks(ctx, endedSprint.ID)
 		if err != nil {
-			s.logger.ErrorContext(ctx, "failed to list stories for move-unfinished", "error", err, "sprint_id", endedSprint.ID, "workspace_id", cfg.WorkspaceID)
+			s.logger.ErrorContext(ctx, "failed to list tasks for move-unfinished", "error", err, "sprint_id", endedSprint.ID, "workspace_id", cfg.WorkspaceID)
 			s.observeFailure(ctx, cfg.WorkspaceID, "pm.sprint_move_unfinished", model.AutomationScopeTeam, teamID, err, metrics)
 			failed = true
 			continue
 		}
 
-		for _, story := range stories {
-			state, err := s.workflowRepo.GetStateByID(ctx, story.WorkflowStateID)
+		for _, task := range tasks {
+			state, err := s.workflowRepo.GetStateByID(ctx, task.WorkflowStateID)
 			if err != nil || state == nil {
 				continue
 			}
 			if state.StateType == model.PMStateTypeDone {
 				continue
 			}
-			if err := s.taskRepo.UpdateSprintID(ctx, story.ID, &nextSprint.ID); err != nil {
-				s.logger.ErrorContext(ctx, "failed to move unfinished task to next sprint", "error", err, "task_id", story.ID, "next_sprint_id", nextSprint.ID)
+			if err := s.taskRepo.UpdateSprintID(ctx, task.ID, &nextSprint.ID); err != nil {
+				s.logger.ErrorContext(ctx, "failed to move unfinished task to next sprint", "error", err, "task_id", task.ID, "next_sprint_id", nextSprint.ID)
 				continue
 			}
 			metrics["stories_moved"] = metrics["stories_moved"].(int) + 1
-			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: story.ID, WorkspaceID: cfg.WorkspaceID})
+			s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "task", EntityID: task.ID, WorkspaceID: cfg.WorkspaceID})
 		}
 		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "sprint", EntityID: endedSprint.ID, WorkspaceID: cfg.WorkspaceID})
 		s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "sprint", EntityID: nextSprint.ID, WorkspaceID: cfg.WorkspaceID})
@@ -582,7 +582,7 @@ func (s *PMAutomationService) ensureSprintCloseout(ctx context.Context, endedSpr
 		return existing, nil
 	}
 
-	stories, err := s.sprintRepo.ListTasks(ctx, endedSprint.ID)
+	tasks, err := s.sprintRepo.ListTasks(ctx, endedSprint.ID)
 	if err != nil {
 		return nil, fmt.Errorf("list sprint tasks for closeout: %w", err)
 	}
@@ -593,22 +593,22 @@ func (s *PMAutomationService) ensureSprintCloseout(ctx context.Context, endedSpr
 		TeamID:      endedSprint.TeamID,
 		ClosedAt:    time.Now().UTC(),
 	}
-	rows := make([]model.PMSprintCloseoutTask, 0, len(stories))
-	for _, story := range stories {
+	rows := make([]model.PMSprintCloseoutTask, 0, len(tasks))
+	for _, task := range tasks {
 		estimate := 0
-		if story.Estimate != nil {
-			estimate = *story.Estimate
+		if task.Estimate != nil {
+			estimate = *task.Estimate
 		}
 
 		closeout.CommittedCount++
 		closeout.CommittedPoints += estimate
 
-		state, err := s.workflowRepo.GetStateByID(ctx, story.WorkflowStateID)
+		state, err := s.workflowRepo.GetStateByID(ctx, task.WorkflowStateID)
 		if err != nil {
 			return nil, fmt.Errorf("load workflow state for closeout: %w", err)
 		}
 		if state == nil {
-			return nil, fmt.Errorf("workflow state %s not found", story.WorkflowStateID)
+			return nil, fmt.Errorf("workflow state %s not found", task.WorkflowStateID)
 		}
 
 		outcome := model.PMSprintCloseoutOutcomeCompleted
@@ -628,7 +628,7 @@ func (s *PMAutomationService) ensureSprintCloseout(ctx context.Context, endedSpr
 		}
 
 		rows = append(rows, model.PMSprintCloseoutTask{
-			TaskID:   story.ID,
+			TaskID:   task.ID,
 			Outcome:  outcome,
 			Estimate: estimate,
 		})

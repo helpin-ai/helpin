@@ -45,18 +45,18 @@ func (r *PMRecurringTemplateRepository) GetByID(ctx context.Context, id string) 
 	return &tmpl, nil
 }
 
-func (r *PMRecurringTemplateRepository) GetByStoryID(ctx context.Context, storyID string) (*model.PMRecurringTemplate, error) {
+func (r *PMRecurringTemplateRepository) GetByTaskID(ctx context.Context, taskID string) (*model.PMRecurringTemplate, error) {
 	var tmpl model.PMRecurringTemplate
 	if err := r.db.WithContext(ctx).
 		Table("pm_recurring_templates t").
 		Select("t.*").
 		Joins("JOIN pm_tasks s ON s.recurring_template_id = t.id").
-		Where("s.id = ?", storyID).
+		Where("s.id = ?", taskID).
 		First(&tmpl).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get recurring template by story: %w", err)
+		return nil, fmt.Errorf("get recurring template by task: %w", err)
 	}
 	return &tmpl, nil
 }

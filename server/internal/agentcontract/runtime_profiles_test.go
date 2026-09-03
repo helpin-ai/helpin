@@ -12,7 +12,12 @@ func TestDocumentationRuntimeProfileIncludesOrganizationTools(t *testing.T) {
 	if profile.RuntimeKind != "native_sdk" {
 		t.Fatalf("documentation runtime profile = %q, want native_sdk", profile.RuntimeKind)
 	}
-	for _, tool := range []string{"search_workspace", "list_spaces", "create_space", "create_collection", "update_space", "update_collection", "move_document", "link_document_to_object", "complete_support_coverage_gap"} {
+	for _, tool := range []string{
+		"search_workspace", "list_spaces", "create_space", "create_collection", "update_space",
+		"update_collection", "move_document", "link_document_to_object",
+		"complete_support_coverage_gap", "list_task_checklist", "list_epic_tasks",
+		"get_pull_request_diff", "search_knowledge",
+	} {
 		if !slices.Contains(profile.AllowedTools, tool) {
 			t.Fatalf("documentation runtime profile is missing %q", tool)
 		}

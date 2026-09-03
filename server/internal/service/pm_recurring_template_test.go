@@ -66,7 +66,7 @@ func TestPMRecurringTemplateService_CreateFromStory(t *testing.T) {
 		t.Fatalf("generated_count = %d, want 1", tmpl.Template.GeneratedCount)
 	}
 	if tmpl.Template.LastGeneratedTaskID == nil || *tmpl.Template.LastGeneratedTaskID != story.Task.ID {
-		t.Fatalf("last_generated_story_id = %v, want %q", tmpl.Template.LastGeneratedTaskID, story.Task.ID)
+		t.Fatalf("last_generated_task_id = %v, want %q", tmpl.Template.LastGeneratedTaskID, story.Task.ID)
 	}
 	if tmpl.Template.NextRunAt == nil {
 		t.Fatal("expected next_run_at to be populated for time-based template")

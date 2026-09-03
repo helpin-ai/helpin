@@ -110,7 +110,7 @@ func (h *PMEpicHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "epic archived"})
 }
 
-// ListTasks handles GET /api/pm/epics/{id}/stories.
+// ListTasks handles GET /api/pm/epics/{id}/tasks.
 func (h *PMEpicHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tasks, err := h.epicService.ListTasks(r.Context(), id)

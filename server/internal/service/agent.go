@@ -342,11 +342,11 @@ func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef 
 		availableRefs = append(availableRefs, ref)
 		seenAvailableKeys[key] = true
 	}
-	// The managed Ask Agent owns a product-curated catalog of optional skills.
+	// Managed general-purpose agents own product-curated catalogs of optional skills.
 	// Materialize missing refs at launch so existing workspace rows gain that
-	// catalog without a migration. Specialist presets continue to expose only
-	// the skill refs explicitly persisted on their agent rows.
-	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
+	// catalog without a migration. Specialists continue to expose only the skill
+	// refs explicitly persisted on their agent rows.
+	if presetKey := normalizePresetKey(agent.EffectivePresetKey()); presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetCommandAgent {
 		for _, key := range preset.AvailableSkills {
 			key = agentcontract.CanonicalBuiltInSkillKey(key)
 			if key == "" || seenAvailableKeys[key] {
@@ -1113,6 +1113,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	}
 	preset = enforceManagedAskAgentCapabilities(preset)
 	preset = enforceManagedDocumentationAgentCapabilities(preset)
+	preset = enforceManagedCommandAgentCapabilities(preset)
 	if existing != nil {
 		changed := false
 		beforePresetKey := existing.PresetKey
@@ -1193,16 +1194,29 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
-		// Product-managed flash defaults moved from DeepSeek to GLM 5.3 Flash
-		// Exacto. Migrate only the product default version and preserve workspace
-		// preset versions and other explicit routing choices.
+		// The product-managed Sub-agent default moved from GPT-5.6 Terra to the
+		// Small GLM route. Preserve explicit routing on workspace preset versions
+		// and migrate only the untouched product default.
+		if presetKey == model.AgentPresetCommandAgent &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
+		// Product-managed flash defaults moved to the Nitro DeepSeek route.
+		// Migrate only the product default version and preserve workspace preset
+		// versions and other explicit routing choices.
 		if (presetKey == model.AgentPresetEpicPlanner ||
 			presetKey == model.AgentPresetDocumentationAgent ||
 			presetKey == model.AgentPresetAskAgent ||
-			presetKey == model.AgentPresetSupportAgent) &&
+			presetKey == model.AgentPresetSupportAgent ||
+			presetKey == model.AgentPresetCommandAgent) &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenRouter &&
-			isLegacyDeepSeekFlashModel(derefString(existing.Model)) {
+			(isLegacyDeepSeekFlashModel(derefString(existing.Model)) ||
+				strings.TrimSpace(derefString(existing.Model)) == "z-ai/glm-5.3-flash:exacto") {
 			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true
@@ -1405,12 +1419,20 @@ func applyAgentVersionToAgent(agent *model.Agent, version *model.AgentVersion) {
 	}
 }
 
-func modelTierExecutionConfig(serviceTier string) model.JSONBlob {
-	serviceTier = strings.TrimSpace(serviceTier)
-	if serviceTier == "" || serviceTier == defaultAICompletionServiceTier {
-		return model.JSONBlob("{}")
+func modelTierExecutionConfig(snapshot AgentModelTierSnapshot) model.JSONBlob {
+	config := model.AgentExecutionConfig{}
+	serviceTier := strings.TrimSpace(snapshot.ServiceTier)
+	if serviceTier != "" && serviceTier != defaultAICompletionServiceTier {
+		config.ServiceTier = &serviceTier
 	}
-	return model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{ServiceTier: &serviceTier})
+	if len(snapshot.ProviderQuantizations) > 0 {
+		config.OpenRouter = &model.AgentOpenRouterExecutionConfig{
+			Provider: &model.AgentOpenRouterProviderPreferences{
+				Quantizations: append([]string(nil), snapshot.ProviderQuantizations...),
+			},
+		}
+	}
+	return model.MarshalAgentExecutionConfig(config)
 }
 
 func applyModelTierSnapshotToAgent(agent *model.Agent, snapshot AgentModelTierSnapshot) {
@@ -1421,7 +1443,7 @@ func applyModelTierSnapshotToAgent(agent *model.Agent, snapshot AgentModelTierSn
 	agent.RuntimeKind = snapshot.RuntimeKind
 	agent.Provider = trimPtr(&snapshot.Provider)
 	agent.Model = trimPtr(&snapshot.Model)
-	agent.ExecutionConfig = modelTierExecutionConfig(snapshot.ServiceTier)
+	agent.ExecutionConfig = modelTierExecutionConfig(snapshot)
 }
 
 func applyModelTierSnapshotToVersion(version *model.AgentVersion, snapshot AgentModelTierSnapshot) {
@@ -1432,7 +1454,7 @@ func applyModelTierSnapshotToVersion(version *model.AgentVersion, snapshot Agent
 	version.RuntimeKind = snapshot.RuntimeKind
 	version.Provider = trimPtr(&snapshot.Provider)
 	version.Model = trimPtr(&snapshot.Model)
-	version.ExecutionConfig = modelTierExecutionConfig(snapshot.ServiceTier)
+	version.ExecutionConfig = modelTierExecutionConfig(snapshot)
 }
 
 func agentVersionFromAgent(agent *model.Agent, actorID string) *model.AgentVersion {
@@ -4429,7 +4451,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 	}
 
 	switch targetType {
-	case "task", "story":
+	case "task":
 		task, err := s.taskRepo.GetRawByID(ctx, targetID)
 		if err != nil {
 			return nil, fmt.Errorf("get task: %w", err)
@@ -5193,14 +5215,13 @@ func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorI
 	if err != nil {
 		return nil, err
 	}
-	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && (run.TargetType == "task" || run.TargetType == "story") && run.TaskID != nil {
+	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && run.TargetType == "task" && run.TaskID != nil {
 		task, taskErr := s.taskRepo.GetRawByID(ctx, *run.TaskID)
 		if taskErr == nil && task != nil {
 			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
 				WorkspaceID: run.WorkspaceID,
 				TriggerType: model.TriggerAgentRunApproved,
 				TaskID:      task.ID,
-				StoryID:     task.ID, // backward-compat alias
 				StateID:     task.WorkflowStateID,
 				AgentID:     run.AgentID,
 				RunID:       run.ID,
@@ -7215,7 +7236,7 @@ func (s *AgentService) enrichMCPRunAttributions(ctx context.Context, workspaceID
 
 func normalizeRunTargetType(targetType string) string {
 	switch strings.TrimSpace(targetType) {
-	case "task", "pm_task", "story":
+	case "task", "pm_task":
 		return "task"
 	case "doc":
 		return "document"

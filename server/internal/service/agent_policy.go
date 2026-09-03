@@ -286,6 +286,15 @@ func parseAndValidateExecutionConfig(agent *model.Agent) (model.AgentExecutionCo
 			return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.service_tier is only supported for provider openai")
 		}
 	}
+	if config.OpenRouter != nil {
+		provider := ""
+		if agent.Provider != nil {
+			provider = normalizeModelProvider(*agent.Provider)
+		}
+		if provider != model.AgentModelProviderOpenRouter {
+			return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.openrouter is only supported for provider openrouter")
+		}
+	}
 
 	return config, nil
 }

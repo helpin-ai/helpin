@@ -58,7 +58,7 @@ interface WorkflowMapping {
     newStateName: string;
     stateType: StateType;
     position: number;
-    storyCount: number;
+    taskCount: number;
     existingStateId: string;
   }[];
   existingWorkflowId: string;
@@ -70,7 +70,7 @@ type UserAction = 'matched' | 'invite' | 'skip';
 interface UserMapping {
   email: string;
   shortcutMemberId: string | null;
-  storyCount: number;
+  taskCount: number;
   ownerCount: number;
   requesterCount: number;
   matchedUserId: string | null;
@@ -128,9 +128,9 @@ function formatImportStepLabel(step?: string | null) {
       return 'Epics';
     case 'sprints':
       return 'Sprints';
-    case 'stories':
+    case 'tasks':
       return 'Tasks';
-    case 'story_media':
+    case 'task_media':
       return 'Media';
     case 'comments':
       return 'Comments';
@@ -224,7 +224,7 @@ function buildInitialWorkflowMappings(
       newStateName: s.name,
       stateType: (s.suggested_type || 'unstarted') as StateType,
       position: i,
-      storyCount: s.task_count,
+      taskCount: s.task_count,
       existingStateId: '',
     }));
     const existing =
@@ -358,11 +358,11 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
   const [existingWorkflows, setExistingWorkflows] = useState<WorkflowWithStates[]>([]);
   const [importArchived, setImportArchived] = useState(true);
   const [importCompleted, setImportCompleted] = useState(true);
-  const [storyDateField, setStoryDateField] = useState<'updated_at' | 'created_at'>('updated_at');
-  const [storyLookbackMonths, setStoryLookbackMonths] = useState('0');
+  const [taskDateField, setTaskDateField] = useState<'updated_at' | 'created_at'>('updated_at');
+  const [taskLookbackMonths, setTaskLookbackMonths] = useState('0');
   const [epicLookbackMonths, setEpicLookbackMonths] = useState('0');
   const [objectiveLookbackMonths, setObjectiveLookbackMonths] = useState('0');
-  const [maxStories, setMaxStories] = useState('');
+  const [maxTasks, setMaxTasks] = useState('');
   const [importDocs, setImportDocs] = useState(true);
   const [docsSpaceId, setDocsSpaceId] = useState('');
   const [docsCollectionId, setDocsCollectionId] = useState('');
@@ -438,11 +438,11 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
     return {
       import_archived: importArchived,
       import_completed: importCompleted,
-      story_date_field: storyDateField,
-      story_lookback_months: parsePositiveInt(storyLookbackMonths),
+      task_date_field: taskDateField,
+      task_lookback_months: parsePositiveInt(taskLookbackMonths),
       epic_lookback_months: parsePositiveInt(epicLookbackMonths),
       objective_lookback_months: parsePositiveInt(objectiveLookbackMonths),
-      max_stories: parsePositiveInt(maxStories),
+      max_tasks: parsePositiveInt(maxTasks),
       import_docs: importDocs,
       docs_space_id: importDocs ? docsSpaceId : undefined,
       docs_collection_id: importDocs && docsCollectionId ? docsCollectionId : undefined,
@@ -451,11 +451,11 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
   }, [
     importArchived,
     importCompleted,
-    storyDateField,
-    storyLookbackMonths,
+    taskDateField,
+    taskLookbackMonths,
     epicLookbackMonths,
     objectiveLookbackMonths,
-    maxStories,
+    maxTasks,
     importDocs,
     docsSpaceId,
     docsCollectionId,
@@ -475,7 +475,7 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
       data.users.map((u) => ({
         email: u.email,
         shortcutMemberId: u.shortcut_member_id || null,
-        storyCount: u.story_count ?? 0,
+        taskCount: u.task_count ?? 0,
         ownerCount: u.owner_count ?? 0,
         requesterCount: u.requester_count ?? 0,
         matchedUserId: u.matched_user_id,
@@ -899,11 +899,11 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
           }}
           importArchived={importArchived}
           importCompleted={importCompleted}
-          storyDateField={storyDateField}
-          storyLookbackMonths={storyLookbackMonths}
+          taskDateField={taskDateField}
+          taskLookbackMonths={taskLookbackMonths}
           epicLookbackMonths={epicLookbackMonths}
           objectiveLookbackMonths={objectiveLookbackMonths}
-          maxStories={maxStories}
+          maxTasks={maxTasks}
           importDocs={importDocs}
           docsSpaceId={docsSpaceId}
           docsCollectionId={docsCollectionId}
@@ -912,11 +912,11 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
           docsCollections={docsCollections}
           onArchived={setImportArchived}
           onCompleted={setImportCompleted}
-          onStoryDateField={setStoryDateField}
-          onStoryLookbackMonths={setStoryLookbackMonths}
+          onTaskDateField={setTaskDateField}
+          onTaskLookbackMonths={setTaskLookbackMonths}
           onEpicLookbackMonths={setEpicLookbackMonths}
           onObjectiveLookbackMonths={setObjectiveLookbackMonths}
-          onMaxStories={setMaxStories}
+          onMaxTasks={setMaxTasks}
           onImportDocs={setImportDocs}
           onDocsSpaceId={(value) => {
             setDocsSpaceId(value);
@@ -1025,11 +1025,11 @@ function UploadStep({
   onApiTokenChange,
   importArchived,
   importCompleted,
-  storyDateField,
-  storyLookbackMonths,
+  taskDateField,
+  taskLookbackMonths,
   epicLookbackMonths,
   objectiveLookbackMonths,
-  maxStories,
+  maxTasks,
   importDocs,
   docsSpaceId,
   docsCollectionId,
@@ -1038,11 +1038,11 @@ function UploadStep({
   docsCollections,
   onArchived,
   onCompleted,
-  onStoryDateField,
-  onStoryLookbackMonths,
+  onTaskDateField,
+  onTaskLookbackMonths,
   onEpicLookbackMonths,
   onObjectiveLookbackMonths,
-  onMaxStories,
+  onMaxTasks,
   onImportDocs,
   onDocsSpaceId,
   onDocsCollectionId,
@@ -1057,11 +1057,11 @@ function UploadStep({
   onApiTokenChange: (token: string) => void;
   importArchived: boolean;
   importCompleted: boolean;
-  storyDateField: 'updated_at' | 'created_at';
-  storyLookbackMonths: string;
+  taskDateField: 'updated_at' | 'created_at';
+  taskLookbackMonths: string;
   epicLookbackMonths: string;
   objectiveLookbackMonths: string;
-  maxStories: string;
+  maxTasks: string;
   importDocs: boolean;
   docsSpaceId: string;
   docsCollectionId: string;
@@ -1070,11 +1070,11 @@ function UploadStep({
   docsCollections: { id: string; name: string }[];
   onArchived: (v: boolean) => void;
   onCompleted: (v: boolean) => void;
-  onStoryDateField: (v: 'updated_at' | 'created_at') => void;
-  onStoryLookbackMonths: (v: string) => void;
+  onTaskDateField: (v: 'updated_at' | 'created_at') => void;
+  onTaskLookbackMonths: (v: string) => void;
   onEpicLookbackMonths: (v: string) => void;
   onObjectiveLookbackMonths: (v: string) => void;
-  onMaxStories: (v: string) => void;
+  onMaxTasks: (v: string) => void;
   onImportDocs: (v: boolean) => void;
   onDocsSpaceId: (v: string) => void;
   onDocsCollectionId: (v: string) => void;
@@ -1093,7 +1093,7 @@ function UploadStep({
           </p>
           {hasCount && (
             <p className="text-xs text-muted-foreground">
-              {scanProgress.processed.toLocaleString()} of {scanProgress.total.toLocaleString()} stories
+              {scanProgress.processed.toLocaleString()} of {scanProgress.total.toLocaleString()} Shortcut stories
             </p>
           )}
         </div>
@@ -1104,11 +1104,11 @@ function UploadStep({
   if (!preview) {
     const docsAvailable = docsSpaces.length > 0;
     const resetFilters = () => {
-      onStoryDateField('updated_at');
-      onStoryLookbackMonths('6');
+      onTaskDateField('updated_at');
+      onTaskLookbackMonths('6');
       onEpicLookbackMonths('12');
       onObjectiveLookbackMonths('12');
-      onMaxStories('');
+      onMaxTasks('');
       onArchived(false);
       onCompleted(true);
     };
@@ -1167,8 +1167,8 @@ function UploadStep({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <ToggleCard
                 icon={Bookmark01Icon}
-                title="Stories"
-                description="Tasks are story items"
+                title="Tasks"
+                description="Shortcut stories become Helpin tasks"
                 active
                 onClick={() => undefined}
               />
@@ -1224,7 +1224,7 @@ function UploadStep({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
                 <FieldLabel>Date</FieldLabel>
-                <Select value={storyDateField} onValueChange={(v) => onStoryDateField(v as 'updated_at' | 'created_at')}>
+                <Select value={taskDateField} onValueChange={(v) => onTaskDateField(v as 'updated_at' | 'created_at')}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
                   </SelectTrigger>
@@ -1235,8 +1235,8 @@ function UploadStep({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <FieldLabel>Story window</FieldLabel>
-                <Select value={storyLookbackMonths} onValueChange={onStoryLookbackMonths}>
+                <FieldLabel>Task window</FieldLabel>
+                <Select value={taskLookbackMonths} onValueChange={onTaskLookbackMonths}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
                   </SelectTrigger>
@@ -1295,8 +1295,8 @@ function UploadStep({
                   inputMode="numeric"
                   min={1}
                   placeholder="No limit"
-                  value={maxStories}
-                  onChange={(e) => onMaxStories(e.target.value.replace(/\D/g, ''))}
+                  value={maxTasks}
+                  onChange={(e) => onMaxTasks(e.target.value.replace(/\D/g, ''))}
                   className="h-9"
                 />
               </div>
@@ -1477,7 +1477,7 @@ function TeamStep({
       <Card>
         <CardContent className="px-4 py-6">
           <p className="text-sm text-muted-foreground">
-            No Shortcut teams or groups were detected. Imported stories will not be assigned to a team.
+            No Shortcut teams or groups were detected. Imported Shortcut stories will become unassigned Helpin tasks.
           </p>
         </CardContent>
       </Card>
@@ -1500,7 +1500,7 @@ function TeamStep({
                 <TableHead className="text-xs">Shortcut team</TableHead>
                 <TableHead className="text-xs">Destination</TableHead>
                 <TableHead className="text-xs">Team</TableHead>
-                <TableHead className="text-xs text-right">Stories</TableHead>
+                <TableHead className="text-xs text-right">Shortcut stories</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1596,7 +1596,7 @@ function WorkflowStep({
       <div className="ml-9 space-y-3">
       {workflowMappings.map((wf, wfIdx) => {
         const isValid = wf.existingWorkflowId !== '' && wf.states.every((s) => s.existingStateId !== '');
-        const totalTasks = wf.states.reduce((sum, s) => sum + s.storyCount, 0);
+        const totalTasks = wf.states.reduce((sum, s) => sum + s.taskCount, 0);
         const selectedWf = existingWorkflows.find((ew) => ew.workflow.id === wf.existingWorkflowId);
         const stateStats = workflowStateMappingStats(wf.states);
 
@@ -1715,7 +1715,7 @@ function WorkflowStep({
                               )}
                             </div>
                             <div className="text-xs text-muted-foreground md:text-right">
-                              {s.storyCount.toLocaleString()}
+                              {s.taskCount.toLocaleString()}
                             </div>
                             <Select
                               value={s.existingStateId}
@@ -1808,7 +1808,7 @@ function UserStep({
             <TableHeader>
               <TableRow>
                 <TableHead className="text-xs">Shortcut User</TableHead>
-                <TableHead className="text-xs text-right">Stories</TableHead>
+                <TableHead className="text-xs text-right">Shortcut stories</TableHead>
                 <TableHead className="text-xs">Helpin Member</TableHead>
               </TableRow>
             </TableHeader>
@@ -1827,7 +1827,7 @@ function UserStep({
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="py-1.5 text-right text-sm">{u.storyCount.toLocaleString()}</TableCell>
+                  <TableCell className="py-1.5 text-right text-sm">{u.taskCount.toLocaleString()}</TableCell>
                   <TableCell className="py-1.5 text-sm">{u.matchedName || '—'}</TableCell>
                 </TableRow>
               ))}
@@ -1843,7 +1843,7 @@ function UserStep({
             <TableHeader>
               <TableRow>
                 <TableHead className="text-xs">Shortcut User</TableHead>
-                <TableHead className="text-xs text-right">Stories affected</TableHead>
+                <TableHead className="text-xs text-right">Tasks affected</TableHead>
                 <TableHead className="text-xs w-[220px]">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -1873,7 +1873,7 @@ function UserStep({
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="py-1.5 text-right text-sm">{u.storyCount.toLocaleString()}</TableCell>
+                    <TableCell className="py-1.5 text-right text-sm">{u.taskCount.toLocaleString()}</TableCell>
                     <TableCell className="py-1.5">
                       {u.invited ? (
                         <span className="text-xs text-muted-foreground">Pending acceptance</span>
@@ -2155,7 +2155,7 @@ function ShortcutImportDetailPanel({
 
       {detail.options && (
         <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
-          <DetailPill label="Stories" value={formatLookback(detail.options.story_lookback_months)} />
+          <DetailPill label="Tasks" value={formatLookback(detail.options.task_lookback_months)} />
           <DetailPill label="Epics" value={formatLookback(detail.options.epic_lookback_months)} />
           <DetailPill label="Objectives" value={formatLookback(detail.options.objective_lookback_months)} />
           <DetailPill label="Docs" value={detail.options.import_docs ? formatLookback(detail.options.docs_lookback_months) : 'Off'} />

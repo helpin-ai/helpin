@@ -158,9 +158,9 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	}
 
 	// Auto-follow task when someone comments.
-	if req.EntityType == "task" || req.EntityType == "story" {
+	if req.EntityType == "task" {
 		if err := s.taskRepo.AddFollower(ctx, req.EntityID, authorID); err != nil {
-			s.logger.ErrorContext(ctx, "failed to auto-follow story on comment", "error", err, "entity_id", req.EntityID, "author_id", authorID)
+			s.logger.ErrorContext(ctx, "failed to auto-follow task on comment", "error", err, "entity_id", req.EntityID, "author_id", authorID)
 		}
 	}
 
@@ -210,17 +210,17 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		entityTitle := req.EntityID
 		var entityTeamID string
 		readableTeamIDs := []string(nil)
-		if req.EntityType == "task" || req.EntityType == "story" {
-			if story, _ := s.taskRepo.GetRawByID(ctx, req.EntityID); story != nil {
-				entityTitle = story.Name
-				entityTeamID = derefString(story.TeamID)
+		if req.EntityType == "task" {
+			if task, _ := s.taskRepo.GetRawByID(ctx, req.EntityID); task != nil {
+				entityTitle = task.Name
+				entityTeamID = derefString(task.TeamID)
 				s.trackProductEvent(ctx, ProductAnalyticsEvent{
 					SemanticKey: "comment_created:" + comment.ID, UserID: authorID,
 					WorkspaceID: workspaceID, Name: "comment_created", Source: "api",
 					OccurredAt: comment.CreatedAt,
 					Attributes: map[string]any{"entity_id": comment.ID, "parent_type": req.EntityType, "parent_id": req.EntityID, "is_reply": comment.ParentID != nil, "module": "pm"},
 				})
-				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
+				readableTeamIDs = mentionScopeForTeamID(task.TeamID)
 			}
 		}
 
@@ -464,11 +464,11 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 		entityTitle := comment.EntityID
 		var entityTeamID string
 		readableTeamIDs := []string(nil)
-		if comment.EntityType == "task" || comment.EntityType == "story" {
-			if story, _ := s.taskRepo.GetRawByID(ctx, comment.EntityID); story != nil {
-				entityTitle = story.Name
-				entityTeamID = derefString(story.TeamID)
-				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
+		if comment.EntityType == "task" {
+			if task, _ := s.taskRepo.GetRawByID(ctx, comment.EntityID); task != nil {
+				entityTitle = task.Name
+				entityTeamID = derefString(task.TeamID)
+				readableTeamIDs = mentionScopeForTeamID(task.TeamID)
 			}
 		}
 		addedMentions := diffMentionHandles(extractMentions(oldValue), extractMentions(comment.Body))

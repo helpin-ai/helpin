@@ -19,8 +19,6 @@ const PREVIEW_TOOL_NAMES = new Set([
   'publish_prd_draft',
   'publish_task_plan',
   'publish_task_plan_doc',
-  'publish_story_plan',
-  'publish_story_plan_doc',
 ]);
 
 export function isPublishedPreviewToolName(value: unknown): boolean {
@@ -58,12 +56,7 @@ function parsePreviewInput(input: unknown, surroundingText: string): PublishedPr
   const payload = asRecord(input);
   if (!payload) return null;
 
-  const rawPanelKey = asString(payload.panel_key)?.toLowerCase();
-  const panelKey = rawPanelKey === 'story_plan'
-    ? 'task_plan'
-    : rawPanelKey === 'story_plan_doc'
-      ? 'task_plan_doc'
-      : rawPanelKey;
+  const panelKey = asString(payload.panel_key)?.toLowerCase();
   const title = asString(payload.title);
   const format = normalizePreviewFormat(payload.format);
   if (!panelKey || !title || !format || !Object.prototype.hasOwnProperty.call(payload, 'content')) {
@@ -167,12 +160,10 @@ function buildFixedToolPreviewInput(toolName: string, input: unknown): unknown {
       format = 'markdown';
       break;
     case 'publish_task_plan':
-    case 'publish_story_plan':
       panelKey = 'task_plan';
       format = 'json';
       break;
     case 'publish_task_plan_doc':
-    case 'publish_story_plan_doc':
       panelKey = 'task_plan_doc';
       format = 'markdown';
       break;

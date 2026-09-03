@@ -37,18 +37,18 @@ var allowedExternalLinkEntityTypes = map[string]bool{
 	"epic": true,
 }
 
-// List returns external links for a story.
-func (s *PMExternalLinkService) List(ctx context.Context, storyID string) ([]model.PMExternalLink, error) {
-	if storyID == "" {
-		return nil, fmt.Errorf("story_id is required")
+// List returns external links for a task.
+func (s *PMExternalLinkService) List(ctx context.Context, taskID string) ([]model.PMExternalLink, error) {
+	if taskID == "" {
+		return nil, fmt.Errorf("task_id is required")
 	}
-	return s.repo.List(ctx, storyID)
+	return s.repo.List(ctx, taskID)
 }
 
 // Create creates an external link, auto-deriving title from URL hostname if not provided.
-func (s *PMExternalLinkService) Create(ctx context.Context, storyID string, req model.CreateExternalLinkRequest, userID, workspaceID string) (*model.PMExternalLink, error) {
-	if storyID == "" {
-		return nil, fmt.Errorf("story_id is required")
+func (s *PMExternalLinkService) Create(ctx context.Context, taskID string, req model.CreateExternalLinkRequest, userID, workspaceID string) (*model.PMExternalLink, error) {
+	if taskID == "" {
+		return nil, fmt.Errorf("task_id is required")
 	}
 	rawURL := strings.TrimSpace(req.URL)
 	if rawURL == "" {
@@ -58,9 +58,9 @@ func (s *PMExternalLinkService) Create(ctx context.Context, storyID string, req 
 	resolvedURL, title := s.resolveLinkMetadata(ctx, rawURL, req.Title)
 
 	link := &model.PMExternalLink{
-		TaskID:      &storyID,
+		TaskID:      &taskID,
 		EntityType:  "task",
-		EntityID:    storyID,
+		EntityID:    taskID,
 		Title:       title,
 		URL:         resolvedURL,
 		CreatedByID: userID,
@@ -68,7 +68,7 @@ func (s *PMExternalLinkService) Create(ctx context.Context, storyID string, req 
 	if err := s.repo.Create(ctx, link); err != nil {
 		return nil, err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "external_link", EntityID: link.ID, WorkspaceID: workspaceID, ActorID: userID, ParentType: "task", ParentID: storyID})
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "external_link", EntityID: link.ID, WorkspaceID: workspaceID, ActorID: userID, ParentType: "task", ParentID: taskID})
 	return link, nil
 }
 

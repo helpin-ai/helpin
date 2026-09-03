@@ -69,9 +69,9 @@ describe('collectCodingSessionPreviews', () => {
       kind: 'tool_call',
       tool_call: {
         tool_call_id: 'tool-1',
-        tool_name: 'publish_story_plan_doc',
+        tool_name: 'publish_task_plan_doc',
         args_text: JSON.stringify({
-          panel_key: 'story_plan_doc',
+          panel_key: 'task_plan_doc',
           title: 'Task Planning Document',
           format: 'markdown',
           content: '# Flow\n\nUpdated live draft',
@@ -96,7 +96,7 @@ describe('collectCodingSessionPreviews', () => {
       kind: 'tool_call',
       tool_call: {
         tool_call_id: 'tool-failed',
-        tool_name: 'publish_story_plan',
+        tool_name: 'publish_task_plan',
         args_text: JSON.stringify({
           content: {
             open_questions: [{ question: 'Should Kafka tests run on every PR?' }],
@@ -105,8 +105,8 @@ describe('collectCodingSessionPreviews', () => {
         }),
         status: 'failed',
         result: {
-          content: 'publish_story_plan content must include a non-empty summary',
-          error: 'publish_story_plan content must include a non-empty summary',
+          content: 'publish_task_plan content must include a non-empty summary',
+          error: 'publish_task_plan content must include a non-empty summary',
         },
       },
     }];

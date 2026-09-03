@@ -13,7 +13,7 @@ describe('CodingPreviewPanels', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders legacy Atlas task-plan previews with proposed_stories as structured UI', () => {
+  it('renders canonical Atlas task-plan previews with proposed_tasks as structured UI', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -27,11 +27,11 @@ describe('CodingPreviewPanels', () => {
         surroundingText: '',
         content: {
           summary: 'Break the epic into slices.',
-          proposed_stories: [
+          proposed_tasks: [
             {
               ref: 'story_1',
               title: 'User can connect Stripe',
-              story_type: 'feature',
+              task_type: 'feature',
               description: 'Add the Stripe connection flow.',
               acceptance_criteria: ['User can complete OAuth'],
               dependency_refs: [],
@@ -55,7 +55,7 @@ describe('CodingPreviewPanels', () => {
     expect(container.textContent).toContain('1 tasks');
     expect(container.textContent).toContain('User can connect Stripe');
     expect(container.textContent).toContain('Feature');
-    expect(container.textContent).not.toContain('proposed_stories');
+    expect(container.textContent).not.toContain('proposed_tasks');
 
     act(() => {
       root.unmount();
