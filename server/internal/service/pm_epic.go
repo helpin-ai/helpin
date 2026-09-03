@@ -87,32 +87,7 @@ func (s *PMEpicService) List(ctx context.Context, workspaceID string, filters mo
 		return nil, err
 	}
 
-	result := make([]model.EpicWithStats, 0, len(epics))
-	epicIDs := make([]string, 0, len(epics))
-	for _, epic := range epics {
-		withStats, err := s.epicRepo.GetWithStats(ctx, epic.ID)
-		if err != nil {
-			return nil, err
-		}
-		if withStats != nil {
-			enrichEpicSuggestedHealth(withStats)
-			result = append(result, *withStats)
-			epicIDs = append(epicIDs, epic.ID)
-		}
-	}
-
-	// Batch-load objectives for all epics
-	objMap, err := s.epicRepo.ListObjectivesBatch(ctx, epicIDs)
-	if err != nil {
-		return nil, err
-	}
-	for i := range result {
-		if objs, ok := objMap[result[i].Epic.ID]; ok {
-			result[i].Objectives = objs
-		}
-	}
-
-	return result, nil
+	return s.enrichEpicList(ctx, epics)
 }
 
 // ListPage returns a repository-bounded epic page with batch-loaded enrichment.
@@ -125,8 +100,16 @@ func (s *PMEpicService) ListPage(ctx context.Context, workspaceID string, filter
 	if err != nil {
 		return nil, 0, err
 	}
+	result, err := s.enrichEpicList(ctx, epics)
+	return result, total, err
+}
+
+// enrichEpicList batch-loads list-only associations and aggregate statistics.
+// Keeping this path bounded avoids issuing several queries for every epic while
+// preserving the EpicWithStats response used by both list APIs.
+func (s *PMEpicService) enrichEpicList(ctx context.Context, epics []model.PMEpic) ([]model.EpicWithStats, error) {
 	if len(epics) == 0 {
-		return []model.EpicWithStats{}, total, nil
+		return []model.EpicWithStats{}, nil
 	}
 	epicIDs := make([]string, 0, len(epics))
 	for _, epic := range epics {
@@ -134,15 +117,15 @@ func (s *PMEpicService) ListPage(ctx context.Context, workspaceID string, filter
 	}
 	labelsByEpic, err := s.epicRepo.ListLabelsBatch(ctx, epicIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	objectivesByEpic, err := s.epicRepo.ListObjectivesBatch(ctx, epicIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	statsByEpic, err := s.epicRepo.ComputeStatsBatch(ctx, epicIDs)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	result := make([]model.EpicWithStats, 0, len(epics))
@@ -156,7 +139,7 @@ func (s *PMEpicService) ListPage(ctx context.Context, workspaceID string, filter
 		enrichEpicSuggestedHealth(&item)
 		result = append(result, item)
 	}
-	return result, total, nil
+	return result, nil
 }
 
 // GetByID returns one epic with stats.

@@ -12,6 +12,7 @@ import {
   type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useQueryClient } from '@tanstack/react-query';
 import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
 import { EpicFilterBar } from '@/pages/pm/EpicFilterBar';
 import { format, parseISO } from 'date-fns';
@@ -46,7 +47,6 @@ import { InlineEpicDateControl, InlineEpicObjectivesControl } from '@/components
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { pmEpicService } from '@/lib/services/pmEpicService';
-import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -54,6 +54,10 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useEpics } from '@/hooks/queries/useEpics';
+import { useLabels } from '@/hooks/queries/useLabels';
+import { useObjectives } from '@/hooks/queries/useObjectives';
+import { queryKeys } from '@/lib/queryKeys';
 import type { EpicWithStats, EpicHealth, EpicWorkflowState, Label, Objective, StateType, UpdateEpicRequest } from '@/lib/pmTypes';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
@@ -87,6 +91,8 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
 
 const ARCHIVED_STATE_VALUE = '__archived__';
 const GROUP_HEADER_REPEAT_HEIGHT = 30;
+const EMPTY_EPICS: EpicWithStats[] = [];
+const EMPTY_LABELS: Label[] = [];
 
 const FILTER_CATEGORY_ICONS: Partial<Record<EpicFilterKey, React.ComponentType<{ className?: string }>>> = {
   state: WorkflowSquare01Icon,
@@ -1025,10 +1031,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
 
-  const [epics, setEpics] = useState<EpicWithStats[]>([]);
-  const [allLabels, setAllLabels] = useState<Label[]>([]);
-  const [allObjectives, setAllObjectives] = useState<Objective[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [groupBy, setGroupBy] = useState<EpicGroupBy>('state');
@@ -1040,6 +1042,41 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
   const workspaceId = workspace?.id;
   const slug = workspace?.slug;
+  const showArchived = filters.state?.includes(ARCHIVED_STATE_VALUE) ?? false;
+  const epicFilters = useMemo(() => ({ archived: showArchived, team_id: teamId }), [showArchived, teamId]);
+  const objectiveFilters = useMemo(() => ({ archived: false }), []);
+  const queryClient = useQueryClient();
+  const epicsQuery = useEpics(workspaceId ?? '', epicFilters);
+  const labelsQuery = useLabels(workspaceId ?? '');
+  const objectivesQuery = useObjectives(workspaceId ?? '', objectiveFilters);
+  const epics = epicsQuery.data ?? EMPTY_EPICS;
+  const allLabels = labelsQuery.data ?? EMPTY_LABELS;
+  const allObjectives = useMemo(
+    () => (objectivesQuery.data ?? []).map((entry) => entry.objective),
+    [objectivesQuery.data],
+  );
+  const epicsQueryKey = useMemo(
+    () => [...queryKeys.pm.epics(workspaceId ?? ''), epicFilters] as const,
+    [epicFilters, workspaceId],
+  );
+  const labelsQueryKey = useMemo(
+    () => [...queryKeys.pm.labels(workspaceId ?? ''), undefined] as const,
+    [workspaceId],
+  );
+  const setEpics = useCallback(
+    (next: EpicWithStats[] | ((current: EpicWithStats[]) => EpicWithStats[])) => {
+      queryClient.setQueryData<EpicWithStats[]>(epicsQueryKey, (current = []) =>
+        typeof next === 'function' ? next(current) : next,
+      );
+    },
+    [epicsQueryKey, queryClient],
+  );
+  const setAllLabels = useCallback(
+    (labels: Label[]) => queryClient.setQueryData<Label[]>(labelsQueryKey, labels),
+    [labelsQueryKey, queryClient],
+  );
+  const loading = epicsQuery.isLoading;
+  const loadError = error ?? (epicsQuery.error instanceof Error ? epicsQuery.error.message : null);
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const { teams, findTeamName } = useAccessibleTeams(workspaceId ?? '');
@@ -1148,7 +1185,9 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
   const updateEpicField = useCallback(
     async (epicId: string, patch: UpdateEpicRequest) => {
+      if (!workspaceId) return;
       setError(null);
+      await queryClient.cancelQueries({ queryKey: epicsQueryKey, exact: true });
 
       let snapshot: EpicWithStats[] = [];
       setEpics((current) => {
@@ -1156,7 +1195,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         return current.map((entry) => (entry.epic.id === epicId ? applyEpicPatch(entry, patch, allLabels) : entry));
       });
 
-      const { data, error: updateError } = await pmEpicService.update(workspaceId!, epicId, patch);
+      const { data, error: updateError } = await pmEpicService.update(workspaceId, epicId, patch);
       if (updateError || !data) {
         setEpics(snapshot);
         setError(updateError ?? 'Failed to update epic');
@@ -1165,7 +1204,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
       setEpics((current) => current.map((entry) => (entry.epic.id === epicId ? data : entry)));
     },
-    [allLabels, workspaceId],
+    [allLabels, epicsQueryKey, queryClient, setEpics, workspaceId],
   );
 
   const updateEpicObjectives = useCallback(
@@ -1174,6 +1213,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       if (!currentEntry || !workspaceId) return;
 
       setError(null);
+      await queryClient.cancelQueries({ queryKey: epicsQueryKey, exact: true });
       const snapshot = epics;
       const currentObjectiveIds = (currentEntry.objectives ?? []).map((objective) => objective.id);
       const currentSet = new Set(currentObjectiveIds);
@@ -1207,7 +1247,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         setError(failed.error ?? 'Failed to update objectives');
       }
     },
-    [allObjectives, epics, workspaceId],
+    [allObjectives, epics, epicsQueryKey, queryClient, setEpics, workspaceId],
   );
 
   const columns = useMemo(
@@ -1409,7 +1449,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         cell: (info) => <span className="text-ui text-muted-foreground">{format(parseISO(info.row.original.epic.updated_at), 'MMM d')}</span>,
       }),
     ],
-    [allLabels, allObjectives, assignableMembers, canEdit, columnHelper, epicStateMap, epicStates, findTeamName, ownerNameMap, teamMap, teams, updateEpicField, updateEpicObjectives, workspaceId],
+    [allLabels, allObjectives, assignableMembers, canEdit, columnHelper, epicStateMap, epicStates, findTeamName, ownerNameMap, setAllLabels, teamMap, teams, updateEpicField, updateEpicObjectives, workspaceId],
   );
 
   const columnVisibility = useMemo<VisibilityState>(() => {
@@ -1432,35 +1472,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       updated: visible.has('updated'),
     };
   }, [visibleColumns, isSingleTeam]);
-
-  const showArchived = filters.state?.includes('__archived__') ?? false;
-
-  const loadData = useCallback(async () => {
-    if (!workspaceId) return;
-    setLoading(true);
-    setError(null);
-    const [epicsRes, labelsRes, objectivesRes] = await Promise.all([
-      pmEpicService.list(workspaceId, {
-        archived: showArchived,
-        team_id: teamId,
-      }),
-      pmLabelService.list(workspaceId),
-      pmObjectiveService.list(workspaceId, { archived: false }),
-    ]);
-    if (epicsRes.error || !epicsRes.data) {
-      setError(epicsRes.error ?? 'Failed to load epics');
-      setLoading(false);
-      return;
-    }
-    setEpics(epicsRes.data);
-    setAllLabels(labelsRes.data ?? []);
-    setAllObjectives((objectivesRes.data ?? []).map((entry) => entry.objective));
-    setLoading(false);
-  }, [teamId, workspaceId, showArchived]);
-
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
 
   const hasLoadedViewStateRef = useRef(false);
 
@@ -1485,11 +1496,12 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   // Refresh when epic is created via global modal
   useEffect(() => {
     const handler = () => {
-      void loadData();
+      if (!workspaceId) return;
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pm.epics(workspaceId) });
     };
     window.addEventListener('epic-created', handler);
     return () => window.removeEventListener('epic-created', handler);
-  }, [loadData]);
+  }, [queryClient, workspaceId]);
 
   const openEpic = useCallback(
     (entry: EpicWithStats) => {
@@ -1558,7 +1570,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         }
       />
 
-      {error ? <div className="mx-4 mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">{error}</div> : null}
+      {loadError ? <div className="mx-4 mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">{loadError}</div> : null}
 
       {showControls ? (
         <EpicFilterBar

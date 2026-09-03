@@ -562,6 +562,32 @@ func TestPMEpicService_List(t *testing.T) {
 	})
 }
 
+func TestPMEpicServiceListUsesBoundedBatchEnrichment(t *testing.T) {
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	for _, name := range []string{"Epic One", "Epic Two", "Epic Three"} {
+		createTestEpic(t, svc, wsID, userID, name)
+	}
+
+	queryCount := 0
+	const callbackName = "test:count_epic_list_queries"
+	if err := db.Callback().Query().Before("gorm:query").Register(callbackName, func(*gorm.DB) {
+		queryCount++
+	}); err != nil {
+		t.Fatalf("register query counter: %v", err)
+	}
+
+	epics, err := svc.List(context.Background(), wsID, model.PMEpicListFilters{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(epics) != 3 {
+		t.Fatalf("len = %d, want 3", len(epics))
+	}
+	if queryCount > 4 {
+		t.Fatalf("epic list queries = %d, want at most 4 regardless of epic count", queryCount)
+	}
+}
+
 func TestPMEpicService_GetByID(t *testing.T) {
 	t.Parallel()
 	svc, wsID, userID := newEpicTestEnv(t)
