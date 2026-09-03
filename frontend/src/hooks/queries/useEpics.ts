@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { pmEpicService } from '@/lib/services/pmEpicService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
-import type { CreateEpicRequest, UpdateEpicRequest, UpdateEpicHealthRequest } from '@/lib/pmTypes'
+import type { CreateEpicRequest, EpicWithStats, UpdateEpicRequest, UpdateEpicHealthRequest } from '@/lib/pmTypes'
 
 interface EpicFilters {
   team_id?: string
@@ -20,10 +20,28 @@ export function useEpics(wsId: string, filters?: EpicFilters) {
 }
 
 export function useEpic(wsId: string, id: string) {
+  const queryClient = useQueryClient()
   return useQuery({
     queryKey: queryKeys.pm.epic(wsId, id),
     queryFn: async () => unwrap(await pmEpicService.get(wsId, id)),
     enabled: !!wsId && !!id,
+    placeholderData: () => {
+      const cachedLists = queryClient.getQueriesData<unknown>({ queryKey: queryKeys.pm.epics(wsId) })
+      for (const [queryKey, value] of cachedLists) {
+        const filters = queryKey[3]
+        const isEpicList = queryKey.length === 4
+          && (filters === undefined || (typeof filters === 'object' && filters !== null && !Array.isArray(filters)))
+        if (!isEpicList) continue
+        if (!Array.isArray(value)) continue
+        const match = value.find((candidate: unknown) => {
+          if (!candidate || typeof candidate !== 'object' || !('epic' in candidate)) return false
+          const epic = (candidate as { epic?: { id?: string } }).epic
+          return epic?.id === id
+        })
+        if (match) return match as EpicWithStats
+      }
+      return undefined
+    },
   })
 }
 

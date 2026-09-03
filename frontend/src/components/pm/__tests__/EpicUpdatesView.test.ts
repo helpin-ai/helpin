@@ -193,7 +193,7 @@ describe("Epic updates view", () => {
     expect(routeSource).toContain("epic_view?: 'delivery'");
 
     const tasksIndex = detailSource.indexOf(
-      "title={`Tasks (${tasks.length})`}",
+      "title={`Tasks (${taskDisplayCount})`}",
     );
     const updatesIndex = detailSource.indexOf('title="Updates"');
     const pipelineIndex = detailSource.indexOf('title="Delivery pipeline"');
@@ -213,7 +213,7 @@ describe("Epic updates view", () => {
       "utf8",
     );
 
-    expect(detailSource).toContain('meta={tasks.length > 0 ? (');
+    expect(detailSource).toContain('meta={!areTasksPending && tasks.length > 0 ? (');
     expect(detailSource).toContain('text-sm italic text-muted-foreground">No tasks linked yet.');
     expect(detailSource).toContain('<span>Link existing tasks</span>');
     expect(detailSource).toContain('<span>Create task</span>');

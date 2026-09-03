@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from 'react';
 import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTitle } from '@/hooks/useTitle';
 import {
@@ -53,15 +54,24 @@ import type { TaskListGroupByOption } from '@/components/pm/task-detail/taskList
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
-import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
-import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import {
+  useEpic,
+  useEpics,
+  useEpicTasks,
+  useObjectives,
+  useSprints,
+  useWorkflows,
+  useEpicStates,
+  useWorkspaceAccess,
+  usePermissions,
+} from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { ActivityLogEntry, AttachmentResponse, CommentWithAuthor, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, LinkEpicTasksResponse, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
+import type { ActivityLogEntry, AttachmentResponse, CommentWithAuthor, CreateTaskRequest, EpicWithStats, EpicHealth, LinkEpicTasksResponse, Task, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
 import { getEpicTaskCount } from '@/lib/pmTypes';
 import { getWorkflowStateTone, STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -96,6 +106,9 @@ import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEd
 import { TaskOwnerDistribution } from '@/components/pm/TaskOwnerDistribution';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { cn } from '@/lib/utils';
+import { queryKeys } from '@/lib/queryKeys';
+import { unwrap } from '@/lib/queryUtils';
+import { getEpicTaskDisplayCount, shouldShowEpicLoading } from '@/components/pm/epic-detail/epicDetailLoadState';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -108,6 +121,7 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
 };
 const NO_HEALTH_DATES_TOOLTIP = 'No suggestion yet: set a start date and deadline.';
 const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and execution.';
+const EMPTY_ITEMS: never[] = [];
 
 function hasDraggedFiles(event: DragEvent) {
   return event.dataTransfer.types.includes('Files');
@@ -205,20 +219,55 @@ export function EpicDetailPage() {
   const currentUser = useAuthStore((s) => s.user);
 
   const workspaceId = workspace?.id;
+  const queryClient = useQueryClient();
 
   const { data: epicStates = [] } = useEpicStates(workspaceId ?? '');
   const { data: workflows = [] } = useWorkflows(workspaceId ?? '');
+  const referenceFilters = useMemo(() => ({ archived: false }), []);
+  const epicQuery = useEpic(workspaceId ?? '', epicId);
+  const tasksQuery = useEpicTasks(workspaceId ?? '', epicId);
+  const epicsQuery = useEpics(workspaceId ?? '', referenceFilters);
+  const sprintsQuery = useSprints(workspaceId ?? '', referenceFilters);
+  const objectivesQuery = useObjectives(workspaceId ?? '', referenceFilters);
+  const repositoriesQuery = useQuery({
+    queryKey: queryKeys.git.repositories(workspaceId ?? ''),
+    queryFn: async () => unwrap(await gitService.listRepositories(workspaceId!)),
+    enabled: !!workspaceId,
+  });
+  const refetchEpic = epicQuery.refetch;
+  const refetchTasks = tasksQuery.refetch;
 
-  const [epic, setEpic] = useState<EpicWithStats | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
-  const [allSprints, setAllSprints] = useState<SprintWithStats[]>([]);
-  const [allObjectives, setAllObjectives] = useState<Objective[]>([]);
-  const [repositories, setRepositories] = useState<GitRepository[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const epic = epicQuery.data ?? null;
+  const setEpic = useCallback((next: SetStateAction<EpicWithStats | null>) => {
+    queryClient.setQueryData<EpicWithStats>(queryKeys.pm.epic(workspaceId ?? '', epicId), (current) => {
+      const data = typeof next === 'function' ? next(current ?? null) : next;
+      return data ?? current;
+    });
+  }, [epicId, queryClient, workspaceId]);
 
-  const [form, setForm] = useState<EpicFormState | null>(null);
+  const tasks = tasksQuery.data ?? EMPTY_ITEMS;
+  const setTasks = useCallback((next: SetStateAction<Task[]>) => {
+    queryClient.setQueryData<Task[]>(queryKeys.pm.epicTasks(workspaceId ?? '', epicId), (current) => {
+      return typeof next === 'function' ? next(current ?? EMPTY_ITEMS) : next;
+    });
+  }, [epicId, queryClient, workspaceId]);
+  const allEpics = epicsQuery.data ?? EMPTY_ITEMS;
+  const allSprints = sprintsQuery.data ?? EMPTY_ITEMS;
+  const allObjectives = useMemo(
+    () => (objectivesQuery.data ?? EMPTY_ITEMS).map((entry) => entry.objective),
+    [objectivesQuery.data],
+  );
+  const repositories = repositoriesQuery.data ?? EMPTY_ITEMS;
+
+  const [formOverride, setFormOverride] = useState<{ epicId: string; data: EpicFormState } | null>(null);
+  const form = formOverride?.epicId === epicId ? formOverride.data : (epic ? buildForm(epic) : null);
+  const setForm = useCallback((next: SetStateAction<EpicFormState | null>) => {
+    setFormOverride((current) => {
+      const currentForm = current?.epicId === epicId ? current.data : (epic ? buildForm(epic) : null);
+      const data = typeof next === 'function' ? next(currentForm) : next;
+      return data ? { epicId, data } : null;
+    });
+  }, [epic, epicId]);
   const [pendingPatch, setPendingPatch] = useState<UpdateEpicRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -246,6 +295,7 @@ export function EpicDetailPage() {
   const [activityLoading, setActivityLoading] = useState(true);
   const [taskListGroupBy, setTaskListGroupBy] = useState<TaskListGroupByOption>('none');
   const savedDescriptionRef = useRef('');
+  const savedDescriptionEpicIdRef = useRef('');
   const descriptionUploadRef = useRef<((files: FileList | File[], insertPos?: number) => Promise<void>) | null>(null);
   const queuedDescriptionDropRef = useRef<File[] | null>(null);
   const descriptionDragCounterRef = useRef(0);
@@ -359,41 +409,13 @@ export function EpicDetailPage() {
 
   useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 
-  const fetchData = useCallback(async (showLoading = true) => {
+  const fetchData = useCallback(async () => {
     if (!workspaceId) return;
-    if (showLoading) setLoading(true);
-    setError(null);
-    const [epicRes, tasksRes, epicsRes, sprintsRes, objectivesRes, reposRes] = await Promise.all([
-      pmEpicService.get(workspaceId, epicId),
-      pmEpicService.listTasks(workspaceId, epicId),
-      pmEpicService.list(workspaceId, { archived: false }),
-      pmSprintService.list(workspaceId, { archived: false }),
-      pmObjectiveService.list(workspaceId, { archived: false }),
-      gitService.listRepositories(workspaceId),
-    ]);
-    if (epicRes.error || !epicRes.data) {
-      setError(epicRes.error ?? 'Epic not found');
-      setLoading(false);
-      return;
-    }
-    setEpic(epicRes.data);
-    savedDescriptionRef.current = epicRes.data.epic.description ?? '';
-    setForm((current) => current ? current : buildForm(epicRes.data!));
-    setTasks(tasksRes.data ?? []);
-    setAllEpics(epicsRes.data ?? []);
-    setAllSprints(sprintsRes.data ?? []);
-    setAllObjectives((objectivesRes.data ?? []).map((entry) => entry.objective));
-    setRepositories(reposRes.data ?? []);
-    setLoading(false);
-  }, [workspaceId, epicId]);
+    await Promise.all([refetchEpic(), refetchTasks()]);
+  }, [refetchEpic, refetchTasks, workspaceId]);
 
   const handlePlannerRunCompleted = useCallback(() => {
-    void fetchData(false);
-  }, [fetchData]);
-
-  // Load epic data + reference data
-  useEffect(() => {
-    fetchData();
+    void fetchData();
   }, [fetchData]);
 
   const reloadComments = useCallback(async () => {
@@ -461,7 +483,9 @@ export function EpicDetailPage() {
     ) return;
     const timer = window.setTimeout(async () => {
       const patch = pendingPatch;
-      const previousDescription = savedDescriptionRef.current;
+      const previousDescription = savedDescriptionEpicIdRef.current === epic.epic.id
+        ? savedDescriptionRef.current
+        : (epic.epic.description ?? '');
       setPendingPatch({});
       setSaving(true);
       const { data, error: err } = await pmEpicService.update(workspaceId, epic.epic.id, patch);
@@ -472,6 +496,7 @@ export function EpicDetailPage() {
         setSaveError(null);
         setEpic(data);
         const nextDescription = data.epic.description ?? '';
+        savedDescriptionEpicIdRef.current = data.epic.id;
         savedDescriptionRef.current = nextDescription;
         if (patch.description !== undefined) {
           const removedAttachmentIds = diffRemovedInlineAttachmentIds(previousDescription, nextDescription);
@@ -485,7 +510,7 @@ export function EpicDetailPage() {
       setSaving(false);
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [workspaceId, epic, pendingPatch, saving, descriptionPendingUploads]);
+  }, [workspaceId, epic, pendingPatch, saving, descriptionPendingUploads, setEpic]);
 
   const queuePatch = (patch: UpdateEpicRequest) => {
     setPendingPatch((current) => ({ ...current, ...patch }));
@@ -528,7 +553,8 @@ export function EpicDetailPage() {
 
       setForm((current) => (current ? { ...current, description: nextDescription } : current));
       setPendingPatch((current) => {
-        const { description, ...rest } = current;
+        const rest = { ...current };
+        delete rest.description;
         return rest;
       });
       setSaving(true);
@@ -545,12 +571,13 @@ export function EpicDetailPage() {
 
       setSaveError(null);
       setEpic(data);
+      savedDescriptionEpicIdRef.current = data.epic.id;
       savedDescriptionRef.current = data.epic.description ?? '';
       await pmAttachmentService.remove(workspaceId, entry.attachment.id);
       setSaving(false);
       return 'handled' as const;
     },
-    [workspaceId, epic, form],
+    [workspaceId, epic, form, confirm, setEpic, setForm],
   );
 
   // Derived data
@@ -578,10 +605,10 @@ export function EpicDetailPage() {
     if (!form?.owner_member_id) return 'No owner';
     return assignableMemberNames.get(form.owner_member_id) ?? 'Unknown';
   }, [form?.owner_member_id, assignableMemberNames]);
-  const currentPlanningRepositoryName = useMemo(() => {
-    if (!form?.planning_repository_id) return 'Not configured';
-    return repositories.find((repo) => repo.id === form.planning_repository_id)?.full_name ?? 'Unknown repository';
-  }, [form?.planning_repository_id, repositories]);
+  const currentPlanningRepositoryName = !form?.planning_repository_id
+    ? 'Not configured'
+    : repositories.find((repo) => repo.id === form.planning_repository_id)?.full_name
+      ?? (repositoriesQuery.isLoading ? 'Loading repository…' : 'Unknown repository');
 
   const workflow = workflows[0] ?? null;
   const canCreateTask = canEdit && teams.length > 0;
@@ -641,7 +668,7 @@ export function EpicDetailPage() {
     if (err || !data) {
       throw new Error(err ?? 'Failed to create task');
     }
-    await fetchData(false);
+    await fetchData();
     return data.task
       ? {
           id: data.task.task.id,
@@ -656,7 +683,7 @@ export function EpicDetailPage() {
   }, [fetchData]);
 
   const handleTasksLinked = useCallback(async (result: LinkEpicTasksResponse) => {
-    await Promise.all([fetchData(false), reloadActivity(), delivery.reload()]);
+    await Promise.all([fetchData(), reloadActivity(), delivery.reload()]);
     const linkedLabel = `${result.linked_count} task${result.linked_count === 1 ? '' : 's'}`;
     if (result.moved_count > 0) {
       toast.success(`Linked ${linkedLabel}; ${result.moved_count} moved from another epic.`);
@@ -669,9 +696,9 @@ export function EpicDetailPage() {
     () => (epic?.objectives ?? []).map((objective) => ({
       id: objective.id,
       name: objective.name,
-      archived: !allObjectives.some((candidate) => candidate.id === objective.id),
+      archived: objectivesQuery.isSuccess && !allObjectives.some((candidate) => candidate.id === objective.id),
     })),
-    [allObjectives, epic?.objectives],
+    [allObjectives, epic?.objectives, objectivesQuery.isSuccess],
   );
 
   const updateObjectives = useCallback(async (nextObjectiveIds: string[]) => {
@@ -699,7 +726,7 @@ export function EpicDetailPage() {
     ]);
 
     const failed = results.find((result) => result.error);
-    await fetchData(false);
+    await fetchData();
     if (failed) {
       setSaveError(failed.error ?? 'Failed to update objectives');
       setSaving(false);
@@ -707,15 +734,13 @@ export function EpicDetailPage() {
     }
 
     setSaving(false);
-  }, [allObjectives, epic, fetchData, workspaceId]);
+  }, [allObjectives, epic, fetchData, setEpic, workspaceId]);
 
   // Refresh tasks when global panel updates/archives a task
   useEffect(() => {
     const refresh = () => {
       if (!workspaceId) return;
-      pmEpicService.listTasks(workspaceId, epicId).then((res) => {
-        if (res.data) setTasks(res.data);
-      });
+      void refetchTasks();
     };
     window.addEventListener('task-panel-updated', refresh);
     window.addEventListener('task-panel-archived', refresh);
@@ -723,7 +748,7 @@ export function EpicDetailPage() {
       window.removeEventListener('task-panel-updated', refresh);
       window.removeEventListener('task-panel-archived', refresh);
     };
-  }, [workspaceId, epicId]);
+  }, [workspaceId, epicId, refetchTasks]);
 
   const goBack = () => navigate({
     to: '/w/$slug/pm/epics',
@@ -835,7 +860,14 @@ export function EpicDetailPage() {
     setSaving(false);
   };
 
-  if (loading) {
+  const initialEpicLoading = !workspaceId || shouldShowEpicLoading(epic, epicQuery.isLoading);
+  const loadError = !epic && epicQuery.error instanceof Error ? epicQuery.error.message : null;
+  const tasksUnavailable = tasksQuery.data === undefined;
+  const areTasksPending = tasksQuery.isLoading && tasksUnavailable;
+  const taskLoadError = tasksQuery.isError && tasksUnavailable;
+  const taskDisplayCount = epic ? getEpicTaskDisplayCount(epic, tasks, tasksUnavailable) : 0;
+
+  if (initialEpicLoading) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
         <QuietDetailHeader
@@ -851,7 +883,7 @@ export function EpicDetailPage() {
     );
   }
 
-  if (error || !epic || !form) {
+  if (loadError || !epic || !form) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
         <QuietDetailHeader
@@ -861,7 +893,7 @@ export function EpicDetailPage() {
         />
         <div className="flex-1 overflow-auto p-4 sm:p-6">
           <QuietEmptyState
-            title={error ?? 'Epic not found'}
+            title={loadError ?? 'Epic not found'}
             description="This epic may have been moved, archived, deleted, or is no longer available to you."
             action={<QuietTextAction onClick={goBack}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to Epics</QuietTextAction>}
           />
@@ -1012,9 +1044,9 @@ export function EpicDetailPage() {
           {/* Tasks */}
           <div>
             <TaskDetailSectionHeading
-              title={`Tasks (${tasks.length})`}
+              title={`Tasks (${taskDisplayCount})`}
               icon={CheckListIcon}
-              meta={tasks.length > 0 ? (
+              meta={!areTasksPending && tasks.length > 0 ? (
                 <div className="flex min-w-0 flex-1 items-center">
                   <InlineCompletionProgress
                     completed={doneTasks}
@@ -1027,7 +1059,18 @@ export function EpicDetailPage() {
                 </div>
               ) : undefined}
             />
-            {tasks.length === 0 ? (
+            {taskLoadError ? (
+              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground" role="alert">
+                <span>Tasks could not be loaded.</span>
+                <Button variant="ghost" size="sm" onClick={() => void refetchTasks()}>Retry</Button>
+              </div>
+            ) : areTasksPending ? (
+              <div className="mt-3 space-y-2" aria-label="Loading epic tasks">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className="h-10 animate-pulse rounded-md bg-quiet-icon-well" />
+                ))}
+              </div>
+            ) : tasks.length === 0 ? (
               <div className="mt-3">
                 <p className="text-sm italic text-muted-foreground">No tasks linked yet.</p>
                 {renderEmptyTaskActions()}
@@ -1052,7 +1095,7 @@ export function EpicDetailPage() {
                   groupBy={taskListGroupBy}
                   onGroupByChange={setTaskListGroupBy}
                   showLocalTaskControls
-                  onBulkOperationComplete={() => fetchData(false)}
+                  onBulkOperationComplete={fetchData}
                 />
               </div>
             ) : (
