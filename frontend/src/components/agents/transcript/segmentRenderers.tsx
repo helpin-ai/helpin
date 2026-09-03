@@ -14,6 +14,7 @@ import { formatCodingSessionRelative } from '@/components/pm/CodingSession/codin
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { TranscriptRow } from './TranscriptRow';
 import { toolStatusChrome } from './toolRowChrome';
 import type { TranscriptSegment } from './segments';
@@ -37,6 +38,8 @@ export interface RenderSegmentOptions {
   toolGroup?: TranscriptToolGroupPresentation;
   /** Show the original tool input/result/error inline inside a working group. */
   showToolDetails?: boolean;
+  /** Prefer an outcome-oriented label such as `Read src/app.ts` over the raw tool name. */
+  showToolContext?: boolean;
   /** Show reasoning inline because the surrounding working group is disclosed. */
   showReasoningDetails?: boolean;
   /** Structural assistant role within its conversational interval. */
@@ -67,6 +70,7 @@ export function TranscriptSegmentView({
           toolCall={segment.toolCall}
           group={options.toolGroup}
           showDetails={options.showToolDetails ?? options.expandable}
+          showContext={options.showToolContext}
         />
       );
     case 'reasoning':
@@ -156,10 +160,12 @@ function ToolSegment({
   toolCall,
   group,
   showDetails = false,
+  showContext = false,
 }: {
   toolCall: CodingSessionLiveToolCall;
   group?: TranscriptToolGroupPresentation;
   showDetails?: boolean;
+  showContext?: boolean;
 }) {
   const status = group?.status ?? toolCall.status;
   const failed = status === 'failed';
@@ -171,6 +177,7 @@ function ToolSegment({
     .filter(Boolean)
     .join(' ');
   const friendlyLabel = humanizedName.charAt(0).toUpperCase() + humanizedName.slice(1);
+  const presentation = showContext ? describeToolCall(toolCall) : null;
   const canShowError = showDetails && failed;
 
   return (
@@ -179,10 +186,10 @@ function ToolSegment({
       iconClassName={className}
       label={(
         <>
-          <span className="font-mono text-foreground/80">
-            {canonicalName}{grouped ? ` ×${group.count}` : ''}
+          <span className={cn(presentation ? 'text-quiet-text-secondary' : 'font-mono text-foreground/80')}>
+            {presentation?.primaryLabel ?? canonicalName}{grouped ? ` ×${group.count}` : ''}
           </span>
-          <span className="text-foreground/50"> · {friendlyLabel}</span>
+          <span className={cn('text-foreground/50', presentation && 'font-mono')}> · {presentation ? canonicalName : friendlyLabel}</span>
         </>
       )}
       tone={failed ? 'failed' : 'muted'}

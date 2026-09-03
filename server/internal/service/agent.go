@@ -1221,6 +1221,16 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
+		// Ask Agent and Sub-agent moved from the managed DeepSeek Nitro route
+		// to GLM Nitro. Preserve explicit workspace routing choices.
+		if (presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetCommandAgent) &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenRouter &&
+			strings.TrimSpace(derefString(existing.Model)) == defaultFastOpenRouterAgentModel {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
 		// Scribe's product default moved from DeepSeek on OpenRouter to Codex on
 		// OpenAI. Only migrate the default preset when it still uses the previous
 		// product default, preserving custom routing choices.
@@ -1246,11 +1256,13 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		}
 		expectedExecutionConfig := normalizeExecutionConfigJSON(preset.ExecutionConfig)
 		currentExecutionConfig := normalizeExecutionConfigJSON(existing.ExecutionConfig)
-		if presetKey == model.AgentPresetAskAgent && string(currentExecutionConfig) != string(expectedExecutionConfig) {
-			// Ask Agent execution settings are managed because stale workspace
+		if (presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetCommandAgent) &&
+			string(currentExecutionConfig) != string(expectedExecutionConfig) {
+			// Ask Agent and Sub-agent execution settings are managed because stale workspace
 			// versions may carry workspace.mode=repository. That mode makes the
 			// runtime resolve the product workspace target as a repository and
-			// prevents mixed repository-read/product-write Dock workflows.
+			// prevents mixed repository-read/product-write Dock workflows. Keeping
+			// these configs managed also enforces their product-owned tool-step cap.
 			existing.ExecutionConfig = expectedExecutionConfig
 			changed = true
 		} else if string(currentExecutionConfig) == "{}" && string(expectedExecutionConfig) != "{}" {

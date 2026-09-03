@@ -236,9 +236,7 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 	for _, preset := range presets {
 		usesFastOpenRouterDefault := preset.Key == model.AgentPresetEpicPlanner ||
 			preset.Key == model.AgentPresetDocumentationAgent ||
-			preset.Key == model.AgentPresetAskAgent ||
-			preset.Key == model.AgentPresetSupportAgent ||
-			preset.Key == model.AgentPresetCommandAgent
+			preset.Key == model.AgentPresetSupportAgent
 		if usesFastOpenRouterDefault {
 			config, err := model.ParseAgentExecutionConfig(preset.ExecutionConfig)
 			if err != nil {
@@ -284,26 +282,34 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			}
 			continue
 		}
-		if preset.Key == model.AgentPresetAskAgent || preset.Key == model.AgentPresetSupportAgent {
-			// The dock orchestrator and support agent default to a flash-tier
-			// OpenRouter model.
+		if preset.Key == model.AgentPresetSupportAgent {
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}
-			if preset.Model == nil || *preset.Model != defaultAskAgentModel {
-				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultAskAgentModel)
+			if preset.Model == nil || *preset.Model != defaultFastOpenRouterAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultFastOpenRouterAgentModel)
 			}
 			continue
 		}
-		if preset.Key == model.AgentPresetCommandAgent {
+		if preset.Key == model.AgentPresetAskAgent || preset.Key == model.AgentPresetCommandAgent {
 			if preset.RuntimeKind != "native_sdk" {
 				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
 			}
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}
-			if preset.Model == nil || *preset.Model != defaultCommandAgentModel {
-				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultCommandAgentModel)
+			wantModel := defaultAskAgentModel
+			if preset.Key == model.AgentPresetCommandAgent {
+				wantModel = defaultCommandAgentModel
+			}
+			if preset.Model == nil || *preset.Model != wantModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, wantModel)
+			}
+			config, err := model.ParseAgentExecutionConfig(preset.ExecutionConfig)
+			if err != nil {
+				t.Errorf("preset %q execution config: %v", preset.Key, err)
+			} else if config.MaxToolSteps == nil || *config.MaxToolSteps != managedAssistantMaxToolSteps || config.OpenRouter != nil {
+				t.Errorf("preset %q execution config = %s, want only max_tool_steps=%d", preset.Key, preset.ExecutionConfig, managedAssistantMaxToolSteps)
 			}
 			continue
 		}
@@ -1076,13 +1082,13 @@ func TestParseAndValidateExecutionConfigRejectsInvalidNativeToolStepLimit(t *tes
 			name:        "zero",
 			runtimeKind: "native_sdk",
 			config:      model.JSONBlob(`{"max_tool_steps":0}`),
-			wantError:   "must be between 1 and 1000",
+			wantError:   "must be between 1 and 2000",
 		},
 		{
 			name:        "above maximum",
 			runtimeKind: "native_sdk",
-			config:      model.JSONBlob(`{"max_tool_steps":1001}`),
-			wantError:   "must be between 1 and 1000",
+			config:      model.JSONBlob(`{"max_tool_steps":2001}`),
+			wantError:   "must be between 1 and 2000",
 		},
 		{
 			name:        "codex runtime",
