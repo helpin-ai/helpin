@@ -1,5 +1,4 @@
 import { TeamsTab } from '@/components/settings';
-import { invalidateWorkspaceTeamsCache } from '@/hooks/useWorkspaceTeams';
 import { useInvalidateSettings } from '@/hooks/queries/useSettings';
 import { SettingsPageFrame, type SettingsPageContext } from './SettingsPageFrame';
 
@@ -35,7 +34,6 @@ function TeamsSettingsContent({
       teamRepoDefaults={settings.team_repo_defaults}
       editable={permissions.canManageTeams}
       onRefresh={() => {
-        invalidateWorkspaceTeamsCache();
         invalidateSettings();
       }}
       initialTeamId={initialTeamId}

@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
-import { settingsService } from '@/lib/services/settingsService';
-import type { WorkspaceTeam, WorkspacePerson, TeamMembership, TeamUserMembership } from '@/lib/types';
+import { useCallback, useMemo } from 'react';
+import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
+import type {
+  TeamMembership,
+  TeamUserMembership,
+  WorkspacePerson,
+  WorkspaceSettings,
+  WorkspaceTeam,
+} from '@/lib/types';
 
 interface WorkspaceTeamsResult {
   teams: WorkspaceTeam[];
@@ -12,90 +18,40 @@ interface WorkspaceTeamsResult {
   findTeamName: (teamId: string | null | undefined) => string | undefined;
 }
 
-// Module-level cache keyed by workspace ID.
-let cachedWorkspaceId: string | null = null;
-let cachedTeams: WorkspaceTeam[] = [];
-let cachedPeople: WorkspacePerson[] = [];
-let cachedMemberships: TeamMembership[] = [];
-let cachedUserMemberships: TeamUserMembership[] = [];
-let fetchPromise: Promise<void> | null = null;
-let listeners: (() => void)[] = [];
-
-/** Clear the teams cache and notify all mounted hook instances to re-fetch. */
-export function invalidateWorkspaceTeamsCache() {
-  cachedWorkspaceId = null;
-  cachedTeams = [];
-  cachedPeople = [];
-  cachedMemberships = [];
-  cachedUserMemberships = [];
-  fetchPromise = null;
-  listeners.forEach((l) => l());
+interface TeamsSlice {
+  teams: WorkspaceTeam[];
+  people: WorkspacePerson[];
+  memberships: TeamMembership[];
+  userMemberships: TeamUserMembership[];
 }
 
+const EMPTY_SLICE: TeamsSlice = { teams: [], people: [], memberships: [], userMemberships: [] };
+
+export function capitalizeTeamName(name: string): string {
+  return name ? name.charAt(0).toUpperCase() + name.slice(1) : name;
+}
+
+function selectTeamsSlice(settings: WorkspaceSettings): TeamsSlice {
+  return {
+    teams: settings.teams.map((team) => ({ ...team, name: capitalizeTeamName(team.name) })),
+    people: settings.people,
+    memberships: settings.memberships,
+    userMemberships: settings.user_memberships,
+  };
+}
+
+/**
+ * Teams, people and memberships for a workspace.
+ *
+ * Reads from the workspace settings query (already loaded by the workspace
+ * layout), so there is no separate fetch or module-level cache. Any
+ * `invalidateQueries(queryKeys.workspaces.settings(wsId))` refreshes it.
+ */
 export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTeamsResult {
-  const [teams, setTeams] = useState<WorkspaceTeam[]>(cachedWorkspaceId === workspaceId ? cachedTeams : []);
-  const [people, setPeople] = useState<WorkspacePerson[]>(cachedWorkspaceId === workspaceId ? cachedPeople : []);
-  const [memberships, setMemberships] = useState<TeamMembership[]>(cachedWorkspaceId === workspaceId ? cachedMemberships : []);
-  const [userMemberships, setUserMemberships] = useState<TeamUserMembership[]>(cachedWorkspaceId === workspaceId ? cachedUserMemberships : []);
-  const [loading, setLoading] = useState(false);
-  const [version, setVersion] = useState(0);
+  const { data, isLoading } = useWorkspaceSettings(workspaceId ?? '');
 
-  // Subscribe to cache invalidation events.
-  useEffect(() => {
-    const listener = () => setVersion((v) => v + 1);
-    listeners.push(listener);
-    return () => { listeners = listeners.filter((l) => l !== listener); };
-  }, []);
-
-  const load = useCallback(async () => {
-    if (!workspaceId) return;
-    // Deduplicate concurrent fetches.
-    if (!fetchPromise || cachedWorkspaceId !== workspaceId) {
-      setLoading(true);
-      fetchPromise = (async () => {
-        const { data } = await settingsService.getAll(workspaceId);
-        if (data) {
-          cachedWorkspaceId = workspaceId;
-          cachedTeams = data.teams.map((t) => ({
-            ...t,
-            name: t.name ? t.name.charAt(0).toUpperCase() + t.name.slice(1) : t.name,
-          }));
-          cachedPeople = data.people;
-          cachedMemberships = data.memberships;
-          cachedUserMemberships = data.user_memberships;
-        }
-      })().catch(() => {
-        // A transient API outage must not leave a rejected promise cached for
-        // every teams consumer. The next mount or invalidation can retry.
-      });
-    }
-
-    try {
-      await fetchPromise;
-      setTeams(cachedTeams);
-      setPeople(cachedPeople);
-      setMemberships(cachedMemberships);
-      setUserMemberships(cachedUserMemberships);
-    } finally {
-      fetchPromise = null;
-      setLoading(false);
-    }
-  }, [workspaceId]);
-
-  useEffect(() => {
-    if (!workspaceId) return;
-
-    // Return cached data if it matches.
-    if (cachedWorkspaceId === workspaceId && cachedTeams.length > 0) {
-      setTeams(cachedTeams);
-      setPeople(cachedPeople);
-      setMemberships(cachedMemberships);
-      setUserMemberships(cachedUserMemberships);
-      return;
-    }
-
-    load();
-  }, [workspaceId, version, load]);
+  const slice = useMemo(() => (data ? selectTeamsSlice(data) : EMPTY_SLICE), [data]);
+  const { teams, people, memberships, userMemberships } = slice;
 
   const getTeamMembers = useCallback((teamId: string): WorkspacePerson[] => {
     const memberIds = new Set(memberships.filter((m) => m.team_id === teamId).map((m) => m.person_id));
@@ -107,5 +63,5 @@ export function useWorkspaceTeams(workspaceId: string | undefined): WorkspaceTea
     return teams.find((t) => t.id === teamId)?.name;
   }, [teams]);
 
-  return { teams, people, memberships, userMemberships, loading, getTeamMembers, findTeamName };
+  return { teams, people, memberships, userMemberships, loading: isLoading, getTeamMembers, findTeamName };
 }

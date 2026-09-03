@@ -9,7 +9,7 @@ import {
   TranscriptSegmentView,
 } from '@/components/agents/transcript';
 import { useAuthStore } from '@/stores/authStore';
-import { useWorkspaceMembers } from '@/hooks/useWorkspaceMembers';
+import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
 import type { AgentRunMessage, CodingSessionActor, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
@@ -203,7 +203,7 @@ export function DockTranscript({
   className?: string;
 }) {
   const user = useAuthStore((state) => state.user);
-  const { members } = useWorkspaceMembers(workspaceId);
+  const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
   const actorsById = new Map<string, CodingSessionActor>(
     members.map((member) => [member.user_id, {
       id: member.user_id,

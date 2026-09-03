@@ -55,6 +55,11 @@ const mocks = vi.hoisted(() => ({
   uploadEditorFile: vi.fn(),
 }));
 
+vi.mock('@/hooks/queries/useWorkspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/queries/useWorkspaces')>()),
+  useWorkspaceMembers: () => ({ data: [], isLoading: false }),
+}));
+
 vi.mock('sonner', () => ({
 	toast: {
 		error: mocks.toastError,

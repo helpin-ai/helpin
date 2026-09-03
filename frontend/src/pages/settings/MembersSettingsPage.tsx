@@ -1,5 +1,4 @@
 import { MembersTab } from '@/components/settings';
-import { invalidateWorkspaceTeamsCache } from '@/hooks/useWorkspaceTeams';
 import { useInvalidateSettings } from '@/hooks/queries/useSettings';
 import { SettingsPageFrame, type SettingsPageContext } from './SettingsPageFrame';
 
@@ -22,7 +21,6 @@ function MembersSettingsContent({ workspaceId, organizationId, settings, permiss
       teams={settings.teams}
       userMemberships={settings.user_memberships}
       onRefresh={() => {
-        invalidateWorkspaceTeamsCache();
         invalidateSettings();
       }}
     />

@@ -20,9 +20,9 @@ vi.mock('@/lib/teamMemberAvatar', () => ({
   resolveTeamMemberAvatarSrc: mocks.resolveTeamMemberAvatarSrc,
 }));
 
-vi.mock('@/hooks/useWorkspaceMembers', () => ({
+vi.mock('@/hooks/queries/useWorkspaces', () => ({
   useWorkspaceMembers: () => ({
-    members: [
+    data: [
       {
         id: 'membership-1',
         user_id: 'user-1',

@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => ({
   streamState: null as CodingSessionStreamState | null,
 }));
 
+vi.mock('@/hooks/queries/useWorkspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/queries/useWorkspaces')>()),
+  useWorkspaceMembers: () => ({ data: [], isLoading: false }),
+}));
+
 vi.mock('../useAgentRunStream', () => ({
   useAgentRunStream: () => ({
     streamState: mocks.streamState,
