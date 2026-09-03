@@ -12,21 +12,21 @@ func TestCommentWithAuthor_ReplyFields(t *testing.T) {
 	parent := CommentWithAuthor{
 		Comment: PMComment{
 			ID:         "parent-123",
-			EntityType: "story",
-			EntityID:   "story-1",
+			EntityType: "task",
+			EntityID:   "task-1",
 			AuthorID:   "user-1",
 			Body:       "Top-level comment",
 			ParentID:   nil,
 			CreatedAt:  now,
 		},
-		Author: User{ID: "user-1", Email: "alice@example.com", FullName: "Alice"},
+		Author:     User{ID: "user-1", Email: "alice@example.com", FullName: "Alice"},
 		ReplyCount: 2,
 		Replies: []CommentWithAuthor{
 			{
 				Comment: PMComment{
 					ID:         "reply-1",
-					EntityType: "story",
-					EntityID:   "story-1",
+					EntityType: "task",
+					EntityID:   "task-1",
 					AuthorID:   "user-2",
 					Body:       "First reply",
 					ParentID:   &parentID,
@@ -37,8 +37,8 @@ func TestCommentWithAuthor_ReplyFields(t *testing.T) {
 			{
 				Comment: PMComment{
 					ID:         "reply-2",
-					EntityType: "story",
-					EntityID:   "story-1",
+					EntityType: "task",
+					EntityID:   "task-1",
 					AuthorID:   "user-1",
 					Body:       "Second reply",
 					ParentID:   &parentID,
@@ -66,7 +66,7 @@ func TestCommentWithAuthor_ReplyFields(t *testing.T) {
 func TestPMComment_ParentID_Nil(t *testing.T) {
 	c := PMComment{
 		ID:         "c1",
-		EntityType: "story",
+		EntityType: "task",
 		EntityID:   "s1",
 		AuthorID:   "u1",
 		Body:       "Top-level",
@@ -81,7 +81,7 @@ func TestPMComment_ParentID_Set(t *testing.T) {
 	parentID := "parent-abc"
 	c := PMComment{
 		ID:         "c2",
-		EntityType: "story",
+		EntityType: "task",
 		EntityID:   "s1",
 		AuthorID:   "u2",
 		Body:       "Reply",
@@ -116,8 +116,8 @@ func TestCommentWithAuthor_EmptyReplies(t *testing.T) {
 func TestCreateCommentRequest_WithParentID(t *testing.T) {
 	parentID := "parent-xyz"
 	req := CreateCommentRequest{
-		EntityType: "story",
-		EntityID:   "story-1",
+		EntityType: "task",
+		EntityID:   "task-1",
 		Body:       "This is a reply",
 		ParentID:   &parentID,
 	}
@@ -128,8 +128,8 @@ func TestCreateCommentRequest_WithParentID(t *testing.T) {
 
 func TestCreateCommentRequest_WithoutParentID(t *testing.T) {
 	req := CreateCommentRequest{
-		EntityType: "story",
-		EntityID:   "story-1",
+		EntityType: "task",
+		EntityID:   "task-1",
 		Body:       "Top-level comment",
 	}
 	if req.ParentID != nil {

@@ -3,7 +3,7 @@ import { ReactNodeViewRenderer } from '@tiptap/react'
 import { EntityEmbedNodeView } from './EntityEmbedNodeView'
 import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
-export type DocsEntityEmbedType = 'reference' | 'task' | 'story' | 'epic' | 'support_conversation' | 'deal' | 'contact' | 'company'
+export type DocsEntityEmbedType = 'reference' | 'task' | 'epic' | 'support_conversation' | 'deal' | 'contact' | 'company'
 
 export interface EntityEmbedAttrs {
   entityType: DocsEntityEmbedType

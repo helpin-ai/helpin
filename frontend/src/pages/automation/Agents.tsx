@@ -199,15 +199,6 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
-  story_planner: {
-    ...DEFAULT_PRESET_MODEL,
-    label: 'Coding Task Planner',
-    default_role: 'Coding Task Planner',
-    description: 'Interactive decomposition and refinement for tasks and execution plans.',
-    runtime_kind: 'codex',
-    default_invocation_mode: 'interactive',
-    supported_modes: ['autonomous', 'interactive'],
-  },
   crm_operator: {
     ...DEFAULT_PRESET_MODEL,
     label: 'Beacon',
@@ -1099,7 +1090,7 @@ function agentRunTriggerLabel(run: AgentRun) {
   const triggerType = readNestedString(trigger, ['trigger_type']);
   const source = readNestedString(trigger, ['source']);
 
-  if (triggerType === 'task.state_entered' || triggerType === 'story.state_entered') return 'State changed';
+  if (triggerType === 'task.state_entered') return 'State changed';
   if (triggerType === 'agent_run.approved') return 'Run approved';
   if (triggerType === 'cron' || source === 'cron') return 'Scheduled run';
   if (triggerType === 'command_bar' || source === 'command_bar') return 'Command bar';
@@ -1544,7 +1535,7 @@ function trimSummaryText(value?: string, fallback = 'No description yet.') {
 function agentRoleLabel(agent: Agent, presets: AgentPresetDefinition[]) {
   if (agent.is_system) {
     const presetKey = fallbackPresetKey(agent);
-    if (presetKey === 'task_planner' || presetKey === 'story_planner') return 'Coding Task Planner';
+    if (presetKey === 'task_planner') return 'Coding Task Planner';
     if (presetKey === 'review_agent') return 'QA & Code Reviewer';
     const preset = presetMetaForSelection(presetKey, agent.preset_version_key, presets);
     return preset?.default_role ?? presetMetaForKey(presetKey, presets)?.default_role ?? presetFallback(presetKey).default_role;

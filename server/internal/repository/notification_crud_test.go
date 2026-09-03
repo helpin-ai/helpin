@@ -99,7 +99,7 @@ func TestNotificationRepository_Upsert_CreateNew(t *testing.T) {
 
 	notif := &model.Notification{
 		ID: "notif-1", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "story-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "task-1", EventType: "task.assigned",
 		Title: "Assigned", LatestEventCategory: "assignments",
 		EventCount: 1, LastEventAt: now, Status: "unread", Priority: "normal",
 		CreatedAt: now, UpdatedAt: now,
@@ -125,7 +125,7 @@ func TestNotificationRepository_Upsert_UpdateExisting(t *testing.T) {
 
 	notif := &model.Notification{
 		ID: "notif-1", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "story-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "task-1", EventType: "task.assigned",
 		Title: "Original", LatestEventCategory: "assignments",
 		EventCount: 1, LastEventAt: now, Status: "unread", Priority: "normal",
 		CreatedAt: now, UpdatedAt: now,
@@ -177,14 +177,14 @@ func TestNotificationRepository_GetExisting_Found(t *testing.T) {
 
 	if err := db.WithContext(ctx).Create(&model.Notification{
 		ID: "notif-1", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "story-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "task-1", EventType: "task.assigned",
 		Title: "Test", LatestEventCategory: "assignments",
 		EventCount: 1, LastEventAt: now, Status: "unread", Priority: "normal",
 	}).Error; err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	existing, err := repo.GetExisting(ctx, "user-1", "story", "story-1", "ws-1")
+	existing, err := repo.GetExisting(ctx, "user-1", "task", "task-1", "ws-1")
 	if err != nil {
 		t.Fatalf("GetExisting: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestNotificationRepository_GetExisting_NotFound(t *testing.T) {
 	repo := NewNotificationRepository(db)
 	ctx := context.Background()
 
-	existing, err := repo.GetExisting(ctx, "user-1", "story", "story-999", "ws-1")
+	existing, err := repo.GetExisting(ctx, "user-1", "task", "task-999", "ws-1")
 	if err != nil {
 		t.Fatalf("GetExisting: %v", err)
 	}
@@ -278,9 +278,9 @@ func TestNotificationRepository_List_DefaultExcludesArchived(t *testing.T) {
 	now := time.Now()
 
 	notifs := []model.Notification{
-		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-1", EventType: "story.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
-		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-2", EventType: "story.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "read", LastEventAt: now.Add(-time.Minute), Priority: "normal"},
-		{ID: "n-3", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-3", EventType: "story.assigned", Title: "T3", LatestEventCategory: "assignments", Status: "archived", LastEventAt: now.Add(-2 * time.Minute), Priority: "normal"},
+		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-1", EventType: "task.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-2", EventType: "task.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "read", LastEventAt: now.Add(-time.Minute), Priority: "normal"},
+		{ID: "n-3", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-3", EventType: "task.assigned", Title: "T3", LatestEventCategory: "assignments", Status: "archived", LastEventAt: now.Add(-2 * time.Minute), Priority: "normal"},
 	}
 	for i := range notifs {
 		if err := db.WithContext(ctx).Create(&notifs[i]).Error; err != nil {
@@ -304,8 +304,8 @@ func TestNotificationRepository_List_StatusFilter(t *testing.T) {
 	now := time.Now()
 
 	notifs := []model.Notification{
-		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-1", EventType: "story.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
-		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-2", EventType: "story.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "archived", LastEventAt: now, Priority: "normal"},
+		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-1", EventType: "task.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-2", EventType: "task.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "archived", LastEventAt: now, Priority: "normal"},
 	}
 	for i := range notifs {
 		if err := db.WithContext(ctx).Create(&notifs[i]).Error; err != nil {
@@ -329,8 +329,8 @@ func TestNotificationRepository_List_AssignedFilter(t *testing.T) {
 	now := time.Now()
 
 	notifs := []model.Notification{
-		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-1", EventType: "story.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
-		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-2", EventType: "comment.created", Title: "T2", LatestEventCategory: "comments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-1", EventType: "task.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-2", EventType: "comment.created", Title: "T2", LatestEventCategory: "comments", Status: "unread", LastEventAt: now, Priority: "normal"},
 	}
 	for i := range notifs {
 		if err := db.WithContext(ctx).Create(&notifs[i]).Error; err != nil {
@@ -342,8 +342,8 @@ func TestNotificationRepository_List_AssignedFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List assigned: %v", err)
 	}
-	if len(results) != 1 || results[0].EventType != "story.assigned" {
-		t.Fatalf("assigned list = %+v, want story.assigned only", results)
+	if len(results) != 1 || results[0].EventType != "task.assigned" {
+		t.Fatalf("assigned list = %+v, want task.assigned only", results)
 	}
 }
 
@@ -356,7 +356,7 @@ func TestNotificationRepository_List_CursorPagination(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		if err := db.WithContext(ctx).Create(&model.Notification{
 			ID: fmt.Sprintf("n-%d", i), WorkspaceID: "ws-1", RecipientID: "user-1",
-			EntityType: "story", EntityID: fmt.Sprintf("s-%d", i), EventType: "story.assigned",
+			EntityType: "task", EntityID: fmt.Sprintf("s-%d", i), EventType: "task.assigned",
 			Title: fmt.Sprintf("T%d", i), LatestEventCategory: "assignments",
 			Status: "unread", LastEventAt: now.Add(time.Duration(-i) * time.Minute), Priority: "normal",
 		}).Error; err != nil {
@@ -395,8 +395,8 @@ func TestNotificationRepository_List_HidesSnoozedNotifications(t *testing.T) {
 	future := now.Add(1 * time.Hour)
 
 	notifs := []model.Notification{
-		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-1", EventType: "story.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
-		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-2", EventType: "story.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "unread", SnoozedUntil: &future, LastEventAt: now, Priority: "normal"},
+		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-1", EventType: "task.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-2", EventType: "task.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "unread", SnoozedUntil: &future, LastEventAt: now, Priority: "normal"},
 	}
 	for i := range notifs {
 		if err := db.WithContext(ctx).Create(&notifs[i]).Error; err != nil {
@@ -428,7 +428,7 @@ func TestNotificationRepository_MarkAsRead(t *testing.T) {
 
 	if err := db.WithContext(ctx).Create(&model.Notification{
 		ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "s-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "s-1", EventType: "task.assigned",
 		Title: "T1", LatestEventCategory: "assignments",
 		Status: "unread", LastEventAt: now, Priority: "normal",
 	}).Error; err != nil {
@@ -458,9 +458,9 @@ func TestNotificationRepository_MarkAllAsRead(t *testing.T) {
 	now := time.Now()
 
 	notifs := []model.Notification{
-		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-1", EventType: "story.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
-		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-2", EventType: "story.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
-		{ID: "n-3", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-3", EventType: "story.assigned", Title: "T3", LatestEventCategory: "assignments", Status: "read", LastEventAt: now, Priority: "normal"},
+		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-1", EventType: "task.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-2", EventType: "task.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-3", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-3", EventType: "task.assigned", Title: "T3", LatestEventCategory: "assignments", Status: "read", LastEventAt: now, Priority: "normal"},
 	}
 	for i := range notifs {
 		if err := db.WithContext(ctx).Create(&notifs[i]).Error; err != nil {
@@ -490,8 +490,8 @@ func TestNotificationRepository_ArchiveAllRead(t *testing.T) {
 	now := time.Now()
 
 	notifs := []model.Notification{
-		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-1", EventType: "story.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "read", LastEventAt: now, Priority: "normal"},
-		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-2", EventType: "story.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-1", EventType: "task.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "read", LastEventAt: now, Priority: "normal"},
+		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-2", EventType: "task.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
 	}
 	for i := range notifs {
 		if err := db.WithContext(ctx).Create(&notifs[i]).Error; err != nil {
@@ -525,7 +525,7 @@ func TestNotificationRepository_Update(t *testing.T) {
 
 	if err := db.WithContext(ctx).Create(&model.Notification{
 		ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "s-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "s-1", EventType: "task.assigned",
 		Title: "T1", LatestEventCategory: "assignments",
 		Status: "unread", LastEventAt: now, Priority: "normal",
 	}).Error; err != nil {
@@ -557,7 +557,7 @@ func TestNotificationRepository_Update_WrongRecipient(t *testing.T) {
 
 	if err := db.WithContext(ctx).Create(&model.Notification{
 		ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "s-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "s-1", EventType: "task.assigned",
 		Title: "T1", LatestEventCategory: "assignments",
 		Status: "unread", LastEventAt: now, Priority: "normal",
 	}).Error; err != nil {
@@ -585,7 +585,7 @@ func TestNotificationRepository_Delete(t *testing.T) {
 
 	if err := db.WithContext(ctx).Create(&model.Notification{
 		ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "s-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "s-1", EventType: "task.assigned",
 		Title: "T1", LatestEventCategory: "assignments",
 		Status: "unread", LastEventAt: now, Priority: "normal",
 	}).Error; err != nil {
@@ -611,7 +611,7 @@ func TestNotificationRepository_Delete_WrongRecipient(t *testing.T) {
 
 	if err := db.WithContext(ctx).Create(&model.Notification{
 		ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "s-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "s-1", EventType: "task.assigned",
 		Title: "T1", LatestEventCategory: "assignments",
 		Status: "unread", LastEventAt: now, Priority: "normal",
 	}).Error; err != nil {
@@ -641,7 +641,7 @@ func TestNotificationRepository_CreateEvent(t *testing.T) {
 	event := &model.NotificationEvent{
 		ID:             "event-1",
 		NotificationID: "notif-1",
-		EventType:      "story.assigned",
+		EventType:      "task.assigned",
 		Title:          "Assigned to you",
 		Category:       "assignments",
 		Priority:       "normal",
@@ -694,9 +694,9 @@ func TestNotificationRepository_WakeExpiredSnoozes(t *testing.T) {
 	future := now.Add(1 * time.Hour)
 
 	notifs := []model.Notification{
-		{ID: "n-expired", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-1", EventType: "story.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "snoozed", SnoozedUntil: &past, LastEventAt: now, Priority: "normal"},
-		{ID: "n-active", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-2", EventType: "story.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "snoozed", SnoozedUntil: &future, LastEventAt: now, Priority: "normal"},
-		{ID: "n-unread", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-3", EventType: "story.assigned", Title: "T3", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-expired", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-1", EventType: "task.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "snoozed", SnoozedUntil: &past, LastEventAt: now, Priority: "normal"},
+		{ID: "n-active", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-2", EventType: "task.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "snoozed", SnoozedUntil: &future, LastEventAt: now, Priority: "normal"},
+		{ID: "n-unread", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-3", EventType: "task.assigned", Title: "T3", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
 	}
 	for i := range notifs {
 		if err := db.WithContext(ctx).Create(&notifs[i]).Error; err != nil {
@@ -737,7 +737,7 @@ func TestNotificationRepository_WakeExpiredSnoozes_NoneExpired(t *testing.T) {
 
 	if err := db.WithContext(ctx).Create(&model.Notification{
 		ID: "n-active", WorkspaceID: "ws-1", RecipientID: "user-1",
-		EntityType: "story", EntityID: "s-1", EventType: "story.assigned",
+		EntityType: "task", EntityID: "s-1", EventType: "task.assigned",
 		Title: "T1", LatestEventCategory: "assignments",
 		Status: "snoozed", SnoozedUntil: &future, LastEventAt: now, Priority: "normal",
 	}).Error; err != nil {
@@ -765,8 +765,8 @@ func TestNotificationRepository_UnreadCount_ExcludesSnoozed(t *testing.T) {
 	future := now.Add(1 * time.Hour)
 
 	notifs := []model.Notification{
-		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-1", EventType: "story.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
-		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "story", EntityID: "s-2", EventType: "story.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "unread", SnoozedUntil: &future, LastEventAt: now, Priority: "normal"},
+		{ID: "n-1", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-1", EventType: "task.assigned", Title: "T1", LatestEventCategory: "assignments", Status: "unread", LastEventAt: now, Priority: "normal"},
+		{ID: "n-2", WorkspaceID: "ws-1", RecipientID: "user-1", EntityType: "task", EntityID: "s-2", EventType: "task.assigned", Title: "T2", LatestEventCategory: "assignments", Status: "unread", SnoozedUntil: &future, LastEventAt: now, Priority: "normal"},
 	}
 	for i := range notifs {
 		if err := db.WithContext(ctx).Create(&notifs[i]).Error; err != nil {

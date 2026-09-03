@@ -31,7 +31,6 @@ interface AgentPersonaMeta {
 const PRESET_PERSONA_MAP: Partial<Record<AgentPresetKey, AgentPersonaKey>> = {
   epic_planner: 'atlas',
   task_planner: 'scribe',
-  story_planner: 'scribe',
   code_builder: 'forge',
   support_agent: 'echo',
   review_agent: 'lens',

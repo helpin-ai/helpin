@@ -12,7 +12,7 @@ import (
 
 var selectableAgentTierRoutes = map[aiusage.Tier]AICompletionRoute{
 	aiusage.TierSmall: {
-		Provider: "openrouter", Model: "z-ai/glm-5.3-flash:exacto", ServiceTier: defaultAICompletionServiceTier,
+		Provider: "openrouter", Model: defaultFastOpenRouterAgentModel, ServiceTier: defaultAICompletionServiceTier,
 	},
 	aiusage.TierMedium: {
 		Provider: "openrouter", Model: "google/gemini-3.7-flash", ServiceTier: defaultAICompletionServiceTier,
@@ -27,11 +27,12 @@ var selectableAgentTierRoutes = map[aiusage.Tier]AICompletionRoute{
 
 // AgentModelTierSnapshot is the internal execution identity resolved from a public model size.
 type AgentModelTierSnapshot struct {
-	ModelTier   string
-	Provider    string
-	Model       string
-	ServiceTier string
-	RuntimeKind string
+	ModelTier             string
+	Provider              string
+	Model                 string
+	ServiceTier           string
+	RuntimeKind           string
+	ProviderQuantizations []string
 }
 
 // AgentModelTierResolver owns the public-tier to internal-route policy.
@@ -90,7 +91,16 @@ func (r *AgentModelTierResolver) ResolveCustom(tier aiusage.Tier, allowedTargets
 	return AgentModelTierSnapshot{
 		ModelTier: string(tier), Provider: route.Provider, Model: route.Model,
 		ServiceTier: route.ServiceTier, RuntimeKind: runtimeKind,
+		ProviderQuantizations: providerQuantizationsForAgentRoute(route),
 	}, nil
+}
+
+func providerQuantizationsForAgentRoute(route AICompletionRoute) []string {
+	if normalizeModelProvider(route.Provider) != model.AgentModelProviderOpenRouter ||
+		strings.TrimSpace(route.Model) != defaultFastOpenRouterAgentModel {
+		return nil
+	}
+	return append([]string(nil), defaultFastOpenRouterQuantizations...)
 }
 
 // Derive returns the public tier for an existing exact execution route.
@@ -98,7 +108,10 @@ func (r *AgentModelTierResolver) Derive(provider, model, serviceTier string) (ai
 	if r == nil || r.catalog == nil {
 		return "", fmt.Errorf("model size temporarily unavailable")
 	}
-	resolved, err := r.catalog.ResolveDefault(provider, model, serviceTier)
+	resolved, err := r.catalog.Resolve(provider, model, model, serviceTier)
+	if err != nil {
+		resolved, err = r.catalog.ResolveDefault(provider, model, serviceTier)
+	}
 	if err != nil {
 		return "", err
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-// PMTaskTemplateService contains story template business logic.
+// PMTaskTemplateService contains task template business logic.
 type PMTaskTemplateService struct {
 	templateRepo   *repository.PMTaskTemplateRepository
 	attachmentRepo *repository.PMAttachmentRepository
@@ -29,7 +29,7 @@ func (s *PMTaskTemplateService) SetAttachmentRepository(repo *repository.PMAttac
 	s.attachmentRepo = repo
 }
 
-// ListByWorkspace lists story templates by workspace.
+// ListByWorkspace lists task templates by workspace.
 func (s *PMTaskTemplateService) ListByWorkspace(ctx context.Context, workspaceID string, teamID *string, includeShared bool, archived *bool) ([]model.PMTaskTemplate, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
@@ -45,14 +45,14 @@ func (s *PMTaskTemplateService) ListByWorkspace(ctx context.Context, workspaceID
 	return filterVisibleTaskTemplates(ctx, templates), nil
 }
 
-// GetByID returns a story template by ID.
+// GetByID returns a task template by ID.
 func (s *PMTaskTemplateService) GetByID(ctx context.Context, id string) (*model.PMTaskTemplate, error) {
 	tmpl, err := s.templateRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if tmpl == nil {
-		return nil, fmt.Errorf("story template not found")
+		return nil, fmt.Errorf("task template not found")
 	}
 	if !canViewTaskTemplate(ctx, tmpl.TeamID) {
 		return nil, &model.ErrForbidden{Message: "you do not have access to this template"}
@@ -60,7 +60,7 @@ func (s *PMTaskTemplateService) GetByID(ctx context.Context, id string) (*model.
 	return tmpl, nil
 }
 
-// Create creates a story template after uniqueness validation.
+// Create creates a task template after uniqueness validation.
 func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateTaskTemplateRequest) (*model.PMTaskTemplate, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
@@ -109,14 +109,14 @@ func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateTask
 	return tmpl, nil
 }
 
-// Update updates a story template.
+// Update updates a task template.
 func (s *PMTaskTemplateService) Update(ctx context.Context, id string, req model.UpdateTaskTemplateRequest) (*model.PMTaskTemplate, error) {
 	tmpl, err := s.templateRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if tmpl == nil {
-		return nil, fmt.Errorf("story template not found")
+		return nil, fmt.Errorf("task template not found")
 	}
 	if err := requireCanManage(ctx, tmpl.TeamID); err != nil {
 		return nil, err
@@ -204,14 +204,14 @@ func (s *PMTaskTemplateService) Update(ctx context.Context, id string, req model
 	return tmpl, nil
 }
 
-// Delete deletes a story template.
+// Delete deletes a task template.
 func (s *PMTaskTemplateService) Delete(ctx context.Context, id string) error {
 	tmpl, err := s.templateRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	if tmpl == nil {
-		return fmt.Errorf("story template not found")
+		return fmt.Errorf("task template not found")
 	}
 	if err := requireCanManage(ctx, tmpl.TeamID); err != nil {
 		return err

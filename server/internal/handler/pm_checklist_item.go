@@ -22,9 +22,9 @@ func NewPMChecklistItemHandler(service *service.PMChecklistItemService) *PMCheck
 
 // List handles GET /api/pm/tasks/{id}/checklist
 func (h *PMChecklistItemHandler) List(w http.ResponseWriter, r *http.Request) {
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 	workspaceID := middleware.GetWorkspaceID(r.Context())
-	items, err := h.service.List(r.Context(), storyID, workspaceID)
+	items, err := h.service.List(r.Context(), taskID, workspaceID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -37,7 +37,7 @@ func (h *PMChecklistItemHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/pm/tasks/{id}/checklist
 func (h *PMChecklistItemHandler) Create(w http.ResponseWriter, r *http.Request) {
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 	workspaceID := middleware.GetWorkspaceID(r.Context())
 	actorID := middleware.GetUserID(r.Context())
 	var req model.CreateChecklistItemRequest
@@ -45,7 +45,7 @@ func (h *PMChecklistItemHandler) Create(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	item, err := h.service.Create(r.Context(), storyID, req, workspaceID, actorID)
+	item, err := h.service.Create(r.Context(), taskID, req, workspaceID, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

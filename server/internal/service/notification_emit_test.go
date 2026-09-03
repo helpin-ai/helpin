@@ -40,9 +40,9 @@ func TestEmit_CreatesNotificationAndImmediateEmailDelivery(t *testing.T) {
 		WorkspaceID:        "ws-1",
 		ActorID:            "actor-1",
 		EventType:          "comment.created",
-		EntityType:         "story",
-		EntityID:           "story-1",
-		Title:              "Story comment added",
+		EntityType:         "task",
+		EntityID:           "task-1",
+		Title:              "Task comment added",
 		Body:               "Please review the new comment",
 		Category:           model.NotifCategoryComments,
 		Priority:           "normal",
@@ -91,7 +91,7 @@ func TestEmit_CreatesNotificationAndImmediateEmailDelivery(t *testing.T) {
 	if emailer.sent[0].to != "user@example.com" {
 		t.Fatalf("email recipient = %q, want user@example.com", emailer.sent[0].to)
 	}
-	if !strings.Contains(emailer.sent[0].subject, "[Acme Workspace]") || !strings.Contains(emailer.sent[0].subject, "Story comment added") {
+	if !strings.Contains(emailer.sent[0].subject, "[Acme Workspace]") || !strings.Contains(emailer.sent[0].subject, "Task comment added") {
 		t.Fatalf("email subject = %q, want workspace-prefixed subject", emailer.sent[0].subject)
 	}
 }
@@ -107,7 +107,7 @@ func TestEmit_UpdatesExistingNotificationAndAddsEvent(t *testing.T) {
 	seedNotificationServiceUserSettings(t, db, "user-1", true, "none", nil, now)
 	mustExecNotificationService(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, actor_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, read_at, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"notif-1", "ws-1", "user-1", "actor-0", "story", "story-1", "story.assigned", "Initial assignment", model.NotifCategoryAssignments, 1, earlier, "read", readAt, "normal", earlier, earlier)
+		"notif-1", "ws-1", "user-1", "actor-0", "task", "task-1", "task.assigned", "Initial assignment", model.NotifCategoryAssignments, 1, earlier, "read", readAt, "normal", earlier, earlier)
 
 	service := NewNotificationService(
 		repository.NewNotificationRepository(db),
@@ -124,10 +124,10 @@ func TestEmit_UpdatesExistingNotificationAndAddsEvent(t *testing.T) {
 	if err := service.Emit(ctx, model.NotificationEventInput{
 		WorkspaceID:        "ws-1",
 		ActorID:            "actor-2",
-		EventType:          "story.updated",
-		EntityType:         "story",
-		EntityID:           "story-1",
-		Title:              "Story changed",
+		EventType:          "task.updated",
+		EntityType:         "task",
+		EntityID:           "task-1",
+		Title:              "Task changed",
 		Category:           model.NotifCategoryStatusChanges,
 		Priority:           "normal",
 		ExplicitRecipients: []string{"user-1"},
@@ -145,8 +145,8 @@ func TestEmit_UpdatesExistingNotificationAndAddsEvent(t *testing.T) {
 	if notif.EventCount != 2 {
 		t.Fatalf("updated notification event_count = %d, want 2", notif.EventCount)
 	}
-	if notif.EventType != "story.updated" {
-		t.Fatalf("updated notification event_type = %q, want story.updated", notif.EventType)
+	if notif.EventType != "task.updated" {
+		t.Fatalf("updated notification event_type = %q, want task.updated", notif.EventType)
 	}
 
 	var notifCount int64
@@ -198,9 +198,9 @@ func TestEmit_SkipsNotificationWhenWorkspaceCategoryDisablesInApp(t *testing.T) 
 		WorkspaceID:        "ws-1",
 		ActorID:            "actor-1",
 		EventType:          "comment.created",
-		EntityType:         "story",
-		EntityID:           "story-1",
-		Title:              "Story comment added",
+		EntityType:         "task",
+		EntityID:           "task-1",
+		Title:              "Task comment added",
 		Category:           model.NotifCategoryComments,
 		Priority:           "normal",
 		ExplicitRecipients: []string{"user-1"},
@@ -228,7 +228,7 @@ func TestEmit_SkipFollowersLimitsDeliveryToExplicitRecipients(t *testing.T) {
 	seedNotificationServiceUserSettings(t, db, "user-2", true, "none", nil, now)
 	mustExecNotificationService(t, db, `INSERT INTO entity_followers (id, user_id, entity_type, entity_id, workspace_id, reason, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"follower-1", "user-2", "story", "story-1", "ws-1", "watching", now)
+		"follower-1", "user-2", "task", "task-1", "ws-1", "watching", now)
 
 	service := NewNotificationService(
 		repository.NewNotificationRepository(db),
@@ -246,8 +246,8 @@ func TestEmit_SkipFollowersLimitsDeliveryToExplicitRecipients(t *testing.T) {
 		WorkspaceID:        "ws-1",
 		ActorID:            "actor-1",
 		EventType:          "comment.mention",
-		EntityType:         "story",
-		EntityID:           "story-1",
+		EntityType:         "task",
+		EntityID:           "task-1",
 		Title:              "Mentioned you in a comment",
 		Category:           model.NotifCategoryMentions,
 		Priority:           "high",
@@ -486,9 +486,9 @@ func TestBuildDeliveryPlans_ImmediateEmailBranches(t *testing.T) {
 	event := model.NotificationEventInput{
 		WorkspaceID: "ws-1",
 		EventType:   "comment.created",
-		EntityType:  "story",
-		EntityID:    "story-1",
-		Title:       "Story comment added",
+		EntityType:  "task",
+		EntityID:    "task-1",
+		Title:       "Task comment added",
 		Category:    model.NotifCategoryComments,
 	}
 

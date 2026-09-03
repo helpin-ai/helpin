@@ -429,7 +429,7 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 		resp.Summary = fmt.Sprintf("Workspace: %s", workspace.Name)
 		resp.Target.Display = &agentruntime.TargetDisplay{Title: workspace.Name}
 		resp.Data = runtimeWorkspaceContextData(workspace)
-	case "task", "story":
+	case "task":
 		task, err := s.taskRepo.GetByID(ctx, target.ID)
 		if err != nil {
 			return nil, err
@@ -704,7 +704,7 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 // rather than attempting to resolve the product object as a Git repository.
 func runtimeRepositorySpecTarget(req agentruntime.PrepareWorkspaceRequest, contextMaps ...map[string]interface{}) agentruntime.TargetRef {
 	target := normalizeRuntimeTarget(req.Target)
-	if target.Type == "repository" || target.Type == "task" || target.Type == "story" ||
+	if target.Type == "repository" || target.Type == "task" ||
 		strings.TrimSpace(req.WorkspaceMode) != agentruntime.WorkspaceModeRepository {
 		return target
 	}

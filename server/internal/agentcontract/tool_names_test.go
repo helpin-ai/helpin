@@ -37,3 +37,14 @@ func TestCanonicalToolNameCoversEveryWriteSideMapping(t *testing.T) {
 		}
 	}
 }
+
+func TestCanonicalToolNameDoesNotAliasStoryEraTools(t *testing.T) {
+	for _, name := range []string{"add_story_comment", "list_story_checklist", "update_story_state"} {
+		if _, exists := legacyToolAliases[name]; exists {
+			t.Fatalf("story-era tool %q must not be accepted as an alias", name)
+		}
+		if got := CanonicalToolName(name); got != name {
+			t.Fatalf("CanonicalToolName(%q)=%q, want unchanged rejected name", name, got)
+		}
+	}
+}

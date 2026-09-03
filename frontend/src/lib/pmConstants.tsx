@@ -248,14 +248,3 @@ export function TaskTypeTileIcon({
 }) {
   return <PMTaskTypeTileIcon taskType={taskType} className={className} />;
 }
-
-/** @deprecated Use TaskTypeIcon */
-export function StoryTypeIcon({
-  storyType,
-  className = 'h-4 w-4',
-}: {
-  storyType: TaskType;
-  className?: string;
-}) {
-  return <TaskTypeIcon taskType={storyType} className={className} />;
-}

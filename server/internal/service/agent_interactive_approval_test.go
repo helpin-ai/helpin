@@ -217,8 +217,8 @@ func TestSendRunMessageResolvesLatestPendingCodexInputInteraction(t *testing.T) 
 		ExternalRuntimeID: strPtr("run_rt_codex_input"),
 		WorkspaceID:       "ws-1",
 		AgentID:           "agent-1",
-		TargetType:        "story",
-		TargetID:          "story-1",
+		TargetType:        "task",
+		TargetID:          "task-1",
 		RuntimeKind:       "codex",
 		InvocationMode:    model.InvocationModeInteractive,
 		ApprovalState:     "not_required",
@@ -339,8 +339,8 @@ func TestResolveCodingSessionInteractionPreservesNativeCodexApprovalPayload(t *t
 		ExternalRuntimeID: strPtr("run_rt_codex_approval"),
 		WorkspaceID:       "ws-1",
 		AgentID:           "agent-1",
-		TargetType:        "story",
-		TargetID:          "story-1",
+		TargetType:        "task",
+		TargetID:          "task-1",
 		RuntimeKind:       "codex",
 		InvocationMode:    model.InvocationModeInteractive,
 		ApprovalState:     "pending",
@@ -464,8 +464,8 @@ func TestResolveCodingSessionInteractionSignalsNativeCodexApprovalPayloadForStal
 		ExternalRuntimeID: strPtr("run_rt_stale_resume"),
 		WorkspaceID:       "ws-1",
 		AgentID:           "agent-1",
-		TargetType:        "story",
-		TargetID:          "story-1",
+		TargetType:        "task",
+		TargetID:          "task-1",
 		RuntimeKind:       "codex",
 		InvocationMode:    model.InvocationModeInteractive,
 		ApprovalState:     "pending",
@@ -2188,8 +2188,8 @@ func TestApproveRunKeepsPausedStateForLiveCodexSession(t *testing.T) {
 		ExternalRuntimeID: strPtr("run_rt_live_codex_approve"),
 		WorkspaceID:       "ws-1",
 		AgentID:           "agent-codex",
-		TargetType:        "story",
-		TargetID:          "story-1",
+		TargetType:        "task",
+		TargetID:          "task-1",
 		RuntimeKind:       "codex",
 		InvocationMode:    model.InvocationModeInteractive,
 		ApprovalState:     "pending",
@@ -2329,9 +2329,9 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 	)
 
 	run := &model.AgentRun{
-		ID:                "run-approve-story-plan",
+		ID:                "run-approve-task-plan",
 		ExternalRuntime:   strPtr("agent-runtime"),
-		ExternalRuntimeID: strPtr("run_rt_approve_story_plan"),
+		ExternalRuntimeID: strPtr("run_rt_approve_task_plan"),
 		WorkspaceID:       "ws-1",
 		AgentID:           "agent-1",
 		TargetType:        "epic",
@@ -2373,7 +2373,7 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 		"  \"replace\": true\n" +
 		"}"
 	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
-		ID:            "artifact-run-preview-story-plan",
+		ID:            "artifact-run-preview-task-plan",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
 		ArtifactType:  agentcontract.RunPreviewArtifactType,
@@ -2388,7 +2388,7 @@ func TestSendRunMessageApprovalNormalizesApprovedStoryPlanPreviewContent(t *test
 	}
 	approvalContent := `{"phase":"tasks","title":"Approve task plan","summary":"Review the current breakdown"}`
 	if err := artifactRepo.Create(context.Background(), &model.AgentRunArtifact{
-		ID:            "artifact-approval-story-plan",
+		ID:            "artifact-approval-task-plan",
 		WorkspaceID:   "ws-1",
 		RunID:         run.ID,
 		ArtifactType:  model.AgentRunArtifactTypeHumanApprovalRequest,
@@ -2537,8 +2537,8 @@ func TestRequestRunChangesKeepsPausedStateForLiveCodexSession(t *testing.T) {
 		ExternalRuntimeID: strPtr("run_rt_live_codex_feedback"),
 		WorkspaceID:       "ws-1",
 		AgentID:           "agent-codex",
-		TargetType:        "story",
-		TargetID:          "story-1",
+		TargetType:        "task",
+		TargetID:          "task-1",
 		RuntimeKind:       "codex",
 		InvocationMode:    model.InvocationModeInteractive,
 		ApprovalState:     "pending",

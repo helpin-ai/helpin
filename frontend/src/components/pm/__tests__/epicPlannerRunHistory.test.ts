@@ -137,7 +137,7 @@ describe('runResultSummary', () => {
   });
 
   it('reads summary, message, or result keys from output_summary', () => {
-    expect(runResultSummary(run({ output_summary: { summary: '9 stories drafted' } }))).toBe('9 stories drafted');
+    expect(runResultSummary(run({ output_summary: { summary: '9 tasks drafted' } }))).toBe('9 tasks drafted');
     expect(runResultSummary(run({ output_summary: { message: 'done' } }))).toBe('done');
     expect(runResultSummary(run({ output_summary: { result: 'ok' } }))).toBe('ok');
   });

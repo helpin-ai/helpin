@@ -97,7 +97,7 @@ const COMPARISON_FEATURES: Array<{
   growth?: boolean | string;
 }> = [
   { name: 'Project Management', category: true },
-  { name: 'Tasks & stories', starter: true, growth: true },
+  { name: 'Tasks', starter: true, growth: true },
   { name: 'Epics', starter: true, growth: true },
   { name: 'Objectives', starter: true, growth: true },
   { name: 'Sprints', starter: true, growth: true },

@@ -26,7 +26,7 @@ export function truncateMiddle(value: string, start = 8, end = 4) {
 export function normalizeActivityTargetType(value?: string | null) {
   const normalized = value?.trim().toLowerCase().replace(/^pm_/, '') ?? '';
   if (normalized === 'doc') return 'document';
-  return normalized === 'story' ? 'task' : normalized;
+  return normalized;
 }
 
 export function activityTargetTypeLabel(targetType: string) {

@@ -577,13 +577,13 @@ func (s *PMImportService) publishShortcutAPIScanProgress(workspaceID, actorID, s
 
 func shortcutAPIStorySearchOptionsFromImportOptions(options model.ShortcutImportOptions) shortcutAPIStorySearchOptions {
 	out := shortcutAPIStorySearchOptions{
-		SortField: normalizeShortcutStoryDateField(options.StoryDateField),
+		SortField: normalizeShortcutStoryDateField(options.TaskDateField),
 	}
-	if options.MaxStories > 0 {
-		out.MaxStories = options.MaxStories
+	if options.MaxTasks > 0 {
+		out.MaxStories = options.MaxTasks
 	}
-	if options.StoryLookbackMonths > 0 {
-		cutoff := time.Now().UTC().AddDate(0, -options.StoryLookbackMonths, 0).Format(time.RFC3339)
+	if options.TaskLookbackMonths > 0 {
+		cutoff := time.Now().UTC().AddDate(0, -options.TaskLookbackMonths, 0).Format(time.RFC3339)
 		if out.SortField == "created_at" {
 			out.CreatedAtStart = cutoff
 		} else {
@@ -713,7 +713,7 @@ func (s *PMImportService) buildShortcutPreviewFromRows(ctx context.Context, work
 		externalLinkCount += len(row.APIExternalLinks)
 		storyLinkCount += len(row.APIStoryLinks)
 	}
-	duplicateStories, err := s.countStoryDuplicates(ctx, workspaceID, mapKeys(storyExternalIDs(rows)))
+	duplicateTasks, err := s.countTaskDuplicates(ctx, workspaceID, mapKeys(shortcutStoryExternalIDs(rows)))
 	if err != nil {
 		return nil, err
 	}
@@ -721,7 +721,7 @@ func (s *PMImportService) buildShortcutPreviewFromRows(ctx context.Context, work
 	for _, email := range sortKeysByCount(emailCounts) {
 		match := model.ShortcutUserMatch{
 			Email:          email,
-			StoryCount:     emailCounts[email],
+			TaskCount:      emailCounts[email],
 			OwnerCount:     ownerCounts[email],
 			RequesterCount: requesterCounts[email],
 		}
@@ -771,7 +771,7 @@ func (s *PMImportService) buildShortcutPreviewFromRows(ctx context.Context, work
 			WorkflowsCount:      len(workflowStateCounts),
 			WorkflowStatesCount: countWorkflowStates(workflowStateCounts),
 			ChecklistItemsCount: checklistCount,
-			DuplicateTasks:      duplicateStories,
+			DuplicateTasks:      duplicateTasks,
 		},
 		Users:     users,
 		Teams:     teams,
@@ -1054,30 +1054,30 @@ func shortcutAPIStoryTeamName(story shortcutAPIStory, enrichment *shortcutAPIEnr
 	return ""
 }
 
-func (s *PMImportService) createAPIStoryExternalLinks(ctx context.Context, tx *gorm.DB, actorID string, story model.PMTask, links []shortcutAPIExternalLink, result *model.ShortcutImportResult) error {
+func (s *PMImportService) createAPITaskExternalLinks(ctx context.Context, tx *gorm.DB, actorID string, task model.PMTask, links []shortcutAPIExternalLink, result *model.ShortcutImportResult) error {
 	for _, link := range links {
 		if strings.TrimSpace(link.URL) == "" {
 			continue
 		}
 		var existing int64
 		if err := tx.WithContext(ctx).Model(&model.PMExternalLink{}).
-			Where("task_id = ? AND url = ?", story.ID, strings.TrimSpace(link.URL)).
+			Where("task_id = ? AND url = ?", task.ID, strings.TrimSpace(link.URL)).
 			Count(&existing).Error; err != nil {
 			return fmt.Errorf("check external link: %w", err)
 		}
 		if existing > 0 {
 			continue
 		}
-		storyID := story.ID
+		taskID := task.ID
 		record := model.PMExternalLink{
-			TaskID:      &storyID,
+			TaskID:      &taskID,
 			EntityType:  "task",
-			EntityID:    story.ID,
+			EntityID:    task.ID,
 			Title:       fallbackName(link.Title, link.URL),
 			URL:         strings.TrimSpace(link.URL),
 			CreatedByID: actorID,
-			CreatedAt:   story.CreatedAt,
-			UpdatedAt:   story.UpdatedAt,
+			CreatedAt:   task.CreatedAt,
+			UpdatedAt:   task.UpdatedAt,
 		}
 		if err := tx.WithContext(ctx).Create(&record).Error; err != nil {
 			return fmt.Errorf("create external link: %w", err)

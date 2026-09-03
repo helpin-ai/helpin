@@ -283,14 +283,14 @@ func (r *SettingsRepository) CreateTeam(ctx context.Context, req model.CreateTea
 		// Default sprints enabled for engineering teams, disabled for others
 		sprintsEnabled := req.TeamType == "engineering"
 		t := &model.WorkspaceTeam{
-			WorkspaceID:      req.WorkspaceID,
-			Name:             req.Name,
-			Handle:           req.Handle,
-			Description:      req.Description,
-			ManagerID:        managerID,
-			TeamType:         req.TeamType,
-			DefaultStoryType: req.DefaultStoryType,
-			SprintsEnabled:   sprintsEnabled,
+			WorkspaceID:     req.WorkspaceID,
+			Name:            req.Name,
+			Handle:          req.Handle,
+			Description:     req.Description,
+			ManagerID:       managerID,
+			TeamType:        req.TeamType,
+			DefaultTaskType: req.DefaultTaskType,
+			SprintsEnabled:  sprintsEnabled,
 		}
 		if err := tx.Create(t).Error; err != nil {
 			return fmt.Errorf("create team: %w", err)
@@ -336,8 +336,8 @@ func (r *SettingsRepository) UpdateTeam(ctx context.Context, id string, req mode
 		if req.TeamType != nil {
 			updates["team_type"] = *req.TeamType
 		}
-		if req.DefaultStoryType != nil {
-			updates["default_task_type"] = *req.DefaultStoryType
+		if req.DefaultTaskType != nil {
+			updates["default_task_type"] = *req.DefaultTaskType
 		}
 		if req.SprintsEnabled != nil {
 			updates["sprints_enabled"] = *req.SprintsEnabled
@@ -1266,7 +1266,7 @@ func (r *SettingsRepository) UpsertTeamFieldVisibility(ctx context.Context, team
 		row := map[string]interface{}{
 			"team_id":     teamID,
 			"priority":    boolVal(req.Priority, true),
-			"task_type":   boolVal(req.StoryType, true),
+			"task_type":   boolVal(req.TaskType, true),
 			"severity":    boolVal(req.Severity, true),
 			"labels":      boolVal(req.Labels, true),
 			"epic":        boolVal(req.Epic, true),
@@ -1292,8 +1292,8 @@ func (r *SettingsRepository) UpsertTeamFieldVisibility(ctx context.Context, team
 	if req.Priority != nil {
 		updates["priority"] = *req.Priority
 	}
-	if req.StoryType != nil {
-		updates["task_type"] = *req.StoryType
+	if req.TaskType != nil {
+		updates["task_type"] = *req.TaskType
 	}
 	if req.Severity != nil {
 		updates["severity"] = *req.Severity

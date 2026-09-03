@@ -64,7 +64,7 @@ func (s *DocsEntityReferenceResolverService) resolveOne(ctx context.Context, wor
 	}
 
 	switch entityType {
-	case "task", "story":
+	case "task":
 		if !s.canReadModule(ctx, model.ModulePM, authorization.PermPMRead) {
 			return redactedDocsEntityRef(ref, entityType)
 		}
@@ -268,7 +268,7 @@ func redactedDocsEntityRef(ref model.DocsEntityRefRequest, entityType string) mo
 
 func normalizeDocsEntityRefType(entityType string) string {
 	switch strings.TrimSpace(strings.ToLower(entityType)) {
-	case "task", "story", "epic", "support_conversation", "deal", "contact", "company", "document":
+	case "task", "epic", "support_conversation", "deal", "contact", "company", "document":
 		return strings.TrimSpace(strings.ToLower(entityType))
 	case "conversation", "ticket", "support":
 		return "support_conversation"
@@ -291,8 +291,6 @@ func docsEntityTypeLabel(entityType string) string {
 		return "Contact"
 	case "company":
 		return "Company"
-	case "story":
-		return "Story"
 	case "document":
 		return "Doc"
 	default:

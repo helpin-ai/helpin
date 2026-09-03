@@ -326,7 +326,7 @@ func (s *AgentRunFinalizerService) finalizeRunCompletedRules(ctx context.Context
 	if s.ruleEngine == nil || s.taskRepo == nil {
 		return nil
 	}
-	if run.TaskID == nil || (run.TargetType != "task" && run.TargetType != "story") {
+	if run.TaskID == nil || run.TargetType != "task" {
 		return nil
 	}
 	if runOutputSummaryFlag(run.OutputSummary, agentRuntimeFinalizerAutomationRulesSummaryKey) {
@@ -346,7 +346,6 @@ func (s *AgentRunFinalizerService) finalizeRunCompletedRules(ctx context.Context
 		WorkspaceID: run.WorkspaceID,
 		TriggerType: model.TriggerAgentRunCompleted,
 		TaskID:      task.ID,
-		StoryID:     task.ID,
 		StateID:     task.WorkflowStateID,
 		AgentID:     run.AgentID,
 		RunID:       run.ID,
@@ -508,7 +507,7 @@ func (s *AgentRunFinalizerService) finalizeRepositoryDelivery(ctx context.Contex
 		return nil
 	}
 	switch run.TargetType {
-	case "repository", "task", "story", "epic":
+	case "repository", "task", "epic":
 	default:
 		return nil
 	}

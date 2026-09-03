@@ -929,8 +929,8 @@ func TestEnsureDefaultTeam_CreatesSalesTeamWhenAbsent(t *testing.T) {
 	if team.Handle == nil || *team.Handle != "sales" {
 		t.Errorf("expected handle 'sales', got %v", team.Handle)
 	}
-	if team.DefaultStoryType != model.PMTaskTypeChore {
-		t.Errorf("expected default task type 'chore' for sales, got %q", team.DefaultStoryType)
+	if team.DefaultTaskType != model.PMTaskTypeChore {
+		t.Errorf("expected default task type 'chore' for sales, got %q", team.DefaultTaskType)
 	}
 }
 

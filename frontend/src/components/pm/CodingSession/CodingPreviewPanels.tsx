@@ -78,11 +78,7 @@ function toTitleCase(value: string) {
 function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskPlanPreviewModel | null {
   if (!preview || preview.format !== 'json') return null;
   const record = asRecord(preview.content);
-  const proposedTasks = Array.isArray(record?.proposed_tasks)
-    ? record.proposed_tasks
-    : Array.isArray(record?.proposed_stories)
-      ? record.proposed_stories
-      : [];
+  const proposedTasks = Array.isArray(record?.proposed_tasks) ? record.proposed_tasks : [];
   if (!record || proposedTasks.length === 0) return null;
 
   const normalizedTasks: TaskPlanTaskPreview[] = proposedTasks.flatMap((entry) => {
@@ -108,7 +104,6 @@ function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskP
       ref: asString(task.ref).trim() || undefined,
       title,
       type: asString(task.task_type).trim()
-        || asString(task.story_type).trim()
         || asString(task.type).trim()
         || asString(task.slice_type).trim()
         || undefined,

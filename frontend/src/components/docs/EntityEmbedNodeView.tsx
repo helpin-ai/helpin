@@ -35,8 +35,6 @@ function entityLabel(entityType: string) {
       return 'Contact'
     case 'company':
       return 'Company'
-    case 'story':
-      return 'Story'
     default:
       return 'Task'
   }
@@ -77,7 +75,7 @@ function crmHref(slug: string | undefined, entityType: string, id: string) {
 }
 
 function entityHref(slug: string | undefined, entityType: string, id: string) {
-  if (entityType === 'task' || entityType === 'story') return taskHref(slug, id)
+  if (entityType === 'task') return taskHref(slug, id)
   if (entityType === 'epic') return epicHref(slug, id)
   if (entityType === 'support_conversation') return supportHref(slug, id)
   return crmHref(slug, entityType, id)
@@ -252,7 +250,7 @@ export function EntityEmbedNodeView(props: NodeViewProps) {
 
   const openEntity = () => {
     if (!workspaceSlug || !entityId) return
-    if (entityType === 'task' || entityType === 'story') {
+    if (entityType === 'task') {
       openTaskRoute(navigate as never, location as never, workspaceSlug, entityId)
       return
     }

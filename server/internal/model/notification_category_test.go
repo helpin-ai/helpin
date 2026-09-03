@@ -65,11 +65,11 @@ func TestEventTypeToCategory_KnownMappings(t *testing.T) {
 		eventType string
 		want      string
 	}{
-		{"story.created", NotifCategorySubscriptions},
-		{"story.assigned", NotifCategoryAssignments},
-		{"story.status_changed", NotifCategoryStatusChanges},
+		{"task.created", NotifCategorySubscriptions},
+		{"task.assigned", NotifCategoryAssignments},
+		{"task.status_changed", NotifCategoryStatusChanges},
 		{"comment.created", NotifCategoryComments},
-		{"story.mention", NotifCategoryMentions},
+		{"task.mention", NotifCategoryMentions},
 		{"sprint.mention", NotifCategoryMentions},
 		{"doc.mention", NotifCategoryMentions},
 		{"task.agent_attention_required", NotifCategoryAgentAttention},
@@ -88,7 +88,7 @@ func TestEventTypeToCategory_KnownMappings(t *testing.T) {
 
 // TestEventTypeToCategory_AllAssignments verifies all assignment event types map to the assignments category.
 func TestEventTypeToCategory_AllAssignments(t *testing.T) {
-	assignmentEvents := []string{"story.assigned", "objective.assigned"}
+	assignmentEvents := []string{"task.assigned", "objective.assigned"}
 	for _, e := range assignmentEvents {
 		got := EventTypeToCategory[e]
 		if got != NotifCategoryAssignments {
@@ -99,7 +99,7 @@ func TestEventTypeToCategory_AllAssignments(t *testing.T) {
 
 // TestEventTypeToCategory_AllStatusChanges verifies all status change event types.
 func TestEventTypeToCategory_AllStatusChanges(t *testing.T) {
-	statusEvents := []string{"story.status_changed", "story.blocked", "story.updated"}
+	statusEvents := []string{"task.status_changed", "task.blocked", "task.updated"}
 	for _, e := range statusEvents {
 		got := EventTypeToCategory[e]
 		if got != NotifCategoryStatusChanges {
@@ -111,7 +111,7 @@ func TestEventTypeToCategory_AllStatusChanges(t *testing.T) {
 // TestEventTypeToCategory_AllComments verifies all comment event types.
 func TestEventTypeToCategory_AllComments(t *testing.T) {
 	commentEvents := []string{
-		"comment.created", "story.comment", "objective.comment",
+		"comment.created", "task.comment", "objective.comment",
 		"epic.comment", "sprint.comment",
 	}
 	for _, e := range commentEvents {
@@ -125,7 +125,7 @@ func TestEventTypeToCategory_AllComments(t *testing.T) {
 // TestEventTypeToCategory_AllMentions verifies all mention event types.
 func TestEventTypeToCategory_AllMentions(t *testing.T) {
 	mentionEvents := []string{
-		"story.mention", "comment.mention", "checklist.mention",
+		"task.mention", "comment.mention", "checklist.mention",
 		"objective.mention", "epic.mention", "sprint.mention", "doc.mention",
 	}
 	for _, e := range mentionEvents {
@@ -139,7 +139,7 @@ func TestEventTypeToCategory_AllMentions(t *testing.T) {
 // TestEventTypeToCategory_AllSubscriptions verifies all subscription event types.
 func TestEventTypeToCategory_AllSubscriptions(t *testing.T) {
 	subEvents := []string{
-		"story.created",
+		"task.created",
 		"epic.created", "epic.updated", "epic.deleted",
 		"objective.created", "objective.updated", "objective.deleted",
 	}
@@ -153,12 +153,12 @@ func TestEventTypeToCategory_AllSubscriptions(t *testing.T) {
 
 func TestEmittedNotificationEventTypes_AreMapped(t *testing.T) {
 	emittedEventTypes := []string{
-		"story.created",
-		"story.updated",
-		"story.mention",
-		"story.status_changed",
-		"story.blocked",
-		"story.assigned",
+		"task.created",
+		"task.updated",
+		"task.mention",
+		"task.status_changed",
+		"task.blocked",
+		"task.assigned",
 		"task.agent_attention_required",
 		"comment.created",
 		"comment.mention",
@@ -229,9 +229,9 @@ func TestNotificationEventInput_TeamID(t *testing.T) {
 	input := NotificationEventInput{
 		WorkspaceID: "ws-1",
 		ActorID:     "actor-1",
-		EventType:   "story.assigned",
-		EntityType:  "story",
-		EntityID:    "story-1",
+		EventType:   "task.assigned",
+		EntityType:  "task",
+		EntityID:    "task-1",
 		TeamID:      "team-1",
 	}
 	if input.TeamID != "team-1" {

@@ -413,7 +413,7 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 		taskService: taskService,
 	}
 
-	stories, err := svc.createStoriesFromProposal(ctx, workspaceID, epicID, userID, []model.ProposedTask{
+	stories, err := svc.createTasksFromProposal(ctx, workspaceID, epicID, userID, []model.ProposedTask{
 		{
 			Ref:                "NATS-1",
 			Name:               "Add NATS configuration module",
@@ -423,7 +423,7 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("createStoriesFromProposal returned error: %v", err)
+		t.Fatalf("createTasksFromProposal returned error: %v", err)
 	}
 	if len(stories) != 1 {
 		t.Fatalf("expected 1 created story, got %#v", stories)

@@ -2317,9 +2317,9 @@ func (s *SupportInboxService) enrichSupportMessageLinksAsync(msg *model.SupportM
 	}()
 }
 
-// LinkConversationStory links a conversation to a task.
-func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspaceID, ticketID, storyID, actorID string) error {
-	trimmed := strings.TrimSpace(storyID)
+// LinkConversationTask links a conversation to a task.
+func (s *SupportInboxService) LinkConversationTask(ctx context.Context, workspaceID, ticketID, taskID, actorID string) error {
+	trimmed := strings.TrimSpace(taskID)
 	if trimmed == "" {
 		return fmt.Errorf("task_id is required")
 	}
@@ -2328,7 +2328,7 @@ func (s *SupportInboxService) LinkConversationStory(ctx context.Context, workspa
 
 // UpdateConversationLinkedTask sets or clears the PM task associated with a
 // support conversation and keeps the generic association table synchronized.
-func (s *SupportInboxService) UpdateConversationLinkedTask(ctx context.Context, workspaceID, ticketID string, storyID *string, actorID string) error {
+func (s *SupportInboxService) UpdateConversationLinkedTask(ctx context.Context, workspaceID, ticketID string, taskID *string, actorID string) error {
 	if s.assocRepo == nil {
 		return fmt.Errorf("CRM association repository is unavailable")
 	}
@@ -2341,8 +2341,8 @@ func (s *SupportInboxService) UpdateConversationLinkedTask(ctx context.Context, 
 	}
 
 	var normalizedTaskID *string
-	if storyID != nil && strings.TrimSpace(*storyID) != "" {
-		trimmed := strings.TrimSpace(*storyID)
+	if taskID != nil && strings.TrimSpace(*taskID) != "" {
+		trimmed := strings.TrimSpace(*taskID)
 		if s.taskService != nil {
 			task, err := s.taskService.GetByID(ctx, trimmed)
 			if err != nil || task == nil || task.Task.WorkspaceID != workspaceID {
@@ -2482,7 +2482,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 	}
 
 	taskID := detail.Task.ID
-	if err := s.LinkConversationStory(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
+	if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
 		return nil, err
 	}
 

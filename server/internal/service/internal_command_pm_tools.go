@@ -15,7 +15,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-var pmDiscoveryTargets = []string{"workspace", "task", "story", "epic", "sprint", "objective", "support_coverage_gap"}
+var pmDiscoveryTargets = []string{"workspace", "task", "epic", "sprint", "objective", "support_coverage_gap"}
 
 type pmCommandPage struct {
 	Page    int  `json:"page"`
@@ -560,7 +560,7 @@ func (s *InternalCommandService) registerPMTaskCommands() {
 		Name:                 "pm.update_task",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint"},
+		SupportedTargetTypes: []string{"workspace", "task", "epic", "sprint"},
 		Tool:                 mustCommandToolMetadata("pm.update_task"),
 		Execute:              s.executeUpdatePMTask,
 	})
@@ -568,7 +568,7 @@ func (s *InternalCommandService) registerPMTaskCommands() {
 		Name:                 "pm.list_task_checklist",
 		Module:               "pm",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint"},
+		SupportedTargetTypes: []string{"workspace", "task", "epic", "sprint", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("pm.list_task_checklist"),
 		Execute:              s.executeListTaskChecklist,
 	})
@@ -576,7 +576,7 @@ func (s *InternalCommandService) registerPMTaskCommands() {
 		Name:                 "pm.create_task_checklist_item",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint"},
+		SupportedTargetTypes: []string{"workspace", "task", "epic", "sprint"},
 		Tool:                 mustCommandToolMetadata("pm.create_task_checklist_item"),
 		Execute:              s.executeCreateTaskChecklistItem,
 	})
@@ -584,7 +584,7 @@ func (s *InternalCommandService) registerPMTaskCommands() {
 		Name:                 "pm.update_task_checklist_item",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint"},
+		SupportedTargetTypes: []string{"workspace", "task", "epic", "sprint"},
 		Tool:                 mustCommandToolMetadata("pm.update_task_checklist_item"),
 		Execute:              s.executeUpdateTaskChecklistItem,
 	})
@@ -592,7 +592,7 @@ func (s *InternalCommandService) registerPMTaskCommands() {
 		Name:                 "pm.add_comment",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint", "objective"},
+		SupportedTargetTypes: []string{"workspace", "task", "epic", "sprint", "objective"},
 		Tool:                 mustCommandToolMetadata("pm.add_comment"),
 		Execute:              s.executeAddPMComment,
 	})
@@ -603,7 +603,7 @@ func (s *InternalCommandService) extendExistingPMTaskCommands() {
 		Name:                 "pm.update_task_state",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint"},
+		SupportedTargetTypes: []string{"workspace", "task", "epic", "sprint"},
 		Tool:                 mustCommandToolMetadata("pm.update_task_state"),
 		Execute:              s.executeUpdatePMTaskState,
 	})
@@ -611,7 +611,7 @@ func (s *InternalCommandService) extendExistingPMTaskCommands() {
 		Name:                 "pm.add_task_comment",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"workspace", "task", "epic", "sprint", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("pm.add_task_comment"),
 		Execute:              s.executeAddTaskComment,
 	})
@@ -1029,9 +1029,6 @@ func (s *InternalCommandService) executeAddPMComment(ctx context.Context, meta m
 	}
 	entityType := strings.ToLower(strings.TrimSpace(req.EntityType))
 	targetType := normalizeCommandBarTargetType(meta.TargetType)
-	if targetType == "story" {
-		targetType = "task"
-	}
 	if entityType == "" && targetType != "workspace" {
 		entityType = targetType
 	}
@@ -1078,7 +1075,6 @@ func (s *InternalCommandService) executeUpdatePMTaskState(ctx context.Context, m
 		return nil, fmt.Errorf("task service is not configured")
 	}
 	var req struct {
-		StoryID  string `json:"story_id"`
 		TaskID   string `json:"task_id"`
 		StateID  string `json:"state_id"`
 		Position *int   `json:"position"`
@@ -1086,7 +1082,7 @@ func (s *InternalCommandService) executeUpdatePMTaskState(ctx context.Context, m
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, fmt.Errorf("parse update task state input: %w", err)
 	}
-	taskID, err := resolveCommandEntityID(meta, firstNonEmptyCommand(req.TaskID, req.StoryID), "task")
+	taskID, err := resolveCommandEntityID(meta, req.TaskID, "task")
 	if err != nil {
 		return nil, err
 	}
@@ -1108,7 +1104,7 @@ func (s *InternalCommandService) executeUpdatePMTaskState(ctx context.Context, m
 	if err != nil {
 		return nil, err
 	}
-	return mustJSON(map[string]any{"task_id": updated.Task.ID, "story_id": updated.Task.ID, "state_id": updated.Task.WorkflowStateID}), nil
+	return mustJSON(map[string]any{"task_id": updated.Task.ID, "state_id": updated.Task.WorkflowStateID}), nil
 }
 
 func (s *InternalCommandService) executeSetPMTaskDependencies(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
@@ -1201,9 +1197,6 @@ func validateCommandParentUpdate(meta model.InternalCommandContext, entityType s
 
 func validatePMCommentTarget(meta model.InternalCommandContext, entityType string) error {
 	targetType := normalizeCommandBarTargetType(meta.TargetType)
-	if targetType == "story" {
-		targetType = "task"
-	}
 	if targetType == "workspace" || entityType == targetType {
 		return nil
 	}
@@ -1218,9 +1211,6 @@ func validatePMCommentTarget(meta model.InternalCommandContext, entityType strin
 func resolveCommandEntityID(meta model.InternalCommandContext, explicit, entityType string) (string, error) {
 	explicit = strings.TrimSpace(explicit)
 	targetType := normalizeCommandBarTargetType(meta.TargetType)
-	if targetType == "story" {
-		targetType = "task"
-	}
 	if targetType == entityType {
 		targetID := strings.TrimSpace(meta.TargetID)
 		if explicit != "" && explicit != targetID {
@@ -1262,7 +1252,7 @@ func (s *InternalCommandService) validateTaskWithinTarget(_ context.Context, met
 		return err
 	}
 	switch normalizeCommandBarTargetType(meta.TargetType) {
-	case "task", "story":
+	case "task":
 		if task.ID != strings.TrimSpace(meta.TargetID) {
 			return fmt.Errorf("task does not belong to the current task target")
 		}

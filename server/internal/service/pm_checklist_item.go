@@ -79,22 +79,22 @@ func (s *PMChecklistItemService) validateAssignee(ctx context.Context, workspace
 }
 
 // List returns checklist items for an accessible task in the workspace.
-func (s *PMChecklistItemService) List(ctx context.Context, storyID, workspaceID string) ([]model.PMChecklistItem, error) {
-	if storyID == "" {
-		return nil, fmt.Errorf("story_id is required")
+func (s *PMChecklistItemService) List(ctx context.Context, taskID, workspaceID string) ([]model.PMChecklistItem, error) {
+	if taskID == "" {
+		return nil, fmt.Errorf("task_id is required")
 	}
-	if _, err := s.requireAccessibleTask(ctx, storyID, workspaceID); err != nil {
+	if _, err := s.requireAccessibleTask(ctx, taskID, workspaceID); err != nil {
 		return nil, err
 	}
-	return s.repo.List(ctx, storyID)
+	return s.repo.List(ctx, taskID)
 }
 
 // ListBounded returns at most 100 checklist items plus full count metadata.
-func (s *PMChecklistItemService) ListBounded(ctx context.Context, storyID, workspaceID string, limit int) ([]model.PMChecklistItem, int64, bool, error) {
-	if storyID == "" {
-		return nil, 0, false, fmt.Errorf("story_id is required")
+func (s *PMChecklistItemService) ListBounded(ctx context.Context, taskID, workspaceID string, limit int) ([]model.PMChecklistItem, int64, bool, error) {
+	if taskID == "" {
+		return nil, 0, false, fmt.Errorf("task_id is required")
 	}
-	if _, err := s.requireAccessibleTask(ctx, storyID, workspaceID); err != nil {
+	if _, err := s.requireAccessibleTask(ctx, taskID, workspaceID); err != nil {
 		return nil, 0, false, err
 	}
 	if limit <= 0 {
@@ -103,7 +103,7 @@ func (s *PMChecklistItemService) ListBounded(ctx context.Context, storyID, works
 	if limit > 100 {
 		return nil, 0, false, fmt.Errorf("limit must be between 1 and 100")
 	}
-	items, total, err := s.repo.ListPage(ctx, storyID, limit, 0)
+	items, total, err := s.repo.ListPage(ctx, taskID, limit, 0)
 	if err != nil {
 		return nil, 0, false, err
 	}
@@ -123,14 +123,14 @@ func (s *PMChecklistItemService) Get(ctx context.Context, id, workspaceID string
 }
 
 // Create creates a checklist item.
-func (s *PMChecklistItemService) Create(ctx context.Context, storyID string, req model.CreateChecklistItemRequest, workspaceID, actorID string) (*model.PMChecklistItem, error) {
-	if storyID == "" {
-		return nil, fmt.Errorf("story_id is required")
+func (s *PMChecklistItemService) Create(ctx context.Context, taskID string, req model.CreateChecklistItemRequest, workspaceID, actorID string) (*model.PMChecklistItem, error) {
+	if taskID == "" {
+		return nil, fmt.Errorf("task_id is required")
 	}
 	if strings.TrimSpace(req.Text) == "" {
 		return nil, fmt.Errorf("text is required")
 	}
-	if _, err := s.requireAccessibleTask(ctx, storyID, workspaceID); err != nil {
+	if _, err := s.requireAccessibleTask(ctx, taskID, workspaceID); err != nil {
 		return nil, err
 	}
 	assigneeID, err := s.validateAssignee(ctx, workspaceID, req.AssigneeID, false)
@@ -139,7 +139,7 @@ func (s *PMChecklistItemService) Create(ctx context.Context, storyID string, req
 	}
 
 	item := &model.PMChecklistItem{
-		TaskID:     storyID,
+		TaskID:     taskID,
 		Text:       strings.TrimSpace(req.Text),
 		AssigneeID: assigneeID,
 		DueDate:    req.DueDate,
@@ -151,7 +151,7 @@ func (s *PMChecklistItemService) Create(ctx context.Context, storyID string, req
 	if err := s.repo.Create(ctx, item); err != nil {
 		return nil, err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "checklist_item", EntityID: item.ID, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: storyID})
+	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "checklist_item", EntityID: item.ID, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: taskID})
 
 	// Emit notifications for @mentions in checklist item text.
 	s.emitMentionNotifications(ctx, item, workspaceID, actorID)
@@ -246,10 +246,10 @@ func (s *PMChecklistItemService) emitMentionNotifications(ctx context.Context, i
 	var entityTeamID string
 	readableTeamIDs := []string(nil)
 	if s.taskRepo != nil {
-		if story, _ := s.taskRepo.GetRawByID(ctx, item.TaskID); story != nil {
-			entityTitle = story.Name
-			entityTeamID = derefString(story.TeamID)
-			readableTeamIDs = mentionScopeForTeamID(story.TeamID)
+		if task, _ := s.taskRepo.GetRawByID(ctx, item.TaskID); task != nil {
+			entityTitle = task.Name
+			entityTeamID = derefString(task.TeamID)
+			readableTeamIDs = mentionScopeForTeamID(task.TeamID)
 		}
 	}
 

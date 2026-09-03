@@ -69,7 +69,7 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
       entity_type: 'epic' as const,
       entity_id: activeEpicId,
       display_title: epic.epic.name,
-      related_ids: { task_ids: tasks.map((task) => task.id), story_ids: tasks.map((task) => task.id) },
+      related_ids: { task_ids: tasks.map((task) => task.id) },
     };
   }, [activeEpicId, epic, tasks]);
   useRegisterPageContext(commandBarContext, 25);

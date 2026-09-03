@@ -28,14 +28,12 @@ function entityMentionTypeLabel(type: DocsEntitySearchType) {
   if (type === 'deal') return 'Deal'
   if (type === 'contact') return 'Contact'
   if (type === 'company') return 'Company'
-  if (type === 'story') return 'Story'
   if (type === 'document') return 'Doc'
   return 'Task'
 }
 
 function entityMentionTypePluralLabel(type: DocsEntitySearchType) {
   if (type === 'company') return 'companies'
-  if (type === 'story') return 'stories'
   return `${entityMentionTypeLabel(type).toLowerCase()}s`
 }
 

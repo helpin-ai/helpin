@@ -41,7 +41,7 @@ export interface ShortcutUserMatch {
   matched_member_status?: string | null;
   matched_name: string | null;
   shortcut_name?: string | null;
-  story_count: number;
+  task_count: number;
   owner_count: number;
   requester_count: number;
 }
@@ -177,11 +177,11 @@ export interface ShortcutImportOptionsPayload {
   docs_space_id?: string;
   docs_collection_id?: string;
   docs_lookback_months?: number;
-  story_date_field?: 'updated_at' | 'created_at';
-  story_lookback_months?: number;
+  task_date_field?: 'updated_at' | 'created_at';
+  task_lookback_months?: number;
   epic_lookback_months?: number;
   objective_lookback_months?: number;
-  max_stories?: number;
+  max_tasks?: number;
 }
 
 async function jsonRequest<T>(path: string, body: unknown): Promise<{ data: T | null; error: string | null }> {

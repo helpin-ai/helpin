@@ -15,11 +15,11 @@ func teamActivityAction(oldName, newName string) string {
 	case oldName == "" && newName == "":
 		return ""
 	case oldName == "" && newName != "":
-		return "assigned this story to team " + newName
+		return "assigned this task to team " + newName
 	case oldName != "" && newName == "":
-		return "removed this story from team " + oldName
+		return "removed this task from team " + oldName
 	case oldName != newName:
-		return "moved this story from team " + oldName + " to " + newName
+		return "moved this task from team " + oldName + " to " + newName
 	default:
 		return ""
 	}
@@ -47,11 +47,11 @@ func planningLinkActivityAction(kind, oldName, newName string) string {
 	case oldName == "" && newName == "":
 		return ""
 	case oldName == "" && newName != "":
-		return "added this story to " + kind + " " + newName
+		return "added this task to " + kind + " " + newName
 	case oldName != "" && newName == "":
-		return "removed this story from " + kind + " " + oldName
+		return "removed this task from " + kind + " " + oldName
 	case oldName != newName:
-		return "moved this story from " + kind + " " + oldName + " to " + newName
+		return "moved this task from " + kind + " " + oldName + " to " + newName
 	default:
 		return ""
 	}

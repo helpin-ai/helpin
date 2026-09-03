@@ -544,7 +544,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	// Legacy path: evaluate epic automations from pm_automations table.
 	// Kept during transition until migration 052 is validated and pm_automations dropped.
 	if s.automationService != nil {
-		s.automationService.OnStoryStateChange(ctx, newTask, newTask.WorkflowStateID)
+		s.automationService.OnTaskStateChange(ctx, newTask, newTask.WorkflowStateID)
 	}
 
 	// Evaluate automation rules for the initial state entry.
@@ -553,7 +553,6 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 			WorkspaceID: newTask.WorkspaceID,
 			TriggerType: model.TriggerTaskStateEntered,
 			TaskID:      newTask.ID,
-			StoryID:     newTask.ID,
 			StateID:     newTask.WorkflowStateID,
 		}, nil)
 	}
@@ -1616,10 +1615,10 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	if stateChanged {
 		// Legacy path: evaluate epic automations from pm_automations table.
 		if s.automationService != nil {
-			s.automationService.OnStoryStateChange(ctx, current, current.WorkflowStateID)
+			s.automationService.OnTaskStateChange(ctx, current, current.WorkflowStateID)
 		}
 		if s.recurringService != nil {
-			if err := s.recurringService.HandleStoryProgress(ctx, current.ID); err != nil {
+			if err := s.recurringService.HandleTaskProgress(ctx, current.ID); err != nil {
 				s.logger.ErrorContext(ctx, "failed to process recurring template task progress", "error", err, "task_id", current.ID)
 			}
 		}
@@ -1629,7 +1628,6 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 				WorkspaceID: current.WorkspaceID,
 				TriggerType: model.TriggerTaskStateEntered,
 				TaskID:      current.ID,
-				StoryID:     current.ID,
 				StateID:     current.WorkflowStateID,
 			}, nil)
 		}
@@ -1896,7 +1894,7 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 	}
 	// Legacy path: evaluate epic automations from pm_automations table.
 	if s.automationService != nil {
-		s.automationService.OnStoryStateChange(ctx, current, req.StateID)
+		s.automationService.OnTaskStateChange(ctx, current, req.StateID)
 	}
 	newStateName := req.StateID
 	eventType := "task.state_changed"
@@ -1951,7 +1949,6 @@ func (s *PMTaskService) MoveToState(ctx context.Context, id string, req model.Mo
 			WorkspaceID: current.WorkspaceID,
 			TriggerType: model.TriggerTaskStateEntered,
 			TaskID:      current.ID,
-			StoryID:     current.ID,
 			StateID:     req.StateID,
 		}, execCtx)
 	}

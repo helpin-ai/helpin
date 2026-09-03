@@ -374,7 +374,7 @@ func (r *PMObjectiveRepository) ComputeStats(ctx context.Context, objectiveID st
 		stats.KeyResultAvgPct = krRows[0].AvgPct
 	}
 
-	// Epic stats — count epics linked + aggregate their story counts
+	// Epic stats — count epics linked + aggregate their task counts
 	epicIDs, err := r.listEpicIDs(ctx, objectiveID)
 	if err != nil {
 		return stats, err
@@ -392,8 +392,8 @@ func (r *PMObjectiveRepository) ComputeStats(ctx context.Context, objectiveID st
 		}
 		stats.EpicDoneCount = int(doneCount)
 
-		// Aggregate story counts across linked epics
-		var storyRow struct {
+		// Aggregate task counts across linked epics
+		var taskRow struct {
 			Total int
 			Done  int
 		}
@@ -402,13 +402,13 @@ func (r *PMObjectiveRepository) ComputeStats(ctx context.Context, objectiveID st
 			Select("COUNT(*) AS total, COUNT(CASE WHEN ws.state_type = 'done' THEN 1 END) AS done").
 			Joins("JOIN pm_workflow_states ws ON ws.id = s.workflow_state_id").
 			Where("s.epic_id IN ? AND s.archived = false", epicIDs).
-			Scan(&storyRow).Error; err != nil {
-			return stats, fmt.Errorf("compute epic story stats: %w", err)
+			Scan(&taskRow).Error; err != nil {
+			return stats, fmt.Errorf("compute epic task stats: %w", err)
 		}
-		stats.EpicTaskCount = storyRow.Total
-		stats.EpicDoneTasks = storyRow.Done
-		if storyRow.Total > 0 {
-			stats.EpicProgressPct = float64(storyRow.Done) / float64(storyRow.Total) * 100
+		stats.EpicTaskCount = taskRow.Total
+		stats.EpicDoneTasks = taskRow.Done
+		if taskRow.Total > 0 {
+			stats.EpicProgressPct = float64(taskRow.Done) / float64(taskRow.Total) * 100
 		}
 	}
 

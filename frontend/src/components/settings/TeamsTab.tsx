@@ -72,7 +72,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [description, setDescription] = useState('');
   const [teamType, setTeamType] = useState<TeamType>('engineering');
   const [defaultTaskType, setDefaultTaskType] = useState<DefaultTaskType>('feature');
-  const [storyTypeTouched, setTaskTypeTouched] = useState(false);
+  const [taskTypeTouched, setTaskTypeTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(initialTeamId ?? null);
   const isSelectedTeamManager = selectedTeamId
@@ -229,10 +229,10 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     : [];
 
   useEffect(() => {
-    if (!storyTypeTouched) {
+    if (!taskTypeTouched) {
       setDefaultTaskType(TEAM_TYPE_PRESETS[teamType].defaultTaskType);
     }
-  }, [teamType, storyTypeTouched]);
+  }, [teamType, taskTypeTouched]);
 
   const openCreate = () => {
     setEditTeam(null);

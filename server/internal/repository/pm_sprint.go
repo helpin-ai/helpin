@@ -394,7 +394,7 @@ func (r *PMSprintRepository) GetCurrentSprint(ctx context.Context, workspaceID s
 	return &sprint, nil
 }
 
-// ComputeStats computes derived story/point metrics for a sprint.
+// ComputeStats computes derived task/point metrics for a sprint.
 func (r *PMSprintRepository) ComputeStats(ctx context.Context, sprintID string) (model.PMSprintStats, error) {
 	stats := model.PMSprintStats{}
 	var rows []struct {
@@ -445,14 +445,14 @@ func replaceSprintLabels(tx *gorm.DB, sprintID string, labelIDs []string) error 
 
 // ListTasks returns tasks in a sprint.
 func (r *PMSprintRepository) ListTasks(ctx context.Context, sprintID string) ([]model.PMTask, error) {
-	var stories []model.PMTask
+	var tasks []model.PMTask
 	if err := r.db.WithContext(ctx).
 		Where("sprint_id = ? AND archived = false", sprintID).
 		Order("position ASC, created_at DESC").
-		Find(&stories).Error; err != nil {
-		return nil, fmt.Errorf("list sprint stories: %w", err)
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list sprint tasks: %w", err)
 	}
-	return stories, nil
+	return tasks, nil
 }
 
 // ListEnrichedTasks returns tasks in a sprint with table-facing computed fields
@@ -476,7 +476,7 @@ func (r *PMSprintRepository) ListEnrichedTasksPage(ctx context.Context, sprintID
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, page, perPage, fmt.Errorf("count sprint stories: %w", err)
+		return nil, 0, page, perPage, fmt.Errorf("count sprint tasks: %w", err)
 	}
 	offset := 0
 	if pagination.Offset != nil {
@@ -493,7 +493,7 @@ func (r *PMSprintRepository) ListEnrichedTasksPage(ctx context.Context, sprintID
 
 	var tasks []model.PMTask
 	if err := query.Order("position ASC, created_at DESC").Offset(offset).Limit(perPage).Find(&tasks).Error; err != nil {
-		return nil, 0, page, perPage, fmt.Errorf("list sprint story page: %w", err)
+		return nil, 0, page, perPage, fmt.Errorf("list sprint task page: %w", err)
 	}
 	return NewPMTaskRepository(r.db).EnrichTasksForList(ctx, tasks), int(total), page, perPage, nil
 }
@@ -832,7 +832,7 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 		Where("preview_rank <= ?", limitPerSprint).
 		Order("sprint_id ASC, preview_rank ASC").
 		Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list planning preview stories: %w", err)
+		return nil, fmt.Errorf("list planning preview tasks: %w", err)
 	}
 	if err := r.enrichPlanningTaskPreviewOwners(ctx, rows); err != nil {
 		return nil, err
@@ -866,12 +866,12 @@ func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, wor
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("count planning backlog stories: %w", err)
+		return nil, 0, fmt.Errorf("count planning backlog tasks: %w", err)
 	}
 
 	// Always return an array to clients, including when the team's backlog is empty.
 	// A nil slice is encoded as JSON null, which is not a usable collection in the UI.
-	stories := make([]model.SprintPlanningTaskPreview, 0)
+	tasks := make([]model.SprintPlanningTaskPreview, 0)
 	if err := base.
 		Select(`
 			s.id,
@@ -887,13 +887,13 @@ func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, wor
 		`).
 		Order("s.position ASC, s.updated_at DESC, s.created_at DESC").
 		Limit(limit).
-		Scan(&stories).Error; err != nil {
-		return nil, 0, fmt.Errorf("list planning backlog stories: %w", err)
+		Scan(&tasks).Error; err != nil {
+		return nil, 0, fmt.Errorf("list planning backlog tasks: %w", err)
 	}
-	if err := r.enrichPlanningTaskPreviewOwners(ctx, stories); err != nil {
+	if err := r.enrichPlanningTaskPreviewOwners(ctx, tasks); err != nil {
 		return nil, 0, err
 	}
-	return stories, int(total), nil
+	return tasks, int(total), nil
 }
 
 func (r *PMSprintRepository) enrichPlanningTaskPreviewOwners(ctx context.Context, tasks []model.SprintPlanningTaskPreview) error {

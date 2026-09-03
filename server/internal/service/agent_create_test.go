@@ -605,6 +605,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 				// The dock orchestrator and support agent default to a
 				// flash-tier OpenRouter model.
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAskAgentModel
+			case model.AgentPresetCommandAgent:
+				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultCommandAgentModel
 			}
 			if agent.Provider == nil || *agent.Provider != wantProvider {
 				t.Errorf("system preset %q provider = %+v, want %s", agent.PresetKey, agent.Provider, wantProvider)
@@ -874,16 +876,18 @@ func TestEnsureBuiltInAgent_UpgradesLegacyScribeDefaultRouting(t *testing.T) {
 	}
 }
 
-func TestEnsureBuiltInAgent_UpgradesManagedDeepSeekFlashDefaultsToGLMExacto(t *testing.T) {
+func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToDeepSeekNitro(t *testing.T) {
 	presetKeys := []string{
 		model.AgentPresetEpicPlanner,
 		model.AgentPresetDocumentationAgent,
 		model.AgentPresetAskAgent,
 		model.AgentPresetSupportAgent,
+		model.AgentPresetCommandAgent,
 	}
 	legacyModels := []string{
 		"deepseek/deepseek-v4-flash",
 		"deepseek/deepseek-v4-flash-0731",
+		"z-ai/glm-5.3-flash:exacto",
 	}
 
 	for _, presetKey := range presetKeys {
@@ -900,6 +904,7 @@ func TestEnsureBuiltInAgent_UpgradesManagedDeepSeekFlashDefaultsToGLMExacto(t *t
 				legacyProvider := model.AgentModelProviderOpenRouter
 				systemAgent.Provider = &legacyProvider
 				systemAgent.Model = &legacyModel
+				systemAgent.ExecutionConfig = model.JSONBlob(`{}`)
 				if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
 					t.Fatalf("persist legacy route: %v", err)
 				}
@@ -911,11 +916,48 @@ func TestEnsureBuiltInAgent_UpgradesManagedDeepSeekFlashDefaultsToGLMExacto(t *t
 				if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
 					t.Fatalf("provider = %+v, want openrouter", reconciled.Provider)
 				}
-				if reconciled.Model == nil || *reconciled.Model != "z-ai/glm-5.3-flash:exacto" {
-					t.Fatalf("model = %+v, want GLM 5.3 Flash Exacto", reconciled.Model)
+				if reconciled.Model == nil || *reconciled.Model != defaultFastOpenRouterAgentModel {
+					t.Fatalf("model = %+v, want %s", reconciled.Model, defaultFastOpenRouterAgentModel)
+				}
+				config, err := model.ParseAgentExecutionConfig(reconciled.ExecutionConfig)
+				if err != nil {
+					t.Fatalf("parse execution config: %v", err)
+				}
+				if config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
+					!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
+					t.Fatalf("execution config = %s, want OpenRouter quantizations %v", reconciled.ExecutionConfig, defaultFastOpenRouterQuantizations)
 				}
 			})
 		}
+	}
+}
+
+func TestEnsureBuiltInAgent_UpgradesManagedCommandAgentDefaultToSmall(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCommandAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	legacyProvider := model.AgentModelProviderOpenAI
+	legacyModel := defaultOpenAIAgentModel
+	systemAgent.Provider = &legacyProvider
+	systemAgent.Model = &legacyModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist legacy route: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCommandAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent reconcile returned error: %v", err)
+	}
+	if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
+		t.Fatalf("provider = %+v, want openrouter", reconciled.Provider)
+	}
+	if reconciled.Model == nil || *reconciled.Model != defaultCommandAgentModel {
+		t.Fatalf("model = %+v, want %s", reconciled.Model, defaultCommandAgentModel)
 	}
 }
 

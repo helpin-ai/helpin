@@ -22,7 +22,7 @@ var delegationTargetTypes = []string{
 	"crm_company",
 	"crm_deal",
 	"task",
-	"story",
+	"task",
 	"epic",
 	"repository",
 	"support_conversation",

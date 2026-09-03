@@ -207,7 +207,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 		Name:                 "docs.list_spaces",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "repository", "conversation", "support_conversation", "deal", "crm_deal", "contact", "crm_contact", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository", "conversation", "support_conversation", "deal", "crm_deal", "contact", "crm_contact", "support_coverage_gap"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "docs.list_spaces",
 			Alias:       "list_spaces",
@@ -255,7 +255,7 @@ func (s *InternalCommandService) registerDocsOrganizationCommands() {
 		Name:                 "docs.list_collections",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "repository", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "repository", "support_coverage_gap"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "docs.list_collections",
 			Alias:       "list_collections",
