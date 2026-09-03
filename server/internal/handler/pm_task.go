@@ -38,7 +38,7 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	pagination := queryPagination(r)
 
-	tasks, total, err := h.taskService.List(r.Context(), workspaceID, filters, pagination)
+	tasks, total, err := h.taskService.ListSummary(r.Context(), workspaceID, filters, pagination)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

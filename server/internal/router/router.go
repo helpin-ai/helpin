@@ -1097,13 +1097,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/sprints/{id}/preview-tasks", h.PMSprint.ListPreviewTasks)
 
 				// Tasks — pm.read / pm.edit
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks", h.PMTask.List)
+				r.With(requirePerm(authorization.PermPMRead), middleware.CompressJSON).Get("/tasks", h.PMTask.List)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks", h.PMTask.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/seed", h.PMTask.Seed)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board", h.PMTask.ListBoard)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/column", h.PMTask.ListBoardColumn)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/members", h.PMTask.ListBoardByMember)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/board/members/column", h.PMTask.ListBoardMemberColumn)
+				r.With(requirePerm(authorization.PermPMRead), middleware.CompressJSON).Get("/tasks/board", h.PMTask.ListBoard)
+				r.With(requirePerm(authorization.PermPMRead), middleware.CompressJSON).Get("/tasks/board/column", h.PMTask.ListBoardColumn)
+				r.With(requirePerm(authorization.PermPMRead), middleware.CompressJSON).Get("/tasks/board/members", h.PMTask.ListBoardByMember)
+				r.With(requirePerm(authorization.PermPMRead), middleware.CompressJSON).Get("/tasks/board/members/column", h.PMTask.ListBoardMemberColumn)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/counts", h.PMTask.CountByState)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/display/{displayID}", h.PMTask.GetByDisplayID)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}", h.PMTask.Get)

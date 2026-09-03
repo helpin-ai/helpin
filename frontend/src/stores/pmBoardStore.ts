@@ -282,6 +282,9 @@ const buildApiFilters = (teamId: string | null, filters: BoardFilters): Record<s
 const sortColumns = (data: TaskStateColumn[]) =>
   [...data].sort((a, b) => a.state.position - b.state.position);
 
+const findTeamWorkflow = (workflows: WorkflowWithStates[], teamId: string) =>
+  workflows.find((workflow) => workflow.workflow.team_id === teamId) ?? null;
+
 type BoardFetchArgs = {
   workspaceId: string;
   workflowId: string;
@@ -405,19 +408,23 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       // Explicit workflow ID provided — use it
       selected = workflows.find((workflow) => workflow.workflow.id === workflowId) ?? workflows[0] ?? null;
     } else if (teamId) {
-      // Team filter active — resolve the team's workflow, auto-seeding if needed.
-      const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, teamId);
-      if (resolved.error || !resolved.data) {
-        set({
-          loading: false,
-          error: resolved.error ?? 'Failed to resolve team workflow',
-          workflows,
-          workflow: null,
-          columns: [],
-        });
-        return;
+      // Reuse the workflow already returned by the list request. Resolve only
+      // when a team has no workflow yet, preserving the auto-seed fallback.
+      selected = findTeamWorkflow(workflows, teamId);
+      if (!selected) {
+        const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, teamId);
+        if (resolved.error || !resolved.data) {
+          set({
+            loading: false,
+            error: resolved.error ?? 'Failed to resolve team workflow',
+            workflows,
+            workflow: null,
+            columns: [],
+          });
+          return;
+        }
+        selected = resolved.data;
       }
-      selected = resolved.data;
     } else {
       // No team filter — use saved workflow or first available
       const resolvedId = getSavedWorkflowId(workspaceId);
@@ -460,15 +467,19 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     const { workspaceId, workflows, filters } = get();
     if (!workspaceId) return;
 
-    // Re-resolve workflow for the new team
+    // Select the new team's loaded workflow, resolving only when it has not
+    // been created yet.
     let selected: WorkflowWithStates | null = null;
     if (teamId) {
-      const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, teamId);
-      if (resolved.error || !resolved.data) {
-        set({ error: resolved.error ?? 'Failed to resolve team workflow' });
-        return;
+      selected = findTeamWorkflow(workflows, teamId);
+      if (!selected) {
+        const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, teamId);
+        if (resolved.error || !resolved.data) {
+          set({ error: resolved.error ?? 'Failed to resolve team workflow' });
+          return;
+        }
+        selected = resolved.data;
       }
-      selected = resolved.data;
     } else {
       const resolvedId = getSavedWorkflowId(workspaceId);
       selected = resolvedId

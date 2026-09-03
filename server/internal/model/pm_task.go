@@ -29,7 +29,7 @@ type PMTask struct {
 	WorkspaceID               string               `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	DisplayID                 int                  `json:"display_id" gorm:"not null;index"`
 	Name                      string               `json:"name" gorm:"not null"`
-	Description               *string              `json:"description"`
+	Description               *string              `json:"description,omitempty"`
 	TaskType                  string               `json:"task_type" gorm:"column:task_type;not null;default:'feature'"`
 	WorkflowID                string               `json:"workflow_id" gorm:"type:uuid;not null;index"`
 	WorkflowStateID           string               `json:"workflow_state_id" gorm:"type:uuid;not null;index"`

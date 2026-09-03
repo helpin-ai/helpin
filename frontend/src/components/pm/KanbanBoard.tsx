@@ -20,10 +20,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePMBoardStore, type BoardFilters } from '@/stores/pmBoardStore';
-import type { CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
-import { pmLabelService } from '@/lib/services/pmLabelService';
-import { pmEpicService } from '@/lib/services/pmEpicService';
-import { pmSprintService } from '@/lib/services/pmSprintService';
+import type { CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { StateTypeIcon } from '@/lib/pmConstants';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -31,7 +28,7 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useAuthStore } from '@/stores/authStore';
-import { useAgents, useSession, useAutomationRulesByWorkflow, useTeamFieldVisibilityForTeam, useWorkflows } from '@/hooks/queries';
+import { useAgents, useSession, useAutomationRulesByWorkflow, useTeamFieldVisibilityForTeam, useLabels, useEpics, useSprints } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { TaskCard } from './TaskCard';
 import { CreateTaskModal } from './CreateTaskModal';
@@ -484,13 +481,13 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   const loadMemberBoard = usePMBoardStore((state) => state.loadMemberBoard);
   const loadMoreMemberColumn = usePMBoardStore((state) => state.loadMoreMemberColumn);
   const moveMemberTask = usePMBoardStore((state) => state.moveMemberTask);
+  const allWorkflows = usePMBoardStore((state) => state.workflows);
 
   const currentUser = useAuthStore((s) => s.user);
   const { data: sessionMembership } = useSession(workspaceId);
   const currentMemberId = sessionMembership?.id;
   const { teams, findTeamName } = useAccessibleTeams(workspaceId);
   const teamLabel = teamId ? findTeamName(teamId) : null;
-  const { data: allWorkflows } = useWorkflows(workspaceId);
   const { userMemberships } = useWorkspaceTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const listFieldVis = useTeamFieldVisibilityForTeam(workspaceId, storeTeamId);
@@ -561,22 +558,10 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
     void setFilters(initialFilters);
   }, [initialFilters, initialFiltersKey, setFilters]);
 
-  const [refLabels, setRefLabels] = useState<Label[]>([]);
-  const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
-  const [refSprints, setRefSprints] = useState<SprintWithStats[]>([]);
+  const { data: refLabels = [] } = useLabels(workspaceId);
+  const { data: refEpics = [] } = useEpics(workspaceId);
+  const { data: refSprints = [] } = useSprints(workspaceId);
   const { data: agents = [] } = useAgents(workspaceId);
-
-  useEffect(() => {
-    pmLabelService.list(workspaceId).then((r) => {
-      if (r.data) setRefLabels(r.data);
-    });
-    pmEpicService.list(workspaceId).then((r) => {
-      if (r.data) setRefEpics(r.data);
-    });
-    pmSprintService.list(workspaceId).then((r) => {
-      if (r.data) setRefSprints(r.data);
-    });
-  }, [workspaceId]);
   const agentById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
 
   const dragManager = useRef(new DragPreviewManager()).current;

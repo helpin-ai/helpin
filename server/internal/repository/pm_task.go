@@ -352,6 +352,15 @@ func buildDoneTaskGroups(tasks []model.BoardTask, now time.Time) []model.TaskGro
 
 // List returns tasks with filters and pagination.
 func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination) ([]model.BoardTask, int64, error) {
+	return r.list(ctx, workspaceID, filters, pagination, false)
+}
+
+// ListSummary returns tasks with filters and pagination without rich body fields.
+func (r *PMTaskRepository) ListSummary(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination) ([]model.BoardTask, int64, error) {
+	return r.list(ctx, workspaceID, filters, pagination, true)
+}
+
+func (r *PMTaskRepository) list(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination, summary bool) ([]model.BoardTask, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.PMTask{}).Where("workspace_id = ?", workspaceID)
 
 	if filters.Search != nil && strings.TrimSpace(*filters.Search) != "" {
@@ -436,7 +445,11 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	}
 
 	var tasks []model.PMTask
-	if err := query.Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&tasks).Error; err != nil {
+	listQuery := query
+	if summary {
+		listQuery = taskSummaryQuery(listQuery)
+	}
+	if err := listQuery.Order("updated_at DESC").Offset(offset).Limit(perPage).Find(&tasks).Error; err != nil {
 		return nil, 0, fmt.Errorf("list tasks: %w", err)
 	}
 
@@ -1021,7 +1034,7 @@ func (r *PMTaskRepository) ListByWorkflowState(ctx context.Context, workflowID s
 		}
 
 		var visibleTasks []model.PMTask
-		if err := query.Find(&visibleTasks).Error; err != nil {
+		if err := taskSummaryQuery(query).Find(&visibleTasks).Error; err != nil {
 			return nil, fmt.Errorf("list board column tasks: %w", err)
 		}
 
@@ -1091,7 +1104,7 @@ func (r *PMTaskRepository) ListColumnTasks(ctx context.Context, stateID string, 
 	}
 
 	var tasks []model.PMTask
-	if err := taskQuery.
+	if err := taskSummaryQuery(taskQuery).
 		Order(boardTaskOrderClause(state.StateType)).
 		Offset(offset).Limit(limit).
 		Find(&tasks).Error; err != nil {
@@ -1262,6 +1275,12 @@ func (r *PMTaskRepository) enrichBoardTasks(
 		result = append(result, bs)
 	}
 	return result
+}
+
+// taskSummaryQuery excludes rich task-body fields from collection queries.
+// Full task detail queries intentionally do not use this scope.
+func taskSummaryQuery(query *gorm.DB) *gorm.DB {
+	return query.Omit("description", "implementation_brief")
 }
 
 type taskAssociationLinkRow struct {
@@ -1821,7 +1840,6 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 			query = query.Where("NOT EXISTS (SELECT 1 FROM pm_task_owners po WHERE po.task_id = pm_tasks.id)")
 		} else {
 			query = query.
-				Select("pm_tasks.*").
 				Joins("JOIN pm_task_owners po ON po.task_id = pm_tasks.id").
 				Joins("JOIN workspace_members wm ON wm.user_id = po.user_id AND wm.workspace_id = pm_tasks.workspace_id").
 				Where("wm.id = ?", key)
@@ -1833,7 +1851,7 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 		}
 
 		var memberTasks []model.PMTask
-		if err := query.Find(&memberTasks).Error; err != nil {
+		if err := taskSummaryQuery(query).Find(&memberTasks).Error; err != nil {
 			return nil, fmt.Errorf("list member column tasks: %w", err)
 		}
 		allTasks = append(allTasks, memberTasks...)
@@ -2013,7 +2031,6 @@ func (r *PMTaskRepository) ListMemberColumnTasks(ctx context.Context, workspaceI
 		taskQuery = taskQuery.Where("NOT EXISTS (SELECT 1 FROM pm_task_owners po WHERE po.task_id = pm_tasks.id)")
 	} else {
 		taskQuery = taskQuery.
-			Select("pm_tasks.*").
 			Joins("JOIN pm_task_owners po ON po.task_id = pm_tasks.id").
 			Joins("JOIN workspace_members wm ON wm.user_id = po.user_id AND wm.workspace_id = pm_tasks.workspace_id").
 			Where("wm.id = ?", *memberID)
@@ -2025,7 +2042,7 @@ func (r *PMTaskRepository) ListMemberColumnTasks(ctx context.Context, workspaceI
 	}
 
 	var tasks []model.PMTask
-	if err := taskQuery.
+	if err := taskSummaryQuery(taskQuery).
 		Joins("JOIN pm_workflow_states ws ON ws.id = pm_tasks.workflow_state_id").
 		Order(memberBoardTaskOrderClause()).
 		Offset(offset).Limit(limit).

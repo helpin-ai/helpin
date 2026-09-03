@@ -238,11 +238,29 @@ func (s *PMTaskService) populateMemberColumns(ctx context.Context, workspaceID s
 
 // List returns tasks with filters/pagination.
 func (s *PMTaskService) List(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination) ([]model.BoardTask, int64, error) {
+	return s.list(ctx, workspaceID, filters, pagination, false)
+}
+
+// ListSummary returns table-facing task data without rich task body fields.
+func (s *PMTaskService) ListSummary(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination) ([]model.BoardTask, int64, error) {
+	return s.list(ctx, workspaceID, filters, pagination, true)
+}
+
+func (s *PMTaskService) list(ctx context.Context, workspaceID string, filters model.PMTaskFilters, pagination model.PMPagination, summary bool) ([]model.BoardTask, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
 	filters.AccessibleTeamIDs = intersectAccessibleTeamIDs(filters.AccessibleTeamIDs, accessibleTeamIDs(ctx))
-	tasks, total, err := s.taskRepo.List(ctx, workspaceID, filters, pagination)
+	var (
+		tasks []model.BoardTask
+		total int64
+		err   error
+	)
+	if summary {
+		tasks, total, err = s.taskRepo.ListSummary(ctx, workspaceID, filters, pagination)
+	} else {
+		tasks, total, err = s.taskRepo.List(ctx, workspaceID, filters, pagination)
+	}
 	if err != nil {
 		return nil, 0, err
 	}

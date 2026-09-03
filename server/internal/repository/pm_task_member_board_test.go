@@ -95,6 +95,121 @@ func TestPMTaskRepository_MemberBoardOrdering(t *testing.T) {
 	})
 }
 
+func TestPMTaskRepository_TaskSummaryCollectionsOmitRichFields(t *testing.T) {
+	t.Parallel()
+
+	db := newPMTaskMemberBoardTestDB(t)
+	repo := NewPMTaskRepository(db)
+	ctx := context.Background()
+
+	const (
+		workspaceID = "ws-task-summary"
+		workflowID  = "wf-task-summary"
+		todoStateID = "state-task-summary-todo"
+		userID      = "user-task-summary"
+		memberID    = "member-task-summary"
+		taskID      = "task-summary-rich"
+	)
+
+	seedPMTaskMemberBoardUser(t, db, userID, "task-summary@test.com", "Task Summary User")
+	seedPMTaskMemberBoardWorkspace(t, db, workspaceID, userID)
+	seedPMTaskMemberBoardMember(t, db, memberID, workspaceID, userID, "Task Summary User")
+	seedPMTaskMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, "state-task-summary-doing", "state-task-summary-done")
+	insertPMTaskMemberBoardTask(t, db, taskID, workspaceID, workflowID, todoStateID, memberID, 1, 0, time.Now().UTC())
+
+	const description = "large rich-text description"
+	const implementationBrief = `{"summary":"implementation details"}`
+	if err := db.Model(&model.PMTask{}).
+		Where("id = ?", taskID).
+		Updates(map[string]interface{}{
+			"description":          description,
+			"implementation_brief": []byte(implementationBrief),
+		}).Error; err != nil {
+		t.Fatalf("seed task rich fields: %v", err)
+	}
+
+	assertSummary := func(t *testing.T, task model.BoardTask) {
+		t.Helper()
+		if task.ID != taskID {
+			t.Fatalf("task id = %q, want %q", task.ID, taskID)
+		}
+		if task.Description != nil {
+			t.Fatalf("summary description = %q, want nil", *task.Description)
+		}
+		if len(task.ImplementationBrief) != 0 {
+			t.Fatalf("summary implementation_brief = %s, want empty", task.ImplementationBrief)
+		}
+	}
+
+	t.Run("list", func(t *testing.T) {
+		tasks, total, err := repo.ListSummary(ctx, workspaceID, model.PMTaskFilters{}, model.PMPagination{Page: 1, PerPage: 10})
+		if err != nil {
+			t.Fatalf("ListSummary: %v", err)
+		}
+		if total != 1 || len(tasks) != 1 {
+			t.Fatalf("total/tasks = %d/%d, want 1/1", total, len(tasks))
+		}
+		assertSummary(t, tasks[0])
+	})
+
+	t.Run("workflow state board", func(t *testing.T) {
+		columns, err := repo.ListByWorkflowState(ctx, workflowID, model.PMTaskFilters{}, 10)
+		if err != nil {
+			t.Fatalf("ListByWorkflowState: %v", err)
+		}
+		if len(columns) == 0 || len(columns[0].Tasks) != 1 {
+			t.Fatalf("first column task count = %d, want 1", len(columns[0].Tasks))
+		}
+		assertSummary(t, columns[0].Tasks[0])
+	})
+
+	t.Run("workflow state column", func(t *testing.T) {
+		tasks, _, total, err := repo.ListColumnTasks(ctx, todoStateID, model.PMTaskFilters{}, 0, 10)
+		if err != nil {
+			t.Fatalf("ListColumnTasks: %v", err)
+		}
+		if total != 1 || len(tasks) != 1 {
+			t.Fatalf("total/tasks = %d/%d, want 1/1", total, len(tasks))
+		}
+		assertSummary(t, tasks[0])
+	})
+
+	t.Run("member board", func(t *testing.T) {
+		columns, err := repo.ListByMember(ctx, workspaceID, workflowID, model.PMTaskFilters{}, 10, false, nil)
+		if err != nil {
+			t.Fatalf("ListByMember: %v", err)
+		}
+		if len(columns) != 1 || len(columns[0].Tasks) != 1 {
+			t.Fatalf("columns/tasks = %d/%d, want 1/1", len(columns), len(columns[0].Tasks))
+		}
+		assertSummary(t, columns[0].Tasks[0])
+	})
+
+	t.Run("member column", func(t *testing.T) {
+		tasks, total, err := repo.ListMemberColumnTasks(ctx, workspaceID, workflowID, testStringPtr(memberID), model.PMTaskFilters{}, 0, 10)
+		if err != nil {
+			t.Fatalf("ListMemberColumnTasks: %v", err)
+		}
+		if total != 1 || len(tasks) != 1 {
+			t.Fatalf("total/tasks = %d/%d, want 1/1", total, len(tasks))
+		}
+		assertSummary(t, tasks[0])
+	})
+
+	t.Run("task detail retains rich fields", func(t *testing.T) {
+		detail, err := repo.GetByID(ctx, taskID)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		if detail == nil || detail.Task.Description == nil || *detail.Task.Description != description {
+			t.Fatalf("detail description = %#v, want %q", detail, description)
+		}
+		if string(detail.Task.ImplementationBrief) != implementationBrief {
+			t.Fatalf("detail implementation_brief = %s, want %s", detail.Task.ImplementationBrief, implementationBrief)
+		}
+	})
+}
+
 func TestPMTaskRepository_ListFiltersByOwnerMemberIDsFromJoinTable(t *testing.T) {
 	t.Parallel()
 
