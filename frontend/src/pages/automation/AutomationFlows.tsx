@@ -1669,7 +1669,7 @@ export function flowTriggerSummary(rule: AutomationRule, statesById: Map<string,
   let label = triggerLabel(rule.trigger_type);
   let triggerValue = '';
   if (rule.trigger_type === 'task.state_entered' && stateName) {
-    label = 'Story enters';
+    label = 'Task enters';
     triggerValue = stateName;
   } else if (rule.trigger_type === 'agent_run.approved' && stateName) {
     label = 'Approved in';

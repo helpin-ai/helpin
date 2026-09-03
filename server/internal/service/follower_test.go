@@ -42,11 +42,11 @@ func TestFollowerService_FollowAndGetFollowers(t *testing.T) {
 	svc := NewFollowerService(repository.NewFollowerRepository(db))
 	ctx := context.Background()
 
-	if err := svc.Follow(ctx, "user-1", "story", "story-1", "ws-1", "manual"); err != nil {
+	if err := svc.Follow(ctx, "user-1", "task", "task-1", "ws-1", "manual"); err != nil {
 		t.Fatalf("Follow: %v", err)
 	}
 
-	followers, err := svc.GetFollowers(ctx, "story", "story-1")
+	followers, err := svc.GetFollowers(ctx, "task", "task-1")
 	if err != nil {
 		t.Fatalf("GetFollowers: %v", err)
 	}
@@ -60,11 +60,11 @@ func TestFollowerService_Follow_DefaultReasonIsManual(t *testing.T) {
 	svc := NewFollowerService(repository.NewFollowerRepository(db))
 	ctx := context.Background()
 
-	if err := svc.Follow(ctx, "user-1", "story", "story-1", "ws-1", ""); err != nil {
+	if err := svc.Follow(ctx, "user-1", "task", "task-1", "ws-1", ""); err != nil {
 		t.Fatalf("Follow: %v", err)
 	}
 
-	followers, err := svc.ListFollowers(ctx, "story", "story-1")
+	followers, err := svc.ListFollowers(ctx, "task", "task-1")
 	if err != nil {
 		t.Fatalf("ListFollowers: %v", err)
 	}
@@ -81,14 +81,14 @@ func TestFollowerService_Unfollow(t *testing.T) {
 	svc := NewFollowerService(repository.NewFollowerRepository(db))
 	ctx := context.Background()
 
-	if err := svc.Follow(ctx, "user-1", "story", "story-1", "ws-1", "manual"); err != nil {
+	if err := svc.Follow(ctx, "user-1", "task", "task-1", "ws-1", "manual"); err != nil {
 		t.Fatalf("Follow: %v", err)
 	}
-	if err := svc.Unfollow(ctx, "user-1", "story", "story-1"); err != nil {
+	if err := svc.Unfollow(ctx, "user-1", "task", "task-1"); err != nil {
 		t.Fatalf("Unfollow: %v", err)
 	}
 
-	followers, err := svc.GetFollowers(ctx, "story", "story-1")
+	followers, err := svc.GetFollowers(ctx, "task", "task-1")
 	if err != nil {
 		t.Fatalf("GetFollowers: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestFollowerService_IsFollowing(t *testing.T) {
 	svc := NewFollowerService(repository.NewFollowerRepository(db))
 	ctx := context.Background()
 
-	following, err := svc.IsFollowing(ctx, "user-1", "story", "story-1")
+	following, err := svc.IsFollowing(ctx, "user-1", "task", "task-1")
 	if err != nil {
 		t.Fatalf("IsFollowing: %v", err)
 	}
@@ -110,11 +110,11 @@ func TestFollowerService_IsFollowing(t *testing.T) {
 		t.Fatal("expected not following before follow")
 	}
 
-	if err := svc.Follow(ctx, "user-1", "story", "story-1", "ws-1", "manual"); err != nil {
+	if err := svc.Follow(ctx, "user-1", "task", "task-1", "ws-1", "manual"); err != nil {
 		t.Fatalf("Follow: %v", err)
 	}
 
-	following, err = svc.IsFollowing(ctx, "user-1", "story", "story-1")
+	following, err = svc.IsFollowing(ctx, "user-1", "task", "task-1")
 	if err != nil {
 		t.Fatalf("IsFollowing after: %v", err)
 	}
@@ -128,14 +128,14 @@ func TestFollowerService_ListFollowers(t *testing.T) {
 	svc := NewFollowerService(repository.NewFollowerRepository(db))
 	ctx := context.Background()
 
-	if err := svc.Follow(ctx, "user-1", "story", "story-1", "ws-1", "manual"); err != nil {
+	if err := svc.Follow(ctx, "user-1", "task", "task-1", "ws-1", "manual"); err != nil {
 		t.Fatalf("Follow user-1: %v", err)
 	}
-	if err := svc.Follow(ctx, "user-2", "story", "story-1", "ws-1", "assigned"); err != nil {
+	if err := svc.Follow(ctx, "user-2", "task", "task-1", "ws-1", "assigned"); err != nil {
 		t.Fatalf("Follow user-2: %v", err)
 	}
 
-	records, err := svc.ListFollowers(ctx, "story", "story-1")
+	records, err := svc.ListFollowers(ctx, "task", "task-1")
 	if err != nil {
 		t.Fatalf("ListFollowers: %v", err)
 	}
@@ -149,13 +149,13 @@ func TestFollowerService_ListUserFollowing(t *testing.T) {
 	svc := NewFollowerService(repository.NewFollowerRepository(db))
 	ctx := context.Background()
 
-	if err := svc.Follow(ctx, "user-1", "story", "story-1", "ws-1", "manual"); err != nil {
-		t.Fatalf("Follow story-1: %v", err)
+	if err := svc.Follow(ctx, "user-1", "task", "task-1", "ws-1", "manual"); err != nil {
+		t.Fatalf("Follow task-1: %v", err)
 	}
 	if err := svc.Follow(ctx, "user-1", "epic", "epic-1", "ws-1", "manual"); err != nil {
 		t.Fatalf("Follow epic-1: %v", err)
 	}
-	if err := svc.Follow(ctx, "user-1", "story", "story-2", "ws-2", "manual"); err != nil {
+	if err := svc.Follow(ctx, "user-1", "task", "task-2", "ws-2", "manual"); err != nil {
 		t.Fatalf("Follow ws-2: %v", err)
 	}
 
@@ -173,14 +173,14 @@ func TestFollowerService_FollowIdempotent(t *testing.T) {
 	svc := NewFollowerService(repository.NewFollowerRepository(db))
 	ctx := context.Background()
 
-	if err := svc.Follow(ctx, "user-1", "story", "story-1", "ws-1", "manual"); err != nil {
+	if err := svc.Follow(ctx, "user-1", "task", "task-1", "ws-1", "manual"); err != nil {
 		t.Fatalf("Follow first: %v", err)
 	}
-	if err := svc.Follow(ctx, "user-1", "story", "story-1", "ws-1", "assigned"); err != nil {
+	if err := svc.Follow(ctx, "user-1", "task", "task-1", "ws-1", "assigned"); err != nil {
 		t.Fatalf("Follow second: %v", err)
 	}
 
-	followers, err := svc.GetFollowers(ctx, "story", "story-1")
+	followers, err := svc.GetFollowers(ctx, "task", "task-1")
 	if err != nil {
 		t.Fatalf("GetFollowers: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestFollowerService_UnfollowNonexistent(t *testing.T) {
 	svc := NewFollowerService(repository.NewFollowerRepository(db))
 	ctx := context.Background()
 
-	if err := svc.Unfollow(ctx, "user-1", "story", "story-999"); err != nil {
+	if err := svc.Unfollow(ctx, "user-1", "task", "task-999"); err != nil {
 		t.Fatalf("Unfollow nonexistent should not error: %v", err)
 	}
 }

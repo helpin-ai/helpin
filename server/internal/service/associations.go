@@ -415,7 +415,7 @@ func (s *AssociationsService) populateDocsAssociations(ctx context.Context, work
 func (s *AssociationsService) populateLegacySupportLinks(ctx context.Context, workspaceID, objectType, objectID, workspaceKey string, response *model.GroupedAssociationsResponse) error {
 	switch objectType {
 	case model.CRMObjectTask:
-		conversations, err := s.supportRepo.ListByLinkedStoryIDs(ctx, workspaceID, []string{objectID})
+		conversations, err := s.supportRepo.ListByLinkedTaskIDs(ctx, workspaceID, []string{objectID})
 		if err != nil {
 			return err
 		}

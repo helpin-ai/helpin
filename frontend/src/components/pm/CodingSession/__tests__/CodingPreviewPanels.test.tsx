@@ -344,7 +344,7 @@ describe('CodingPreviewPanels', () => {
     expect(document.body.textContent).toContain('Ship faster');
   });
 
-  it('attaches story-plan approval aliases to the normalized task-plan preview', () => {
+  it('attaches task-plan approval to the normalized task-plan preview', () => {
     const onReviewApproval = vi.fn();
     renderPanels({
       previews: new Map<string, PublishedPreview>([
@@ -363,13 +363,13 @@ describe('CodingPreviewPanels', () => {
         }],
       ]),
       interaction: {
-        interaction_id: 'interaction-story-plan',
+        interaction_id: 'interaction-task-plan',
         interaction_kind: 'approval_request',
         status: 'pending',
         request_schema_version: 'helpin.v1',
         request_payload: {
           phase: 'plan',
-          preview_panel_key: 'story_plan',
+          preview_panel_key: 'task_plan',
           title: 'Approve task plan',
           summary: 'Review the latest plan.',
         },
@@ -383,6 +383,6 @@ describe('CodingPreviewPanels', () => {
 
     clickButton('Review');
 
-    expect(onReviewApproval).toHaveBeenCalledWith('interaction-story-plan');
+    expect(onReviewApproval).toHaveBeenCalledWith('interaction-task-plan');
   });
 });

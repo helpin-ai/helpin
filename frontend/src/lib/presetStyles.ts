@@ -13,11 +13,6 @@ export const PRESET_STYLES: Record<AgentPresetKey, { label: string; className: s
     label: 'Scribe',
     className: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 border-fuchsia-500/20',
   },
-  /** @deprecated Use task_planner */
-  story_planner: {
-    label: 'Scribe',
-    className: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 border-fuchsia-500/20',
-  },
   review_agent: {
     label: 'Lens',
     className: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',

@@ -66,7 +66,7 @@ type ShortcutUserMatch struct {
 	MatchedMemberStatus *string `json:"matched_member_status,omitempty"`
 	MatchedName         *string `json:"matched_name"`
 	ShortcutName        *string `json:"shortcut_name,omitempty"`
-	StoryCount          int     `json:"story_count"`
+	TaskCount           int     `json:"task_count"`
 	OwnerCount          int     `json:"owner_count"`
 	RequesterCount      int     `json:"requester_count"`
 }
@@ -138,11 +138,11 @@ type ShortcutImportOptions struct {
 	DocsSpaceID             string `json:"docs_space_id,omitempty"`
 	DocsCollectionID        string `json:"docs_collection_id,omitempty"`
 	DocsLookbackMonths      int    `json:"docs_lookback_months,omitempty"`
-	StoryDateField          string `json:"story_date_field,omitempty"`
-	StoryLookbackMonths     int    `json:"story_lookback_months,omitempty"`
+	TaskDateField           string `json:"task_date_field,omitempty"`
+	TaskLookbackMonths      int    `json:"task_lookback_months,omitempty"`
 	EpicLookbackMonths      int    `json:"epic_lookback_months,omitempty"`
 	ObjectiveLookbackMonths int    `json:"objective_lookback_months,omitempty"`
-	MaxStories              int    `json:"max_stories,omitempty"`
+	MaxTasks                int    `json:"max_tasks,omitempty"`
 }
 
 type ShortcutImportExecuteRequest struct {

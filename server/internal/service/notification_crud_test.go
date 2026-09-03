@@ -191,7 +191,7 @@ func TestNotificationService_List_ReturnsPaginated(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			fmt.Sprintf("n-%d", i), "ws-1", "user-1", "story", fmt.Sprintf("s-%d", i), "story.assigned", fmt.Sprintf("T%d", i), "assignments", 1, now.Add(time.Duration(-i)*time.Minute), "unread", "normal", now, now)
+			fmt.Sprintf("n-%d", i), "ws-1", "user-1", "task", fmt.Sprintf("s-%d", i), "task.assigned", fmt.Sprintf("T%d", i), "assignments", 1, now.Add(time.Duration(-i)*time.Minute), "unread", "normal", now, now)
 	}
 
 	svc := newCRUDNotificationService(db)
@@ -218,7 +218,7 @@ func TestNotificationService_List_NoCursorWhenLastPage(t *testing.T) {
 	mustExecCRUDSvc(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"settings-1", "user-1", true, "daily", "09:00", 1, false, "all", "UTC", now, now)
 	mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"n-1", "ws-1", "user-1", "story", "s-1", "story.assigned", "T1", "assignments", 1, now, "unread", "normal", now, now)
+		"n-1", "ws-1", "user-1", "task", "s-1", "task.assigned", "T1", "assignments", 1, now, "unread", "normal", now, now)
 
 	svc := newCRUDNotificationService(db)
 	result, err := svc.List(ctx, "user-1", "ws-1", "", "", 20, nil)
@@ -242,7 +242,7 @@ func TestNotificationService_UnreadCount_RespectsBadgeMode(t *testing.T) {
 	mustExecCRUDSvc(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"settings-1", "user-1", true, "daily", "09:00", 1, false, "none", "UTC", now, now)
 	mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"n-1", "ws-1", "user-1", "story", "s-1", "story.assigned", "T1", "assignments", 1, now, "unread", "normal", now, now)
+		"n-1", "ws-1", "user-1", "task", "s-1", "task.assigned", "T1", "assignments", 1, now, "unread", "normal", now, now)
 
 	svc := newCRUDNotificationService(db)
 	count, err := svc.UnreadCount(ctx, "user-1", "ws-1")
@@ -264,7 +264,7 @@ func TestNotificationService_Update_MarkRead(t *testing.T) {
 	now := time.Now()
 
 	mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"n-1", "ws-1", "user-1", "story", "s-1", "story.assigned", "T1", "assignments", 1, now, "unread", "normal", now, now)
+		"n-1", "ws-1", "user-1", "task", "s-1", "task.assigned", "T1", "assignments", 1, now, "unread", "normal", now, now)
 
 	svc := newCRUDNotificationService(db)
 	status := "read"
@@ -285,7 +285,7 @@ func TestNotificationService_Update_Snooze(t *testing.T) {
 	now := time.Now()
 
 	mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"n-1", "ws-1", "user-1", "story", "s-1", "story.assigned", "T1", "assignments", 1, now, "unread", "normal", now, now)
+		"n-1", "ws-1", "user-1", "task", "s-1", "task.assigned", "T1", "assignments", 1, now, "unread", "normal", now, now)
 
 	svc := newCRUDNotificationService(db)
 	snoozeTime := now.Add(2 * time.Hour)
@@ -306,7 +306,7 @@ func TestNotificationService_Update_Archive(t *testing.T) {
 	now := time.Now()
 
 	mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"n-1", "ws-1", "user-1", "story", "s-1", "story.assigned", "T1", "assignments", 1, now, "read", "normal", now, now)
+		"n-1", "ws-1", "user-1", "task", "s-1", "task.assigned", "T1", "assignments", 1, now, "read", "normal", now, now)
 
 	svc := newCRUDNotificationService(db)
 	status := "archived"
@@ -332,7 +332,7 @@ func TestNotificationService_MarkAllAsRead(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			fmt.Sprintf("n-%d", i), "ws-1", "user-1", "story", fmt.Sprintf("s-%d", i), "story.assigned", "T", "assignments", 1, now, "unread", "normal", now, now)
+			fmt.Sprintf("n-%d", i), "ws-1", "user-1", "task", fmt.Sprintf("s-%d", i), "task.assigned", "T", "assignments", 1, now, "unread", "normal", now, now)
 	}
 
 	svc := newCRUDNotificationService(db)
@@ -353,9 +353,9 @@ func TestNotificationService_ArchiveAllRead(t *testing.T) {
 	now := time.Now()
 
 	mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"n-read", "ws-1", "user-1", "story", "s-1", "story.assigned", "T", "assignments", 1, now, "read", "normal", now, now)
+		"n-read", "ws-1", "user-1", "task", "s-1", "task.assigned", "T", "assignments", 1, now, "read", "normal", now, now)
 	mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"n-unread", "ws-1", "user-1", "story", "s-2", "story.assigned", "T", "assignments", 1, now, "unread", "normal", now, now)
+		"n-unread", "ws-1", "user-1", "task", "s-2", "task.assigned", "T", "assignments", 1, now, "unread", "normal", now, now)
 
 	svc := newCRUDNotificationService(db)
 	if err := svc.ArchiveAllRead(ctx, "user-1", "ws-1"); err != nil {
@@ -375,7 +375,7 @@ func TestNotificationService_Delete(t *testing.T) {
 	now := time.Now()
 
 	mustExecCRUDSvc(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"n-1", "ws-1", "user-1", "story", "s-1", "story.assigned", "T", "assignments", 1, now, "unread", "normal", now, now)
+		"n-1", "ws-1", "user-1", "task", "s-1", "task.assigned", "T", "assignments", 1, now, "unread", "normal", now, now)
 
 	svc := newCRUDNotificationService(db)
 	if err := svc.Delete(ctx, "n-1", "user-1"); err != nil {
@@ -531,9 +531,9 @@ func TestNotificationService_Emit_ExcludesActor(t *testing.T) {
 	if err := svc.Emit(ctx, model.NotificationEventInput{
 		WorkspaceID:        "ws-1",
 		ActorID:            "actor-1",
-		EventType:          "story.assigned",
-		EntityType:         "story",
-		EntityID:           "story-1",
+		EventType:          "task.assigned",
+		EntityType:         "task",
+		EntityID:           "task-1",
 		Title:              "Self assign",
 		Category:           model.NotifCategoryAssignments,
 		Priority:           "normal",
@@ -561,16 +561,16 @@ func TestNotificationService_Emit_NotifiesFollowers(t *testing.T) {
 	mustExecCRUDSvc(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"settings-1", "follower-1", true, "none", "09:00", 1, false, "all", "UTC", now, now)
 	mustExecCRUDSvc(t, db, `INSERT INTO entity_followers (id, user_id, entity_type, entity_id, workspace_id, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"f-1", "follower-1", "story", "story-1", "ws-1", "manual", now)
+		"f-1", "follower-1", "task", "task-1", "ws-1", "manual", now)
 
 	svc := newCRUDNotificationService(db)
 	if err := svc.Emit(ctx, model.NotificationEventInput{
 		WorkspaceID: "ws-1",
 		ActorID:     "actor-1",
-		EventType:   "story.updated",
-		EntityType:  "story",
-		EntityID:    "story-1",
-		Title:       "Story updated",
+		EventType:   "task.updated",
+		EntityType:  "task",
+		EntityID:    "task-1",
+		Title:       "Task updated",
 		Category:    model.NotifCategoryStatusChanges,
 		Priority:    "normal",
 	}); err != nil {
@@ -601,9 +601,9 @@ func TestNotificationService_Emit_DNDBlocksNotification(t *testing.T) {
 	if err := svc.Emit(ctx, model.NotificationEventInput{
 		WorkspaceID:        "ws-1",
 		ActorID:            "actor-1",
-		EventType:          "story.assigned",
-		EntityType:         "story",
-		EntityID:           "story-1",
+		EventType:          "task.assigned",
+		EntityType:         "task",
+		EntityID:           "task-1",
 		Title:              "Assigned",
 		Category:           model.NotifCategoryAssignments,
 		Priority:           "normal",
@@ -637,9 +637,9 @@ func TestNotificationService_Emit_WorkspaceMuteBlocksNotification(t *testing.T) 
 	if err := svc.Emit(ctx, model.NotificationEventInput{
 		WorkspaceID:        "ws-1",
 		ActorID:            "actor-1",
-		EventType:          "story.assigned",
-		EntityType:         "story",
-		EntityID:           "story-1",
+		EventType:          "task.assigned",
+		EntityType:         "task",
+		EntityID:           "task-1",
 		Title:              "Assigned",
 		Category:           model.NotifCategoryAssignments,
 		Priority:           "normal",

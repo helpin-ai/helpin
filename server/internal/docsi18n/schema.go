@@ -82,7 +82,7 @@ func validateNodeSchema(node *tiptap.Node, path NodePath) error {
 	case "entityEmbed":
 		entityType := strAttr(node.Attrs, "entityType")
 		switch entityType {
-		case "task", "story", "epic", "support_conversation", "deal", "contact", "company":
+		case "task", "epic", "support_conversation", "deal", "contact", "company":
 		default:
 			return fmt.Errorf("invalid entity embed type at %s", path.String())
 		}

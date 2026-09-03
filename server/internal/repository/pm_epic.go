@@ -252,7 +252,7 @@ func (r *PMEpicRepository) replaceLabels(ctx context.Context, epicID string, lab
 	return nil
 }
 
-// ComputeStats computes derived story/point metrics for an epic.
+// ComputeStats computes derived task/point metrics for an epic.
 func (r *PMEpicRepository) ComputeStats(ctx context.Context, epicID string) (model.PMEpicStats, error) {
 	stats := model.PMEpicStats{}
 
@@ -329,7 +329,7 @@ func (r *PMEpicRepository) ComputeStatsBatch(ctx context.Context, epicIDs []stri
 
 // ListTasks returns non-archived tasks in an epic.
 func (r *PMEpicRepository) ListTasks(ctx context.Context, epicID string) ([]model.PMTask, error) {
-	var stories []model.PMTask
+	var tasks []model.PMTask
 	if err := r.db.WithContext(ctx).
 		Joins("JOIN pm_workflow_states ws ON ws.id = pm_tasks.workflow_state_id").
 		Where("epic_id = ? AND archived = false", epicID).
@@ -340,10 +340,10 @@ func (r *PMEpicRepository) ListTasks(ctx context.Context, epicID string) ([]mode
 		Order(`CASE WHEN ws.state_type = 'done' THEN pm_tasks.updated_at END DESC`).
 		Order("pm_tasks.position ASC").
 		Order("pm_tasks.updated_at DESC").
-		Find(&stories).Error; err != nil {
-		return nil, fmt.Errorf("list epic stories: %w", err)
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list epic tasks: %w", err)
 	}
-	return stories, nil
+	return tasks, nil
 }
 
 // ListEnrichedTasks returns non-archived tasks in an epic with table-facing

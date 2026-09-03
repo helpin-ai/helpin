@@ -269,7 +269,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     };
   }, [activeTaskId, handleClose, requestKey, workspaceId]);
 
-  const handleStoryUpdated = useCallback((updated: TaskDetail) => {
+  const handleTaskUpdated = useCallback((updated: TaskDetail) => {
     const patchedTask = buildPatchedTaskFromDetail(updated);
     setLoadedTask((current) =>
       current
@@ -311,7 +311,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     );
   }, [workspaceSlug]);
 
-  const handleStoryArchived = useCallback(
+  const handleTaskArchived = useCallback(
     (archivedTaskId: string) => {
       handleClose();
       window.dispatchEvent(
@@ -335,9 +335,9 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
         onOpenChange={(isOpen) => {
           if (!isOpen) handleClose();
         }}
-        onTaskUpdated={handleStoryUpdated}
+        onTaskUpdated={handleTaskUpdated}
         onTaskOpened={handleTaskOpened}
-        onTaskArchived={handleStoryArchived}
+        onTaskArchived={handleTaskArchived}
       />
       <CodingSessionDrawer
         sessionId={fallbackRunId}

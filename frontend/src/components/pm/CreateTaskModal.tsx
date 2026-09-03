@@ -1083,7 +1083,7 @@ export function CreateTaskModal({
               entityLabel: 'Task',
               title: createdTitle,
               subtitle: successSubtitle || undefined,
-              identifier: taskKey ? { label: 'Story ID', value: taskKey } : undefined,
+              identifier: taskKey ? { label: 'Task ID', value: taskKey } : undefined,
               tone: 'pm',
               icon: TASK_TYPE_CONFIG[form.task_type].icon,
               onOpen: currentWorkspace?.slug

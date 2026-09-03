@@ -459,7 +459,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "agents.list_agents",
 		Module:               "agents",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "agents.list_agents",
 			Alias:       "list_agents",
@@ -501,7 +501,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "agents.get_my_capabilities",
 		Module:               "agents",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "agents.get_my_capabilities",
 			Alias:       "get_my_capabilities",
@@ -542,7 +542,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "agents.get_capabilities",
 		Module:               "agents",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "document", "deal", "crm_deal", "contact", "crm_contact", "company", "conversation", "support_conversation", "repository"},
 		Tool: &commandtools.RuntimeToolMetadata{
 			CommandName: "agents.get_capabilities",
 			Alias:       "get_agent_capabilities",
@@ -607,7 +607,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "workspace.list_teams",
 		Module:               "workspace",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "contact", "company", "conversation", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "document", "deal", "contact", "company", "conversation", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("workspace.list_teams"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.settingsRepo == nil {
@@ -635,7 +635,7 @@ func (s *InternalCommandService) registerDefaults() {
 					"id":                team.ID,
 					"name":              team.Name,
 					"team_type":         team.TeamType,
-					"default_task_type": team.DefaultStoryType,
+					"default_task_type": team.DefaultTaskType,
 				}
 				if team.Handle != nil && strings.TrimSpace(*team.Handle) != "" {
 					item["handle"] = strings.TrimSpace(*team.Handle)
@@ -663,7 +663,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.list_documents",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "crm_deal", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.list_documents"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsDocumentService == nil {
@@ -775,7 +775,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.read_document",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "story", "crm_deal", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "crm_deal", "support_coverage_gap"},
 		Tool:                 internalReadDocumentToolMetadata(),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsDocumentService == nil {
@@ -836,7 +836,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.get_document_blocks",
 		Module:               "docs",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "story", "crm_deal", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "crm_deal", "support_coverage_gap"},
 		Tool:                 internalGetDocumentBlocksToolMetadata(),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.docsBlockService == nil {
@@ -976,7 +976,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.ensure_task_plan_doc",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"task", "story"},
+		SupportedTargetTypes: []string{"task"},
 		Tool:                 mustCommandToolMetadata("docs.ensure_task_plan_doc"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			doc, err := s.agentService.EnsureTaskPlanDocument(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta))
@@ -1086,7 +1086,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "pm.set_task_dependencies",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story"},
+		SupportedTargetTypes: []string{"epic", "task"},
 		Tool:                 mustCommandToolMetadata("pm.set_task_dependencies"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -1261,7 +1261,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "pm.assign_task_agent",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story"},
+		SupportedTargetTypes: []string{"epic", "task"},
 		Tool:                 mustCommandToolMetadata("pm.assign_task_agent"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			return nil, fmt.Errorf("task agent assignment was removed; use a workflow automation rule or start a run explicitly with an agent")
@@ -1271,7 +1271,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "pm.ensure_label",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "epic", "task", "story"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task"},
 		Tool:                 mustCommandToolMetadata("pm.ensure_label"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.labelService == nil {
@@ -1333,7 +1333,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "pm.list_tasks",
 		Module:               "pm",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "epic", "task", "story"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task"},
 		Tool:                 mustCommandToolMetadata("pm.list_tasks"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.taskService == nil {
@@ -1461,7 +1461,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "pm.add_task_comment",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"workspace", "task", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("pm.add_task_comment"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.commentService == nil || s.taskService == nil {
@@ -1507,7 +1507,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "pm.create_followup_tasks",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"task", "story"},
+		SupportedTargetTypes: []string{"task"},
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
 				Followups []model.TaskCompletionFollowupProposal `json:"followups"`
@@ -1548,27 +1548,17 @@ func (s *InternalCommandService) registerDefaults() {
 				}
 				createdIDs = append(createdIDs, detail.Task.ID)
 			}
-			return mustJSON(map[string]any{"created_task_ids": createdIDs, "created_story_ids": createdIDs}), nil
-		},
-	})
-	s.register(InternalCommandDefinition{
-		Name:                 "pm.create_followup_stories",
-		Module:               "pm",
-		Mutating:             true,
-		SupportedTargetTypes: []string{"task", "story"},
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "pm.create_followup_tasks", input)
+			return mustJSON(map[string]any{"created_task_ids": createdIDs}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
 		Name:                 "pm.update_task_state",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"task", "story"},
+		SupportedTargetTypes: []string{"task"},
 		Tool:                 mustCommandToolMetadata("pm.update_task_state"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
-				StoryID  string `json:"story_id"`
 				TaskID   string `json:"task_id"`
 				StateID  string `json:"state_id"`
 				Position *int   `json:"position,omitempty"`
@@ -1576,7 +1566,7 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse move task input: %w", err)
 			}
-			taskID := strings.TrimSpace(firstNonEmptyCommand(req.TaskID, req.StoryID, meta.TargetID))
+			taskID := strings.TrimSpace(firstNonEmptyCommand(req.TaskID, meta.TargetID))
 			if taskID == "" || strings.TrimSpace(req.StateID) == "" {
 				return nil, fmt.Errorf("task_id and state_id are required")
 			}
@@ -1587,14 +1577,14 @@ func (s *InternalCommandService) registerDefaults() {
 			if err != nil {
 				return nil, err
 			}
-			return mustJSON(map[string]any{"task_id": taskID, "story_id": taskID, "state_id": req.StateID}), nil
+			return mustJSON(map[string]any{"task_id": taskID, "state_id": req.StateID}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
 		Name:                 "docs.write_document_content",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "crm_deal", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.write_document_content"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -1719,7 +1709,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.create_document",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story", "crm_deal", "workspace", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"epic", "task", "crm_deal", "workspace", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.create_document"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -1778,7 +1768,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "docs.link_document_to_object",
 		Module:               "docs",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "deal", "crm_deal", "support_coverage_gap"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "deal", "crm_deal", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("docs.link_document_to_object"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
@@ -1805,7 +1795,7 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			linkedObjectType := strings.TrimSpace(req.LinkedObjectType)
 			switch linkedObjectType {
-			case model.LinkedObjectTask, "story":
+			case model.LinkedObjectTask:
 				if s.taskRepo == nil {
 					return nil, fmt.Errorf("task access is not available")
 				}
@@ -2000,7 +1990,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "pm.auto_start_epic",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story"},
+		SupportedTargetTypes: []string{"epic", "task"},
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.pmAutomationService == nil {
 				return nil, fmt.Errorf("pm automation service not configured")
@@ -2032,7 +2022,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "pm.auto_complete_epic",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story"},
+		SupportedTargetTypes: []string{"epic", "task"},
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.pmAutomationService == nil {
 				return nil, fmt.Errorf("pm automation service not configured")
@@ -2090,13 +2080,12 @@ func (s *InternalCommandService) registerDefaults() {
 		Name:                 "delivery.merge_branch",
 		Module:               "delivery",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"task", "story"},
+		SupportedTargetTypes: []string{"task"},
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			if s.gitService == nil {
 				return nil, fmt.Errorf("git service not configured")
 			}
 			var req struct {
-				StoryID      string `json:"story_id"`
 				TaskID       string `json:"task_id"`
 				TargetBranch string `json:"target_branch"`
 			}
@@ -2105,20 +2094,20 @@ func (s *InternalCommandService) registerDefaults() {
 					return nil, fmt.Errorf("parse merge_branch input: %w", err)
 				}
 			}
-			storyID := firstNonEmptyCommand(req.TaskID, req.StoryID, meta.TargetID)
-			if storyID == "" {
+			taskID := firstNonEmptyCommand(req.TaskID, meta.TargetID)
+			if taskID == "" {
 				return nil, fmt.Errorf("task_id is required")
 			}
 			if strings.TrimSpace(req.TargetBranch) == "" {
 				return nil, fmt.Errorf("target_branch is required")
 			}
-			if err := s.gitService.MergeBranch(ctx, meta.WorkspaceID, storyID, req.TargetBranch); err != nil {
+			if err := s.gitService.MergeBranch(ctx, meta.WorkspaceID, taskID, req.TargetBranch); err != nil {
 				return nil, err
 			}
-			if err := s.gitService.UpdateDeliveryStatusAfterMerge(ctx, meta.WorkspaceID, storyID, "merged"); err != nil {
+			if err := s.gitService.UpdateDeliveryStatusAfterMerge(ctx, meta.WorkspaceID, taskID, "merged"); err != nil {
 				return nil, err
 			}
-			return mustJSON(map[string]any{"task_id": storyID, "story_id": storyID, "target_branch": req.TargetBranch}), nil
+			return mustJSON(map[string]any{"task_id": taskID, "target_branch": req.TargetBranch}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{

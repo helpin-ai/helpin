@@ -43,19 +43,19 @@ func TestFollowerRepository_FollowAndGetFollowers(t *testing.T) {
 	ctx := context.Background()
 
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-1",
+		UserID: "user-1", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "manual",
 	}); err != nil {
 		t.Fatalf("Follow: %v", err)
 	}
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-2", EntityType: "story", EntityID: "story-1",
+		UserID: "user-2", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "assigned",
 	}); err != nil {
 		t.Fatalf("Follow user-2: %v", err)
 	}
 
-	followers, err := repo.GetFollowers(ctx, "story", "story-1")
+	followers, err := repo.GetFollowers(ctx, "task", "task-1")
 	if err != nil {
 		t.Fatalf("GetFollowers: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestFollowerRepository_FollowUpsertNoDuplicate(t *testing.T) {
 	ctx := context.Background()
 
 	follower := &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-1",
+		UserID: "user-1", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "manual",
 	}
 	if err := repo.Follow(ctx, follower); err != nil {
@@ -78,13 +78,13 @@ func TestFollowerRepository_FollowUpsertNoDuplicate(t *testing.T) {
 	}
 	// Second follow should not error (upsert)
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-1",
+		UserID: "user-1", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "assigned",
 	}); err != nil {
 		t.Fatalf("Follow duplicate: %v", err)
 	}
 
-	followers, err := repo.GetFollowers(ctx, "story", "story-1")
+	followers, err := repo.GetFollowers(ctx, "task", "task-1")
 	if err != nil {
 		t.Fatalf("GetFollowers: %v", err)
 	}
@@ -99,17 +99,17 @@ func TestFollowerRepository_Unfollow(t *testing.T) {
 	ctx := context.Background()
 
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-1",
+		UserID: "user-1", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "manual",
 	}); err != nil {
 		t.Fatalf("Follow: %v", err)
 	}
 
-	if err := repo.Unfollow(ctx, "user-1", "story", "story-1"); err != nil {
+	if err := repo.Unfollow(ctx, "user-1", "task", "task-1"); err != nil {
 		t.Fatalf("Unfollow: %v", err)
 	}
 
-	followers, err := repo.GetFollowers(ctx, "story", "story-1")
+	followers, err := repo.GetFollowers(ctx, "task", "task-1")
 	if err != nil {
 		t.Fatalf("GetFollowers: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestFollowerRepository_UnfollowNonexistent(t *testing.T) {
 	ctx := context.Background()
 
 	// Should not error even when nothing to delete
-	if err := repo.Unfollow(ctx, "user-1", "story", "story-999"); err != nil {
+	if err := repo.Unfollow(ctx, "user-1", "task", "task-999"); err != nil {
 		t.Fatalf("Unfollow nonexistent: %v", err)
 	}
 }
@@ -134,7 +134,7 @@ func TestFollowerRepository_IsFollowing(t *testing.T) {
 	repo := NewFollowerRepository(db)
 	ctx := context.Background()
 
-	following, err := repo.IsFollowing(ctx, "user-1", "story", "story-1")
+	following, err := repo.IsFollowing(ctx, "user-1", "task", "task-1")
 	if err != nil {
 		t.Fatalf("IsFollowing before follow: %v", err)
 	}
@@ -143,13 +143,13 @@ func TestFollowerRepository_IsFollowing(t *testing.T) {
 	}
 
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-1",
+		UserID: "user-1", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "manual",
 	}); err != nil {
 		t.Fatalf("Follow: %v", err)
 	}
 
-	following, err = repo.IsFollowing(ctx, "user-1", "story", "story-1")
+	following, err = repo.IsFollowing(ctx, "user-1", "task", "task-1")
 	if err != nil {
 		t.Fatalf("IsFollowing after follow: %v", err)
 	}
@@ -164,19 +164,19 @@ func TestFollowerRepository_ListFollowers(t *testing.T) {
 	ctx := context.Background()
 
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-1",
+		UserID: "user-1", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "manual",
 	}); err != nil {
 		t.Fatalf("Follow user-1: %v", err)
 	}
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-2", EntityType: "story", EntityID: "story-1",
+		UserID: "user-2", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "assigned",
 	}); err != nil {
 		t.Fatalf("Follow user-2: %v", err)
 	}
 
-	records, err := repo.ListFollowers(ctx, "story", "story-1")
+	records, err := repo.ListFollowers(ctx, "task", "task-1")
 	if err != nil {
 		t.Fatalf("ListFollowers: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestFollowerRepository_ListFollowers(t *testing.T) {
 		t.Fatalf("follower records = %d, want 2", len(records))
 	}
 	for _, f := range records {
-		if f.EntityType != "story" || f.EntityID != "story-1" {
+		if f.EntityType != "task" || f.EntityID != "task-1" {
 			t.Fatalf("unexpected follower record: %+v", f)
 		}
 	}
@@ -196,10 +196,10 @@ func TestFollowerRepository_ListUserFollowing(t *testing.T) {
 	ctx := context.Background()
 
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-1",
+		UserID: "user-1", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "manual",
 	}); err != nil {
-		t.Fatalf("Follow story-1: %v", err)
+		t.Fatalf("Follow task-1: %v", err)
 	}
 	if err := repo.Follow(ctx, &model.EntityFollower{
 		UserID: "user-1", EntityType: "epic", EntityID: "epic-1",
@@ -209,7 +209,7 @@ func TestFollowerRepository_ListUserFollowing(t *testing.T) {
 	}
 	// Different workspace — should not appear
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-2",
+		UserID: "user-1", EntityType: "task", EntityID: "task-2",
 		WorkspaceID: "ws-2", Reason: "manual",
 	}); err != nil {
 		t.Fatalf("Follow ws-2: %v", err)
@@ -230,35 +230,35 @@ func TestFollowerRepository_GetFollowers_DifferentEntities(t *testing.T) {
 	ctx := context.Background()
 
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-1",
+		UserID: "user-1", EntityType: "task", EntityID: "task-1",
 		WorkspaceID: "ws-1", Reason: "manual",
 	}); err != nil {
-		t.Fatalf("Follow story-1: %v", err)
+		t.Fatalf("Follow task-1: %v", err)
 	}
 	if err := repo.Follow(ctx, &model.EntityFollower{
-		UserID: "user-1", EntityType: "story", EntityID: "story-2",
+		UserID: "user-1", EntityType: "task", EntityID: "task-2",
 		WorkspaceID: "ws-1", Reason: "manual",
 	}); err != nil {
-		t.Fatalf("Follow story-2: %v", err)
+		t.Fatalf("Follow task-2: %v", err)
 	}
 
-	followers, err := repo.GetFollowers(ctx, "story", "story-1")
+	followers, err := repo.GetFollowers(ctx, "task", "task-1")
 	if err != nil {
-		t.Fatalf("GetFollowers story-1: %v", err)
+		t.Fatalf("GetFollowers task-1: %v", err)
 	}
 	if len(followers) != 1 {
-		t.Fatalf("story-1 follower count = %d, want 1", len(followers))
+		t.Fatalf("task-1 follower count = %d, want 1", len(followers))
 	}
 
-	followers, err = repo.GetFollowers(ctx, "story", "story-2")
+	followers, err = repo.GetFollowers(ctx, "task", "task-2")
 	if err != nil {
-		t.Fatalf("GetFollowers story-2: %v", err)
+		t.Fatalf("GetFollowers task-2: %v", err)
 	}
 	if len(followers) != 1 {
-		t.Fatalf("story-2 follower count = %d, want 1", len(followers))
+		t.Fatalf("task-2 follower count = %d, want 1", len(followers))
 	}
 
-	followers, err = repo.GetFollowers(ctx, "story", "story-999")
+	followers, err = repo.GetFollowers(ctx, "task", "task-999")
 	if err != nil {
 		t.Fatalf("GetFollowers nonexistent: %v", err)
 	}

@@ -24,7 +24,6 @@ func NewCommandBarHandler(commandBarService *service.CommandBarService, authz *a
 	return &CommandBarHandler{commandBarService: commandBarService, authz: authz}
 }
 
-
 func (h *CommandBarHandler) DispatchPlan(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())
@@ -99,10 +98,6 @@ func (h *CommandBarHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-
-
-
-
 func authorizeCommandBarDispatch(r *http.Request, req model.CommandBarDispatchRequest) error {
 	return authorizeCommandBarSteps(r, req.PageContext, req.Steps, 0)
 }
@@ -133,8 +128,6 @@ func authorizeCommandBarSteps(r *http.Request, pageContext model.CommandBarPageC
 
 func commandBarDispatchPermissionForTarget(targetType string) (authorization.Permission, bool) {
 	switch strings.TrimSpace(strings.ToLower(targetType)) {
-	case "story":
-		return authorization.PermPMEdit, true
 	case "task", "epic", "workspace":
 		return authorization.PermPMEdit, true
 	case "repository", "repo", "git_repo", "git_repository":
@@ -232,8 +225,6 @@ func (h *CommandBarHandler) DismissPlan(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, http.StatusNoContent, nil)
 }
-
-
 
 func (h *CommandBarHandler) ListAgentToolCatalog(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

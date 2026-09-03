@@ -414,9 +414,9 @@ func (h *GitHandler) ListRepositoryBranches(w http.ResponseWriter, r *http.Reque
 // GetTaskGitLinks handles GET /api/pm/tasks/{id}/git-links.
 func (h *GitHandler) GetTaskGitLinks(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 
-	links, err := h.gitService.GetTaskGitLinks(r.Context(), workspaceID, storyID)
+	links, err := h.gitService.GetTaskGitLinks(r.Context(), workspaceID, taskID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -430,9 +430,9 @@ func (h *GitHandler) GetTaskGitLinks(w http.ResponseWriter, r *http.Request) {
 // GetTaskDeliveryTarget handles GET /api/pm/tasks/{id}/delivery-target.
 func (h *GitHandler) GetTaskDeliveryTarget(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 
-	target, err := h.gitService.GetTaskDeliveryTarget(r.Context(), workspaceID, storyID)
+	target, err := h.gitService.GetTaskDeliveryTarget(r.Context(), workspaceID, taskID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -443,7 +443,7 @@ func (h *GitHandler) GetTaskDeliveryTarget(w http.ResponseWriter, r *http.Reques
 // UpdateTaskDeliveryTarget handles PUT /api/pm/tasks/{id}/delivery-target.
 func (h *GitHandler) UpdateTaskDeliveryTarget(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
 	var req model.UpdateTaskDeliveryTargetRequest
@@ -452,7 +452,7 @@ func (h *GitHandler) UpdateTaskDeliveryTarget(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	target, err := h.gitService.UpdateTaskDeliveryTarget(r.Context(), workspaceID, storyID, req, actorID)
+	target, err := h.gitService.UpdateTaskDeliveryTarget(r.Context(), workspaceID, taskID, req, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -463,10 +463,10 @@ func (h *GitHandler) UpdateTaskDeliveryTarget(w http.ResponseWriter, r *http.Req
 // UseTaskEpicDeliveryTarget handles POST /api/pm/tasks/{id}/delivery-target/use-epic.
 func (h *GitHandler) UseTaskEpicDeliveryTarget(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
-	target, err := h.gitService.UseTaskEpicDeliveryTarget(r.Context(), workspaceID, storyID, actorID)
+	target, err := h.gitService.UseTaskEpicDeliveryTarget(r.Context(), workspaceID, taskID, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -510,7 +510,7 @@ func (h *GitHandler) UpdateEpicDeliveryTarget(w http.ResponseWriter, r *http.Req
 // CreateBranch handles POST /api/pm/tasks/{id}/create-branch.
 func (h *GitHandler) CreateBranch(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
 	var req model.CreateBranchRequest
@@ -519,7 +519,7 @@ func (h *GitHandler) CreateBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	link, err := h.gitService.CreateBranch(r.Context(), workspaceID, storyID, req, actorID)
+	link, err := h.gitService.CreateBranch(r.Context(), workspaceID, taskID, req, actorID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

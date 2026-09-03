@@ -10,22 +10,38 @@ import (
 )
 
 const (
-	defaultAnthropicAgentModel  = "claude-opus-4-8"
-	defaultOpenAIAgentModel     = "gpt-5.6-terra"
-	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
+	defaultAnthropicAgentModel      = "claude-opus-4-8"
+	defaultOpenAIAgentModel         = "gpt-5.6-terra"
+	defaultOpenRouterAgentModel     = "openai/gpt-5.6-terra"
+	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4-flash-0731:nitro"
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
 	// preferred fast OpenRouter model.
-	defaultAtlasAgentModel = "z-ai/glm-5.3-flash:exacto"
+	defaultAtlasAgentModel = defaultFastOpenRouterAgentModel
 	// defaultScribeAgentModel keeps interactive task planning on Codex's
 	// default OpenAI model.
 	defaultScribeAgentModel = defaultOpenAIAgentModel
 	// defaultQuillAgentModel keeps documentation work on the product's fast
 	// OpenRouter model.
-	defaultQuillAgentModel = "z-ai/glm-5.3-flash:exacto"
+	defaultQuillAgentModel = defaultFastOpenRouterAgentModel
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
-	defaultAskAgentModel = "z-ai/glm-5.3-flash:exacto"
+	defaultAskAgentModel = defaultFastOpenRouterAgentModel
+	// defaultCommandAgentModel keeps delegated sub-agent work on the Small
+	// native model route and its runtime-hosted tool surface.
+	defaultCommandAgentModel = defaultAskAgentModel
 )
+
+var defaultFastOpenRouterQuantizations = []string{"fp8", "fp16", "bf16", "fp32"}
+
+func defaultFastOpenRouterExecutionConfig() model.JSONBlob {
+	return model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
+		OpenRouter: &model.AgentOpenRouterExecutionConfig{
+			Provider: &model.AgentOpenRouterProviderPreferences{
+				Quantizations: slices.Clone(defaultFastOpenRouterQuantizations),
+			},
+		},
+	})
+}
 
 func isLegacyDeepSeekFlashModel(modelName string) bool {
 	switch strings.TrimSpace(modelName) {
@@ -421,6 +437,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		ReasoningEffort: &highReasoning,
 		ServiceTier:     &standardServiceTier,
 	})
+	fastOpenRouterExecutionConfig := defaultFastOpenRouterExecutionConfig()
 
 	epicPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	taskPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
@@ -436,6 +453,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	scribeDefaultModel := defaultScribeAgentModel
 	quillDefaultModel := defaultQuillAgentModel
 	askAgentDefaultModel := defaultAskAgentModel
+	commandAgentDefaultModel := defaultCommandAgentModel
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		agentcontract.ToolUpdatePlan,
 		agentcontract.ToolPublishPRDDraft,
@@ -471,11 +489,12 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
 			Label:                 "Epic Planner",
-			Description:           "Interactive product planning for epics, PRDs, documents, and story creation.",
+			Description:           "Interactive product planning for epics, PRDs, documents, and task creation.",
 			DefaultRole:           "Epic Planner",
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &atlasDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          epicPlannerTools,
@@ -542,6 +561,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &askAgentDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(supportProfile.AllowedTools),
@@ -564,6 +584,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &quillDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(documentationProfile.AllowedTools),
@@ -647,7 +668,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Model:                 &openAIPresetModel,
 			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
 			Label:                 "Code Builder",
-			Description:           "Repository-writing implementation agent for story execution.",
+			Description:           "Repository-writing implementation agent for task execution.",
 			DefaultRole:           "Code Builder",
 			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
@@ -692,17 +713,19 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Sub-agent",
 			Description:           "Handles one delegated workspace task with a limited tool set.",
 			DefaultRole:           "Sub-agent",
-			RuntimeKind:           "codex",
-			Provider:              &openAIPresetProvider,
-			Model:                 &openAIPresetModel,
+			RuntimeKind:           "native_sdk",
+			Provider:              &openRouterPresetProvider,
+			Model:                 &commandAgentDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          appendPresetTools([]string{"web_search", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repositories", "list_commits", "read_files", "list_directory", "repository_search", "list_symbols", "read_symbol", "trace_symbol", "list_spaces", "search_workspace", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "update_document_metadata", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_crm_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases, safeSupportDiscoveryToolAliases, safeSupportWriteToolAliases),
+			AllowedTools:          commandAgentPresetTools(),
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "crm_company", "support_conversation", "repository"},
+			AvailableSkills:       commandAgentAvailableSkills(),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          &commandAgentPrompt,
 		},
 		{
@@ -717,6 +740,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &askAgentDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          askAgentPresetTools(),
@@ -731,6 +755,55 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	}
 
 	return applyBuiltInPresetInstructionMetadata(presets)
+}
+
+// commandAgentPresetTools is the maximum worker surface from which the parent
+// Ask Agent must select a narrower per-run subset.
+func commandAgentPresetTools() []string {
+	return appendPresetTools([]string{
+		// Optional skills, interaction, and progress.
+		"find_skills", "read_skill", "request_user_input", "request_approval", "update_plan",
+		// Web and authenticated browser research.
+		"web_search", "fetch_url", "crawl_url",
+		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
+		// Read-only repository inspection, release investigation, and security scans.
+		"list_repositories", "checkout_repositories", "list_commits", "read_files", "list_directory",
+		"repository_search", "list_symbols", "read_symbol", "trace_symbol",
+		"get_pull_request_diff", "get_check_run_logs", "get_release_context", "find_tasks_for_git_changes",
+		"scan_semgrep", "scan_trivy", "scan_gitleaks",
+		// Workspace and documentation reads and writes.
+		"list_spaces", "search_workspace", "list_documents", "list_collections", "read_document",
+		"get_document_blocks", "search_documents", "create_space", "create_collection", "create_document",
+		"update_space", "update_collection", "move_document", "update_document_metadata",
+		"write_document_content", "update_document_block", "insert_document_block",
+		"insert_document_artifact", "link_document_to_object", "publish_document_change_proposal",
+		"publish_ai_section_candidate", "preview_md", "preview_json",
+		// Project-management reads and approval-gated writes.
+		"list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "list_task_checklist",
+		"list_epic_tasks", "create_task", "add_task_comment", "get_task_context", "ensure_task_label",
+		"assign_task_agent", "set_task_dependencies", "update_task_state", "update_task_delivery_target",
+		"update_epic_delivery_target",
+		// CRM and support work. Live customer delivery remains specialist-only.
+		"list_deals", "list_contacts", "list_crm_signals", "add_deal_note", "update_deal_stage",
+		"ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company",
+		"search_knowledge", "draft_support_reply", "update_conversation_status",
+	}, newPMReadToolAliases, newPMWriteToolAliases, safeCRMDiscoveryToolAliases,
+		safeCRMWriteToolAliases, safeSupportDiscoveryToolAliases, safeSupportWriteToolAliases)
+}
+
+// commandAgentAvailableSkills keeps skill discovery useful without loading
+// planner state machines or specialist-only live-support and coding contracts.
+func commandAgentAvailableSkills() []string {
+	return []string{
+		"docs_architecture_review",
+		"public_help_doc_writing",
+		"api_reference_doc_writing",
+		"internal_docs_maintenance",
+		"public_help_docs_maintenance",
+		"api_docs_maintenance",
+		"post_release_docs_update",
+		"support_gap_docs_update",
+	}
 }
 
 // askAgentPresetTools is the dock's primary-agent surface: product reads,
@@ -753,17 +826,21 @@ func askAgentPresetTools() []string {
 		"read_document", "get_document_blocks", "search_documents",
 		"create_space", "create_collection", "create_document", "update_space",
 		"update_collection", "move_document", "write_document_content",
-		"update_document_block", "insert_document_artifact", "link_document_to_object",
+		"update_document_block", "insert_document_block", "insert_document_artifact",
+		"link_document_to_object", "preview_md", "preview_json",
 		"publish_document_change_proposal", "publish_ai_section_candidate",
 		// CRM reads and approval-gated writes.
 		"list_deals", "list_contacts", "list_crm_signals", "add_deal_note",
 		"update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company",
 		// PM approval-gated writes (read aliases are appended below).
-		"create_task", "add_task_comment", "update_task_delivery_target",
+		"create_task", "add_task_comment", "list_task_checklist", "list_epic_tasks",
+		"ensure_task_label", "assign_task_agent", "set_task_dependencies", "update_task_state",
+		"update_task_delivery_target", "update_epic_delivery_target",
 		// Read-only repository inspection. No shell, file-write, branch, push, or PR tools.
 		"list_repositories", "checkout_repositories", "list_commits",
 		"read_files", "list_directory", "repository_search", "list_symbols",
-		"read_symbol", "trace_symbol",
+		"read_symbol", "trace_symbol", "get_pull_request_diff", "get_check_run_logs",
+		"get_release_context", "find_tasks_for_git_changes",
 		// Scoped direct execution.
 		"prepare_dock_execution", "activate_dock_execution", "finish_dock_execution",
 		// Agent orchestration.
@@ -838,7 +915,28 @@ func enforceManagedDocumentationAgentCapabilities(preset model.AgentPresetDefini
 	if normalizePresetKey(preset.Key) != model.AgentPresetDocumentationAgent {
 		return preset
 	}
-	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{"insert_document_artifact"})
+	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{
+		"insert_document_artifact",
+		"list_task_checklist",
+		"list_epic_tasks",
+		"get_pull_request_diff",
+		"search_knowledge",
+	})
+	return preset
+}
+
+// enforceManagedCommandAgentCapabilities keeps the worker ceiling current for
+// product-owned Sub-agents, including workspace snapshots created earlier.
+func enforceManagedCommandAgentCapabilities(preset model.AgentPresetDefinition) model.AgentPresetDefinition {
+	if normalizePresetKey(preset.Key) != model.AgentPresetCommandAgent {
+		return preset
+	}
+	preset.AllowedTools = appendPresetTools(preset.AllowedTools, commandAgentPresetTools())
+	for _, skillKey := range commandAgentAvailableSkills() {
+		if !slices.Contains(preset.AvailableSkills, skillKey) {
+			preset.AvailableSkills = append(preset.AvailableSkills, skillKey)
+		}
+	}
 	return preset
 }
 

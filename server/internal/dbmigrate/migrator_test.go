@@ -584,6 +584,40 @@ func TestAgentModelTierBackfillMigrationContract(t *testing.T) {
 	t.Fatal("expected agent model tier migration 202608210001 to be registered")
 }
 
+func TestTaskCanonicalContractMigrationPreservesProseAndAnchorsSchemaGuard(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	for _, migration := range migrations {
+		if migration.Version != "202609030001" {
+			continue
+		}
+		sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+		for _, clause := range []string{
+			"from jsonb_each(payload)",
+			"from jsonb_array_elements(payload) with ordinality",
+			"column_name ~ '(^|_)story_id$'",
+			"table_name <> 'schema_migrations'",
+		} {
+			if !strings.Contains(sql, clause) {
+				t.Fatalf("task canonical migration is missing safety clause %q", clause)
+			}
+		}
+		for _, unsafe := range []string{
+			"replace(payload::text",
+			"result text := payload::text",
+			"column_name like '%story_id'",
+		} {
+			if strings.Contains(sql, unsafe) {
+				t.Fatalf("task canonical migration contains unsafe whole-text behavior %q", unsafe)
+			}
+		}
+		return
+	}
+	t.Fatal("expected task canonical contract migration 202609030001 to be registered")
+}
+
 func TestCRMSignalInterpretationCoverageMigrationIsGuarded(t *testing.T) {
 	migrations, err := loadMigrations()
 	if err != nil {

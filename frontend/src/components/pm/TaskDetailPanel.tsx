@@ -1328,7 +1328,7 @@ function TaskDetailPanelBody({
                   onClick={() => copyDuplicateKey(duplicateNotice.taskDetail.task.task_key!)}
                 >
                   {duplicateKeyCopied ? <Tick01Icon className="mr-1.5 h-3.5 w-3.5" /> : <Copy01Icon className="mr-1.5 h-3.5 w-3.5" />}
-                  {duplicateKeyCopied ? 'Story ID copied' : 'Copy Story ID'}
+                  {duplicateKeyCopied ? 'Task ID copied' : 'Copy Task ID'}
                 </Button>
               ) : null}
               <Button

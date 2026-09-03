@@ -2440,7 +2440,7 @@ func (r *PMTaskRepository) loadAssignableMember(ctx context.Context, workspaceID
 		Joins("LEFT JOIN users u ON u.id = wm.user_id").
 		Where("wm.workspace_id = ? AND wm.id = ?", workspaceID, *memberID).
 		Scan(&member).Error; err != nil {
-		return nil, fmt.Errorf("load story member: %w", err)
+		return nil, fmt.Errorf("load task member: %w", err)
 	}
 	if member.ID == "" {
 		return nil, nil
@@ -2448,10 +2448,10 @@ func (r *PMTaskRepository) loadAssignableMember(ctx context.Context, workspaceID
 	return &member, nil
 }
 
-// MigrateStoriesToWorkflow remaps stories belonging to a team (or with NULL
+// MigrateTasksToWorkflow remaps tasks belonging to a team (or with NULL
 // team_id) from old workflow states to new workflow states using the provided
-// state mapping. It also sets team_id on migrated stories.
-func (r *PMTaskRepository) MigrateStoriesToWorkflow(ctx context.Context, teamID, oldWorkflowID, newWorkflowID string, stateMap map[string]string) (int64, error) {
+// state mapping. It also sets team_id on migrated tasks.
+func (r *PMTaskRepository) MigrateTasksToWorkflow(ctx context.Context, teamID, oldWorkflowID, newWorkflowID string, stateMap map[string]string) (int64, error) {
 	var total int64
 	for oldStateID, newStateID := range stateMap {
 		result := r.db.WithContext(ctx).
@@ -2463,7 +2463,7 @@ func (r *PMTaskRepository) MigrateStoriesToWorkflow(ctx context.Context, teamID,
 				"team_id":           teamID,
 			})
 		if result.Error != nil {
-			return total, fmt.Errorf("migrate stories from state %s to %s: %w", oldStateID, newStateID, result.Error)
+			return total, fmt.Errorf("migrate tasks from state %s to %s: %w", oldStateID, newStateID, result.Error)
 		}
 		total += result.RowsAffected
 	}

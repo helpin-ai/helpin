@@ -225,18 +225,18 @@ func (e *pmMentionTestEnv) createStory(t *testing.T, description *string) *model
 	t.Helper()
 
 	teamID := e.engTeamID
-	story, err := e.storyService.Create(context.Background(), model.CreateTaskRequest{
+	task, err := e.storyService.Create(context.Background(), model.CreateTaskRequest{
 		WorkspaceID:     e.workspaceID,
-		Name:            "Mention Story",
+		Name:            "Mention Task",
 		Description:     description,
 		WorkflowID:      e.workflowID,
 		WorkflowStateID: e.stateID,
 		TeamID:          &teamID,
 	}, e.actorUserID)
 	if err != nil {
-		t.Fatalf("create story: %v", err)
+		t.Fatalf("create task: %v", err)
 	}
-	return story
+	return task
 }
 
 func (e *pmMentionTestEnv) notificationsFor(t *testing.T, entityType, entityID string) []model.Notification {
@@ -370,20 +370,20 @@ func TestResolveMentionRecipients_NotifiesAllUsersForHandleCollision(t *testing.
 func TestPMTaskService_CreateAndUpdate_TeamMentions(t *testing.T) {
 	t.Parallel()
 
-	t.Run("create emits story mention notifications", func(t *testing.T) {
+	t.Run("create emits task mention notifications", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
-		story := env.createStory(t, stringPtr(pmMentionBodyHTML))
-		assertMentionNotifications(t, env.notificationsFor(t, "task", story.Task.ID), "task.mention", env.expectedRecipientIDs())
+		task := env.createStory(t, stringPtr(pmMentionBodyHTML))
+		assertMentionNotifications(t, env.notificationsFor(t, "task", task.Task.ID), "task.mention", env.expectedRecipientIDs())
 	})
 
-	t.Run("update emits story mention notifications", func(t *testing.T) {
+	t.Run("update emits task mention notifications", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
-		story := env.createStory(t, nil)
-		updated, err := env.storyService.Update(context.Background(), story.Task.ID, model.UpdateTaskRequest{
+		task := env.createStory(t, nil)
+		updated, err := env.storyService.Update(context.Background(), task.Task.ID, model.UpdateTaskRequest{
 			Description: stringPtr(pmMentionBodyHTML),
 		}, env.actorUserID)
 		if err != nil {
-			t.Fatalf("update story: %v", err)
+			t.Fatalf("update task: %v", err)
 		}
 		assertMentionNotifications(t, env.notificationsFor(t, "task", updated.Task.ID), "task.mention", env.expectedRecipientIDs())
 	})
@@ -392,8 +392,8 @@ func TestPMTaskService_CreateAndUpdate_TeamMentions(t *testing.T) {
 		env := newPMMentionTestEnv(t)
 		env.addCarolToDesignTeam(t)
 
-		story := env.createStory(t, stringPtr("@design"))
-		notifications := env.notificationsFor(t, "task", story.Task.ID)
+		task := env.createStory(t, stringPtr("@design"))
+		notifications := env.notificationsFor(t, "task", task.Task.ID)
 		if len(notifications) != 0 {
 			t.Fatalf("notification count = %d, want 0", len(notifications))
 		}
@@ -405,34 +405,34 @@ func TestPMCommentService_CreateAndUpdate_TeamMentions(t *testing.T) {
 
 	t.Run("create emits comment mention notifications", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
-		story := env.createStory(t, nil)
+		task := env.createStory(t, nil)
 		comment, err := env.commentService.Create(context.Background(), model.CreateCommentRequest{
-			EntityType: "story",
-			EntityID:   story.Task.ID,
+			EntityType: "task",
+			EntityID:   task.Task.ID,
 			Body:       pmMentionBodyText,
 		}, env.actorUserID, env.workspaceID)
 		if err != nil {
 			t.Fatalf("create comment: %v", err)
 		}
-		assertMentionNotifications(t, env.notificationsFor(t, "story", comment.Comment.EntityID), "comment.mention", env.expectedRecipientIDs())
+		assertMentionNotifications(t, env.notificationsFor(t, "task", comment.Comment.EntityID), "comment.mention", env.expectedRecipientIDs())
 	})
 
 	t.Run("create keeps follower notifications separate from mentions", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
-		story := env.createStory(t, nil)
+		task := env.createStory(t, nil)
 		mustExec(t, env.db, `INSERT INTO entity_followers (id, user_id, entity_type, entity_id, workspace_id, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			"follower-carol-story", env.carolUserID, "story", story.Task.ID, env.workspaceID, "watching", time.Now().UTC())
+			"follower-carol-task", env.carolUserID, "task", task.Task.ID, env.workspaceID, "watching", time.Now().UTC())
 
 		comment, err := env.commentService.Create(context.Background(), model.CreateCommentRequest{
-			EntityType: "story",
-			EntityID:   story.Task.ID,
+			EntityType: "task",
+			EntityID:   task.Task.ID,
 			Body:       pmCommentMentionFollowerText,
 		}, env.actorUserID, env.workspaceID)
 		if err != nil {
 			t.Fatalf("create comment: %v", err)
 		}
 
-		notifications := env.notificationsFor(t, "story", comment.Comment.EntityID)
+		notifications := env.notificationsFor(t, "task", comment.Comment.EntityID)
 		if len(notifications) != 3 {
 			t.Fatalf("notification count = %d, want 3", len(notifications))
 		}
@@ -469,10 +469,10 @@ func TestPMCommentService_CreateAndUpdate_TeamMentions(t *testing.T) {
 
 	t.Run("update emits comment mention notifications", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
-		story := env.createStory(t, nil)
+		task := env.createStory(t, nil)
 		comment, err := env.commentService.Create(context.Background(), model.CreateCommentRequest{
-			EntityType: "story",
-			EntityID:   story.Task.ID,
+			EntityType: "task",
+			EntityID:   task.Task.ID,
 			Body:       "plain comment",
 		}, env.actorUserID, env.workspaceID)
 		if err != nil {
@@ -483,15 +483,15 @@ func TestPMCommentService_CreateAndUpdate_TeamMentions(t *testing.T) {
 		}, env.actorUserID, true, env.workspaceID); err != nil {
 			t.Fatalf("update comment: %v", err)
 		}
-		assertMentionNotifications(t, env.notificationsFor(t, "story", story.Task.ID), "comment.mention", env.expectedRecipientIDs())
+		assertMentionNotifications(t, env.notificationsFor(t, "task", task.Task.ID), "comment.mention", env.expectedRecipientIDs())
 	})
 
 	t.Run("update only notifies newly added mentions", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
-		story := env.createStory(t, nil)
+		task := env.createStory(t, nil)
 		comment, err := env.commentService.Create(context.Background(), model.CreateCommentRequest{
-			EntityType: "story",
-			EntityID:   story.Task.ID,
+			EntityType: "task",
+			EntityID:   task.Task.ID,
 			Body:       "@alice.eng",
 		}, env.actorUserID, env.workspaceID)
 		if err != nil {
@@ -504,7 +504,7 @@ func TestPMCommentService_CreateAndUpdate_TeamMentions(t *testing.T) {
 			t.Fatalf("update comment: %v", err)
 		}
 
-		notifications := env.notificationsFor(t, "story", story.Task.ID)
+		notifications := env.notificationsFor(t, "task", task.Task.ID)
 		if len(notifications) != 2 {
 			t.Fatalf("notification count = %d, want 2", len(notifications))
 		}
@@ -530,17 +530,17 @@ func TestPMCommentService_CreateAndUpdate_TeamMentions(t *testing.T) {
 	t.Run("create ignores out-of-scope team mentions", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
 		env.addCarolToDesignTeam(t)
-		story := env.createStory(t, nil)
+		task := env.createStory(t, nil)
 		comment, err := env.commentService.Create(context.Background(), model.CreateCommentRequest{
-			EntityType: "story",
-			EntityID:   story.Task.ID,
+			EntityType: "task",
+			EntityID:   task.Task.ID,
 			Body:       "@design",
 		}, env.actorUserID, env.workspaceID)
 		if err != nil {
 			t.Fatalf("create comment: %v", err)
 		}
 
-		notifications := env.notificationsFor(t, "story", comment.Comment.EntityID)
+		notifications := env.notificationsFor(t, "task", comment.Comment.EntityID)
 		if len(notifications) != 0 {
 			t.Fatalf("notification count = %d, want 0", len(notifications))
 		}
@@ -552,8 +552,8 @@ func TestPMChecklistItemService_CreateAndUpdate_TeamMentions(t *testing.T) {
 
 	t.Run("create emits checklist mention notifications", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
-		story := env.createStory(t, nil)
-		item, err := env.checklistService.Create(context.Background(), story.Task.ID, model.CreateChecklistItemRequest{
+		task := env.createStory(t, nil)
+		item, err := env.checklistService.Create(context.Background(), task.Task.ID, model.CreateChecklistItemRequest{
 			Text: pmMentionBodyText,
 		}, env.workspaceID, env.actorUserID)
 		if err != nil {
@@ -564,8 +564,8 @@ func TestPMChecklistItemService_CreateAndUpdate_TeamMentions(t *testing.T) {
 
 	t.Run("update emits checklist mention notifications", func(t *testing.T) {
 		env := newPMMentionTestEnv(t)
-		story := env.createStory(t, nil)
-		item, err := env.checklistService.Create(context.Background(), story.Task.ID, model.CreateChecklistItemRequest{
+		task := env.createStory(t, nil)
+		item, err := env.checklistService.Create(context.Background(), task.Task.ID, model.CreateChecklistItemRequest{
 			Text: "plain item",
 		}, env.workspaceID, env.actorUserID)
 		if err != nil {
@@ -576,7 +576,7 @@ func TestPMChecklistItemService_CreateAndUpdate_TeamMentions(t *testing.T) {
 		}, env.workspaceID, env.actorUserID); err != nil {
 			t.Fatalf("update checklist item: %v", err)
 		}
-		assertMentionNotifications(t, env.notificationsFor(t, "task", story.Task.ID), "checklist.mention", env.expectedRecipientIDs())
+		assertMentionNotifications(t, env.notificationsFor(t, "task", task.Task.ID), "checklist.mention", env.expectedRecipientIDs())
 	})
 }
 

@@ -75,7 +75,7 @@ jobs:
           MOBILE=false
           EVENTPIPELINE=false
 
-          if echo "$CHANGED" | grep -qE '^server/|^\.github/workflows/ci\.yml$'; then
+          if echo "$CHANGED" | grep -qE '^server/|^scripts/check-task-canonical\.sh$|^\.github/workflows/ci\.yml$'; then
             SERVER=true
           fi
           if echo "$CHANGED" | grep -qE '^frontend/|^packages/(shared|widget-core)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
@@ -158,6 +158,8 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Task is canonical
+        run: bash scripts/check-task-canonical.sh
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'

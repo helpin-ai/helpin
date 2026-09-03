@@ -8,7 +8,6 @@ import (
 // Trigger type constants.
 const (
 	TriggerTaskStateEntered     = "task.state_entered"
-	TriggerStoryStateEntered    = TriggerTaskStateEntered // legacy alias
 	TriggerAgentRunApproved     = "agent_run.approved"
 	TriggerAgentRunCompleted    = "agent_run.completed"
 	TriggerDocPublished         = "doc.published"
@@ -208,7 +207,6 @@ type AutomationEvent struct {
 	TriggerType string
 	// Task-specific context.
 	TaskID  string
-	StoryID string // legacy alias
 	StateID string
 	AgentID string
 	RunID   string

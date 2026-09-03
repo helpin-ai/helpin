@@ -94,7 +94,7 @@ func (r *PMLabelRepository) Update(ctx context.Context, label *model.PMLabel) er
 	return nil
 }
 
-// ListWithStats returns all labels in a workspace with story/epic completion stats.
+// ListWithStats returns all labels in a workspace with task/epic completion stats.
 func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID string, opts PMLabelListOptions) ([]model.LabelWithStats, error) {
 	// Fetch labels
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
@@ -114,15 +114,15 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 		labelIDs[i] = l.ID
 	}
 
-	// Query story stats per label
-	type storyStatRow struct {
+	// Query task stats per label
+	type taskStatRow struct {
 		LabelID string `gorm:"column:label_id"`
 		Total   int    `gorm:"column:total"`
 		Done    int    `gorm:"column:done"`
 		Points  int    `gorm:"column:points"`
 		DonePts int    `gorm:"column:done_pts"`
 	}
-	var storyRows []storyStatRow
+	var taskRows []taskStatRow
 	if err := r.db.WithContext(ctx).
 		Table("pm_task_labels sl").
 		Select(`sl.label_id,
@@ -133,8 +133,8 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 		Joins("JOIN pm_tasks s ON s.id = sl.task_id").
 		Where("sl.label_id IN ? AND s.archived = false", labelIDs).
 		Group("sl.label_id").
-		Scan(&storyRows).Error; err != nil {
-		return nil, fmt.Errorf("label story stats: %w", err)
+		Scan(&taskRows).Error; err != nil {
+		return nil, fmt.Errorf("label task stats: %w", err)
 	}
 
 	// Query epic stats per label
@@ -157,9 +157,9 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 	}
 
 	// Index stats by label ID
-	storyMap := make(map[string]storyStatRow, len(storyRows))
-	for _, r := range storyRows {
-		storyMap[r.LabelID] = r
+	taskMap := make(map[string]taskStatRow, len(taskRows))
+	for _, r := range taskRows {
+		taskMap[r.LabelID] = r
 	}
 	epicMap := make(map[string]epicStatRow, len(epicRows))
 	for _, r := range epicRows {
@@ -170,7 +170,7 @@ func (r *PMLabelRepository) ListWithStats(ctx context.Context, workspaceID strin
 	results := make([]model.LabelWithStats, len(labels))
 	for i, label := range labels {
 		stats := model.LabelStats{}
-		if ss, ok := storyMap[label.ID]; ok {
+		if ss, ok := taskMap[label.ID]; ok {
 			stats.TaskCount = ss.Total
 			stats.DoneTaskCount = ss.Done
 			stats.TotalPoints = ss.Points

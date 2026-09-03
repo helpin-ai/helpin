@@ -3,8 +3,6 @@ import type { AgentRun, AgentRunPauseReason, TaskImplementationBrief } from './a
 import type { Objective } from './objectives';
 
 export type TaskType = 'feature' | 'bug' | 'chore';
-/** @deprecated Use TaskType instead */
-export type StoryType = TaskType;
 export type StateType = 'backlog' | 'unstarted' | 'started' | 'done';
 export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 export type Severity = 'none' | 'minor' | 'major' | 'critical';
@@ -118,10 +116,6 @@ export interface SpecClarification {
 export interface EpicStats {
   task_count?: number;
   done_task_count?: number;
-  /** @deprecated Legacy alias */
-  story_count?: number;
-  /** @deprecated Legacy alias */
-  done_story_count?: number;
   total_points: number;
   done_points: number;
   in_progress_count: number;
@@ -129,11 +123,11 @@ export interface EpicStats {
 }
 
 export function getEpicTaskCount(stats: EpicStats) {
-  return stats.task_count ?? stats.story_count ?? 0;
+  return stats.task_count ?? 0;
 }
 
 export function getEpicDoneTaskCount(stats: EpicStats) {
-  return stats.done_task_count ?? stats.done_story_count ?? 0;
+  return stats.done_task_count ?? 0;
 }
 
 export interface RoadmapObjectiveRef {
@@ -374,7 +368,6 @@ export interface TaskDependencyTask {
 
 export type AssociationEntityType =
   | 'task'
-  | 'story'
   | 'epic'
   | 'support_conversation'
   | 'contact'
@@ -389,8 +382,6 @@ export type TaskRelationshipAction =
   | 'duplicates'
   | 'is_duplicated_by';
 
-/** @deprecated Use TaskRelationshipAction instead */
-export type StoryRelationshipAction = TaskRelationshipAction;
 
 export interface AssociationObjectSummary {
   association_id?: string;
@@ -412,12 +403,8 @@ export interface TaskRelationshipSummary {
   link_type: string;
   is_active: boolean;
   task?: AssociationObjectSummary;
-  /** @deprecated Legacy alias for task */
-  story?: AssociationObjectSummary;
 }
 
-/** @deprecated Use TaskRelationshipSummary instead */
-export type StoryRelationshipSummary = TaskRelationshipSummary;
 
 export interface TaskRelationshipGroups {
   blocked_by: TaskRelationshipSummary[];
@@ -428,8 +415,6 @@ export interface TaskRelationshipGroups {
   duplicated_by: TaskRelationshipSummary[];
 }
 
-/** @deprecated Use TaskRelationshipGroups instead */
-export type StoryRelationshipGroups = TaskRelationshipGroups;
 
 export interface GroupedAssociations {
   task_relationships: TaskRelationshipGroups;
@@ -1137,5 +1122,3 @@ export interface UpdateCommentRequest {
   body: string;
   attachment_ids?: string[];
 }
-
-// Task is now the canonical type, Story is an alias (defined above)

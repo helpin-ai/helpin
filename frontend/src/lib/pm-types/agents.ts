@@ -7,7 +7,6 @@ import type { CodingSessionLiveTurnSegment } from './codingSession';
 
 export type AgentPresetKey =
   | 'epic_planner'
-  | 'story_planner'
   | 'task_planner'
   | 'crm_operator'
   | 'support_agent'
@@ -135,7 +134,6 @@ export interface AgentRun {
   workspace_id: string;
   agent_id: string;
   task_id?: string;
-  story_id?: string;
   conversation_id?: string;
   target_type: AgentTargetType;
   target_id: string;
@@ -454,9 +452,6 @@ export interface TaskImplementationBrief {
   depends_on_files?: string[];
 }
 
-/** @deprecated Use TaskImplementationBrief instead */
-export type StoryImplementationBrief = TaskImplementationBrief;
-
 export interface FileChange {
   path: string;
   action: 'create' | 'modify' | 'delete';
@@ -466,7 +461,6 @@ export interface FileChange {
 export interface VerticalCoverageEntry {
   behavior: string;
   task_refs: string[];
-  story_refs?: string[];
   full_slice: boolean;
 }
 
@@ -475,7 +469,6 @@ export interface ProposedTask {
   name: string;
   description: string;
   task_type: string;
-  story_type?: string;
   estimate?: number;
   priority?: string;
   acceptance_criteria?: string[];
@@ -485,9 +478,6 @@ export interface ProposedTask {
   slice_type?: 'vertical' | 'enabler' | 'spike';
   implementation_brief?: TaskImplementationBrief;
 }
-
-/** @deprecated Use ProposedTask instead */
-export type ProposedStory = ProposedTask;
 
 export interface PlanningSourceRef {
   type: string;
@@ -500,8 +490,6 @@ export interface OrchestrationProposal {
   summary: string;
   spec_version_id?: string;
   proposed_tasks: ProposedTask[];
-  /** @deprecated Use proposed_tasks instead */
-  proposed_stories?: ProposedTask[];
   open_questions?: string[];
   risks?: string[];
   vertical_coverage?: VerticalCoverageEntry[];

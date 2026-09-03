@@ -6,9 +6,9 @@ func TestNormalizeInteractionContractsCanonicalizesToolCallsForEveryRuntime(t *t
 	contracts := NormalizeInteractionContracts([]SkillInteractionContract{{
 		Kind: InteractionKindApprovalRequest,
 		Transports: map[string]SkillInteractionTransport{
-			"native_sdk": {Type: InteractionTransportTypeToolCall, ToolName: "add_story_comment"},
-			"codex":      {Type: InteractionTransportTypeToolCall, ToolName: HelpinMCPToolPrefix + "add_story_comment"},
-			"opencode":   {Type: InteractionTransportTypeToolCall, ToolName: "add_story_comment"},
+			"native_sdk": {Type: InteractionTransportTypeToolCall, ToolName: "add_task_comment"},
+			"codex":      {Type: InteractionTransportTypeToolCall, ToolName: HelpinMCPToolPrefix + "add_task_comment"},
+			"opencode":   {Type: InteractionTransportTypeToolCall, ToolName: "add_task_comment"},
 		},
 	}})
 	if len(contracts) != 1 {

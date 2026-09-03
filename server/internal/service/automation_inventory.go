@@ -789,7 +789,7 @@ func automationActivityItemForRun(run model.AgentRun, agentNames map[string]stri
 
 func manualActivityBindingIDForTargetType(targetType string) string {
 	switch strings.TrimSpace(targetType) {
-	case "task", "story":
+	case "task":
 		return "manual.task_run"
 	case "epic":
 		return "manual.epic_run"

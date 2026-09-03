@@ -436,7 +436,6 @@ func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.
 
 	baseBranch, workingBranch, err := engine.resolveRunBranchOverrides(ctx, model.AutomationEvent{
 		WorkspaceID: "ws-1",
-		StoryID:     task.ID,
 		TaskID:      task.ID,
 		TargetType:  "task",
 		TargetID:    task.ID,
@@ -473,7 +472,7 @@ func TestExecuteMergeBranchUpdatesDeliveryStatusAfterSuccessfulMerge(t *testing.
 
 	err := engine.executeMergeBranch(context.Background(),
 		&model.AutomationRule{ID: "rule-1", Name: "Merge reviewed branch"},
-		model.AutomationEvent{WorkspaceID: "ws-1", StoryID: "task-1", TaskID: "task-1"},
+		model.AutomationEvent{WorkspaceID: "ws-1", TaskID: "task-1"},
 		nil,
 		model.ActionConfigMergeBranch{TargetBranch: "{base_branch}"},
 	)
@@ -510,7 +509,7 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 		{
 			name: "exact state_id match",
 			rule: model.AutomationRule{
-				TriggerType:   model.TriggerStoryStateEntered,
+				TriggerType:   model.TriggerTaskStateEntered,
 				TriggerConfig: json.RawMessage(`{"state_id":"state-1"}`),
 			},
 			event:     model.AutomationEvent{StateID: "state-1"},
@@ -519,7 +518,7 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 		{
 			name: "state_type match",
 			rule: model.AutomationRule{
-				TriggerType:   model.TriggerStoryStateEntered,
+				TriggerType:   model.TriggerTaskStateEntered,
 				TriggerConfig: json.RawMessage(`{"state_type":"started"}`),
 			},
 			event:     model.AutomationEvent{StateID: "state-1"},
@@ -528,7 +527,7 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 		{
 			name: "state_type mismatch",
 			rule: model.AutomationRule{
-				TriggerType:   model.TriggerStoryStateEntered,
+				TriggerType:   model.TriggerTaskStateEntered,
 				TriggerConfig: json.RawMessage(`{"state_type":"done"}`),
 			},
 			event:     model.AutomationEvent{StateID: "state-1"},
@@ -774,7 +773,7 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		},
 		{
 			name:          "valid start_agent_run",
-			triggerType:   model.TriggerStoryStateEntered,
+			triggerType:   model.TriggerTaskStateEntered,
 			triggerConfig: json.RawMessage(`{"state_type":"done"}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
@@ -958,7 +957,7 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		},
 		{
 			name:          "start_agent_run missing agent_id",
-			triggerType:   model.TriggerStoryStateEntered,
+			triggerType:   model.TriggerTaskStateEntered,
 			triggerConfig: json.RawMessage(`{"state_type":"done"}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{}`),
@@ -966,10 +965,10 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		},
 		{
 			name:          "start_agent_run with partial explicit target is invalid",
-			triggerType:   model.TriggerStoryStateEntered,
+			triggerType:   model.TriggerTaskStateEntered,
 			triggerConfig: json.RawMessage(`{"state_type":"done"}`),
 			actionType:    model.ActionStartAgentRun,
-			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"story"}`),
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"task"}`),
 			wantErr:       true,
 		},
 		{
@@ -982,7 +981,7 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		},
 		{
 			name:          "legacy start_flow rejected",
-			triggerType:   model.TriggerStoryStateEntered,
+			triggerType:   model.TriggerTaskStateEntered,
 			triggerConfig: json.RawMessage(`{"state_type":"done"}`),
 			actionType:    model.ActionStartFlow,
 			actionConfig:  json.RawMessage(`{"template_id":"tmpl-1"}`),
@@ -990,7 +989,7 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		},
 		{
 			name:          "legacy run_agent rejected",
-			triggerType:   model.TriggerStoryStateEntered,
+			triggerType:   model.TriggerTaskStateEntered,
 			triggerConfig: json.RawMessage(`{"state_type":"done"}`),
 			actionType:    model.ActionRunAgent,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
@@ -998,7 +997,7 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		},
 		{
 			name:          "state_entered with state_type only is valid",
-			triggerType:   model.TriggerStoryStateEntered,
+			triggerType:   model.TriggerTaskStateEntered,
 			triggerConfig: json.RawMessage(`{"state_type":"started"}`),
 			actionType:    model.ActionMoveToState,
 			actionConfig:  json.RawMessage(`{"target_state_id":"s-1"}`),

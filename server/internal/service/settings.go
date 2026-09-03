@@ -42,7 +42,7 @@ func isValidTeamType(value string) bool {
 	return ok
 }
 
-func isValidDefaultStoryType(value string) bool {
+func isValidDefaultTaskType(value string) bool {
 	switch value {
 	case model.PMTaskTypeFeature, model.PMTaskTypeBug, model.PMTaskTypeChore:
 		return true
@@ -106,10 +106,10 @@ func (s *SettingsService) CreateTeam(ctx context.Context, req model.CreateTeamRe
 	if !isValidTeamType(req.TeamType) {
 		return nil, fmt.Errorf("invalid team_type")
 	}
-	if strings.TrimSpace(req.DefaultStoryType) == "" {
-		req.DefaultStoryType = model.PMTaskTypeFeature
+	if strings.TrimSpace(req.DefaultTaskType) == "" {
+		req.DefaultTaskType = model.PMTaskTypeFeature
 	}
-	if !isValidDefaultStoryType(req.DefaultStoryType) {
+	if !isValidDefaultTaskType(req.DefaultTaskType) {
 		return nil, fmt.Errorf("invalid default_task_type")
 	}
 	if s.entitlementSvc != nil {
@@ -235,11 +235,11 @@ func (s *SettingsService) EnsureDefaultTeam(ctx context.Context, workspaceID, te
 	}
 
 	req := model.CreateTeamRequest{
-		WorkspaceID:      workspaceID,
-		Name:             defaultTeamDisplayName(teamType),
-		Handle:           &handle,
-		TeamType:         teamType,
-		DefaultStoryType: defaultTaskTypeForTeamType(teamType),
+		WorkspaceID:     workspaceID,
+		Name:            defaultTeamDisplayName(teamType),
+		Handle:          &handle,
+		TeamType:        teamType,
+		DefaultTaskType: defaultTaskTypeForTeamType(teamType),
 	}
 	team, err := s.CreateTeam(ctx, req, actorUserID)
 	if err == nil {
@@ -316,15 +316,15 @@ func (s *SettingsService) UpdateTeam(ctx context.Context, id string, req model.U
 		}
 		req.TeamType = &teamType
 	}
-	if req.DefaultStoryType != nil {
-		defaultStoryType := strings.TrimSpace(*req.DefaultStoryType)
-		if defaultStoryType == "" {
-			defaultStoryType = model.PMTaskTypeFeature
+	if req.DefaultTaskType != nil {
+		defaultTaskType := strings.TrimSpace(*req.DefaultTaskType)
+		if defaultTaskType == "" {
+			defaultTaskType = model.PMTaskTypeFeature
 		}
-		if !isValidDefaultStoryType(defaultStoryType) {
+		if !isValidDefaultTaskType(defaultTaskType) {
 			return nil, fmt.Errorf("invalid default_task_type")
 		}
-		req.DefaultStoryType = &defaultStoryType
+		req.DefaultTaskType = &defaultTaskType
 	}
 	return s.settingsRepo.UpdateTeam(ctx, id, req)
 }

@@ -35,8 +35,8 @@ func MigrateAgentSchema(db *gorm.DB) error {
 }
 
 // MigrateAgentRunTargets backfills agent_runs.target_type and target_id from
-// the legacy story_id / ticket_id columns so that the NOT NULL constraint
-// added by AutoMigrate succeeds.
+// the legacy ticket_id column so that the NOT NULL constraint added by
+// AutoMigrate succeeds.
 func MigrateAgentRunTargets(db *gorm.DB) error {
 	const stmt = `
 DO $$
@@ -48,13 +48,6 @@ BEGIN
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='agent_runs' AND column_name='target_type') THEN
             ALTER TABLE agent_runs ADD COLUMN target_type text;
-        END IF;
-
-        -- Backfill from story_id (only if legacy column exists)
-        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='agent_runs' AND column_name='story_id') THEN
-            UPDATE agent_runs
-               SET target_type = 'task', target_id = story_id::uuid
-             WHERE target_id IS NULL AND story_id IS NOT NULL;
         END IF;
 
         -- Backfill from ticket_id (only if legacy column exists)

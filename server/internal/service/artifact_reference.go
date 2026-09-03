@@ -45,7 +45,6 @@ func helpinTaskMarkdownLink(taskKey, name, taskID string) string {
 func helpinMarkdownLinkForEntityType(label, entityType, resourceID string) string {
 	collections := map[string]string{
 		"task":                 "tasks",
-		"story":                "tasks",
 		"epic":                 "epics",
 		"sprint":               "sprints",
 		"objective":            "objectives",

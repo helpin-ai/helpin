@@ -94,31 +94,31 @@ func (s *DocsLinkService) enrichLinks(ctx context.Context, links []model.DocsLin
 	}
 
 	// Collect task IDs.
-	var storyIDs []string
+	var taskIDs []string
 	for _, l := range links {
-		if l.LinkedObjectType == "task" || l.LinkedObjectType == "story" {
-			storyIDs = append(storyIDs, l.LinkedObjectID)
+		if l.LinkedObjectType == "task" {
+			taskIDs = append(taskIDs, l.LinkedObjectID)
 		}
 	}
-	if len(storyIDs) == 0 {
+	if len(taskIDs) == 0 {
 		return
 	}
 
-	// Batch-fetch stories. Use the workspace from the first link.
+	// Batch-fetch tasks. Use the workspace from the first link.
 	wsID := links[0].WorkspaceID
-	stories, err := s.taskRepo.ListByIDs(ctx, wsID, storyIDs)
+	tasks, err := s.taskRepo.ListByIDs(ctx, wsID, taskIDs)
 	if err != nil {
 		return // best-effort enrichment
 	}
 
-	storyMap := make(map[string]*model.PMTask, len(stories))
-	for i := range stories {
-		storyMap[stories[i].ID] = &stories[i]
+	taskMap := make(map[string]*model.PMTask, len(tasks))
+	for i := range tasks {
+		taskMap[tasks[i].ID] = &tasks[i]
 	}
 
 	for i := range links {
-		if links[i].LinkedObjectType == "task" || links[i].LinkedObjectType == "story" {
-			if st, ok := storyMap[links[i].LinkedObjectID]; ok {
+		if links[i].LinkedObjectType == "task" {
+			if st, ok := taskMap[links[i].LinkedObjectID]; ok {
 				links[i].LinkedObjectName = st.Name
 				links[i].LinkedObjectDisplayID = st.DisplayID
 			}

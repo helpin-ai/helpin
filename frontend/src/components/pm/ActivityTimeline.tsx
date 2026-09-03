@@ -157,7 +157,7 @@ function ActivityTimelineEntry({
   const label = formatActivityAction(activity.action, entityLabel, activity.field_name);
   const actorLabel = getActivityActorLabel(activity.action, actor);
 
-  const stateMatch = activity.action?.match(/moved this (?:task|story|epic) to (.+)/);
+  const stateMatch = activity.action?.match(/moved this (?:task|epic) to (.+)/);
   const targetStateName = stateMatch?.[1] ?? null;
   const matchedState = targetStateName ? states.find((s) => s.name === targetStateName) : null;
   const stateColor = matchedState?.color ?? null;
