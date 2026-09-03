@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import QRCode from 'qrcode';
 import { useTitle } from '@/hooks/useTitle';
@@ -93,8 +94,23 @@ export default function SecuritySettings() {
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
   const [setupPassword, setSetupPassword] = useState('');
   const [setupProvisioning, setSetupProvisioning] = useState<TwoFASetupResponse | null>(null);
-  const [setupQRCodeUrl, setSetupQRCodeUrl] = useState('');
-  const [setupQRCodeStatus, setSetupQRCodeStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const setupProvisioningUri = setupProvisioning?.provisioning_uri ?? '';
+  const setupQRCodeQuery = useQuery({
+    queryKey: ['two-fa-setup-qr', setupProvisioningUri, 256],
+    queryFn: () => QRCode.toDataURL(setupProvisioningUri, { margin: 1, width: 256 }),
+    enabled: !!setupProvisioningUri,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  });
+  const setupQRCodeUrl = setupProvisioningUri ? (setupQRCodeQuery.data ?? '') : '';
+  const setupQRCodeStatus: 'idle' | 'loading' | 'ready' | 'error' = !setupProvisioningUri
+    ? 'idle'
+    : setupQRCodeQuery.isError
+      ? 'error'
+      : setupQRCodeQuery.data
+        ? 'ready'
+        : 'loading';
   const [setupVerificationCode, setSetupVerificationCode] = useState('');
   const [setupSubmitting, setSetupSubmitting] = useState(false);
   const [setupStep, setSetupStep] = useState<'password' | 'recovery' | 'verify'>('password');
@@ -163,40 +179,6 @@ export default function SecuritySettings() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const buildQRCode = async () => {
-      if (!setupProvisioning?.provisioning_uri) {
-        setSetupQRCodeUrl('');
-        setSetupQRCodeStatus('idle');
-        return;
-      }
-
-      setSetupQRCodeStatus('loading');
-      try {
-        const dataUrl = await QRCode.toDataURL(setupProvisioning.provisioning_uri, {
-          margin: 1,
-          width: 256,
-        });
-        if (!cancelled) {
-          setSetupQRCodeUrl(dataUrl);
-          setSetupQRCodeStatus('ready');
-        }
-      } catch {
-        if (!cancelled) {
-          setSetupQRCodeUrl('');
-          setSetupQRCodeStatus('error');
-        }
-      }
-    };
-
-    void buildQRCode();
-    return () => {
-      cancelled = true;
-    };
-  }, [setupProvisioning?.provisioning_uri]);
-
   const syncTwoFAState = (enabled: boolean) => {
     setTwoFAEnabled(enabled);
     const existingUser = useAuthStore.getState().user;
@@ -225,8 +207,6 @@ export default function SecuritySettings() {
     setSetupDialogOpen(false);
     setSetupPassword('');
     setSetupProvisioning(null);
-    setSetupQRCodeUrl('');
-    setSetupQRCodeStatus('idle');
     setSetupVerificationCode('');
     setSetupStep('password');
     setRecoveryAcknowledged(false);

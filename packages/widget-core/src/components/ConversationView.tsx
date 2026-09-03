@@ -266,7 +266,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
     };
   }, [menuOpen]);
 
-  const introMessage: Message = {
+  const introMessage = useMemo<Message>(() => ({
     id: '__intro__',
     conversationId: '__intro__',
     role: introRole,
@@ -275,13 +275,15 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
     senderAvatar: introAvatar,
     isInternal: false,
     createdAt: introCreatedAt,
-  };
+  }), [introAvatar, introCreatedAt, introName, introRole, welcomeMessage]);
 
-  const displayMessages = hasTeamReply || messages.length === 0
-    ? messages.length === 0
-      ? [introMessage]
-      : messages
-    : [introMessage, ...messages];
+  const displayMessages = useMemo(() => (
+    hasTeamReply || messages.length === 0
+      ? messages.length === 0
+        ? [introMessage]
+        : messages
+      : [introMessage, ...messages]
+  ), [hasTeamReply, introMessage, messages]);
 
   useEffect(() => {
     if (!onToggleExpanded || isExpanded || autoExpandDismissed || typeof window === 'undefined') {

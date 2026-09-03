@@ -82,14 +82,6 @@ export function PageContextProvider({ children }: { children: React.ReactNode })
     setSelectedScopeKeys((current) => ({ ...current, [activeEntry.id]: trimmed }));
   }, [activeEntry, activeScopes]);
 
-  useEffect(() => {
-    setSelectedScopeKeys((current) => {
-      const activeIDs = new Set(entries.map((entry) => entry.id));
-      const next = Object.fromEntries(Object.entries(current).filter(([id]) => activeIDs.has(id)));
-      return Object.keys(next).length === Object.keys(current).length ? current : next;
-    });
-  }, [entries, fallback]);
-
   const register = useCallback((entry: RegisteredPageContext) => {
     setEntries((current) => {
       const next = current.filter((item) => item.id !== entry.id);
@@ -100,6 +92,12 @@ export function PageContextProvider({ children }: { children: React.ReactNode })
 
   const unregister = useCallback((id: string) => {
     setEntries((current) => current.filter((item) => item.id !== id));
+    setSelectedScopeKeys((current) => {
+      if (!(id in current)) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
   }, []);
 
   const value = useMemo<PageContextValue>(

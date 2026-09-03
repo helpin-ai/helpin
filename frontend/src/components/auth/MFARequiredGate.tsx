@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
 import { authService } from '@/lib/services/authService';
@@ -39,27 +40,19 @@ export function MFARequiredGate({ workspaceName, mfaEnabled, onComplete }: MFARe
   const [password, setPassword] = useState('');
   const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [setup, setSetup] = useState<TwoFASetupResponse | null>(null);
-  const [qrCodeUrl, setQrCodeUrl] = useState('');
   const [savedRecoveryCodes, setSavedRecoveryCodes] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!setup?.provisioning_uri) {
-      setQrCodeUrl('');
-      return;
-    }
-    QRCode.toDataURL(setup.provisioning_uri, { margin: 1, width: 224 })
-      .then((url) => {
-        if (!cancelled) setQrCodeUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) setQrCodeUrl('');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [setup?.provisioning_uri]);
+  const provisioningUri = setup?.provisioning_uri ?? '';
+  const qrCodeQuery = useQuery({
+    queryKey: ['two-fa-setup-qr', provisioningUri, 224],
+    queryFn: () => QRCode.toDataURL(provisioningUri, { margin: 1, width: 224 }),
+    enabled: !!provisioningUri,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  });
+  const qrCodeUrl = provisioningUri ? (qrCodeQuery.data ?? '') : '';
 
   const handleStepUp = async (event: FormEvent) => {
     event.preventDefault();

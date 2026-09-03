@@ -158,11 +158,17 @@ export function Sidebar() {
     workspaceId ? getExpandedTeams(workspaceId) : new Set(),
   );
   const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(getCollapsedSettingsGroups);
-  const [activeSetupJourney, setActiveSetupJourney] = useState<string>();
-
-  useEffect(() => {
-    setActiveSetupJourney(setup?.recommended?.journey_key ?? setup?.journeys[0]?.key);
-  }, [setup?.recommended?.journey_key, setup?.journeys[0]?.key, workspaceId]);
+  const recommendedSetupJourney = setup?.recommended?.journey_key ?? setup?.journeys[0]?.key;
+  // The user's journey pick is dropped whenever the recommendation or workspace changes.
+  const setupJourneyResetKey = JSON.stringify([
+    workspaceId ?? null,
+    setup?.recommended?.journey_key ?? null,
+    setup?.journeys[0]?.key ?? null,
+  ]);
+  const [setupJourneyOverride, setSetupJourneyOverride] = useState<{ resetKey: string; key: string } | null>(null);
+  const activeSetupJourney = setupJourneyOverride?.resetKey === setupJourneyResetKey
+    ? setupJourneyOverride.key
+    : recommendedSetupJourney;
 
   useEffect(() => {
     if (!workspaceId) {
@@ -494,7 +500,7 @@ export function Sidebar() {
                 journeys={setup.journeys}
                 activeJourneyKey={activeSetupJourney}
                 onSelect={(journeyKey) => {
-                  setActiveSetupJourney(journeyKey);
+                  setSetupJourneyOverride({ resetKey: setupJourneyResetKey, key: journeyKey });
                   window.dispatchEvent(new CustomEvent('setup-journey-navigate', { detail: { journeyKey } }));
                 }}
               />
