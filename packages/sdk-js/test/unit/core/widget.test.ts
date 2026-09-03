@@ -204,6 +204,36 @@ describe('WidgetManager', () => {
       });
       expect(localStorage.removeItem).toHaveBeenCalledWith('helpin_ws_test-key');
     });
+
+    it('refreshes visitor presence every 30 seconds', () => {
+      vi.useFakeTimers();
+      try {
+        const socket = new MockWebSocket('wss://example.test/widget/ws');
+        (widget as any).wsConnection = socket;
+
+        (widget as any).handleWSMessage({
+          type: 'session:joined',
+          data: {
+            session_token: 'session-token',
+            expires_at: new Date(Date.now() + 60_000).toISOString(),
+            conversations: [],
+            messages: [],
+            is_anonymous: true,
+          },
+        });
+
+        vi.advanceTimersByTime(29_999);
+        expect(socket.sent).toHaveLength(0);
+
+        vi.advanceTimersByTime(1);
+        expect(socket.sent.map((frame) => JSON.parse(frame))).toContainEqual({
+          type: 'ping',
+          data: {},
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('visibility and open state', () => {

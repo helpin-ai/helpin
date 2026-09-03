@@ -613,6 +613,36 @@ func TestRedisPresence_RefreshVisitorOnline(t *testing.T) {
 	}
 }
 
+func TestRedisPresence_RefreshVisitorOnlineRestoresExpiredConnection(t *testing.T) {
+	p, mr := setupRedisPresence(t)
+	defer mr.Close()
+	ctx := context.Background()
+
+	if err := p.SetVisitorOnline(ctx, "ws-1", "anon-1", "conn-1"); err != nil {
+		t.Fatalf("SetVisitorOnline: %v", err)
+	}
+	mr.FastForward(visitorConnTTL + time.Second)
+
+	if err := p.RefreshVisitorOnline(ctx, "ws-1", "anon-1", "conn-1"); err != nil {
+		t.Fatalf("RefreshVisitorOnline: %v", err)
+	}
+
+	online, err := p.IsVisitorOnline(ctx, "ws-1", "anon-1")
+	if err != nil {
+		t.Fatalf("IsVisitorOnline: %v", err)
+	}
+	if !online {
+		t.Fatal("visitor should return online when its live connection refreshes after TTL expiry")
+	}
+	visitors, err := p.GetOnlineVisitors(ctx, "ws-1")
+	if err != nil {
+		t.Fatalf("GetOnlineVisitors: %v", err)
+	}
+	if len(visitors) != 1 || visitors[0] != "anon-1" {
+		t.Fatalf("GetOnlineVisitors() = %v, want [anon-1]", visitors)
+	}
+}
+
 func TestRedisPresence_GetOnlineVisitors_PrunesExpiredVisitorEntries(t *testing.T) {
 	p, mr := setupRedisPresence(t)
 	defer mr.Close()

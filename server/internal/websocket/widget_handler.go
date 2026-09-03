@@ -168,7 +168,7 @@ func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, 
 			if err != nil {
 				slog.Error("presence SetVisitorOffline (legacy)", "error", err)
 			}
-			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) || lastConn {
+			if shouldBroadcastVisitorOffline(h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID), lastConn, err) {
 				h.hub.BroadcastAll(Event{
 					Action:      "visitor_offline",
 					Entity:      "support_visitor",
@@ -186,6 +186,11 @@ func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, 
 		if err != nil {
 			return
 		}
+		if session.AnonymousID != "" {
+			if err := h.hub.Presence.RefreshVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
+				slog.Error("presence RefreshVisitorOnline on legacy widget activity", "error", err)
+			}
+		}
 	}
 }
 
@@ -197,6 +202,17 @@ func unmarshalWidgetData[T any](data map[string]any) (T, error) {
 	}
 	err = json.Unmarshal(dataBytes, &result)
 	return result, err
+}
+
+// shouldBroadcastVisitorOffline treats the shared presence provider as the
+// authority whenever it responds successfully. A replica's local hub only
+// knows about sockets connected to that replica, so it cannot decide that a
+// visitor is offline while another replica may still own a connection.
+func shouldBroadcastVisitorOffline(localOnline, lastConn bool, presenceErr error) bool {
+	if presenceErr == nil {
+		return lastConn
+	}
+	return !localOnline
 }
 
 func (h *WidgetHandler) handleSessionCreate(ctx context.Context, widgetKey string, msg model.WidgetWSMessage, conn *websocket.Conn) (*model.SupportWidgetSession, error) {
@@ -378,7 +394,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			if err != nil {
 				slog.Error("presence SetVisitorOffline", "error", err)
 			}
-			if !h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID) || lastConn {
+			if shouldBroadcastVisitorOffline(h.hub.IsVisitorOnline(session.WorkspaceID, session.AnonymousID), lastConn, err) {
 				h.hub.BroadcastAll(Event{
 					Action:      "visitor_offline",
 					Entity:      "support_visitor",
@@ -394,6 +410,14 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 		_, data, err := conn.Read(ctx)
 		if err != nil {
 			return
+		}
+		// Any successfully received frame proves that this connection is alive.
+		// Refresh here as well as on heartbeat frames so active visitors cannot
+		// expire merely because a browser delayed its interval timer.
+		if session.AnonymousID != "" {
+			if err := h.hub.Presence.RefreshVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
+				slog.Error("presence RefreshVisitorOnline on widget activity", "error", err)
+			}
 		}
 
 		var msg model.WidgetWSMessage
@@ -566,12 +590,8 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			client.ConversationID = nil
 
 		case "ping":
-			// Refresh visitor presence and extend an active session near expiry.
-			if session.AnonymousID != "" {
-				if err := h.hub.Presence.RefreshVisitorOnline(ctx, session.WorkspaceID, session.AnonymousID, client.ConnID); err != nil {
-					slog.Error("presence RefreshVisitorOnline", "error", err)
-				}
-			}
+			// Extend an active session near expiry. Presence was refreshed when
+			// this frame was received above.
 			refreshed, err := h.service.GetWidgetSession(ctx, session.SessionToken)
 			if err != nil {
 				SendToClient(conn, "connection:error", map[string]string{"code": "session_expired", "message": err.Error()})

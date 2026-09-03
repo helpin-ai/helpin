@@ -2,10 +2,55 @@ package websocket
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+func TestShouldBroadcastVisitorOfflineUsesSharedPresenceResult(t *testing.T) {
+	tests := []struct {
+		name        string
+		localOnline bool
+		lastConn    bool
+		presenceErr error
+		want        bool
+	}{
+		{
+			name:        "remote replica still has an active connection",
+			localOnline: false,
+			lastConn:    false,
+			want:        false,
+		},
+		{
+			name:        "shared presence confirms the final connection closed",
+			localOnline: false,
+			lastConn:    true,
+			want:        true,
+		},
+		{
+			name:        "local connection remains active after provider failure",
+			localOnline: true,
+			presenceErr: errors.New("presence unavailable"),
+			want:        false,
+		},
+		{
+			name:        "local state is fallback when provider fails",
+			localOnline: false,
+			presenceErr: errors.New("presence unavailable"),
+			want:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldBroadcastVisitorOffline(tt.localOnline, tt.lastConn, tt.presenceErr)
+			if got != tt.want {
+				t.Fatalf("shouldBroadcastVisitorOffline() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestUnmarshalWidgetData_MessageSendData(t *testing.T) {
 	tests := []struct {
@@ -45,9 +90,9 @@ func TestUnmarshalWidgetData_MessageSendData(t *testing.T) {
 			wantErr:     false,
 		},
 		{
-			name:        "wrong type for content",
-			data:        map[string]any{"content": 123},
-			wantErr:     true,
+			name:    "wrong type for content",
+			data:    map[string]any{"content": 123},
+			wantErr: true,
 		},
 	}
 

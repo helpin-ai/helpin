@@ -1949,7 +1949,9 @@ export class WidgetManager {
         this.connectionStatus = 'connected';
         this.syncUnreadCount();
 
-        // Start keepalive ping every 60s to refresh server-side visitor online keys.
+        // Keep three heartbeat opportunities inside the server's 90-second
+        // visitor-presence TTL so one delayed browser timer does not make an
+        // active visitor appear offline.
         if (this.keepaliveTimer) {
           clearInterval(this.keepaliveTimer);
         }
@@ -1957,7 +1959,7 @@ export class WidgetManager {
           if (this.wsConnection?.readyState === WebSocket.OPEN) {
             this.wsSend('ping', {});
           }
-        }, 60_000);
+        }, 30_000);
 
         // If session was restored as identified, store email to skip pre-chat
         if (!payload.is_anonymous && payload.customer_email) {

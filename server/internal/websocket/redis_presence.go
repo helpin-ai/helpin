@@ -895,12 +895,13 @@ func (p *RedisPresence) GetOnlineVisitors(ctx context.Context, workspaceID strin
 	return online, nil
 }
 
-// RefreshVisitorOnline extends the TTL on a visitor's conn key.
+// RefreshVisitorOnline refreshes or restores a live visitor connection.
 func (p *RedisPresence) RefreshVisitorOnline(ctx context.Context, workspaceID, anonymousID, connID string) error {
 	connKey := visitorConnKey(workspaceID, anonymousID, p.podID, connID)
 	pipe := p.rdb.Pipeline()
-	pipe.Expire(ctx, connKey, visitorConnTTL)
-	pipe.Expire(ctx, visitorOnlineKey(workspaceID, anonymousID), visitorConnTTL)
+	pipe.Set(ctx, connKey, "1", visitorConnTTL)
+	pipe.Set(ctx, visitorOnlineKey(workspaceID, anonymousID), "1", visitorConnTTL)
+	pipe.SAdd(ctx, visitorSetKey(workspaceID), anonymousID)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("redis presence RefreshVisitorOnline: %w", err)
 	}
