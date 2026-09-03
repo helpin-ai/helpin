@@ -125,8 +125,57 @@ export function updateConversationUnreadCount(
   return { ...current, unread_count: unreadCount };
 }
 
+export type SupportPersonalReadPatch = {
+  conversationId: string;
+  unreadCount: number;
+  version: number;
+};
+
+function patchConversationPersonalRead(
+  conversation: SupportConversation,
+  patch: SupportPersonalReadPatch,
+): SupportConversation {
+  if (conversation.id !== patch.conversationId) return conversation;
+  if ((conversation.personal_state_version ?? 0) >= patch.version) return conversation;
+  return {
+    ...conversation,
+    unread_count: Math.max(0, patch.unreadCount),
+    personal_state_version: patch.version,
+  };
+}
+
+export function patchConversationPersonalReadInCache(
+  current: SupportConversationListCache | undefined,
+  patch: SupportPersonalReadPatch,
+): SupportConversationListCache | undefined {
+  if (!current) return current;
+  if (isInfiniteConversationListResponse(current)) {
+    return {
+      ...current,
+      pages: current.pages.map((page) => ({
+        ...page,
+        data: page.data.map((conversation) => patchConversationPersonalRead(conversation, patch)),
+      })),
+    };
+  }
+  if (!isConversationListResponse(current)) return current;
+  return {
+    ...current,
+    data: current.data.map((conversation) => patchConversationPersonalRead(conversation, patch)),
+  };
+}
+
+export function patchConversationDetailPersonalRead(
+  current: SupportConversation | undefined,
+  patch: SupportPersonalReadPatch,
+): SupportConversation | undefined {
+  if (!current) return current;
+  return patchConversationPersonalRead(current, patch);
+}
+
 type SupportMessageActivityPatch = {
   conversationId: string;
+  messageId?: string;
   timestamp: string;
   message?: {
     content?: unknown;
@@ -146,16 +195,17 @@ export type SupportConversationStatusPatch = {
   mailboxId?: string | null;
 };
 
-function isPublicCustomerReply(message: SupportMessageActivityPatch['message']): boolean {
-  return message?.sender_type === 'customer' &&
-    (message.message_type === undefined || message.message_type === 'reply') &&
-    !message.system_event_type;
-}
-
 function isPublicReply(message: SupportMessageActivityPatch['message']): boolean {
   return typeof message?.sender_type === 'string' &&
     (message.message_type === undefined || message.message_type === 'reply') &&
     !message.system_event_type;
+}
+
+function conversationAIControlsResponse(conversation: SupportConversation): boolean {
+  return !conversation.human_takeover && (
+    conversation.flow_state === 'ai_handling' ||
+    (!conversation.flow_state && conversation.ai_state === 'pending')
+  );
 }
 
 function patchConversationForMessageActivity(
@@ -165,6 +215,8 @@ function patchConversationForMessageActivity(
   const next: SupportConversation = {
     ...conversation,
     updated_at: patch.timestamp,
+    list_last_message_id: patch.messageId ?? conversation.list_last_message_id,
+    list_last_message_at: patch.timestamp,
   };
 
   if (!isPublicReply(patch.message)) {
@@ -183,10 +235,27 @@ function patchConversationForMessageActivity(
     last_message_sender_type: senderType,
     last_message_sender_display_name: senderDisplayName,
     awaiting_reply: senderType === 'customer',
-    unread_count: isPublicCustomerReply(patch.message)
-      ? (conversation.unread_count ?? 0) + 1
-      : conversation.unread_count,
+    customer_awaiting_response: senderType === 'customer',
+    needs_human_reply: senderType === 'customer'
+      ? conversation.status !== 'resolved' && conversation.status !== 'spam' && !conversationAIControlsResponse(conversation)
+      : false,
+    last_customer_message_id: senderType === 'customer' && patch.messageId
+      ? patch.messageId
+      : conversation.last_customer_message_id,
   };
+}
+
+function isMessagePatchNewer(conversation: SupportConversation, patch: SupportMessageActivityPatch): boolean {
+  if (!conversation.list_last_message_at) return true;
+  const currentTime = Date.parse(conversation.list_last_message_at);
+  const patchTime = Date.parse(patch.timestamp);
+  if (Number.isFinite(currentTime) && Number.isFinite(patchTime)) {
+    if (patchTime !== currentTime) return patchTime > currentTime;
+  } else if (patch.timestamp !== conversation.list_last_message_at) {
+    return patch.timestamp > conversation.list_last_message_at;
+  }
+  if (!patch.messageId || !conversation.list_last_message_id) return false;
+  return patch.messageId > conversation.list_last_message_id;
 }
 
 function moveConversationInList(
@@ -198,6 +267,9 @@ function moveConversationInList(
   }
   const index = conversations.findIndex((conversation) => conversation.id === patch.conversationId);
   if (index === -1) {
+    return { conversations, changed: false };
+  }
+  if (!isMessagePatchNewer(conversations[index], patch)) {
     return { conversations, changed: false };
   }
   const patched = patchConversationForMessageActivity(conversations[index], patch);

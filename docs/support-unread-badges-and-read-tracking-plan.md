@@ -1,9 +1,11 @@
 # Support Unread Badges and Read Tracking Plan
 
-**Status:** Proposed
+**Status:** Superseded for internal support unread
 **Date:** 2026-03-17
 **Scope:** Support inbox, widget unread badges, read tracking, realtime sync
 **Modules:** `server`, `frontend`, `packages/sdk-js`, `packages/widget-core`
+
+> **Superseded on 2026-09-03:** The internal-inbox portions of this plan describe the former shared-team cursor and correlated-query approach. They must not be used for new implementation work. Internal support unread is now personal per workspace user, the blue dot is shared customer-response state, human attention is a separate shared projection, and core counts are incrementally materialized. See [First-Class Support Inbox State Design](./superpowers/specs/2026-09-02-first-class-support-inbox-state-design.md), especially its implementation record. Widget/customer unread remains a separate state domain; historical widget analysis below may still be useful but must be reconciled with the authoritative design before implementation.
 
 ---
 

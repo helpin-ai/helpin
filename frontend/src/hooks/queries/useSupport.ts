@@ -10,14 +10,13 @@ import { unwrap } from '@/lib/queryUtils';
 import { isUpgradeRequiredError } from '@/lib/upgradeRequired';
 import {
   extractConversationListConversations,
-  getConversationListUnreadCount,
   getNextConversationIdAfterRemoval,
   isSupportConversationListQueryKey,
+  patchConversationDetailPersonalRead,
   patchConversationDetailStatus,
+  patchConversationPersonalReadInCache,
   patchConversationStatusInCache,
   type SupportConversationListCache,
-  updateConversationListUnreadCount,
-  updateConversationUnreadCount,
 } from '@/lib/supportQueryCache';
 import {
   appendMessageToNewestPage,
@@ -1254,25 +1253,23 @@ export function useMarkConversationUnread(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (conversationId: string) =>
-      supportService.markConversationUnread(workspaceId, conversationId),
-    onSuccess: (_data, conversationId) => {
+      supportService.markConversationUnread(workspaceId, conversationId).then(unwrap),
+    onSuccess: (state, conversationId) => {
+      const patch = {
+        conversationId,
+        unreadCount: state.unread_customer_message_count > 0 ? state.unread_customer_message_count : 1,
+        version: state.version,
+      };
       queryClient.setQueriesData<SupportConversationListCache>(
         {
           queryKey: queryKeys.support.conversations(workspaceId),
           predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
         },
-        (current) => {
-          const currentUnreadCount = getConversationListUnreadCount(current, conversationId);
-          return updateConversationListUnreadCount(
-            current,
-            conversationId,
-            Math.max(currentUnreadCount, 1),
-          );
-        }
+        (current) => patchConversationPersonalReadInCache(current, patch),
       );
       queryClient.setQueryData<SupportConversation>(
         queryKeys.support.conversation(workspaceId, conversationId),
-        (current) => updateConversationUnreadCount(current, Math.max(current?.unread_count ?? 0, 1))
+        (current) => patchConversationDetailPersonalRead(current, patch),
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
@@ -1287,19 +1284,23 @@ export function useMarkConversationUnread(workspaceId: string) {
 export function useMarkConversationRead(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (conversationId: string) =>
-      supportService.markConversationRead(workspaceId, conversationId),
-    onSuccess: (_data, conversationId) => {
+    mutationFn: ({ conversationId, throughMessageId }: { conversationId: string; throughMessageId?: string }) =>
+      supportService.markConversationRead(workspaceId, conversationId, throughMessageId).then(unwrap),
+    onSuccess: (state, { conversationId }) => {
+      const unreadCount = state.unread_customer_message_count > 0
+        ? state.unread_customer_message_count
+        : state.manually_unread ? 1 : 0;
+      const patch = { conversationId, unreadCount, version: state.version };
       queryClient.setQueriesData<SupportConversationListCache>(
         {
           queryKey: queryKeys.support.conversations(workspaceId),
           predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
         },
-        (current) => updateConversationListUnreadCount(current, conversationId, 0)
+        (current) => patchConversationPersonalReadInCache(current, patch),
       );
       queryClient.setQueryData<SupportConversation>(
         queryKeys.support.conversation(workspaceId, conversationId),
-        (current) => updateConversationUnreadCount(current, 0)
+        (current) => patchConversationDetailPersonalRead(current, patch),
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });

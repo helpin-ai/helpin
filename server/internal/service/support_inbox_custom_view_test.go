@@ -244,6 +244,12 @@ func TestSupportInboxViewServiceCountsCustomViewsFromSavedFilters(t *testing.T) 
 	).Error; err != nil {
 		t.Fatalf("seed unread message: %v", err)
 	}
+	if err := db.Exec(
+		`INSERT INTO support_conversation_user_states (workspace_id, conversation_id, user_id, unread_customer_message_count, relevance_mask) VALUES (?, ?, ?, 1, ?)`,
+		workspaceID, openUnread.ID, userID, model.SupportRelevanceAssignee,
+	).Error; err != nil {
+		t.Fatalf("seed personal unread state: %v", err)
+	}
 
 	openRead := &model.SupportConversation{
 		WorkspaceID:    workspaceID,

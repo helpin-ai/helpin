@@ -337,7 +337,9 @@ export const ConversationRow = memo(function ConversationRow({
   const humanQueueWaitSince = conversation.customer_requested_human_at || conversation.ai_escalated_at || conversation.updated_at;
   const userTags = conversation.tags ?? [];
   const hasAgentReplyPreview = conversation.last_message_sender_type === 'user' || conversation.last_message_sender_type === 'agent';
-  const hasCustomerReplyPreview = conversation.last_message_sender_type === 'customer';
+  const hasCustomerReplyPreview = conversation.customer_awaiting_response
+    ?? conversation.awaiting_reply
+    ?? conversation.last_message_sender_type === 'customer';
   const agentReplyLabel = `${conversation.last_message_sender_display_name?.trim() || 'Agent'} replied`;
   const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;

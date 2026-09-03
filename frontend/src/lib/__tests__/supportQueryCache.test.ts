@@ -195,7 +195,7 @@ describe('supportQueryCache', () => {
     }));
   });
 
-  it('moves customer message activity to the top and increments unread count', () => {
+  it('moves customer activity and sets shared response state without guessing personal unread', () => {
     const current: ConversationListResponse = {
       data: [
         {
@@ -228,10 +228,49 @@ describe('supportQueryCache', () => {
     }) as ConversationListResponse;
 
     expect(updated.data[0]).toEqual(expect.objectContaining({
-      unread_count: 2,
+      unread_count: 1,
       awaiting_reply: true,
+      customer_awaiting_response: true,
       last_message: 'I still need help.',
       last_message_sender_type: 'customer',
+    }));
+  });
+
+  it('marks customer activity as human work after an explicit AI takeover', () => {
+    const current: ConversationListResponse = {
+      data: [{
+        id: 'conv-handoff',
+        workspace_id: 'ws-1',
+        display_id: 1,
+        subject: 'Handoff',
+        status: 'open',
+        flow_state: 'ai_handling',
+        human_takeover: true,
+        priority: 'medium',
+        source: 'widget',
+        unread_count: 0,
+        created_at: '2026-04-08T00:00:00Z',
+        updated_at: '2026-04-08T00:00:00Z',
+      }],
+      total: 1,
+      page: 1,
+      per_page: 50,
+      total_pages: 1,
+    };
+
+    const updated = moveConversationToTopForMessageActivity(current, {
+      conversationId: 'conv-handoff',
+      timestamp: '2026-04-08T10:00:00Z',
+      message: {
+        content: 'A human still needs to answer.',
+        sender_type: 'customer',
+        message_type: 'reply',
+      },
+    }) as ConversationListResponse;
+
+    expect(updated.data[0]).toEqual(expect.objectContaining({
+      customer_awaiting_response: true,
+      needs_human_reply: true,
     }));
   });
 
@@ -283,6 +322,42 @@ describe('supportQueryCache', () => {
       last_message: 'Customer question',
       updated_at: '2026-04-08T10:00:00Z',
     }));
+  });
+
+  it('ignores a delayed message older than the cached list projection', () => {
+    const current: ConversationListResponse = {
+      data: [{
+        id: 'conv-newer',
+        workspace_id: 'ws-1',
+        display_id: 1,
+        subject: 'Newer',
+        status: 'open',
+        priority: 'medium',
+        source: 'widget',
+        list_last_message_id: '00000000-0000-0000-0000-000000000020',
+        list_last_message_at: '2026-04-08T11:00:00Z',
+        last_message: 'Newest customer reply',
+        created_at: '2026-04-08T00:00:00Z',
+        updated_at: '2026-04-08T11:00:00Z',
+      }],
+      total: 1,
+      page: 1,
+      per_page: 50,
+      total_pages: 1,
+    };
+
+    const updated = moveConversationToTopForMessageActivity(current, {
+      conversationId: 'conv-newer',
+      messageId: '00000000-0000-0000-0000-000000000010',
+      timestamp: '2026-04-08T10:00:00Z',
+      message: {
+        content: 'Delayed reply',
+        sender_type: 'customer',
+        message_type: 'reply',
+      },
+    });
+
+    expect(updated).toBe(current);
   });
 
   it('patches status changes without changing unread count or preview', () => {

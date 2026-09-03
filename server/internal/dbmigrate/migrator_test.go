@@ -65,6 +65,204 @@ func TestCreateKeepsLegacySequentialVersionsAsExistingVersions(t *testing.T) {
 	}
 }
 
+func TestMigrationNoTransactionDirective(t *testing.T) {
+	t.Run("directive on first line disables transaction", func(t *testing.T) {
+		migration := Migration{SQL: "-- dbmigrate:no-transaction\nCREATE INDEX CONCURRENTLY example_idx ON example_table (id);\n"}
+		if !migration.NoTransaction() {
+			t.Fatal("expected no-transaction directive to be detected")
+		}
+	})
+
+	t.Run("directive elsewhere is ignored", func(t *testing.T) {
+		migration := Migration{SQL: "-- Migration comment\n-- dbmigrate:no-transaction\nSELECT 1;\n"}
+		if migration.NoTransaction() {
+			t.Fatal("directive must be the first line")
+		}
+	})
+}
+
+func TestNonTransactionalMigrationStatementsExecuteSeparately(t *testing.T) {
+	migration := Migration{SQL: "-- dbmigrate:no-transaction\n\nCREATE INDEX CONCURRENTLY first_idx ON first_table (id);\nCREATE INDEX CONCURRENTLY second_idx ON second_table (id);\n"}
+	statements, err := migration.NonTransactionalStatements()
+	if err != nil {
+		t.Fatalf("split statements: %v", err)
+	}
+	if len(statements) != 2 {
+		t.Fatalf("statement count = %d, want 2", len(statements))
+	}
+	if strings.Contains(statements[0], "second_idx") || !strings.Contains(statements[1], "second_idx") {
+		t.Fatalf("statements were not separated: %#v", statements)
+	}
+}
+
+func TestNonTransactionalMigrationRejectsTransactionControl(t *testing.T) {
+	migration := Migration{SQL: "-- dbmigrate:no-transaction\nBEGIN;\nCREATE INDEX CONCURRENTLY example_idx ON example_table (id);\nCOMMIT;\n"}
+	if _, err := migration.NonTransactionalStatements(); err == nil {
+		t.Fatal("expected explicit transaction control to be rejected")
+	}
+}
+
+func TestSupportInboxStateFoundationMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+
+	var foundation, indexes *Migration
+	for i := range migrations {
+		switch migrations[i].Version {
+		case "202609020003":
+			foundation = &migrations[i]
+		case "202609020004":
+			indexes = &migrations[i]
+		}
+	}
+	if foundation == nil {
+		t.Fatal("expected support inbox state foundation migration")
+	}
+	if indexes == nil {
+		t.Fatal("expected support inbox concurrent indexes migration")
+	}
+
+	foundationSQL := strings.ToLower(strings.Join(strings.Fields(foundation.SQL), " "))
+	for _, clause := range []string{
+		"add column if not exists customer_awaiting_response boolean",
+		"add column if not exists needs_human_reply boolean",
+		"create table if not exists support_conversation_user_states",
+		"primary key (conversation_id, user_id)",
+		"create table if not exists support_inbox_counter_buckets",
+		"create table if not exists support_inbox_counter_contributions",
+		"create table if not exists support_inbox_scope_heads",
+		"create table if not exists support_inbox_user_scope_heads",
+		"create table if not exists support_inbox_conversation_changes",
+		"create table if not exists support_realtime_outbox",
+	} {
+		if !strings.Contains(foundationSQL, clause) {
+			t.Errorf("foundation migration missing %q", clause)
+		}
+	}
+
+	if !indexes.NoTransaction() {
+		t.Fatal("concurrent index migration must opt out of the transaction wrapper")
+	}
+	indexSQL := strings.ToLower(strings.Join(strings.Fields(indexes.SQL), " "))
+	for _, clause := range []string{
+		"create index concurrently if not exists idx_support_messages_public_customer_replies",
+		"create index concurrently if not exists idx_support_messages_metadata_path_ops",
+		"create index concurrently if not exists idx_support_widget_sessions_workspace_anonymous_created",
+		"create index concurrently if not exists idx_support_widget_sessions_conversation_created",
+		"create index concurrently if not exists idx_support_inbox_counter_contributions_scope",
+	} {
+		if !strings.Contains(indexSQL, clause) {
+			t.Errorf("index migration missing %q", clause)
+		}
+	}
+}
+
+func TestSupportInboxStateProjectionTriggersMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202609020005" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected support inbox projection trigger migration")
+	}
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"create or replace function project_support_message_state",
+		"create trigger support_message_state_inserted",
+		"create or replace function recompute_support_message_state",
+		"create trigger support_message_state_updated",
+		"create trigger support_message_state_deleted",
+		"after update of deleted_at, is_internal, sender_type, message_type, content, created_at",
+		"after delete on support_messages",
+		"when is_customer_reply then true",
+		"unread_customer_message_count = support_conversation_user_states.unread_customer_message_count + 1",
+		"relevance_mask = support_conversation_user_states.relevance_mask | excluded.relevance_mask",
+		"create or replace function project_support_conversation_workload",
+		"create trigger support_conversation_workload_changed",
+		"create or replace function project_support_conversation_change",
+		"create trigger support_conversation_state_updated",
+		"update of status, mailbox_id, assigned_user_id, opened_by_user_id, flow_state, ai_state, human_takeover, subject, customer_name, customer_email",
+		"insert into support_realtime_outbox",
+		"old.status in ('resolved', 'spam')",
+		"state.relevance_mask & ~4",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("projection trigger migration missing %q", clause)
+		}
+	}
+}
+
+func TestSupportInboxStateBackfillMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202609020006" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected support inbox state backfill migration")
+	}
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"create or replace function support_inbox_backfill_batch",
+		"for update of candidate skip locked",
+		"insert into support_conversation_user_states",
+		"insert into support_inbox_conversation_projection_states",
+		"on conflict (conversation_id, user_id) do nothing",
+		"notification.latest_event_category = 'support_replies'",
+		"perform support_refresh_core_counters(conversation.id)",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("backfill migration missing %q", clause)
+		}
+	}
+}
+
+func TestSupportInboxCoreCountersMigrationContract(t *testing.T) {
+	migrations, err := loadMigrations()
+	if err != nil {
+		t.Fatalf("load migrations: %v", err)
+	}
+	var migration *Migration
+	for i := range migrations {
+		if migrations[i].Version == "202609020007" {
+			migration = &migrations[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatal("expected support inbox core counter migration")
+	}
+	sql := strings.ToLower(strings.Join(strings.Fields(migration.SQL), " "))
+	for _, clause := range []string{
+		"create or replace function support_apply_core_counter_contribution",
+		"create or replace function support_refresh_core_counters",
+		"create trigger support_user_state_core_counters_inserted",
+		"create trigger support_user_state_core_counters_updated",
+		"create trigger support_conversation_core_counters_updated",
+		"before delete on support_conversations",
+		"on conflict (conversation_id, audience_type, audience_id, bucket_id)",
+	} {
+		if !strings.Contains(sql, clause) {
+			t.Errorf("core counter migration missing %q", clause)
+		}
+	}
+}
+
 func TestTieredAIUsageCutoverMigrationContract(t *testing.T) {
 	migrations, err := loadMigrations()
 	if err != nil {

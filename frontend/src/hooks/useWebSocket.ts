@@ -12,6 +12,7 @@ export interface WSEvent {
   entity_id: string
   workspace_id: string
   actor_id: string
+  target_user_id?: string
   parent_type?: string
   parent_id?: string
   data?: Record<string, unknown>

@@ -428,3 +428,19 @@ func TestSetWidgetConversation(t *testing.T) {
 		t.Errorf("expected conversation ID conv-123, got %v", client.ConversationID)
 	}
 }
+
+func TestShouldReceive_TargetedPersonalEventOnlyForTargetUser(t *testing.T) {
+	hub := NewHub()
+	event := Event{
+		Entity: "support_personal_read", WorkspaceID: "workspace-1", TargetUserID: "user-1",
+	}
+	if !hub.shouldReceive(&Client{UserID: "user-1", WorkspaceID: "workspace-1"}, event) {
+		t.Fatal("target user's internal session should receive personal event")
+	}
+	if hub.shouldReceive(&Client{UserID: "user-2", WorkspaceID: "workspace-1"}, event) {
+		t.Fatal("another internal user must not receive personal event")
+	}
+	if hub.shouldReceive(&Client{UserID: "user-1", WorkspaceID: "workspace-1", IsWidget: true}, event) {
+		t.Fatal("widget must not receive internal personal event")
+	}
+}

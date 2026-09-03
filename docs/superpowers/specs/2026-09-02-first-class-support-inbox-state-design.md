@@ -1,7 +1,7 @@
 # First-Class Support Inbox State Design
 
 **Date:** 2026-09-02
-**Status:** Independent written-spec review approved; awaiting user review
+**Status:** Approved; core implementation complete on `waqar-fixes`; production cutover pending
 **Target branch:** `waqar-fixes`
 **Scale target:** 300,000 conversations and 3,000,000 messages in one workspace, ten times the measured baseline
 
@@ -18,7 +18,44 @@ The release preserves saved-view membership and the existing blue-dot interactio
 
 The production cutover is one user-visible release, but deployment is additive and reversible: create schema, dual-write, backfill, shadow-compare, switch reads, and retain the legacy cursor until the new path is proven.
 
-## Current System and Failure Mode
+## Implementation Record (2026-09-03)
+
+This section records the branch state and overrides delivery assumptions elsewhere in this document where they conflict. The detailed sections below remain the target architecture and rationale.
+
+### Implemented on `waqar-fixes`
+
+- Transactional projection schema and a tested non-transactional migration mode for concurrent indexes.
+- Conversation projections for list previews, public/customer message state, visitor country, the shared blue dot (`customer_awaiting_response`), and shared human attention (`needs_human_reply`).
+- Per-user read cursors, exact unread counts, manual unread, durable mention relevance, monotonic read-through behavior, and legacy cursor dual-write for rollback.
+- Incrementally maintained core counter buckets for Inbox, Mine, Waiting, AI Handling, Unassigned, Support, shared mailbox scopes, and personal audiences.
+- Resumable bounded backfill plus guarded workspace modes: `legacy`, `shadow`, and `v2`.
+- List and counter read paths that use projected state and materialized core counters in V2 while retaining legacy behavior before cutover.
+- Targeted personal-read WebSocket events, version-aware client patches, stale message rejection, and coalesced counter invalidation for message bursts.
+- Separate indicator semantics: personal unread controls row emphasis; the blue dot represents an unanswered customer; Support and mailbox attention use human workload; AI Handling membership remains independent.
+- Existing saved-view JSON and filter membership remain authoritative. View counts now use one exact aggregate per view and include personal unread and human-attention counts.
+
+The implementation was exercised against a disposable PostgreSQL copy at 30,000 conversations and 300,000 messages. Projection transitions, mentions, reopen behavior, counter idempotency, mailbox moves, backfill, and rollback/forward mode changes were checked. The full Go suite, 2,168 frontend tests, TypeScript compilation, and backend/frontend production builds passed at implementation handoff. This is implementation evidence, not the 10x production acceptance test defined below.
+
+### Deliberately deferred
+
+Materialized custom-view count snapshots, filter compilation, and the custom-view projection worker are deferred because current custom-view usage is low. Custom-view membership and counts remain exact and synchronous; WebSocket-triggered refreshes are debounced. The snapshot tables and ordered change-log foundation may remain available for future work, but they are not authoritative and are not a V2 cutover dependency for this release.
+
+Revisit snapshots when production evidence shows material custom-view adoption or count latency. Useful triggers include sustained workspaces with many active views, custom-view count p95 exceeding the product budget, or count queries becoming a measurable share of support database time.
+
+### Required before production V2 cutover
+
+- Wire and verify the durable realtime outbox dispatcher. Migration `202609020005_support_inbox_state_projection_triggers.sql` starts writing outbox rows regardless of workspace rollout mode, but no leased publisher/retry worker is wired yet. Do not deploy that trigger migration without shipping the dispatcher in the same deployment or explicitly gating those inserts; otherwise the pending table grows without bound and the designed delivery guarantee is absent.
+- Run the migrations and bounded backfill in the target environment, then verify zero uninitialized conversations and exact core-counter reconciliation before moving a workspace beyond legacy mode.
+- Perform shadow comparisons for projected list fields, personal unread, blue-dot state, and authorized core counters. The branch contains rollout modes but not the complete production parity-metrics pipeline.
+- Verify mailbox-access changes and reconnect recovery under real multi-pod WebSocket delivery.
+- Run representative production-scale load tests against the 300,000-conversation/3,000,000-message target. Do not infer the 10x SLO from the smaller implementation dataset.
+- Add operational monitoring and retention/reconciliation jobs for projection drift, counter drift, pending outbox age, and retained conversation-change rows.
+
+### Future option, not a current release blocker
+
+If custom-view snapshots are later activated, implement the baseline-and-replay bootstrap, contiguous per-scope worker, authorization-safe shared/personal overlays, version-vector responses, reconciliation, and the full saved-filter golden corpus described below. Do not make the currently created snapshot tables authoritative without those safeguards.
+
+## Pre-implementation System and Failure Mode
 
 `support_conversations.team_last_seen_at` is the only internal read cursor. A customer reply is unread when its message timestamp is later than this shared value. Any agent opening the conversation advances the cursor for the entire team.
 
@@ -195,9 +232,11 @@ Each bucket stores `total_count`, `needs_human_reply_count`, `unread_count`, `ve
 
 Core-counter replacements use the same explicit version-vector contract as custom views: mailbox access version plus a shared and, where applicable, personal version for every contributing mailbox scope. Bucket rows for all categories affected by one scope mutation are updated atomically under the allocated scope version. Clients never compare a per-conversation version to an aggregate and never collapse a multi-mailbox result into a synthetic scalar version.
 
-### Custom-view count snapshots
+### Custom-view count snapshots (deferred architecture)
 
-Arbitrary custom filters are not synchronously reevaluated for every connected client.
+This section is retained as the approved future design. It is not implemented or required for the current V2 release; see the implementation record above. Until production usage justifies this subsystem, the API returns exact counts from one aggregate query per saved view.
+
+In the future snapshot architecture, arbitrary custom filters will no longer be synchronously reevaluated for every connected client.
 
 Materialize custom-view counts in authorization-safe pieces rather than one unrestricted workspace total:
 
@@ -273,7 +312,7 @@ Add an optional target user to websocket events and enforce it in the hub. Perso
 
 Mailbox access changes increment a per-user `mailbox_access_version` and insert a targeted authorization event in the same transaction. On receipt, every session for that user cancels in-flight support requests, removes conversation lists, details, messages, core counters, view counts, and search results for removed scopes, rotates all remaining support query keys to the new access version, and refetches authorization before processing later support events. Server APIs and websocket subscriptions always recheck current authorization; reconnect, window focus, and a bounded background refresh reconcile a missed event. No response generated after revocation may include the removed scope.
 
-Support realtime outbox rows are inserted in the authoritative transaction. A leased worker publishes them through the existing multi-pod relay, retries with bounded exponential backoff, and records delivery state. Clients deduplicate by `event_id` and ignore versions older than their cached version.
+Support realtime outbox rows are inserted in the authoritative transaction. The required leased publisher/retry worker remains pending and is a production V2 cutover blocker. Once wired, it publishes through the existing multi-pod relay, retries with bounded exponential backoff, and records delivery state. Clients deduplicate by `event_id` and ignore versions older than their cached version.
 
 Reading a conversation never invalidates workspace conversation lists, mailbox scopes, or other users' custom-view counts. New messages patch the row, messages, applicable core counters, and only the selected detail. Status/assignment/AI transitions patch the row and exact affected counters; a list refetch is a recovery mechanism, not the normal path.
 
@@ -340,7 +379,9 @@ Therefore a live mutation that reaches an unbackfilled conversation initializes 
 
 Backfill uses `FOR UPDATE SKIP LOCKED` or an equivalent lease so multiple workers can cooperate, commits every batch, rate-limits itself, and can resume after interruption. Generation rollover is reserved for an explicit full rebuild; normal retries always reuse the active generation.
 
-Existing saved views use a race-safe baseline-and-replay bootstrap after dual-write logging is active:
+#### Deferred custom-view bootstrap
+
+The following bootstrap applies only when custom-view snapshots are activated. Existing saved views then use a race-safe baseline-and-replay bootstrap after dual-write logging is active:
 
 1. mark each `(view, mailbox scope)` or `(view, user, mailbox scope)` projection as `building` so normal workers retain its log entries without publishing a partial snapshot;
 2. in a repeatable-read transaction, capture the applicable shared/personal head, evaluate the exact legacy predicate against that transaction's snapshot, and store the baseline count at the captured version;
@@ -356,7 +397,7 @@ Use a workspace-aware mode with `legacy`, `shadow`, and `v2` behavior:
 
 - `legacy`: legacy reads; new schema may still be dual-written;
 - `shadow`: legacy response remains authoritative while v2 results, counters, and view membership are compared and measured;
-- `v2`: personal reads, projected lists, buckets, typed realtime, and snapshot view counts are authoritative.
+- `v2`: personal reads, projected lists, and core buckets are authoritative. Custom-view counts remain exact synchronous aggregates until the deferred snapshot subsystem is activated. Typed realtime uses targeted personal-read delivery and version-aware message patches, while the durable outbox dispatcher remains a cutover blocker.
 
 The release begins dual-writing before backfill, runs the backfill, reaches shadow parity, then switches workspaces to v2. A mode change back to legacy is the rollback. No legacy column or query is removed in the first release.
 
@@ -386,7 +427,8 @@ Record metrics by workspace-size band and runtime mode:
 - websocket events by class, target, recipient count, retry, and duplicate;
 - list refetches caused by read actions;
 - backfill throughput, lag, errors, and remaining rows;
-- custom-view projection queue depth, age, per-scope watermark lag, and retained-log floor.
+- exact custom-view count latency, active views per workspace, and custom-view query share of support database time;
+- after snapshot activation only: custom-view projection queue depth, age, per-scope watermark lag, and retained-log floor.
 
 Cutover gates:
 
@@ -395,7 +437,7 @@ Cutover gates:
 - no blue-dot mismatch in the shadow sample;
 - personal-read concurrency tests pass under race/load execution;
 - counter drift below 0.1% before reconciliation and zero after reconciliation;
-- custom-view count convergence p99 under two seconds;
+- exact custom-view count latency remains within the product budget for observed production view cardinality;
 - a read action produces no workspace-wide list/count refetch;
 - no increase in notification duplication or missed mentions;
 - 10x load SLOs pass.
@@ -411,10 +453,10 @@ Targets under representative warm-cache load:
 - core counter read: p95 <= 50 ms, p99 <= 100 ms;
 - conversation/message commit including projection and core counters: p95 <= 100 ms excluding external delivery;
 - websocket commit-to-client patch: p95 <= 250 ms;
-- custom-view counter convergence: p95 <= 1 second, p99 <= 2 seconds;
+- current exact custom-view count request: p95 <= 150 ms, p99 <= 300 ms at observed production view cardinality;
 - database work for one read is constant with respect to connected teammate count;
 - authoritative-transaction and personal-state work for one customer reply is bounded by indexed personal contributors to that conversation, not workspace membership, saved-view subscribers, or connected clients;
-- post-commit custom-view work for one customer reply is bounded by affected views plus directly affected users and never enumerates workspace membership.
+- after snapshot activation only: custom-view counter convergence is p95 <= 1 second and p99 <= 2 seconds, and post-commit work for one customer reply is bounded by affected views plus directly affected users without enumerating workspace membership.
 
 ## Test Matrix
 
@@ -428,21 +470,21 @@ Cover two agents with different read positions, multiple tabs for one agent, ass
 
 ### Concurrency and idempotency
 
-Cover customer reply racing a read-through request, two reads in reverse order, duplicate message idempotency keys, duplicate outbox delivery, concurrent assignment/reply, retry after transaction failure, a live mutation racing first-time initialization, a rerun encountering newer personal state, two workers attempting the same scope, out-of-order log visibility, a missing sequence, and two backfill workers. Prove that initialization and contribution insertion happen once, a watermark never advances past a gap, and an idempotent replay never double-applies a delta. Run Go race tests for in-process caches/workers.
+For the current release, cover customer replies racing read-through requests, reverse-order reads, duplicate message/idempotency requests, concurrent assignment and replies, retries after transaction failure, live mutation during initialization, reruns encountering newer personal state, and concurrent backfill workers. Prove initialization and counter contributions are idempotent. When the outbox and snapshot workers are implemented, additionally cover duplicate outbox delivery, two workers attempting the same scope, out-of-order log visibility, missing sequences, contiguous watermarks, and idempotent replay. Run Go race tests for every in-process worker introduced.
 
 ### Views and indicators
 
-Use golden fixtures for every existing serialized filter key, operator, boolean combination, and built-in view. Assert unchanged membership, exact agreement between legacy evaluation and compiled shared-plus-personal counts, personal unread differences, shared blue-dot behavior, human-attention counts, AI Handling transitions, Support rail behavior, row typography, mailbox-access revocation with deterministic cache eviction, access-version rotation, component-wise vector comparison, incomparable-vector refetch, stale-version rejection, and count-patch convergence. Mutation tests change subject, customer name, and customer email through every supported write path and prove search-view membership/counts converge; the registry-coverage test fails for any accepted mutable filter field without a projector route.
+For the current release, use fixtures for every existing serialized filter key and built-in view to assert unchanged membership, exact personal unread counts, shared blue-dot behavior, human-attention counts, AI Handling transitions, Support rail behavior, row typography, authorization, and stale-event rejection. When snapshot counts are activated, add the full compiler golden corpus, access-version rotation, component-wise vector comparison, incomparable-vector refetch, mutation-coverage registry, and count-patch convergence tests described in the deferred architecture.
 
 ### Migration and rollback
 
-Test empty, partially backfilled, fully backfilled, interrupted, and rerun databases. Include writes before, during, and after conversation initialization and a saved-view baseline; late access grants; retained-log cleanup; and bootstrap retries. Exercise V2 personal reads, manual unread, teammate/AI replies, customer-message deletion, duplicate requests, rollback to the shared legacy cursor, and forward switch back to preserved personal state. Validate migration checksums, concurrent-index mode, legacy fallback, shadow mode, the initialized/ready/gap cutover gates, V2 cutover, and rollback with dual-written data intact.
+For the current release, test empty, partially backfilled, fully backfilled, interrupted, and rerun databases, including writes before, during, and after conversation initialization. Exercise V2 personal reads, manual unread, teammate/AI replies, customer-message deletion, duplicate requests, rollback to the shared legacy cursor, and forward switch back to preserved personal state. Validate migration checksums, concurrent-index mode, legacy fallback, shadow mode, initialization and counter-reconciliation gates, V2 cutover, and rollback with dual-written data intact. When snapshots are activated, extend this matrix with saved-view baselines, late access grants, retained-log cleanup, bootstrap retries, and ready/gap cutover gates.
 
 ## Recovery and Reconciliation
 
 A scheduled reconciler recomputes projections and core counter buckets for sampled workspaces continuously and supports a full workspace repair command. Repairs are idempotent, versioned, and publish replacement snapshots rather than blind deltas.
 
-If realtime delivery is unavailable, TanStack Query's bounded stale refresh restores state. If the custom-view worker is delayed, the last completed counts remain visible and queue-age monitoring alerts. If dual-write fails, the authoritative mutation fails rather than committing a message with inconsistent state; non-authoritative external notifications remain retryable after commit.
+If realtime delivery is unavailable, TanStack Query's bounded stale refresh restores state. Current custom-view count failures retain the prior client cache and retry the exact aggregate. After snapshot activation, a delayed view worker keeps the last completed counts visible and queue-age monitoring alerts. If dual-write fails, the authoritative mutation fails rather than committing a message with inconsistent state; non-authoritative external notifications remain retryable after commit.
 
 ## Non-Goals
 
@@ -455,4 +497,4 @@ If realtime delivery is unavailable, TanStack Query's bounded stale refresh rest
 
 ## Delivery Boundary
 
-This is one product release and one coordinated implementation program. Internally, it is delivered in reversible stages so schema, backfill, shadow comparison, client compatibility, and cutover can be verified independently. The implementation plan must preserve these gates and must not collapse them into a destructive big-bang migration.
+The core state change is one product release delivered in reversible stages so schema, backfill, shadow comparison, client compatibility, and cutover can be verified independently. Materialized custom-view snapshots are now a separate optional follow-up driven by production usage. The durable realtime outbox dispatcher and the production cutover requirements in the implementation record remain part of the core release boundary.

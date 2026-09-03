@@ -143,7 +143,7 @@ describe('SupportRailNav', () => {
     const aiHandling = buttonByText(rendered.container, 'AI Handling')
     expect(aiHandling?.textContent).toContain('4')
     expect(aiHandling?.textContent).not.toContain('1')
-    expect(aiHandling?.querySelector('[data-slot="support-unread-dot"]')).toBeTruthy()
+    expect(aiHandling?.querySelector('[data-slot="support-unread-dot"]')).toBeNull()
     expect(aiHandling?.querySelector('[data-slot="support-total-count"]')?.textContent).toBe('4')
 
     rendered.cleanup()

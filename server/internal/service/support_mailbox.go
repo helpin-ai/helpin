@@ -81,7 +81,7 @@ func (s *SupportInboxService) loadConversationAccessible(ctx context.Context, wo
 		return s.loadConversationUnscoped(ctx, workspaceID, conversationID)
 	}
 	workspaceMemberID, role := actor.WorkspaceMemberID, actor.Role
-	return s.conversationRepo.GetByID(ctx, workspaceID, conversationID, workspaceMemberID, role)
+	return s.conversationRepo.GetByIDForUser(ctx, workspaceID, conversationID, actor.UserID, workspaceMemberID, role)
 }
 
 func (s *SupportInboxService) loadConversationUnscoped(ctx context.Context, workspaceID, conversationID string) (*model.SupportConversation, error) {
@@ -168,52 +168,47 @@ func (s *SupportInboxService) ListInboxScopes(ctx context.Context, workspaceID s
 	}
 	_ = inst
 
-	sharedUnread, err := s.mailboxRepo.CountUnread(ctx, workspaceID, nil)
+	mailboxIDs := make([]string, 0, len(mailboxes))
+	for _, mailbox := range mailboxes {
+		mailboxIDs = append(mailboxIDs, mailbox.ID)
+	}
+	scopeCounts, err := s.mailboxRepo.CountScopes(ctx, workspaceID, actor.UserID, mailboxIDs)
 	if err != nil {
 		return nil, err
 	}
-	sharedTotal, err := s.mailboxRepo.CountWorkload(ctx, workspaceID, nil)
-	if err != nil {
-		return nil, err
-	}
+	sharedCounts := scopeCounts["shared"]
 	sharedIsDefault := settings != nil && (settings.DefaultMailboxID == nil || strings.TrimSpace(derefString(settings.DefaultMailboxID)) == "")
 
 	response := &model.SupportInboxScopeListResponse{
 		SharedInbox: model.SupportInboxScope{
-			ID:          "shared",
-			Name:        "Shared Inbox",
-			Handle:      "shared",
-			Icon:        "inbox",
-			IsShared:    true,
-			IsDefault:   sharedIsDefault,
-			TotalCount:  sharedTotal,
-			UnreadCount: sharedUnread,
-			Active:      true,
+			ID:                   "shared",
+			Name:                 "Shared Inbox",
+			Handle:               "shared",
+			Icon:                 "inbox",
+			IsShared:             true,
+			IsDefault:            sharedIsDefault,
+			TotalCount:           sharedCounts.TotalCount,
+			UnreadCount:          sharedCounts.UnreadCount,
+			NeedsHumanReplyCount: sharedCounts.NeedsHumanReplyCount,
+			Active:               true,
 		},
 		Mailboxes: make([]model.SupportInboxScope, 0, len(mailboxes)),
 	}
 
 	for _, mailbox := range mailboxes {
-		mailboxID := mailbox.ID
-		unreadCount, countErr := s.mailboxRepo.CountUnread(ctx, workspaceID, &mailboxID)
-		if countErr != nil {
-			return nil, countErr
-		}
-		totalCount, countErr := s.mailboxRepo.CountWorkload(ctx, workspaceID, &mailboxID)
-		if countErr != nil {
-			return nil, countErr
-		}
+		counts := scopeCounts[mailbox.ID]
 		response.Mailboxes = append(response.Mailboxes, model.SupportInboxScope{
-			ID:           mailbox.ID,
-			Name:         mailbox.Name,
-			Handle:       mailbox.Handle,
-			Icon:         mailbox.Icon,
-			IsShared:     false,
-			IsDefault:    settings != nil && settings.DefaultMailboxID != nil && strings.TrimSpace(*settings.DefaultMailboxID) == mailbox.ID,
-			TotalCount:   totalCount,
-			UnreadCount:  unreadCount,
-			Active:       mailbox.Active,
-			LinkedTeamID: mailbox.LinkedTeamID,
+			ID:                   mailbox.ID,
+			Name:                 mailbox.Name,
+			Handle:               mailbox.Handle,
+			Icon:                 mailbox.Icon,
+			IsShared:             false,
+			IsDefault:            settings != nil && settings.DefaultMailboxID != nil && strings.TrimSpace(*settings.DefaultMailboxID) == mailbox.ID,
+			TotalCount:           counts.TotalCount,
+			UnreadCount:          counts.UnreadCount,
+			NeedsHumanReplyCount: counts.NeedsHumanReplyCount,
+			Active:               mailbox.Active,
+			LinkedTeamID:         mailbox.LinkedTeamID,
 		})
 	}
 

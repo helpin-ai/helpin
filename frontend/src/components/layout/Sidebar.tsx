@@ -103,7 +103,8 @@ export function Sidebar() {
   const [editingSupportViewName, setEditingSupportViewName] = useState('');
   const [editingSupportViewShared, setEditingSupportViewShared] = useState(false);
   const totalSupportUnread = useMemo(
-    () => (inboxScopes?.shared_inbox.unread_count ?? 0) + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + mailbox.unread_count, 0),
+    () => (inboxScopes?.shared_inbox.needs_human_reply_count ?? 0)
+      + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + (mailbox.needs_human_reply_count ?? 0), 0),
     [inboxScopes],
   );
   const sortedCustomViews = useMemo(

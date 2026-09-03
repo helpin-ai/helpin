@@ -28,6 +28,46 @@ type Migration struct {
 	Checksum string
 }
 
+const noTransactionDirective = "-- dbmigrate:no-transaction"
+
+// NoTransaction reports whether the migration must execute outside a database
+// transaction. PostgreSQL requires this for operations such as CREATE INDEX
+// CONCURRENTLY. The directive is deliberately restricted to the first line so
+// an incidental mention in migration documentation cannot change execution.
+func (m Migration) NoTransaction() bool {
+	firstLine, _, _ := strings.Cut(strings.ReplaceAll(m.SQL, "\r\n", "\n"), "\n")
+	return strings.TrimSpace(firstLine) == noTransactionDirective
+}
+
+// NonTransactionalStatements returns individually executable statements.
+// PostgreSQL treats a multi-command query as one implicit transaction, which
+// would still make CREATE INDEX CONCURRENTLY fail. No-transaction migrations
+// are intentionally limited to plain DDL without procedural bodies.
+func (m Migration) NonTransactionalStatements() ([]string, error) {
+	if !m.NoTransaction() {
+		return nil, fmt.Errorf("migration does not declare %s", noTransactionDirective)
+	}
+	_, body, _ := strings.Cut(strings.ReplaceAll(m.SQL, "\r\n", "\n"), "\n")
+	parts := strings.Split(body, ";")
+	statements := make([]string, 0, len(parts))
+	for _, part := range parts {
+		statement := strings.TrimSpace(part)
+		if statement == "" {
+			continue
+		}
+		firstField := ""
+		if fields := strings.Fields(statement); len(fields) > 0 {
+			firstField = strings.ToUpper(fields[0])
+		}
+		switch firstField {
+		case "BEGIN", "COMMIT", "ROLLBACK", "START":
+			return nil, fmt.Errorf("transaction control %q is not allowed in a no-transaction migration", firstField)
+		}
+		statements = append(statements, statement)
+	}
+	return statements, nil
+}
+
 type StatusRow struct {
 	Version   string
 	Name      string
@@ -438,6 +478,28 @@ func loadAppliedMigrations(ctx context.Context, conn *sql.Conn) (map[string]appl
 }
 
 func applyMigration(ctx context.Context, conn *sql.Conn, migration Migration) error {
+	if migration.NoTransaction() {
+		statements, err := migration.NonTransactionalStatements()
+		if err != nil {
+			return err
+		}
+		for index, statement := range statements {
+			if _, err := conn.ExecContext(ctx, statement); err != nil {
+				return fmt.Errorf("execute non-transactional statement %d: %w", index+1, err)
+			}
+		}
+		if _, err := conn.ExecContext(
+			ctx,
+			`INSERT INTO schema_migrations (version, name, checksum) VALUES ($1, $2, $3)`,
+			migration.Version,
+			migration.Name,
+			migration.Checksum,
+		); err != nil {
+			return fmt.Errorf("record non-transactional schema migration: %w", err)
+		}
+		return nil
+	}
+
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)

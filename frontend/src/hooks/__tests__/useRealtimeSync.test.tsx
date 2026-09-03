@@ -677,6 +677,43 @@ describe('useRealtimeSync task ordering events', () => {
     container.remove()
   })
 
+  it('patches a targeted personal read without workspace-wide invalidation', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    client.setQueryData<ConversationListResponse>(queryKeys.support.conversations('ws-1'), {
+      data: [{
+        id: 'conv-1', workspace_id: 'ws-1', display_id: 1, subject: 'Unread', status: 'open',
+        priority: 'medium', source: 'widget', unread_count: 2, personal_state_version: 3,
+        created_at: '2026-06-04T08:00:00Z', updated_at: '2026-06-04T08:00:00Z',
+      }],
+      total: 1, page: 1, per_page: 50, total_pages: 1,
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>)
+    })
+
+    await act(async () => {
+      captured.onEvent?.({
+        action: 'updated', entity: 'support_personal_read', entity_id: 'conv-1',
+        workspace_id: 'ws-1', actor_id: 'user-1', target_user_id: 'user-1',
+        data: { unread_count: 0, personal_state_version: 4 },
+      })
+      await Promise.resolve()
+    })
+
+    const updated = client.getQueryData<ConversationListResponse>(queryKeys.support.conversations('ws-1'))
+    expect(updated?.data[0]).toEqual(expect.objectContaining({ unread_count: 0, personal_state_version: 4 }))
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queryKeys.support.conversations('ws-1') })
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queryKeys.support.inboxScopes('ws-1') })
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queryKeys.support.inboxViewCounts('ws-1') })
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
   it('moves support conversation rows for message activity without marking agent replies unread', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     client.setQueryData<ConversationListResponse>(queryKeys.support.conversations('ws-1'), {

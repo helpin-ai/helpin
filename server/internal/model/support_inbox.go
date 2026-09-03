@@ -43,6 +43,23 @@ type SupportConversation struct {
 	TeamLastSeenAt                 *time.Time      `json:"team_last_seen_at" gorm:"type:timestamptz"`
 	ContactLastSeenAt              *time.Time      `json:"contact_last_seen_at" gorm:"type:timestamptz"`
 	EmailUnsubscribed              bool            `json:"email_unsubscribed" gorm:"not null;default:false"`
+	ListLastMessageID              *string         `json:"list_last_message_id,omitempty" gorm:"type:uuid"`
+	ListLastMessageAt              *time.Time      `json:"list_last_message_at,omitempty" gorm:"type:timestamptz"`
+	ListLastMessagePreview         *string         `json:"list_last_message_preview,omitempty"`
+	ListLastMessageIsInternal      bool            `json:"list_last_message_is_internal" gorm:"not null;default:false"`
+	LastPublicMessageID            *string         `json:"last_public_message_id,omitempty" gorm:"type:uuid"`
+	LastPublicMessageAt            *time.Time      `json:"last_public_message_at,omitempty" gorm:"type:timestamptz"`
+	LastPublicSenderType           *string         `json:"last_public_sender_type,omitempty"`
+	LastPublicSenderDisplayName    *string         `json:"last_public_sender_display_name,omitempty"`
+	LastCustomerMessageID          *string         `json:"last_customer_message_id,omitempty" gorm:"type:uuid"`
+	LastCustomerMessageAt          *time.Time      `json:"last_customer_message_at,omitempty" gorm:"type:timestamptz"`
+	UnansweredCustomerMessageCount int             `json:"unanswered_customer_message_count" gorm:"not null;default:0"`
+	CustomerAwaitingResponse       bool            `json:"customer_awaiting_response" gorm:"not null;default:false"`
+	NeedsHumanReply                bool            `json:"needs_human_reply" gorm:"not null;default:false"`
+	SupportStateVersion            int64           `json:"state_version" gorm:"column:support_state_version;not null;default:0"`
+	VisitorCountryCode             *string         `json:"visitor_country_code,omitempty"`
+	VisitorCountryName             *string         `json:"visitor_country_name,omitempty"`
+	ViewSearchDocument             *string         `json:"-"`
 
 	// AI State — separate from human Status. Null when AI is not involved.
 	AIState                  *string    `json:"ai_state" gorm:"index"` // null, "pending", "resolved", "escalated"
@@ -66,6 +83,7 @@ type SupportConversation struct {
 	LastMessageSenderDisplayName *string                    `json:"last_message_sender_display_name,omitempty" gorm:"->"`
 	UnreadCount                  int                        `json:"unread_count" gorm:"->"`
 	AwaitingReply                bool                       `json:"awaiting_reply" gorm:"->"`
+	PersonalStateVersion         int64                      `json:"personal_state_version" gorm:"->"`
 	CountryCode                  *string                    `json:"country_code,omitempty" gorm:"->"`
 	CountryName                  *string                    `json:"country_name,omitempty" gorm:"->"`
 	OpenedByDisplayName          *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`
@@ -182,30 +200,35 @@ type UpdateSupportTeammatePresenceRequest struct {
 
 // UnreadStats holds aggregate unread conversation counts for sidebar badges.
 type UnreadStats struct {
-	Inbox         int `json:"inbox"`
-	Mine          int `json:"mine"`
-	Waiting       int `json:"waiting"`
-	AIActive      int `json:"ai_active"`
-	Total         int `json:"total"`
-	MyInbox       int `json:"my_inbox"`
-	Unassigned    int `json:"unassigned"`
-	InboxTotal    int `json:"inbox_total"`
-	MineTotal     int `json:"mine_total"`
-	WaitingTotal  int `json:"waiting_total"`
-	AIActiveTotal int `json:"ai_active_total"`
+	Inbox                   int `json:"inbox"`
+	Mine                    int `json:"mine"`
+	Waiting                 int `json:"waiting"`
+	AIActive                int `json:"ai_active"`
+	Total                   int `json:"total"`
+	MyInbox                 int `json:"my_inbox"`
+	Unassigned              int `json:"unassigned"`
+	InboxTotal              int `json:"inbox_total"`
+	MineTotal               int `json:"mine_total"`
+	WaitingTotal            int `json:"waiting_total"`
+	AIActiveTotal           int `json:"ai_active_total"`
+	InboxNeedsHumanReply    int `json:"inbox_needs_human_reply"`
+	MineNeedsHumanReply     int `json:"mine_needs_human_reply"`
+	WaitingNeedsHumanReply  int `json:"waiting_needs_human_reply"`
+	AIActiveNeedsHumanReply int `json:"ai_active_needs_human_reply"`
 }
 
 type SupportInboxScope struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	Handle       string  `json:"handle"`
-	Icon         string  `json:"icon"`
-	IsShared     bool    `json:"is_shared"`
-	IsDefault    bool    `json:"is_default"`
-	TotalCount   int     `json:"total_count"`
-	UnreadCount  int     `json:"unread_count"`
-	Active       bool    `json:"active"`
-	LinkedTeamID *string `json:"linked_team_id,omitempty"`
+	ID                   string  `json:"id"`
+	Name                 string  `json:"name"`
+	Handle               string  `json:"handle"`
+	Icon                 string  `json:"icon"`
+	IsShared             bool    `json:"is_shared"`
+	IsDefault            bool    `json:"is_default"`
+	TotalCount           int     `json:"total_count"`
+	UnreadCount          int     `json:"unread_count"`
+	NeedsHumanReplyCount int     `json:"needs_human_reply_count"`
+	Active               bool    `json:"active"`
+	LinkedTeamID         *string `json:"linked_team_id,omitempty"`
 }
 
 type SupportInboxScopeListResponse struct {

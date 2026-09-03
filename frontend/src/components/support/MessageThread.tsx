@@ -661,6 +661,15 @@ export function MessageThread({
   const visibleGroupedMessages = groupedMessages;
 
   const lastMessageId = messages[messages.length - 1]?.id ?? null;
+  const lastRenderedCustomerMessageId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.sender_type === 'customer' && !message.is_internal && message.message_type === 'reply' && !message.system_event_type) {
+        return message.id;
+      }
+    }
+    return null;
+  }, [messages]);
   const initialScrollTargetMessageId = useMemo(
     () => getInitialThreadScrollTarget(messages, conversation?.team_last_seen_at),
     [conversation?.team_last_seen_at, messages],
@@ -780,11 +789,12 @@ export function MessageThread({
     })) {
       return;
     }
-    if (lastOpenThreadReadMessageIdRef.current === lastMessageId) return;
+    if (!lastRenderedCustomerMessageId) return;
+    if (lastOpenThreadReadMessageIdRef.current === lastRenderedCustomerMessageId) return;
 
-    lastOpenThreadReadMessageIdRef.current = lastMessageId;
-    markConversationRead.mutate(conversationId);
-  }, [conversation, conversationId, isThreadLoading, lastMessageId, markConversationRead]);
+	lastOpenThreadReadMessageIdRef.current = lastRenderedCustomerMessageId;
+	markConversationRead.mutate({ conversationId, throughMessageId: lastRenderedCustomerMessageId });
+  }, [conversation, conversationId, isThreadLoading, lastRenderedCustomerMessageId, markConversationRead]);
 
   useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;

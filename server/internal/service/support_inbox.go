@@ -1036,7 +1036,9 @@ func (s *SupportInboxService) SearchConversations(ctx context.Context, params Su
 	return resp, nil
 }
 
-// ListConversationsWithMeta returns conversations plus aggregate unread stats.
+// ListConversationsWithMeta returns the conversation page. Aggregate inbox
+// state has its own endpoint; keeping it out of this hot path prevents every
+// list refresh/page fetch from repeating workspace-wide counter work.
 func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, params SupportConversationListParams) (*model.ConversationListResponse, error) {
 	startedAt := time.Now()
 	defer func() {
@@ -1080,12 +1082,6 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, par
 	}
 	s.hydrateConversationTags(ctx, params.WorkspaceID, conversations)
 
-	stats, err := s.conversationRepo.GetUnreadStats(ctx, params.WorkspaceID, params.UserID, workspaceMemberID, role, params.MailboxID)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to get unread stats", "error", err, "workspace_id", params.WorkspaceID)
-		// Non-fatal: return conversations with zero stats
-	}
-
 	perPage := params.Pagination.PerPage
 	if perPage <= 0 {
 		perPage = 50
@@ -1105,9 +1101,7 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, par
 		Page:       page,
 		PerPage:    perPage,
 		TotalPages: totalPages,
-		Meta: model.ConversationListMeta{
-			Unread: stats,
-		},
+		Meta:       model.ConversationListMeta{},
 	}, nil
 }
 
@@ -1187,42 +1181,64 @@ func (s *SupportInboxService) GetUnreadStats(ctx context.Context, workspaceID, u
 	return s.conversationRepo.GetUnreadStats(ctx, workspaceID, userID, workspaceMemberID, role, mailboxID)
 }
 
-// MarkConversationRead updates the team read cursor and broadcasts a read event.
+// MarkConversationRead keeps the legacy call shape while using personal state.
 func (s *SupportInboxService) MarkConversationRead(ctx context.Context, workspaceID, conversationID, userID string) error {
+	_, err := s.MarkConversationReadThrough(ctx, workspaceID, conversationID, userID, "")
+	return err
+}
+
+// MarkConversationReadThrough advances only the requesting user's cursor
+// through the newest customer message that was actually rendered.
+func (s *SupportInboxService) MarkConversationReadThrough(ctx context.Context, workspaceID, conversationID, userID, throughMessageID string) (*model.SupportConversationUserState, error) {
 	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if conv == nil {
-		return fmt.Errorf("conversation not found")
+		return nil, fmt.Errorf("conversation not found")
 	}
 
-	if err := s.conversationRepo.MarkInternalRead(ctx, conversationID); err != nil {
-		return err
+	throughMessageID = strings.TrimSpace(throughMessageID)
+	if throughMessageID == "" && conv.LastCustomerMessageID != nil {
+		throughMessageID = strings.TrimSpace(*conv.LastCustomerMessageID)
 	}
+	if throughMessageID == "" {
+		throughMessageID, err = s.conversationRepo.LatestReadableCustomerMessageID(ctx, workspaceID, conversationID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	state := &model.SupportConversationUserState{WorkspaceID: workspaceID, ConversationID: conversationID, UserID: userID}
+	if throughMessageID != "" {
+		state, err = s.conversationRepo.MarkPersonalRead(ctx, workspaceID, conversationID, userID, throughMessageID)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		state, err = s.conversationRepo.ClearPersonalRead(ctx, workspaceID, conversationID, userID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if s.notificationService != nil {
-		recipients := []string{userID}
-		if conv.OpenedByUserID != nil && strings.TrimSpace(*conv.OpenedByUserID) != "" && *conv.OpenedByUserID != userID {
-			recipients = append(recipients, *conv.OpenedByUserID)
-		}
-		for _, recipientID := range recipients {
-			if err := s.notificationService.MarkEntityCategoryAsRead(ctx, recipientID, workspaceID, "support_conversation", conversationID, model.NotifCategorySupportReplies); err != nil {
-				slog.ErrorContext(ctx, "mark support reply notifications read", "error", err, "conversation_id", conversationID, "user_id", recipientID)
-			}
+		if err := s.notificationService.MarkEntityCategoryAsRead(ctx, userID, workspaceID, "support_conversation", conversationID, model.NotifCategorySupportReplies); err != nil {
+			slog.ErrorContext(ctx, "mark support reply notifications read", "error", err, "conversation_id", conversationID, "user_id", userID)
 		}
 	}
 
-	// Broadcast read event so other tabs/users can invalidate
-	reasonJSON, _ := json.Marshal(map[string]string{"reason": "read"})
+	reasonJSON, _ := json.Marshal(map[string]any{"reason": "read", "unread_count": state.EffectiveUnreadCount(), "personal_state_version": state.Version})
 	s.wsPublisher.Publish(websocket.Event{
-		Action:      "updated",
-		Entity:      "support_conversation",
-		EntityID:    conversationID,
-		WorkspaceID: workspaceID,
-		ActorID:     userID,
-		Data:        reasonJSON,
+		Action:       "updated",
+		Entity:       "support_personal_read",
+		EntityID:     conversationID,
+		WorkspaceID:  workspaceID,
+		ActorID:      userID,
+		TargetUserID: userID,
+		Data:         reasonJSON,
 	})
-	return nil
+	s.publishLegacyReadInvalidationIfNeeded(ctx, workspaceID, conversationID, userID, reasonJSON)
+	return state, nil
 }
 
 // MarkConversationReadByVisitor updates the contact read cursor and broadcasts a list refresh.
@@ -1289,28 +1305,56 @@ func (s *SupportInboxService) pushVisitorConversationsRefresh(ctx context.Contex
 	})
 }
 
-// MarkConversationUnread resets the team read cursor so the conversation appears unread.
+// MarkConversationUnread keeps the legacy call shape while setting a personal reminder.
 func (s *SupportInboxService) MarkConversationUnread(ctx context.Context, workspaceID, conversationID, userID string) error {
+	_, err := s.MarkConversationUnreadForUser(ctx, workspaceID, conversationID, userID)
+	return err
+}
+
+func (s *SupportInboxService) MarkConversationUnreadForUser(ctx context.Context, workspaceID, conversationID, userID string) (*model.SupportConversationUserState, error) {
 	conv, err := s.loadConversationAccessible(ctx, workspaceID, conversationID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if conv == nil {
-		return fmt.Errorf("conversation not found")
+		return nil, fmt.Errorf("conversation not found")
 	}
 
-	if err := s.conversationRepo.MarkUnread(ctx, conversationID); err != nil {
-		return err
+	state, err := s.conversationRepo.MarkPersonalUnread(ctx, workspaceID, conversationID, userID)
+	if err != nil {
+		return nil, err
 	}
 
+	reasonJSON, _ := json.Marshal(map[string]any{"reason": "manual_unread", "unread_count": state.EffectiveUnreadCount(), "personal_state_version": state.Version})
+	s.wsPublisher.Publish(websocket.Event{
+		Action:       "updated",
+		Entity:       "support_personal_read",
+		EntityID:     conversationID,
+		WorkspaceID:  workspaceID,
+		ActorID:      userID,
+		TargetUserID: userID,
+		Data:         reasonJSON,
+	})
+	s.publishLegacyReadInvalidationIfNeeded(ctx, workspaceID, conversationID, userID, reasonJSON)
+	return state, nil
+}
+
+func (s *SupportInboxService) publishLegacyReadInvalidationIfNeeded(ctx context.Context, workspaceID, conversationID, userID string, data json.RawMessage) {
+	v2, err := s.conversationRepo.UsesV2SupportInboxState(ctx, workspaceID)
+	if err != nil {
+		slog.ErrorContext(ctx, "load support inbox state mode for read event", "error", err, "workspace_id", workspaceID)
+	}
+	if v2 && err == nil {
+		return
+	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
 		Entity:      "support_conversation",
 		EntityID:    conversationID,
 		WorkspaceID: workspaceID,
 		ActorID:     userID,
+		Data:        data,
 	})
-	return nil
 }
 
 // UpdateConversationSubject changes the conversation subject.

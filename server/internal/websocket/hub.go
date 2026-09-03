@@ -14,17 +14,18 @@ import (
 
 // Event is the lightweight notification sent to clients.
 type Event struct {
-	EventID     string          `json:"event_id,omitempty"`
-	SentAt      time.Time       `json:"sent_at,omitempty"`
-	Action      string          `json:"action"`
-	Entity      string          `json:"entity"`
-	EntityID    string          `json:"entity_id"`
-	WorkspaceID string          `json:"workspace_id"`
-	ActorID     string          `json:"actor_id"`
-	ParentType  string          `json:"parent_type,omitempty"`
-	ParentID    string          `json:"parent_id,omitempty"`
-	TaskKey     string          `json:"task_key,omitempty"` // included for task create/update/delete events
-	Data        json.RawMessage `json:"data,omitempty"`     // hydrated payload for widget clients
+	EventID      string          `json:"event_id,omitempty"`
+	SentAt       time.Time       `json:"sent_at,omitempty"`
+	Action       string          `json:"action"`
+	Entity       string          `json:"entity"`
+	EntityID     string          `json:"entity_id"`
+	WorkspaceID  string          `json:"workspace_id"`
+	ActorID      string          `json:"actor_id"`
+	TargetUserID string          `json:"target_user_id,omitempty"`
+	ParentType   string          `json:"parent_type,omitempty"`
+	ParentID     string          `json:"parent_id,omitempty"`
+	TaskKey      string          `json:"task_key,omitempty"` // included for task create/update/delete events
+	Data         json.RawMessage `json:"data,omitempty"`     // hydrated payload for widget clients
 }
 
 // Client represents a single WebSocket connection.
@@ -347,6 +348,9 @@ func (h *Hub) Broadcast(event Event) {
 // Widget clients only receive their own conversation's events, and only
 // agent-origin typing indicators.
 func (h *Hub) shouldReceive(client *Client, event Event) bool {
+	if event.TargetUserID != "" {
+		return !client.IsWidget && client.UserID == event.TargetUserID
+	}
 	// Visitor online/offline events go to internal (agent) clients only
 	if event.Entity == "support_visitor" {
 		return !client.IsWidget

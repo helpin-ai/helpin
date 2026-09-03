@@ -2,6 +2,7 @@ import { api } from '../api';
 import type { AssignableMember } from '../types';
 import type {
   SupportConversation,
+  SupportConversationUserState,
   SupportMessage,
   SupportMessagePage,
   CreateConversationRequest,
@@ -283,10 +284,12 @@ export const supportService = {
     api.get<SupportTeammatePresenceStatus[]>(`/support/inbox/teammates/presence${qs(workspaceId)}`),
   updateMyTeammatePresence: (workspaceId: string, manualStatus: 'online' | 'away' | 'offline' | null) =>
     api.put<SupportTeammatePresenceStatus>(`/support/inbox/me/presence${qs(workspaceId)}`, { manual_status: manualStatus }),
-  markConversationRead: (workspaceId: string, conversationId: string) =>
-    api.post(`/support/inbox/conversations/${conversationId}/read${qs(workspaceId)}`, {}),
+  markConversationRead: (workspaceId: string, conversationId: string, throughMessageId?: string) =>
+    api.post<SupportConversationUserState>(`/support/inbox/conversations/${conversationId}/read${qs(workspaceId)}`, {
+      through_message_id: throughMessageId ?? '',
+    }),
   markConversationUnread: (workspaceId: string, conversationId: string) =>
-    api.post(`/support/inbox/conversations/${conversationId}/unread${qs(workspaceId)}`, {}),
+    api.post<SupportConversationUserState>(`/support/inbox/conversations/${conversationId}/unread${qs(workspaceId)}`, {}),
   moveConversation: (workspaceId: string, conversationId: string, mailboxId: string | null) =>
     api.post<SupportConversation>(`/support/inbox/conversations/${conversationId}/move${qs(workspaceId)}`, { mailbox_id: mailboxId }),
   dismissConversationTriage: (workspaceId: string, conversationId: string) =>

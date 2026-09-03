@@ -31,6 +31,7 @@ type InboxScopes = {
     icon?: string | null;
     total_count?: number;
     unread_count: number;
+    needs_human_reply_count?: number;
   }>;
 };
 
@@ -131,13 +132,13 @@ export function SupportRailNav({
       <SidebarGroup className="p-0 pb-3">
         <SidebarMenu>
           {supportFilterItems.map((item) => {
-            const unread =
+            const attention =
               item.key === 'inbox'
-                ? inboxUnreadStats?.inbox
+                ? inboxUnreadStats?.inbox_needs_human_reply
                 : item.key === 'mine'
-                  ? (globalUnreadStats ?? unreadStats)?.mine
+                  ? (globalUnreadStats ?? unreadStats)?.mine_needs_human_reply
                   : item.key === 'waiting'
-                    ? (globalUnreadStats ?? unreadStats)?.waiting
+                    ? (globalUnreadStats ?? unreadStats)?.waiting_needs_human_reply
                     : undefined;
             const total =
               item.key === 'inbox'
@@ -158,7 +159,7 @@ export function SupportRailNav({
                   <item.icon className="h-4 w-4" />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate">{item.label}</span>
-                    {renderUnreadDot(unread)}
+                    {renderUnreadDot(attention)}
                   </span>
                   {renderCounts(total)}
                 </SidebarMenuButton>
@@ -174,10 +175,6 @@ export function SupportRailNav({
         </SidebarGroupLabel>
         <SidebarMenu>
           {supportAiItems.map((item) => {
-            const unread =
-              item.key === 'ai_active'
-                ? aiStats?.ai_active
-                : undefined;
             const total =
               item.key === 'ai_active'
                 ? aiStats?.ai_active_total
@@ -193,7 +190,6 @@ export function SupportRailNav({
                   <item.icon className="h-4 w-4" />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate">{item.label}</span>
-                    {renderUnreadDot(unread)}
                   </span>
                   {renderCounts(total)}
                 </SidebarMenuButton>
@@ -250,7 +246,7 @@ export function SupportRailNav({
                   />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate">{mailbox.name}</span>
-                    {renderUnreadDot(mailbox.unread_count)}
+                    {renderUnreadDot(mailbox.needs_human_reply_count)}
                   </span>
                   <span className={trailingSlotClassName}>
                     {renderCounts(
@@ -268,7 +264,7 @@ export function SupportRailNav({
                             className={`${trailingMenuButtonClassName} ${
                               isMenuOpen
                                 ? 'opacity-100'
-                                : mailbox.unread_count > 0
+                                : (mailbox.needs_human_reply_count ?? 0) > 0
                                   ? 'opacity-0 group-hover/mailbox:opacity-100'
                                   : 'opacity-0 group-hover/mailbox:opacity-100'
                             }`}
