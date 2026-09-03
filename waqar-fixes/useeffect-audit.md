@@ -26,6 +26,21 @@ Lint baseline (`cd frontend && npx eslint src`), for tracking progress:
 | `react-hooks/exhaustive-deps` | 68 |
 | `eslint-disable … react-hooks/*` comments | 15 |
 
+## Status (2026-09-03)
+
+Done on branch `fix/useeffect-audit-phase1`:
+
+- **Phase 1 shared hooks**: `useWorkspaceTeams` now selects from the workspace settings query; `useAssignableWorkspaceMembers` wraps the existing `useAssignableMembers` query; legacy `hooks/useWorkspaceMembers.ts` deleted. `useDebounce` added.
+- **Bug fix**: `CreateDocumentDialog` no longer loses the typed title or the picked collection on refetch. Regression tests added.
+- **Mechanical rewrites landed**: `use-mobile.ts` (`useSyncExternalStore`), `pageContext.tsx` (prune moved into `unregister`), `Sidebar.tsx` setup-journey override, the two TOTP QR-code effects in `SecuritySettings` / `MFARequiredGate` (now `useQuery` with `gcTime: 0`), and memoisation in widget-core `ConversationView`.
+
+What the rewrite pass taught us, which the tables below do not reflect:
+
+- Most items labelled **Derived state** are really "auto-selected value with user override" patterns: the state is also written by a handler, so a plain `useMemo` changes stickiness. They need the *override-with-reset-key* pattern (see `Sidebar.tsx`), not a mechanical swap. Treat them as Medium, per-file work.
+- The **ref mirror** items (`CommentThread`, `TaskDetailPanel`, `TaskListView`) feed unmount cleanups or memoised callbacks. The React Compiler lint forbids writing refs during render, so those effects are the correct pattern and should be removed from the backlog.
+- The `Epics.tsx` collapsed-group prune and the `ContactsTable` optimistic-patch prune look like derived state but are not: dropping the prune changes what happens when a row or group disappears and later reappears. Leave them.
+- The **refetch-on-param** items are mostly contingent on the surrounding fetch first becoming a `useQuery`; the `AutomationActivity` DOM listener no longer exists on `develop`.
+
 ## The patterns, by frequency
 
 | # | Anti-pattern | Count | Replace with |
