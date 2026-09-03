@@ -145,6 +145,7 @@ export function repositorySelectorForToolCall(toolCall: CodingSessionLiveToolCal
 export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallPresentation {
   const toolName = canonicalToolName(toolCall.tool_name).toLowerCase();
   const parsed = parseArgs(toolCall.args_text);
+  const result = parseJSONRecord(toolCall.result?.content) ?? parseJSONRecord(toolCall.result?.output_summary);
   const path = asString(parsed?.path) ?? asString(parsed?.file_path);
   const startLine = asNumber(parsed?.start_line);
   const endLine = asNumber(parsed?.end_line);
@@ -159,6 +160,9 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
       ? parsed.files.map((value) => asString(asRecord(value)?.path)).filter((value): value is string => Boolean(value))
       : [];
   const readFilesResult = toolName === 'read_files' ? readFilesResultForToolCall(toolCall) : null;
+  const documentID = asString(parsed?.document_id) ?? asString(result?.document_id) ?? asString(result?.id);
+  const documentTitle = asString(parsed?.title) ?? asString(result?.title);
+  const documentLabel = documentTitle ? quoted(documentTitle) : documentID;
 
   const repositoryLabel = repositorySelectorForToolCall(toolCall);
   const withRepository = (presentation: ToolCallPresentation): ToolCallPresentation => (
@@ -172,6 +176,54 @@ export function describeToolCall(toolCall: CodingSessionLiveToolCall): ToolCallP
   );
 
   const secondaryLabel = titleCaseToolName(displayToolName(toolCall.tool_name));
+
+  if (toolName === 'create_document' && documentTitle) {
+    return { primaryLabel: `Create document ${quoted(documentTitle)}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'read_document' && documentLabel) {
+    return { primaryLabel: `Read document ${documentLabel}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'get_document_blocks' && documentLabel) {
+    return { primaryLabel: `Read blocks in ${documentLabel}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'write_document_content' && documentLabel) {
+    return { primaryLabel: `Update document ${documentLabel}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'update_document_metadata' && documentLabel) {
+    return { primaryLabel: `Update details for ${documentLabel}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'update_document_block' && documentLabel) {
+    return { primaryLabel: `Update a block in ${documentLabel}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'insert_document_block' && documentLabel) {
+    return { primaryLabel: `Add a block to ${documentLabel}`, secondaryLabel, chips: [] };
+  }
+
+  if ((toolName === 'insert_document_artifact' || toolName === 'insert_document_image') && documentLabel) {
+    return {
+      primaryLabel: `Add ${toolName === 'insert_document_image' ? 'an image' : 'an artifact'} to ${documentLabel}`,
+      secondaryLabel,
+      chips: [],
+    };
+  }
+
+  if (toolName === 'move_document' && documentLabel) {
+    return { primaryLabel: `Move document ${documentLabel}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'link_document_to_object' && documentLabel) {
+    return { primaryLabel: `Link document ${documentLabel}`, secondaryLabel, chips: [] };
+  }
+
+  if (toolName === 'search_documents' && pattern) {
+    return { primaryLabel: `Search documents for ${quoted(pattern)}`, secondaryLabel, chips: [] };
+  }
 
   if (toolName === 'read_file_range' && path) {
     const primaryLabel = `Read ${path}${range ? `:${range}` : ''}`;

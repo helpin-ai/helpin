@@ -169,6 +169,45 @@ describe('describeToolCall', () => {
     });
   });
 
+  it('names the document being created, read, or updated', () => {
+    const create = describeToolCall(buildToolCall({
+      tool_name: 'create_document',
+      args_text: JSON.stringify({ space_id: 'space-1', title: 'Incident review' }),
+    }));
+    const read = describeToolCall(buildToolCall({
+      tool_name: 'read_document',
+      args_text: JSON.stringify({ document_id: 'doc-1' }),
+      result: { content: JSON.stringify({ document_id: 'doc-1', title: 'API guide' }) },
+    }));
+    const update = describeToolCall(buildToolCall({
+      tool_name: 'write_document_content',
+      args_text: JSON.stringify({ document_id: 'doc-42', content: '# Draft' }),
+    }));
+
+    expect(create.primaryLabel).toBe('Create document "Incident review"');
+    expect(read.primaryLabel).toBe('Read document "API guide"');
+    expect(update.primaryLabel).toBe('Update document doc-42');
+  });
+
+  it('describes document searches and focused mutations', () => {
+    const search = describeToolCall(buildToolCall({
+      tool_name: 'search_documents',
+      args_text: JSON.stringify({ query: 'retention policy' }),
+    }));
+    const metadata = describeToolCall(buildToolCall({
+      tool_name: 'update_document_metadata',
+      args_text: JSON.stringify({ document_id: 'doc-2', title: 'Security policy' }),
+    }));
+    const block = describeToolCall(buildToolCall({
+      tool_name: 'insert_document_block',
+      args_text: JSON.stringify({ document_id: 'doc-3', content: { type: 'paragraph' } }),
+    }));
+
+    expect(search.primaryLabel).toBe('Search documents for "retention policy"');
+    expect(metadata.primaryLabel).toBe('Update details for "Security policy"');
+    expect(block.primaryLabel).toBe('Add a block to doc-3');
+  });
+
   describe('web search tools', () => {
     it('formats canonical web_search modes and filters', () => {
       const presentation = describeToolCall(buildToolCall({
