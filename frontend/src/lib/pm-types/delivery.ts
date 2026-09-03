@@ -118,9 +118,6 @@ export interface TaskDeliveryTarget {
   updated_at: string;
 }
 
-/** @deprecated Use TaskDeliveryTarget instead */
-export type StoryDeliveryTarget = TaskDeliveryTarget;
-
 export interface EpicDeliveryTarget {
   id: string;
   workspace_id: string;
@@ -161,9 +158,6 @@ export interface TaskGitLink {
   created_at: string;
   updated_at: string;
 }
-
-/** @deprecated Use TaskGitLink instead */
-export type StoryGitLink = TaskGitLink;
 
 export interface CreateGitIntegrationRequest {
   provider: string;
@@ -228,6 +222,3 @@ export interface UpdateEpicDeliveryTargetRequest {
   base_branch?: string;
   epic_branch?: string;
 }
-
-/** @deprecated Use UpdateTaskDeliveryTargetRequest instead */
-export type UpdateStoryDeliveryTargetRequest = UpdateTaskDeliveryTargetRequest;

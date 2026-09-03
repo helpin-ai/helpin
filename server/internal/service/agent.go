@@ -4441,7 +4441,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 	}
 
 	switch targetType {
-	case "task", "story":
+	case "task":
 		task, err := s.taskRepo.GetRawByID(ctx, targetID)
 		if err != nil {
 			return nil, fmt.Errorf("get task: %w", err)
@@ -5205,14 +5205,13 @@ func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorI
 	if err != nil {
 		return nil, err
 	}
-	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && (run.TargetType == "task" || run.TargetType == "story") && run.TaskID != nil {
+	if req.Intent == model.AgentRunResumeIntentApprove && s.ruleEngine != nil && run.TargetType == "task" && run.TaskID != nil {
 		task, taskErr := s.taskRepo.GetRawByID(ctx, *run.TaskID)
 		if taskErr == nil && task != nil {
 			s.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
 				WorkspaceID: run.WorkspaceID,
 				TriggerType: model.TriggerAgentRunApproved,
 				TaskID:      task.ID,
-				StoryID:     task.ID, // backward-compat alias
 				StateID:     task.WorkflowStateID,
 				AgentID:     run.AgentID,
 				RunID:       run.ID,
@@ -7227,7 +7226,7 @@ func (s *AgentService) enrichMCPRunAttributions(ctx context.Context, workspaceID
 
 func normalizeRunTargetType(targetType string) string {
 	switch strings.TrimSpace(targetType) {
-	case "task", "pm_task", "story":
+	case "task", "pm_task":
 		return "task"
 	case "doc":
 		return "document"

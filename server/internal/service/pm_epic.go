@@ -841,7 +841,7 @@ func nullableStringsEqual(left, right *string) bool {
 
 func stringPtr(value string) *string { return &value }
 
-// computeEpicSuggestedHealth calculates health based on story progress vs the planned schedule.
+// computeEpicSuggestedHealth calculates health based on task progress vs the planned schedule.
 func computeEpicSuggestedHealth(epic *model.EpicWithStats) string {
 	return computeEpicSuggestedHealthAt(epic, time.Now())
 }

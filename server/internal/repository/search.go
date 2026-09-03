@@ -76,7 +76,7 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 
 	pattern := "%" + normalizedQuery + "%"
 	var (
-		stories    []model.SearchResult
+		tasks      []model.SearchResult
 		epics      []model.SearchResult
 		sprints    []model.SearchResult
 		objectives []model.SearchResult
@@ -125,7 +125,7 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, pattern, pattern, limit).
 			Scan(&textResults).Error; err != nil {
-			setErr(fmt.Errorf("search stories: %w", err))
+			setErr(fmt.Errorf("search tasks: %w", err))
 			return
 		}
 
@@ -138,9 +138,9 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 					deduped = append(deduped, r)
 				}
 			}
-			stories = append(exactMatch, deduped...)
+			tasks = append(exactMatch, deduped...)
 		} else {
-			stories = textResults
+			tasks = textResults
 		}
 	}()
 
@@ -226,8 +226,8 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 		return nil, firstErr
 	}
 
-	if stories == nil {
-		stories = []model.SearchResult{}
+	if tasks == nil {
+		tasks = []model.SearchResult{}
 	}
 	if epics == nil {
 		epics = []model.SearchResult{}
@@ -246,7 +246,7 @@ func (r *SearchRepository) SearchLimit(ctx context.Context, workspaceID, query s
 	}
 
 	return &model.SearchResponse{
-		Tasks:      stories,
+		Tasks:      tasks,
 		Epics:      epics,
 		Sprints:    sprints,
 		Objectives: objectives,

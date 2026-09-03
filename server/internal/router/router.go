@@ -854,7 +854,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/tickets/{id}/status", h.SupportInbox.UpdateConversationStatus)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/tickets/{id}/messages", h.SupportInbox.ListConversationMessages)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/messages", h.SupportInbox.CreateConversationMessage)
-				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/link-task", h.SupportInbox.LinkConversationStory)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/link-task", h.SupportInbox.LinkConversationTask)
 				r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/tickets/{id}/create-task", h.SupportInbox.CreateTaskFromConversation)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/tickets/{id}/assign-user", h.SupportInbox.AssignConversationUser)
@@ -924,7 +924,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/rewrite-draft", h.SupportAI.RewriteSupportDraft)
 				}
-				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-task", h.SupportInbox.LinkConversationStory)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-task", h.SupportInbox.LinkConversationTask)
 				r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/create-task", h.SupportInbox.CreateTaskFromConversation)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-user", h.SupportInbox.AssignConversationUser)
@@ -1111,7 +1111,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}/followers", h.PMTask.RemoveFollower)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/labels", h.PMTask.AddLabel)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}/labels/{labelId}", h.PMTask.RemoveLabel)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{taskId}/recurring-template", h.PMRecurringTemplate.GetByStory)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{taskId}/recurring-template", h.PMRecurringTemplate.GetByTask)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/associations", h.Associations.ListTaskAssociations)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/relationships", h.Associations.CreateTaskRelationship)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/task-relationships/{id}", h.Associations.DeleteTaskRelationship)

@@ -328,7 +328,7 @@ func TestBuildRuntimeSystemPromptWithStagedForgeSkillsKeepsPresetPreamble(t *tes
 	agent := &model.Agent{
 		Name:                      "Forge",
 		PresetKey:                 model.AgentPresetCodeBuilder,
-		ResolvedSkillInstructions: "Implement the requested story directly in the repository.\nDo not push the branch.",
+		ResolvedSkillInstructions: "Implement the requested task directly in the repository.\nDo not push the branch.",
 	}
 
 	prompt := BuildRuntimeSystemPrompt(
@@ -346,7 +346,7 @@ func TestBuildRuntimeSystemPromptWithStagedForgeSkillsKeepsPresetPreamble(t *tes
 	if !strings.Contains(prompt, "You are Forge, the workspace code builder.") {
 		t.Fatalf("expected staged Forge prompt to keep preset preamble\n%s", prompt)
 	}
-	if strings.Contains(prompt, "Implement the requested story directly in the repository.") {
+	if strings.Contains(prompt, "Implement the requested task directly in the repository.") {
 		t.Fatalf("expected staged Forge prompt to omit inline skill body\n%s", prompt)
 	}
 	if strings.Contains(prompt, "## Current Task") {
@@ -434,7 +434,7 @@ func TestBuildRuntimeSystemPromptWithoutStagedSkillsStillInlinesResolvedSkillTex
 	agent := &model.Agent{
 		Name:                      "Forge",
 		PresetKey:                 model.AgentPresetCodeBuilder,
-		ResolvedSkillInstructions: "Implement the requested story directly in the repository.\nDo not push the branch.",
+		ResolvedSkillInstructions: "Implement the requested task directly in the repository.\nDo not push the branch.",
 	}
 
 	prompt := BuildRuntimeSystemPrompt(
@@ -452,7 +452,7 @@ func TestBuildRuntimeSystemPromptWithoutStagedSkillsStillInlinesResolvedSkillTex
 	if !strings.Contains(prompt, "You are Forge, the workspace code builder.") {
 		t.Fatalf("expected unstaged Forge prompt to keep preset prompt\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "Implement the requested story directly in the repository.") {
+	if !strings.Contains(prompt, "Implement the requested task directly in the repository.") {
 		t.Fatalf("expected unstaged Forge prompt to inline skill body\n%s", prompt)
 	}
 	if strings.Contains(prompt, "## Current Task") {
@@ -482,7 +482,7 @@ func TestBuildSystemPromptNonEpicPreservesAgentSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestBuildSystemPromptStoryIncludesSearchFirstAndGuardedEditGuidance(t *testing.T) {
+func TestBuildSystemPromptTaskIncludesSearchFirstAndGuardedEditGuidance(t *testing.T) {
 	systemPrompt := "You are a careful engineer."
 
 	prompt := BuildSystemPrompt(

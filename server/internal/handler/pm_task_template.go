@@ -28,7 +28,7 @@ func NewPMTaskTemplateHandler(templateService *service.PMTaskTemplateService) *P
 	return &PMTaskTemplateHandler{templateService: templateService}
 }
 
-// List handles GET /api/pm/story-templates.
+// List handles GET /api/pm/task-templates.
 func (h *PMTaskTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
@@ -56,7 +56,7 @@ func (h *PMTaskTemplateHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, templates)
 }
 
-// Get handles GET /api/pm/story-templates/{id}.
+// Get handles GET /api/pm/task-templates/{id}.
 func (h *PMTaskTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tmpl, err := h.templateService.GetByID(r.Context(), id)
@@ -67,7 +67,7 @@ func (h *PMTaskTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tmpl)
 }
 
-// Create handles POST /api/pm/story-templates.
+// Create handles POST /api/pm/task-templates.
 func (h *PMTaskTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateTaskTemplateRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -85,7 +85,7 @@ func (h *PMTaskTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, tmpl)
 }
 
-// Update handles PUT /api/pm/story-templates/{id}.
+// Update handles PUT /api/pm/task-templates/{id}.
 func (h *PMTaskTemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var req model.UpdateTaskTemplateRequest
@@ -101,7 +101,7 @@ func (h *PMTaskTemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tmpl)
 }
 
-// Delete handles DELETE /api/pm/story-templates/{id}.
+// Delete handles DELETE /api/pm/task-templates/{id}.
 func (h *PMTaskTemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := h.templateService.Delete(r.Context(), id); err != nil {

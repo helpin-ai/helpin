@@ -214,7 +214,7 @@ These are accepted during decode for backward compatibility only. Do not use the
   - structured JSON object
   - stringified JSON
 
-Legacy story-era aliases should not be added to prompts. If one still exists in decoder code, treat it as temporary compatibility, not as part of the model-facing contract.
+Story-era planner aliases are not accepted. Prompts, decoders, persisted payloads, and tool dispatch must use the canonical task contract.
 
 No other planner payload aliases should be added casually.
 

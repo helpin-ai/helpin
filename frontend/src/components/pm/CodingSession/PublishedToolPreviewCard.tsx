@@ -48,11 +48,7 @@ function jsonSummaryLines(content: unknown): string[] {
   const summary = typeof record.summary === 'string' ? compactLine(record.summary) : '';
   if (summary) lines.push(summary);
 
-  const proposedTasks = Array.isArray(record.proposed_tasks)
-    ? record.proposed_tasks
-    : Array.isArray(record.proposed_stories)
-      ? record.proposed_stories
-      : [];
+  const proposedTasks = Array.isArray(record.proposed_tasks) ? record.proposed_tasks : [];
   if (proposedTasks.length > 0) lines.push(`${proposedTasks.length} proposed tasks`);
 
   const risks = Array.isArray(record.risks) ? record.risks.length : 0;

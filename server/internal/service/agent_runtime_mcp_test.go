@@ -93,7 +93,6 @@ func TestProviderCatalogValidationRejectsInvalidModelContracts(t *testing.T) {
 	tests := map[string]*commandtools.RuntimeToolMetadata{
 		"missing schema": {CommandName: "test.invalid_tool", Alias: "invalid_tool"},
 		"invalid schema": {CommandName: "test.invalid_tool", Alias: "invalid_tool", InputSchema: map[string]any{"type": "object", "invalid": make(chan int)}},
-		"legacy alias":   {CommandName: "test.invalid_tool", Alias: "add_story_comment", InputSchema: map[string]any{"type": "object"}},
 		"prefixed alias": {CommandName: "test.invalid_tool", Alias: "mcp__helpin__invalid_tool", InputSchema: map[string]any{"type": "object"}},
 	}
 	for name, metadata := range tests {

@@ -162,12 +162,12 @@ export function SprintPlanningWorkspace({
   // Hide the task being dragged OR just dropped from the backlog list.
   // The ref bridges the gap: when activeTask clears but workspace data
   // hasn't updated yet, droppedTaskIdRef still filters the card out.
-  const hideStoryId = activeTask?.id ?? droppedTaskIdRef.current;
+  const hideTaskID = activeTask?.id ?? droppedTaskIdRef.current;
   const visibleBacklogTasks = useMemo(() => {
     const raw = backlogTasks;
-    if (!hideStoryId) return raw;
-    return raw.filter((s) => s.id !== hideStoryId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- hideStoryId uses ref, recompute when backlog changes
+    if (!hideTaskID) return raw;
+    return raw.filter((s) => s.id !== hideTaskID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hideTaskID uses ref, recompute when backlog changes
   }, [backlogTasks, activeTask]);
 
   // Stable ordered list of sprint cards — avoids recreating during drag

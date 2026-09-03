@@ -33,7 +33,7 @@ describe('runPreviews', () => {
     const parsed = parseArtifactPublishedPreview({
       artifact_type: 'run_preview',
       inline_content: JSON.stringify({
-        panel_key: 'story_plan',
+        panel_key: 'task_plan',
         title: 'Task Plan',
         format: 'json',
         content: {
@@ -53,7 +53,7 @@ describe('runPreviews', () => {
 
   it('parses live publish_preview tool input payloads', () => {
     const parsed = parsePublishedPreviewRawInput(JSON.stringify({
-      panel_key: 'story_plan',
+      panel_key: 'task_plan',
       title: 'Task Plan',
       format: 'json',
       content: {
@@ -68,7 +68,7 @@ describe('runPreviews', () => {
 
   it('parses json preview content when the payload content is itself a json string', () => {
     const parsed = parsePublishedPreviewRawInput(JSON.stringify({
-      panel_key: 'story_plan',
+      panel_key: 'task_plan',
       title: 'Task Plan',
       format: 'json',
       content: JSON.stringify({
@@ -88,9 +88,9 @@ describe('runPreviews', () => {
       content: 'Review the proposed tasks.',
       tool_invocations: [
         {
-          tool_name: 'publish_story_plan',
+          tool_name: 'publish_task_plan',
           input: {
-            panel_key: 'story_plan',
+            panel_key: 'task_plan',
             title: 'Task Plan',
             format: 'json',
             content: {

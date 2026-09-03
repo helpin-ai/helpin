@@ -22,8 +22,8 @@ func NewPMExternalLinkHandler(service *service.PMExternalLinkService) *PMExterna
 
 // List handles GET /api/pm/tasks/{id}/links
 func (h *PMExternalLinkHandler) List(w http.ResponseWriter, r *http.Request) {
-	storyID := chi.URLParam(r, "id")
-	links, err := h.service.List(r.Context(), storyID)
+	taskID := chi.URLParam(r, "id")
+	links, err := h.service.List(r.Context(), taskID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -36,7 +36,7 @@ func (h *PMExternalLinkHandler) List(w http.ResponseWriter, r *http.Request) {
 
 // Create handles POST /api/pm/tasks/{id}/links
 func (h *PMExternalLinkHandler) Create(w http.ResponseWriter, r *http.Request) {
-	storyID := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())
 	workspaceID := middleware.GetWorkspaceID(r.Context())
 	var req model.CreateExternalLinkRequest
@@ -44,7 +44,7 @@ func (h *PMExternalLinkHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	link, err := h.service.Create(r.Context(), storyID, req, userID, workspaceID)
+	link, err := h.service.Create(r.Context(), taskID, req, userID, workspaceID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

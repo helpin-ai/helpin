@@ -1961,18 +1961,18 @@ func (r *SupportConversationRepository) ListTitlesByIDs(ctx context.Context, wor
 	return conversations, nil
 }
 
-// ListByLinkedStoryIDs returns conversations linked to any of the provided tasks.
-func (r *SupportConversationRepository) ListByLinkedStoryIDs(ctx context.Context, workspaceID string, storyIDs []string) ([]model.SupportConversation, error) {
-	if len(storyIDs) == 0 {
+// ListByLinkedTaskIDs returns conversations linked to any of the provided tasks.
+func (r *SupportConversationRepository) ListByLinkedTaskIDs(ctx context.Context, workspaceID string, taskIDs []string) ([]model.SupportConversation, error) {
+	if len(taskIDs) == 0 {
 		return []model.SupportConversation{}, nil
 	}
 
 	var conversations []model.SupportConversation
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND linked_task_id IN ?", workspaceID, storyIDs).
+		Where("workspace_id = ? AND linked_task_id IN ?", workspaceID, taskIDs).
 		Order("updated_at DESC").
 		Find(&conversations).Error; err != nil {
-		return nil, fmt.Errorf("list conversations by linked stories: %w", err)
+		return nil, fmt.Errorf("list conversations by linked tasks: %w", err)
 	}
 	return conversations, nil
 }

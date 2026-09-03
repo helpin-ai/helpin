@@ -57,7 +57,6 @@ export interface SupportConversation {
   opened_by_user_id?: string;
   assigned_user_id?: string;
   assigned_agent_id?: string;
-  linked_story_id?: string;
   linked_task_id?: string;
   source: TicketSource;
   crm_contact_id?: string;
@@ -991,11 +990,6 @@ export interface CreateConversationWithMessageRequest {
 export interface CreateConversationWithMessageResponse {
   conversation: SupportConversation;
   message: SupportMessage;
-}
-
-/** @deprecated Use LinkTaskRequest instead */
-export interface LinkStoryRequest {
-  story_id: string;
 }
 
 export interface LinkTaskRequest {

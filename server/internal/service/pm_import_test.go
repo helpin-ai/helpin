@@ -144,13 +144,13 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 		t.Fatalf("expected 4 owner links created, got %d", result.OwnerLinksCreated)
 	}
 	if result.LabelLinksCreated != 5 {
-		t.Fatalf("expected 5 story label links created, got %d", result.LabelLinksCreated)
+		t.Fatalf("expected 5 task label links created, got %d", result.LabelLinksCreated)
 	}
 	if result.ChecklistItemsCreated != 4 {
 		t.Fatalf("expected 4 checklist items created, got %d", result.ChecklistItemsCreated)
 	}
 	assertWarningContains(t, result.Warnings, "1 imported sprints had null dates because iteration names could not be parsed")
-	assertWarningContains(t, result.Warnings, "1 stories had unmapped requester emails")
+	assertWarningContains(t, result.Warnings, "1 tasks had unmapped requester emails")
 	assertWarningContains(t, result.Warnings, "Owner email 'missing.owner@example.com' not mapped")
 
 	assertImportState(t, db, workspaceID)
@@ -351,67 +351,6 @@ func TestPMImportServiceShortcutAPIEndToEndAndIdempotency(t *testing.T) {
 		if task.SprintID == nil {
 			t.Fatalf("expected rerun to repair sprint assignment for task %s", task.ID)
 		}
-	}
-}
-
-func TestPMImportServiceShortcutAPIRepairsLegacyExternalLinksStoryIDColumn(t *testing.T) {
-	db := newImportTestDB(t)
-	if err := db.Exec(`DROP TABLE pm_external_links`).Error; err != nil {
-		t.Fatalf("drop external links table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE pm_external_links (
-		id TEXT PRIMARY KEY,
-		task_id TEXT,
-		story_id TEXT NOT NULL,
-		title TEXT NOT NULL,
-		url TEXT NOT NULL,
-		created_by_id TEXT NOT NULL,
-		created_at DATETIME,
-		updated_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create legacy external links table: %v", err)
-	}
-
-	svc, workspaceID, adminID := newImportTestService(t, db)
-	handler := newShortcutAPITestHandler(t)
-
-	prevBaseURL := shortcutAPIBaseURL
-	prevHTTPClientFactory := shortcutHTTPClientFactory
-	shortcutAPIBaseURL = "https://shortcut.test"
-	shortcutHTTPClientFactory = func() *http.Client {
-		return &http.Client{Transport: handlerRoundTripper{handler: handler}}
-	}
-	t.Cleanup(func() {
-		shortcutAPIBaseURL = prevBaseURL
-		shortcutHTTPClientFactory = prevHTTPClientFactory
-	})
-
-	req := model.ShortcutAPIImportExecuteRequest{
-		APIToken: "test-token",
-		UserMappings: map[string]string{
-			"owner.one@example.com": "user-owner-one",
-			"owner.two@example.com": "user-owner-two",
-		},
-		WorkflowStateMappings: shortcutAPIImportWorkflowMappings(),
-		Options:               model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true},
-	}
-	result, _, err := svc.executeShortcutAPIImport(context.Background(), workspaceID, adminID, req, "")
-	if err != nil {
-		t.Fatalf("execute Shortcut API import with legacy external links schema: %v", err)
-	}
-	if result.ExternalLinksCreated != 4 {
-		t.Fatalf("expected 4 external links created, got %d", result.ExternalLinksCreated)
-	}
-	if db.Migrator().HasColumn("pm_external_links", "story_id") {
-		t.Fatal("expected legacy story_id column to be removed from pm_external_links")
-	}
-
-	var count int64
-	if err := db.Model(&model.PMExternalLink{}).Count(&count).Error; err != nil {
-		t.Fatalf("count external links: %v", err)
-	}
-	if count != 4 {
-		t.Fatalf("expected 4 stored external links, got %d", count)
 	}
 }
 
@@ -628,80 +567,6 @@ func shortcutAPIImportWorkflowMappings() []model.ShortcutWorkflowStateMappingPay
 				{ShortcutState: "Done", NewStateName: "Done", StateType: model.PMStateTypeDone, Position: 1},
 			},
 		},
-	}
-}
-
-func TestPMImportServiceExecuteShortcutRepairsLegacyChecklistStoryIDColumn(t *testing.T) {
-	db := newImportTestDB(t)
-	if err := db.Exec(`DROP TABLE pm_checklist_items`).Error; err != nil {
-		t.Fatalf("drop checklist table: %v", err)
-	}
-	if err := db.Exec(`CREATE TABLE pm_checklist_items (
-		id TEXT PRIMARY KEY,
-		task_id TEXT,
-		story_id TEXT NOT NULL,
-		text TEXT NOT NULL,
-		completed BOOLEAN NOT NULL DEFAULT 0,
-		position INTEGER NOT NULL DEFAULT 0,
-		assignee_id TEXT,
-		due_date DATE,
-		created_at DATETIME,
-		updated_at DATETIME
-	)`).Error; err != nil {
-		t.Fatalf("create legacy checklist table: %v", err)
-	}
-
-	svc, workspaceID, _ := newImportTestService(t, db)
-	req := model.ShortcutImportExecuteRequest{
-		UserMappings: map[string]string{
-			"owner.one@example.com": "user-owner-one",
-			"owner.two@example.com": "user-owner-two",
-		},
-		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
-			{
-				ShortcutWorkflowName: "Product Development",
-				Mode:                 "create_new",
-				NewWorkflowName:      "Imported Product Development",
-				States: []struct {
-					ShortcutState   string `json:"shortcut_state"`
-					NewStateName    string `json:"new_state_name,omitempty"`
-					StateType       string `json:"state_type,omitempty"`
-					Position        int    `json:"position,omitempty"`
-					ExistingStateID string `json:"existing_state_id,omitempty"`
-				}{
-					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
-					{ShortcutState: "Completed", NewStateName: "Completed", StateType: model.PMStateTypeDone, Position: 1},
-				},
-			},
-		},
-		Options: model.ShortcutImportOptions{
-			ImportArchived:  true,
-			ImportCompleted: true,
-		},
-	}
-
-	result, _, err := svc.executeShortcutImport(context.Background(), workspaceID, "user-admin", []byte(shortcutImportTestCSV()), req, "", "")
-	if err != nil {
-		t.Fatalf("execute shortcut import with legacy checklist schema: %v", err)
-	}
-	if result.ChecklistItemsCreated != 4 {
-		t.Fatalf("expected 4 checklist items created, got %d", result.ChecklistItemsCreated)
-	}
-	if db.Migrator().HasColumn("pm_checklist_items", "story_id") {
-		t.Fatal("expected legacy story_id column to be removed from pm_checklist_items")
-	}
-
-	var checklistItems []model.PMChecklistItem
-	if err := db.Order("position ASC, created_at ASC").Find(&checklistItems).Error; err != nil {
-		t.Fatalf("load checklist items: %v", err)
-	}
-	if len(checklistItems) != 4 {
-		t.Fatalf("expected 4 stored checklist items, got %d", len(checklistItems))
-	}
-	for _, item := range checklistItems {
-		if strings.TrimSpace(item.TaskID) == "" {
-			t.Fatalf("expected checklist item %+v to have task_id set", item)
-		}
 	}
 }
 

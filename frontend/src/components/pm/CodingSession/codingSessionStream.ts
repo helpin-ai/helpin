@@ -710,7 +710,7 @@ function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
   }
 }
 
-const TASK_PLAN_DOC_PUBLISH_TOOLS = new Set(['publish_task_plan_doc', 'publish_story_plan_doc']);
+const TASK_PLAN_DOC_PUBLISH_TOOLS = new Set(['publish_task_plan_doc']);
 const APPROVAL_TOOLS = new Set(['request_approval', 'request_review_checkpoint', 'request_human_approval']);
 
 function settleResolvedInteractionToolCalls(
@@ -795,7 +795,6 @@ function isTaskPlanDocumentStep(stepText: string) {
     stepText.includes('planning document')
     || stepText.includes('task plan doc')
     || stepText.includes('task planning doc')
-    || stepText.includes('story plan doc')
     || stepText.includes('plan document')
   );
 }

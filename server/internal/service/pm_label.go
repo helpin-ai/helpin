@@ -34,7 +34,7 @@ func (s *PMLabelService) ListByWorkspace(ctx context.Context, workspaceID string
 	})
 }
 
-// ListWithStats returns labels with story/epic completion stats.
+// ListWithStats returns labels with task/epic completion stats.
 func (s *PMLabelService) ListWithStats(ctx context.Context, workspaceID string, teamID *string, includeShared bool, archived *bool) ([]model.LabelWithStats, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")

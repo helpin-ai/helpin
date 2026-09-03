@@ -106,7 +106,6 @@ export function targetLabel(run: AgentRun): string {
 function targetTypeLabel(type: string | undefined): string {
   switch (type) {
     case 'task':
-    case 'story':
       return 'Task';
     case 'epic':
       return 'Epic';

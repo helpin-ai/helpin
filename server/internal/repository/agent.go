@@ -738,10 +738,10 @@ func (r *AgentRunRepository) ListSettledDockRunsForActor(ctx context.Context, wo
 }
 
 // ListByTask returns runs for a task.
-func (r *AgentRunRepository) ListByTask(ctx context.Context, workspaceID, storyID string) ([]model.AgentRun, error) {
+func (r *AgentRunRepository) ListByTask(ctx context.Context, workspaceID, taskID string) ([]model.AgentRun, error) {
 	var runs []model.AgentRun
-	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).Order("created_at DESC").Find(&runs).Error; err != nil {
-		return nil, fmt.Errorf("list story agent runs: %w", err)
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, taskID).Order("created_at DESC").Find(&runs).Error; err != nil {
+		return nil, fmt.Errorf("list task agent runs: %w", err)
 	}
 	return runs, nil
 }

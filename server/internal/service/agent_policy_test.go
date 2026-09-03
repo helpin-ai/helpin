@@ -66,7 +66,7 @@ func TestValidateAgentTargetEnforcesPresetTargetMapping(t *testing.T) {
 		{
 			name:      "unknown preset is not runnable",
 			agent:     model.Agent{IsSystem: true, PresetKey: "unknown"},
-			target:    "story",
+			target:    "task",
 			shouldErr: true,
 		},
 	}
@@ -1082,7 +1082,7 @@ func TestValidateRuntimeForAgentAllowsCustomCodexPolicy(t *testing.T) {
 		Provider:              &openAI,
 		AllowedTools:          mustJSONStringSlice([]string{"read_file"}),
 		AllowedCommands:       mustJSONStringSlice([]string{"go"}),
-		AllowedTargets:        mustJSONStringSlice([]string{"story"}),
+		AllowedTargets:        mustJSONStringSlice([]string{"task"}),
 		ApprovalMode:          "never",
 		DefaultInvocationMode: model.InvocationModeAutonomous,
 	}
@@ -1217,7 +1217,7 @@ func TestNormalizeAgentRecordStripsGenericPreviewToolsFromTaskPlanner(t *testing
 		TriggerMode:    "manual",
 		RuntimeKind:    "native_sdk",
 		AllowedTools:   json.RawMessage(`["request_human_approval","preview_md","publish_task_plan_doc","write_document_content","search_documents"]`),
-		AllowedTargets: json.RawMessage(`["story"]`),
+		AllowedTargets: json.RawMessage(`["task"]`),
 	}
 
 	normalizeAgentRecord(agent)

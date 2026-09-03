@@ -168,9 +168,9 @@ func (s *AgentService) ApproveEpicSpec(ctx context.Context, workspaceID, epicID,
 
 // ConfirmEpicRun confirms a task plan, creates tasks, and writes dependency links.
 func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, runID, actorID string, req model.ConfirmPlanningRequest) ([]model.PMTask, error) {
-	// Interactive path: stories provided directly, no agent run to validate.
+	// Interactive path: tasks provided directly, no agent run to validate.
 	if runID == "" && len(req.ProposedTasks) > 0 {
-		return s.createStoriesFromProposal(ctx, workspaceID, epicID, actorID, req.ProposedTasks)
+		return s.createTasksFromProposal(ctx, workspaceID, epicID, actorID, req.ProposedTasks)
 	}
 
 	run, err := s.GetAgentRun(ctx, workspaceID, runID)
@@ -230,19 +230,19 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		return nil, fmt.Errorf("task plan output is invalid; regenerate the plan as JSON with \"summary\" and \"proposed_tasks\"")
 	}
 
-	proposedStories := req.ProposedTasks
-	if len(proposedStories) == 0 {
-		proposedStories = proposal.ProposedTasks
+	proposedTasks := req.ProposedTasks
+	if len(proposedTasks) == 0 {
+		proposedTasks = proposal.ProposedTasks
 	}
-	if len(proposedStories) == 0 {
+	if len(proposedTasks) == 0 {
 		return nil, fmt.Errorf("task plan must include at least one item in \"proposed_tasks\"")
 	}
-	if err := validatePlanningTasks(proposedStories); err != nil {
+	if err := validatePlanningTasks(proposedTasks); err != nil {
 		return nil, err
 	}
 
 	enablerCount := 0
-	for _, s := range proposedStories {
+	for _, s := range proposedTasks {
 		if s.SliceType == "enabler" {
 			enablerCount++
 		}
@@ -250,13 +250,13 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	if enablerCount > 2 {
 		slog.Warn("high enabler count in task plan",
 			"enabler_count", enablerCount,
-			"total_count", len(proposedStories),
+			"total_count", len(proposedTasks),
 			"epic_id", epicID)
 	}
 
 	// Warn on overlapping file modifications across non-dependent tasks.
 	fileOwners := map[string]string{} // path -> task ref
-	for _, ps := range proposedStories {
+	for _, ps := range proposedTasks {
 		if ps.ImplementationBrief == nil {
 			continue
 		}
@@ -275,8 +275,8 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		}
 	}
 
-	externalIDs := make([]string, 0, len(proposedStories))
-	for idx, ps := range proposedStories {
+	externalIDs := make([]string, 0, len(proposedTasks))
+	for idx, ps := range proposedTasks {
 		externalIDs = append(externalIDs, planningTaskExternalID(runID, idx, ps.Ref))
 	}
 	existingTasks, err := s.taskRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
@@ -291,12 +291,12 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		existingByExternalID[*task.ExternalID] = task
 	}
 
-	created := make([]model.PMTask, 0, len(proposedStories))
-	createdIDs := make([]string, 0, len(proposedStories))
-	createdDetails := make([]createdPlanningTask, 0, len(proposedStories))
-	refToTask := make(map[string]model.PMTask, len(proposedStories))
+	created := make([]model.PMTask, 0, len(proposedTasks))
+	createdIDs := make([]string, 0, len(proposedTasks))
+	createdDetails := make([]createdPlanningTask, 0, len(proposedTasks))
+	refToTask := make(map[string]model.PMTask, len(proposedTasks))
 
-	for idx, ps := range proposedStories {
+	for idx, ps := range proposedTasks {
 		taskType := strings.ToLower(strings.TrimSpace(ps.TaskType))
 		if !isValidTaskType(taskType) {
 			taskType = model.PMTaskTypeFeature
@@ -368,7 +368,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		}
 	}
 
-	for _, ps := range proposedStories {
+	for _, ps := range proposedTasks {
 		targetTask, ok := refToTask[ps.Ref]
 		if !ok || len(ps.DependencyRefs) == 0 {
 			continue
@@ -411,7 +411,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	if proposal.SpecVersionID == "" && epic.ApprovedSpecVersionID != nil {
 		proposal.SpecVersionID = *epic.ApprovedSpecVersionID
 	}
-	proposal.ProposedTasks = proposedStories
+	proposal.ProposedTasks = proposedTasks
 	runSummary := epicPlanningRunSummary{
 		Stage:               model.PlanningStagePlanTasks,
 		SpecDocumentID:      derefString(epic.SpecDocumentID),
@@ -451,16 +451,16 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	return created, nil
 }
 
-// createStoriesFromProposal creates tasks from proposed items without requiring an agent run.
+// createTasksFromProposal creates tasks from proposed items without requiring an agent run.
 // Used by the interactive task planning path.
-func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceID, epicID, actorID string, proposedStories []model.ProposedTask) ([]model.PMTask, error) {
+func (s *AgentService) createTasksFromProposal(ctx context.Context, workspaceID, epicID, actorID string, proposedTasks []model.ProposedTask) ([]model.PMTask, error) {
 	if s.taskService == nil {
 		return nil, fmt.Errorf("task service is not configured")
 	}
-	if len(proposedStories) == 0 {
+	if len(proposedTasks) == 0 {
 		return nil, fmt.Errorf("task plan must include at least one item in \"proposed_tasks\"")
 	}
-	if err := validatePlanningTasks(proposedStories); err != nil {
+	if err := validatePlanningTasks(proposedTasks); err != nil {
 		return nil, err
 	}
 
@@ -490,8 +490,8 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 	// Use a stable key for external IDs in the interactive path.
 	syntheticRunID := "interactive-" + epicID
 
-	externalIDs := make([]string, 0, len(proposedStories))
-	for idx, ps := range proposedStories {
+	externalIDs := make([]string, 0, len(proposedTasks))
+	for idx, ps := range proposedTasks {
 		externalIDs = append(externalIDs, planningTaskExternalID(syntheticRunID, idx, ps.Ref))
 	}
 	existingTasks, err := s.taskRepo.ListByEpicAndExternalIDs(ctx, workspaceID, epicID, externalIDs)
@@ -506,10 +506,10 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		existingByExternalID[*task.ExternalID] = task
 	}
 
-	created := make([]model.PMTask, 0, len(proposedStories))
-	refToTask := make(map[string]model.PMTask, len(proposedStories))
+	created := make([]model.PMTask, 0, len(proposedTasks))
+	refToTask := make(map[string]model.PMTask, len(proposedTasks))
 
-	for idx, ps := range proposedStories {
+	for idx, ps := range proposedTasks {
 		taskType := strings.ToLower(strings.TrimSpace(ps.TaskType))
 		if !isValidTaskType(taskType) {
 			taskType = model.PMTaskTypeFeature
@@ -566,7 +566,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		}
 	}
 
-	for _, ps := range proposedStories {
+	for _, ps := range proposedTasks {
 		targetTask, ok := refToTask[ps.Ref]
 		if !ok || len(ps.DependencyRefs) == 0 {
 			continue
@@ -596,8 +596,8 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 }
 
 // CreateEpicTaskBatch creates tasks from planner tool input.
-func (s *AgentService) CreateEpicTaskBatch(ctx context.Context, workspaceID, epicID, actorID string, proposedStories []model.ProposedTask) ([]model.PMTask, error) {
-	return s.createStoriesFromProposal(ctx, workspaceID, epicID, actorID, proposedStories)
+func (s *AgentService) CreateEpicTaskBatch(ctx context.Context, workspaceID, epicID, actorID string, proposedTasks []model.ProposedTask) ([]model.PMTask, error) {
+	return s.createTasksFromProposal(ctx, workspaceID, epicID, actorID, proposedTasks)
 }
 
 func planningTaskExternalID(runID string, index int, ref string) string {
@@ -892,15 +892,15 @@ func (s *AgentService) loadCreatedTasks(ctx context.Context, ids []string) ([]mo
 	return loadPlanningTasksByID(ctx, s.taskRepo, ids)
 }
 
-func validatePlanningTasks(stories []model.ProposedTask) error {
-	if err := model.NormalizeProposedTasks(stories); err != nil {
+func validatePlanningTasks(tasks []model.ProposedTask) error {
+	if err := model.NormalizeProposedTasks(tasks); err != nil {
 		return err
 	}
-	for idx := range stories {
-		stories[idx].TaskType = normalizePlannedTaskType(stories[idx].TaskType)
-		if stories[idx].Priority != nil {
-			normalizedPriority := normalizePlannedTaskPriority(*stories[idx].Priority)
-			stories[idx].Priority = &normalizedPriority
+	for idx := range tasks {
+		tasks[idx].TaskType = normalizePlannedTaskType(tasks[idx].TaskType)
+		if tasks[idx].Priority != nil {
+			normalizedPriority := normalizePlannedTaskPriority(*tasks[idx].Priority)
+			tasks[idx].Priority = &normalizedPriority
 		}
 	}
 	return nil
@@ -1003,7 +1003,7 @@ func (s *AgentService) resolvePlanningTaskWorkflow(ctx context.Context, workspac
 
 func normalizePlannedTaskType(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "feature", "feat", "user_story", "story", "task":
+	case "", "feature", "feat", "user_story", "task":
 		return model.PMTaskTypeFeature
 	case "bug", "fix", "defect":
 		return model.PMTaskTypeBug

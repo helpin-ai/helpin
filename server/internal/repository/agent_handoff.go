@@ -37,10 +37,10 @@ func (r *AgentHandoffRepository) ListByEpic(ctx context.Context, workspaceID, ep
 }
 
 // ListByTask returns handoffs for a task.
-func (r *AgentHandoffRepository) ListByTask(ctx context.Context, workspaceID, storyID string) ([]model.AgentHandoff, error) {
+func (r *AgentHandoffRepository) ListByTask(ctx context.Context, workspaceID, taskID string) ([]model.AgentHandoff, error) {
 	var handoffs []model.AgentHandoff
-	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).Order("created_at DESC").Find(&handoffs).Error; err != nil {
-		return nil, fmt.Errorf("list story handoffs: %w", err)
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, taskID).Order("created_at DESC").Find(&handoffs).Error; err != nil {
+		return nil, fmt.Errorf("list task handoffs: %w", err)
 	}
 	return handoffs, nil
 }

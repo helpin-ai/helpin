@@ -194,7 +194,7 @@ export function hasAnyDependencies(plan: CommandBarPlan): boolean {
 
 /**
  * Pluralized task noun based on the dominant `target.entity_type` across
- * the plan's task nodes — e.g. `stories` for epics-of-stories, `contacts`
+ * the plan's task nodes — e.g. `tasks` for epics, `contacts`
  * for CRM fan-outs, `tasks` as the generic fallback.
  */
 export function taskNounFor(nodes: TaskNode[]): { singular: string; plural: string } {
@@ -213,7 +213,7 @@ export function taskNounFor(nodes: TaskNode[]): { singular: string; plural: stri
   }
   switch (dominant) {
     case 'task':
-      return { singular: 'story', plural: 'stories' };
+      return { singular: 'task', plural: 'tasks' };
     case 'epic':
       return { singular: 'epic', plural: 'epics' };
     case 'document':

@@ -48,9 +48,9 @@ func (h *PMRecurringTemplateHandler) Get(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, item)
 }
 
-func (h *PMRecurringTemplateHandler) GetByStory(w http.ResponseWriter, r *http.Request) {
+func (h *PMRecurringTemplateHandler) GetByTask(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
-	item, err := h.recurringService.GetByStoryID(r.Context(), taskID)
+	item, err := h.recurringService.GetByTaskID(r.Context(), taskID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

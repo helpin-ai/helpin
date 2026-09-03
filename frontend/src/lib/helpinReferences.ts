@@ -23,8 +23,6 @@ const LEGACY_ARTIFACT_RE = /^helpin-artifact:\/\/([^/?#]+)$/i;
 const referenceTypeAliases: Record<string, HelpinReferenceType> = {
   task: 'tasks',
   tasks: 'tasks',
-  story: 'tasks',
-  stories: 'tasks',
   epic: 'epics',
   epics: 'epics',
   sprint: 'sprints',

@@ -100,13 +100,13 @@ func TestProcessPendingDigests_SendsDueDigestAndSkipsResolvedNotifications(t *te
 	if got := emailer.sent[0].to; got != "user@example.com" {
 		t.Fatalf("digest recipient = %q, want %q", got, "user@example.com")
 	}
-	if !strings.Contains(emailer.sent[0].textBody, "Story A was updated") {
+	if !strings.Contains(emailer.sent[0].textBody, "Task A was updated") {
 		t.Fatalf("digest body missing due unread notification: %q", emailer.sent[0].textBody)
 	}
-	if strings.Contains(emailer.sent[0].textBody, "Story B was resolved") {
+	if strings.Contains(emailer.sent[0].textBody, "Task B was resolved") {
 		t.Fatalf("digest body should not include read notification: %q", emailer.sent[0].textBody)
 	}
-	if strings.Contains(emailer.sent[0].textBody, "Story C will wait") {
+	if strings.Contains(emailer.sent[0].textBody, "Task C will wait") {
 		t.Fatalf("digest body should not include future notification: %q", emailer.sent[0].textBody)
 	}
 
@@ -428,23 +428,23 @@ func seedNotificationDigestCase(t *testing.T, db *gorm.DB, now time.Time) {
 
 	mustExecDigest(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"notif-due-unread", "ws-1", "user-1", "story", "story-1", "story.comment", "Story A was updated", "comments", 1, dueAt, "unread", "normal", dueAt, dueAt)
+		"notif-due-unread", "ws-1", "user-1", "task", "task-1", "task.comment", "Task A was updated", "comments", 1, dueAt, "unread", "normal", dueAt, dueAt)
 	mustExecDigest(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"notif-due-read", "ws-1", "user-1", "story", "story-2", "story.comment", "Story B was resolved", "comments", 1, dueAt, "read", "normal", dueAt, dueAt)
+		"notif-due-read", "ws-1", "user-1", "task", "task-2", "task.comment", "Task B was resolved", "comments", 1, dueAt, "read", "normal", dueAt, dueAt)
 	mustExecDigest(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"notif-future-unread", "ws-1", "user-1", "story", "story-3", "story.comment", "Story C will wait", "comments", 1, futureAt, "unread", "normal", futureAt, futureAt)
+		"notif-future-unread", "ws-1", "user-1", "task", "task-3", "task.comment", "Task C will wait", "comments", 1, futureAt, "unread", "normal", futureAt, futureAt)
 
 	mustExecDigest(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"event-due-unread", "notif-due-unread", "story.comment", "Story A was updated", "comments", "normal", dueAt)
+		"event-due-unread", "notif-due-unread", "task.comment", "Task A was updated", "comments", "normal", dueAt)
 	mustExecDigest(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"event-due-read", "notif-due-read", "story.comment", "Story B was resolved", "comments", "normal", dueAt)
+		"event-due-read", "notif-due-read", "task.comment", "Task B was resolved", "comments", "normal", dueAt)
 	mustExecDigest(t, db, `INSERT INTO notification_events (id, notification_id, event_type, title, category, priority, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"event-future-unread", "notif-future-unread", "story.comment", "Story C will wait", "comments", "normal", futureAt)
+		"event-future-unread", "notif-future-unread", "task.comment", "Task C will wait", "comments", "normal", futureAt)
 
 	mustExecDigest(t, db, `INSERT INTO notification_deliveries (id, notification_event_id, channel, status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,

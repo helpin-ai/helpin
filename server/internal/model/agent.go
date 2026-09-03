@@ -704,8 +704,6 @@ type AgentRunWorkspaceContext struct {
 }
 
 // AgentRunInputPayload is the shared input contract for all agent runs.
-// It preserves legacy top-level IDs and planning fields while adding
-// explicit trigger/target/event metadata for generic launches.
 type AgentRunInputPayload struct {
 	Trigger             *AgentRunTriggerContext    `json:"trigger,omitempty"`
 	Target              *AgentRunTargetContext     `json:"target,omitempty"`
@@ -713,7 +711,7 @@ type AgentRunInputPayload struct {
 	Output              *AgentRunOutputContext     `json:"output,omitempty"`
 	WorkspaceContext    *AgentRunWorkspaceContext  `json:"workspace_context,omitempty"`
 	AttachedContexts    []AgentRunContextReference `json:"attached_contexts,omitempty"`
-	StoryID             string                     `json:"story_id,omitempty"`
+	TaskID              string                     `json:"task_id,omitempty"`
 	EpicID              string                     `json:"epic_id,omitempty"`
 	ConversationID      string                     `json:"conversation_id,omitempty"`
 	AdditionalContext   string                     `json:"additional_context,omitempty"`
@@ -735,6 +733,11 @@ func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
 	if targetType == "" || targetID == "" {
 		return
 	}
+	switch targetType {
+	case "workspace", "document", "task", "epic", "sprint", "objective", "crm_deal", "crm_contact", "crm_company", "support_conversation", "repository":
+	default:
+		return
+	}
 
 	p.Target = &AgentRunTargetContext{
 		TargetType: targetType,
@@ -742,8 +745,8 @@ func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
 	}
 
 	switch targetType {
-	case "task", "story":
-		p.StoryID = targetID
+	case "task":
+		p.TaskID = targetID
 	case "epic":
 		p.EpicID = targetID
 	case "support_conversation":

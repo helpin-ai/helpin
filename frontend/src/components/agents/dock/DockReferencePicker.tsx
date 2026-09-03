@@ -13,7 +13,7 @@ import type { DockEntityReference } from '@/lib/dockTypes';
 const REFERENCE_TYPES: DocsEntitySearchType[] = ['task', 'document', 'epic', 'contact', 'deal'];
 
 function referenceType(type: DocsEntitySearchType): DockEntityReference['entity_type'] | null {
-  if (type === 'task' || type === 'story') return 'task';
+  if (type === 'task') return 'task';
   if (type === 'document' || type === 'epic') return type;
   if (type === 'contact') return 'crm_contact';
   if (type === 'deal') return 'crm_deal';

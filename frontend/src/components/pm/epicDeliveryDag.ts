@@ -158,7 +158,7 @@ export interface DeliveryVerdict {
 }
 
 /**
- * One-line story of what the delivery needs, derived from step states. Null
+ * One-line summary of what the delivery needs, derived from step states. Null
  * when the delivery is healthy (running or finished clean) — the summary
  * counts cover that. Rendered under the panel header so a stalled or failed
  * delivery says what happened and what unblocks it, instead of making the

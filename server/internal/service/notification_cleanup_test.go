@@ -62,7 +62,7 @@ func seedCleanupNotification(t *testing.T, db *gorm.DB, id, status string, updat
 	t.Helper()
 	mustExecCleanup(t, db, `INSERT INTO notifications (id, workspace_id, recipient_id, entity_type, entity_id, event_type, title, latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, "ws-1", "user-1", "story", "entity-"+id, "story.assigned", "Title "+id, "assignments", 1, updatedAt, status, "normal", updatedAt, updatedAt)
+		id, "ws-1", "user-1", "task", "entity-"+id, "task.assigned", "Title "+id, "assignments", 1, updatedAt, status, "normal", updatedAt, updatedAt)
 }
 
 func TestCleanupArchivedNotifications_DeletesOldArchived(t *testing.T) {

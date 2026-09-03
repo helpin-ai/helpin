@@ -89,7 +89,7 @@ export function EntityMentionNodeView({ node, extension }: NodeViewProps) {
   const openEntity = () => {
     if (!entityId) return
     if (resolved?.status === 'unavailable') return
-    if (workspaceSlug && (entityType === 'task' || entityType === 'story')) {
+    if (workspaceSlug && entityType === 'task') {
       openTaskRoute(navigate as never, location as never, workspaceSlug, entityId)
       return
     }

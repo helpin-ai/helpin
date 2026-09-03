@@ -642,15 +642,15 @@ func NewTaskDeliveryTargetRepository(db *gorm.DB) *TaskDeliveryTargetRepository 
 }
 
 // GetByTask returns the delivery target for a task.
-func (r *TaskDeliveryTargetRepository) GetByTask(ctx context.Context, workspaceID, storyID string) (*model.TaskDeliveryTarget, error) {
+func (r *TaskDeliveryTargetRepository) GetByTask(ctx context.Context, workspaceID, taskID string) (*model.TaskDeliveryTarget, error) {
 	var target model.TaskDeliveryTarget
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).
+		Where("workspace_id = ? AND task_id = ?", workspaceID, taskID).
 		First(&target).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get story delivery target: %w", err)
+		return nil, fmt.Errorf("get task delivery target: %w", err)
 	}
 	return &target, nil
 }
@@ -664,7 +664,7 @@ func (r *TaskDeliveryTargetRepository) GetByID(ctx context.Context, workspaceID,
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get story delivery target: %w", err)
+		return nil, fmt.Errorf("get task delivery target: %w", err)
 	}
 	return &target, nil
 }
@@ -682,7 +682,7 @@ func (r *TaskDeliveryTargetRepository) Save(ctx context.Context, target *model.T
 			}),
 		}).
 		Create(target).Error; err != nil {
-		return fmt.Errorf("save story delivery target: %w", err)
+		return fmt.Errorf("save task delivery target: %w", err)
 	}
 	return nil
 }
@@ -740,10 +740,10 @@ func NewTaskGitLinkRepository(db *gorm.DB) *TaskGitLinkRepository {
 }
 
 // ListByTask returns git links for a task.
-func (r *TaskGitLinkRepository) ListByTask(ctx context.Context, workspaceID, storyID string) ([]model.TaskGitLink, error) {
+func (r *TaskGitLinkRepository) ListByTask(ctx context.Context, workspaceID, taskID string) ([]model.TaskGitLink, error) {
 	var links []model.TaskGitLink
-	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, storyID).Order("created_at DESC").Find(&links).Error; err != nil {
-		return nil, fmt.Errorf("list story git links: %w", err)
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND task_id = ?", workspaceID, taskID).Order("created_at DESC").Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list task git links: %w", err)
 	}
 	return links, nil
 }
@@ -771,7 +771,7 @@ func (r *TaskGitLinkRepository) GetByBranch(ctx context.Context, workspaceID, re
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get story git link by branch: %w", err)
+		return nil, fmt.Errorf("get task git link by branch: %w", err)
 	}
 	return &link, nil
 }
@@ -783,7 +783,7 @@ func (r *TaskGitLinkRepository) GetByProviderBranch(ctx context.Context, workspa
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get story git link by provider branch: %w", err)
+		return nil, fmt.Errorf("get task git link by provider branch: %w", err)
 	}
 	return &link, nil
 }
@@ -795,7 +795,7 @@ func (r *TaskGitLinkRepository) GetByPR(ctx context.Context, workspaceID, repo s
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get story git link by PR: %w", err)
+		return nil, fmt.Errorf("get task git link by PR: %w", err)
 	}
 	return &link, nil
 }
@@ -807,7 +807,7 @@ func (r *TaskGitLinkRepository) GetByProviderPR(ctx context.Context, workspaceID
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get story git link by provider PR: %w", err)
+		return nil, fmt.Errorf("get task git link by provider PR: %w", err)
 	}
 	return &link, nil
 }
@@ -821,7 +821,7 @@ func (r *TaskGitLinkRepository) ListByRepoAndPRs(ctx context.Context, workspaceI
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND repo = ? AND pr_number IN ?", workspaceID, repo, prNumbers).
 		Find(&links).Error; err != nil {
-		return nil, fmt.Errorf("list story git links by PRs: %w", err)
+		return nil, fmt.Errorf("list task git links by PRs: %w", err)
 	}
 	return links, nil
 }
@@ -835,7 +835,7 @@ func (r *TaskGitLinkRepository) ListByRepoAndBranches(ctx context.Context, works
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND repo = ? AND branch IN ?", workspaceID, repo, branches).
 		Find(&links).Error; err != nil {
-		return nil, fmt.Errorf("list story git links by branches: %w", err)
+		return nil, fmt.Errorf("list task git links by branches: %w", err)
 	}
 	return links, nil
 }
@@ -849,7 +849,7 @@ func (r *TaskGitLinkRepository) ListByRepoAndCommitSHAs(ctx context.Context, wor
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND repo = ? AND commit_sha IN ?", workspaceID, repo, commitSHAs).
 		Find(&links).Error; err != nil {
-		return nil, fmt.Errorf("list story git links by commit shas: %w", err)
+		return nil, fmt.Errorf("list task git links by commit shas: %w", err)
 	}
 	return links, nil
 }
@@ -857,7 +857,7 @@ func (r *TaskGitLinkRepository) ListByRepoAndCommitSHAs(ctx context.Context, wor
 // Create creates a new link.
 func (r *TaskGitLinkRepository) Create(ctx context.Context, link *model.TaskGitLink) error {
 	if err := r.db.WithContext(ctx).Create(link).Error; err != nil {
-		return fmt.Errorf("create story git link: %w", err)
+		return fmt.Errorf("create task git link: %w", err)
 	}
 	return nil
 }
@@ -865,7 +865,7 @@ func (r *TaskGitLinkRepository) Create(ctx context.Context, link *model.TaskGitL
 // Update saves a link.
 func (r *TaskGitLinkRepository) Update(ctx context.Context, link *model.TaskGitLink) error {
 	if err := r.db.WithContext(ctx).Save(link).Error; err != nil {
-		return fmt.Errorf("update story git link: %w", err)
+		return fmt.Errorf("update task git link: %w", err)
 	}
 	return nil
 }
@@ -887,7 +887,7 @@ func (r *TaskGitLinkRepository) UpsertByRunAndBranch(ctx context.Context, link *
 			"updated_at",
 		}),
 	}).Create(link).Error; err != nil {
-		return fmt.Errorf("upsert story git link: %w", err)
+		return fmt.Errorf("upsert task git link: %w", err)
 	}
 	return nil
 }

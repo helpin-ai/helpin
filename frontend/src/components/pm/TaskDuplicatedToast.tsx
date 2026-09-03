@@ -14,7 +14,7 @@ export function showTaskDuplicatedToast(options: TaskDuplicatedToastOptions) {
     entityLabel: 'Task',
     eyebrow: 'Task duplicated',
     title: options.taskName,
-    identifier: options.taskKey ? { label: 'Story ID', value: options.taskKey } : undefined,
+    identifier: options.taskKey ? { label: 'Task ID', value: options.taskKey } : undefined,
     tone: 'pm',
     icon: options.taskType ? TASK_TYPE_CONFIG[options.taskType].icon : undefined,
     openLabel: 'Open duplicate',

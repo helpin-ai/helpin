@@ -420,20 +420,20 @@ func (h *SupportInboxHandler) writeMessageActionError(w http.ResponseWriter, err
 	}
 }
 
-// LinkConversationStory handles POST /api/support/tickets/{id}/link-task.
-func (h *SupportInboxHandler) LinkConversationStory(w http.ResponseWriter, r *http.Request) {
+// LinkConversationTask handles POST /api/support/tickets/{id}/link-task.
+func (h *SupportInboxHandler) LinkConversationTask(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	ticketID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
-	var req model.LinkStoryRequest
+	var req model.LinkTaskRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	taskID := strings.TrimSpace(req.TaskID)
-	if err := h.supportService.LinkConversationStory(r.Context(), workspaceID, ticketID, taskID, actorID); err != nil {
+	if err := h.supportService.LinkConversationTask(r.Context(), workspaceID, ticketID, taskID, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

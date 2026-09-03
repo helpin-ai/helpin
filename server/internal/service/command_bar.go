@@ -493,8 +493,6 @@ func normalizeCommandBarTargetType(targetType string) string {
 	targetType = strings.ReplaceAll(targetType, "-", "_")
 	targetType = strings.ReplaceAll(targetType, " ", "_")
 	switch targetType {
-	case "story":
-		return "task"
 	case "deal":
 		return "crm_deal"
 	case "contact":
