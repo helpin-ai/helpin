@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CheckListIcon } from '@/lib/icons';
-import { buildPanelNavGroups, buildRailItems, deriveActiveRail, projectCreateOptions, teamSubItems } from '../config';
+import { buildPanelNavGroups, buildRailItems, deriveActiveRail, projectCreateOptions, supportModuleUnreadCount, teamSubItems } from '../config';
 
 describe('workspace rail navigation', () => {
+  it('drives the Support indicator from the global personal unread total', () => {
+    expect(supportModuleUnreadCount({ total: 4 })).toBe(4);
+    expect(supportModuleUnreadCount({ total: 0 })).toBe(0);
+    expect(supportModuleUnreadCount(undefined)).toBe(0);
+  });
+
   it('uses the shared task icon for team task navigation', () => {
     expect(teamSubItems.find((item) => item.key === 'tasks')?.icon).toBe(CheckListIcon);
     expect(projectCreateOptions.find((item) => item.key === 'task')?.icon).toBe(CheckListIcon);

@@ -62,6 +62,10 @@ export const projectCreateOptions = [
   { key: 'objective' as const, label: 'Objective', icon: Target01Icon, pages: ['objectives'] },
 ];
 
+export function supportModuleUnreadCount(stats?: { total?: number | null }): number {
+  return stats?.total ?? 0;
+}
+
 export function buildRailItems(
   wsSlug: string,
   totalSupportUnread: number,

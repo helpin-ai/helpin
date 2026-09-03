@@ -508,6 +508,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         queryKeys.support.conversation(workspaceId, event.entity_id),
         (current) => patchConversationDetailPersonalRead(current, patch),
       )
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.support.workspaceUnread() })
     } else if (event.entity === 'support_conversation') {
       if (event.action === 'typing_started' || event.action === 'typing_stopped') {

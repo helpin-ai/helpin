@@ -132,13 +132,13 @@ export function SupportRailNav({
       <SidebarGroup className="p-0 pb-3">
         <SidebarMenu>
           {supportFilterItems.map((item) => {
-            const attention =
+            const unread =
               item.key === 'inbox'
-                ? inboxUnreadStats?.inbox_needs_human_reply
+                ? inboxUnreadStats?.inbox
                 : item.key === 'mine'
-                  ? (globalUnreadStats ?? unreadStats)?.mine_needs_human_reply
+                  ? (globalUnreadStats ?? unreadStats)?.mine
                   : item.key === 'waiting'
-                    ? (globalUnreadStats ?? unreadStats)?.waiting_needs_human_reply
+                    ? (globalUnreadStats ?? unreadStats)?.waiting
                     : undefined;
             const total =
               item.key === 'inbox'
@@ -159,7 +159,7 @@ export function SupportRailNav({
                   <item.icon className="h-4 w-4" />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate">{item.label}</span>
-                    {renderUnreadDot(attention)}
+                    {renderUnreadDot(unread)}
                   </span>
                   {renderCounts(total)}
                 </SidebarMenuButton>
@@ -246,7 +246,7 @@ export function SupportRailNav({
                   />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate">{mailbox.name}</span>
-                    {renderUnreadDot(mailbox.needs_human_reply_count)}
+                    {renderUnreadDot(mailbox.unread_count)}
                   </span>
                   <span className={trailingSlotClassName}>
                     {renderCounts(

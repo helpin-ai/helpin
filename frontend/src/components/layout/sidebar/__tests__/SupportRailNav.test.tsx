@@ -70,6 +70,7 @@ function renderSupportRail({
               total: 2,
               my_inbox: 0,
               unassigned: 0,
+              inbox_needs_human_reply: 0,
             }}
             globalUnreadStats={{
               inbox: 3,
@@ -83,6 +84,7 @@ function renderSupportRail({
               total: 3,
               my_inbox: 1,
               unassigned: 1,
+              mine_needs_human_reply: 0,
             }}
             inboxScopes={{
               mailboxes: [
@@ -91,6 +93,7 @@ function renderSupportRail({
                   name: 'Test',
                   total_count: 2,
                   unread_count: 1,
+                  needs_human_reply_count: 0,
                 },
               ],
             }}
@@ -155,6 +158,16 @@ describe('SupportRailNav', () => {
     expect(buttonByText(rendered.container, 'Inbox')?.textContent).toContain('9')
     expect(buttonByText(rendered.container, 'Mine')?.textContent).toContain('2')
     expect(buttonByText(rendered.container, 'Mine')?.textContent).not.toContain('8')
+
+    rendered.cleanup()
+  })
+
+  it('shows red dots from personal unread counts rather than team reply state', () => {
+    const rendered = renderSupportRail()
+
+    expect(buttonByText(rendered.container, 'Inbox')?.querySelector('[data-slot="support-unread-dot"]')).toBeTruthy()
+    expect(buttonByText(rendered.container, 'Mine')?.querySelector('[data-slot="support-unread-dot"]')).toBeTruthy()
+    expect(buttonByText(rendered.container, 'Test')?.querySelector('[data-slot="support-unread-dot"]')).toBeTruthy()
 
     rendered.cleanup()
   })

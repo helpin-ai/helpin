@@ -27,7 +27,7 @@ import { TrialBanner } from '@/components/layout/TrialBanner';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
 import { DocsRailNav } from './sidebar/DocsRailNav';
-import { buildPanelNavGroups, buildRailItems, deriveActiveRail, projectCreateOptions } from './sidebar/config';
+import { buildPanelNavGroups, buildRailItems, deriveActiveRail, projectCreateOptions, supportModuleUnreadCount } from './sidebar/config';
 import { isSidebarLinkActive, isTeamSubLinkActive, type SidebarNavigateTarget } from './sidebar/navigation';
 import { ProjectsTeamsNav } from './sidebar/ProjectsTeamsNav';
 import {
@@ -102,11 +102,7 @@ export function Sidebar() {
   const [editingSupportView, setEditingSupportView] = useState<SupportInboxView | null>(null);
   const [editingSupportViewName, setEditingSupportViewName] = useState('');
   const [editingSupportViewShared, setEditingSupportViewShared] = useState(false);
-  const totalSupportUnread = useMemo(
-    () => (inboxScopes?.shared_inbox.needs_human_reply_count ?? 0)
-      + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + (mailbox.needs_human_reply_count ?? 0), 0),
-    [inboxScopes],
-  );
+  const totalSupportUnread = supportModuleUnreadCount(unreadStats);
   const sortedCustomViews = useMemo(
     () => [...customViews].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
     [customViews],

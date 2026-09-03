@@ -677,7 +677,7 @@ describe('useRealtimeSync task ordering events', () => {
     container.remove()
   })
 
-  it('patches a targeted personal read without workspace-wide invalidation', async () => {
+  it('patches a targeted personal read and refreshes personal counters without refetching lists', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
     client.setQueryData<ConversationListResponse>(queryKeys.support.conversations('ws-1'), {
@@ -707,7 +707,8 @@ describe('useRealtimeSync task ordering events', () => {
     const updated = client.getQueryData<ConversationListResponse>(queryKeys.support.conversations('ws-1'))
     expect(updated?.data[0]).toEqual(expect.objectContaining({ unread_count: 0, personal_state_version: 4 }))
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queryKeys.support.conversations('ws-1') })
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queryKeys.support.inboxScopes('ws-1') })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queryKeys.support.unreadStats('ws-1') })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queryKeys.support.inboxScopes('ws-1') })
     expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queryKeys.support.inboxViewCounts('ws-1') })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queryKeys.support.workspaceUnread() })
 
