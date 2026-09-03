@@ -25,6 +25,9 @@ const (
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
 	defaultAskAgentModel = "z-ai/glm-5.3-flash:exacto"
+	// defaultCommandAgentModel keeps delegated sub-agent work on the Small
+	// model route while preserving the Codex runtime and its tool surface.
+	defaultCommandAgentModel = defaultAskAgentModel
 )
 
 func isLegacyDeepSeekFlashModel(modelName string) bool {
@@ -436,6 +439,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	scribeDefaultModel := defaultScribeAgentModel
 	quillDefaultModel := defaultQuillAgentModel
 	askAgentDefaultModel := defaultAskAgentModel
+	commandAgentDefaultModel := defaultCommandAgentModel
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		agentcontract.ToolUpdatePlan,
 		agentcontract.ToolPublishPRDDraft,
@@ -693,8 +697,8 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Description:           "Handles one delegated workspace task with a limited tool set.",
 			DefaultRole:           "Sub-agent",
 			RuntimeKind:           "codex",
-			Provider:              &openAIPresetProvider,
-			Model:                 &openAIPresetModel,
+			Provider:              &openRouterPresetProvider,
+			Model:                 &commandAgentDefaultModel,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          appendPresetTools([]string{"web_search", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_repositories", "checkout_repositories", "list_commits", "read_files", "list_directory", "repository_search", "list_symbols", "read_symbol", "trace_symbol", "list_spaces", "search_workspace", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "update_document_metadata", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_crm_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"}, newPMReadToolAliases, newPMWriteToolAliases, safeCRMDiscoveryToolAliases, safeCRMWriteToolAliases, safeSupportDiscoveryToolAliases, safeSupportWriteToolAliases),

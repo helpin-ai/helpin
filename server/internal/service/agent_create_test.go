@@ -605,6 +605,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 				// The dock orchestrator and support agent default to a
 				// flash-tier OpenRouter model.
 				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultAskAgentModel
+			case model.AgentPresetCommandAgent:
+				wantProvider, wantModel = model.AgentModelProviderOpenRouter, defaultCommandAgentModel
 			}
 			if agent.Provider == nil || *agent.Provider != wantProvider {
 				t.Errorf("system preset %q provider = %+v, want %s", agent.PresetKey, agent.Provider, wantProvider)
@@ -916,6 +918,35 @@ func TestEnsureBuiltInAgent_UpgradesManagedDeepSeekFlashDefaultsToGLMExacto(t *t
 				}
 			})
 		}
+	}
+}
+
+func TestEnsureBuiltInAgent_UpgradesManagedCommandAgentDefaultToSmall(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCommandAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	legacyProvider := model.AgentModelProviderOpenAI
+	legacyModel := defaultOpenAIAgentModel
+	systemAgent.Provider = &legacyProvider
+	systemAgent.Model = &legacyModel
+	if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
+		t.Fatalf("persist legacy route: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCommandAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent reconcile returned error: %v", err)
+	}
+	if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
+		t.Fatalf("provider = %+v, want openrouter", reconciled.Provider)
+	}
+	if reconciled.Model == nil || *reconciled.Model != defaultCommandAgentModel {
+		t.Fatalf("model = %+v, want %s", reconciled.Model, defaultCommandAgentModel)
 	}
 }
 

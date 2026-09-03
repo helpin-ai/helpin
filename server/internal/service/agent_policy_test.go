@@ -281,6 +281,15 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			}
 			continue
 		}
+		if preset.Key == model.AgentPresetCommandAgent {
+			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
+				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
+			}
+			if preset.Model == nil || *preset.Model != defaultCommandAgentModel {
+				t.Errorf("preset %q model = %+v, want %s", preset.Key, preset.Model, defaultCommandAgentModel)
+			}
+			continue
+		}
 		if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenAI {
 			t.Errorf("preset %q provider = %+v, want openai", preset.Key, preset.Provider)
 		}

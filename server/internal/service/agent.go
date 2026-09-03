@@ -1193,6 +1193,17 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
+		// The product-managed Sub-agent default moved from GPT-5.6 Terra to the
+		// Small GLM route. Preserve explicit routing on workspace preset versions
+		// and migrate only the untouched product default.
+		if presetKey == model.AgentPresetCommandAgent &&
+			presetVersionKey == productDefaultVersionKey &&
+			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenAI &&
+			strings.TrimSpace(derefString(existing.Model)) == defaultOpenAIAgentModel {
+			existing.Provider = trimPtr(preset.Provider)
+			existing.Model = trimPtr(preset.Model)
+			changed = true
+		}
 		// Product-managed flash defaults moved from DeepSeek to GLM 5.3 Flash
 		// Exacto. Migrate only the product default version and preserve workspace
 		// preset versions and other explicit routing choices.
