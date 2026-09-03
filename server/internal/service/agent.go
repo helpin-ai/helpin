@@ -1205,16 +1205,18 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
-		// Product-managed flash defaults moved from DeepSeek to GLM 5.3 Flash
-		// Exacto. Migrate only the product default version and preserve workspace
-		// preset versions and other explicit routing choices.
+		// Product-managed flash defaults moved to the Nitro DeepSeek route.
+		// Migrate only the product default version and preserve workspace preset
+		// versions and other explicit routing choices.
 		if (presetKey == model.AgentPresetEpicPlanner ||
 			presetKey == model.AgentPresetDocumentationAgent ||
 			presetKey == model.AgentPresetAskAgent ||
-			presetKey == model.AgentPresetSupportAgent) &&
+			presetKey == model.AgentPresetSupportAgent ||
+			presetKey == model.AgentPresetCommandAgent) &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenRouter &&
-			isLegacyDeepSeekFlashModel(derefString(existing.Model)) {
+			(isLegacyDeepSeekFlashModel(derefString(existing.Model)) ||
+				strings.TrimSpace(derefString(existing.Model)) == "z-ai/glm-5.3-flash:exacto") {
 			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true
@@ -1417,12 +1419,20 @@ func applyAgentVersionToAgent(agent *model.Agent, version *model.AgentVersion) {
 	}
 }
 
-func modelTierExecutionConfig(serviceTier string) model.JSONBlob {
-	serviceTier = strings.TrimSpace(serviceTier)
-	if serviceTier == "" || serviceTier == defaultAICompletionServiceTier {
-		return model.JSONBlob("{}")
+func modelTierExecutionConfig(snapshot AgentModelTierSnapshot) model.JSONBlob {
+	config := model.AgentExecutionConfig{}
+	serviceTier := strings.TrimSpace(snapshot.ServiceTier)
+	if serviceTier != "" && serviceTier != defaultAICompletionServiceTier {
+		config.ServiceTier = &serviceTier
 	}
-	return model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{ServiceTier: &serviceTier})
+	if len(snapshot.ProviderQuantizations) > 0 {
+		config.OpenRouter = &model.AgentOpenRouterExecutionConfig{
+			Provider: &model.AgentOpenRouterProviderPreferences{
+				Quantizations: append([]string(nil), snapshot.ProviderQuantizations...),
+			},
+		}
+	}
+	return model.MarshalAgentExecutionConfig(config)
 }
 
 func applyModelTierSnapshotToAgent(agent *model.Agent, snapshot AgentModelTierSnapshot) {
@@ -1433,7 +1443,7 @@ func applyModelTierSnapshotToAgent(agent *model.Agent, snapshot AgentModelTierSn
 	agent.RuntimeKind = snapshot.RuntimeKind
 	agent.Provider = trimPtr(&snapshot.Provider)
 	agent.Model = trimPtr(&snapshot.Model)
-	agent.ExecutionConfig = modelTierExecutionConfig(snapshot.ServiceTier)
+	agent.ExecutionConfig = modelTierExecutionConfig(snapshot)
 }
 
 func applyModelTierSnapshotToVersion(version *model.AgentVersion, snapshot AgentModelTierSnapshot) {
@@ -1444,7 +1454,7 @@ func applyModelTierSnapshotToVersion(version *model.AgentVersion, snapshot Agent
 	version.RuntimeKind = snapshot.RuntimeKind
 	version.Provider = trimPtr(&snapshot.Provider)
 	version.Model = trimPtr(&snapshot.Model)
-	version.ExecutionConfig = modelTierExecutionConfig(snapshot.ServiceTier)
+	version.ExecutionConfig = modelTierExecutionConfig(snapshot)
 }
 
 func agentVersionFromAgent(agent *model.Agent, actorID string) *model.AgentVersion {

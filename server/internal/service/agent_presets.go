@@ -10,25 +10,38 @@ import (
 )
 
 const (
-	defaultAnthropicAgentModel  = "claude-opus-4-8"
-	defaultOpenAIAgentModel     = "gpt-5.6-terra"
-	defaultOpenRouterAgentModel = "openai/gpt-5.6-terra"
+	defaultAnthropicAgentModel      = "claude-opus-4-8"
+	defaultOpenAIAgentModel         = "gpt-5.6-terra"
+	defaultOpenRouterAgentModel     = "openai/gpt-5.6-terra"
+	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4-flash-0731:nitro"
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
 	// preferred fast OpenRouter model.
-	defaultAtlasAgentModel = "z-ai/glm-5.3-flash:exacto"
+	defaultAtlasAgentModel = defaultFastOpenRouterAgentModel
 	// defaultScribeAgentModel keeps interactive task planning on Codex's
 	// default OpenAI model.
 	defaultScribeAgentModel = defaultOpenAIAgentModel
 	// defaultQuillAgentModel keeps documentation work on the product's fast
 	// OpenRouter model.
-	defaultQuillAgentModel = "z-ai/glm-5.3-flash:exacto"
+	defaultQuillAgentModel = defaultFastOpenRouterAgentModel
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
-	defaultAskAgentModel = "z-ai/glm-5.3-flash:exacto"
+	defaultAskAgentModel = defaultFastOpenRouterAgentModel
 	// defaultCommandAgentModel keeps delegated sub-agent work on the Small
-	// model route while preserving the Codex runtime and its tool surface.
+	// native model route and its runtime-hosted tool surface.
 	defaultCommandAgentModel = defaultAskAgentModel
 )
+
+var defaultFastOpenRouterQuantizations = []string{"fp8", "fp16", "bf16", "fp32"}
+
+func defaultFastOpenRouterExecutionConfig() model.JSONBlob {
+	return model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
+		OpenRouter: &model.AgentOpenRouterExecutionConfig{
+			Provider: &model.AgentOpenRouterProviderPreferences{
+				Quantizations: slices.Clone(defaultFastOpenRouterQuantizations),
+			},
+		},
+	})
+}
 
 func isLegacyDeepSeekFlashModel(modelName string) bool {
 	switch strings.TrimSpace(modelName) {
@@ -424,6 +437,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 		ReasoningEffort: &highReasoning,
 		ServiceTier:     &standardServiceTier,
 	})
+	fastOpenRouterExecutionConfig := defaultFastOpenRouterExecutionConfig()
 
 	epicPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetEpicPlanner)
 	taskPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
@@ -480,6 +494,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &atlasDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          epicPlannerTools,
@@ -546,6 +561,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &askAgentDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(supportProfile.AllowedTools),
@@ -568,6 +584,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &quillDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          slices.Clone(documentationProfile.AllowedTools),
@@ -696,9 +713,10 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Sub-agent",
 			Description:           "Handles one delegated workspace task with a limited tool set.",
 			DefaultRole:           "Sub-agent",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &commandAgentDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          commandAgentPresetTools(),
@@ -707,7 +725,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AvailableSkills:       commandAgentAvailableSkills(),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          &commandAgentPrompt,
 		},
 		{
@@ -722,6 +740,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &askAgentDefaultModel,
+			ExecutionConfig:       fastOpenRouterExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
 			AllowedTools:          askAgentPresetTools(),

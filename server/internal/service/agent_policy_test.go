@@ -234,6 +234,20 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 		t.Fatal("expected preset catalog")
 	}
 	for _, preset := range presets {
+		usesFastOpenRouterDefault := preset.Key == model.AgentPresetEpicPlanner ||
+			preset.Key == model.AgentPresetDocumentationAgent ||
+			preset.Key == model.AgentPresetAskAgent ||
+			preset.Key == model.AgentPresetSupportAgent ||
+			preset.Key == model.AgentPresetCommandAgent
+		if usesFastOpenRouterDefault {
+			config, err := model.ParseAgentExecutionConfig(preset.ExecutionConfig)
+			if err != nil {
+				t.Errorf("preset %q execution config: %v", preset.Key, err)
+			} else if config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
+				!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
+				t.Errorf("preset %q execution config = %s, want quantizations %v", preset.Key, preset.ExecutionConfig, defaultFastOpenRouterQuantizations)
+			}
+		}
 		if preset.Key == model.AgentPresetEpicPlanner {
 			if preset.RuntimeKind != "native_sdk" {
 				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
@@ -282,6 +296,9 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			continue
 		}
 		if preset.Key == model.AgentPresetCommandAgent {
+			if preset.RuntimeKind != "native_sdk" {
+				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
+			}
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenRouter {
 				t.Errorf("preset %q provider = %+v, want openrouter", preset.Key, preset.Provider)
 			}
@@ -1009,6 +1026,42 @@ func TestParseAndValidateExecutionConfigAllowsNativeToolStepLimit(t *testing.T) 
 	}
 	if got := strings.TrimSpace(string(model.MarshalAgentExecutionConfig(config))); got != `{"max_tool_steps":640}` {
 		t.Fatalf("normalized execution config = %s, want max_tool_steps", got)
+	}
+}
+
+func TestParseAndValidateExecutionConfigAllowsOpenRouterQuantizations(t *testing.T) {
+	openRouter := model.AgentModelProviderOpenRouter
+	agent := &model.Agent{
+		RuntimeKind: "native_sdk",
+		Provider:    &openRouter,
+		ExecutionConfig: model.JSONBlob(
+			`{"openrouter":{"provider":{"quantizations":["fp8","fp16","bf16","fp32"]}}}`,
+		),
+	}
+
+	config, err := parseAndValidateExecutionConfig(agent)
+	if err != nil {
+		t.Fatalf("expected OpenRouter quantizations to validate, got %v", err)
+	}
+	if config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
+		!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
+		t.Fatalf("OpenRouter config = %#v", config.OpenRouter)
+	}
+}
+
+func TestParseAndValidateExecutionConfigRejectsOpenRouterConfigForOtherProvider(t *testing.T) {
+	openAI := model.AgentModelProviderOpenAI
+	agent := &model.Agent{
+		RuntimeKind: "native_sdk",
+		Provider:    &openAI,
+		ExecutionConfig: model.JSONBlob(
+			`{"openrouter":{"provider":{"quantizations":["fp8"]}}}`,
+		),
+	}
+
+	_, err := parseAndValidateExecutionConfig(agent)
+	if err == nil || !strings.Contains(err.Error(), "only supported for provider openrouter") {
+		t.Fatalf("parseAndValidateExecutionConfig() error = %v", err)
 	}
 }
 

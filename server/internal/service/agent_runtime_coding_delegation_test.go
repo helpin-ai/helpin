@@ -501,6 +501,24 @@ func TestRuntimeAgentFromHelpinAgentPropagatesNativeToolBudget(t *testing.T) {
 	}
 }
 
+func TestRuntimeAgentFromHelpinAgentPropagatesOpenRouterQuantizations(t *testing.T) {
+	agent := &model.Agent{
+		ID:              "agent-fast",
+		RuntimeKind:     "native_sdk",
+		ExecutionConfig: defaultFastOpenRouterExecutionConfig(),
+	}
+
+	out := runtimeAgentFromHelpinAgent(agent, "helpin")
+	var config model.AgentExecutionConfig
+	if err := json.Unmarshal(out.ExecutionConfig, &config); err != nil {
+		t.Fatalf("decode runtime execution config: %v", err)
+	}
+	if config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
+		!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
+		t.Fatalf("runtime execution config = %s, want quantizations %v", out.ExecutionConfig, defaultFastOpenRouterQuantizations)
+	}
+}
+
 // setupCodingDelegationTestDB extends the shared interactive-approval schema
 // with the PM, delivery, git, and docs tables the coding launch chain touches.
 func setupCodingDelegationTestDB(t *testing.T) *gorm.DB {

@@ -876,16 +876,18 @@ func TestEnsureBuiltInAgent_UpgradesLegacyScribeDefaultRouting(t *testing.T) {
 	}
 }
 
-func TestEnsureBuiltInAgent_UpgradesManagedDeepSeekFlashDefaultsToGLMExacto(t *testing.T) {
+func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToDeepSeekNitro(t *testing.T) {
 	presetKeys := []string{
 		model.AgentPresetEpicPlanner,
 		model.AgentPresetDocumentationAgent,
 		model.AgentPresetAskAgent,
 		model.AgentPresetSupportAgent,
+		model.AgentPresetCommandAgent,
 	}
 	legacyModels := []string{
 		"deepseek/deepseek-v4-flash",
 		"deepseek/deepseek-v4-flash-0731",
+		"z-ai/glm-5.3-flash:exacto",
 	}
 
 	for _, presetKey := range presetKeys {
@@ -902,6 +904,7 @@ func TestEnsureBuiltInAgent_UpgradesManagedDeepSeekFlashDefaultsToGLMExacto(t *t
 				legacyProvider := model.AgentModelProviderOpenRouter
 				systemAgent.Provider = &legacyProvider
 				systemAgent.Model = &legacyModel
+				systemAgent.ExecutionConfig = model.JSONBlob(`{}`)
 				if err := agentRepo.Update(context.Background(), systemAgent); err != nil {
 					t.Fatalf("persist legacy route: %v", err)
 				}
@@ -913,8 +916,16 @@ func TestEnsureBuiltInAgent_UpgradesManagedDeepSeekFlashDefaultsToGLMExacto(t *t
 				if reconciled.Provider == nil || *reconciled.Provider != model.AgentModelProviderOpenRouter {
 					t.Fatalf("provider = %+v, want openrouter", reconciled.Provider)
 				}
-				if reconciled.Model == nil || *reconciled.Model != "z-ai/glm-5.3-flash:exacto" {
-					t.Fatalf("model = %+v, want GLM 5.3 Flash Exacto", reconciled.Model)
+				if reconciled.Model == nil || *reconciled.Model != defaultFastOpenRouterAgentModel {
+					t.Fatalf("model = %+v, want %s", reconciled.Model, defaultFastOpenRouterAgentModel)
+				}
+				config, err := model.ParseAgentExecutionConfig(reconciled.ExecutionConfig)
+				if err != nil {
+					t.Fatalf("parse execution config: %v", err)
+				}
+				if config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
+					!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
+					t.Fatalf("execution config = %s, want OpenRouter quantizations %v", reconciled.ExecutionConfig, defaultFastOpenRouterQuantizations)
 				}
 			})
 		}
