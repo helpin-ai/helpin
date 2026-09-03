@@ -206,6 +206,44 @@ func TestRuntimeAgentFromHelpinAgentRegistersManagedAskSkillsAndTools(t *testing
 	}
 }
 
+func TestRuntimeAgentFromHelpinAgentRegistersManagedCommandAgentSkills(t *testing.T) {
+	commandAgent := &model.Agent{
+		ID:               "agent-command",
+		IsSystem:         true,
+		Name:             "Sub-agent",
+		PresetKey:        model.AgentPresetCommandAgent,
+		PresetVersionKey: "command_agent_default",
+		RuntimeKind:      "codex",
+		AllowedTools: mustJSONStringSlice([]string{
+			agentcontract.ToolFindSkills,
+			agentcontract.ToolReadSkill,
+			"read_files",
+		}),
+	}
+
+	out := runtimeAgentFromHelpinAgent(commandAgent, "helpin")
+	if len(out.Skills) != len(commandAgentAvailableSkills()) {
+		t.Fatalf("expected curated Sub-agent skills, got %d: %#v", len(out.Skills), out.Skills)
+	}
+	for _, skill := range out.Skills {
+		if !slices.Contains(commandAgentAvailableSkills(), skill.Key) {
+			t.Errorf("unexpected Sub-agent skill %q", skill.Key)
+		}
+		config := map[string]interface{}{}
+		if err := json.Unmarshal(skill.Config, &config); err != nil {
+			t.Fatalf("decode runtime skill config for %q: %v", skill.Key, err)
+		}
+		if config[runtimeSkillRoleConfigKey] != "available" {
+			t.Fatalf("Sub-agent skill %q must be optional, got config %#v", skill.Key, config)
+		}
+	}
+	for _, toolName := range []string{agentcontract.ToolFindSkills, agentcontract.ToolReadSkill} {
+		if !slices.Contains(out.AllowedTools, toolName) {
+			t.Fatalf("Sub-agent must retain %q when optional skills are available: %#v", toolName, out.AllowedTools)
+		}
+	}
+}
+
 func TestRuntimeAgentFromHelpinAgentAlwaysIncludesSupportDeliveryContract(t *testing.T) {
 	staleWorkspacePrompt := "You are Echo. Answer customer questions from evidence."
 	out := runtimeAgentFromHelpinAgent(&model.Agent{

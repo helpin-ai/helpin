@@ -568,7 +568,7 @@ func (s *InternalCommandService) registerPMTaskCommands() {
 		Name:                 "pm.list_task_checklist",
 		Module:               "pm",
 		Mutating:             false,
-		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint"},
+		SupportedTargetTypes: []string{"workspace", "task", "story", "epic", "sprint", "support_coverage_gap"},
 		Tool:                 mustCommandToolMetadata("pm.list_task_checklist"),
 		Execute:              s.executeListTaskChecklist,
 	})

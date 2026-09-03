@@ -342,11 +342,11 @@ func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef 
 		availableRefs = append(availableRefs, ref)
 		seenAvailableKeys[key] = true
 	}
-	// The managed Ask Agent owns a product-curated catalog of optional skills.
+	// Managed general-purpose agents own product-curated catalogs of optional skills.
 	// Materialize missing refs at launch so existing workspace rows gain that
-	// catalog without a migration. Specialist presets continue to expose only
-	// the skill refs explicitly persisted on their agent rows.
-	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
+	// catalog without a migration. Specialists continue to expose only the skill
+	// refs explicitly persisted on their agent rows.
+	if presetKey := normalizePresetKey(agent.EffectivePresetKey()); presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetCommandAgent {
 		for _, key := range preset.AvailableSkills {
 			key = agentcontract.CanonicalBuiltInSkillKey(key)
 			if key == "" || seenAvailableKeys[key] {
@@ -1113,6 +1113,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	}
 	preset = enforceManagedAskAgentCapabilities(preset)
 	preset = enforceManagedDocumentationAgentCapabilities(preset)
+	preset = enforceManagedCommandAgentCapabilities(preset)
 	if existing != nil {
 		changed := false
 		beforePresetKey := existing.PresetKey

@@ -173,6 +173,16 @@ func TestDocumentationCoverageGapToolsAcceptCoverageTarget(t *testing.T) {
 		if !ok || len(def.SupportedTargetTypes) == 0 {
 			continue
 		}
+		// Knowledge search is useful when Quill is launched on a specific
+		// support conversation, but it cannot infer one conversation from an
+		// aggregated coverage-gap target. The gap run receives its evidence in
+		// launch context instead.
+		if toolName == "search_knowledge" {
+			if !slices.Contains(def.SupportedTargetTypes, "support_conversation") {
+				t.Errorf("documentation tool %q (%s) rejects support_conversation", toolName, def.Name)
+			}
+			continue
+		}
 		if !slices.Contains(def.SupportedTargetTypes, "support_coverage_gap") {
 			t.Errorf("documentation tool %q (%s) rejects support_coverage_gap", toolName, def.Name)
 		}

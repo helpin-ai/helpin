@@ -342,7 +342,14 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 				t.Fatalf("expected documentation target %q in %v", targetType, preset.AllowedTargetTypes)
 			}
 		}
-		for _, toolName := range []string{"list_repositories", "checkout_repositories", "read_files", "list_documents", "create_document", "write_document_content", "insert_document_artifact", "browser_open", "browser_screenshot", "browser_record", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
+		for _, toolName := range []string{
+			"list_repositories", "checkout_repositories", "read_files", "list_documents",
+			"create_document", "write_document_content", "insert_document_artifact",
+			"browser_open", "browser_screenshot", "browser_record",
+			"publish_document_change_proposal", "list_conversation_messages",
+			"get_release_context", "list_task_checklist", "list_epic_tasks",
+			"get_pull_request_diff", "search_knowledge",
+		} {
 			if !slices.Contains(preset.AllowedTools, toolName) {
 				t.Fatalf("expected documentation tool %q in %v", toolName, preset.AllowedTools)
 			}
@@ -396,14 +403,19 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 	}
 	for _, toolName := range []string{
 		"get_my_capabilities",
-		"create_task", "update_task_delivery_target", "create_document", "write_document_content", "insert_document_artifact",
+		"create_task", "list_task_checklist", "list_epic_tasks", "ensure_task_label",
+		"assign_task_agent", "set_task_dependencies", "update_task_state",
+		"update_task_delivery_target", "update_epic_delivery_target",
+		"create_document", "write_document_content", "insert_document_block",
+		"insert_document_artifact", "preview_md", "preview_json",
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		"list_conversation_messages",
 		"search_workspace", "search_documents",
 		"find_skills", "read_skill",
 		"list_repositories", "checkout_repositories",
 		"repository_search", "list_symbols", "read_files",
-		"read_symbol", "trace_symbol",
+		"read_symbol", "trace_symbol", "get_pull_request_diff", "get_check_run_logs",
+		"get_release_context", "find_tasks_for_git_changes",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
@@ -483,7 +495,12 @@ func TestManagedAskAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
 		"checkout_repositories", "repository_search", "read_files",
 		"read_symbol", "trace_symbol",
 		"find_skills", "read_skill", "update_plan",
-		"get_my_capabilities", "search_workspace", "search_documents", "create_document", "update_task_delivery_target", "prepare_dock_execution",
+		"get_my_capabilities", "search_workspace", "search_documents", "create_document",
+		"insert_document_block", "preview_md", "preview_json", "list_task_checklist",
+		"list_epic_tasks", "ensure_task_label", "assign_task_agent", "set_task_dependencies",
+		"update_task_state", "update_task_delivery_target", "update_epic_delivery_target",
+		"get_pull_request_diff", "get_check_run_logs", "get_release_context",
+		"find_tasks_for_git_changes", "prepare_dock_execution",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {
 			t.Errorf("managed Ask capability %q was not restored to pinned preset: %v", toolName, preset.AllowedTools)
@@ -509,14 +526,84 @@ func TestManagedDocumentationAgentCapabilitiesUpgradePinnedSnapshots(t *testing.
 		Key:          model.AgentPresetDocumentationAgent,
 		AllowedTools: []string{"read_document", "write_document_content"},
 	})
-	if !slices.Contains(preset.AllowedTools, "insert_document_artifact") {
-		t.Fatalf("managed Documentation Agent artifact capability was not restored: %v", preset.AllowedTools)
+	for _, toolName := range []string{
+		"insert_document_artifact", "list_task_checklist", "list_epic_tasks",
+		"get_pull_request_diff", "search_knowledge",
+	} {
+		if !slices.Contains(preset.AllowedTools, toolName) {
+			t.Fatalf("managed Documentation Agent capability %q was not restored: %v", toolName, preset.AllowedTools)
+		}
 	}
 	if got := enforceManagedDocumentationAgentCapabilities(model.AgentPresetDefinition{
 		Key:          model.AgentPresetSupportAgent,
 		AllowedTools: []string{"read_document"},
 	}); slices.Contains(got.AllowedTools, "insert_document_artifact") {
 		t.Fatalf("artifact capability leaked into unrelated preset: %v", got.AllowedTools)
+	}
+}
+
+func TestCommandAgentExposesGeneralWorkerToolsAndSkills(t *testing.T) {
+	preset, ok := agentPresetDefinition(model.AgentPresetCommandAgent)
+	if !ok {
+		t.Fatal("command agent preset not found")
+	}
+	for _, toolName := range []string{
+		"find_skills", "read_skill",
+		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
+		"create_space", "create_collection", "update_space", "update_collection", "move_document",
+		"insert_document_block", "insert_document_artifact", "preview_md", "preview_json",
+		"list_task_checklist", "list_epic_tasks", "ensure_task_label", "assign_task_agent",
+		"set_task_dependencies", "update_task_state", "update_task_delivery_target",
+		"update_epic_delivery_target", "get_pull_request_diff", "get_check_run_logs",
+		"get_release_context", "find_tasks_for_git_changes", "scan_semgrep", "scan_trivy",
+		"scan_gitleaks", "search_knowledge", "draft_support_reply", "update_conversation_status",
+	} {
+		if !slices.Contains(preset.AllowedTools, toolName) {
+			t.Errorf("Sub-agent is missing worker tool %q", toolName)
+		}
+	}
+	if !slices.Equal(preset.AvailableSkills, commandAgentAvailableSkills()) {
+		t.Fatalf("Sub-agent available skills = %v, want %v", preset.AvailableSkills, commandAgentAvailableSkills())
+	}
+	for _, forbidden := range []string{
+		"run_command", "write_file", "apply_patch", "commit_and_push", "open_pr",
+		"list_agents", "start_agent_run", "send_support_reply", "escalate_to_human",
+	} {
+		if slices.Contains(preset.AllowedTools, forbidden) {
+			t.Errorf("Sub-agent must not expose specialist or orchestration tool %q", forbidden)
+		}
+	}
+}
+
+func TestManagedCommandAgentCapabilitiesUpgradePinnedSnapshots(t *testing.T) {
+	preset := enforceManagedCommandAgentCapabilities(model.AgentPresetDefinition{
+		Key:             model.AgentPresetCommandAgent,
+		AllowedTools:    []string{"read_files"},
+		AvailableSkills: []string{"workspace_skill"},
+	})
+	for _, toolName := range []string{
+		"browser_open", "insert_document_block", "update_task_state",
+		"get_pull_request_diff", "scan_semgrep", "search_knowledge",
+	} {
+		if !slices.Contains(preset.AllowedTools, toolName) {
+			t.Errorf("managed Sub-agent capability %q was not restored: %v", toolName, preset.AllowedTools)
+		}
+	}
+	if !slices.Contains(preset.AvailableSkills, "workspace_skill") {
+		t.Fatalf("managed Sub-agent dropped an existing available skill: %v", preset.AvailableSkills)
+	}
+	for _, skillKey := range commandAgentAvailableSkills() {
+		if !slices.Contains(preset.AvailableSkills, skillKey) {
+			t.Errorf("managed Sub-agent available skill %q was not restored: %v", skillKey, preset.AvailableSkills)
+		}
+	}
+
+	unrelated := enforceManagedCommandAgentCapabilities(model.AgentPresetDefinition{
+		Key:          model.AgentPresetSupportAgent,
+		AllowedTools: []string{"search_knowledge"},
+	})
+	if slices.Contains(unrelated.AllowedTools, "scan_semgrep") {
+		t.Fatalf("Sub-agent worker tools leaked into unrelated preset: %v", unrelated.AllowedTools)
 	}
 }
 
