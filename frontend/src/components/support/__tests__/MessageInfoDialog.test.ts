@@ -59,4 +59,28 @@ describe('buildMessageInfoRows', () => {
     expect(rows).toContainEqual(['Cc', 'finance@example.com, manager@example.com'])
     expect(rows).toContainEqual(['Bcc', 'audit@example.com'])
   })
+
+  it('uses external-email terminology without claiming delivery or read tracking', () => {
+    const rows = buildMessageInfoRows({
+      ...baseInfo,
+      external_email: true,
+      captured_via: 'Support email copy',
+      from: 'waqar@example.com',
+      to_email: 'customer@example.com',
+      origin: 'External email',
+      email_delivery_status: 'unavailable',
+      email_delivery_status_label: 'Delivery status unavailable',
+      read_status_label: 'Read status unavailable',
+    })
+
+    expect(rows.slice(0, 4)).toEqual([
+      ['Identifier', 'msg-1'],
+      ['Sent at', expect.any(String)],
+      ['Sent by', 'Waqar Azeem'],
+      ['Origin', 'External email'],
+    ])
+    expect(rows).toContainEqual(['Added to Helpin', 'Via the support email copy'])
+    expect(rows).toContainEqual(['Email status', 'Delivery status unavailable'])
+    expect(rows).toContainEqual(['Read', 'Read status unavailable'])
+  })
 })

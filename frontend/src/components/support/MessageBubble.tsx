@@ -14,7 +14,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportLinkSecurity, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
-import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity } from './helpers';
+import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, isExternalSupportEmailReply, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -292,7 +292,7 @@ interface MessageBubbleProps {
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
   source?: TicketSource;
-  receiptStatus?: 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null;
+  receiptStatus?: SupportReceiptStatus;
   fallbackAvatarUrl?: string;
   customerDisplayName?: string;
   customerEmail?: string | null;
@@ -316,6 +316,9 @@ export const MessageBubble = memo(function MessageBubble({
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
   const linkPreviews = useMemo<SupportLinkPreview[]>(() => parseSupportLinkPreviews(message.metadata), [message.metadata]);
   const linkSecurity = useMemo<SupportLinkSecurity[]>(() => parseSupportLinkSecurity(message.metadata), [message.metadata]);
+  const displayedReceiptStatus: SupportReceiptStatus = isExternalSupportEmailReply(message.metadata)
+    ? 'sent_outside_helpin'
+    : receiptStatus ?? null;
   const markdownComponents = useMemo(() => ({
     ...markdownBaseComponents,
     a: ({ href, children }: ComponentPropsWithoutRef<'a'>) => (
@@ -732,12 +735,9 @@ export const MessageBubble = memo(function MessageBubble({
       ? 'Received by email'
       : `Received by email from ${inboundFromEmail}`
     : 'Received via email';
-  const hasEmailReceiptStatus = receiptStatus === 'sending_email' || receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email';
+  const hasEmailReceiptStatus = displayedReceiptStatus === 'sending_email' || displayedReceiptStatus === 'sent_email' || displayedReceiptStatus === 'delivered_email' || displayedReceiptStatus === 'read_email' || displayedReceiptStatus === 'sent_outside_helpin';
   const showStandaloneEmailBadge = hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
-  const emailReceiptCanOpenDetails = hasEmailBadge
-    && (receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email')
-    && !isCustomer;
-  const hasStatusBelow = !!receiptStatus || !!aiMeta || hasEmailBadge;
+  const hasStatusBelow = !!displayedReceiptStatus || !!aiMeta || hasEmailBadge;
   const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
     : hasTableContent
@@ -949,29 +949,38 @@ export const MessageBubble = memo(function MessageBubble({
                     </button>
                   )}
                 </div>
-                {receiptStatus && (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
-                    {receiptStatus === 'read' ? (
+                {displayedReceiptStatus && (
+                  <button
+                    type="button"
+                    onClick={() => setInfoOpen(true)}
+                    className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+                  >
+                    {displayedReceiptStatus === 'sent_outside_helpin' ? (
+                      <>
+                        <Mail01Icon className="h-3.5 w-3.5" />
+                        Sent outside Helpin
+                      </>
+                    ) : displayedReceiptStatus === 'read' ? (
                       <>
                         <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
                         Read in chat
                       </>
-                    ) : receiptStatus === 'read_email' ? (
+                    ) : displayedReceiptStatus === 'read_email' ? (
                       <>
                         <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
                         Read via email
                       </>
-                    ) : receiptStatus === 'delivered_email' ? (
+                    ) : displayedReceiptStatus === 'delivered_email' ? (
                       <>
                         <TickDouble01Icon className="h-3.5 w-3.5" />
                         Delivered via email
                       </>
-                    ) : receiptStatus === 'sending_email' ? (
+                    ) : displayedReceiptStatus === 'sending_email' ? (
                       <>
                         <TickDouble01Icon className="h-3.5 w-3.5" />
                         Sending email
                       </>
-                    ) : receiptStatus === 'sent_email' ? (
+                    ) : displayedReceiptStatus === 'sent_email' ? (
                       <>
                         <TickDouble01Icon className="h-3.5 w-3.5" />
                         Sent via email
@@ -982,7 +991,7 @@ export const MessageBubble = memo(function MessageBubble({
                         Delivered
                       </>
                     )}
-                  </span>
+                  </button>
                 )}
               </div>
               {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
@@ -1009,62 +1018,50 @@ export const MessageBubble = memo(function MessageBubble({
                 </div>
               )}
             </>
-          ) : receiptStatus && (
+          ) : displayedReceiptStatus && (
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
-              {emailReceiptCanOpenDetails ? (
-                <button
-                  type="button"
-                  onClick={() => setEmailDetailOpen(true)}
-                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
-                >
-                  {receiptStatus === 'read_email' ? (
-                    <>
-                      <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
-                      Read via email
-                    </>
-                  ) : receiptStatus === 'delivered_email' ? (
-                    <>
-                      <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                      Delivered via email
-                    </>
-                  ) : (
-                    <>
-                      <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                      Sent via email
-                    </>
-                  )}
-                </button>
-              ) : receiptStatus === 'read' ? (
-                <>
-                  <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
-                  <span className="text-[11px] text-muted-foreground">Read in chat</span>
-                </>
-              ) : receiptStatus === 'read_email' ? (
-                <>
-                  <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
-                  <span className="text-[11px] text-muted-foreground">Read via email</span>
-                </>
-              ) : receiptStatus === 'delivered_email' ? (
-                <>
-                  <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-[11px] text-muted-foreground">Delivered via email</span>
-                </>
-              ) : receiptStatus === 'sending_email' ? (
-                <>
-                  <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-[11px] text-muted-foreground">Sending email</span>
-                </>
-              ) : receiptStatus === 'sent_email' ? (
-                <>
-                  <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-[11px] text-muted-foreground">Sent via email</span>
-                </>
-              ) : (
-                <>
-                  <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-[11px] text-muted-foreground">Delivered</span>
-                </>
-              )}
+              <button
+                type="button"
+                onClick={() => setInfoOpen(true)}
+                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+              >
+                {displayedReceiptStatus === 'sent_outside_helpin' ? (
+                  <>
+                    <Mail01Icon className="h-3.5 w-3.5" />
+                    Sent outside Helpin
+                  </>
+                ) : displayedReceiptStatus === 'read' ? (
+                  <>
+                    <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
+                    Read in chat
+                  </>
+                ) : displayedReceiptStatus === 'read_email' ? (
+                  <>
+                    <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
+                    Read via email
+                  </>
+                ) : displayedReceiptStatus === 'delivered_email' ? (
+                  <>
+                    <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    Delivered via email
+                  </>
+                ) : displayedReceiptStatus === 'sending_email' ? (
+                  <>
+                    <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    Sending email
+                  </>
+                ) : displayedReceiptStatus === 'sent_email' ? (
+                  <>
+                    <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    Sent via email
+                  </>
+                ) : (
+                  <>
+                    <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    Delivered
+                  </>
+                )}
+              </button>
             </div>
           )}
         </div>

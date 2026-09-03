@@ -1143,6 +1143,23 @@ func (r *WorkspaceRepository) getMembershipByEmailTx(tx *gorm.DB, workspaceID, e
 	return member, nil
 }
 
+// GetActiveMembershipByEmail returns a linked, active workspace member for an
+// email address. Pending/revoked invitations are deliberately excluded because
+// inbound email from those addresses must not be attributed to a teammate.
+func (r *WorkspaceRepository) GetActiveMembershipByEmail(ctx context.Context, workspaceID, email string) (*model.WorkspaceMember, error) {
+	member := &model.WorkspaceMember{}
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND LOWER(email) = LOWER(?) AND status = ? AND user_id IS NOT NULL", workspaceID, normalizeEmail(email), model.WorkspaceMemberStatusActive).
+		First(member).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get active membership by email: %w", err)
+	}
+	return member, nil
+}
+
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }

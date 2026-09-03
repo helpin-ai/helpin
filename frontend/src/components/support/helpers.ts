@@ -73,6 +73,34 @@ export function isAIMessage(message: Pick<SupportMessage, 'sender_type' | 'metad
   return parseAIMessageMetadata(message.metadata) !== null;
 }
 
+export type SupportReceiptStatus = 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | 'sent_outside_helpin' | null;
+
+export function isExternalSupportEmailReply(metadata?: string): boolean {
+  if (!metadata) return false;
+  try {
+    const parsed = JSON.parse(metadata) as { external_email_reply?: unknown };
+    return parsed.external_email_reply === true;
+  } catch {
+    return false;
+  }
+}
+
+export function getSupportReceiptStatus(
+  message: SupportMessage,
+  conversation: Pick<SupportConversation, 'source' | 'contact_last_seen_at'>,
+): SupportReceiptStatus {
+  if (isExternalSupportEmailReply(message.metadata)) return 'sent_outside_helpin';
+  if (message.email_read_at) return 'read_email';
+  if (message.email_delivery_status === 'opened') return 'read_email';
+  if (message.email_delivery_status === 'delivered') return 'delivered_email';
+  if (message.id.startsWith('optimistic-') && message.via_channel === 'email') return 'sending_email';
+  const seen = conversation.contact_last_seen_at;
+  if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(message.created_at)) return 'read';
+  if (message.email_notified_at) return 'sent_email';
+  if (conversation.source === 'widget') return 'delivered';
+  return null;
+}
+
 export function getEffectiveSenderType(message: Pick<SupportMessage, 'sender_type' | 'metadata'>): SupportMessage['sender_type'] {
   return isAIMessage(message) ? 'ai' : message.sender_type;
 }

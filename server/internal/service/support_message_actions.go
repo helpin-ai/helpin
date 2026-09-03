@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -55,6 +56,8 @@ type SupportMessageInfo struct {
 	CCEmails                 []string                    `json:"cc_emails,omitempty"`
 	BCCEmails                []string                    `json:"bcc_emails,omitempty"`
 	Origin                   string                      `json:"origin"`
+	ExternalEmail            bool                        `json:"external_email"`
+	CapturedVia              string                      `json:"captured_via,omitempty"`
 	Type                     string                      `json:"type"`
 	EmailDeliveryStatus      string                      `json:"email_delivery_status,omitempty"`
 	EmailDeliveryStatusLabel string                      `json:"email_delivery_status_label,omitempty"`
@@ -62,6 +65,7 @@ type SupportMessageInfo struct {
 	NotDeliveredReason       *string                     `json:"not_delivered_reason"`
 	Read                     bool                        `json:"read"`
 	ReadAt                   *time.Time                  `json:"read_at"`
+	ReadStatusLabel          string                      `json:"read_status_label,omitempty"`
 	Edited                   bool                        `json:"edited"`
 	Translated               bool                        `json:"translated"`
 	Automated                bool                        `json:"automated"`
@@ -149,6 +153,7 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 		return nil, ErrSupportMessageActionNotFound
 	}
 
+	externalEmail := supportMessageIsExternalEmail(msg)
 	info := &SupportMessageInfo{
 		ID:         msg.ID,
 		SentAt:     msg.CreatedAt,
@@ -156,11 +161,18 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 		From:       supportMessageInfoFrom(msg, nil),
 		Origin:     supportMessageInfoOrigin(msg),
 		Type:       supportMessageInfoType(msg),
-		Read:       msg.EmailReadAt != nil,
+		Read:       !externalEmail && msg.EmailReadAt != nil,
 		ReadAt:     msg.EmailReadAt,
 		Edited:     false,
 		Translated: false,
 		Automated:  msg.SenderType == "agent" || msg.SenderType == "ai",
+	}
+	if externalEmail {
+		info.Origin = "External email"
+		info.ExternalEmail = true
+		info.CapturedVia = "Support email copy"
+		info.ReadAt = nil
+		info.ReadStatusLabel = "Read status unavailable"
 	}
 
 	if s.emailLogRepo != nil {
@@ -174,7 +186,7 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 			info.CCEmails = normalizeSupportEmailList(logRow.CCEmails)
 			info.BCCEmails = normalizeSupportEmailList(logRow.BCCEmails)
 			info.EmailDeliveryStatus, info.EmailDeliveryStatusLabel = supportMessageInfoEmailStatus(msg, logRow, s.now())
-			if logRow.DeliveredAt != nil {
+			if !externalEmail && logRow.DeliveredAt != nil {
 				info.Delivered = &SupportMessageInfoDelivery{Channel: "email", DeliveredAt: logRow.DeliveredAt.UTC()}
 			}
 			if strings.TrimSpace(logRow.ErrorMessage) != "" {
@@ -249,6 +261,9 @@ func supportMessageInfoType(msg *model.SupportMessage) string {
 }
 
 func supportMessageInfoEmailStatus(msg *model.SupportMessage, logRow *model.SupportEmailLog, now time.Time) (string, string) {
+	if supportMessageIsExternalEmail(msg) {
+		return "unavailable", "Delivery status unavailable"
+	}
 	if logRow != nil {
 		switch strings.TrimSpace(logRow.Status) {
 		case "opened":
@@ -273,6 +288,19 @@ func supportMessageInfoEmailStatus(msg *model.SupportMessage, logRow *model.Supp
 		return "queued", "Queued for email"
 	}
 	return "", ""
+}
+
+func supportMessageIsExternalEmail(msg *model.SupportMessage) bool {
+	if msg == nil || strings.TrimSpace(msg.Metadata) == "" {
+		return false
+	}
+	var metadata struct {
+		ExternalEmailReply bool `json:"external_email_reply"`
+	}
+	if err := json.Unmarshal([]byte(msg.Metadata), &metadata); err != nil {
+		return false
+	}
+	return metadata.ExternalEmailReply
 }
 
 func derefSupportMessageActionString(value *string) string {

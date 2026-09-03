@@ -43,8 +43,8 @@ function formatEmailList(values: string[] | null | undefined) {
 export function buildMessageInfoRows(info: SupportMessageInfo) {
   const rows: Array<readonly [string, string | boolean | null | undefined]> = [
     ['Identifier', info.id],
-    ['Created', formatTimestamp(info.sent_at)],
-    ['Sender', info.sender.name],
+    [info.external_email ? 'Sent at' : 'Created', formatTimestamp(info.sent_at)],
+    [info.external_email ? 'Sent by' : 'Sender', info.sender.name],
     ['Origin', info.origin],
   ];
 
@@ -62,6 +62,9 @@ export function buildMessageInfoRows(info: SupportMessageInfo) {
   if (bcc) {
     rows.push(['Bcc', bcc]);
   }
+  if (info.external_email && info.captured_via) {
+    rows.push(['Added to Helpin', `Via the ${info.captured_via.toLowerCase()}`]);
+  }
   if (info.type && info.type !== 'text') {
     rows.push(['Type', info.type]);
   }
@@ -70,8 +73,8 @@ export function buildMessageInfoRows(info: SupportMessageInfo) {
   if (emailStatus) {
     rows.push(['Email status', emailStatus]);
   }
-  if (info.read || info.read_at) {
-    rows.push(['Read', info.read_at ? formatTimestamp(info.read_at) : info.read]);
+  if (info.read_status_label || info.read || info.read_at) {
+    rows.push(['Read', info.read_status_label || (info.read_at ? formatTimestamp(info.read_at) : info.read)]);
   }
   if (info.edited) {
     rows.push(['Edited', info.edited]);

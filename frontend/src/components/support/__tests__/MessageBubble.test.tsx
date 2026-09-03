@@ -19,7 +19,7 @@ function findButtonByText(container: HTMLElement, text: string) {
 
 function renderBubble(
   message: SupportMessage,
-  receiptStatus?: 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null,
+  receiptStatus?: 'sending_email' | 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | 'sent_outside_helpin' | null,
   extraProps: Partial<ComponentProps<typeof MessageBubble>> = {},
 ) {
   const container = document.createElement('div')
@@ -659,6 +659,60 @@ Can I export my data?`,
     const read = renderBubble({ ...message, id: 'msg-email-status-2', email_read_at: '2026-04-24T12:22:00.000Z' }, 'read_email')
     expect(read.container.textContent).toContain('Read via email')
     read.cleanup()
+  })
+
+  it('opens message info when an email delivery marker is clicked', () => {
+    const message: SupportMessage = {
+      id: 'msg-email-info-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'agent-1',
+      sender_display_name: 'Agent',
+      content: 'Following up here.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      email_delivery_status: 'delivered',
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:20:00.000Z',
+    }
+
+    const rendered = renderBubble(message, 'delivered_email')
+    const marker = findButtonByText(rendered.container, 'Delivered via email')
+    expect(marker).toBeTruthy()
+
+    act(() => {
+      marker?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(document.body.textContent).toContain('Message info')
+    rendered.cleanup()
+  })
+
+  it('labels copied teammate email replies as sent outside Helpin', () => {
+    const message: SupportMessage = {
+      id: 'msg-external-email-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'agent-1',
+      sender_display_name: 'Agent',
+      content: 'Sent directly from Gmail.',
+      message_type: 'reply',
+      is_internal: false,
+      metadata: '{"external_email_reply":true,"external_email_capture":"support_email_copy"}',
+      via_channel: 'email',
+      created_at: '2026-09-03T07:35:00.000Z',
+      updated_at: '2026-09-03T07:35:00.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    expect(findButtonByText(rendered.container, 'Sent outside Helpin')).toBeTruthy()
+    expect(rendered.container.textContent).not.toContain('Sent via email')
+    expect(rendered.container.textContent).not.toContain('Delivered')
+    expect(rendered.container.textContent).not.toContain('Read via email')
+    rendered.cleanup()
   })
 
   it('does not keep showing delivered email from an expired undo window', () => {

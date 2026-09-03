@@ -655,6 +655,8 @@ export interface SupportMessageInfo {
   cc_emails?: string[];
   bcc_emails?: string[];
   origin: string;
+  external_email?: boolean;
+  captured_via?: string;
   type: string;
   email_delivery_status?: string;
   email_delivery_status_label?: string;
@@ -665,6 +667,7 @@ export interface SupportMessageInfo {
   not_delivered_reason?: string | null;
   read: boolean;
   read_at?: string | null;
+  read_status_label?: string;
   edited: boolean;
   translated: boolean;
   automated: boolean;
