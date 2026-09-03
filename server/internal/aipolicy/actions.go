@@ -153,6 +153,6 @@ func defaultChatModels() map[string][]string {
 	return map[string][]string{
 		"anthropic":  {"claude-haiku-4-5", "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8"},
 		"openai":     {"gpt-5-mini", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-terra"},
-		"openrouter": {"deepseek/deepseek-v4-flash-0731", "openai/gpt-5.6-luna", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5", "google/gemini-3.7-flash"},
+		"openrouter": {"z-ai/glm-5.3-flash:exacto", "deepseek/deepseek-v4-flash-0731", "openai/gpt-5.6-luna", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5", "google/gemini-3.7-flash"},
 	}
 }
