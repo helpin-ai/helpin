@@ -68,6 +68,9 @@ func (r *CRMSignalRepository) ListWorkspaceSignalCandidates(ctx context.Context,
 		limit = 500
 	}
 	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).Where("crm_signals.workspace_id = ?", workspaceID)
+	if filters.CommercialOnly {
+		query = commercialSignalsOnly(query)
+	}
 	hasSupersession := r.db.Migrator().HasColumn(&model.CRMSignal{}, "superseded_at")
 	if filters.Query != nil {
 		var err error

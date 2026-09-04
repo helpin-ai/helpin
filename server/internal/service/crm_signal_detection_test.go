@@ -32,6 +32,12 @@ func setupCRMSignalDetectionTestDB(t *testing.T) *gorm.DB {
 	}
 
 	statements := []string{
+		`CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, company_product_context TEXT, description TEXT, website_url TEXT)`,
+		`INSERT INTO workspaces VALUES ('ws-1', 'Seller', 'We sell social media management software to marketing teams. Paid enterprise plans and upgrades. We do not sell guest posts.', NULL, 'https://seller.example')`,
+		`CREATE TABLE crm_contacts (id TEXT PRIMARY KEY, workspace_id TEXT, lifecycle_stage TEXT)`,
+		`INSERT INTO crm_contacts VALUES ('contact-1','ws-1','lead'), ('contact-2','ws-1','lead')`,
+		`CREATE TABLE crm_companies (id TEXT PRIMARY KEY, workspace_id TEXT)`,
+		`CREATE TABLE crm_associations (workspace_id TEXT, from_object_type TEXT, from_object_id TEXT, to_object_type TEXT, to_object_id TEXT)`,
 		`CREATE TABLE crm_signals (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
@@ -83,7 +89,7 @@ func TestSignalDetectionService_PersistsProvenanceAndDedupes(t *testing.T) {
 	repo := repository.NewCRMSignalRepository(db)
 	summary := &fakeSummaryRequester{}
 	svc := NewSignalDetectionService(&fakeLLMProvider{
-		content: `[{"signal_type":"buying_intent","summary":"Prospect asked for pricing","confidence":0.91,"raw_evidence":"Can you send pricing for enterprise?"}]`,
+		content: `[{"commercial":{"relevance":"relevant","event":"purchase","offering_match":"Enterprise software plan","consequence":"Buyer is evaluating a paid subscription."},"signal_type":"buying_intent","summary":"Prospect asked for pricing","confidence":0.91,"raw_evidence":"Can you send pricing for enterprise?"}]`,
 	}, repo, summary)
 
 	threadID := "thread-1"
@@ -169,7 +175,7 @@ func TestSignalDetectionService_RequiresVerifiedConfidentEvidence(t *testing.T) 
 		t.Run(tt.name, func(t *testing.T) {
 			db := setupCRMSignalDetectionTestDB(t)
 			svc := NewSignalDetectionService(&fakeLLMProvider{content: fmt.Sprintf(
-				`[{"signal_type":"buying_intent","summary":"Pricing interest","confidence":%v,"raw_evidence":%q}]`,
+				`[{"commercial":{"relevance":"relevant","event":"purchase","offering_match":"Enterprise software plan","consequence":"Buyer is evaluating a paid subscription."},"signal_type":"buying_intent","summary":"Pricing interest","confidence":%v,"raw_evidence":%q}]`,
 				tt.confidence, tt.evidence,
 			)}, repository.NewCRMSignalRepository(db), &fakeSummaryRequester{})
 			rows, err := svc.DetectSignals(context.Background(), []model.SignalSourcePayload{{
@@ -189,7 +195,7 @@ func TestSignalDetectionService_RequiresVerifiedConfidentEvidence(t *testing.T) 
 func TestSignalDetectionServiceVerifiesEvidenceAcrossInlineHTMLTags(t *testing.T) {
 	db := setupCRMSignalDetectionTestDB(t)
 	svc := NewSignalDetectionService(&fakeLLMProvider{content: `[
-		{"signal_type":"buying_intent","summary":"The buyer requested pricing.","confidence":0.92,"raw_evidence":"Please send pricing details."}
+		{"commercial":{"relevance":"relevant","event":"purchase","offering_match":"Enterprise software plan","consequence":"Buyer is evaluating a paid subscription."},"signal_type":"buying_intent","summary":"The buyer requested pricing.","confidence":0.92,"raw_evidence":"Please send pricing details."}
 	]`}, repository.NewCRMSignalRepository(db), &fakeSummaryRequester{})
 
 	rows, err := svc.DetectSignals(context.Background(), []model.SignalSourcePayload{{
@@ -208,7 +214,7 @@ func TestSignalDetectionService_BatchBindsSignalToDeclaredSource(t *testing.T) {
 	db := setupCRMSignalDetectionTestDB(t)
 	repo := repository.NewCRMSignalRepository(db)
 	svc := NewSignalDetectionService(&fakeLLMProvider{content: `[
-		{"source_type":"email","source_id":"message-2","signal_type":"timeline_signal","summary":"The buyer needs a decision by September 15.","confidence":0.94,"raw_evidence":"We need to decide by September 15, 2026.","timeline_date":"2026-09-15"}
+		{"source_type":"email","source_id":"message-2","commercial":{"relevance":"relevant","event":"purchase_deadline","offering_match":"Enterprise software plan","consequence":"The purchase decision is due September 15."},"signal_type":"timeline_signal","summary":"The buyer needs a decision by September 15.","confidence":0.94,"raw_evidence":"We need to decide by September 15, 2026.","timeline_date":"2026-09-15"}
 	]`}, repo, &fakeSummaryRequester{})
 	contact1, contact2 := "contact-1", "contact-2"
 	payloads := []model.SignalSourcePayload{

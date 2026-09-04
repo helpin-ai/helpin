@@ -18,20 +18,21 @@ type SignalParticipant struct {
 
 // SignalSourcePayload is a unified format for signal detection inputs.
 type SignalSourcePayload struct {
-	SourceType             string              `json:"source_type"` // email, meeting, support, note, or call
-	SourceID               string              `json:"source_id"`
-	SourceThreadID         *string             `json:"source_thread_id,omitempty"`
-	SourceThreadExternalID *string             `json:"source_thread_external_id,omitempty"`
-	WorkspaceID            string              `json:"workspace_id"`
-	ContactID              *string             `json:"contact_id"`
-	DealID                 *string             `json:"deal_id"`
-	CompanyID              *string             `json:"company_id"`
-	Subject                string              `json:"subject"`
-	Body                   string              `json:"body"`
-	Participants           []SignalParticipant `json:"participants"`
-	Direction              string              `json:"direction"` // "inbound", "outbound", "bilateral"
-	OccurredAt             time.Time           `json:"occurred_at"`
-	ThreadContext          string              `json:"thread_context"` // preceding messages, truncated
+	CommercialContext      *SignalCommercialContext `json:"commercial_context,omitempty"`
+	SourceType             string                   `json:"source_type"` // email, meeting, support, note, or call
+	SourceID               string                   `json:"source_id"`
+	SourceThreadID         *string                  `json:"source_thread_id,omitempty"`
+	SourceThreadExternalID *string                  `json:"source_thread_external_id,omitempty"`
+	WorkspaceID            string                   `json:"workspace_id"`
+	ContactID              *string                  `json:"contact_id"`
+	DealID                 *string                  `json:"deal_id"`
+	CompanyID              *string                  `json:"company_id"`
+	Subject                string                   `json:"subject"`
+	Body                   string                   `json:"body"`
+	Participants           []SignalParticipant      `json:"participants"`
+	Direction              string                   `json:"direction"` // "inbound", "outbound", "bilateral"
+	OccurredAt             time.Time                `json:"occurred_at"`
+	ThreadContext          string                   `json:"thread_context"` // preceding messages, truncated
 }
 
 // PayloadFromEmail builds a signal source payload from an email message.

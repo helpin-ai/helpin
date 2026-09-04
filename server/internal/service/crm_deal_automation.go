@@ -415,6 +415,9 @@ func (s *DealAutomationService) allSignalsActivationEligible(ctx context.Context
 		return false
 	}
 	for _, signal := range signals {
+		if signal.Metadata["needs_customer_context"] == true || signal.CommercialMotion == model.CRMCommercialMotionNeedsContext {
+			return false
+		}
 		if signal.ID == "" || signal.EvidenceIdentityTrust != model.IdentityTrustVerified || signal.RuleKey == nil || signal.RuleVersion == nil {
 			return false
 		}

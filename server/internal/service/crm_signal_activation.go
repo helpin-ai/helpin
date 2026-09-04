@@ -219,6 +219,9 @@ func signalTrustRank(trust string) (int, bool) {
 
 func (s *CRMSignalService) setSignalActivation(ctx context.Context, signal *model.CRMSignal, policy *model.CRMSignalRoutingPolicy, profile signalScoringProfile) {
 	blockers := []string{}
+	if signal.Metadata["needs_customer_context"] == true || signal.CommercialMotion == model.CRMCommercialMotionNeedsContext {
+		blockers = append(blockers, "needs_customer_context")
+	}
 	if signal.DismissedAt != nil {
 		blockers = append(blockers, "dismissed")
 	}

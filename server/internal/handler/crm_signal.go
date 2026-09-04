@@ -320,7 +320,7 @@ func signalLanePages(r *http.Request) map[string]int {
 		model.CRMCommercialMotionProspecting, model.CRMCommercialMotionConversion,
 		model.CRMCommercialMotionOnboarding, model.CRMCommercialMotionAdoption,
 		model.CRMCommercialMotionExpansion, model.CRMCommercialMotionRenewal,
-		model.CRMCommercialMotionRetention,
+		model.CRMCommercialMotionRetention, model.CRMCommercialMotionNeedsContext,
 	} {
 		if page, err := strconv.Atoi(r.URL.Query().Get("lane_" + motion + "_page")); err == nil && page > 0 {
 			pages[motion] = page
@@ -343,6 +343,8 @@ func signalListFiltersFromRequest(r *http.Request) (model.CRMSignalListFilters, 
 		Severity:         queryStringPtr(r, "severity"),
 		CommercialMotion: queryStringPtr(r, "motion"),
 		Query:            queryFilters,
+		CommercialOnly:   r.URL.Query().Get("commercial_only") == "true",
+		IncludeContext:   r.URL.Query().Get("include_context") == "true",
 	}
 	if filters.CompanyID == nil {
 		filters.CompanyID = queryStringPtr(r, "company_id")

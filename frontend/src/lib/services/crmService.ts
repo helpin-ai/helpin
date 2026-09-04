@@ -339,6 +339,7 @@ export const crmSignalService = {
   list: (
     workspaceId: string,
     filters?: {
+      commercial_only?: boolean;
       contact_id?: string;
       deal_id?: string;
       company_id?: string;

@@ -462,7 +462,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                 <div>
                   <p className="text-sm font-medium">Company/Product Context</p>
                   <p className="text-xs text-muted-foreground">
-                    Plain-text context used by Helpin AI agents for support answers, docs, planning, automation, and product-aware work.
+                    Describe your offerings, target buyers, and what you do not sell. CRM uses this context to qualify sales signals; Helpin AI also uses it for support, docs, planning, and automation.
                   </p>
                 </div>
               </div>
@@ -500,7 +500,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                 id="company-product-context"
                 value={companyDescription}
                 onChange={(event) => setCompanyDescription(event.target.value)}
-                placeholder="Plain text about what your company or product does, who it serves, and what problems it solves."
+                placeholder="What do you sell? Who buys it, and why? Include paid plans, upgrades, services, and exclusions such as unsolicited vendor pitches or partnerships you do not offer."
                 rows={companyContextExpanded ? 14 : 8}
                 className={cn(
                   shouldCollapseCompanyContext && 'pb-10',

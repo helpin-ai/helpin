@@ -226,6 +226,7 @@ func (s *CRMSignalService) listWorkspaceSignalFeed(ctx context.Context, workspac
 		return &model.CRMSignalWorkspaceFeed{Data: []model.CRMSignalAccountStory{}, Lanes: []model.CRMSignalLane{}, RolloutMode: rollout.Mode}, nil
 	}
 	now := time.Now().UTC()
+	filters.CommercialOnly = !filters.IncludeContext && !includeShadow
 	signals, err := s.signalRepo.ListWorkspaceSignalCandidates(ctx, workspaceID, filters, now, 0)
 	if err != nil {
 		return nil, err
@@ -276,7 +277,7 @@ func paginateSignalLanes(stories []model.CRMSignalAccountStory, page, perPage in
 		model.CRMCommercialMotionProspecting, model.CRMCommercialMotionConversion,
 		model.CRMCommercialMotionOnboarding, model.CRMCommercialMotionAdoption,
 		model.CRMCommercialMotionExpansion, model.CRMCommercialMotionRenewal,
-		model.CRMCommercialMotionRetention,
+		model.CRMCommercialMotionRetention, model.CRMCommercialMotionNeedsContext,
 	}
 	byMotion := make(map[string][]model.CRMSignalAccountStory, len(motionOrder))
 	for _, story := range stories {

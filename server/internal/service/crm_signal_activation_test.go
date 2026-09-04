@@ -212,6 +212,13 @@ func TestSignalActivationRequiresLiveRuleAndNoOpenTask(t *testing.T) {
 	if !signal.ActivationEligible {
 		t.Fatalf("eligible signal blocked: %+v", signal.ActivationBlockers)
 	}
+
+	signal.Metadata = model.JSONB{"needs_customer_context": true}
+	svc.setSignalActivation(context.Background(), &signal, policy, profile)
+	if signal.ActivationEligible || !signalTestContains(signal.ActivationBlockers, "needs_customer_context") {
+		t.Fatalf("missing relationship allowed activation: %+v", signal.ActivationBlockers)
+	}
+	signal.Metadata = nil
 	if err := db.Exec(`INSERT INTO pm_tasks VALUES ('task-1', 'ws-1', false, false, 'crm-signal:fingerprint-1', ?)`, time.Now().UTC()).Error; err != nil {
 		t.Fatalf("seed open task: %v", err)
 	}
