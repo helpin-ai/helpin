@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { QueryBuilderPopover } from "@/components/ui/query-builder/QueryBuilderPopover";
 import {
@@ -46,6 +47,7 @@ const motionLabels: Record<CRMCommercialMotion, string> = {
   expansion: "Expansion",
   renewal: "Renewal",
   retention: "Retention",
+  needs_context: "Needs customer context",
 };
 
 function motionLabel(motion: CRMCommercialMotion | string) {
@@ -148,6 +150,12 @@ function StoryRow({
             <Badge variant="outline" className="rounded-sm text-[10px]">
               {motionLabel(story.commercial_motion)}
             </Badge>
+            {story.signals.some((signal) => signal.metadata?.needs_customer_context) &&
+            story.commercial_motion !== "needs_context" ? (
+              <Badge variant="outline" className="rounded-sm text-[10px]">
+                Confirm customer relationship
+              </Badge>
+            ) : null}
             {story.other_active_motions?.map((motion) => (
               <Badge
                 key={motion}
@@ -167,7 +175,8 @@ function StoryRow({
               Why now
             </p>
             <p className="mt-1 text-[13px] leading-5 text-foreground/90">
-              {story.signals[0]?.summary ||
+              {story.signals[0]?.metadata?.commercial_consequence ||
+                story.signals[0]?.summary ||
                 "New customer evidence needs review."}
             </p>
           </div>
@@ -429,7 +438,9 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
             </h2>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            What changed, why it matters, and where to follow up.
+            {filters.include_context
+              ? "Includes older signals and operational context that have not passed commercial qualification."
+              : "Purchases, upgrades, renewals, and revenue risks with supporting evidence."}
           </p>
         </div>
         {feed.data ? (
@@ -523,6 +534,20 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
             <SelectItem value="180">Last 180 days</SelectItem>
           </SelectContent>
         </Select>
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox
+            checked={filters.include_context ?? false}
+            onCheckedChange={(checked) => {
+              setFilters((current) => ({
+                ...current,
+                include_context: checked === true,
+                page: 1,
+              }));
+              setLanePages({});
+            }}
+          />
+          Include unqualified context
+        </label>
         {Object.values(filters).some((value) => value !== undefined) ||
         queryFilters ? (
           <Button
@@ -563,7 +588,9 @@ export function SignalWorkspaceFeed({ workspaceId }: { workspaceId: string }) {
           <p className="mt-1 text-xs text-muted-foreground">
             {feed.data?.rollout_mode === "shadow"
               ? "Admins can inspect the separate shadow preview and take the workspace live after its quality gate passes."
-              : "Broaden the time window or include lower-trust context."}
+              : filters.include_context
+                ? "Broaden the time window or adjust your filters to see more context."
+                : "No qualified commercial evidence matches. You can include unqualified context above. Describe your offerings, buyers, and exclusions in Settings → Knowledge → Company/Product Context."}
           </p>
         </div>
       ) : (

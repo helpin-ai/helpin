@@ -864,7 +864,7 @@ export function useApplyEnrichmentSuggestion(wsId: string) {
 
 export function useCRMSignals(
   wsId: string,
-  filters?: { contact_id?: string; deal_id?: string; company_id?: string; signal_type?: string },
+  filters?: { contact_id?: string; deal_id?: string; company_id?: string; signal_type?: string; commercial_only?: boolean },
 ) {
   return useQuery({
     queryKey: [...queryKeys.crm.signals(wsId), filters],

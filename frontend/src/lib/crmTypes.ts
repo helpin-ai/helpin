@@ -777,9 +777,16 @@ export type CRMCommercialMotion =
   | "adoption"
   | "expansion"
   | "renewal"
-  | "retention";
+  | "retention"
+  | "needs_context";
 
 export interface CRMSignalMetadata {
+  commercial_relevance?: "relevant";
+  commercial_event?: string;
+  commercial_consequence?: string;
+  offering_match?: string;
+  customer_relationship?: "customer" | "prospect" | "unknown";
+  needs_customer_context?: boolean;
   message_direction?: string;
   participant_count?: number;
   thread_external_id?: string;
@@ -1008,6 +1015,7 @@ export interface CRMSignalRoutingPolicy {
 }
 
 export interface CRMSignalFeedFilters {
+  include_context?: boolean;
   owner_member_id?: string;
   account_id?: string;
   domain?: CRMSignalDomain;

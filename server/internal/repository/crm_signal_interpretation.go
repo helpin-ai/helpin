@@ -38,6 +38,14 @@ func (r *CRMSignalRepository) prepareSignalInterpretations(
 	if err := r.persistSignalMotionState(ctx, signal, motions, snapshot); err != nil {
 		return nil, err
 	}
+	if isCommerciallyQualifiedConversation(*signal) {
+		snapshot["baseline_motions_at_detection"] = motions
+		motions = []string{signal.CommercialMotion}
+		snapshot["motions_at_detection"] = motions
+		snapshot["commercial_event"] = signal.Metadata["commercial_event"]
+		snapshot["customer_relationship"] = signal.Metadata["customer_relationship"]
+		snapshot["needs_customer_context"] = signal.Metadata["needs_customer_context"]
+	}
 	observationID, err := r.persistSignalObservation(ctx, signal, motions, snapshot)
 	if err != nil {
 		return nil, err
@@ -84,6 +92,12 @@ func (r *CRMSignalRepository) prepareSignalInterpretations(
 		interpreted.InterpretationSnapshot["half_life_days"] = interpreted.HalfLifeDaysSnapshot
 		if interpreted.RecommendedActionKey != nil {
 			interpreted.InterpretationSnapshot["recommended_action_key"] = *interpreted.RecommendedActionKey
+		}
+		if isCommerciallyQualifiedConversation(interpreted) {
+			actionKey, _ := signal.Metadata["commercial_action_key"].(string)
+			actionLabel, _ := signal.Metadata["commercial_action_label"].(string)
+			interpreted.RecommendedActionKey, interpreted.RecommendedActionLabel = &actionKey, &actionLabel
+			interpreted.InterpretationSnapshot["recommended_action_key"] = actionKey
 		}
 		interpreted.MeaningFingerprint = signalMeaningFingerprint(interpreted)
 		rows = append(rows, interpreted)
@@ -292,7 +306,7 @@ func (r *CRMSignalRepository) ReconcileDealMotionSignals(ctx context.Context, wo
 	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND deal_id = ? AND superseded_at IS NULL", workspaceID, dealID)
 	if deal.StageType == model.CRMStageTypeOpen {
-		query = query.Where("commercial_motion <> ?", activeMotion)
+		query = excludeQualifiedCommercialEvents(query.Where("commercial_motion <> ?", activeMotion))
 	}
 	now := time.Now().UTC()
 	if err := query.Updates(map[string]interface{}{
@@ -368,6 +382,7 @@ func (r *CRMSignalRepository) RefreshEntityMotionSignals(
 	query := entityScope(r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND dismissed_at IS NULL AND superseded_at IS NULL", workspaceID)).
 		Where("commercial_motion NOT IN ?", motions)
+	query = excludeQualifiedCommercialEvents(query)
 	var stale []model.CRMSignal
 	if err := query.Find(&stale).Error; err != nil {
 		return fmt.Errorf("load motion-exit signals: %w", err)

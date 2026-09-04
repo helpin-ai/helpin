@@ -286,7 +286,7 @@ export function InsightsPage() {
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
   const wsSlug = currentWorkspace?.slug ?? '';
-  const { data: signalsData, isLoading: signalsLoading } = useCRMSignals(wsId, {});
+  const { data: signalsData, isLoading: signalsLoading } = useCRMSignals(wsId, { commercial_only: true });
   const { data: healthData, isLoading: healthLoading } = useHealthScores(wsId);
   const { data: suggestionsData, isLoading: suggestionsLoading } = usePendingSuggestions(wsId);
   const acceptSuggestion = useAcceptSuggestion(wsId);
@@ -378,12 +378,17 @@ export function InsightsPage() {
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:px-6">
 
         {!isLoadingIntelligence && !hasAnyIntelligence ? (
-          <IntelligenceReadinessState
-            onConnectEmail={goToEmailSettings}
-            onImportRecords={goToImportSettings}
-            onTuneThresholds={goToAutonomySettings}
-            onOpenContacts={goToContacts}
-          />
+          <>
+            <IntelligenceReadinessState
+              onConnectEmail={goToEmailSettings}
+              onImportRecords={goToImportSettings}
+              onTuneThresholds={goToAutonomySettings}
+              onOpenContacts={goToContacts}
+            />
+            <div className="rounded-lg border bg-card px-4 py-4 sm:px-5">
+              <SignalWorkspaceFeed workspaceId={wsId} />
+            </div>
+          </>
         ) : (
           <>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

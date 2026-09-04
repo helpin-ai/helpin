@@ -167,6 +167,9 @@ func legacySignalCreateDB(db *gorm.DB) *gorm.DB {
 // ListSignals returns CRM signals with optional filters.
 func (r *CRMSignalRepository) ListSignals(ctx context.Context, workspaceID string, filters model.CRMSignalListFilters, pagination model.PMPagination) ([]model.CRMSignal, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).Where("crm_signals.workspace_id = ?", workspaceID)
+	if filters.CommercialOnly {
+		query = commercialSignalsOnly(query)
+	}
 	hasSupersession := r.db.Migrator().HasColumn(&model.CRMSignal{}, "superseded_at")
 	if filters.Query != nil {
 		var err error
@@ -532,7 +535,7 @@ func (r *CRMSignalRepository) DeleteSignal(ctx context.Context, workspaceID, id 
 
 // HasRecentSignalForThread returns true when a same-type signal already exists
 // for the same thread inside the provided window.
-func (r *CRMSignalRepository) HasRecentSignalForThread(ctx context.Context, workspaceID, threadID, signalType, excludeSourceID string, since time.Time) (bool, error) {
+func (r *CRMSignalRepository) HasRecentSignalForThread(ctx context.Context, workspaceID, threadID, signalType, excludeSourceID string, since time.Time, commercialEvent ...string) (bool, error) {
 	if workspaceID == "" || threadID == "" || signalType == "" {
 		return false, nil
 	}
@@ -543,6 +546,9 @@ func (r *CRMSignalRepository) HasRecentSignalForThread(ctx context.Context, work
 		Where("source_thread_id = ?", threadID).
 		Where("signal_type = ?", signalType).
 		Where("detected_at >= ?", since)
+	if len(commercialEvent) > 0 {
+		query = query.Where("rule_key = ? AND rule_version = ? AND metadata->>'commercial_event' = ?", model.CRMSignalRuleConversationExtraction, model.CRMSignalCommercialDetectorVersion, commercialEvent[0])
+	}
 	if excludeSourceID != "" {
 		query = query.Where("source_id IS NULL OR source_id <> ?", excludeSourceID)
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/crmtext"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -18,8 +19,8 @@ import (
 const (
 	repeatedThreadSignalWindow    = 24 * time.Hour
 	minimumDetectedConfidence     = 0.6
-	signalEvidenceDetectorVersion = "verified-v3-en"
-	signalEvidenceRuleVersion     = 3
+	signalEvidenceDetectorVersion = "commercial-v4-en"
+	signalEvidenceRuleVersion     = model.CRMSignalCommercialDetectorVersion
 )
 
 // SignalDetectionService uses LLM to detect CRM signals from various sources.
@@ -57,13 +58,14 @@ func (s *SignalDetectionService) SetHealthScoreRefresh(refresh interface {
 
 // DetectedSignal is the parsed LLM output for a single signal.
 type DetectedSignal struct {
-	SourceType   string  `json:"source_type"`
-	SourceID     string  `json:"source_id"`
-	SignalType   string  `json:"signal_type"`
-	Summary      string  `json:"summary"`
-	Confidence   float64 `json:"confidence"`
-	RawEvidence  string  `json:"raw_evidence"`
-	TimelineDate string  `json:"timeline_date,omitempty"`
+	Commercial   *model.SignalCommercialAssessment `json:"commercial"`
+	SourceType   string                            `json:"source_type"`
+	SourceID     string                            `json:"source_id"`
+	SignalType   string                            `json:"signal_type"`
+	Summary      string                            `json:"summary"`
+	Confidence   float64                           `json:"confidence"`
+	RawEvidence  string                            `json:"raw_evidence"`
+	TimelineDate string                            `json:"timeline_date,omitempty"`
 }
 
 // DetectSignals analyzes source payloads and detects CRM signals.
@@ -75,7 +77,22 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 		return nil, fmt.Errorf("LLM provider not configured")
 	}
 
-	// Build the analysis prompt
+	// Hydrate trusted context here, never from caller-supplied prompt metadata.
+	enriched := make([]model.SignalSourcePayload, len(payloads))
+	for i, payload := range payloads {
+		if payload.WorkspaceID == "" || payload.WorkspaceID != payloads[0].WorkspaceID {
+			return nil, fmt.Errorf("signal sources must belong to one workspace")
+		}
+		commercialContext, err := s.signalRepo.SignalCommercialContext(ctx, payload)
+		if err != nil {
+			return nil, err
+		}
+		enriched[i] = payload
+		enriched[i].CommercialContext = &commercialContext
+		enriched[i].CompanyID = commercialContext.CompanyID
+	}
+	payloads = enriched
+	// Build the analysis prompt, including context in the metering/idempotency hash.
 	payloadJSON, err := json.Marshal(payloads)
 	if err != nil {
 		return nil, fmt.Errorf("marshal payloads: %w", err)
@@ -119,6 +136,23 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 				if !knownSource || !validDetectedSignalType(item.SignalType) {
 					return fmt.Errorf("CRM signal model returned an unknown source or signal type")
 				}
+				if item.Commercial == nil {
+					return fmt.Errorf("CRM signal model omitted commercial assessment")
+				}
+				if item.Commercial.Relevance != "relevant" && item.Commercial.Relevance != "irrelevant" && item.Commercial.Relevance != "uncertain" {
+					return fmt.Errorf("CRM signal model returned invalid commercial relevance")
+				}
+				if item.Commercial.Relevance == "relevant" {
+					if !crmsignal.ValidCommercialEvent(item.Commercial.Event) {
+						return fmt.Errorf("CRM signal model returned an invalid commercial event")
+					}
+					if strings.TrimSpace(item.Commercial.Consequence) == "" || strings.TrimSpace(item.Commercial.OfferingMatch) == "" {
+						return fmt.Errorf("CRM signal model omitted the offering match or revenue consequence")
+					}
+					if err := validateEnglishCRMNarrative(item.Commercial.Consequence); err != nil {
+						return err
+					}
+				}
 				if languageErr := validateEnglishCRMNarrative(item.Summary); languageErr != nil {
 					return languageErr
 				}
@@ -141,7 +175,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 
 	detected, err := parseDetectedSignals(resp.Content)
 	if err != nil {
-		slog.Error("failed to parse signal detection response", "error", err, "content", resp.Content)
+		slog.Error("failed to parse signal detection response", "error", err)
 		return nil, err
 	}
 
@@ -150,7 +184,7 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 	for _, candidate := range payloads {
 		key := signalSourceKey(candidate.SourceType, candidate.SourceID)
 		keptTypesByKey[key] = nil
-		reconcileSource[key] = true
+		reconcileSource[key] = strings.TrimSpace(candidate.CommercialContext.ProductContext) != ""
 	}
 
 	// Create CRM signal records against the exact source declared by the model.
@@ -170,6 +204,14 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 			slog.InfoContext(ctx, "skipping CRM signal with unknown source or type", "source_type", d.SourceType, "source_id", d.SourceID, "signal_type", d.SignalType)
 			continue
 		}
+		meaning, qualified := crmsignal.QualifyCommercialSignal(*d.Commercial, *payload.CommercialContext)
+		if !qualified {
+			// Missing seller context cannot justify removing previously extracted evidence.
+			if strings.TrimSpace(payload.CommercialContext.ProductContext) == "" || d.Commercial.Relevance == "uncertain" {
+				reconcileSource[key] = false
+			}
+			continue
+		}
 		if d.Confidence < minimumDetectedConfidence {
 			continue
 		}
@@ -181,17 +223,27 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 		}
 
 		if payload.SourceThreadID != nil && *payload.SourceThreadID != "" {
-			exists, err := s.signalRepo.HasRecentSignalForThread(ctx, payload.WorkspaceID, *payload.SourceThreadID, d.SignalType, payload.SourceID, time.Now().Add(-repeatedThreadSignalWindow))
+			exists, err := s.signalRepo.HasRecentSignalForThread(ctx, payload.WorkspaceID, *payload.SourceThreadID, d.SignalType, payload.SourceID, time.Now().Add(-repeatedThreadSignalWindow), d.Commercial.Event)
 			if err != nil {
 				return nil, err
 			}
 			if exists {
 				slog.Info("skipping repeated thread-level CRM signal", "workspace_id", payload.WorkspaceID, "thread_id", *payload.SourceThreadID, "signal_type", d.SignalType)
+				reconcileSource[key] = false
 				continue
 			}
 		}
 
 		metadata := buildSignalMetadata(payload)
+		metadata["commercial_relevance"] = "relevant"
+		metadata["commercial_event"] = d.Commercial.Event
+		metadata["commercial_consequence"] = strings.TrimSpace(d.Commercial.Consequence)
+		metadata["offering_match"] = strings.TrimSpace(d.Commercial.OfferingMatch)
+		metadata["customer_relationship"] = meaning.Relationship
+		metadata["needs_customer_context"] = meaning.NeedsContext
+		metadata["commercial_motion"] = meaning.Motion
+		metadata["commercial_action_key"] = meaning.ActionKey
+		metadata["commercial_action_label"] = meaning.ActionLabel
 		if d.SignalType == model.CRMSignalTimelineSignal && strings.TrimSpace(d.TimelineDate) != "" {
 			parsedDate, parseErr := time.Parse("2006-01-02", strings.TrimSpace(d.TimelineDate))
 			if parseErr != nil {
@@ -203,28 +255,29 @@ func (s *SignalDetectionService) DetectSignals(ctx context.Context, payloads []m
 
 		ruleKey, ruleVersion := model.CRMSignalRuleConversationExtraction, signalEvidenceRuleVersion
 		signal := model.CRMSignal{
-			WorkspaceID:     payload.WorkspaceID,
-			ContactID:       payload.ContactID,
-			DealID:          payload.DealID,
-			CompanyID:       payload.CompanyID,
-			SignalType:      d.SignalType,
-			SourceType:      payload.SourceType,
-			SourceID:        &payload.SourceID,
-			SourceThreadID:  payload.SourceThreadID,
-			Summary:         d.Summary,
-			EvidenceExcerpt: &evidence,
-			Metadata:        metadata,
-			Confidence:      d.Confidence,
-			DetectedAt:      time.Now(),
-			DetectorKind:    model.CRMSignalDetectorLLMExtracted,
-			RuleKey:         &ruleKey,
-			RuleVersion:     &ruleVersion,
+			WorkspaceID:      payload.WorkspaceID,
+			ContactID:        payload.ContactID,
+			DealID:           payload.DealID,
+			CompanyID:        payload.CompanyID,
+			SignalType:       d.SignalType,
+			Polarity:         meaning.Polarity,
+			CommercialMotion: meaning.Motion,
+			SourceType:       payload.SourceType,
+			SourceID:         &payload.SourceID,
+			SourceThreadID:   payload.SourceThreadID,
+			Summary:          d.Summary,
+			EvidenceExcerpt:  &evidence,
+			Metadata:         metadata,
+			Confidence:       d.Confidence,
+			DetectedAt:       time.Now(),
+			DetectorKind:     model.CRMSignalDetectorLLMExtracted,
+			RuleKey:          &ruleKey,
+			RuleVersion:      &ruleVersion,
 		}
 
 		created, err := s.signalRepo.CreateSignalIfAbsent(ctx, &signal)
 		if err != nil {
-			slog.Error("failed to store detected signal", "error", err, "signal_type", d.SignalType)
-			continue
+			return signals, fmt.Errorf("store commercially qualified signal: %w", err)
 		}
 		if !created {
 			keptTypesByKey[key] = append(keptTypesByKey[key], d.SignalType)
@@ -277,39 +330,6 @@ func validDetectedSignalType(signalType string) bool {
 		return false
 	}
 }
-
-const signalDetectionSystemPrompt = `You are a sales intelligence analyst. Analyze the provided communication data and detect CRM signals.
-
-Signal types to detect:
-1. "buying_intent" — prospect shows interest in purchasing, asks about pricing, requests demos, mentions evaluating solutions
-2. "objection" — prospect raises concerns, pushes back on features/price/timeline, mentions barriers
-3. "competitor_mention" — prospect mentions competing products/vendors by name or alludes to alternatives
-4. "budget_signal" — prospect discusses budget availability, approval processes, funding timelines
-5. "timeline_signal" — prospect mentions deadlines, implementation timelines, urgency
-6. "champion_signal" — internal advocate emerges, someone pushes for adoption, refers colleagues
-7. "risk_signal" — signs of deal risk: going silent, mentioning organizational changes, deprioritization
-
-For each detected signal, provide:
-- source_type: the exact source_type from the input item containing the evidence
-- source_id: the exact source_id from the input item containing the evidence
-- signal_type: one of the 7 types above
-- summary: concise 1-2 sentence description of the signal, written in English
-- confidence: float 0.0-1.0 (0.9+ = very clear signal, 0.7-0.9 = likely signal, 0.5-0.7 = possible signal)
-- raw_evidence: the specific text/quote that indicates this signal
-- timeline_date: for timeline_signal only, the explicit calendar date normalized as YYYY-MM-DD; omit it when the evidence does not state a calendar date
-
-Return a JSON array of detected signals. If no signals are detected, return an empty array [].
-Only detect signals that are clearly present — avoid false positives. Be conservative with confidence scores.
-Never infer a timeline_date from vague phrases such as "soon", "next quarter", or "in a few weeks".
-Treat inbound customer language as primary evidence. Do not interpret the seller's outbound pitch, internal task state, or deal-stage movement as a CRM signal.
-For calendar sources, attendee response status and event cancellation are factual evidence; do not treat the organizer's meeting title or description alone as buyer intent.
-Write generated summaries in English even when the source evidence is in another language. Keep raw_evidence as an exact excerpt in its original language.
-
-Example response:
-[
-  {"source_type": "email", "source_id": "source UUID from input", "signal_type": "buying_intent", "summary": "Prospect asked about enterprise pricing and requested a demo call", "confidence": 0.92, "raw_evidence": "Can you send me the pricing for your enterprise plan? We'd like to schedule a demo next week."},
-  {"source_type": "email", "source_id": "source UUID from input", "signal_type": "budget_signal", "summary": "Budget approved for Q2 tooling purchase", "confidence": 0.85, "raw_evidence": "Our team has budget approved for Q2 to invest in a new project management tool."}
-]`
 
 func buildSignalMetadata(payload model.SignalSourcePayload) model.JSONB {
 	content := signalEvidenceCorpus(payload)

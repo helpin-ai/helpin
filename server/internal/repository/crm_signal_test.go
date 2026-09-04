@@ -368,6 +368,11 @@ func TestContactMotionRefreshDoesNotSupersedeDealScopedSignal(t *testing.T) {
 		`INSERT INTO crm_contacts VALUES ('contact-1', 'workspace-1', 'customer', '')`,
 		`INSERT INTO crm_signals VALUES ('contact-only', 'workspace-1', 'contact-1', NULL, NULL, 'conversion', 'positive', 10, 1, NULL, NULL, NULL, 0)`,
 		`INSERT INTO crm_signals VALUES ('deal-scoped', 'workspace-1', 'contact-1', 'deal-1', NULL, 'conversion', 'positive', 10, 1, NULL, NULL, NULL, 0)`,
+		`ALTER TABLE crm_signals ADD COLUMN detector_kind TEXT`,
+		`ALTER TABLE crm_signals ADD COLUMN rule_key TEXT`,
+		`ALTER TABLE crm_signals ADD COLUMN rule_version INTEGER`,
+		`ALTER TABLE crm_signals ADD COLUMN metadata BLOB`,
+		`INSERT INTO crm_signals (id,workspace_id,contact_id,commercial_motion,polarity,detector_kind,rule_key,rule_version,metadata) VALUES ('upgrade','workspace-1','contact-1','expansion','positive','llm_extracted','conversation_signal_extraction',4,'{"commercial_relevance":"relevant"}')`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("seed schema: %v", err)
@@ -385,12 +390,16 @@ func TestContactMotionRefreshDoesNotSupersedeDealScopedSignal(t *testing.T) {
 	if err := db.Table("crm_signals").Order("id").Scan(&rows).Error; err != nil {
 		t.Fatalf("load signals: %v", err)
 	}
-	if len(rows) != 2 || rows[0].ID != "contact-only" || rows[0].SupersededAt == nil {
+	if len(rows) != 3 || rows[0].ID != "contact-only" || rows[0].SupersededAt == nil {
 		t.Fatalf("contact-only signal was not superseded: %#v", rows)
 	}
 	if rows[1].ID != "deal-scoped" || rows[1].SupersededAt != nil {
 		t.Fatalf("deal-scoped signal was superseded by contact refresh: %#v", rows)
 	}
+	if rows[2].ID != "upgrade" || rows[2].SupersededAt != nil {
+		t.Fatalf("customer upgrade superseded by baseline lifecycle: %#v", rows)
+	}
+
 }
 
 func TestCommercialStateMotionsAreApplicabilityNotLaneMembership(t *testing.T) {

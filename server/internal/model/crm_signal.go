@@ -336,6 +336,8 @@ type CRMSignalListFilters struct {
 	SourceType            *string
 	IncludeDismissed      bool
 	IncludeLowConfidence  bool
+	CommercialOnly        bool
+	IncludeContext        bool
 	OwnerMemberID         *string
 	SignalDomain          *string
 	Polarity              *string
