@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -475,6 +476,8 @@ func (h *SupportAIHandler) RewriteSupportDraft(w http.ResponseWriter, r *http.Re
 	resp, err := h.aiService.RewriteSupportDraft(r.Context(), workspaceID, chi.URLParam(r, "id"), req)
 	if err != nil {
 		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			writeError(w, http.StatusGatewayTimeout, "AI rewrite took too long. Your draft is unchanged. Please try again.")
 		case errors.Is(err, service.ErrSupportRewriteInvalidInput):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, service.ErrSupportRewriteConversationNotFound):
@@ -525,6 +528,8 @@ func (h *SupportAIHandler) rewriteDraftForSurface(w http.ResponseWriter, r *http
 	resp, err := h.aiService.RewriteDraftForSurface(r.Context(), workspaceID, surface, featureKey, req)
 	if err != nil {
 		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			writeError(w, http.StatusGatewayTimeout, "AI rewrite took too long. Your draft is unchanged. Please try again.")
 		case errors.Is(err, service.ErrSupportRewriteInvalidInput):
 			writeError(w, http.StatusBadRequest, err.Error())
 		default:

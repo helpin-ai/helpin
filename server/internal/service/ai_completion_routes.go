@@ -83,7 +83,14 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		common(BillingFeatureAIRouting, 400),
 		common(BillingFeatureCoverageGapAnalysis, 1800),
 		crm(BillingFeatureCRMSignalDetection, 4096),
-		common(BillingFeatureSupportReplyRewrite, 900),
+		{
+			FeatureKey: BillingFeatureSupportReplyRewrite,
+			Primary: AICompletionRoute{
+				Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731",
+				ServiceTier: defaultAICompletionServiceTier,
+			},
+			Fallbacks: []AICompletionRoute{openRouterLunaRoute}, MaximumOutputTokens: 900,
+		},
 		common(BillingFeaturePMCommentRewrite, 900),
 		crm(BillingFeatureCRMEmailRewrite, 900),
 		crm(BillingFeatureDealAutomationInference, 2048),

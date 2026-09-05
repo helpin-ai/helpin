@@ -225,3 +225,54 @@ func TestAICompletionServiceAppliesPerRouteOpenRouterProviderSelection(t *testin
 		}
 	}
 }
+
+func TestAICompletionServiceCleansUpCanceledRewrite(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &cancelAwareRewriteStore{}
+	audit := &cancelAwareRewriteAudit{}
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &cancelRewriteProvider{cancel: cancel}
+	svc := NewAICompletionService(provider, NewAIUsageService(catalog, store, nil), DefaultAICompletionRouteRegistry()).SetGovernance(aipolicy.DefaultRegistry(), audit)
+	_, err = svc.Complete(ctx, AICompletionRequest{
+		WorkspaceID: "ws-1", FeatureKey: BillingFeatureSupportReplyRewrite,
+		IdempotencyKey: "rewrite:cancel", Chat: llm.ChatRequest{MaxTokens: 900},
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want deadline exceeded", err)
+	}
+	if store.releasedID == "" {
+		t.Error("timed-out rewrite reservation was not released")
+	}
+	if len(audit.finished) != 1 {
+		t.Errorf("audit finishes = %d, want 1", len(audit.finished))
+	}
+}
+
+type cancelRewriteProvider struct{ cancel context.CancelFunc }
+
+func (p *cancelRewriteProvider) ChatCompletion(context.Context, llm.ChatRequest) (*llm.ChatResponse, error) {
+	p.cancel()
+	return nil, &llm.ProviderError{Err: context.DeadlineExceeded}
+}
+
+type cancelAwareRewriteStore struct{ fakeAIUsageStore }
+
+func (s *cancelAwareRewriteStore) Release(ctx context.Context, id, reason string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.fakeAIUsageStore.Release(ctx, id, reason)
+}
+
+type cancelAwareRewriteAudit struct{ gatewayFakeAudit }
+
+func (a *cancelAwareRewriteAudit) Finish(ctx context.Context, id string, result aipolicy.ExecutionResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return a.gatewayFakeAudit.Finish(ctx, id, result)
+}

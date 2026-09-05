@@ -148,3 +148,26 @@ func TestAICompletionRouteRegistryRejectsOpenRouterSelectionOnDirectRoute(t *tes
 		t.Fatalf("route validation issues = %v", issues)
 	}
 }
+
+func TestSupportRewriteRoutesUseOnlySmallTierModels(t *testing.T) {
+	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureSupportReplyRewrite, "")
+	if !ok {
+		t.Fatal("support rewrite route policy missing")
+	}
+	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != "deepseek/deepseek-v4-flash-0731" {
+		t.Errorf("primary = %+v, want DeepSeek V4 Flash through OpenRouter", policy.Primary)
+	}
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range append([]AICompletionRoute{policy.Primary}, policy.Fallbacks...) {
+		resolved, err := catalog.Resolve(route.Provider, route.Model, route.Model, route.ServiceTier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.Tier != "small" {
+			t.Errorf("route %s tier = %s, want small", route.Model, resolved.Tier)
+		}
+	}
+}
