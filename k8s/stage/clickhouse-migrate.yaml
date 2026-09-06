@@ -30,7 +30,7 @@ spec:
         - name: ghcr-helpin-json-key
       containers:
         - name: migrate
-          image: ghcr.io/helpin-ai/helpin/server-migrate:server-v0.95.369-rc.1
+          image: ghcr.io/helpin-ai/helpin/server-migrate:server-v0.95.371-rc.1
           command: ["./clickhouse-migrate", "up"]
           env:
             - name: CLICKHOUSE_MIGRATION_PASSWORD
