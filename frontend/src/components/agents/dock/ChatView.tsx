@@ -405,7 +405,9 @@ export function ChatView({
           ? `Analyzing ${mediaAttachments.find((attachment) => attachment.id === attachmentIDs[0])?.file_name ?? 'attachment'}…`
           : attachmentIDs.length > 1
             ? `Analyzing ${attachmentIDs.length} attachments…`
-            : 'Checking context attachments…',
+            : run?.id
+              ? 'Preparing your message…'
+              : 'Checking context attachments…',
       );
       const sentAt = new Date().toISOString();
       setLaunchStartedAt(sentAt);
