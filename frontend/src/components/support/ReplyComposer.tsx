@@ -50,6 +50,7 @@ import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { getMemberMentionHandle, getMentionSuggestions, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
 import { useCannedResponses, useConversation, useCreateCannedResponse, useDeleteCannedResponse, useRewriteSupportDraft, useSendMessage, useUpdateCannedResponse, useUpdateConversationEmailRecipients, useUploadSupportAttachment } from '@/hooks/queries/useSupport';
+import { useComposerRewrite } from '@/hooks/useComposerRewrite';
 import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
@@ -1321,6 +1322,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
   const editorRef = useRef(editor);
   editorRef.current = editor;
+  const { isRewriting, runRewrite } = useComposerRewrite(editor, `${workspaceId}:${conversationId}`);
 
   const insertShortcut = useCallback((shortcut: SupportCannedResponse, range?: { from: number; to: number }) => {
     const ed = editorRef.current;
@@ -1462,7 +1464,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   }, [editor, isNote]);
 
   const sendReply = useCallback(async () => {
-    if (!editor) return;
+    if (!editor || !editor.isEditable) return;
     const markdown = getEditorMarkdown(editor).trim();
     const doneAttachments = pendingAttachments.filter((a) => a.status === 'done' && a.attachmentId);
     if ((!markdown && doneAttachments.length === 0) || sendMutation.isPending) return;
@@ -1496,7 +1498,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   }, [clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, emailFallbackHint?.email, pendingAttachments, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async () => {
-    if (!editor) return;
+    if (!editor || !editor.isEditable) return;
     const markdown = getEditorMarkdown(editor).trim();
     const hasUploadedAttachments = pendingAttachments.some((a) => a.status === 'done' && a.attachmentId);
     if ((!markdown && !hasUploadedAttachments) || sendMutation.isPending) return;
@@ -1516,24 +1518,27 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   }, [conversation?.primary_recipient_state, editor, emailFallbackHint, isNote, pendingAttachments, sendMutation.isPending, sendReply, skipOfflineEmailConfirm]);
 
   const handleRewrite = useCallback(async (operation: SupportAIRewriteOperation) => {
-    if (!editor) return;
-    const text = editor.getText().trim();
-    if (!text || rewriteMutation.isPending) return;
+    if (!editor || sendMutation.isPending) return;
+    const content = getEditorMarkdown(editor).trim();
+    if (!content) return;
 
     try {
-      const rewritten = await rewriteMutation.mutateAsync({
-        content: text,
-        operation,
+      const applied = await runRewrite(async () => {
+        closeShortcutsPanel();
+        setMentionState(null);
+        sendTyping(false);
+        const rewritten = await rewriteMutation.mutateAsync({ content, operation });
+        return rewritten.content;
       });
-
-      editor.commands.setContent(rewritten.content);
-      editor.commands.focus('end');
-			aiAssistedRef.current = true;
+      if (applied) {
+        editor.commands.focus('end');
+        aiAssistedRef.current = true;
+      }
     } catch (error) {
       const reason = getUpgradeRequiredReason(error);
       if (reason) onUpgradeRequired?.(reason);
     }
-  }, [editor, onUpgradeRequired, rewriteMutation]);
+  }, [closeShortcutsPanel, editor, onUpgradeRequired, rewriteMutation, runRewrite, sendMutation.isPending, sendTyping]);
 
   const handleConfirmOfflineEmailSend = useCallback(async () => {
     if (doNotAskAgain) {
@@ -1618,7 +1623,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   const primaryRecipientEmail = conversation?.customer_email?.trim() || emailFallbackHint?.email?.trim() || '';
   const suggestedPrimaryEmail = conversation?.suggested_primary_recipient_email?.trim() || '';
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed';
-  const canUseAITools = hasContent && !rewriteMutation.isPending;
+  const canUseAITools = hasContent && !isRewriting && !sendMutation.isPending;
   const aiTools: Array<{ operation: SupportAIRewriteOperation; label: string; icon: typeof ArrowUpDownIcon }> = [
     { operation: 'expand', label: 'Expand', icon: ArrowUpDownIcon },
     { operation: 'rephrase', label: 'Rephrase', icon: ArrowReloadHorizontalIcon },
@@ -1629,6 +1634,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
   return (
     <div
+      aria-busy={isRewriting}
       className={cn(
         'relative mx-3 mb-4 rounded-xl border border-border/40 bg-card transition-colors',
         editorFocused && (
@@ -1639,6 +1645,15 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
         isNote && 'bg-amber-50/50 dark:bg-amber-950/10'
       )}
     >
+      {isRewriting && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center rounded-xl bg-background/75">
+          <div role="status" className="flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm shadow-sm">
+            <Loading01Icon aria-hidden="true" className="h-4 w-4 animate-spin" />
+            Rewriting draft…
+          </div>
+        </div>
+      )}
+      <div inert={isRewriting}>
       {primaryRecipientUnconfirmed && !isNote && (
         <div className="flex flex-col gap-2 rounded-t-xl border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
           <div className="flex items-start gap-2">
@@ -1952,7 +1967,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
                         : 'text-muted-foreground/50'
                     )}
                   >
-                    {rewriteMutation.isPending ? (
+                    {isRewriting ? (
                       <Loading01Icon className="h-3 w-3 animate-spin" />
                     ) : (
                       <SparklesIcon className="h-3 w-3" />
@@ -1963,7 +1978,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
                 </DropdownMenuTrigger>
               </span>
             </TooltipTrigger>
-            {!canUseAITools && (
+            {!hasContent && (
               <TooltipContent side="top" className="text-xs">Write something first to use AI tools</TooltipContent>
             )}
           </Tooltip>
@@ -2167,7 +2182,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
           </kbd>
           <Button
             size="sm"
-            disabled={sendMutation.isPending || (!isNote && primaryRecipientUnconfirmed) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
+            disabled={isRewriting || sendMutation.isPending || (!isNote && primaryRecipientUnconfirmed) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
             onClick={handleSend}
             className={cn(
               'h-7 gap-1.5 rounded-full px-3 text-xs',
@@ -2224,6 +2239,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </div>
   );
 }

@@ -170,6 +170,10 @@ func (s *SupportAIService) rewriteDraftWithHistory(
 		return nil, fmt.Errorf("%w: unsupported operation %q", ErrSupportRewriteInvalidInput, strings.TrimSpace(req.Operation))
 	}
 
+	// Composer actions must not inherit the provider's five-minute timeout.
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
 	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    workspaceID,
 		FeatureKey:     featureKey,
@@ -177,12 +181,21 @@ func (s *SupportAIService) rewriteDraftWithHistory(
 		Metadata: map[string]interface{}{
 			"operation": operation,
 		},
+		RequireComplete:    true,
+		RetryInvalidOutput: true,
+		ValidateResponse: func(response *llm.ChatResponse) error {
+			if _, ok := parseSupportRewriteResponse(response.Content); !ok {
+				return fmt.Errorf("rewrite response must contain non-empty content")
+			}
+			return nil
+		},
 		Chat: llm.ChatRequest{
 			SystemPrompt: buildDraftRewriteSystemPrompt(surface, operation),
 			Messages:     buildSupportRewriteMessages(history, content),
 			Temperature:  0.2,
 			MaxTokens:    900,
 			JSONMode:     true,
+			Reasoning:    &llm.ReasoningConfig{Effort: "low"},
 		},
 	})
 	if err != nil {
@@ -197,8 +210,8 @@ func (s *SupportAIService) rewriteDraftWithHistory(
 	return &model.SupportAIRewriteDraftResponse{
 		Content:   rewritten,
 		Operation: operation,
-		Provider:  supportRewriteProvider,
-		Model:     supportRewriteModel,
+		Provider:  resp.Provider,
+		Model:     resp.Model,
 	}, nil
 }
 
@@ -951,18 +964,14 @@ func parseSupportRewriteResponse(raw string) (string, bool) {
 	}
 
 	var parsed contract
-	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &parsed); err == nil {
+	if err := llm.UnmarshalResponse(raw, &parsed); err == nil {
 		content := strings.TrimSpace(parsed.Content)
 		if content != "" {
 			return content, true
 		}
 	}
 
-	content := strings.TrimSpace(raw)
-	if content == "" {
-		return "", false
-	}
-	return content, true
+	return "", false
 }
 
 func previewSearchResults(results []KnowledgeSearchResult) []model.SupportAIPreviewSearchResult {

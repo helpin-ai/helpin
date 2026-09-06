@@ -519,6 +519,65 @@ describe('AskAgentsDock', () => {
     expect(document.body.textContent).not.toContain('Press / to open');
   });
 
+  it('keeps the first support message visible while creating and starting the chat', async () => {
+    const context: CommandBarPageContext = {
+      entity_type: 'support_conversation', entity_id: 'conv-new', display_title: 'New request',
+    };
+    const chat = { ...CHAT, id: 'chat-new', title: '', support_conversation_id: 'conv-new' };
+    let create!: () => void;
+    let accept!: () => void;
+    let finishInitialFetch!: () => void;
+    mocks.createChat.mockImplementation(() => new Promise((resolve) => {
+      create = () => resolve({ data: chat, error: null });
+    }));
+    mocks.getChat.mockImplementation(() => new Promise((resolve) => {
+      finishInitialFetch = () => resolve({ data: chatDetail({ chat }), error: null });
+    }));
+    mocks.sendMessage.mockImplementation((_workspace, _chat, payload) => new Promise((resolve) => {
+      accept = () => resolve({ data: chatDetail({
+        chat: { ...chat, active_run_id: 'support-run-1' },
+        run: { id: 'support-run-1', status: 'running', pause_reason: 'none' } as never,
+        accepted_message: {
+          id: 'accepted-1', workspace_id: 'ws-1', run_id: 'support-run-1', dock_chat_id: chat.id,
+          dock_chat_sequence: 1, client_message_id: payload.client_message_id,
+          role: 'user', content: payload.content, message_type: 'prompt', sequence_no: 1,
+          created_at: new Date().toISOString(), delivery_status: 'sent',
+        },
+      }), error: null });
+    }));
+    await renderEmbeddedDock(context);
+    await act(async () => {
+      setTextareaValue(dockTextarea(), 'Investigate this customer request');
+      dockTextarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(document.body.textContent).toContain('Investigate this customer request');
+    expect(document.querySelector('[data-agent-live-status-region]')).not.toBeNull();
+    await act(async () => create());
+    await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'message was not sent');
+    expect(document.body.textContent).toContain('Investigate this customer request');
+    expect(document.querySelector('[data-agent-live-status-region]')).not.toBeNull();
+    await waitForCondition(() => !!finishInitialFetch, 'initial chat was not fetched');
+    await act(async () => accept());
+    await act(async () => finishInitialFetch());
+    await waitForCondition(() => mocks.getChatRun.mock.calls.some((call) => call[1] === chat.id), 'run was not subscribed');
+    expect(document.body.textContent).toContain('Investigate this customer request');
+    expect(document.querySelector('[data-agent-live-status-region]')).not.toBeNull();
+  });
+
+  it('preserves the first support message for retry when chat creation fails', async () => {
+    await renderEmbeddedDock({
+      entity_type: 'support_conversation', entity_id: 'conv-new', display_title: 'New request',
+    });
+    mocks.createChat.mockResolvedValue({ data: null, error: 'Unavailable' });
+    await act(async () => {
+      setTextareaValue(dockTextarea(), 'Investigate this customer request');
+      dockTextarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(document.body.textContent).toContain('Investigate this customer request');
+    expect(document.body.textContent).toContain('Retry');
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
   it('keeps an unsent support conversation chat local until the first message', async () => {
     const supportContext: CommandBarPageContext = {
       entity_type: 'support_conversation',

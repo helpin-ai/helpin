@@ -42,8 +42,8 @@ const (
 	// primary-model task while its eligible media can use the approved reader.
 	AIUsageOperationMediaEnrichment = "media_enrichment"
 	mediaEnrichmentProvider         = "openrouter"
-	mediaEnrichmentCanonicalModel   = "gemini-3.7-flash"
-	mediaEnrichmentRoute            = "google/gemini-3.7-flash"
+	mediaEnrichmentCanonicalModel   = "gemini-3.8-flash"
+	mediaEnrichmentRoute            = "google/gemini-3.8-flash"
 )
 
 // PreflightRequest contains one execution's metering request.
