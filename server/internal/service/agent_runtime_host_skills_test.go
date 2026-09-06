@@ -1,17 +1,93 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
+
+func TestAgentRuntimeHostCachedBuiltInSkillContracts(t *testing.T) {
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	uncached := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	uncached.builtInArchives = nil
+	builds := 0
+	host.builtInArchives = newRuntimeBuiltInSkillArchiveCache(func(def agentcontract.SkillDefinition) ([]byte, string, string, error) {
+		builds++
+		return agentcontract.BuildSkillArchive(def)
+	})
+	definitions := agentcontract.ListBuiltInSkills()
+	for _, definition := range definitions {
+		t.Run(definition.Key, func(t *testing.T) {
+			req := AgentRuntimeSkillLookupRequest{AppID: "helpin", Key: definition.Key}
+			want, err := uncached.ResolveActiveSkillByKey(context.Background(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantBytes, err := uncached.GetSkillPackageObject(context.Background(), want.PackageObjectKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for turn := 0; turn < 2; turn++ {
+				byKey, err := host.ResolveActiveSkillByKey(context.Background(), req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				byID, err := host.ResolveSkillByID(context.Background(), AgentRuntimeSkillLookupRequest{
+					AppID: "helpin", SkillID: byKey.ID,
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(byKey, want) || !reflect.DeepEqual(byID, want) {
+					t.Errorf("turn %d changed runtime metadata, instructions, tools or policy", turn)
+				}
+				payload, err := host.GetSkillPackageObject(context.Background(), byKey.PackageObjectKey)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(payload, wantBytes) {
+					t.Errorf("turn %d changed runtime package bytes", turn)
+				}
+				payload[0] ^= 0xff
+			}
+		})
+	}
+	if builds != len(definitions) {
+		t.Errorf("built %d packages across repeated lookups; want %d", builds, len(definitions))
+	}
+}
+
+func TestAgentRuntimeHostWarmSkillCacheStillRejectsWrongApp(t *testing.T) {
+	host := NewAgentRuntimeHostService("helpin", nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	resolved, err := host.ResolveActiveSkillByKey(context.Background(), AgentRuntimeSkillLookupRequest{
+		AppID: "helpin", Key: "marketing_context_setup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = host.ResolveActiveSkillByKey(context.Background(), AgentRuntimeSkillLookupRequest{
+		AppID: "other-app", Key: resolved.Key,
+	})
+	if !errors.Is(err, ErrAgentRuntimeHostForbidden) {
+		t.Errorf("warm by-key cache bypassed app validation: %v", err)
+	}
+	_, err = host.ResolveSkillByID(context.Background(), AgentRuntimeSkillLookupRequest{
+		AppID: "other-app", SkillID: resolved.ID,
+	})
+	if !errors.Is(err, ErrAgentRuntimeHostForbidden) {
+		t.Errorf("warm by-ID cache bypassed app validation: %v", err)
+	}
+}
 
 func TestAgentRuntimeHostResolveActiveSkillByKey(t *testing.T) {
 	db := newWorkspaceSkillTestDB(t)
@@ -250,6 +326,19 @@ func TestAgentRuntimeHostGetSkillPackageObjectVerifiesWorkspaceSkillObjectKey(t 
 	}
 	if string(payload) != "zip-bytes" {
 		t.Fatalf("unexpected package payload: %q", string(payload))
+	}
+	// Custom packages must still be fetched live, and revocation must take
+	// effect after a successful read rather than serving a cached object.
+	store.objects[objectKey] = []byte("updated-zip-bytes")
+	payload, err = host.GetSkillPackageObject(context.Background(), objectKey)
+	if err != nil || string(payload) != "updated-zip-bytes" {
+		t.Fatalf("custom package did not refresh: %q, %v", payload, err)
+	}
+	if err := repo.Archive(context.Background(), "ws-1", "skill-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := host.GetSkillPackageObject(context.Background(), objectKey); !errors.Is(err, ErrAgentRuntimeHostNotFound) {
+		t.Fatalf("archived package remained available: %v", err)
 	}
 	_, err = host.GetSkillPackageObject(context.Background(), "workspaces/ws-1/skills/missing.zip")
 	if !errors.Is(err, ErrAgentRuntimeHostNotFound) {

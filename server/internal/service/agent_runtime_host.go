@@ -57,6 +57,7 @@ type AgentRuntimeHostService struct {
 	gitService       *GitService
 	skillRepo        *repository.WorkspaceSkillRepository
 	skillStore       skillPackageStore
+	builtInArchives  *runtimeBuiltInSkillArchiveCache
 	authz            *authorization.AuthzService
 	artifactRepo     agentRuntimeBrowserArtifactRepository
 	assetStore       agentRuntimeBrowserAssetStore
@@ -313,6 +314,7 @@ func NewAgentRuntimeHostService(
 		commandService:   commandService,
 		providerCommands: providerCommandNames(commandService),
 		gitService:       gitService,
+		builtInArchives:  newRuntimeBuiltInSkillArchiveCache(agentcontract.BuildSkillArchive),
 	}
 }
 
@@ -827,7 +829,7 @@ func (s *AgentRuntimeHostService) ResolveSkillByID(ctx context.Context, req Agen
 		if !ok {
 			return nil, fmt.Errorf("%w: workspace skill not found", ErrAgentRuntimeHostNotFound)
 		}
-		return runtimeBuiltInWorkspaceSkill(definition)
+		return s.runtimeBuiltInWorkspaceSkill(definition)
 	}
 	return s.resolveWorkspaceSkill(ctx, req, func(workspaceID string) (*model.WorkspaceSkill, error) {
 		return s.skillRepo.GetByID(ctx, workspaceID, skillID)
@@ -852,7 +854,7 @@ func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, r
 	// tools or completion-interaction policy across process restarts. Workspace
 	// skills remain addressable through their explicit skill IDs.
 	if definition, ok := agentcontract.GetBuiltInSkill(key); ok {
-		return runtimeBuiltInWorkspaceSkill(definition)
+		return s.runtimeBuiltInWorkspaceSkill(definition)
 	}
 	workspaceID, err := s.workspaceIDForSkillLookup(ctx, req)
 	if err != nil {
@@ -926,7 +928,7 @@ func (s *AgentRuntimeHostService) GetSkillPackageObject(ctx context.Context, obj
 		if !ok {
 			return nil, fmt.Errorf("%w: workspace skill package not found", ErrAgentRuntimeHostNotFound)
 		}
-		archive, _, _, err := agentcontract.BuildSkillArchive(definition)
+		archive, _, _, err := s.builtInArchives.get(definition)
 		if err != nil {
 			return nil, err
 		}
@@ -976,8 +978,8 @@ func runtimeWorkspaceSkill(skill *model.WorkspaceSkill) *AgentRuntimeWorkspaceSk
 	}
 }
 
-func runtimeBuiltInWorkspaceSkill(definition agentcontract.SkillDefinition) (*AgentRuntimeWorkspaceSkill, error) {
-	archive, checksum, filename, err := agentcontract.BuildSkillArchive(definition)
+func (s *AgentRuntimeHostService) runtimeBuiltInWorkspaceSkill(definition agentcontract.SkillDefinition) (*AgentRuntimeWorkspaceSkill, error) {
+	archive, checksum, filename, err := s.builtInArchives.get(definition)
 	if err != nil {
 		return nil, err
 	}
