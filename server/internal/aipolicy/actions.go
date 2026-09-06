@@ -38,8 +38,8 @@ func defaultActions() []Action {
 		{
 			Key: ActionAskMediaEnrichment, PolicyVersion: "v1", FeatureKey: "ask_chat",
 			Label: "Ask media enrichment", Category: CategoryAgents, Origin: "ask",
-			Modality: ModalityChat, DefaultProvider: "openrouter", DefaultModel: "google/gemini-3.7-flash",
-			AllowedModels: defaultChatModels(), Timeout: 2 * time.Minute,
+			Modality: ModalityChat, DefaultProvider: "openrouter", DefaultModel: "google/gemini-3.8-flash",
+			AllowedModels: map[string][]string{"openrouter": {"google/gemini-3.8-flash"}}, Timeout: 4 * time.Minute,
 			MaxInputTokens: 200000, MaxOutputTokens: 700, MaxReasoningTokens: 32000,
 			RetryClass: RetryTransient, Autonomy: AutonomyAnalyze,
 			DataClass: DataClassWorkspaceData, FloorUnits: 40, Chargeable: true,

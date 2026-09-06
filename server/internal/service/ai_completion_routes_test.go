@@ -67,7 +67,7 @@ func TestAICompletionRouteRegistryKeepsMediaOnApprovedVisionRoute(t *testing.T) 
 	if !ok {
 		t.Fatal("media route policy missing")
 	}
-	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != "google/gemini-3.7-flash" {
+	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != "google/gemini-3.8-flash" {
 		t.Fatalf("media route = %#v", policy.Primary)
 	}
 	if len(policy.Fallbacks) != 0 {

@@ -122,7 +122,10 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		common(BillingFeatureDockChatTitle, 80),
 		{
 			FeatureKey: BillingFeatureAskChat, OperationKey: AIUsageOperationMediaEnrichment,
-			Primary: openRouterGeminiFlashRoute, MaximumOutputTokens: 700,
+			Primary: AICompletionRoute{
+				Provider: mediaEnrichmentProvider, Model: mediaEnrichmentRoute,
+				ServiceTier: defaultAICompletionServiceTier,
+			}, MaximumOutputTokens: 700,
 		},
 	}
 	registry := AICompletionRouteRegistry{policies: make(map[string]AICompletionRoutePolicy, len(policies))}
