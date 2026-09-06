@@ -1,7 +1,7 @@
 {
-  "pricing_version": "2026-09-03",
-  "effective_date": "2026-09-03",
-  "reviewed_date": "2026-09-03",
+  "pricing_version": "2026-09-06",
+  "effective_date": "2026-09-06",
+  "reviewed_date": "2026-09-06",
   "source_urls": [
     "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
     "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
@@ -10,6 +10,8 @@
     "https://openrouter.ai/deepseek/deepseek-v4-flash-0731",
     "https://openrouter.ai/z-ai/glm-5.3-flash",
     "https://openrouter.ai/google/gemini-3.7-flash",
+    "https://openrouter.ai/google/gemini-3.8-flash",
+    "https://openrouter.ai/api/v1/models/google/gemini-3.8-flash/endpoints",
     "https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5"
   ],
   "tiers": [
@@ -56,6 +58,7 @@
     {"provider": "openrouter", "canonical_model": "glm-5.3-flash", "label": "GLM 5.3 Flash", "aliases": ["z-ai/glm-5.3-flash:exacto", "z-ai/glm-5.3-flash:nitro"], "tier": "small", "enabled": true},
     {"provider": "openrouter", "canonical_model": "deepseek-v4-flash-0731", "label": "DeepSeek V4 Flash", "aliases": ["deepseek/deepseek-v4-flash-0731", "deepseek/deepseek-v4-flash-0731:nitro", "deepseek/deepseek-v4-flash"], "tier": "small", "enabled": true},
     {"provider": "openrouter", "canonical_model": "gemini-3.7-flash", "label": "Gemini 3.7 Flash", "aliases": ["google/gemini-3.7-flash"], "tier": "medium", "enabled": true},
+    {"provider": "openrouter", "canonical_model": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "aliases": ["google/gemini-3.8-flash"], "tier": "medium", "enabled": true},
     {"provider": "openai", "canonical_model": "gpt-5-mini", "label": "GPT-5 mini", "tier": "medium", "enabled": true},
     {"provider": "openrouter", "canonical_model": "gpt-5-mini", "label": "GPT-5 mini", "aliases": ["openai/gpt-5-mini"], "tier": "medium", "enabled": true},
     {"provider": "openrouter", "canonical_model": "qwen-3.5-122b", "label": "Qwen 3.5 122B", "tier": "medium", "enabled": false},
@@ -79,6 +82,7 @@
     {"provider": "openrouter", "canonical_model": "deepseek-v4-flash-0731", "route": "deepseek/deepseek-v4-flash-0731", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "cache_read_support": true, "cache_write_support": false, "context_window": 128000, "maximum_output": 8192, "enabled": true},
     {"provider": "openrouter", "canonical_model": "deepseek-v4-flash-0731", "route": "deepseek/deepseek-v4-flash-0731:nitro", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "cache_read_support": true, "cache_write_support": false, "context_window": 128000, "maximum_output": 8192, "enabled": true},
     {"provider": "openrouter", "canonical_model": "gemini-3.7-flash", "route": "google/gemini-3.7-flash", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 375000, "cache_read_microusd_per_million": 37500, "cache_write_microusd_per_million": 20834, "output_microusd_per_million": 1875000}, "cache_read_support": true, "cache_write_support": true, "context_window": 1048576, "maximum_output": 65536, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "gemini-3.8-flash", "route": "google/gemini-3.8-flash", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 375000, "cache_read_microusd_per_million": 37500, "cache_write_microusd_per_million": 20834, "output_microusd_per_million": 1875000}, "cache_read_support": true, "cache_write_support": true, "context_window": 1048576, "maximum_output": 65536, "enabled": true},
     {"provider": "openai", "canonical_model": "gpt-5-mini", "route": "gpt-5-mini", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 400000, "cache_read_microusd_per_million": 40000, "cache_write_microusd_per_million": 500000, "output_microusd_per_million": 3200000}, "cache_read_support": true, "cache_write_support": true, "context_window": 272000, "maximum_output": 128000, "enabled": true},
     {"provider": "openrouter", "canonical_model": "gpt-5-mini", "route": "openai/gpt-5-mini", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 400000, "cache_read_microusd_per_million": 40000, "cache_write_microusd_per_million": 500000, "output_microusd_per_million": 3200000}, "cache_read_support": true, "cache_write_support": true, "context_window": 272000, "maximum_output": 128000, "enabled": true},
     {"provider": "anthropic", "canonical_model": "claude-haiku-4-5", "route": "claude-haiku-4-5", "service_tier": "standard", "tier": "large", "maximum_cost_rates": {"input_microusd_per_million": 2000000, "cache_read_microusd_per_million": 200000, "cache_write_microusd_per_million": 2500000, "output_microusd_per_million": 12000000}, "cache_read_support": true, "cache_write_support": true, "context_window": 200000, "maximum_output": 64000, "enabled": true},

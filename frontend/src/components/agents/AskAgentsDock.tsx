@@ -706,7 +706,8 @@ export function AskAgentsDock({
           <SupportChatErrorPane message={currentSupportChatError} onRetry={retrySupportChat} />
         ) : activeChat || draftChat ? (
           <ChatView
-            key={chatViewKey}
+            // Creating the first chat must preserve the pending send and run state.
+            key={supportAssociationKey ?? chatViewKey}
             workspaceId={workspaceId}
             chatId={activeChat?.id}
             onCreateChat={createDraftChat}

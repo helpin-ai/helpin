@@ -4,3 +4,24 @@ packages:
   - "frontend"
   - "website"
   - "help-center"
+
+# These libraries import React types but omit the peer; use the consuming app's version.
+packageExtensions:
+  cmdk@1.1.1:
+    peerDependencies:
+      "@types/react": "^18 || ^19"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+  next-themes@0.4.6:
+    peerDependencies:
+      "@types/react": "^16.8 || ^17 || ^18 || ^19"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+  vaul@1.1.2:
+    peerDependencies:
+      "@types/react": "^16.8 || ^17 || ^18 || ^19"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true

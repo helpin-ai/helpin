@@ -221,9 +221,15 @@ func (s *AICompletionService) completeAttempt(
 	}
 
 	response, providerErr := s.provider.ChatCompletion(ctx, chat)
+	// Finish metering and the audit even when an interactive request times out
+	// or its caller disconnects. Cleanup itself must remain bounded.
+	settlementCtx, cancelSettlement := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancelSettlement()
 	if providerErr != nil || response == nil {
 		if preflight.ReservationID != "" {
-			_ = s.usage.Fail(ctx, preflight.ReservationID)
+			if err := s.usage.Fail(settlementCtx, preflight.ReservationID); err != nil {
+				slog.ErrorContext(settlementCtx, "release failed AI completion reservation", "reservation_id", preflight.ReservationID, "error", err)
+			}
 		}
 		if providerErr == nil {
 			providerErr = &llm.ProviderError{
@@ -231,11 +237,11 @@ func (s *AICompletionService) completeAttempt(
 				Message: "provider returned no response",
 			}
 		}
-		s.finishCompletionAudit(ctx, auditExecution, response, "llm_provider", providerErr)
+		s.finishCompletionAudit(settlementCtx, auditExecution, response, "llm_provider", providerErr)
 		return nil, llm.IsRetryableProviderError(providerErr), providerErr
 	}
 
-	_, reconcileErr := s.usage.Reconcile(ctx, CompletionUsage{
+	_, reconcileErr := s.usage.Reconcile(settlementCtx, CompletionUsage{
 		Context: *preflight,
 		Telemetry: aiusage.TokenTelemetry{
 			InputTokensTotal:            int64(response.TokensUsed.InputTokensTotal),
@@ -255,16 +261,16 @@ func (s *AICompletionService) completeAttempt(
 
 	if input.RequireComplete && isIncompleteFinishReason(response.FinishReason) {
 		completionErr := fmt.Errorf("model output was incomplete (finish_reason=%s)", response.FinishReason)
-		s.finishCompletionAudit(ctx, auditExecution, response, "llm_contract", completionErr)
+		s.finishCompletionAudit(settlementCtx, auditExecution, response, "llm_contract", completionErr)
 		return nil, true, completionErr
 	}
 	if input.ValidateResponse != nil {
 		if err := input.ValidateResponse(response); err != nil {
-			s.finishCompletionAudit(ctx, auditExecution, response, "llm_contract", err)
+			s.finishCompletionAudit(settlementCtx, auditExecution, response, "llm_contract", err)
 			return nil, input.RetryInvalidOutput, err
 		}
 	}
-	s.finishCompletionAudit(ctx, auditExecution, response, "", nil)
+	s.finishCompletionAudit(settlementCtx, auditExecution, response, "", nil)
 	return response, false, nil
 }
 

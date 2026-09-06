@@ -50,8 +50,8 @@ func TestCatalogResolvesAskMediaReaderRoute(t *testing.T) {
 
 	resolved, err := catalog.Resolve(
 		"openrouter",
-		"google/gemini-3.7-flash",
-		"google/gemini-3.7-flash",
+		"google/gemini-3.8-flash",
+		"google/gemini-3.8-flash",
 		"standard",
 	)
 	if err != nil {
@@ -159,8 +159,8 @@ func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
 	}
 
 	pricing := catalog.PublicSnapshot()
-	if pricing.PricingVersion != "2026-09-03" {
-		t.Errorf("pricing version = %q, want 2026-09-03", pricing.PricingVersion)
+	if pricing.PricingVersion != "2026-09-06" {
+		t.Errorf("pricing version = %q, want 2026-09-06", pricing.PricingVersion)
 	}
 
 	wantAllowances := map[string]int64{

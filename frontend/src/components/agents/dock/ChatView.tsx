@@ -159,9 +159,13 @@ export function ChatView({
   const { currentPlan, streamState, pendingInteraction, refetch, clearPendingInteraction } =
     streamController;
 
+  const acceptedSendVersion = useRef(0);
   const refreshDetail = useCallback(async () => {
 	if (!chatId) return null;
+    const version = acceptedSendVersion.current;
     const res = await dockChatService.getChat(workspaceId, chatId);
+    // A fetch started before send acceptance must not erase the new run.
+    if (version !== acceptedSendVersion.current) return null;
     if (res.error || !res.data) {
       setRefreshError(res.error ?? 'Unable to refresh conversation');
       return null;
@@ -390,12 +394,6 @@ export function ChatView({
   const sendContent = useCallback(
     async (content: string, messageReferences: DockEntityReference[] = references, retryClientMessageID?: string) => {
       if (!content || sending) return;
-	  let targetChatId = chatId;
-	  if (!targetChatId) {
-		const created = await onCreateChat?.();
-		if (!created) return;
-		targetChatId = created.id;
-	  }
       const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
@@ -407,7 +405,9 @@ export function ChatView({
           ? `Analyzing ${mediaAttachments.find((attachment) => attachment.id === attachmentIDs[0])?.file_name ?? 'attachment'}…`
           : attachmentIDs.length > 1
             ? `Analyzing ${attachmentIDs.length} attachments…`
-            : 'Checking context attachments…',
+            : run?.id
+              ? 'Preparing your message…'
+              : 'Checking context attachments…',
       );
       const sentAt = new Date().toISOString();
       setLaunchStartedAt(sentAt);
@@ -416,6 +416,12 @@ export function ChatView({
       autoFollowRef.current = true;
       setAtBottom(true);
       try {
+        let targetChatId = chatId;
+        if (!targetChatId) {
+          const created = await onCreateChat?.();
+          if (!created) throw new Error('Unable to create chat. Please retry.');
+          targetChatId = created.id;
+        }
 		const res = await dockChatService.sendMessage(workspaceId, targetChatId, {
           client_message_id: clientMessageId,
           content,
@@ -442,7 +448,9 @@ export function ChatView({
 		  });
 		  return [];
 		});
+        acceptedSendVersion.current += 1;
         setDetail(res.data);
+        setDetailLoading(false);
         onChatChanged?.();
         if (needsTitle) {
           void (async () => {
@@ -462,6 +470,12 @@ export function ChatView({
 		void refreshMessages();
         // Successor run: useAgentRunStream will reset and fetch with the returned
         // run id instead of invoking this render's predecessor refetch closure.
+      } catch (error) {
+        setPendingEcho(null);
+        setSendError({
+          message: error instanceof Error ? error.message : 'Failed to send message',
+          content, references: messageReferences, clientMessageId,
+        });
       } finally {
 		setAnalyzingMedia(false);
 		setAnalyzingMediaLabel('');

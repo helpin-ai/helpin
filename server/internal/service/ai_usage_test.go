@@ -86,7 +86,7 @@ func TestAIUsageServiceAllowsConfiguredMediaEnrichmentRouteForSupportWork(t *tes
 	resolved, err := service.ResolveMeteringContext(MeteringRequest{
 		WorkspaceID: "ws", TaskNature: "support", FeatureKey: BillingFeatureAskChat,
 		OperationKey: AIUsageOperationMediaEnrichment,
-		Provider:     "openrouter", Model: "google/gemini-3.7-flash", Route: "google/gemini-3.7-flash",
+		Provider:     "openrouter", Model: "google/gemini-3.8-flash", Route: "google/gemini-3.8-flash",
 		FundingMode: aiusage.FundingHelpinHosted,
 	})
 	if err != nil {
