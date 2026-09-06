@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -64,6 +65,7 @@ type DockChatService struct {
 	pmAttachmentService *PMAttachmentService
 	supportInboxService *SupportInboxService
 	mediaLLM            dockChatMediaLLM
+	externalMediaClient *http.Client
 }
 
 // SetPMAttachmentRepository enables first-class Ask media attachments.
@@ -94,13 +96,14 @@ func NewDockChatService(
 	authz *authorization.AuthzService,
 ) *DockChatService {
 	return &DockChatService{
-		chatRepo:       chatRepo,
-		runRepo:        runRepo,
-		runMessageRepo: runMessageRepo,
-		planRepo:       planRepo,
-		agentService:   agentService,
-		commandService: commandService,
-		authz:          authz,
+		chatRepo:            chatRepo,
+		runRepo:             runRepo,
+		runMessageRepo:      runMessageRepo,
+		planRepo:            planRepo,
+		agentService:        agentService,
+		commandService:      commandService,
+		authz:               authz,
+		externalMediaClient: newDockChatExternalMediaClient(),
 	}
 }
 
@@ -1001,12 +1004,8 @@ func (s *DockChatService) resolveDockChatSourceMediaAttachments(ctx context.Cont
 						continue
 					}
 					seenExternalURLs[externalURL] = struct{}{}
-					contentType, dataURL, err := fetchDockChatExternalImage(ctx, externalURL)
-					if err != nil {
-						continue
-					}
 					digest := sha256.Sum256([]byte(externalURL))
-					result = append(result, dockChatMediaAttachment{ID: fmt.Sprintf("external-%x", digest[:8]), FileName: "Hosted image", FileType: contentType, Source: "hosted_link", URL: dataURL})
+					result = append(result, dockChatMediaAttachment{ID: fmt.Sprintf("external-%x", digest[:8]), FileName: "Hosted image", Source: "hosted_link", URL: externalURL})
 				}
 			}
 			continue
@@ -1033,7 +1032,7 @@ func (s *DockChatService) resolveDockChatSourceMediaAttachments(ctx context.Cont
 			result = append(result, dockChatMediaAttachment{ID: attachment.ID, FileName: attachment.FileName, FileType: attachment.ContentType, FileSize: attachment.FileSize, Source: item.EntityType, URL: url})
 		}
 	}
-	return result, nil
+	return s.hydrateDockChatExternalImages(ctx, result)
 }
 
 func dockChatHostedImageURLs(message model.SupportMessage) []string {

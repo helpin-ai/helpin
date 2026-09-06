@@ -11,9 +11,14 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
-const dockChatExternalImageMaxBytes = 10 << 20
+const (
+	dockChatExternalImageMaxBytes    = 10 << 20
+	dockChatExternalImageConcurrency = 4
+)
 
 func isDockChatExternalMediaURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
@@ -29,6 +34,8 @@ func newDockChatExternalMediaClient() *http.Client {
 		TLSHandshakeTimeout:   5 * time.Second,
 		ResponseHeaderTimeout: 5 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
+		MaxIdleConns:          32,
+		MaxIdleConnsPerHost:   dockChatExternalImageConcurrency,
 	}
 	return &http.Client{
 		Timeout:   10 * time.Second,
@@ -65,7 +72,7 @@ func isDisallowedDockChatMediaIP(ip net.IP) bool {
 
 // fetchDockChatExternalImage reads a public image transiently. It never stores
 // external content; the returned data URL exists only for the provider call.
-func fetchDockChatExternalImage(ctx context.Context, rawURL string) (string, string, error) {
+func fetchDockChatExternalImage(ctx context.Context, client *http.Client, rawURL string) (string, string, error) {
 	if !isDockChatExternalMediaURL(rawURL) {
 		return "", "", errors.New("external media URL is not allowed")
 	}
@@ -75,7 +82,7 @@ func fetchDockChatExternalImage(ctx context.Context, rawURL string) (string, str
 	}
 	req.Header.Set("Accept", "image/jpeg,image/png,image/gif,image/webp")
 	req.Header.Set("User-Agent", "Helpin-Ask-Media/1.0")
-	resp, err := newDockChatExternalMediaClient().Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", fmt.Errorf("fetch external media: %w", err)
 	}
@@ -98,4 +105,57 @@ func fetchDockChatExternalImage(ctx context.Context, rawURL string) (string, str
 		return "", "", err
 	}
 	return contentType, "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(body), nil
+}
+
+func (s *DockChatService) hydrateDockChatExternalImages(ctx context.Context, attachments []dockChatMediaAttachment) ([]dockChatMediaAttachment, error) {
+	client := s.externalMediaClient
+	if client == nil {
+		client = newDockChatExternalMediaClient()
+		defer client.CloseIdleConnections()
+	}
+	group, downloadCtx := errgroup.WithContext(ctx)
+	group.SetLimit(dockChatExternalImageConcurrency)
+	for i, attachment := range attachments {
+		if downloadCtx.Err() != nil {
+			break
+		}
+		if attachment.Source != "hosted_link" {
+			continue
+		}
+		group.Go(func() (err error) {
+			defer func() {
+				if recover() != nil {
+					err = errors.New("unexpected hosted image download failure")
+				}
+			}()
+			if err := downloadCtx.Err(); err != nil {
+				return err
+			}
+			contentType, dataURL, err := fetchDockChatExternalImage(downloadCtx, client, attachment.URL)
+			if err != nil {
+				// Optional remote images remain best-effort, but caller
+				// cancellation stops the whole batch and queued downloads.
+				return downloadCtx.Err()
+			}
+			attachments[i].FileType = contentType
+			attachments[i].URL = dataURL
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Downloads finish in any order. Compact only after every worker has
+	// stopped so the original attachment order and metadata are preserved.
+	result := attachments[:0]
+	for _, attachment := range attachments {
+		if attachment.Source == "hosted_link" && attachment.FileType == "" {
+			continue
+		}
+		result = append(result, attachment)
+	}
+	return result, nil
 }
