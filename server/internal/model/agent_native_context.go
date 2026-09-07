@@ -11,6 +11,7 @@ type AgentNativeContextConfig struct {
 	MaxOutputTokens  int   `json:"max_output_tokens,omitempty"`
 	TriggerTokens    int   `json:"trigger_tokens,omitempty"`
 	KeepRecentTokens int   `json:"keep_recent_tokens,omitempty"`
+	UserAnchorTokens int   `json:"user_anchor_tokens,omitempty"`
 	SummaryTokens    int   `json:"summary_tokens,omitempty"`
 	SafetyTokens     int   `json:"safety_tokens,omitempty"`
 	MaxTotalTokens   int64 `json:"max_total_tokens,omitempty"`
@@ -18,8 +19,8 @@ type AgentNativeContextConfig struct {
 
 // Validate rejects unsafe configurations before an agent can be launched.
 func (c AgentNativeContextConfig) Validate() error {
-	if c.MaxTotalTokens < 0 {
-		return fmt.Errorf("native_context.max_total_tokens must be nonnegative")
+	if c.MaxTotalTokens < 0 || c.UserAnchorTokens < 0 {
+		return fmt.Errorf("native context total and user-anchor budgets must be nonnegative")
 	}
 	if !c.Enabled {
 		return nil
@@ -51,7 +52,7 @@ func (c AgentNativeContextConfig) Validate() error {
 	if summary == 0 {
 		summary = min(4000, trigger/8)
 	}
-	if trigger <= 0 || trigger > input || recent <= 0 || summary <= 0 || recent+summary >= trigger {
+	if trigger <= 0 || trigger > input || recent <= 0 || summary <= 0 || c.UserAnchorTokens >= trigger || recent+summary >= trigger-c.UserAnchorTokens {
 		return fmt.Errorf("invalid native context trigger, summary or retained-history budget")
 	}
 	return nil
