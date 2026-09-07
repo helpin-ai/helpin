@@ -124,11 +124,11 @@ func (s *SupportChatService) notifySupportPlanSettled(ctx context.Context, plan 
 		}
 	}
 	resumeID := supportChildResultResumePrefix + plan.ID
-	if _, err := runtimeClient.ResumeRun(ctx, strings.TrimSpace(*chatRun.ExternalRuntimeID), AgentRuntimeResumeRunRequest{
+	if _, err := runtimeClient.ResumeRunWithProvenance(ctx, strings.TrimSpace(*chatRun.ExternalRuntimeID), AgentRuntimeResumeRunRequest{
 		Intent:   "reply",
 		Content:  block,
 		ResumeID: resumeID,
-	}); err != nil {
+	}, "system_notification"); err != nil {
 		if isChatRunExpiredError(err) {
 			return s.deliverPlanResultViaSuccessor(ctx, conv, chatRun, plan)
 		}

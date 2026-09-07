@@ -193,15 +193,22 @@ func (c *AgentRuntimeClient) ListToolCalls(ctx context.Context, runtimeRunID str
 }
 
 func (c *AgentRuntimeClient) ResumeRun(ctx context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest) (*AgentRuntimeRun, error) {
+	if strings.TrimSpace(req.ExternalActorID) != "" && strings.TrimSpace(req.Intent) != model.AgentRunResumeIntentAuthCompleted {
+		return c.ResumeRunWithProvenance(ctx, runtimeRunID, req, "human")
+	}
 	return c.client.ResumeRun(ctx, runtimeRunID, req)
 }
 
 func (c *AgentRuntimeClient) ApproveRun(ctx context.Context, runtimeRunID string, externalActorID ...string) (*AgentRuntimeRun, error) {
-	return c.client.ApproveRun(ctx, runtimeRunID, externalActorID...)
+	return c.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
+		Intent: model.AgentRunResumeIntentApprove, ExternalActorID: firstOptionalString(externalActorID),
+	})
 }
 
 func (c *AgentRuntimeClient) RequestChanges(ctx context.Context, runtimeRunID, content string, externalActorID ...string) (*AgentRuntimeRun, error) {
-	return c.client.RequestChanges(ctx, runtimeRunID, content, externalActorID...)
+	return c.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
+		Intent: model.AgentRunResumeIntentRequestChanges, Content: content, ExternalActorID: firstOptionalString(externalActorID),
+	})
 }
 
 func (c *AgentRuntimeClient) AppendMessage(ctx context.Context, runtimeRunID, role, content string, externalActorID ...string) error {
