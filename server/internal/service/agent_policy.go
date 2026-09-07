@@ -243,6 +243,14 @@ func parseAndValidateExecutionConfig(agent *model.Agent) (model.AgentExecutionCo
 	}
 
 	runtimeKind := strings.TrimSpace(agent.RuntimeKind)
+	if config.NativeContext != nil {
+		if runtimeKind != "native_sdk" {
+			return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.native_context is only supported for runtime_kind native_sdk")
+		}
+		if err := config.NativeContext.Validate(); err != nil {
+			return model.AgentExecutionConfig{}, err
+		}
+	}
 	if config.MaxToolSteps != nil {
 		if runtimeKind != "native_sdk" {
 			return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.max_tool_steps is only supported for runtime_kind native_sdk")

@@ -753,19 +753,35 @@ func (m *AIUsageMeter) reconcileAgentRun(ctx context.Context, run *model.AgentRu
 	if checkpoint.Turn > 0 {
 		metering.IdempotencyKey = aiUsageIdempotencyKey(metering.IdempotencyKey, "turn", fmt.Sprint(checkpoint.Turn+1))
 	}
+	// The strict cap belongs to the cumulative run, not to each late settlement.
+	if metering.EnforcementMode == model.AIUsageEnforcementStrict {
+		prior, err := aiusage.NormalizeTokens(agentRunTokenTelemetry(run, agentRuntimeUsagePayload{InputTokens: checkpoint.InputTokens, OutputTokens: checkpoint.OutputTokens, CachedInputTokens: checkpoint.CachedInputTokens, ReasoningOutputTokens: checkpoint.ReasoningOutputTokens}))
+		if err != nil {
+			return err
+		}
+		charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{FundingMode: metering.FundingMode, Tokens: prior, Rates: metering.Route.Rates})
+		if err != nil {
+			return err
+		}
+		metering.MaxBillableMicrousd = max(metering.MaxBillableMicrousd-charge.FinalMicrousd, 0)
+	}
 	status := "actual"
 	if agentRunUsageIsZero(usage) {
 		status = "estimated"
 	}
+	previousSummary := append(json.RawMessage(nil), run.OutputSummary...)
+	if err := storeAgentRunUsageCheckpoint(run, agentRunUsageCheckpoint{Turn: checkpoint.Turn + 1, InputTokens: usage.InputTokens, CachedInputTokens: usage.CachedInputTokens, OutputTokens: usage.OutputTokens, ReasoningOutputTokens: usage.ReasoningOutputTokens}); err != nil {
+		return err
+	}
 	_, err := m.usage.Reconcile(ctx, CompletionUsage{
-		Context: metering,
-		Telemetry: aiusage.TokenTelemetry{
-			InputTokensTotal: int64(delta.InputTokens), CacheReadTokens: int64(delta.CachedInputTokens),
-			CompletionTokensTotal: int64(delta.OutputTokens + delta.ReasoningOutputTokens),
-			OutputTokens:          int64(delta.OutputTokens), ReasoningTokens: int64(delta.ReasoningOutputTokens),
-		},
+		Context:           metering,
+		Telemetry:         agentRunTokenTelemetry(run, delta),
 		MeasurementStatus: status,
+		AllowLateUsage:    true, RunID: run.ID, RunOutputSummary: model.JSONBlob(run.OutputSummary),
 	})
+	if err != nil {
+		run.OutputSummary = previousSummary
+	}
 	return err
 }
 
@@ -793,12 +809,8 @@ func (m *AIUsageMeter) checkpointAgentRun(ctx context.Context, run *model.AgentR
 		return err
 	}
 	if _, err := m.usage.Checkpoint(ctx, CompletionUsage{
-		Context: metering,
-		Telemetry: aiusage.TokenTelemetry{
-			InputTokensTotal: int64(delta.InputTokens), CacheReadTokens: int64(delta.CachedInputTokens),
-			CompletionTokensTotal: int64(delta.OutputTokens + delta.ReasoningOutputTokens),
-			OutputTokens:          int64(delta.OutputTokens), ReasoningTokens: int64(delta.ReasoningOutputTokens),
-		},
+		Context:           metering,
+		Telemetry:         agentRunTokenTelemetry(run, delta),
 		MeasurementStatus: "actual",
 		RunID:             run.ID,
 		RunOutputSummary:  model.JSONBlob(run.OutputSummary),
@@ -855,16 +867,26 @@ func agentRunUsageExceedsBudget(run *model.AgentRun, usage agentRuntimeUsagePayl
 	if !ok || metering.EnforcementMode != model.AIUsageEnforcementStrict || metering.MaxBillableMicrousd <= 0 {
 		return false
 	}
-	normalized, err := aiusage.NormalizeTokens(aiusage.TokenTelemetry{
-		InputTokensTotal: int64(usage.InputTokens), CacheReadTokens: int64(usage.CachedInputTokens),
-		CompletionTokensTotal: int64(usage.OutputTokens + usage.ReasoningOutputTokens),
-		OutputTokens:          int64(usage.OutputTokens), ReasoningTokens: int64(usage.ReasoningOutputTokens),
-	})
+	normalized, err := aiusage.NormalizeTokens(agentRunTokenTelemetry(run, usage))
 	if err != nil {
 		return false
 	}
 	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{FundingMode: metering.FundingMode, Tokens: normalized, Rates: metering.Route.Rates})
 	return err == nil && charge.FinalMicrousd >= metering.MaxBillableMicrousd
+}
+
+// agentRunTokenTelemetry normalizes inclusive native/Codex completion usage.
+// OpenCode reports visible output and reasoning separately.
+func agentRunTokenTelemetry(run *model.AgentRun, usage agentRuntimeUsagePayload) aiusage.TokenTelemetry {
+	completion := usage.OutputTokens
+	if run != nil && run.RuntimeKind == "opencode" {
+		completion += usage.ReasoningOutputTokens
+	}
+	return aiusage.TokenTelemetry{
+		InputTokensTotal: int64(usage.InputTokens), CacheReadTokens: int64(usage.CachedInputTokens),
+		CompletionTokensTotal: int64(completion), OutputTokens: int64(max(completion-usage.ReasoningOutputTokens, 0)),
+		ReasoningTokens: int64(usage.ReasoningOutputTokens), CompletionIncludesReasoning: true,
+	}
 }
 
 func agentPresetKey(agent *model.Agent) string {

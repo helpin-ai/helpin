@@ -1033,7 +1033,7 @@ func (r *SupportConversationRepository) conversationListProjectionSelect() strin
 			WHERE rollout.workspace_id = support_conversations.workspace_id AND rollout.mode = 'v2'
 		)`
 	}
-	projection := `support_conversations.*,
+	projection := `support_conversations.*, list_activity.created_at AS list_last_activity_at,
 		CASE WHEN support_conversations.support_state_version = 0 THEN (
 			SELECT CASE WHEN fallback_message.is_internal
 				THEN 'Note: ' || fallback_message.content ELSE fallback_message.content END
@@ -1323,11 +1323,22 @@ func (r *SupportConversationRepository) applyConversationListParams(query *gorm.
 	return query
 }
 
+// Reuse the indexed timeline rather than treating unrelated record updates as activity.
+// This read-only projection includes internal notes and system events and does not
+// modify message timestamps, unread state, or response tracking.
+const conversationActivityJoin = `LEFT JOIN support_messages list_activity ON list_activity.id = (
+    SELECT activity.id FROM support_messages activity
+    WHERE activity.conversation_id = support_conversations.id
+      AND activity.workspace_id = support_conversations.workspace_id
+      AND activity.deleted_at IS NULL
+    ORDER BY activity.created_at DESC, activity.id DESC LIMIT 1
+)`
+
 func conversationListOrder(sortOrder string) string {
 	if strings.EqualFold(strings.TrimSpace(sortOrder), "oldest") {
-		return "support_conversations.updated_at ASC"
+		return "COALESCE(list_activity.created_at, support_conversations.created_at) ASC"
 	}
-	return "support_conversations.updated_at DESC"
+	return "COALESCE(list_activity.created_at, support_conversations.created_at) DESC"
 }
 
 const supportConversationSearchTotalCap = 1000
@@ -1486,16 +1497,15 @@ func (r *SupportConversationRepository) applySupportSearchFilters(query *gorm.DB
 }
 
 func supportSearchOrder(sortOrder, query string) string {
+	order := conversationListOrder(sortOrder)
 	switch strings.ToLower(strings.TrimSpace(sortOrder)) {
-	case "oldest":
-		return "support_conversations.updated_at ASC"
-	case "newest":
-		return "support_conversations.updated_at DESC"
+	case "oldest", "newest":
+		return order
 	default:
 		if strings.TrimSpace(query) == "" {
-			return "support_conversations.updated_at DESC"
+			return order
 		}
-		return "support_search_score DESC, support_conversations.updated_at DESC"
+		return "support_search_score DESC, " + order
 	}
 }
 
@@ -1674,13 +1684,14 @@ func (r *SupportConversationRepository) Search(ctx context.Context, params Conve
 		model.SupportConversation
 		SupportSearchScore float64 `gorm:"column:support_search_score"`
 	}
-	selectSQL := fmt.Sprintf(`support_conversations.*, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon, (%s) AS support_search_score`, scoreSQL)
+	selectSQL := fmt.Sprintf(`support_conversations.*, list_activity.created_at AS list_last_activity_at, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon, (%s) AS support_search_score`, scoreSQL)
 	offset := (page - 1) * perPage
 	if params.Pagination.Offset != nil {
 		offset = *params.Pagination.Offset
 	}
 	if err := fetch.
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
+		Joins(conversationActivityJoin).
 		Select(selectSQL, scoreArgs...).
 		Order(supportSearchOrder(sortOrder, params.Query)).
 		Offset(offset).
@@ -1748,6 +1759,7 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 	var conversations []model.SupportConversation
 	if err := fetch.
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
+		Joins(conversationActivityJoin).
 		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", strings.TrimSpace(params.UserID)).
 		Select(r.conversationListProjectionSelect()).
 		Order(conversationListOrder(params.Sort)).Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
@@ -1957,9 +1969,10 @@ func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID
 	query := r.db.WithContext(ctx).
 		Table("support_conversations").
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
+		Joins(conversationActivityJoin).
 		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
 	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
-	if err := query.Select(fmt.Sprintf(`support_conversations.*,
+	if err := query.Select(fmt.Sprintf(`support_conversations.*, list_activity.created_at AS list_last_activity_at,
 		(SELECT COUNT(*)
 		 FROM support_messages unread_messages
 		 WHERE unread_messages.conversation_id = support_conversations.id
@@ -1991,6 +2004,7 @@ func (r *SupportConversationRepository) GetByIDForUser(ctx context.Context, work
 	query := r.db.WithContext(ctx).
 		Table("support_conversations").
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
+		Joins(conversationActivityJoin).
 		Joins("LEFT JOIN support_conversation_user_states scus ON scus.conversation_id = support_conversations.id AND scus.user_id = ?", strings.TrimSpace(userID)).
 		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
 	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
@@ -2072,14 +2086,15 @@ func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspace
 	query := r.db.WithContext(ctx).
 		Table("support_conversations").
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
+		Joins(conversationActivityJoin).
 		Where("support_conversations.workspace_id = ? AND support_conversations.id IN ?", workspaceID, ids)
 	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
 	if err := query.
-		Select(fmt.Sprintf("support_conversations.*, %s AS country_code, %s AS country_name, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon",
+		Select(fmt.Sprintf("support_conversations.*, list_activity.created_at AS list_last_activity_at, %s AS country_code, %s AS country_name, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon",
 			r.latestSessionCountryExpr("country_code", "support_conversations"),
 			r.latestSessionCountryExpr("country_name", "support_conversations"),
 		)).
-		Order("updated_at DESC").
+		Order("support_conversations.updated_at DESC").
 		Find(&conversations).Error; err != nil {
 		return nil, fmt.Errorf("list conversations by ids: %w", err)
 	}

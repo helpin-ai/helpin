@@ -164,12 +164,12 @@ func (s *DockChatService) notifyPlanSettled(ctx context.Context, plan *model.Com
 		return err
 	}
 	resumeID := dockChildResultResumePrefix + plan.ID
-	if _, err := runtimeClient.ResumeRun(ctx, strings.TrimSpace(*chatRun.ExternalRuntimeID), AgentRuntimeResumeRunRequest{
+	if _, err := runtimeClient.ResumeRunWithProvenance(ctx, strings.TrimSpace(*chatRun.ExternalRuntimeID), AgentRuntimeResumeRunRequest{
 		Intent:     "reply",
 		Content:    block,
 		ResumeID:   resumeID,
 		TurnPolicy: runtimeResumeTurnPolicy(chatRun),
-	}); err != nil {
+	}, "system_notification"); err != nil {
 		// "run is not paused" and similar races resolve on the next sweep.
 		return err
 	}
@@ -313,7 +313,7 @@ func recordChildResultRunMessage(ctx context.Context, runMessageRepo *repository
 		RuntimeMessageID: resumeID,
 		Role:             "user",
 		Content:          content,
-		MessageType:      "message",
+		MessageType:      "system_notification",
 		SequenceNo:       sequence,
 	}
 	if err := runMessageRepo.Create(ctx, message); err != nil {

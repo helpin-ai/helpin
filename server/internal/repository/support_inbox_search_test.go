@@ -229,7 +229,7 @@ func TestSupportConversationRepositorySearchFiltersOnlyAndMailboxAccess(t *testi
 		DisplayID:   42,
 		Subject:     "Allowed open",
 		Status:      openStatus,
-		CreatedAt:   base,
+		CreatedAt:   base.Add(2 * time.Minute),
 		UpdatedAt:   base.Add(2 * time.Minute),
 	})
 	blockedMailbox := "blocked-box"

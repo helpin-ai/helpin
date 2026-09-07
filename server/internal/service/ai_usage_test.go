@@ -252,6 +252,8 @@ func newTestAIUsageService(t *testing.T, store *fakeAIUsageStore) *AIUsageServic
 }
 
 type fakeAIUsageStore struct {
+	reconciles    []repository.AIUsageReconcileRequest
+	reconcileErr  error
 	mode          string
 	reserveErr    error
 	reserveCalls  int
@@ -282,6 +284,10 @@ func (f *fakeAIUsageStore) Reserve(_ context.Context, input repository.AIUsageRe
 
 func (f *fakeAIUsageStore) Reconcile(_ context.Context, input repository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error) {
 	f.reconcile = input
+	f.reconciles = append(f.reconciles, input)
+	if f.reconcileErr != nil {
+		return nil, f.reconcileErr
+	}
 	return &model.AIUsagePeriod{}, nil
 }
 

@@ -77,8 +77,8 @@ describe('ConversationList presence resync', () => {
         pages: [
           {
             data: [
-              { id: 'conv-1', status: 'open', updated_at: '2026-03-27T20:00:00Z' },
-              { id: 'conv-2', status: 'open', updated_at: '2026-03-27T20:01:00Z' },
+              { id: 'conv-1', status: 'open', list_last_message_at: '2026-03-27T20:00:00Z' },
+              { id: 'conv-2', status: 'open', list_last_message_at: '2026-03-27T20:01:00Z' },
             ],
           },
         ],
@@ -264,7 +264,7 @@ describe('ConversationList presence resync', () => {
         pages: [
           {
             data: [
-              { id: 'conv-loaded', status: 'open', updated_at: '2026-03-27T20:02:00Z' },
+              { id: 'conv-loaded', status: 'open', list_last_message_at: '2026-03-27T20:02:00Z' },
             ],
           },
         ],
@@ -334,7 +334,7 @@ describe('ConversationList presence resync', () => {
         pages: [
           {
             data: [
-              { id: 'conv-1', status: 'open', updated_at: '2026-03-27T20:00:00Z' },
+              { id: 'conv-1', status: 'open', list_last_message_at: '2026-03-27T20:00:00Z' },
             ],
           },
         ],

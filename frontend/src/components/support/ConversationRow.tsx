@@ -450,7 +450,7 @@ export const ConversationRow = memo(function ConversationRow({
                 }`}
               >
                 <span className="text-[11px] text-muted-foreground/70 tabular-nums">
-                  {timeAgo(conversation.updated_at)}
+                  {timeAgo(conversation.list_last_activity_at ?? conversation.list_last_message_at ?? conversation.created_at)}
                 </span>
               </div>
               <div

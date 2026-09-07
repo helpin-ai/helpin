@@ -29,6 +29,16 @@ function buildConversation(overrides: Partial<SupportConversation>): SupportConv
 }
 
 describe('filterSupportConversations', () => {
+  it.each(['newest', 'oldest'] as const)('sorts %s by timeline activity with creation fallback', (sortOrder) => {
+    const conversations = [
+      buildConversation({ id: 'older', list_last_activity_at: '2026-09-07T10:00:00Z', list_last_message_at: '2026-09-07T10:00:00Z', updated_at: '2026-09-07T20:00:00Z' }),
+      buildConversation({ id: 'newer', list_last_activity_at: '2026-09-07T12:00:00Z', list_last_message_at: '2026-09-07T09:00:00Z', updated_at: '2026-09-07T12:00:00Z' }),
+      buildConversation({ id: 'empty', created_at: '2026-09-07T11:00:00Z', updated_at: '2026-09-07T21:00:00Z' }),
+    ];
+    const result = filterSupportConversations(conversations, { navFilter: 'inbox', mailboxScope: 'all', userId: 'user-1', searchQuery: '', sortOrder });
+    expect(result.map(c => c.id)).toEqual(sortOrder === 'newest' ? ['newer', 'empty', 'older'] : ['older', 'empty', 'newer']);
+  });
+
   it('keeps only active human work in Inbox', () => {
     const conversations = [
       buildConversation({ id: 'human' }),
