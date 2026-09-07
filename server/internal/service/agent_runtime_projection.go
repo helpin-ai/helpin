@@ -678,7 +678,10 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	// redelivered or reconciled terminal events on an already-terminal run
 	// are no-ops.
 	wasTerminal := isTerminalAgentRunStatus(run.Status)
-	changed := false
+	changed, err := seedTerminalUsageBaseline(run)
+	if err != nil {
+		return err
+	}
 	runtimeName := agentRuntimeName
 	if run.ExternalRuntime == nil || strings.TrimSpace(*run.ExternalRuntime) != runtimeName {
 		run.ExternalRuntime = &runtimeName
@@ -691,6 +694,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	}
 
 	now := s.eventTime(event)
+	var settlementErr error
 	suppressLifecycle := isTerminalAgentRunStatus(run.Status) && isPreTerminalRuntimeEvent(event.Type)
 	if !suppressLifecycle && isRuntimeWorkProgressEvent(event.Type) {
 		changed = clearRuntimeResumeStage(run) || changed
@@ -834,7 +838,15 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			}
 		}
 	}
-	if usage, ok := eventUsage(event); ok {
+	usage, hasUsage := eventUsage(event)
+	if previous, ok := latestAgentRuntimeUsage(run); ok && (runtimeUsageSemantic(event) == agentruntime.UsageSemanticCumulative || isTerminalRuntimeEvent(event.Type)) {
+		usage = maxAgentRuntimeUsage(usage, previous)
+		hasUsage = true
+	}
+	if !hasUsage && isTerminalRuntimeEvent(event.Type) && s.usageMeter != nil && s.usageMeter.usage != nil {
+		hasUsage = true
+	}
+	if hasUsage {
 		if applyRuntimeUsage(run, usage) {
 			changed = true
 		}
@@ -843,6 +855,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		terminalUsageChanged, err := s.maybeConsumeTerminalUsage(ctx, run, event, usage)
 		if err != nil {
+			if errors.Is(err, repository.ErrAIUsageWatermarkChanged) {
+				return err
+			}
 			slog.ErrorContext(ctx, "agent runtime terminal usage consumption failed",
 				"error", err,
 				"workspace_id", run.WorkspaceID,
@@ -850,7 +865,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 				"runtime_run_id", strings.TrimSpace(derefString(run.ExternalRuntimeID)),
 				"event_type", event.Type,
 			)
-			terminalUsageChanged = false
+			settlementErr = err // Persist lifecycle state, then request redelivery.
 		}
 		if terminalUsageChanged {
 			changed = true
@@ -902,7 +917,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		s.runFinalizers.FinalizeTerminalRun(ctx, run, runtimeSummaryAvailable)
 	}
 	if !changed {
-		return nil
+		return settlementErr
 	}
 	model.NormalizeAgentRunPauseState(run)
 	if err := s.runRepo.Update(ctx, run); err != nil {
@@ -924,7 +939,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			hook(hookCtx, &runCopy)
 		}()
 	}
-	return nil
+	return settlementErr
 }
 
 func (s *AgentRuntimeProjectionService) projectionLock(event AgentRuntimeEventEnvelope) *sync.Mutex {
@@ -1342,47 +1357,21 @@ func (s *AgentRuntimeProjectionService) maybeConsumeTerminalUsage(ctx context.Co
 	if s == nil || run == nil || s.usageMeter == nil || s.agentRepo == nil {
 		return false, nil
 	}
-	if !isTerminalRuntimeEvent(event.Type) {
+	if !isTerminalRuntimeEvent(event.Type) && !(isTerminalAgentRunStatus(run.Status) && event.Type == agentruntime.EventUsageCheckpoint) {
 		return false, nil
 	}
 	semantic := runtimeUsageSemantic(event)
 	if semantic != "" && semantic != agentruntime.UsageSemanticCumulative {
 		return false, nil
 	}
-	if runtimeUsageAlreadyConsumed(run.OutputSummary) {
+	if runtimeUsageAlreadyConsumed(run.OutputSummary) && agentRunUsageIsZero(agentRunUsageDelta(usage, agentRunUsageCheckpointFromSummary(run.OutputSummary))) {
 		return false, nil
 	}
 	agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
 	if err != nil {
 		return false, err
 	}
-	runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID))
-	if s.usageMeter.usage != nil {
-		err = s.usageMeter.reconcileAgentRun(ctx, run, usage)
-	} else {
-		_, err = s.usageMeter.Consume(ctx, AIUsageMeterInput{
-			WorkspaceID:       run.WorkspaceID,
-			FeatureKey:        AgentRunAIUsageFeature(agent),
-			IdempotencyKey:    aiUsageIdempotencyKey(run.WorkspaceID, "agent-runtime", run.ID, "terminal-usage"),
-			InputTokens:       usage.InputTokens,
-			OutputTokens:      int(agentRunTokenTelemetry(run, usage).OutputTokens),
-			ReasoningTokens:   usage.ReasoningOutputTokens,
-			CachedInputTokens: usage.CachedInputTokens,
-			AllowOverage:      true,
-			Metadata: map[string]interface{}{
-				"run_id":         run.ID,
-				"runtime_run_id": runtimeRunID,
-				"agent_id":       run.AgentID,
-				"terminal_event": strings.TrimSpace(event.Type),
-				"delegated":      true,
-			},
-		})
-	}
-	if err != nil {
-		return false, err
-	}
-	run.OutputSummary = markRuntimeUsageConsumed(run.OutputSummary, s.eventTime(event))
-	return true, nil
+	return s.settleTerminalUsage(ctx, run, agent, event, usage)
 }
 
 func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) error {

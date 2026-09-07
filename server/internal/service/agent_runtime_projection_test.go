@@ -1658,8 +1658,8 @@ func TestAgentRuntimeProjectionTerminalUsageFailureDoesNotBlockStatusProjection(
 			},
 			"usage_semantic": "cumulative",
 		},
-	}); err != nil {
-		t.Fatalf("ApplyEvent returned error: %v", err)
+	}); !errors.Is(err, model.ErrBillingWorkspaceLocked) {
+		t.Fatalf("expected retryable settlement error, got: %v", err)
 	}
 	if run.Status != model.AgentRunStatusCompleted || run.CompletedAt == nil || !run.CompletedAt.Equal(completedAt) {
 		t.Fatalf("terminal status not projected after consume failure: status=%s completed_at=%v", run.Status, run.CompletedAt)
