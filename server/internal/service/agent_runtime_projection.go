@@ -47,7 +47,7 @@ type agentRuntimeProjectionRunRepository interface {
 	GetByExternalRuntimeID(ctx context.Context, externalRuntime, externalRuntimeID string) (*model.AgentRun, error)
 	ListActiveByExternalRuntime(ctx context.Context, externalRuntime string, olderThan time.Time, limit int) ([]model.AgentRun, error)
 	UpdateRuntimeProjection(ctx context.Context, run *model.AgentRun) error
-	UpdateOutputSummary(ctx context.Context, runID string, outputSummary json.RawMessage) error
+	UpdateRuntimeSummaryMarker(ctx context.Context, workspaceID, runID, key string, value json.RawMessage) error
 	Notify(ctx context.Context, run *model.AgentRun)
 }
 
@@ -403,7 +403,7 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 			continue
 		}
 		if markRuntimeTranscriptReconciled(projectedRun, runtimeRun) {
-			if err := s.runRepo.UpdateOutputSummary(ctx, projectedRun.ID, projectedRun.OutputSummary); err != nil {
+			if err := persistRuntimeSummaryMarker(ctx, s.runRepo, projectedRun, agentRuntimeTranscriptReconciledVersionKey); err != nil {
 				slog.WarnContext(ctx, "agent runtime transcript reconciliation marker update failed",
 					"workspace_id", run.WorkspaceID,
 					"run_id", run.ID,
@@ -522,7 +522,7 @@ func (s *AgentRuntimeProjectionService) persistV2ReplayCursor(ctx context.Contex
 		s.setV2ReplayCursor(runtimeRunID, sequence)
 		return nil
 	}
-	if err := s.runRepo.UpdateOutputSummary(ctx, run.ID, run.OutputSummary); err != nil {
+	if err := persistRuntimeSummaryMarker(ctx, s.runRepo, run, agentRuntimeV2ReplayThroughSummaryKey); err != nil {
 		return fmt.Errorf("persist v2 replay cursor %d: %w", sequence, err)
 	}
 	s.setV2ReplayCursor(runtimeRunID, sequence)

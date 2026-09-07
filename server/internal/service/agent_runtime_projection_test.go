@@ -80,6 +80,24 @@ func (r *fakeAgentRuntimeProjectionRunRepo) UpdateOutputSummary(_ context.Contex
 	return nil
 }
 
+func (r *fakeAgentRuntimeProjectionRunRepo) UpdateRuntimeSummaryMarker(ctx context.Context, workspaceID, runID, key string, value json.RawMessage) error {
+	body := map[string]json.RawMessage{}
+	if run := r.byID[runID]; run != nil && len(run.OutputSummary) > 0 {
+		if err := json.Unmarshal(run.OutputSummary, &body); err != nil {
+			return err
+		}
+	}
+	if body == nil {
+		body = map[string]json.RawMessage{}
+	}
+	body[key] = value
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	return r.UpdateOutputSummary(ctx, runID, encoded)
+}
+
 func (r *fakeAgentRuntimeProjectionRunRepo) Notify(_ context.Context, _ *model.AgentRun) {
 	r.notifications++
 }
