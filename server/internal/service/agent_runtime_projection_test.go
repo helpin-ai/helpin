@@ -62,6 +62,10 @@ func (r *fakeAgentRuntimeProjectionRunRepo) Update(_ context.Context, run *model
 	return nil
 }
 
+func (r *fakeAgentRuntimeProjectionRunRepo) UpdateRuntimeProjection(ctx context.Context, run *model.AgentRun) error {
+	return r.Update(ctx, run)
+}
+
 func (r *fakeAgentRuntimeProjectionRunRepo) UpdateOutputSummary(_ context.Context, runID string, outputSummary json.RawMessage) error {
 	r.summaryUpdates++
 	if r.byID != nil && r.byID[runID] != nil {

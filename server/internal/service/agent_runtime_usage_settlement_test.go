@@ -166,3 +166,29 @@ func TestTerminalUsageConflictDoesNotPersistStaleRun(t *testing.T) {
 		t.Fatal("stale projection persisted over concurrent settlement")
 	}
 }
+
+type conflictingTerminalProjectionRepo struct {
+	*fakeAgentRuntimeProjectionRunRepo
+}
+
+func (r *conflictingTerminalProjectionRepo) UpdateRuntimeProjection(context.Context, *model.AgentRun) error {
+	return repository.ErrAIUsageWatermarkChanged
+}
+
+func TestTerminalUsageConflictAfterSettlementDoesNotNotify(t *testing.T) {
+	svc, _, store := terminalUsageFixture(t)
+	repo := svc.runRepo.(*fakeAgentRuntimeProjectionRunRepo)
+	svc.runRepo = &conflictingTerminalProjectionRepo{fakeAgentRuntimeProjectionRunRepo: repo}
+	// Simulate another worker advancing the watermark after our settlement
+	// succeeds but before the guarded final projection write.
+	err := svc.ApplyEvent(context.Background(), terminalUsageEvent(agentruntime.EventRunCancelled, 100, 10))
+	if !errors.Is(err, repository.ErrAIUsageWatermarkChanged) {
+		t.Fatalf("final projection conflict not returned: %v", err)
+	}
+	if len(store.reconciles) != 1 {
+		t.Fatal("expected successful settlement before projection conflict")
+	}
+	if repo.updates != 0 || repo.notifications != 0 {
+		t.Fatal("stale projection saved or broadcast")
+	}
+}

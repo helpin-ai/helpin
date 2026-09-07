@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -186,6 +187,19 @@ func (r *AIUsageRepository) Reconcile(ctx context.Context, input AIUsageReconcil
 		if err := tx.Where("idempotency_key = ?", input.Entry.IdempotencyKey).First(&existing).Error; err == nil {
 			if input.AllowLateUsage && input.RunID != "" && (existing.InputTokensTotal != input.Entry.InputTokensTotal || existing.OutputTokens != input.Entry.OutputTokens || existing.ReasoningTokens != input.Entry.ReasoningTokens || existing.CacheReadTokens != input.Entry.CacheReadTokens) {
 				return ErrAIUsageWatermarkChanged
+			}
+			if input.AllowLateUsage && input.RunID != "" {
+				current, err := loadRunUsageWatermark(tx, existing.WorkspaceID, input.RunID)
+				if err != nil {
+					return err
+				}
+				requested, err := parseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
+				if err != nil {
+					return err
+				}
+				if current != requested {
+					return ErrAIUsageWatermarkChanged
+				}
 			}
 			return tx.First(&period, "id = ?", existing.PeriodID).Error
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {

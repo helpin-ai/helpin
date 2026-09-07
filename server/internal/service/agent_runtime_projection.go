@@ -46,7 +46,7 @@ type agentRuntimeProjectionRunRepository interface {
 	GetByIDAny(ctx context.Context, id string) (*model.AgentRun, error)
 	GetByExternalRuntimeID(ctx context.Context, externalRuntime, externalRuntimeID string) (*model.AgentRun, error)
 	ListActiveByExternalRuntime(ctx context.Context, externalRuntime string, olderThan time.Time, limit int) ([]model.AgentRun, error)
-	Update(ctx context.Context, run *model.AgentRun) error
+	UpdateRuntimeProjection(ctx context.Context, run *model.AgentRun) error
 	UpdateOutputSummary(ctx context.Context, runID string, outputSummary json.RawMessage) error
 	Notify(ctx context.Context, run *model.AgentRun)
 }
@@ -920,7 +920,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		return settlementErr
 	}
 	model.NormalizeAgentRunPauseState(run)
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateRuntimeProjection(ctx, run); err != nil {
 		return err
 	}
 	s.runRepo.Notify(ctx, run)
