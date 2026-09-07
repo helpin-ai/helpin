@@ -833,3 +833,47 @@ describe('DockTranscript', () => {
     expect(container.textContent).toContain('Browser Open');
   });
 });
+
+
+describe('follow-up with retained live history', () => {
+  it.each(['pending', 'sent'] as const)('keeps the earlier answer above the %s follow-up and the new answer below it', async (deliveryStatus) => {
+    const stream = streamWithMessages([
+      userMessage('user-first', 'First question', 1),
+      { ...userMessage('client:follow-up', 'Follow-up question', 3), client_message_id: 'follow-up', delivery_status: deliveryStatus },
+    ]);
+    stream.live_turn_segments = [
+      { kind: 'assistant_message', segment_id: 'earlier-answer', assistant_message: {
+        message_id: 'earlier-answer', content: 'Earlier answer', status: 'completed', tool_calls: [], started_at: '2026-08-06T00:00:02Z',
+      } },
+      { kind: 'assistant_message', segment_id: 'new-answer', assistant_message: {
+        message_id: 'new-answer', content: 'New answer', status: 'streaming', tool_calls: [], started_at: '2026-08-06T00:00:04Z',
+      } },
+    ];
+    await act(async () => root.render(<DockTranscript stream={stream} active useRuntimeTimeline />));
+    const text = container.textContent ?? '';
+    expect(text.indexOf('First question')).toBeLessThan(text.indexOf('Earlier answer'));
+    expect(text.indexOf('Earlier answer')).toBeLessThan(text.indexOf('Follow-up question'));
+    expect(text.indexOf('Follow-up question')).toBeLessThan(text.indexOf('New answer'));
+  });
+});
+
+
+describe('follow-up after timestamp-less live completion', () => {
+  it.each(['pending', 'sent'] as const)('preserves pre-submit history for the %s row without moving a new reply above it', async (deliveryStatus) => {
+    const stream = streamWithMessages([
+      userMessage('user-first', 'First question', 1),
+      { ...userMessage('client:follow-up', 'Follow-up question', 3), client_message_id: 'follow-up', delivery_status: deliveryStatus },
+    ]);
+    stream.live_turn_segments = ['Earlier answer', 'New answer'].map((content) => ({
+      kind: 'assistant_message', segment_id: content, assistant_message: {
+        message_id: content, content, status: 'completed', tool_calls: [],
+      },
+    }));
+    await act(async () => root.render(<DockTranscript stream={stream} active useRuntimeTimeline
+      latestSubmission={{ clientMessageId: 'follow-up', precedingLiveSegmentIds: new Set(['live:Earlier answer']) }} />));
+    const text = container.textContent ?? '';
+    expect(text.indexOf('First question')).toBeLessThan(text.indexOf('Earlier answer'));
+    expect(text.indexOf('Earlier answer')).toBeLessThan(text.indexOf('Follow-up question'));
+    expect(text.indexOf('Follow-up question')).toBeLessThan(text.indexOf('New answer'));
+  });
+});

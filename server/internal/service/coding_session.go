@@ -25,7 +25,13 @@ func (s *AgentService) GetCodingSession(ctx context.Context, workspaceID, sessio
 	return s.buildCodingSession(ctx, run)
 }
 
-func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID, sessionID string, after int) (*model.CodingSessionEventListResponse, error) {
+// CodingSessionEventListOptions controls whether event reads also load the live snapshot.
+type CodingSessionEventListOptions struct {
+	IncludeSnapshot bool
+}
+
+// ListCodingSessionEvents includes the live snapshot unless options explicitly omit it.
+func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID, sessionID string, after int, options ...CodingSessionEventListOptions) (*model.CodingSessionEventListResponse, error) {
 	run, err := s.GetAgentRun(ctx, workspaceID, sessionID)
 	if err != nil {
 		return nil, err
@@ -169,11 +175,14 @@ func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID,
 		events = append(events, item.event)
 	}
 
-	return &model.CodingSessionEventListResponse{
-		Events:              events,
-		NextSequenceNo:      nextSequenceNo,
-		StreamStateSnapshot: s.codingSessionStreamSnapshot(ctx, run),
-	}, nil
+	response := &model.CodingSessionEventListResponse{
+		Events:         events,
+		NextSequenceNo: nextSequenceNo,
+	}
+	if len(options) == 0 || options[0].IncludeSnapshot {
+		response.StreamStateSnapshot = s.codingSessionStreamSnapshot(ctx, run)
+	}
+	return response, nil
 }
 
 func (s *AgentService) GetCodingSessionRepo(ctx context.Context, workspaceID, sessionID string) (*model.CodingSessionRepoState, error) {

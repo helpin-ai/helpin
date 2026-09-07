@@ -31,6 +31,7 @@ import { buildCodingSessionPath } from '@/lib/codingSessionSurface';
 import { AnimatedDockChatTitle } from './dock/AnimatedDockChatTitle';
 import { usePageContext } from '@/components/command-bar/pageContext';
 import { PublicShareMenuActions } from './PublicShareMenuActions';
+import { useDockRoster } from './dock/useDockRoster';
 
 type AskAgentsEventDetail = {
   query?: string;
@@ -40,6 +41,18 @@ type AskAgentsEventDetail = {
   chatId?: string;
 };
 type DockFocusTarget = 'composer' | 'selection' | 'header';
+
+function useDockChatStreamFetchers(selectedChatId: string | null) {
+  return useMemo<AgentRunStreamFetchers>(() => ({
+    requestKey: `dock-chat:${selectedChatId}`,
+    getSnapshot: (ws, _runId, signal) => selectedChatId
+      ? dockChatService.getChatRun(ws, selectedChatId, signal)
+      : Promise.resolve({ data: null, error: null }),
+    listEvents: (ws, _runId, after, signal) => selectedChatId
+      ? dockChatService.listChatRunEvents(ws, selectedChatId, after, signal)
+      : Promise.resolve({ data: null, error: null }),
+  }), [selectedChatId]);
+}
 
 /** Persistent workspace presence layer for chats and user-owned agent runs. */
 interface AskAgentsDockProps {
@@ -81,7 +94,6 @@ export function AskAgentsDock({
     clearDraft,
     lastAttentionIds,
     setLastAttentionIds,
-    activateWorkspace,
   } = useDockStore();
   const [embeddedActiveChatId, setEmbeddedActiveChatId] = useState<string | null>(null);
   const tab = embedded ? 'chats' : globalTab;
@@ -109,20 +121,16 @@ export function AskAgentsDock({
     url.searchParams.delete('ask_chat');
     window.history.replaceState(window.history.state, '', url);
   }, [embedded, setActiveChatId, setCollapsed, setTab, workspaceId]);
-  const [runs, setRuns] = useState<DockRunSummary[]>([]);
-  const [runsLoading, setRunsLoading] = useState(true);
-  const [chatsLoading, setChatsLoading] = useState(true);
-  const [runsError, setRunsError] = useState<string | null>(null);
-  const [chatsError, setChatsError] = useState<string | null>(null);
+  const {
+    runs, runsLoading, chatsLoading, runsError, chatsError,
+    nextChatCursor, loadingMoreChats, nextRunCursor, loadingMoreRuns,
+    refreshRuns, refreshChats, loadMoreRuns, loadMoreChats, updateChatRunStatus, invalidateChats,
+  } = useDockRoster(workspaceId, currentUserId, active, active && (embedded || !collapsed));
   const [hiddenByModal, setHiddenByModal] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [chatScrollRequest, setChatScrollRequest] = useState(0);
   const [pendingDraft, setPendingDraft] = useState<string | undefined>();
   const [attentionNudge, setAttentionNudge] = useState(false);
-  const [nextChatCursor, setNextChatCursor] = useState<string | null>(null);
-  const [loadingMoreChats, setLoadingMoreChats] = useState(false);
-  const [nextRunCursor, setNextRunCursor] = useState<string | null>(null);
-  const [loadingMoreRuns, setLoadingMoreRuns] = useState(false);
   const [chatPresenceOverride, setChatPresenceOverride] = useState<{
     chatId: string;
     state: AskAgentAvatarState;
@@ -130,6 +138,7 @@ export function AskAgentsDock({
   const [chatRunOverride, setChatRunOverride] = useState<{
     chatId: string;
     runId: string | null;
+    rosterRunId: string | null;
   } | null>(null);
   const [draftChat, setDraftChat] = useState(false);
   const [supportChatError, setSupportChatError] = useState<{ associationKey: string; message: string } | null>(null);
@@ -139,8 +148,6 @@ export function AskAgentsDock({
   const askTriggerRef = useRef<HTMLButtonElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const focusTargetRef = useRef<DockFocusTarget>('header');
-  const loadingMoreChatsRef = useRef(false);
-  const loadingMoreRunsRef = useRef(false);
   const ensuredSupportConversationRef = useRef<string | null>(null);
   const draftStoreKey = activeChatId
     ? `chat:${activeChatId}`
@@ -194,24 +201,21 @@ export function AskAgentsDock({
   );
   const selectedChatId = activeChat?.id ?? null;
   const activeChatRunId = chatRunOverride?.chatId === selectedChatId
+    && chatRunOverride.rosterRunId === (activeChat?.active_run_id ?? null)
     ? chatRunOverride.runId
     : activeChat?.active_run_id ?? null;
-  const chatStreamFetchers = useMemo<AgentRunStreamFetchers>(() => ({
-    getSnapshot: (ws) => selectedChatId
-      ? dockChatService.getChatRun(ws, selectedChatId)
-      : Promise.resolve({ data: null, error: null }),
-    listEvents: (ws, _runId, after) => selectedChatId
-      ? dockChatService.listChatRunEvents(ws, selectedChatId, after)
-      : Promise.resolve({ data: null, error: null }),
-  }), [selectedChatId]);
+  const chatStreamFetchers = useDockChatStreamFetchers(selectedChatId);
+  const chatStreamActive = active && !draftChat && (embedded || !collapsed) && (embedded || !hiddenByModal) && tab === 'chats' && !!activeChatRunId;
   const chatStreamController = useAgentRunStream(
     workspaceId,
     activeChatRunId,
-    !!activeChatRunId,
+    chatStreamActive,
     5_000,
     chatStreamFetchers,
   );
-  const askAgentState = chatPresenceOverride?.chatId === selectedChatId
+  const askAgentState = !chatStreamActive
+    ? deriveAskAgentAvatarState({ run: { status: activeChat?.active_run_status } })
+    : chatPresenceOverride?.chatId === selectedChatId
     ? chatPresenceOverride.state
     : deriveAskAgentAvatarState({
     run: chatStreamController.session,
@@ -221,109 +225,11 @@ export function AskAgentsDock({
     setChatPresenceOverride(state && selectedChatId ? { chatId: selectedChatId, state } : null);
   }, [selectedChatId]);
   const handleChatRunIdChange = useCallback((runId: string | null) => {
-    if (selectedChatId) setChatRunOverride({ chatId: selectedChatId, runId });
+    if (selectedChatId) setChatRunOverride({
+      chatId: selectedChatId, runId,
+      rosterRunId: useDockStore.getState().chats.find((chat) => chat.id === selectedChatId)?.active_run_id ?? null,
+    });
   }, [selectedChatId]);
-
-  const refreshRuns = useCallback(async () => {
-    if (!workspaceId) return [];
-    setRunsError(null);
-    const result = await dockChatService.listRuns(workspaceId);
-    if (useWorkspaceStore.getState().currentWorkspace?.id !== workspaceId) return [];
-    if (result.error || !result.data) {
-      setRunsError(result.error ?? 'Unable to load agent runs');
-      setRunsLoading(false);
-      return [];
-    }
-    setRuns(result.data.runs ?? []);
-    setNextRunCursor(result.data.next_cursor ?? null);
-    setRunsLoading(false);
-    return result.data.runs ?? [];
-  }, [workspaceId]);
-
-  const loadMoreRuns = useCallback(async () => {
-    if (!workspaceId || !nextRunCursor || loadingMoreRunsRef.current) return;
-    loadingMoreRunsRef.current = true;
-    setLoadingMoreRuns(true);
-    const cursor = nextRunCursor;
-    const result = await dockChatService.listRuns(workspaceId, cursor);
-    if (useWorkspaceStore.getState().currentWorkspace?.id === workspaceId) {
-      if (result.error || !result.data) {
-        toast.error(result.error ?? 'Unable to load more agent runs');
-      } else {
-        setRuns((current) => {
-          const known = new Set(current.map((summary) => summary.run.id));
-          return [...current, ...(result.data?.runs ?? []).filter((summary) => !known.has(summary.run.id))];
-        });
-        setNextRunCursor(result.data.next_cursor ?? null);
-      }
-    }
-    loadingMoreRunsRef.current = false;
-    setLoadingMoreRuns(false);
-  }, [nextRunCursor, workspaceId]);
-
-  const refreshChats = useCallback(async (preserveLoaded = false) => {
-    if (!workspaceId) return;
-    setChatsError(null);
-    const result = await dockChatService.listChats(workspaceId);
-    if (useWorkspaceStore.getState().currentWorkspace?.id !== workspaceId) return;
-    if (result.error || !result.data) {
-      setChatsError(result.error ?? 'Unable to load conversations');
-      setChatsLoading(false);
-      return;
-    }
-    const firstPage = result.data.chats ?? [];
-    const currentChats = useDockStore.getState().chats;
-    const currentById = new Map(currentChats.map((chat) => [chat.id, chat]));
-    const mergedFirstPage = firstPage.map((chat) => {
-      const current = currentById.get(chat.id);
-      if (!chat.active_run_status && current
-        && current.active_run_id === chat.active_run_id && current.active_run_status) {
-        return { ...chat, active_run_status: current.active_run_status };
-      }
-      return chat;
-    });
-    if (preserveLoaded) {
-      const firstPageIds = new Set(firstPage.map((chat) => chat.id));
-      const existing = currentChats.filter((chat) => !firstPageIds.has(chat.id));
-      setChats([...mergedFirstPage, ...existing]);
-    } else {
-      setChats(mergedFirstPage);
-    }
-    setNextChatCursor(result.data.next_cursor ?? null);
-    setChatsLoading(false);
-  }, [setChats, workspaceId]);
-
-  const updateChatRunStatus = useCallback((runId: string | null, status: DockChat['active_run_status']) => {
-    if (!runId || !status) return;
-    const current = useDockStore.getState().chats;
-    let changed = false;
-    const next = current.map((chat) => {
-      if (chat.active_run_id !== runId || chat.active_run_status === status) return chat;
-      changed = true;
-      return { ...chat, active_run_status: status };
-    });
-    if (changed) setChats(next);
-  }, [setChats]);
-
-  const loadMoreChats = useCallback(async () => {
-    if (!workspaceId || !nextChatCursor || loadingMoreChatsRef.current) return;
-    loadingMoreChatsRef.current = true;
-    setLoadingMoreChats(true);
-    const cursor = nextChatCursor;
-    const result = await dockChatService.listChats(workspaceId, cursor);
-    if (useWorkspaceStore.getState().currentWorkspace?.id === workspaceId) {
-      if (result.error || !result.data) {
-        toast.error(result.error ?? 'Unable to load more conversations');
-      } else {
-        const existing = useDockStore.getState().chats;
-        const knownIds = new Set(existing.map((chat) => chat.id));
-        setChats([...existing, ...(result.data.chats ?? []).filter((chat) => !knownIds.has(chat.id))]);
-        setNextChatCursor(result.data.next_cursor ?? null);
-      }
-    }
-    loadingMoreChatsRef.current = false;
-    setLoadingMoreChats(false);
-  }, [nextChatCursor, setChats, workspaceId]);
 
   const renameChat = useCallback(async (chatId: string, title: string) => {
     if (!workspaceId) return false;
@@ -332,9 +238,10 @@ export function AskAgentsDock({
       toast.error(result.error ?? 'Failed to rename conversation');
       return false;
     }
+    invalidateChats();
     setChats(useDockStore.getState().chats.map((chat) => chat.id === chatId ? result.data! : chat));
     return true;
-  }, [setChats, workspaceId]);
+  }, [invalidateChats, setChats, workspaceId]);
 
   const archiveChat = useCallback(async (chatId: string) => {
     if (!workspaceId) return false;
@@ -343,11 +250,12 @@ export function AskAgentsDock({
       toast.error(result.error ?? 'Failed to archive conversation');
       return false;
     }
+    invalidateChats();
     const remaining = useDockStore.getState().chats.filter((chat) => chat.id !== chatId);
     setChats(remaining);
     if (useDockStore.getState().activeChatId === chatId) setActiveChatId(remaining[0]?.id ?? null);
     return true;
-  }, [setActiveChatId, setChats, workspaceId]);
+  }, [invalidateChats, setActiveChatId, setChats, workspaceId]);
 
   const updateChatVisibility = useCallback(async (chatId: string, visibility: DockChatVisibility) => {
     if (!workspaceId) return false;
@@ -356,29 +264,10 @@ export function AskAgentsDock({
       toast.error(result.error ?? 'Failed to update who can see this chat');
       return false;
     }
+    invalidateChats();
     setChats(useDockStore.getState().chats.map((chat) => chat.id === chatId ? result.data! : chat));
     return true;
-  }, [setChats, workspaceId]);
-
-  useEffect(() => {
-    if (!workspaceId) return;
-    activateWorkspace(workspaceId);
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setRuns([]);
-      setRunsLoading(true);
-      setNextRunCursor(null);
-      loadingMoreRunsRef.current = false;
-      setLoadingMoreRuns(false);
-      setChatsLoading(true);
-      setNextChatCursor(null);
-      loadingMoreChatsRef.current = false;
-      setLoadingMoreChats(false);
-      void Promise.all([refreshRuns(), refreshChats()]);
-    });
-    return () => { cancelled = true; };
-  }, [activateWorkspace, refreshChats, refreshRuns, workspaceId]);
+  }, [invalidateChats, setChats, workspaceId]);
 
   useEffect(() => {
     if (runsLoading) return;
@@ -469,27 +358,6 @@ export function AskAgentsDock({
     setLastAttentionIds(nextIds);
   }, [attentionRuns, lastAttentionIds, runsLoading, setLastAttentionIds]);
 
-  useEffect(() => {
-    if (!workspaceId) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const refresh = (event: Event) => {
-      const detail = (event as CustomEvent<{ entity_id?: string; status?: DockChat['active_run_status'] }>).detail;
-      updateChatRunStatus(detail?.entity_id ?? null, detail?.status ?? null);
-      if (timer) return;
-      timer = setTimeout(() => {
-        timer = null;
-        void Promise.all([refreshRuns(), refreshChats(true)]);
-      }, 180);
-    };
-    window.addEventListener('agent_run-updated', refresh);
-    window.addEventListener('coding_session-updated', refresh);
-    return () => {
-      if (timer) clearTimeout(timer);
-      window.removeEventListener('agent_run-updated', refresh);
-      window.removeEventListener('coding_session-updated', refresh);
-    };
-  }, [refreshChats, refreshRuns, updateChatRunStatus, workspaceId]);
-
   const rememberFocusSource = useCallback((source?: HTMLElement | null) => {
     const active = document.activeElement;
     returnFocusRef.current = source ?? (active instanceof HTMLElement ? active : askTriggerRef.current);
@@ -539,11 +407,12 @@ export function AskAgentsDock({
       toast.error(result.error ?? 'Failed to create chat');
       return null;
     }
+    invalidateChats();
     upsertChat(result.data);
     setActiveChatId(result.data.id);
     setTab('chats');
     return result.data;
-  }, [associatedSupportConversationId, creationModule, embedded, setActiveChatId, setTab, upsertChat, workspaceId]);
+  }, [associatedSupportConversationId, creationModule, embedded, invalidateChats, setActiveChatId, setTab, upsertChat, workspaceId]);
 
   useLayoutEffect(() => {
     if (collapsed && !embedded) return;
@@ -710,6 +579,8 @@ export function AskAgentsDock({
             key={supportAssociationKey ?? chatViewKey}
             workspaceId={workspaceId}
             chatId={activeChat?.id}
+            rosterRunId={activeChat?.active_run_id}
+            active={active}
             onCreateChat={createDraftChat}
             textareaRef={textareaRef}
             draftValue={drafts[draftStoreKey] ?? ''}
@@ -828,6 +699,7 @@ export function AskAgentsDock({
                     key={activeRun.run.id}
                     workspaceId={workspaceId}
                     summary={activeRun}
+                    active={active && !hiddenByModal}
                     draft={drafts[`run:${activeRun.run.id}`] ?? ''}
                     onDraftChange={(value) => setDraft(`run:${activeRun.run.id}`, value)}
                     onRunChanged={() => void refreshRuns()}
@@ -846,6 +718,8 @@ export function AskAgentsDock({
                   key={chatViewKey}
                   workspaceId={workspaceId}
                   chatId={activeChat?.id}
+                  rosterRunId={activeChat?.active_run_id}
+                  active={active && !hiddenByModal}
                   onCreateChat={createDraftChat}
                   scrollToLatestRequest={chatScrollRequest}
                   textareaRef={textareaRef}

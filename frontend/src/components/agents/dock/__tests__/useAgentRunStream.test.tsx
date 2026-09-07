@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAgentRunStream } from '../useAgentRunStream';
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import type { CodingSessionEvent } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -12,6 +13,12 @@ const mocks = vi.hoisted(() => ({
   getRunSnapshot: vi.fn(),
   listRunEvents: vi.fn(),
 }));
+
+// This hook needs the authenticated identity, not auth initialization/analytics.
+vi.mock('@/stores/authStore', async () => {
+  const { create } = await import('zustand');
+  return { useAuthStore: create<{ user: { id: string } | null }>(() => ({ user: null })) };
+});
 
 vi.mock('@/lib/services/agentService', () => ({
   agentService: {
@@ -69,8 +76,8 @@ function assistantEvent(
   };
 }
 
-function Probe({ runId = 'run-1' }: { runId?: string }) {
-  latestState = useAgentRunStream('ws-1', runId, true, 0);
+function Probe({ runId = 'run-1', active = true, pollMs = 0 }: { runId?: string; active?: boolean; pollMs?: number }) {
+  latestState = useAgentRunStream('ws-1', runId, active, pollMs);
   return (
     <div data-testid="pending">
       {latestState.pendingInteraction?.interaction_id ?? 'none'}
@@ -619,3 +626,241 @@ function liveSnapshot(content: string, throughSequence = 1) {
     },
   };
 }
+
+describe('stream request lifecycle', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    useSupportPresenceStore.getState().setWsConnected(false);
+    mocks.getRunSnapshot.mockResolvedValue({ data: { id: 'run-1', status: 'paused', pause_reason: 'awaiting_user_message' }, error: null });
+    mocks.listRunEvents.mockResolvedValue({ data: { events: [], next_sequence_no: 0 }, error: null });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+  });
+
+  it('shares the initial transcript read across two consumers of the same run', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.getRunSnapshot.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await act(async () => { root.render(<><Probe /><Probe /></>); });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(1);
+    expect(mocks.listRunEvents).toHaveBeenCalledTimes(1);
+    await act(async () => { finish({ data: { id: 'run-1', status: 'completed' }, error: null }); });
+    expect(latestState?.session?.status).toBe('completed');
+  });
+
+  it('gets a fresh post-action response when another dock has a pre-action read pending', async () => {
+    const consumers: Array<ReturnType<typeof useAgentRunStream>> = [];
+    function Consumer({ index }: { index: number }) {
+      consumers[index] = useAgentRunStream('ws-1', 'run-1', true, 0);
+      return null;
+    }
+    await act(async () => { root.render(<><Consumer index={0} /><Consumer index={1} /></>); });
+    mocks.getRunSnapshot.mockClear();
+    let finish!: (value: unknown) => void;
+    mocks.getRunSnapshot.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    await act(async () => { first = consumers[0].refetch(); });
+    // A message has now been accepted while the other dock is still fetching.
+    mocks.getRunSnapshot.mockResolvedValue({ data: { id: 'run-1', status: 'running' }, error: null });
+    await act(async () => { second = consumers[1].refetch(); });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish({ data: { id: 'run-1', status: 'paused' }, error: null });
+      await Promise.all([first, second]);
+    });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(2);
+    expect(consumers[1].session?.status).toBe('running');
+  });
+
+  it('shares a fresh follow-up when both docks were invalidated during the same read', async () => {
+    const consumers: Array<ReturnType<typeof useAgentRunStream>> = [];
+    function Consumer({ index }: { index: number }) {
+      consumers[index] = useAgentRunStream('ws-1', 'run-1', true, 0);
+      return null;
+    }
+    let finish!: (value: unknown) => void;
+    mocks.getRunSnapshot.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await act(async () => { root.render(<><Consumer index={0} /><Consumer index={1} /></>); });
+    let followups: Promise<void>[] = [];
+    await act(async () => { followups = consumers.map((consumer) => consumer.refetch()); });
+    await act(async () => {
+      finish({ data: { id: 'run-1', status: 'running' }, error: null });
+      await Promise.all(followups);
+    });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['notification', 'focus', 'poll', 'visibility'])(
+    'shares one refresh across idle consumers after %s', async (trigger) => {
+      mocks.getRunSnapshot.mockResolvedValue({ data: { id: 'run-1', status: 'running' }, error: null });
+      await act(async () => { root.render(<><Probe pollMs={5000} /><Probe pollMs={5000} /></>); });
+      expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(1);
+      let finish!: (value: unknown) => void;
+      mocks.getRunSnapshot.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+      if (trigger === 'visibility') {
+        await act(async () => {
+          Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+      }
+      await act(async () => {
+        if (trigger === 'notification') window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'run-1' } }));
+        if (trigger === 'focus') window.dispatchEvent(new Event('focus'));
+        if (trigger === 'visibility') {
+          Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+          document.dispatchEvent(new Event('visibilitychange'));
+        }
+        await vi.advanceTimersByTimeAsync(trigger === 'poll' ? 5000 : 100);
+      });
+      await act(async () => { finish({ data: { id: 'run-1', status: 'running' }, error: null }); });
+      expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('coalesces requests arriving during a fetch into one ordered follow-up', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.getRunSnapshot.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await act(async () => { root.render(<Probe />); });
+    let followups: Array<Promise<void> | undefined> = [];
+    await act(async () => { followups = [latestState?.refetch(), latestState?.refetch(), latestState?.refetch()]; });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(1);
+    expect(mocks.listRunEvents).toHaveBeenCalledTimes(1);
+    mocks.getRunSnapshot.mockResolvedValue({ data: { id: 'run-1', status: 'completed' }, error: null });
+    await act(async () => {
+      finish({ data: { id: 'run-1', status: 'running' }, error: null });
+      await Promise.all(followups);
+    });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(2);
+    expect(latestState?.session?.status).toBe('completed');
+  });
+
+  it('settles an explicit refresh after its own cycle while slow background polling continues', async () => {
+    mocks.getRunSnapshot.mockImplementation(() => new Promise((resolve) => {
+      setTimeout(() => resolve({ data: { id: 'run-1', status: 'running' }, error: null }), 10000);
+    }));
+    await act(async () => { root.render(<Probe pollMs={5000} />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    let finished = false;
+    await act(async () => { void latestState?.refetch().then(() => { finished = true; }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(24000); });
+    expect(mocks.getRunSnapshot.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(finished).toBe(true);
+  });
+
+  it('drops an automatic queued follow-up when the dock closes', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.getRunSnapshot.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await act(async () => { root.render(<Probe />); });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'run-1' } }));
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    await act(async () => { root.render(<Probe active={false} />); });
+    await act(async () => { finish({ data: { id: 'run-1', status: 'running' }, error: null }); });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('retires hung network work with staggered polling consumers', async () => {
+    mocks.getRunSnapshot.mockImplementation(() => new Promise(() => {}));
+    await act(async () => { root.render(<><Probe key="first" pollMs={5000} /></>); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await act(async () => { root.render(<><Probe key="first" pollMs={5000} /><Probe key="second" pollMs={5000} /></>); });
+    const firstSignal = mocks.getRunSnapshot.mock.calls[0][2] as AbortSignal;
+    await act(async () => { await vi.advanceTimersByTimeAsync(120000); });
+    expect(firstSignal.aborted).toBe(true);
+    expect(mocks.getRunSnapshot.mock.calls.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('releases a timed-out read and allows explicit recovery', async () => {
+    mocks.getRunSnapshot.mockReturnValueOnce(new Promise(() => {}));
+    await act(async () => { root.render(<Probe />); });
+    const signal = mocks.getRunSnapshot.mock.calls[0][2] as AbortSignal;
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(signal.aborted).toBe(true);
+    expect(latestState?.loading).toBe(false);
+    await act(async () => { await latestState?.refetch(); });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not poll paused chats every five seconds but retains a slow recovery fallback', async () => {
+    await act(async () => { root.render(<Probe pollMs={5000} />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(59000); });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the five-second recovery fallback for an active run', async () => {
+    mocks.getRunSnapshot.mockResolvedValue({ data: { id: 'run-1', status: 'running' }, error: null });
+    await act(async () => { root.render(<Probe pollMs={5000} />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('suppresses hidden automatic fetches including socket notifications and recovers on return', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    await act(async () => { root.render(<Probe pollMs={5000} />); });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'run-1', status: 'completed' } }));
+      await vi.advanceTimersByTimeAsync(65000);
+    });
+    expect(mocks.getRunSnapshot).not.toHaveBeenCalled();
+    await act(async () => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles completed runs after offline recovery and websocket reconnect', async () => {
+    mocks.getRunSnapshot.mockResolvedValue({ data: { id: 'run-1', status: 'completed' }, error: null });
+    await act(async () => { root.render(<Probe />); });
+    await act(async () => {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+      window.dispatchEvent(new Event('offline'));
+    });
+    await act(async () => {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+      window.dispatchEvent(new Event('online'));
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      useSupportPresenceStore.getState().setWsConnected(true);
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(3);
+  });
+
+  it('reconciles on focus without requiring a polling timer', async () => {
+    await act(async () => { root.render(<Probe />); });
+    await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(100); });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps explicit action reconciliation available while inactive', async () => {
+    await act(async () => { root.render(<Probe active={false} />); });
+    expect(mocks.getRunSnapshot).not.toHaveBeenCalled();
+    await act(async () => { await latestState?.refetch(); });
+    expect(mocks.getRunSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts obsolete requests on a run switch and rejects their late response', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.getRunSnapshot.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await act(async () => { root.render(<Probe />); });
+    const signal = mocks.getRunSnapshot.mock.calls[0][2] as AbortSignal;
+    mocks.getRunSnapshot.mockResolvedValue({ data: { id: 'run-2', status: 'completed' }, error: null });
+    await act(async () => { root.render(<Probe runId="run-2" />); });
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { finish({ data: { id: 'run-1', status: 'running' }, error: null }); });
+    expect(latestState?.session?.id).toBe('run-2');
+  });
+});

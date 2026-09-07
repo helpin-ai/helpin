@@ -28,12 +28,13 @@ import { type AgentTypingState, useSupportPresenceStore } from '@/stores/support
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
-import { flattenSupportMessagePages } from '@/lib/supportMessagePages';
+import { flattenSupportMessagePages, supportMessageRenderKey } from '@/lib/supportMessagePages';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, type SupportReceiptStatus } from './helpers';
 import { MessageBubble } from './MessageBubble';
+import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { AIRunApprovalCard } from './AIRunApprovalCard';
@@ -630,7 +631,10 @@ export function MessageThread({
       const currentSenderType = getEffectiveSenderType(msg);
       const prevSenderType = prev ? getEffectiveSenderType(prev) : null;
       const isConsecutive = prev !== null
+        && prev.message_type !== 'system'
+        && msg.message_type !== 'system'
         && prevSenderType === currentSenderType
+        && (currentSenderType !== 'user' || (!!msg.sender_user_id && prev.sender_user_id === msg.sender_user_id))
         && prev.is_internal === msg.is_internal
         && isSameDay(prev.created_at, msg.created_at)
         && (new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime()) < 120000;
@@ -639,7 +643,10 @@ export function MessageThread({
       const next = idx < messages.length - 1 ? messages[idx + 1] : null;
       const nextSenderType = next ? getEffectiveSenderType(next) : null;
       const isLastInGroup = next === null
+        || next.message_type === 'system'
+        || msg.message_type === 'system'
         || nextSenderType !== currentSenderType
+        || (currentSenderType === 'user' && (!msg.sender_user_id || next.sender_user_id !== msg.sender_user_id))
         || next.is_internal !== msg.is_internal
         || !isSameDay(msg.created_at, next.created_at)
         || (new Date(next.created_at).getTime() - new Date(msg.created_at).getTime()) >= 120000;
@@ -757,6 +764,8 @@ export function MessageThread({
       timeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
   }, [conversationId, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+
+  useJoinedMessagePosition(scrollAreaRef, conversationId, messages, olderPageScrollRef);
 
   useLayoutEffect(() => {
     const previous = olderPageScrollRef.current;
@@ -1173,9 +1182,10 @@ export function MessageThread({
             }
             return (
               <div
-                key={item.message.id}
+                key={supportMessageRenderKey(item.message)}
                 className="support-thread-message w-full min-w-0 max-w-full"
                 data-support-message-id={item.message.id}
+                data-support-message-key={supportMessageRenderKey(item.message)}
               >
                 <MessageBubble
                   message={item.message}

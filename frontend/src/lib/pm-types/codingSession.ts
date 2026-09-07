@@ -173,6 +173,8 @@ export interface CodingSessionEventListResponse {
 export interface CodingSessionTranscriptMessage {
   event_id: string;
   message_id?: string;
+  client_message_id?: string;
+  delivery_status?: 'pending' | 'sent' | 'failed';
   role: 'assistant' | 'user';
   content: string;
   message_type?: string;

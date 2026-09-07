@@ -4,6 +4,30 @@ import type { SupportMessage, SupportMessagePage } from '@/lib/pmTypes'
 
 export type SupportMessagePages = InfiniteData<SupportMessagePage, string | undefined>
 
+function messageMetadataString(message: SupportMessage, key: string): string | null {
+  if (!message.metadata) return null
+  try {
+    const value = JSON.parse(message.metadata)?.[key]
+    return typeof value === 'string' && value.trim() ? value.trim() : null
+  } catch {
+    return null
+  }
+}
+
+export function supportMessageClientID(message: SupportMessage): string | null {
+  return message.client_message_id?.trim() || messageMetadataString(message, 'client_message_id')
+}
+
+export function supportMessageRenderKey(message: SupportMessage): string {
+  const clientID = supportMessageClientID(message)
+  return clientID ? `client:${clientID}` : message.id
+}
+
+export function joinedReplyClientMessageID(message: SupportMessage): string | null {
+  return message.message_type === 'system' && message.system_event_type === 'teammate_joined'
+    ? messageMetadataString(message, 'reply_client_message_id') : null
+}
+
 export function seedSupportMessagePages(messages: SupportMessage[]): SupportMessagePages {
   return {
     pages: [{ data: messages, has_more: false }],
@@ -23,7 +47,22 @@ export function flattenSupportMessagePages(data?: SupportMessagePages): SupportM
       messages.push(message)
     }
   }
-  return messages
+  // Realtime rows arrive independently while the reply may already be visible
+  // optimistically. Apply the same join/reply order as the saved history, using
+  // explicit correlation rather than names, text, or the client's clock.
+  const replyIDs = new Set(messages.filter((message) => message.message_type !== 'system')
+    .map(supportMessageClientID).filter(Boolean))
+  const joins = new Map<string, SupportMessage[]>()
+  for (const message of messages) {
+    const replyID = joinedReplyClientMessageID(message)
+    if (replyID && replyIDs.has(replyID)) joins.set(replyID, [...(joins.get(replyID) ?? []), message])
+  }
+  if (joins.size === 0) return messages
+  return messages.flatMap((message) => {
+    const replyID = joinedReplyClientMessageID(message)
+    if (replyID && joins.has(replyID)) return []
+    return [...(joins.get(supportMessageClientID(message) ?? '') ?? []), message]
+  })
 }
 
 export function appendMessageToNewestPage(
@@ -33,16 +72,16 @@ export function appendMessageToNewestPage(
   if (!data) return seedSupportMessagePages([message])
   if (data.pages.some((page) => page.data.some((item) => item.id === message.id))) return data
 
-  const clientMessageID = message.client_message_id?.trim()
+  const clientMessageID = supportMessageClientID(message)
   if (clientMessageID && data.pages.some((page) => page.data.some((item) =>
-    item.id === clientMessageID || item.client_message_id === clientMessageID,
+    item.id === clientMessageID || supportMessageClientID(item) === clientMessageID,
   ))) {
     return {
       ...data,
       pages: data.pages.map((page) => ({
         ...page,
         data: page.data.map((item) =>
-          item.id === clientMessageID || item.client_message_id === clientMessageID ? message : item,
+          item.id === clientMessageID || supportMessageClientID(item) === clientMessageID ? { ...item, ...message } : item,
         ),
       })),
     }

@@ -80,12 +80,13 @@ export const agentService = {
   listRunArtifacts: (workspaceId: string, runId: string) =>
     automationService.listRunArtifacts(workspaceId, runId) as ReturnType<typeof automationService.listRunArtifacts>,
   /** Run-scoped snapshot — same shape as the coding-session view, includes stream_state_snapshot.current_plan. */
-  getRunSnapshot: (workspaceId: string, runId: string) =>
-    api.get<CodingSession>(`/pm/agent-runs/${encodeURIComponent(runId)}/snapshot${qs(workspaceId)}`),
+  getRunSnapshot: (workspaceId: string, runId: string, signal?: AbortSignal) =>
+    api.get<CodingSession>(`/pm/agent-runs/${encodeURIComponent(runId)}/snapshot${qs(workspaceId)}`, { signal }),
   /** Run-scoped event stream. `after` is the last seen sequence_no for incremental pulls. */
-  listRunEvents: (workspaceId: string, runId: string, after = 0) =>
+  listRunEvents: (workspaceId: string, runId: string, after = 0, signal?: AbortSignal) =>
     api.get<CodingSessionEventListResponse>(
       `/pm/agent-runs/${encodeURIComponent(runId)}/events${qs(workspaceId)}&after=${after}`,
+      { signal },
     ),
   /** Resolve a pending agent-run interaction (request_user_input, approval, etc.). */
   resolveInteraction: (

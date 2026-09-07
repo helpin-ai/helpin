@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useAuthStore } from '@/stores/authStore';
+import { currentAgentRunReadVersion, readSharedAgentRun } from './sharedAgentRunRead';
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { isDockNetworkAvailable, useDockNetworkActivity } from './useDockNetworkActivity';
 import { agentService } from '@/lib/services/agentService';
 import {
   latestPendingCodingSessionInteraction,
@@ -26,17 +30,38 @@ import type {
  * own chat.
  */
 export interface AgentRunStreamFetchers {
-  getSnapshot: (workspaceId: string, runId: string) => Promise<{ data: CodingSession | null; error: string | null }>;
+  /** Stable endpoint/chat identity for sharing reads across mounted docks. */
+  requestKey?: string;
+  getSnapshot: (workspaceId: string, runId: string, signal?: AbortSignal) => Promise<{ data: CodingSession | null; error: string | null }>;
   listEvents: (
     workspaceId: string,
     runId: string,
     after: number,
+    signal?: AbortSignal,
   ) => Promise<{ data: CodingSessionEventListResponse | null; error: string | null }>;
 }
 
+interface StreamRequest {
+  generation: number;
+  automatic: boolean;
+  afterRead?: number;
+  controller: AbortController;
+  promise: Promise<void>;
+  resolve: () => void;
+}
+
+const fetcherIds = new WeakMap<AgentRunStreamFetchers, number>();
+let nextFetcherId = 0;
+function fetcherIdentity(fetchers: AgentRunStreamFetchers) {
+  if (fetchers.requestKey) return fetchers.requestKey;
+  if (!fetcherIds.has(fetchers)) fetcherIds.set(fetchers, ++nextFetcherId);
+  return fetcherIds.get(fetchers);
+}
+
 const defaultFetchers: AgentRunStreamFetchers = {
-  getSnapshot: (workspaceId, runId) => agentService.getRunSnapshot(workspaceId, runId),
-  listEvents: (workspaceId, runId, after) => agentService.listRunEvents(workspaceId, runId, after),
+  requestKey: 'pm-agent-run',
+  getSnapshot: (workspaceId, runId, signal) => agentService.getRunSnapshot(workspaceId, runId, signal),
+  listEvents: (workspaceId, runId, after, signal) => agentService.listRunEvents(workspaceId, runId, after, signal),
 };
 
 export interface AgentRunStreamState {
@@ -66,8 +91,9 @@ export interface AgentRunStreamState {
  * - Apply `coding_session_event-created` payloads immediately, using the host
  *   run id carried by the websocket parent rather than the event's own id.
  * - Reconcile snapshots after status changes or sequence gaps.
- * - Light polling fallback every `pollMs` while the run is active, in case a
- *   WS event is dropped. Disabled when `active === false`.
+ * - Reconcile on open, browser recovery, and socket reconnect.
+ * - Poll visible active runs at `pollMs`, paused runs at most once a minute.
+ *   Automatic reads stop while inactive, hidden, or offline.
  *
  * Returns null fields when nothing is known yet — callers should treat them as
  * "no live state" and fall back to the static run summary.
@@ -79,6 +105,7 @@ export function useAgentRunStream(
   pollMs = 5_000,
   fetchers: AgentRunStreamFetchers = defaultFetchers,
 ): AgentRunStreamState {
+  const currentUserId = useAuthStore((state) => state.user?.id);
   const [currentPlan, setCurrentPlan] = useState<RunPlanArtifact | null>(null);
   const [session, setSession] = useState<CodingSession | null>(null);
   const [streamState, setStreamState] = useState<CodingSessionStreamState | null>(null);
@@ -92,7 +119,17 @@ export function useAgentRunStream(
   const pendingRuntimeEventsRef = useRef<Map<number, CodingSessionEvent>>(new Map());
   const snapshotRef = useRef<CodingSessionStreamSnapshot | null>(null);
   const generationRef = useRef(0);
-  const loadingCountRef = useRef(0);
+  const networkAvailable = useDockNetworkActivity();
+  const activeRef = useRef(active);
+  const requestRef = useRef<StreamRequest | null>(null);
+  const queuedRequestRef = useRef<StreamRequest | null>(null);
+  const subscribedRef = useRef(false);
+  const recoveryBoundaryRef = useRef(currentAgentRunReadVersion());
+  useLayoutEffect(() => {
+    activeRef.current = active;
+    // Capture before passive effects start any shared recovery reads.
+    recoveryBoundaryRef.current = currentAgentRunReadVersion();
+  });
   const clearedInteractionIdsRef = useRef<Set<string>>(new Set());
 
   const publishStreamState = useCallback(() => {
@@ -132,76 +169,119 @@ export function useAgentRunStream(
     }
   }, []);
 
-  const refetch = useCallback(async () => {
+  const reconcile = useCallback(async (signal: AbortSignal, generation: number, afterRead: number | undefined) => {
     if (!workspaceId || !runId) return;
-    const generation = generationRef.current;
-    loadingCountRef.current += 1;
-    setLoading(true);
-    try {
-      const [snap, ev] = await Promise.all([
-        fetchers.getSnapshot(workspaceId, runId),
-        fetchers.listEvents(workspaceId, runId, persistedSeqRef.current),
-      ]);
-      if (generationRef.current !== generation) return;
+    const [snap, ev] = await readSharedAgentRun(
+      JSON.stringify([currentUserId, workspaceId, runId, fetcherIdentity(fetchers)]),
+      persistedSeqRef.current,
+      (after, sharedSignal) => Promise.all([
+        fetchers.getSnapshot(workspaceId, runId, sharedSignal),
+        fetchers.listEvents(workspaceId, runId, after, sharedSignal),
+      ]),
+      signal,
+      afterRead,
+    );
+    if (generationRef.current !== generation || signal.aborted) return;
 
-      // Dock endpoints resolve the chat's active run. A chat can roll over to
-      // a successor while this request is in flight, so never merge a response
-      // that identifies a different host run.
-      if (typeof snap.data?.id === 'string' && snap.data.id !== runId) return;
-      if (snap.data) setSession(snap.data);
-      const acceptedEvents = (ev.data?.events ?? []).filter(
-        (event) => event.session_id === runId && event.run_id === runId,
+    // Dock endpoints resolve the chat's active run. A chat can roll over to
+    // a successor while this request is in flight, so never merge a response
+    // that identifies a different host run.
+    if (typeof snap.data?.id === 'string' && snap.data.id !== runId) return;
+    if (snap.data) setSession(snap.data);
+    const acceptedEvents = (ev.data?.events ?? []).filter(
+      (event) => event.session_id === runId && event.run_id === runId,
+    );
+    if (acceptedEvents.length > 0) {
+      eventsRef.current = upsertCodingSessionEvents(eventsRef.current, acceptedEvents);
+      persistedSeqRef.current = maxPersistedCodingSessionSequence(eventsRef.current);
+    }
+
+    // The event-list response does not identify which active dock run it
+    // resolved. Only use the snapshot embedded in the run-identified session
+    // response; otherwise a rollover between these two requests can leak the
+    // successor snapshot into the predecessor stream.
+    const incomingSnapshot = snap.data?.stream_state_snapshot ?? null;
+    const incomingSequence = incomingSnapshot?.through_sequence ?? 0;
+    const terminal = snap.data
+      ? ['completed', 'failed', 'cancelled'].includes(snap.data.status)
+      : false;
+    // A response that started before a websocket delta must not erase that
+    // newer live state. Terminal snapshots remain authoritative so completed
+    // live segments can be cleared.
+    if (
+      terminal
+      || runtimeSeqRef.current === 0
+      || incomingSequence >= runtimeSeqRef.current
+    ) {
+      snapshotRef.current = mergeCodingSessionStreamSnapshotSeed(
+        snapshotRef.current,
+        incomingSnapshot,
       );
-      if (acceptedEvents.length > 0) {
-        eventsRef.current = upsertCodingSessionEvents(eventsRef.current, acceptedEvents);
-        persistedSeqRef.current = maxPersistedCodingSessionSequence(eventsRef.current);
-      }
+      runtimeSeqRef.current = Math.max(runtimeSeqRef.current, incomingSequence);
 
-      // The event-list response does not identify which active dock run it
-      // resolved. Only use the snapshot embedded in the run-identified session
-      // response; otherwise a rollover between these two requests can leak the
-      // successor snapshot into the predecessor stream.
-      const incomingSnapshot = snap.data?.stream_state_snapshot ?? null;
-      const incomingSequence = incomingSnapshot?.through_sequence ?? 0;
-      const terminal = snap.data
-        ? ['completed', 'failed', 'cancelled'].includes(snap.data.status)
-        : false;
-      // A response that started before a websocket delta must not erase that
-      // newer live state. Terminal snapshots remain authoritative so completed
-      // live segments can be cleared.
-      if (
-        terminal
-        || runtimeSeqRef.current === 0
-        || incomingSequence >= runtimeSeqRef.current
-      ) {
-        snapshotRef.current = mergeCodingSessionStreamSnapshotSeed(
-          snapshotRef.current,
-          incomingSnapshot,
-        );
-        runtimeSeqRef.current = Math.max(runtimeSeqRef.current, incomingSequence);
-
-        // The snapshot is authoritative through its runtime watermark. Discard
-        // buffered websocket events it already contains, then append only a
-        // contiguous tail. This lets snapshots bridge legitimate gaps caused by
-        // runtime events that are not projected to the browser.
-        if (terminal) {
-          pendingRuntimeEventsRef.current.clear();
-        } else {
-          for (const sequence of pendingRuntimeEventsRef.current.keys()) {
-            if (sequence <= incomingSequence) pendingRuntimeEventsRef.current.delete(sequence);
-          }
-          flushContiguousRuntimeEvents();
+      // The snapshot is authoritative through its runtime watermark. Discard
+      // buffered websocket events it already contains, then append only a
+      // contiguous tail. This lets snapshots bridge legitimate gaps caused by
+      // runtime events that are not projected to the browser.
+      if (terminal) {
+        pendingRuntimeEventsRef.current.clear();
+      } else {
+        for (const sequence of pendingRuntimeEventsRef.current.keys()) {
+          if (sequence <= incomingSequence) pendingRuntimeEventsRef.current.delete(sequence);
         }
-      }
-
-      publishStreamState();
-    } finally {
-      if (generationRef.current === generation) {
-        loadingCountRef.current = Math.max(0, loadingCountRef.current - 1);
-        setLoading(loadingCountRef.current > 0);
+        flushContiguousRuntimeEvents();
       }
     }
-  }, [fetchers, flushContiguousRuntimeEvents, publishStreamState, runId, workspaceId]);
+
+    publishStreamState();
+  }, [currentUserId, fetchers, flushContiguousRuntimeEvents, publishStreamState, runId, workspaceId]);
+
+  const refetch = useCallback((automatic = false, boundary: number | null = currentAgentRunReadVersion()): Promise<void> => {
+    if (!workspaceId || !runId || (automatic && (!activeRef.current || !isDockNetworkAvailable()))) {
+      return Promise.resolve();
+    }
+    const generation = generationRef.current;
+    const afterRead = boundary ?? undefined;
+    const queued = queuedRequestRef.current;
+    if (queued?.generation === generation) {
+      queued.automatic &&= automatic;
+      if (afterRead !== undefined) queued.afterRead = Math.max(queued.afterRead ?? -1, afterRead);
+      return queued.promise;
+    }
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => { resolve = done; });
+    const request: StreamRequest = {
+      generation, automatic, afterRead, controller: new AbortController(), promise, resolve,
+    };
+    const start = (next: StreamRequest) => {
+      if (generationRef.current !== next.generation) {
+        next.resolve();
+        return;
+      }
+      if (next.automatic && (!activeRef.current || !isDockNetworkAvailable())) {
+        next.resolve();
+        setLoading(false);
+        return;
+      }
+      requestRef.current = next;
+      setLoading(true);
+      void reconcile(next.controller.signal, next.generation, next.afterRead).catch(() => {
+        // A later action, recovery event, or fallback retries failed reads.
+      }).finally(() => {
+        // Each caller waits for its own cycle, not an endless polling loop.
+        next.resolve();
+        if (requestRef.current !== next) return;
+        requestRef.current = null;
+        const followup = queuedRequestRef.current;
+        queuedRequestRef.current = null;
+        if (followup) start(followup);
+        else if (generationRef.current === next.generation) setLoading(false);
+      });
+    };
+    if (requestRef.current?.generation === generation) queuedRequestRef.current = request;
+    else start(request);
+    return promise;
+  }, [reconcile, runId, workspaceId]);
 
   const ingestRealtimeEvent = useCallback((event: CodingSessionEvent) => {
     if (!runId || event.session_id !== runId || event.run_id !== runId) return false;
@@ -243,7 +323,11 @@ export function useAgentRunStream(
   // prevents a predecessor request from committing after the new run mounts.
   useEffect(() => {
     generationRef.current += 1;
-    loadingCountRef.current = 0;
+    requestRef.current?.controller.abort();
+    requestRef.current = null;
+    queuedRequestRef.current?.resolve();
+    queuedRequestRef.current = null;
+    subscribedRef.current = false;
     persistedSeqRef.current = 0;
     runtimeSeqRef.current = 0;
     eventsRef.current = [];
@@ -257,19 +341,29 @@ export function useAgentRunStream(
     setLoading(false);
     return () => {
       generationRef.current += 1;
+      requestRef.current?.controller.abort();
+      requestRef.current = null;
+      queuedRequestRef.current?.resolve();
+      queuedRequestRef.current = null;
     };
-  }, [fetchers, runId, workspaceId]);
+  }, [currentUserId, fetchers, runId, workspaceId]);
 
   // Initial fetch + WS-driven updates.
   useEffect(() => {
-    if (!active || !workspaceId || !runId) return;
-    void refetch();
+    if (!active || !networkAvailable || !workspaceId || !runId) return;
+    void refetch(true, subscribedRef.current ? recoveryBoundaryRef.current : null);
+    subscribedRef.current = true;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshAfterRead = currentAgentRunReadVersion();
     const scheduleReconcile = () => {
+      if (!isDockNetworkAvailable()) return;
+      // All consumers capture the same boundary when the event arrives, before
+      // the first consumer's deferred request can advance the shared version.
+      refreshAfterRead = currentAgentRunReadVersion();
       if (refreshTimer) return;
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
-        void refetch();
+        void refetch(true, refreshAfterRead);
       }, 100);
     };
     const onRunUpdated = (event: Event) => {
@@ -285,26 +379,34 @@ export function useAgentRunStream(
       if (detail?.parent_id !== runId || !detail.data) return;
       if (ingestRealtimeEvent(detail.data)) scheduleReconcile();
     };
+    const unsubscribeConnection = useSupportPresenceStore.subscribe((state, previous) => {
+      if (state.wsConnected && !previous.wsConnected) scheduleReconcile();
+    });
+    window.addEventListener('focus', scheduleReconcile);
     window.addEventListener('agent_run-updated', onRunUpdated);
     window.addEventListener('coding_session-updated', onRunUpdated);
     window.addEventListener('coding_session_event-created', onSessionEvent);
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
+      unsubscribeConnection();
+      window.removeEventListener('focus', scheduleReconcile);
       window.removeEventListener('agent_run-updated', onRunUpdated);
       window.removeEventListener('coding_session-updated', onRunUpdated);
       window.removeEventListener('coding_session_event-created', onSessionEvent);
     };
-  }, [active, ingestRealtimeEvent, refetch, runId, workspaceId]);
+  }, [active, networkAvailable, ingestRealtimeEvent, refetch, runId, workspaceId]);
 
   // Light polling fallback while active.
+  const sessionStatus = session?.status;
   useEffect(() => {
-    if (!active || !workspaceId || !runId || pollMs <= 0) return;
-    if (session && ['completed', 'failed', 'cancelled'].includes(session.status)) return;
+    if (!active || !networkAvailable || !workspaceId || !runId || pollMs <= 0) return;
+    if (sessionStatus && ['completed', 'failed', 'cancelled'].includes(sessionStatus)) return;
     const id = setInterval(() => {
-      void refetch();
-    }, pollMs);
+      // Periodic safety reads can share a bounded read already in progress.
+      void refetch(true, null);
+    }, sessionStatus === 'paused' ? Math.max(60_000, pollMs) : pollMs);
     return () => clearInterval(id);
-  }, [active, pollMs, refetch, runId, session, workspaceId]);
+  }, [active, networkAvailable, pollMs, refetch, runId, sessionStatus, workspaceId]);
 
   return { session, currentPlan, streamState, pendingInteraction, loading, refetch, clearPendingInteraction };
 }
