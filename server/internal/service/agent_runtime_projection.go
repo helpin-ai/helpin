@@ -46,8 +46,8 @@ type agentRuntimeProjectionRunRepository interface {
 	GetByIDAny(ctx context.Context, id string) (*model.AgentRun, error)
 	GetByExternalRuntimeID(ctx context.Context, externalRuntime, externalRuntimeID string) (*model.AgentRun, error)
 	ListActiveByExternalRuntime(ctx context.Context, externalRuntime string, olderThan time.Time, limit int) ([]model.AgentRun, error)
-	Update(ctx context.Context, run *model.AgentRun) error
-	UpdateOutputSummary(ctx context.Context, runID string, outputSummary json.RawMessage) error
+	UpdateRuntimeProjection(ctx context.Context, run *model.AgentRun) error
+	UpdateRuntimeSummaryMarker(ctx context.Context, workspaceID, runID, key string, value json.RawMessage) error
 	Notify(ctx context.Context, run *model.AgentRun)
 }
 
@@ -403,7 +403,7 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 			continue
 		}
 		if markRuntimeTranscriptReconciled(projectedRun, runtimeRun) {
-			if err := s.runRepo.UpdateOutputSummary(ctx, projectedRun.ID, projectedRun.OutputSummary); err != nil {
+			if err := persistRuntimeSummaryMarker(ctx, s.runRepo, projectedRun, agentRuntimeTranscriptReconciledVersionKey); err != nil {
 				slog.WarnContext(ctx, "agent runtime transcript reconciliation marker update failed",
 					"workspace_id", run.WorkspaceID,
 					"run_id", run.ID,
@@ -522,7 +522,7 @@ func (s *AgentRuntimeProjectionService) persistV2ReplayCursor(ctx context.Contex
 		s.setV2ReplayCursor(runtimeRunID, sequence)
 		return nil
 	}
-	if err := s.runRepo.UpdateOutputSummary(ctx, run.ID, run.OutputSummary); err != nil {
+	if err := persistRuntimeSummaryMarker(ctx, s.runRepo, run, agentRuntimeV2ReplayThroughSummaryKey); err != nil {
 		return fmt.Errorf("persist v2 replay cursor %d: %w", sequence, err)
 	}
 	s.setV2ReplayCursor(runtimeRunID, sequence)
@@ -678,7 +678,10 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	// redelivered or reconciled terminal events on an already-terminal run
 	// are no-ops.
 	wasTerminal := isTerminalAgentRunStatus(run.Status)
-	changed := false
+	changed, err := seedTerminalUsageBaseline(run)
+	if err != nil {
+		return err
+	}
 	runtimeName := agentRuntimeName
 	if run.ExternalRuntime == nil || strings.TrimSpace(*run.ExternalRuntime) != runtimeName {
 		run.ExternalRuntime = &runtimeName
@@ -691,6 +694,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	}
 
 	now := s.eventTime(event)
+	var settlementErr error
 	suppressLifecycle := isTerminalAgentRunStatus(run.Status) && isPreTerminalRuntimeEvent(event.Type)
 	if !suppressLifecycle && isRuntimeWorkProgressEvent(event.Type) {
 		changed = clearRuntimeResumeStage(run) || changed
@@ -834,7 +838,15 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			}
 		}
 	}
-	if usage, ok := eventUsage(event); ok {
+	usage, hasUsage := eventUsage(event)
+	if previous, ok := latestAgentRuntimeUsage(run); ok && (runtimeUsageSemantic(event) == agentruntime.UsageSemanticCumulative || isTerminalRuntimeEvent(event.Type)) {
+		usage = maxAgentRuntimeUsage(usage, previous)
+		hasUsage = true
+	}
+	if !hasUsage && isTerminalRuntimeEvent(event.Type) && s.usageMeter != nil && s.usageMeter.usage != nil {
+		hasUsage = true
+	}
+	if hasUsage {
 		if applyRuntimeUsage(run, usage) {
 			changed = true
 		}
@@ -843,6 +855,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		}
 		terminalUsageChanged, err := s.maybeConsumeTerminalUsage(ctx, run, event, usage)
 		if err != nil {
+			if errors.Is(err, repository.ErrAIUsageWatermarkChanged) {
+				return err
+			}
 			slog.ErrorContext(ctx, "agent runtime terminal usage consumption failed",
 				"error", err,
 				"workspace_id", run.WorkspaceID,
@@ -850,7 +865,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 				"runtime_run_id", strings.TrimSpace(derefString(run.ExternalRuntimeID)),
 				"event_type", event.Type,
 			)
-			terminalUsageChanged = false
+			settlementErr = err // Persist lifecycle state, then request redelivery.
 		}
 		if terminalUsageChanged {
 			changed = true
@@ -869,6 +884,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			if usage, hasUsage := latestAgentRuntimeUsage(run); hasUsage {
 				previousSummary := run.OutputSummary
 				if err := s.usageMeter.checkpointAgentRun(ctx, run, usage); err != nil {
+					if errors.Is(err, repository.ErrAIUsageWatermarkChanged) {
+						return err
+					}
 					canSuspendReservation = false
 					slog.ErrorContext(ctx, "agent runtime chat-turn usage checkpoint failed",
 						"error", err,
@@ -902,13 +920,13 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		s.runFinalizers.FinalizeTerminalRun(ctx, run, runtimeSummaryAvailable)
 	}
 	if !changed {
-		return nil
+		return settlementErr
 	}
 	model.NormalizeAgentRunPauseState(run)
-	if err := s.runRepo.Update(ctx, run); err != nil {
+	if err := s.runRepo.UpdateRuntimeProjection(ctx, run); err != nil {
 		return err
 	}
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeState)
 	if hookPtr := s.supportChatPauseHook.Load(); hookPtr != nil && event.Type == agentruntime.EventRunPaused &&
 		run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage {
 		hook := *hookPtr
@@ -924,7 +942,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			hook(hookCtx, &runCopy)
 		}()
 	}
-	return nil
+	return settlementErr
 }
 
 func (s *AgentRuntimeProjectionService) projectionLock(event AgentRuntimeEventEnvelope) *sync.Mutex {
@@ -1312,7 +1330,7 @@ func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, 
 			WorkspaceID:       run.WorkspaceID,
 			FeatureKey:        AgentRunAIUsageFeature(agent),
 			InputTokens:       usage.InputTokens,
-			OutputTokens:      usage.OutputTokens,
+			OutputTokens:      int(agentRunTokenTelemetry(run, usage).OutputTokens),
 			ReasoningTokens:   usage.ReasoningOutputTokens,
 			CachedInputTokens: usage.CachedInputTokens,
 			Metadata: map[string]interface{}{
@@ -1342,47 +1360,21 @@ func (s *AgentRuntimeProjectionService) maybeConsumeTerminalUsage(ctx context.Co
 	if s == nil || run == nil || s.usageMeter == nil || s.agentRepo == nil {
 		return false, nil
 	}
-	if !isTerminalRuntimeEvent(event.Type) {
+	if !isTerminalRuntimeEvent(event.Type) && !(isTerminalAgentRunStatus(run.Status) && event.Type == agentruntime.EventUsageCheckpoint) {
 		return false, nil
 	}
 	semantic := runtimeUsageSemantic(event)
 	if semantic != "" && semantic != agentruntime.UsageSemanticCumulative {
 		return false, nil
 	}
-	if runtimeUsageAlreadyConsumed(run.OutputSummary) {
+	if runtimeUsageAlreadyConsumed(run.OutputSummary) && agentRunUsageIsZero(agentRunUsageDelta(usage, agentRunUsageCheckpointFromSummary(run.OutputSummary))) {
 		return false, nil
 	}
 	agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
 	if err != nil {
 		return false, err
 	}
-	runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID))
-	if s.usageMeter.usage != nil {
-		err = s.usageMeter.reconcileAgentRun(ctx, run, usage)
-	} else {
-		_, err = s.usageMeter.Consume(ctx, AIUsageMeterInput{
-			WorkspaceID:       run.WorkspaceID,
-			FeatureKey:        AgentRunAIUsageFeature(agent),
-			IdempotencyKey:    aiUsageIdempotencyKey(run.WorkspaceID, "agent-runtime", run.ID, "terminal-usage"),
-			InputTokens:       usage.InputTokens,
-			OutputTokens:      usage.OutputTokens,
-			ReasoningTokens:   usage.ReasoningOutputTokens,
-			CachedInputTokens: usage.CachedInputTokens,
-			AllowOverage:      true,
-			Metadata: map[string]interface{}{
-				"run_id":         run.ID,
-				"runtime_run_id": runtimeRunID,
-				"agent_id":       run.AgentID,
-				"terminal_event": strings.TrimSpace(event.Type),
-				"delegated":      true,
-			},
-		})
-	}
-	if err != nil {
-		return false, err
-	}
-	run.OutputSummary = markRuntimeUsageConsumed(run.OutputSummary, s.eventTime(event))
-	return true, nil
+	return s.settleTerminalUsage(ctx, run, agent, event, usage)
 }
 
 func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) error {
@@ -1446,7 +1438,7 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return err
 	}
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeMessage)
 	return nil
 }
 
@@ -1770,7 +1762,7 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 			if err := s.runMessageRepo.Update(ctx, &message); err != nil {
 				return err
 			}
-			s.runRepo.Notify(ctx, run)
+			s.notifyRunChange(ctx, run, model.AgentRunChangeMessage)
 			return nil
 		}
 		if agentRunMessageMatchesRuntimeMessage(message, runtimeMessage, runtimeMessageID) {
@@ -1811,7 +1803,7 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return err
 	}
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeMessage)
 	return nil
 }
 
@@ -1938,7 +1930,7 @@ func (s *AgentRuntimeProjectionService) createRuntimeArtifact(ctx context.Contex
 	if err := s.artifactRepo.Create(ctx, artifact); err != nil {
 		return err
 	}
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeArtifact)
 	return nil
 }
 
@@ -2004,7 +1996,7 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 		return err
 	}
 	s.publishRuntimeInteractionEvent(run, *interaction)
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeInteraction)
 	return nil
 }
 
@@ -2585,10 +2577,6 @@ func jsonOrNil(raw json.RawMessage) json.RawMessage {
 	return append(json.RawMessage(nil), raw...)
 }
 
-func agentRuntimeProjectionJSONRawEqual(left, right json.RawMessage) bool {
-	return strings.TrimSpace(string(left)) == strings.TrimSpace(string(right))
-}
-
 func stringPointersEqual(left, right *string) bool {
 	return strings.TrimSpace(derefString(left)) == strings.TrimSpace(derefString(right))
 }
@@ -3019,4 +3007,16 @@ func clampInt64(value int64) int {
 		return int(maxIntValue)
 	}
 	return int(value)
+}
+
+// notifyRunChange preserves compatibility with repository adapters that only
+// support the original, unspecified run notification.
+func (s *AgentRuntimeProjectionService) notifyRunChange(ctx context.Context, run *model.AgentRun, kind model.AgentRunChangeKind) {
+	if repo, ok := s.runRepo.(interface {
+		NotifyChange(context.Context, *model.AgentRun, model.AgentRunChangeKind)
+	}); ok {
+		repo.NotifyChange(ctx, run, kind)
+		return
+	}
+	s.runRepo.Notify(ctx, run)
 }

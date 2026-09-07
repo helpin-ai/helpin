@@ -128,9 +128,16 @@ class DockRosterOwner {
       if (!this.canRefresh()) return;
       for (const detail of this.pendingRunUpdates.values()) {
         const id = detail.entity_id;
+        if (detail.update_kind === 'duplicate') continue;
         if (detail.update_kind === 'progress') {
           if (useDockStore.getState().chats.some((chat) => chat.active_run_id === id)) this.pending.add('chats');
           if (this.state.runs.some((summary) => summary.run.id === id)) this.pending.add('runs');
+        } else if (detail.data?.change_kind) {
+          const knownChat = useDockStore.getState().chats.some((chat) => chat.active_run_id === id);
+          const knownRun = this.state.runs.some((summary) => summary.run.id === id);
+          if (knownChat) this.pending.add('chats');
+          if (knownRun) this.pending.add('runs');
+          if (!knownChat && !knownRun) this.pending.add(detail.dock_chat_id || detail.data.dock_chat_id ? 'chats' : 'runs');
         } else { this.pending.add('runs'); this.pending.add('chats'); }
       }
       this.pendingRunUpdates.clear();
@@ -154,9 +161,13 @@ class DockRosterOwner {
       // A raw legacy alias has no update_kind. Retain the canonical kind for
       // the same run/status notification, regardless of which alias arrives first.
       const pause = detail?.pause_reason ?? detail?.data?.pause_reason;
-      const key = JSON.stringify([id, status, pause === 'none' ? '' : pause ?? '']);
+      const approval = detail?.approval_state ?? detail?.data?.approval_state;
+      const key = JSON.stringify([id, status, pause === 'none' ? '' : pause ?? '', approval ?? '']);
       const previous = this.pendingRunUpdates.get(key);
-      if (!previous?.update_kind || detail?.update_kind) this.pendingRunUpdates.set(key, detail ?? {});
+      const priority = { duplicate: 1, progress: 2, content: 3, lifecycle: 4 };
+      if (!previous?.update_kind || (detail?.update_kind && priority[detail.update_kind] >= priority[previous.update_kind])) {
+        this.pendingRunUpdates.set(key, detail ?? {});
+      }
       this.schedule();
     };
     const onSession = (event: Event) => {

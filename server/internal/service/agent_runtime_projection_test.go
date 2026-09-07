@@ -11,6 +11,7 @@ import (
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -62,6 +63,10 @@ func (r *fakeAgentRuntimeProjectionRunRepo) Update(_ context.Context, run *model
 	return nil
 }
 
+func (r *fakeAgentRuntimeProjectionRunRepo) UpdateRuntimeProjection(ctx context.Context, run *model.AgentRun) error {
+	return r.Update(ctx, run)
+}
+
 func (r *fakeAgentRuntimeProjectionRunRepo) UpdateOutputSummary(_ context.Context, runID string, outputSummary json.RawMessage) error {
 	r.summaryUpdates++
 	if r.byID != nil && r.byID[runID] != nil {
@@ -74,6 +79,24 @@ func (r *fakeAgentRuntimeProjectionRunRepo) UpdateOutputSummary(_ context.Contex
 		}
 	}
 	return nil
+}
+
+func (r *fakeAgentRuntimeProjectionRunRepo) UpdateRuntimeSummaryMarker(ctx context.Context, workspaceID, runID, key string, value json.RawMessage) error {
+	body := map[string]json.RawMessage{}
+	if run := r.byID[runID]; run != nil && len(run.OutputSummary) > 0 {
+		if err := json.Unmarshal(run.OutputSummary, &body); err != nil {
+			return err
+		}
+	}
+	if body == nil {
+		body = map[string]json.RawMessage{}
+	}
+	body[key] = value
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	return r.UpdateOutputSummary(ctx, runID, encoded)
 }
 
 func (r *fakeAgentRuntimeProjectionRunRepo) Notify(_ context.Context, _ *model.AgentRun) {
@@ -1501,7 +1524,7 @@ func TestAgentRuntimeProjectionCheckpointsDockChatUsageOnUserMessagePause(t *tes
 			t.Errorf("increased usage added %d updates and %d notifications, want 1/1", runRepo.updates-beforeUpdates, runRepo.notifications-beforeNotifications)
 		}
 		if store.checkpoints != 2 || store.checkpoint.Entry.InputTokensTotal != 60 ||
-			store.checkpoint.Entry.CacheReadTokens != 10 || store.checkpoint.Entry.OutputTokens != 17 ||
+			store.checkpoint.Entry.CacheReadTokens != 10 || store.checkpoint.Entry.OutputTokens != 13 ||
 			store.checkpoint.Entry.ReasoningTokens != 2 {
 			t.Errorf("increased usage checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
 		}
@@ -1513,6 +1536,20 @@ func TestAgentRuntimeProjectionCheckpointsDockChatUsageOnUserMessagePause(t *tes
 		}
 		if store.resizeCalls != beforeSuspensions+1 || store.resizedTo != 0 {
 			t.Error("increased usage did not suspend reservation")
+		}
+	})
+
+	t.Run("stale checkpoint stops projection", func(t *testing.T) {
+		beforeUpdates, beforeNotifications := runRepo.updates, runRepo.notifications
+		beforeSuspensions := store.resizeCalls
+		store.checkpointErr = repository.ErrAIUsageWatermarkChanged
+		defer func() { store.checkpointErr = nil }()
+		usageEvent.Data["usage"] = map[string]any{"input_tokens": float64(170), "output_tokens": float64(25)}
+		if err := svc.ApplyEvent(context.Background(), usageEvent); !errors.Is(err, repository.ErrAIUsageWatermarkChanged) {
+			t.Fatalf("stale checkpoint error = %v", err)
+		}
+		if runRepo.updates != beforeUpdates || runRepo.notifications != beforeNotifications || store.resizeCalls != beforeSuspensions {
+			t.Fatal("stale checkpoint persisted, notified, or suspended a reservation")
 		}
 	})
 
@@ -1658,8 +1695,8 @@ func TestAgentRuntimeProjectionTerminalUsageFailureDoesNotBlockStatusProjection(
 			},
 			"usage_semantic": "cumulative",
 		},
-	}); err != nil {
-		t.Fatalf("ApplyEvent returned error: %v", err)
+	}); !errors.Is(err, model.ErrBillingWorkspaceLocked) {
+		t.Fatalf("expected retryable settlement error, got: %v", err)
 	}
 	if run.Status != model.AgentRunStatusCompleted || run.CompletedAt == nil || !run.CompletedAt.Equal(completedAt) {
 		t.Fatalf("terminal status not projected after consume failure: status=%s completed_at=%v", run.Status, run.CompletedAt)

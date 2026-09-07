@@ -837,6 +837,23 @@ func (r *AgentRunMessageRepository) NextSequence(ctx context.Context, workspaceI
 
 func (r *AgentRunMessageRepository) Create(ctx context.Context, message *model.AgentRunMessage) error {
 	if message != nil && message.DockChatID != nil && strings.TrimSpace(*message.DockChatID) != "" && message.DockChatSequence == nil {
+		// Allocate and insert together. A rejected insert must not leave a
+		// permanent hole in the conversation's handoff coverage cursor, nor
+		// leave a rolled-back sequence attached to a caller's retry object.
+		candidate := *message
+		if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return (&AgentRunMessageRepository{db: tx}).create(ctx, &candidate)
+		}); err != nil {
+			return err
+		}
+		*message = candidate
+		return nil
+	}
+	return r.create(ctx, message)
+}
+
+func (r *AgentRunMessageRepository) create(ctx context.Context, message *model.AgentRunMessage) error {
+	if message != nil && message.DockChatID != nil && strings.TrimSpace(*message.DockChatID) != "" && message.DockChatSequence == nil {
 		var sequence int64
 		if err := r.db.WithContext(ctx).Raw(`
 			UPDATE dock_chats AS chat
@@ -1298,6 +1315,20 @@ func (r *AgentRunRepository) Notify(ctx context.Context, run *model.AgentRun) {
 		return
 	}
 	r.notifier.PublishRunEvent(ctx, run)
+}
+
+// NotifyChange adds precise semantics when supported by the configured publisher.
+func (r *AgentRunRepository) NotifyChange(ctx context.Context, run *model.AgentRun, kind model.AgentRunChangeKind) {
+	if r == nil || run == nil || r.notifier == nil {
+		return
+	}
+	if notifier, ok := r.notifier.(interface {
+		PublishRunChange(context.Context, *model.AgentRun, model.AgentRunChangeKind)
+	}); ok {
+		notifier.PublishRunChange(ctx, run, kind)
+		return
+	}
+	r.Notify(ctx, run)
 }
 
 // AgentTriggerExecutionRepository handles DB operations for durable trigger execution history.

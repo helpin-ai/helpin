@@ -3606,7 +3606,7 @@
     },
     {
       "name": "read_files",
-      "description": "Read bounded numbered excerpts from one to four known files. The call shares an approximately 2,100-character content budget across its files, so limit_lines is only a ceiling. When has_more is true, continue exactly from next_start_line; do not restart the range or increase limit_lines. Prefer repository_search or list_symbols before reading when paths or declarations are unknown.",
+      "description": "Read bounded numbered excerpts from one to four known files. Files share a content budget (normally 2,100 characters; 8,192 with native context management), so limit_lines is only a ceiling. When has_more is true, continue exactly from next_start_line; do not restart the range or increase limit_lines. Prefer repository_search or list_symbols before reading when paths or declarations are unknown.",
       "category": "Filesystem",
       "input_schema": {
         "properties": {

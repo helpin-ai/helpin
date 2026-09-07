@@ -296,18 +296,12 @@ func (s *InternalCommandService) persistSupportCoverageGapOutcome(ctx context.Co
 	if err != nil {
 		return err
 	}
-	body := map[string]any{}
-	if len(run.OutputSummary) > 0 {
-		_ = json.Unmarshal(run.OutputSummary, &body)
-	}
-	body[supportCoverageGapOutcomeSummaryKey] = outcome
-	payload, err := json.Marshal(body)
+	payload, err := json.Marshal(outcome)
 	if err != nil {
 		return fmt.Errorf("encode support coverage outcome: %w", err)
 	}
-	if err := s.agentRunRepo.UpdateOutputSummary(ctx, run.ID, payload); err != nil {
+	if err := s.agentRunRepo.UpdateRuntimeSummaryMarker(ctx, run.WorkspaceID, run.ID, supportCoverageGapOutcomeSummaryKey, payload); err != nil {
 		return err
 	}
-	run.OutputSummary = payload
 	return nil
 }

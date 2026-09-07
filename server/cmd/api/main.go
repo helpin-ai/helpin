@@ -264,6 +264,7 @@ func main() {
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarPlanDismissal{},
 			&model.DockChat{},
+			&model.DockChatHandoff{},
 			&model.PublicShare{},
 			&model.SupportRunEvidence{},
 			&model.HelpcenterAnswer{},

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { queryKeys } from '@/lib/queryKeys'
 import { notificationsService } from '@/lib/services/notificationsService'
 import { nextCursor, unwrap, unwrapRequired } from '@/lib/queryUtils'
+import { useRealtimeFallbackPolling } from '@/hooks/useRealtimeFallbackPolling'
 import type { NotificationFilter, UpdateNotificationPreferencesRequest, UpdateUserNotificationSettingsRequest } from '@/lib/notificationTypes'
 
 // Account-level notification settings (no workspace scope)
@@ -43,12 +44,12 @@ export function useNotifications(wsId: string, filter: NotificationFilter = 'all
 }
 
 export function useUnreadCount(wsId: string) {
+  const polling = useRealtimeFallbackPolling(!!wsId)
   return useQuery({
     queryKey: queryKeys.notifications.unreadCount(wsId),
     queryFn: async () => unwrap(await notificationsService.unreadCount(wsId)),
-    enabled: !!wsId,
+    ...polling,
     staleTime: 30_000,
-    refetchInterval: 30_000,
   })
 }
 

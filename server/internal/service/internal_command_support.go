@@ -212,14 +212,7 @@ func (s *InternalCommandService) executeDraftSupportReply(ctx context.Context, m
 		draft["sender_display_name"] = name
 	}
 
-	summary := map[string]any{}
-	if len(run.OutputSummary) > 0 {
-		if err := json.Unmarshal(run.OutputSummary, &summary); err != nil {
-			summary = map[string]any{}
-		}
-	}
-	summary["draft_reply"] = draft
-	if err := s.agentRunRepo.UpdateOutputSummary(ctx, run.ID, mustJSON(summary)); err != nil {
+	if err := s.agentRunRepo.UpdateRuntimeSummaryMarker(ctx, run.WorkspaceID, run.ID, "draft_reply", mustJSON(draft)); err != nil {
 		return nil, fmt.Errorf("stage support draft on run: %w", err)
 	}
 
