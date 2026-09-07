@@ -14,15 +14,16 @@ type DockChatHandoff struct {
 	CoveredSequence  int64  `gorm:"not null"`
 	// AccessScope is an opaque host-owned authorization snapshot identifier.
 	// Matching it alone is NOT a substitute for authorizing the source records.
-	AccessScope    string   `gorm:"type:text;not null"`
-	Payload        JSONBlob `gorm:"type:jsonb"`
-	Generator      string   `gorm:"type:text"`
-	PromptVersion  string   `gorm:"type:text"`
-	LeaseToken     string   `gorm:"type:text;not null"`
-	LeaseExpiresAt *time.Time
-	FailureCode    string `gorm:"type:text"`
-	UpdatedAt      time.Time
-	Chat           *DockChat `gorm:"foreignKey:DockChatID;references:ID;constraint:OnDelete:CASCADE"`
+	AccessScope          string   `gorm:"type:text;not null"`
+	Payload              JSONBlob `gorm:"type:jsonb"`
+	Generator            string   `gorm:"type:text"`
+	PromptVersion        string   `gorm:"type:text"`
+	LeaseToken           string   `gorm:"type:text;not null"`
+	LeaseThroughSequence int64    `gorm:"not null;default:0"`
+	LeaseExpiresAt       *time.Time
+	FailureCode          string `gorm:"type:text"`
+	UpdatedAt            time.Time
+	Chat                 *DockChat `gorm:"foreignKey:DockChatID;references:ID;constraint:OnDelete:CASCADE"`
 }
 
 func (DockChatHandoff) TableName() string { return "dock_chat_handoffs" }

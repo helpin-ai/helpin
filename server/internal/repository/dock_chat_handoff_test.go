@@ -27,7 +27,7 @@ func handoffTestRepository(t *testing.T) *DockChatHandoffRepository {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	for _, query := range []string{
 		`CREATE TABLE dock_chats(id text PRIMARY KEY, workspace_id text, archived_at datetime)`,
-		`CREATE TABLE dock_chat_handoffs(workspace_id text, dock_chat_id text REFERENCES dock_chats(id) ON DELETE CASCADE, format_version integer, revision integer, previous_revision integer, covered_sequence integer, access_scope text, payload blob, generator text, prompt_version text, lease_token text, lease_expires_at datetime, failure_code text, updated_at datetime, PRIMARY KEY(workspace_id,dock_chat_id))`,
+		`CREATE TABLE dock_chat_handoffs(workspace_id text, dock_chat_id text REFERENCES dock_chats(id) ON DELETE CASCADE, format_version integer, revision integer, previous_revision integer, covered_sequence integer, access_scope text, payload blob, generator text, prompt_version text, lease_token text, lease_through_sequence integer NOT NULL DEFAULT 0, lease_expires_at datetime, failure_code text, updated_at datetime, PRIMARY KEY(workspace_id,dock_chat_id))`,
 		`CREATE TABLE agent_run_messages(id text PRIMARY KEY, workspace_id text, dock_chat_id text, dock_chat_sequence integer, delivery_status text)`,
 		`INSERT INTO dock_chats VALUES ('chat','ws',NULL),('foreign','other',NULL)`,
 		`INSERT INTO agent_run_messages VALUES ('first','ws','chat',1,'sent'),('correction','ws','chat',2,'sent'),('secret','other','foreign',1,'sent')`,

@@ -32,6 +32,9 @@ func NewDockChatHandoffRepository(db *gorm.DB) *DockChatHandoffRepository {
 type HandoffLease struct {
 	WorkspaceID, DockChatID, Token, AccessScope string
 	Revision, CoveredSequence                   int64
+	// SourceThrough is the frozen contiguous delivered prefix at acquisition.
+	// Generate from records read AFTER acquiring the lease and at or below it.
+	SourceThrough int64
 }
 
 func (r *DockChatHandoffRepository) Get(ctx context.Context, workspaceID, chatID string) (*model.DockChatHandoff, error) {
@@ -80,7 +83,16 @@ func (r *DockChatHandoffRepository) Acquire(ctx context.Context, workspaceID, ch
 		if err := tx.Where("workspace_id = ? AND dock_chat_id = ?", workspaceID, chatID).Take(&state).Error; err != nil {
 			return err
 		}
-		lease = HandoffLease{WorkspaceID: workspaceID, DockChatID: chatID, Token: token, AccessScope: scope, Revision: revision, CoveredSequence: state.CoveredSequence}
+		through, err := handoffDeliveredPrefix(tx, workspaceID, chatID, state.CoveredSequence)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&model.DockChatHandoff{}).
+			Where("workspace_id = ? AND dock_chat_id = ?", workspaceID, chatID).
+			Update("lease_through_sequence", through).Error; err != nil {
+			return err
+		}
+		lease = HandoffLease{WorkspaceID: workspaceID, DockChatID: chatID, Token: token, AccessScope: scope, Revision: revision, CoveredSequence: state.CoveredSequence, SourceThrough: through}
 		return nil
 	})
 	return &lease, err
@@ -91,6 +103,9 @@ func (r *DockChatHandoffRepository) Acquire(ctx context.Context, workspaceID, ch
 func (r *DockChatHandoffRepository) Publish(ctx context.Context, lease HandoffLease, through int64, content model.DockChatHandoffContent, generator, promptVersion string) error {
 	if through <= lease.CoveredSequence || generator == "" || promptVersion == "" {
 		return fmt.Errorf("handoff must advance coverage and identify its generator")
+	}
+	if through > lease.SourceThrough {
+		return fmt.Errorf("handoff coverage exceeds the lease's delivered source prefix")
 	}
 	payload, err := json.Marshal(content)
 	if err != nil {
@@ -132,17 +147,17 @@ func (r *DockChatHandoffRepository) Publish(ctx context.Context, lease HandoffLe
 			}
 		}
 		var count int64
-		if err := tx.Model(&model.AgentRunMessage{}).Where("workspace_id = ? AND dock_chat_id = ? AND dock_chat_sequence = ? AND delivery_status = 'sent'", lease.WorkspaceID, lease.DockChatID, through).Count(&count).Error; err != nil {
+		if err := tx.Model(&model.AgentRunMessage{}).Distinct("dock_chat_sequence").Where("workspace_id = ? AND dock_chat_id = ? AND dock_chat_sequence > ? AND dock_chat_sequence <= ? AND delivery_status = 'sent'", lease.WorkspaceID, lease.DockChatID, lease.CoveredSequence, through).Count(&count).Error; err != nil {
 			return err
 		}
-		if count != 1 {
+		if count != through-lease.CoveredSequence {
 			return fmt.Errorf("handoff coverage source is unavailable")
 		}
 		result := r.leased(tx, lease).Updates(map[string]any{
 			"revision": lease.Revision + 1, "previous_revision": lease.Revision,
 			"covered_sequence": through, "payload": model.JSONBlob(payload),
 			"generator": generator, "prompt_version": promptVersion,
-			"lease_token": "", "lease_expires_at": nil, "failure_code": "",
+			"lease_token": "", "lease_expires_at": nil, "lease_through_sequence": 0, "failure_code": "",
 		})
 		return handoffWriteResult(result)
 	})
@@ -156,7 +171,7 @@ func (r *DockChatHandoffRepository) Fail(ctx context.Context, lease HandoffLease
 	default:
 		return fmt.Errorf("invalid handoff failure code")
 	}
-	return handoffWriteResult(r.leased(r.db.WithContext(ctx), lease).Updates(map[string]any{"lease_token": "", "lease_expires_at": nil, "failure_code": code}))
+	return handoffWriteResult(r.leased(r.db.WithContext(ctx), lease).Updates(map[string]any{"lease_token": "", "lease_expires_at": nil, "lease_through_sequence": 0, "failure_code": code}))
 }
 
 // Invalidate erases derived text and revokes in-flight generations. The host
@@ -169,12 +184,37 @@ func (r *DockChatHandoffRepository) Invalidate(ctx context.Context, workspaceID,
 		Where("workspace_id = ? AND dock_chat_id = ? AND revision = ?", workspaceID, chatID, revision).
 		Updates(map[string]any{"revision": revision + 1, "previous_revision": revision, "access_scope": newScope,
 			"payload": nil, "covered_sequence": 0, "generator": "", "prompt_version": "",
-			"lease_token": "", "lease_expires_at": nil, "failure_code": ""}))
+			"lease_token": "", "lease_expires_at": nil, "lease_through_sequence": 0, "failure_code": ""}))
 }
 
 func (r *DockChatHandoffRepository) leased(tx *gorm.DB, lease HandoffLease) *gorm.DB {
 	return tx.Model(&model.DockChatHandoff{}).
+		Where("lease_through_sequence = ?", lease.SourceThrough).
 		Where("workspace_id = ? AND dock_chat_id = ? AND revision = ? AND covered_sequence = ? AND access_scope = ? AND lease_token = ? AND lease_token <> '' AND lease_expires_at > ? AND format_version = 1", lease.WorkspaceID, lease.DockChatID, lease.Revision, lease.CoveredSequence, lease.AccessScope, lease.Token, r.now().UTC())
+}
+
+// handoffDeliveredPrefix bounds source scanning and stops at the first missing
+// or undelivered sequence. Sequence allocation precedes insertion/delivery, so
+// MAX(sequence) is not a safe coverage cursor. Gaps require recovery; they must
+// never be silently retired. A full batch leaves the remaining rows uncovered.
+func handoffDeliveredPrefix(tx *gorm.DB, workspaceID, chatID string, after int64) (int64, error) {
+	var rows []struct {
+		DockChatSequence int64
+		DeliveryStatus   string
+	}
+	if err := tx.Model(&model.AgentRunMessage{}).Select("dock_chat_sequence", "delivery_status").
+		Where("workspace_id = ? AND dock_chat_id = ? AND dock_chat_sequence > ?", workspaceID, chatID, after).
+		Order("dock_chat_sequence ASC").Limit(1000).Find(&rows).Error; err != nil {
+		return 0, fmt.Errorf("read handoff source prefix: %w", err)
+	}
+	through := after
+	for _, row := range rows {
+		if row.DockChatSequence != through+1 || row.DeliveryStatus != "sent" {
+			break
+		}
+		through = row.DockChatSequence
+	}
+	return through, nil
 }
 
 func handoffWriteResult(result *gorm.DB) error {
