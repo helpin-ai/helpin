@@ -679,7 +679,7 @@ func (s *AgentRunFinalizerService) pushVisitorConversationRefresh(ctx context.Co
 }
 
 // markRunOutputSummaryFlag merges a boolean marker into the run output
-// summary (in memory and via the targeted UpdateOutputSummary repo method) so
+// summary (in memory and via an atomic marker-only update) so
 // the marker survives a crash before the projection's final row update
 // without ever touching projection-owned status fields.
 func (s *AgentRunFinalizerService) markRunOutputSummaryFlag(ctx context.Context, run *model.AgentRun, key string) error {
@@ -699,10 +699,14 @@ func (s *AgentRunFinalizerService) setRunOutputSummaryValue(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("marshal run output summary: %w", err)
 	}
-	run.OutputSummary = payload
-	if err := s.runRepo.UpdateOutputSummary(ctx, run.ID, payload); err != nil {
+	marker, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("marshal run output summary marker: %w", err)
+	}
+	if err := s.runRepo.UpdateRuntimeSummaryMarker(ctx, run.WorkspaceID, run.ID, key, marker); err != nil {
 		return fmt.Errorf("persist run output summary marker %q: %w", key, err)
 	}
+	run.OutputSummary = payload
 	return nil
 }
 

@@ -57,6 +57,7 @@ type CompletionUsage struct {
 	MeasurementStatus string
 	RunID             string
 	RunOutputSummary  model.JSONBlob
+	AllowLateUsage    bool
 }
 
 // UsageResult reports customer-charged and internally absorbed value.
@@ -175,6 +176,7 @@ func (s *AIUsageService) Reconcile(ctx context.Context, input CompletionUsage) (
 	if _, err := s.store.Reconcile(ctx, repository.AIUsageReconcileRequest{
 		ReservationID: input.Context.ReservationID, Entry: entry,
 		ChargedMicrousd: charged, AbsorbedMicrousd: absorbed,
+		AllowLateUsage: input.AllowLateUsage, RunID: input.RunID, RunOutputSummary: input.RunOutputSummary,
 	}); err != nil {
 		return nil, err
 	}
