@@ -114,6 +114,7 @@ const WORKSPACE_MEMBERSHIP = {
 }
 
 const WORKSPACE_ACCESS = {
+  modules: ['support'],
   workspace_id: WORKSPACE_ID,
   membership: {
     id: WORKSPACE_MEMBERSHIP.id,
@@ -345,6 +346,21 @@ export async function installSupportAppMocks(page: Page, options: MockOptions = 
     if (method === 'GET' && path === '/api/organizations') {
       return fulfillJSON(route, ORGANIZATIONS)
     }
+    if (method === 'GET' && path === '/api/workspaces') {
+      return fulfillJSON(route, [WORKSPACE])
+    }
+    if (method === 'GET' && path === `/api/workspaces/${WORKSPACE_ID}/billing`) {
+      return fulfillJSON(route, {
+        workspace_id: WORKSPACE_ID,
+        plan: 'starter',
+        status: 'active',
+        locked: false,
+        trialing: false,
+        included_credits: 1000,
+        credits_used: 0,
+        credits_remaining: 1000,
+      })
+    }
     if (method === 'GET' && path === `/api/workspaces/by-slug/${WORKSPACE_SLUG}`) {
       return fulfillJSON(route, WORKSPACE)
     }
@@ -397,6 +413,9 @@ export async function installSupportAppMocks(page: Page, options: MockOptions = 
     }
     if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}/messages` && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
       return fulfillJSON(route, SUPPORT_MESSAGES)
+    }
+    if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}/message-pages` && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
+      return fulfillJSON(route, { data: SUPPORT_MESSAGES, has_more: false })
     }
 
     return fulfillJSON(route, { error: `Unhandled e2e API mock for ${method} ${path}` }, 500)
