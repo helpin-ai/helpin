@@ -1501,7 +1501,7 @@ func TestAgentRuntimeProjectionCheckpointsDockChatUsageOnUserMessagePause(t *tes
 			t.Errorf("increased usage added %d updates and %d notifications, want 1/1", runRepo.updates-beforeUpdates, runRepo.notifications-beforeNotifications)
 		}
 		if store.checkpoints != 2 || store.checkpoint.Entry.InputTokensTotal != 60 ||
-			store.checkpoint.Entry.CacheReadTokens != 10 || store.checkpoint.Entry.OutputTokens != 17 ||
+			store.checkpoint.Entry.CacheReadTokens != 10 || store.checkpoint.Entry.OutputTokens != 13 ||
 			store.checkpoint.Entry.ReasoningTokens != 2 {
 			t.Errorf("increased usage checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
 		}

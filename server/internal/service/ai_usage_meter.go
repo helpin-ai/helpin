@@ -758,12 +758,8 @@ func (m *AIUsageMeter) reconcileAgentRun(ctx context.Context, run *model.AgentRu
 		status = "estimated"
 	}
 	_, err := m.usage.Reconcile(ctx, CompletionUsage{
-		Context: metering,
-		Telemetry: aiusage.TokenTelemetry{
-			InputTokensTotal: int64(delta.InputTokens), CacheReadTokens: int64(delta.CachedInputTokens),
-			CompletionTokensTotal: int64(delta.OutputTokens + delta.ReasoningOutputTokens),
-			OutputTokens:          int64(delta.OutputTokens), ReasoningTokens: int64(delta.ReasoningOutputTokens),
-		},
+		Context:           metering,
+		Telemetry:         agentRunTokenTelemetry(run, delta),
 		MeasurementStatus: status,
 	})
 	return err
@@ -793,12 +789,8 @@ func (m *AIUsageMeter) checkpointAgentRun(ctx context.Context, run *model.AgentR
 		return err
 	}
 	if _, err := m.usage.Checkpoint(ctx, CompletionUsage{
-		Context: metering,
-		Telemetry: aiusage.TokenTelemetry{
-			InputTokensTotal: int64(delta.InputTokens), CacheReadTokens: int64(delta.CachedInputTokens),
-			CompletionTokensTotal: int64(delta.OutputTokens + delta.ReasoningOutputTokens),
-			OutputTokens:          int64(delta.OutputTokens), ReasoningTokens: int64(delta.ReasoningOutputTokens),
-		},
+		Context:           metering,
+		Telemetry:         agentRunTokenTelemetry(run, delta),
 		MeasurementStatus: "actual",
 		RunID:             run.ID,
 		RunOutputSummary:  model.JSONBlob(run.OutputSummary),
@@ -855,16 +847,26 @@ func agentRunUsageExceedsBudget(run *model.AgentRun, usage agentRuntimeUsagePayl
 	if !ok || metering.EnforcementMode != model.AIUsageEnforcementStrict || metering.MaxBillableMicrousd <= 0 {
 		return false
 	}
-	normalized, err := aiusage.NormalizeTokens(aiusage.TokenTelemetry{
-		InputTokensTotal: int64(usage.InputTokens), CacheReadTokens: int64(usage.CachedInputTokens),
-		CompletionTokensTotal: int64(usage.OutputTokens + usage.ReasoningOutputTokens),
-		OutputTokens:          int64(usage.OutputTokens), ReasoningTokens: int64(usage.ReasoningOutputTokens),
-	})
+	normalized, err := aiusage.NormalizeTokens(agentRunTokenTelemetry(run, usage))
 	if err != nil {
 		return false
 	}
 	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{FundingMode: metering.FundingMode, Tokens: normalized, Rates: metering.Route.Rates})
 	return err == nil && charge.FinalMicrousd >= metering.MaxBillableMicrousd
+}
+
+// agentRunTokenTelemetry normalizes inclusive native/Codex completion usage.
+// OpenCode reports visible output and reasoning separately.
+func agentRunTokenTelemetry(run *model.AgentRun, usage agentRuntimeUsagePayload) aiusage.TokenTelemetry {
+	completion := usage.OutputTokens
+	if run != nil && run.RuntimeKind == "opencode" {
+		completion += usage.ReasoningOutputTokens
+	}
+	return aiusage.TokenTelemetry{
+		InputTokensTotal: int64(usage.InputTokens), CacheReadTokens: int64(usage.CachedInputTokens),
+		CompletionTokensTotal: int64(completion), OutputTokens: int64(max(completion-usage.ReasoningOutputTokens, 0)),
+		ReasoningTokens: int64(usage.ReasoningOutputTokens), CompletionIncludesReasoning: true,
+	}
 }
 
 func agentPresetKey(agent *model.Agent) string {
