@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/oschwald/maxminddb-golang/v2"
@@ -32,7 +34,10 @@ type Resolver interface {
 }
 
 type Service struct {
+	mu     sync.RWMutex
 	reader *maxminddb.Reader
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 type Options struct {
@@ -43,26 +48,42 @@ type Options struct {
 	HTTPClient  *http.Client
 }
 
-func Open(opts Options) (*Service, error) {
+// Open loads a local database immediately, or downloads it in the background.
+// Lookups return no location until initialization succeeds. Close stops retries.
+func Open(opts Options) *Service {
+	return openWithRetryInterval(opts, time.Hour)
+}
+
+func openWithRetryInterval(opts Options, retryInterval time.Duration) *Service {
 	path := strings.TrimSpace(opts.Path)
 	if path == "" {
-		return nil, nil
+		return nil
 	}
-
-	if err := ensureDatabase(path, opts); err != nil {
-		return nil, err
+	opts.Path = path
+	if opts.HTTPClient == nil {
+		opts.HTTPClient = &http.Client{Timeout: 2 * time.Minute}
 	}
-
+	s := &Service{}
 	reader, err := maxminddb.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open maxmind db %q: %w", path, err)
+	if err == nil {
+		s.reader = reader
+		return s
 	}
-
-	return &Service{reader: reader}, nil
+	slog.Warn("maxmind db unavailable; initializing in background", "path", path, "error", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancel = cancel
+	s.done = make(chan struct{})
+	go s.initialize(ctx, opts, retryInterval)
+	return s
 }
 
 func (s *Service) Lookup(addr netip.Addr) (*Result, error) {
-	if s == nil || s.reader == nil || !addr.IsValid() {
+	if s == nil || !addr.IsValid() {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.reader == nil {
 		return nil, nil
 	}
 
@@ -111,32 +132,24 @@ func (s *Service) Lookup(addr netip.Addr) (*Result, error) {
 }
 
 func (s *Service) Close() error {
-	if s == nil || s.reader == nil {
+	if s == nil {
 		return nil
 	}
-	return s.reader.Close()
-}
-
-func ensureDatabase(path string, opts Options) error {
-	if _, err := os.Stat(path); err == nil {
+	if s.cancel != nil {
+		s.cancel()
+		<-s.done
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.reader == nil {
 		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("stat maxmind db %q: %w", path, err)
 	}
-
-	downloadURL := strings.TrimSpace(opts.DownloadURL)
-	if downloadURL == "" {
-		return fmt.Errorf("maxmind db %q not found and MAXMIND_DOWNLOAD_URL is empty", path)
-	}
-
-	if err := downloadDatabase(path, opts); err != nil {
-		return fmt.Errorf("bootstrap maxmind db %q: %w", path, err)
-	}
-
-	return nil
+	err := s.reader.Close()
+	s.reader = nil
+	return err
 }
 
-func downloadDatabase(path string, opts Options) error {
+func downloadDatabase(ctx context.Context, path string, opts Options) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create maxmind db directory: %w", err)
 	}
@@ -156,7 +169,7 @@ func downloadDatabase(path string, opts Options) error {
 		client = &http.Client{Timeout: 2 * time.Minute}
 	}
 
-	req, err := http.NewRequest(http.MethodGet, strings.TrimSpace(opts.DownloadURL), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(opts.DownloadURL), nil)
 	if err != nil {
 		return fmt.Errorf("build maxmind download request: %w", err)
 	}
@@ -172,7 +185,11 @@ func downloadDatabase(path string, opts Options) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("download maxmind archive: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return &downloadError{
+			status:     resp.StatusCode,
+			body:       strings.TrimSpace(string(body)),
+			retryAfter: resp.Header.Get("Retry-After"),
+		}
 	}
 
 	if _, err := io.Copy(tempFile, resp.Body); err != nil {
