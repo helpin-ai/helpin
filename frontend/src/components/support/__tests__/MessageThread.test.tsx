@@ -73,6 +73,10 @@ vi.mock('../MessageBubble', () => ({
   MessageBubble: ({ message, isConsecutive }: { message: { content: string }; isConsecutive: boolean }) => <div data-testid="message-bubble" data-consecutive={String(isConsecutive)}>{message.content}</div>,
 }))
 
+vi.mock('../AIRunApprovalCard', () => ({
+  AIRunApprovalCard: ({ enabled }: { enabled: boolean }) => <div data-testid="ai-run-approvals" data-enabled={String(enabled)} />,
+}))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('MessageThread', () => {
@@ -95,6 +99,31 @@ describe('MessageThread', () => {
     vi.useRealTimers()
     vi.clearAllMocks()
     document.body.innerHTML = ''
+  })
+
+  it.each([
+    { label: 'AI handling without legacy state', flow_state: 'ai_handling', ai_state: null, human_takeover: false, enabled: true },
+    { label: 'legacy AI handling', flow_state: null, ai_state: 'pending', human_takeover: false, enabled: true },
+    { label: 'human takeover', flow_state: 'ai_handling', ai_state: 'pending', human_takeover: true, enabled: false },
+    { label: 'resolved by AI', flow_state: 'resolved_by_ai', ai_state: 'resolved', human_takeover: false, enabled: false },
+    { label: 'human queue', flow_state: 'waiting_for_human', ai_state: 'escalated', human_takeover: false, enabled: false },
+  ])('enables run approval discovery according to $label', async ({ enabled, flow_state, ai_state, human_takeover }) => {
+    supportHooks.useConversation.mockReturnValue({
+      isFetched: true,
+      data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: '2026-09-07T10:00:00Z', flow_state, ai_state, human_takeover },
+    })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([]) })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const client = createTestQueryClient()
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      expect(container.querySelector('[data-testid="ai-run-approvals"]')?.getAttribute('data-enabled')).toBe(String(enabled))
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+    }
   })
 
   it('shows a full thread loading shell and hides the composer while switching conversations', () => {

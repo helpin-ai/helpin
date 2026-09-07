@@ -292,8 +292,8 @@ export function ChatView({
       }, 100);
     };
     const onRun = (event: Event) => {
-      const payload = (event as CustomEvent<{ entity_id?: string }>).detail;
-      if (payload?.entity_id === run?.id) recover(false);
+      const payload = (event as CustomEvent<{ entity_id?: string; update_kind?: string; data?: { change_kind?: string } }>).detail;
+      if (payload?.entity_id === run?.id && payload.update_kind !== 'duplicate') recover(payload.data?.change_kind === 'message');
     };
     const onSession = (event: Event) => {
       const payload = (event as CustomEvent<{ parent_id?: string; data?: { type?: string } }>).detail;

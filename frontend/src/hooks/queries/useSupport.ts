@@ -27,6 +27,7 @@ import {
 } from '@/lib/supportMessagePages';
 import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useRealtimeFallbackPolling } from '@/hooks/useRealtimeFallbackPolling';
 import type {
   AgentKnowledgeSource,
   CuratedGuidance,
@@ -215,12 +216,12 @@ export function useChatSettings(workspaceId: string) {
 }
 
 export function useSupportRoutingUsage(workspaceId: string) {
+  const polling = useRealtimeFallbackPolling(!!workspaceId);
   return useQuery({
     queryKey: queryKeys.support.routingUsage(workspaceId),
     queryFn: async () => unwrap(await supportService.getRoutingUsageStatus(workspaceId)),
-    enabled: !!workspaceId,
+    ...polling,
     staleTime: 30_000,
-    refetchInterval: 60_000,
   });
 }
 
@@ -401,12 +402,12 @@ export function useDeleteSupportInboxView(workspaceId: string) {
 }
 
 export function useSupportUnreadByWorkspace(enabled = true) {
+  const polling = useRealtimeFallbackPolling(enabled);
   return useQuery({
     queryKey: queryKeys.support.workspaceUnread(),
     queryFn: async () => unwrap(await supportService.listWorkspaceUnread()),
-    enabled,
+    ...polling,
     staleTime: 30_000,
-    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
 }
@@ -508,13 +509,12 @@ export function useSearchCannedResponses(workspaceId: string, query: string, ena
 }
 
 export function useSupportTeammatePresence(workspaceId: string, enabled = true) {
+  const polling = useRealtimeFallbackPolling(!!workspaceId && enabled);
   return useQuery({
     queryKey: queryKeys.support.teammatePresence(workspaceId),
     queryFn: async () => unwrap(await supportService.listTeammatePresence(workspaceId)),
-    enabled: !!workspaceId && enabled,
+    ...polling,
     staleTime: 15_000,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: true,
   });
 }
 

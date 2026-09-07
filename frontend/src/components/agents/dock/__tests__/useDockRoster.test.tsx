@@ -128,6 +128,24 @@ describe('shared roster request ordering and recovery', () => {
     expect(useDockStore.getState().chats[0]?.id).toBe('after-reconnect');
   });
 
+  it.each(['canonical-first', 'legacy-first'])('routes new chat content without refreshing runs and ignores repeated states (%s)', async (order) => {
+    await act(async () => root.render(<Harness />));
+    mocks.listChats.mockClear(); mocks.listRuns.mockClear();
+    const emit = (kind: string) => {
+      const data = { change_kind: kind === 'content' ? 'message' : 'state', dock_chat_id: 'new-chat', status: 'paused', pause_reason: 'awaiting_user_message' };
+      const canonical = new CustomEvent('agent_run-updated', { detail: { entity_id: 'new-run', data, update_kind: kind } });
+      const legacy = new CustomEvent('coding_session-updated', { detail: { entity_id: 'new-run', data, update_kind: kind } });
+      for (const event of order === 'canonical-first' ? [canonical, legacy] : [legacy, canonical]) window.dispatchEvent(event);
+    };
+    await act(async () => { emit('content'); vi.advanceTimersByTime(200); });
+    expect(mocks.listChats).toHaveBeenCalledTimes(1);
+    expect(mocks.listRuns).not.toHaveBeenCalled();
+    mocks.listChats.mockClear();
+    await act(async () => { emit('duplicate'); vi.advanceTimersByTime(200); });
+    expect(mocks.listChats).not.toHaveBeenCalled();
+    expect(mocks.listRuns).not.toHaveBeenCalled();
+  });
+
   it.each(['canonical-first', 'legacy-first'])('normalizes raw compatibility aliases before selecting lists (%s)', async (order) => {
     mocks.listChats.mockResolvedValue({ data: { chats: [{ ...chat('first'), active_run_id: 'chat-run' }] }, error: null });
     await act(async () => root.render(<><Harness /><Harness id="second" /></>));

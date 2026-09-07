@@ -10,7 +10,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
-import { classifyAgentRunUpdate, type AgentRunUpdateKind } from '@/lib/agentRunRealtime'
+import { createAgentRunUpdateTracker, type AgentRunUpdateKind } from '@/lib/agentRunRealtime'
+import { isForegroundNetworkAvailable } from './useRealtimeFallbackPolling'
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload'
 import { isSupportConversationListQueryKey, moveConversationToTopForMessageActivity, patchConversationDetailPersonalRead, patchConversationDetailStatus, patchConversationPersonalReadInCache, patchConversationStatusInCache, type SupportConversationListCache, type SupportConversationStatusPatch } from '@/lib/supportQueryCache'
 import { appendMessageToNewestPage, type SupportMessagePages } from '@/lib/supportMessagePages'
@@ -184,7 +185,7 @@ function patchBoardTaskLatestRun(event: WSEvent) {
 }
 
 function dispatchAgentRunCompatibilityEvents(event: WSEvent, updateKind: AgentRunUpdateKind) {
-  if (event.entity !== 'agent_run') return
+  if (updateKind === 'duplicate') return
 
   const detail = {
     ...event,
@@ -192,10 +193,12 @@ function dispatchAgentRunCompatibilityEvents(event: WSEvent, updateKind: AgentRu
     status: typeof event.data?.status === 'string' ? event.data.status : undefined,
     pause_reason: typeof event.data?.pause_reason === 'string' ? event.data.pause_reason : undefined,
     approval_state: typeof event.data?.approval_state === 'string' ? event.data.approval_state : undefined,
+    change_kind: typeof event.data?.change_kind === 'string' ? event.data.change_kind : undefined,
+    dock_chat_id: typeof event.data?.dock_chat_id === 'string' ? event.data.dock_chat_id : undefined,
     update_kind: updateKind,
   }
 
-  const eventName = event.action === 'created' ? 'agent_run-created' : 'agent_run-updated'
+  const eventName = `${event.entity}-${event.action}`
   window.dispatchEvent(new CustomEvent(eventName, { detail }))
 }
 
@@ -227,6 +230,7 @@ function patchAgentRunCache(current: unknown, event: WSEvent): unknown {
 
 export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const queryClient = useQueryClient()
+  const agentRunTracker = useRef(createAgentRunUpdateTracker())
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const agentRunInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -256,7 +260,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       const pending = pendingAgentRunInvalidations.current
       pendingAgentRunInvalidations.current = new Map()
       pending.forEach((key) => {
-        queryClient.invalidateQueries({ queryKey: key })
+        queryClient.invalidateQueries({ queryKey: key, refetchType: isForegroundNetworkAvailable() ? 'active' : 'none' })
       })
     }, AGENT_RUN_INVALIDATE_MS)
   }, [queryClient])
@@ -448,17 +452,17 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           })
         }
       }
-    } else if (event.entity === 'agent_run') {
-      const updateKind = classifyAgentRunUpdate(event)
+    } else if (event.entity === 'agent_run' || (event.entity === 'coding_session' && event.data?.change_kind)) {
+      const { kind: updateKind, attentionChanged } = agentRunTracker.current(event)
       patchBoardTaskLatestRun(event)
       queryClient.setQueriesData(
         { queryKey: queryKeys.automation.runsRoot(workspaceId) },
         (current) => patchAgentRunCache(current, event),
       )
       dispatchAgentRunCompatibilityEvents(event, updateKind)
+      if (attentionChanged) scheduleAgentRunInvalidation(queryKeys.automation.runAttentionCount(workspaceId))
       if (updateKind === 'lifecycle') {
         scheduleAgentRunInvalidation(queryKeys.automation.runsRoot(workspaceId))
-        scheduleAgentRunInvalidation(queryKeys.automation.runAttentionCount(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.activityRoot(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.overview(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.agentFleet(workspaceId))
@@ -719,7 +723,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
 
     // Dispatch custom DOM events for any component that listens
     // e.g. "task-updated", "comment-created", "epic-deleted"
-    if (event.entity !== 'agent_run') {
+    if (event.entity !== 'agent_run' && !(event.entity === 'coding_session' && event.data?.change_kind)) {
       window.dispatchEvent(
         new CustomEvent(`${event.entity}-${event.action}`, {
           detail: event,
@@ -814,19 +818,46 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   }, [])
 
   useEffect(() => {
+    agentRunTracker.current = createAgentRunUpdateTracker()
     const timers = typingTimers.current
     return () => {
       clearTimeout(debounceTimer.current ?? undefined)
       clearTimeout(agentRunInvalidateTimer.current ?? undefined)
       clearTimeout(supportCounterInvalidateTimer.current ?? undefined)
+      debounceTimer.current = null
+      agentRunInvalidateTimer.current = null
+      supportCounterInvalidateTimer.current = null
       supportWorkspaceUnreadPending.current = false
       pendingAgentRunInvalidations.current.clear()
       timers.forEach((t) => clearTimeout(t))
       timers.clear()
     }
-  }, [])
+  }, [workspaceId, selfId])
 
   const { send: wsSend, isConnected } = useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsPresenceSnapshot })
+
+  const previousConnection = useRef({ workspaceId, selfId, connected: isConnected })
+  useEffect(() => {
+    const previous = previousConnection.current
+    previousConnection.current = { workspaceId, selfId, connected: isConnected }
+    if (!isConnected || previous.connected || previous.workspaceId !== workspaceId || previous.selfId !== selfId) return
+    agentRunTracker.current = createAgentRunUpdateTracker()
+    const refetchType = isForegroundNetworkAvailable() ? 'active' : 'none'
+    const keys = [
+      queryKeys.automation.runsRoot(workspaceId), queryKeys.automation.runAttentionCount(workspaceId),
+      queryKeys.automation.activityRoot(workspaceId), queryKeys.automation.overview(workspaceId),
+      queryKeys.automation.agentFleet(workspaceId), queryKeys.automation.agentsRoot(workspaceId),
+      queryKeys.notifications.all(workspaceId), queryKeys.support.teammatePresence(workspaceId),
+      queryKeys.workspaces.memberPresence(workspaceId), queryKeys.support.workspaceUnread(),
+      queryKeys.support.routingUsage(workspaceId), queryKeys.support.unreadStats(workspaceId),
+      queryKeys.support.inboxScopes(workspaceId), queryKeys.support.inboxViewCounts(workspaceId),
+    ]
+    keys.forEach((queryKey) => { void queryClient.invalidateQueries({ queryKey, refetchType }) })
+    void queryClient.invalidateQueries({
+      predicate: ({ queryKey }) => queryKey[0] === 'support' && queryKey[1] === workspaceId && queryKey.at(-1) === 'ai-run-interactions',
+      refetchType,
+    })
+  }, [isConnected, workspaceId, selfId, queryClient])
 
   // Expose wsSend and connection state to components via the store
   useEffect(() => {

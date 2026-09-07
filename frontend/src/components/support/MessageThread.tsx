@@ -32,7 +32,7 @@ import { flattenSupportMessagePages, supportMessageRenderKey } from '@/lib/suppo
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
-import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, type SupportReceiptStatus } from './helpers';
+import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
@@ -1109,7 +1109,7 @@ export function MessageThread({
         <AIRunApprovalCard
           workspaceId={workspaceId}
           conversationId={conversation.id}
-          enabled={!!conversation.ai_state}
+          enabled={isAIActiveConversation(conversation)}
         />
       )}
 
