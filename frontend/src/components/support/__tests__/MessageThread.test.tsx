@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { seedSupportMessagePages } from '@/lib/supportMessagePages'
+import { appendMessageToNewestPage, replaceMessageInPages, seedSupportMessagePages } from '@/lib/supportMessagePages'
 import { MessageThread } from '../MessageThread'
 
 const supportHooks = vi.hoisted(() => ({
@@ -70,7 +70,7 @@ vi.mock('../ReplyComposer', () => ({
 }))
 
 vi.mock('../MessageBubble', () => ({
-  MessageBubble: () => <div data-testid="message-bubble" />,
+  MessageBubble: ({ message, isConsecutive }: { message: { content: string }; isConsecutive: boolean }) => <div data-testid="message-bubble" data-consecutive={String(isConsecutive)}>{message.content}</div>,
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -338,4 +338,160 @@ describe('MessageThread', () => {
 
     act(() => root.unmount())
   })
+
+  it.each(['event-first', 'ack-first', 'refetch-only', 'other-teammate'])('keeps the immediate reply stable with joined status arriving %s', (delivery) => {
+    const customer = { id: 'customer', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: (delivery === 'other-teammate' ? 'user' : 'customer') as 'user' | 'customer', sender_user_id: delivery === 'other-teammate' ? 'user-2' : undefined,
+      content: 'Customer question', is_internal: false, message_type: 'reply', created_at: '2026-09-07T10:00:00Z', updated_at: '2026-09-07T10:00:00Z' }
+    const optimistic = { ...customer, id: 'optimistic-send', client_message_id: 'optimistic-send', sender_type: 'user' as const,
+      sender_user_id: 'user-1', content: 'Teammate reply', created_at: '2026-09-07T10:00:01Z' }
+    const joined = { ...optimistic, id: 'joined', client_message_id: '', content: 'Waqar joined the conversation.',
+      message_type: 'system', system_event_type: 'teammate_joined', metadata: JSON.stringify({ reply_client_message_id: optimistic.client_message_id }), created_at: '2026-09-07T10:00:02Z' }
+    const saved = { ...optimistic, id: 'saved-reply', created_at: '2026-09-07T10:00:03Z' }
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: {
+      id: 'conv-1', workspace_id: 'ws-1', subject: 'Question', status: 'open', priority: 'medium', source: 'widget',
+      created_at: customer.created_at, updated_at: customer.created_at, unread_count: 0,
+    } })
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container); const client = createTestQueryClient()
+    let pages = seedSupportMessagePages([customer])
+    const render = () => {
+      supportHooks.useConversationMessages.mockReturnValue({ data: pages, isLoading: false, hasNextPage: false })
+      act(() => { root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>) })
+      act(() => { vi.runAllTimers() })
+    }
+    const order = () => [...container.querySelectorAll('[data-support-message-id]')].map((row) => row.textContent)
+    render()
+    pages = appendMessageToNewestPage(pages, optimistic); render()
+    const preview = order()
+    const previewNode = container.querySelector('[data-support-message-id="optimistic-send"]')
+    expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
+    if (delivery === 'ack-first') { pages = replaceMessageInPages(pages, optimistic.id, saved)!; render() }
+    if (delivery !== 'refetch-only') { pages = appendMessageToNewestPage(pages, joined); render() }
+    const realtimeJoin = order()
+    expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
+    pages = appendMessageToNewestPage(pages, saved)
+    pages = replaceMessageInPages(pages, optimistic.id, saved)!; render()
+    const confirmed = order()
+    const savedNode = container.querySelector('[data-support-message-id="saved-reply"]')
+    pages = seedSupportMessagePages([customer, joined, { ...saved, client_message_id: undefined, metadata: JSON.stringify({ client_message_id: optimistic.client_message_id }) }]); render()
+    const refreshed = order()
+    expect(preview).toEqual(['Customer question', 'Teammate reply'])
+    if (delivery !== 'refetch-only') expect(realtimeJoin).toEqual(['Customer question', 'Waqar joined the conversation.', 'Teammate reply'])
+    expect(confirmed).toEqual(realtimeJoin)
+    expect(refreshed).toEqual(['Customer question', 'Waqar joined the conversation.', 'Teammate reply'])
+    expect(previewNode).toBe(savedNode)
+    expect(container.querySelector('[data-support-message-id="saved-reply"]')).toBe(previewNode)
+    expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
+    act(() => root.unmount()); client.clear()
+  })
+
+  it.each([{ historyCount: 1, reducedMotion: false, batchReply: false }, { historyCount: 5, reducedMotion: false, batchReply: false }, { historyCount: 1, reducedMotion: true, batchReply: false }, { historyCount: 5, reducedMotion: false, batchReply: true }])('keeps an immediate reply steady with $historyCount previous messages and reduced motion $reducedMotion, new reply $batchReply', ({ historyCount, reducedMotion, batchReply }) => {
+    const history = Array.from({ length: historyCount }, (_, index) => ({
+      id: `customer-${index}`, workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'customer' as const,
+      content: 'Customer question', is_internal: false, message_type: 'reply', created_at: '2026-09-07T10:00:00Z', updated_at: '2026-09-07T10:00:00Z',
+    }))
+    const pending = { ...history[0], id: 'client-reply', client_message_id: 'client-reply', sender_type: 'user' as const, content: 'Immediate reply' }
+    const joined = { ...history[0], id: 'joined', message_type: 'system', system_event_type: 'teammate_joined',
+      metadata: JSON.stringify({ reply_client_message_id: pending.client_message_id }), content: 'Waqar joined the conversation.' }
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: {
+      id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: history[0].created_at,
+    } })
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container); const client = createTestQueryClient()
+    let pages = seedSupportMessagePages(history)
+    const render = (settle = true) => {
+      supportHooks.useConversationMessages.mockReturnValue({ data: pages, isLoading: false, hasNextPage: false })
+      act(() => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      if (settle) act(() => { vi.runAllTimers() })
+    }
+    render()
+    const viewport = container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    let scrollTop = 0
+    const rows = () => [...container.querySelectorAll<HTMLElement>('[data-support-message-id]')]
+    Object.defineProperties(viewport, {
+      scrollHeight: { configurable: true, get: () => Math.max(300, rows().length * 100) },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, get: () => scrollTop, set: (value) => { scrollTop = Math.max(0, Math.min(value, viewport.scrollHeight - 300)) } },
+    })
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const rowIndex = rows().indexOf(this)
+      const top = rowIndex >= 0 ? rowIndex * 100 - scrollTop : 0
+      return { top, bottom: top + (this === viewport ? 300 : 100), left: 0, right: 300, height: this === viewport ? 300 : 100, width: 300, x: 0, y: top, toJSON: () => ({}) }
+    })
+    const previousMatchMedia = window.matchMedia
+    window.matchMedia = vi.fn().mockReturnValue({ matches: reducedMotion })
+    const previousAnimate = HTMLElement.prototype.animate
+    const animate = vi.fn()
+    HTMLElement.prototype.animate = animate
+    try {
+      pages = appendMessageToNewestPage(pages, pending); render()
+      const reply = container.querySelector<HTMLElement>('[data-support-message-id="client-reply"]')!
+      expect(reply.textContent).toBe('Immediate reply')
+      const top = reply.getBoundingClientRect().top
+      animate.mockClear()
+      pages = appendMessageToNewestPage(pages, joined)
+      if (batchReply) pages = appendMessageToNewestPage(pages, { ...history[0], id: 'new-customer-reply', content: 'New customer reply' })
+      render(false)
+      expect(rows().indexOf(reply)).toBe(historyCount + 1)
+      if (historyCount === 1 && !reducedMotion) {
+        expect(animate).toHaveBeenCalledWith([{ transform: 'translateY(-100px)' }, { transform: 'translateY(0)' }], expect.objectContaining({ duration: 160 }))
+      } else {
+        if (historyCount > 1) expect(reply.getBoundingClientRect().top).toBe(top - (batchReply ? 100 : 0))
+        expect(animate).not.toHaveBeenCalled()
+      }
+    } finally {
+      act(() => root.unmount()); client.clear(); rect.mockRestore()
+      window.matchMedia = previousMatchMedia
+      if (previousAnimate) HTMLElement.prototype.animate = previousAnimate
+      else delete (HTMLElement.prototype as Partial<HTMLElement>).animate
+    }
+  })
+
+  it.each(['realtime', 'pagination'])('preserves a reader in history when a joined row arrives through %s', (arrival) => {
+    const history = Array.from({ length: 6 }, (_, index) => ({
+      id: `reply-${index}`, client_message_id: `client-${index}`, workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'user' as const,
+      content: `Reply ${index}`, is_internal: false, message_type: 'reply', created_at: '2026-09-07T10:00:00Z', updated_at: '2026-09-07T10:00:00Z',
+    }))
+    const joined = { ...history[0], id: 'joined', client_message_id: '', message_type: 'system', system_event_type: 'teammate_joined',
+      metadata: JSON.stringify({ reply_client_message_id: 'client-0' }), content: 'Waqar joined the conversation.' }
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: history[0].created_at } })
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container); const client = createTestQueryClient()
+    const fetchNextPage = vi.fn()
+    let pages = seedSupportMessagePages(history)
+    const render = () => {
+      supportHooks.useConversationMessages.mockReturnValue({ data: pages, isLoading: false, hasNextPage: arrival === 'pagination', fetchNextPage, isFetchingNextPage: false, isFetchNextPageError: arrival === 'pagination' })
+      act(() => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      act(() => { vi.runAllTimers() })
+    }
+    render()
+    const viewport = container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!
+    let scrollTop = 200
+    const rows = () => [...container.querySelectorAll<HTMLElement>('[data-support-message-id]')]
+    Object.defineProperties(viewport, {
+      scrollHeight: { configurable: true, get: () => rows().length * 100 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, get: () => scrollTop, set: (value) => { scrollTop = Math.max(0, Math.min(value, viewport.scrollHeight - 300)) } },
+    })
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const rowIndex = rows().indexOf(this)
+      const top = rowIndex >= 0 ? rowIndex * 100 - scrollTop : 0
+      return { top, bottom: top + (this === viewport ? 300 : 100), left: 0, right: 300, height: this === viewport ? 300 : 100, width: 300, x: 0, y: top, toJSON: () => ({}) }
+    })
+    try {
+      act(() => { viewport.dispatchEvent(new Event('scroll')) })
+      const anchor = container.querySelector<HTMLElement>('[data-support-message-id="reply-2"]')!
+      const top = anchor.getBoundingClientRect().top
+      if (arrival === 'pagination') {
+        const button = [...container.querySelectorAll('button')].find((node) => node.textContent?.includes('Load earlier messages'))!
+        act(() => button.click())
+        expect(fetchNextPage).toHaveBeenCalledOnce()
+        pages = { ...pages, pages: [...pages.pages, { data: [joined], has_more: false }], pageParams: [undefined, 'older'] }
+      } else pages = appendMessageToNewestPage(pages, joined)
+      render()
+      expect(anchor.getBoundingClientRect().top).toBe(top)
+      expect(scrollTop).toBe(300)
+    } finally { act(() => root.unmount()); client.clear(); rect.mockRestore() }
+  })
+
 })

@@ -1104,6 +1104,43 @@ func TestSupportInboxServiceCreateConversationMessageBlocksEmailReplyUntilPrimar
 	if aiAssisted.ClientMessageID != "optimistic-conversation-1" {
 		t.Fatalf("client_message_id = %q, want optimistic-conversation-1", aiAssisted.ClientMessageID)
 	}
+	messages, err := messageRepo.ListByConversation(ctx, workspaceID, conversation.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var joined *model.SupportMessage
+	for i := range messages {
+		if messages[i].SystemEventType != nil && *messages[i].SystemEventType == model.SystemEventTeammateJoined {
+			joined = &messages[i]
+			break
+		}
+	}
+	if joined == nil {
+		t.Fatal("expected first-reply joined event")
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal([]byte(joined.Metadata), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata["reply_client_message_id"] != aiAssisted.ClientMessageID {
+		t.Fatalf("joined event lost reply correlation: %s", joined.Metadata)
+	}
+	saved, err := messageRepo.GetByID(ctx, aiAssisted.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var savedMetadata map[string]any
+	if err := json.Unmarshal([]byte(saved.Metadata), &savedMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if savedMetadata["client_message_id"] != aiAssisted.ClientMessageID {
+		t.Fatalf("saved reply lost client identity: %s", saved.Metadata)
+	}
+
+	if joined.ClientMessageID != "" {
+		t.Fatal("joined event must not share the reply's deduplication ID")
+	}
+
 }
 
 func TestAgentServiceRunConversationAgentSkipsUnconfirmedPrimaryRecipient(t *testing.T) {
