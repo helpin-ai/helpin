@@ -292,9 +292,19 @@ func (r *AIUsageRepository) Checkpoint(ctx context.Context, input AIUsageCheckpo
 		var existing model.AIUsageLedgerEntry
 		if err := tx.Where("idempotency_key = ?", input.Entry.IdempotencyKey).First(&existing).Error; err == nil {
 			if input.RunID != "" {
-				if err := tx.Model(&model.AgentRun{}).Where("id = ?", input.RunID).
-					Update("output_summary", input.RunOutputSummary).Error; err != nil {
-					return fmt.Errorf("restore AI usage checkpoint run summary: %w", err)
+				if existing.InputTokensTotal != input.Entry.InputTokensTotal || existing.OutputTokens != input.Entry.OutputTokens || existing.ReasoningTokens != input.Entry.ReasoningTokens || existing.CacheReadTokens != input.Entry.CacheReadTokens {
+					return ErrAIUsageWatermarkChanged
+				}
+				current, err := loadRunUsageWatermark(tx, existing.WorkspaceID, input.RunID)
+				if err != nil {
+					return err
+				}
+				requested, err := parseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
+				if err != nil {
+					return err
+				}
+				if current != requested {
+					return ErrAIUsageWatermarkChanged
 				}
 			}
 			return tx.First(&period, "id = ?", existing.PeriodID).Error

@@ -12,6 +12,8 @@ import (
 func TestRuntimeSummaryMarkerPreservesSettledUsage(t *testing.T) {
 	for _, test := range []struct{ name, key, value string }{
 		{"finalizer", "agent_runtime_finalizer_agent_idle", "true"},
+		{"support draft", "draft_reply", `{"content":"draft","approval_required":true}`},
+		{"support coverage", "support_coverage_gap_outcome", `{"outcome":"blocked"}`},
 		{"replay", "agent_runtime_v2_replay_through", "20"},
 		{"transcript", "agent_runtime_transcript_reconciled_runtime_updated_at", `"2026-09-07T12:00:00Z"`},
 	} {

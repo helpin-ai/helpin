@@ -11,6 +11,7 @@ import (
 	agentruntime "github.com/helpin-ai/agent-runtime-go"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -1535,6 +1536,20 @@ func TestAgentRuntimeProjectionCheckpointsDockChatUsageOnUserMessagePause(t *tes
 		}
 		if store.resizeCalls != beforeSuspensions+1 || store.resizedTo != 0 {
 			t.Error("increased usage did not suspend reservation")
+		}
+	})
+
+	t.Run("stale checkpoint stops projection", func(t *testing.T) {
+		beforeUpdates, beforeNotifications := runRepo.updates, runRepo.notifications
+		beforeSuspensions := store.resizeCalls
+		store.checkpointErr = repository.ErrAIUsageWatermarkChanged
+		defer func() { store.checkpointErr = nil }()
+		usageEvent.Data["usage"] = map[string]any{"input_tokens": float64(170), "output_tokens": float64(25)}
+		if err := svc.ApplyEvent(context.Background(), usageEvent); !errors.Is(err, repository.ErrAIUsageWatermarkChanged) {
+			t.Fatalf("stale checkpoint error = %v", err)
+		}
+		if runRepo.updates != beforeUpdates || runRepo.notifications != beforeNotifications || store.resizeCalls != beforeSuspensions {
+			t.Fatal("stale checkpoint persisted, notified, or suspended a reservation")
 		}
 	})
 

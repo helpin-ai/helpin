@@ -884,6 +884,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			if usage, hasUsage := latestAgentRuntimeUsage(run); hasUsage {
 				previousSummary := run.OutputSummary
 				if err := s.usageMeter.checkpointAgentRun(ctx, run, usage); err != nil {
+					if errors.Is(err, repository.ErrAIUsageWatermarkChanged) {
+						return err
+					}
 					canSuspendReservation = false
 					slog.ErrorContext(ctx, "agent runtime chat-turn usage checkpoint failed",
 						"error", err,
