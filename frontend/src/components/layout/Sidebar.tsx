@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useSetup, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useRealtimeFallbackPolling } from '@/hooks/useRealtimeFallbackPolling';
 import { useQuery } from '@tanstack/react-query';
 import { useArchiveMailbox, useInboxScopes, useSupportBuiltinInboxViews, useSupportInboxViewCounts, useUnreadStats } from '@/hooks/queries/useSupport';
 import { useDeleteSupportInboxView, useSupportInboxViews, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
@@ -125,13 +126,14 @@ export function Sidebar() {
     setBuiltinViewFilters(builtinViewFilterMap);
   }, [builtinViewFilterMap, setBuiltinViewFilters]);
 
+  const attentionPolling = useRealtimeFallbackPolling(!!workspaceId);
   const { data: agentAttentionCount = 0 } = useQuery({
     queryKey: queryKeys.automation.runAttentionCount(workspaceId ?? ''),
     queryFn: async () => {
       const res = await automationService.getRunAttentionCount(workspaceId!);
       return res.data?.count ?? 0;
     },
-    enabled: !!workspaceId,
+    ...attentionPolling,
     staleTime: 30_000,
   });
 

@@ -360,6 +360,7 @@ function UserSegment({
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(message.timestamp)}</span>
+        {message.delivery_status === 'pending' ? <span className="sr-only">Sending…</span> : null}
         <span className="font-medium">{actorLabel}</span>
         <UserAvatar
           name={actorLabel}

@@ -22,6 +22,18 @@ function buildEvent(overrides: Partial<CodingSessionEvent> & Pick<CodingSessionE
 }
 
 describe('buildCodingSessionStreamState', () => {
+  it('preserves the client correlation and pending delivery of a realtime user message', () => {
+    const state = buildCodingSessionStreamState([buildEvent({
+      id: 'msg:pending-followup', type: 'user.message.completed', sequence_no: 2,
+      runtime_metadata: { source: 'agent_run_message' },
+      payload: { message_id: 'pending-followup', role: 'user', content: 'Follow up',
+        client_message_id: 'client-followup', delivery_status: 'pending', sequence_no: 2 },
+    })]);
+    expect(state.transcript_messages[0]).toMatchObject({
+      client_message_id: 'client-followup', delivery_status: 'pending',
+    });
+  });
+
   it('keeps live run status messages in persisted transcript order', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({

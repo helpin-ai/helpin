@@ -1317,6 +1317,20 @@ func (r *AgentRunRepository) Notify(ctx context.Context, run *model.AgentRun) {
 	r.notifier.PublishRunEvent(ctx, run)
 }
 
+// NotifyChange adds precise semantics when supported by the configured publisher.
+func (r *AgentRunRepository) NotifyChange(ctx context.Context, run *model.AgentRun, kind model.AgentRunChangeKind) {
+	if r == nil || run == nil || r.notifier == nil {
+		return
+	}
+	if notifier, ok := r.notifier.(interface {
+		PublishRunChange(context.Context, *model.AgentRun, model.AgentRunChangeKind)
+	}); ok {
+		notifier.PublishRunChange(ctx, run, kind)
+		return
+	}
+	r.Notify(ctx, run)
+}
+
 // AgentTriggerExecutionRepository handles DB operations for durable trigger execution history.
 type AgentTriggerExecutionRepository struct {
 	db *gorm.DB

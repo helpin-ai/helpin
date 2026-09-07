@@ -97,3 +97,36 @@ describe('support message page cache', () => {
     expect(removed?.pages).toHaveLength(2)
   })
 })
+
+
+describe('joined status delivery', () => {
+  it('keeps the joined event before its exact reply before and after confirmation', () => {
+    const pending = { ...message('client-01'), sender_type: 'user' as const, client_message_id: 'client-01' }
+    const other = { ...message('other-02'), sender_type: 'user' as const, content: pending.content, client_message_id: 'client-other' }
+    const joined = { ...message('join-03'), message_type: 'system', system_event_type: 'teammate_joined',
+      metadata: JSON.stringify({ reply_client_message_id: pending.client_message_id }) }
+    const confirmed = { ...pending, id: 'saved-04', client_message_id: undefined, metadata: JSON.stringify({ client_message_id: pending.client_message_id }) }
+    const current = appendMessageToNewestPage(seedSupportMessagePages([other, pending]), joined)
+    expect(flattenSupportMessagePages(current).map((m) => m.id)).toEqual([other.id, joined.id, pending.id])
+    const accepted = appendMessageToNewestPage(current, confirmed)
+    expect(flattenSupportMessagePages(accepted).map((m) => m.id)).toEqual([other.id, joined.id, confirmed.id])
+  })
+
+  it('leaves unrelated, legacy and unloaded-reply system events in server order', () => {
+    const rows = [message('msg-01'),
+      { ...message('join-02'), message_type: 'system', system_event_type: 'teammate_joined', metadata: '{invalid' },
+      { ...message('join-03'), message_type: 'system', system_event_type: 'teammate_joined', metadata: JSON.stringify({ reply_client_message_id: 'unloaded' }) },
+    ]
+    expect(flattenSupportMessagePages(seedSupportMessagePages(rows))).toEqual(rows)
+  })
+})
+
+
+it('retains optimistic author details when the widget-shaped realtime acknowledgement omits them', () => {
+  const pending = { ...message('client-01'), client_message_id: 'client-01', sender_type: 'user' as const,
+    sender_user_id: 'user-1', sender_display_name: 'Waqar' }
+  const realtime = { ...message('saved-02'), client_message_id: 'client-01', sender_type: 'user' as const }
+  const rows = flattenSupportMessagePages(appendMessageToNewestPage(seedSupportMessagePages([pending]), realtime))
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ id: 'saved-02', sender_user_id: 'user-1', sender_display_name: 'Waqar' })
+})

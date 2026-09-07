@@ -2115,12 +2115,18 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
 	}
-	if req.AIAssisted {
+	if req.AIAssisted || clientMessageID != "" {
 		metadata := map[string]any{}
 		if strings.TrimSpace(msg.Metadata) != "" {
 			_ = json.Unmarshal([]byte(msg.Metadata), &metadata)
 		}
-		metadata["ai_assisted"] = true
+		if req.AIAssisted {
+			metadata["ai_assisted"] = true
+		}
+		// The top-level client ID is virtual; retain it across REST reloads.
+		if clientMessageID != "" {
+			metadata["client_message_id"] = clientMessageID
+		}
 		metaJSON, _ := json.Marshal(metadata)
 		msg.Metadata = string(metaJSON)
 	}
@@ -2129,7 +2135,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	// "{name} joined the conversation" system message so the customer sees a
 	// centered pill immediately ahead of the reply — Intercom's pattern.
 	if senderType == "user" && !req.IsInternal && messageType == "reply" && senderUserID != nil {
-		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL)
+		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL, clientMessageID)
 	}
 
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
@@ -4688,7 +4694,7 @@ func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targe
 // system message on the widget-visible side the first time a given teammate
 // sends a non-internal reply on the conversation. Matches Intercom's behavior
 // of surfacing a "joined" pill on first engagement rather than on assignment.
-func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string) {
+func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string, replyClientMessageID string) {
 	if s.messageRepo == nil || senderUserID == "" {
 		return
 	}
@@ -4736,6 +4742,13 @@ func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context
 		MessageType:       "system",
 		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventTeammateJoined),
 	}
+	// Correlate the status with its reply without sharing the reply's own
+	// deduplication ID. The inbox can place this ahead of an immediate preview.
+	if replyClientMessageID = strings.TrimSpace(replyClientMessageID); replyClientMessageID != "" {
+		metadata, _ := json.Marshal(map[string]string{"reply_client_message_id": replyClientMessageID})
+		msg.Metadata = string(metadata)
+	}
+
 	if err := s.messageRepo.Create(ctx, msg); err != nil {
 		slog.ErrorContext(ctx, "create teammate-joined system message", "error", err, "conversation_id", conversationID)
 		return

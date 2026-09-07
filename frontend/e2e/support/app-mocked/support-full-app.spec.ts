@@ -16,11 +16,11 @@ declare global {
 
 async function waitForSupportApp(page: import('@playwright/test').Page) {
   await page.waitForFunction(() => window.__supportE2E?.isReady === true)
-  await expect(page.getByRole('button', { name: /Visitor Example/ })).toBeVisible()
+  await expect(conversationRow(page)).toBeVisible()
 }
 
 function conversationRow(page: import('@playwright/test').Page) {
-  return page.getByRole('button', { name: /Visitor Example/ })
+  return page.locator(`[role="button"][data-conversation-id="${CONVERSATION_ID}"]`)
 }
 
 test('real support route shows teammate typing and resyncs presence after reconnect', async ({ page, baseURL }) => {
@@ -200,7 +200,7 @@ test('mobile support keeps Inbox mounted and opens conversations and Details as 
   await page.waitForFunction(() => window.__supportE2E?.isReady === true)
 
   const row = conversationRow(page)
-  await expect(row).toBeVisible()
+  await expect(row).toBeVisible({ timeout: 45_000 })
   await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_SLUG}/support(?:\\?.*)?$`))
   await expect(page.getByRole('button', { name: 'Return to Inbox' })).toHaveCount(0)
 

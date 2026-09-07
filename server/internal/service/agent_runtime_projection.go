@@ -926,7 +926,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	if err := s.runRepo.UpdateRuntimeProjection(ctx, run); err != nil {
 		return err
 	}
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeState)
 	if hookPtr := s.supportChatPauseHook.Load(); hookPtr != nil && event.Type == agentruntime.EventRunPaused &&
 		run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage {
 		hook := *hookPtr
@@ -1438,7 +1438,7 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return err
 	}
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeMessage)
 	return nil
 }
 
@@ -1762,7 +1762,7 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 			if err := s.runMessageRepo.Update(ctx, &message); err != nil {
 				return err
 			}
-			s.runRepo.Notify(ctx, run)
+			s.notifyRunChange(ctx, run, model.AgentRunChangeMessage)
 			return nil
 		}
 		if agentRunMessageMatchesRuntimeMessage(message, runtimeMessage, runtimeMessageID) {
@@ -1803,7 +1803,7 @@ func (s *AgentRuntimeProjectionService) createRuntimeMessage(ctx context.Context
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return err
 	}
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeMessage)
 	return nil
 }
 
@@ -1930,7 +1930,7 @@ func (s *AgentRuntimeProjectionService) createRuntimeArtifact(ctx context.Contex
 	if err := s.artifactRepo.Create(ctx, artifact); err != nil {
 		return err
 	}
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeArtifact)
 	return nil
 }
 
@@ -1996,7 +1996,7 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 		return err
 	}
 	s.publishRuntimeInteractionEvent(run, *interaction)
-	s.runRepo.Notify(ctx, run)
+	s.notifyRunChange(ctx, run, model.AgentRunChangeInteraction)
 	return nil
 }
 
@@ -2577,10 +2577,6 @@ func jsonOrNil(raw json.RawMessage) json.RawMessage {
 	return append(json.RawMessage(nil), raw...)
 }
 
-func agentRuntimeProjectionJSONRawEqual(left, right json.RawMessage) bool {
-	return strings.TrimSpace(string(left)) == strings.TrimSpace(string(right))
-}
-
 func stringPointersEqual(left, right *string) bool {
 	return strings.TrimSpace(derefString(left)) == strings.TrimSpace(derefString(right))
 }
@@ -3011,4 +3007,16 @@ func clampInt64(value int64) int {
 		return int(maxIntValue)
 	}
 	return int(value)
+}
+
+// notifyRunChange preserves compatibility with repository adapters that only
+// support the original, unspecified run notification.
+func (s *AgentRuntimeProjectionService) notifyRunChange(ctx context.Context, run *model.AgentRun, kind model.AgentRunChangeKind) {
+	if repo, ok := s.runRepo.(interface {
+		NotifyChange(context.Context, *model.AgentRun, model.AgentRunChangeKind)
+	}); ok {
+		repo.NotifyChange(ctx, run, kind)
+		return
+	}
+	s.runRepo.Notify(ctx, run)
 }

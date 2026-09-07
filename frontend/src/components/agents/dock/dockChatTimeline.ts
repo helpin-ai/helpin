@@ -12,11 +12,12 @@ function timestamp(value: string | undefined): number | null {
 }
 
 function transcriptIdentityKeys(message: CodingSessionTranscriptMessage): string[] {
-  return [message.event_id, message.message_id].filter((value): value is string => !!value);
+  return [message.event_id, message.message_id, message.client_message_id && `client:${message.client_message_id}`]
+    .filter((value): value is string => !!value);
 }
 
 function persistedIdentityKeys(message: AgentRunMessage): string[] {
-  return [message.id, message.runtime_message_id, `msg:${message.id}`]
+  return [message.id, message.runtime_message_id, `msg:${message.id}`, message.client_message_id && `client:${message.client_message_id}`]
     .filter((value): value is string => !!value);
 }
 
@@ -93,14 +94,27 @@ export function hasAuthoritativeDockRuntimeTimeline(stream: CodingSessionStreamS
     && [...durableToolIDs].every((id) => runtimeToolIDs.has(id));
 }
 
+export interface PendingDockChatMessage {
+  id: string;
+  content: string;
+  timestamp: string;
+  actor_user_id?: string;
+}
+
 /** Merge stable chat rows with only the genuinely newer tail of a runtime snapshot. */
 export function mergePersistedChatMessages(
   stream: CodingSessionStreamState | null,
   messages: AgentRunMessage[],
+  options: { pendingMessage?: PendingDockChatMessage | null; failedClientMessageIds?: ReadonlySet<string> } = {},
 ): CodingSessionStreamState | null {
-  if (!stream && messages.length === 0) return null;
+  if (!stream && messages.length === 0 && !options.pendingMessage) return null;
+  const isVisible = (message: Pick<CodingSessionTranscriptMessage, 'client_message_id' | 'delivery_status'>) => (
+    message.delivery_status !== 'failed'
+    && (message.delivery_status === 'sent'
+      || !(message.client_message_id && options.failedClientMessageIds?.has(message.client_message_id)))
+  );
 
-  const orderedMessages = [...messages].sort(
+  const orderedMessages = messages.filter(isVisible).sort(
     (left, right) => (left.dock_chat_sequence ?? left.sequence_no) - (right.dock_chat_sequence ?? right.sequence_no),
   );
   const persisted = orderedMessages
@@ -108,6 +122,8 @@ export function mergePersistedChatMessages(
     .map((message) => ({
       event_id: `msg:${message.id}`,
       message_id: message.runtime_message_id || message.id,
+      client_message_id: message.client_message_id,
+      delivery_status: message.delivery_status,
       role: message.role as 'user' | 'assistant',
       content: message.content,
       message_type: message.message_type,
@@ -145,6 +161,7 @@ export function mergePersistedChatMessages(
   // history after that page. Snapshot messages are admitted only when they can
   // be proven to be newer than the durable tail.
   const extras = (stream?.transcript_messages ?? [])
+    .filter(isVisible)
     .filter((message) => !transcriptIdentityKeys(message).some((key) => persistedMessageKeys.has(key)))
     .filter((message) => {
       if (persisted.length === 0) return true;
@@ -170,8 +187,27 @@ export function mergePersistedChatMessages(
     return latestPersistedTime !== null && value !== null && value > latestPersistedTime;
   });
 
+  // The same submitted turn keeps its React identity when its websocket event
+  // arrives before the HTTP acknowledgement or the saved message page.
+  const transcriptMessages: CodingSessionTranscriptMessage[] = [...persisted, ...extras].map((message) => (
+    message.role === 'user' && message.client_message_id
+      ? { ...message, event_id: `client:${message.client_message_id}`,
+          ...(message.client_message_id === options.pendingMessage?.id && message.delivery_status !== 'sent'
+            ? { delivery_status: 'pending' as const } : {}) }
+      : message
+  ));
+  const pending = resolveVisiblePendingEcho(options.pendingMessage ?? null, transcriptMessages);
+  if (pending) {
+    transcriptMessages.push({
+      event_id: `client:${pending.id}`, client_message_id: pending.id,
+      role: 'user', content: pending.content, timestamp: pending.timestamp,
+      message_type: 'user_reply', delivery_status: 'pending', actor_user_id: pending.actor_user_id,
+      sequence_no: transcriptMessages.reduce((maximum, message) => Math.max(maximum, message.sequence_no), 0) + 1,
+    });
+  }
+
   return {
-    transcript_messages: [...persisted, ...extras],
+    transcript_messages: transcriptMessages,
     live_assistant_message: stream?.live_assistant_message ?? null,
     live_reasoning_message: stream?.live_reasoning_message ?? null,
     live_turn_segments: liveTurnSegments,
