@@ -520,8 +520,8 @@ export function filterSupportConversations(
     const aResolved = resolvedStatuses.has(a.status) ? 1 : 0;
     const bResolved = resolvedStatuses.has(b.status) ? 1 : 0;
     if (aResolved !== bResolved) return aResolved - bResolved;
-    const aTime = new Date(a.updated_at).getTime();
-    const bTime = new Date(b.updated_at).getTime();
+    const aTime = new Date(a.list_last_activity_at ?? a.list_last_message_at ?? a.created_at).getTime();
+    const bTime = new Date(b.list_last_activity_at ?? b.list_last_message_at ?? b.created_at).getTime();
     return sortOrder === 'oldest' ? aTime - bTime : bTime - aTime;
   });
 

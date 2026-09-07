@@ -70,6 +70,7 @@ export interface SupportConversation {
   human_takeover?: boolean | null;
   list_last_message_id?: string | null;
   list_last_message_at?: string | null;
+  list_last_activity_at?: string | null;
   last_message?: string;
   last_message_sender_type?: MessageSenderType | null;
   last_message_sender_display_name?: string | null;

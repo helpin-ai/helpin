@@ -651,7 +651,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           (current) => moveConversationToTopForMessageActivity(current, {
             conversationId: parentId,
             messageId: event.entity_id,
-            timestamp: event.sent_at ?? (typeof event.data?.created_at === 'string' ? event.data.created_at : new Date().toISOString()),
+            timestamp: typeof event.data?.created_at === 'string' ? event.data.created_at : event.sent_at ?? new Date().toISOString(),
             message: event.data,
           }),
         )

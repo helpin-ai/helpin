@@ -183,6 +183,7 @@ type SupportMessageActivityPatch = {
     sender_display_name?: unknown;
     message_type?: unknown;
     system_event_type?: unknown;
+    is_internal?: unknown;
   };
 };
 
@@ -198,7 +199,7 @@ export type SupportConversationStatusPatch = {
 function isPublicReply(message: SupportMessageActivityPatch['message']): boolean {
   return typeof message?.sender_type === 'string' &&
     (message.message_type === undefined || message.message_type === 'reply') &&
-    !message.system_event_type;
+    !message.system_event_type && !message.is_internal;
 }
 
 function conversationAIControlsResponse(conversation: SupportConversation): boolean {
@@ -212,14 +213,25 @@ function patchConversationForMessageActivity(
   conversation: SupportConversation,
   patch: SupportMessageActivityPatch,
 ): SupportConversation {
+  const activityAt = conversation.list_last_activity_at ?? conversation.list_last_message_at ?? conversation.created_at;
+  const advancesActivity = Date.parse(patch.timestamp) > Date.parse(activityAt);
+  const isListReply = patch.message && !patch.message.system_event_type &&
+    (patch.message.message_type === undefined || patch.message.message_type === 'reply') &&
+    typeof patch.message.sender_type === 'string' &&
+    (!patch.message.is_internal || (typeof patch.message.content === 'string' && patch.message.content.trim() !== ''));
+  const advancesMessage = isListReply && isMessagePatchNewer(conversation, patch);
+  if (!advancesActivity && !advancesMessage) return conversation;
+
   const next: SupportConversation = {
     ...conversation,
-    updated_at: patch.timestamp,
-    list_last_message_id: patch.messageId ?? conversation.list_last_message_id,
-    list_last_message_at: patch.timestamp,
+    ...(advancesActivity ? { updated_at: patch.timestamp, list_last_activity_at: patch.timestamp } : {}),
+    ...(advancesMessage ? {
+      list_last_message_id: patch.messageId ?? conversation.list_last_message_id,
+      list_last_message_at: patch.timestamp,
+    } : {}),
   };
 
-  if (!isPublicReply(patch.message)) {
+  if (!advancesMessage || !isPublicReply(patch.message)) {
     return next;
   }
 
@@ -269,10 +281,8 @@ function moveConversationInList(
   if (index === -1) {
     return { conversations, changed: false };
   }
-  if (!isMessagePatchNewer(conversations[index], patch)) {
-    return { conversations, changed: false };
-  }
   const patched = patchConversationForMessageActivity(conversations[index], patch);
+  if (patched === conversations[index]) return { conversations, changed: false };
   const next = conversations.slice();
   next.splice(index, 1);
   next.unshift(patched);
@@ -297,7 +307,9 @@ export function moveConversationToTopForMessageActivity(
       if (index === -1) {
         return page;
       }
-      found = patchConversationForMessageActivity(page.data[index], patch);
+      const patched = patchConversationForMessageActivity(page.data[index], patch);
+      if (patched === page.data[index]) return page;
+      found = patched;
       return {
         ...page,
         data: page.data.filter((conversation) => conversation.id !== patch.conversationId),

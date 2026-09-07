@@ -701,6 +701,12 @@ func TestSupportConversationRepository_ListPreviewIgnoresSystemEventsButKeepsInt
 	if got := byID["status-event"].LastMessage; got == nil || *got != "real customer reply" {
 		t.Fatalf("status event last_message = %v, want real customer reply", got)
 	}
+	if got := byID["internal-note"].ListLastActivityAt; got == nil || !got.Equal(base.Add(3*time.Minute)) {
+		t.Fatalf("internal note activity timestamp = %v, want note time", got)
+	}
+	if got := byID["status-event"].ListLastActivityAt; got == nil || !got.Equal(base.Add(2*time.Minute)) {
+		t.Fatalf("system event activity timestamp = %v, want status time", got)
+	}
 	if got := byID["internal-note"].LastMessage; got == nil || *got != "Note: check billing context" {
 		t.Fatalf("internal note last_message = %v, want prefixed internal note", got)
 	}
@@ -751,4 +757,65 @@ func TestSupportConversationRepository_MarkContactReadIgnoresSoftDeletedMessages
 
 func supportMessageTimePtr(t time.Time) *time.Time {
 	return &t
+}
+
+func TestSupportConversationRepository_ListOrdersByTimelineActivity(t *testing.T) {
+	db := setupSupportConversationMessageTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	base := time.Date(2026, 9, 7, 10, 0, 0, 0, time.UTC)
+	for i, id := range []string{"older", "empty", "newer"} {
+		insertConversation(t, db, model.SupportConversation{ID: id, WorkspaceID: "w", DisplayID: i + 1, CreatedAt: base.Add(time.Duration(i) * time.Hour), UpdatedAt: base.Add(time.Duration(12-i) * time.Hour)})
+		if id != "empty" {
+			insertMessage(t, db, model.SupportMessage{ID: id + "-reply", WorkspaceID: "w", ConversationID: id, SenderType: "customer", Content: "question", CreatedAt: base})
+			if id == "newer" {
+				insertMessage(t, db, model.SupportMessage{ID: id + "-status", WorkspaceID: "w", ConversationID: id, SenderType: "system", MessageType: "system", SystemEventType: strPtr("resolved"), CreatedAt: base.Add(2 * time.Hour)})
+			}
+		}
+	}
+	// A deleted timeline entry must not make an old conversation look recent.
+	insertMessage(t, db, model.SupportMessage{ID: "deleted-status", WorkspaceID: "w", ConversationID: "older", SenderType: "system", MessageType: "system", SystemEventType: strPtr("resolved"), CreatedAt: base.Add(20 * time.Hour), DeletedAt: gorm.DeletedAt{Time: base.Add(21 * time.Hour), Valid: true}})
+	detail, err := repo.GetByIDForUser(context.Background(), "w", "newer", "user", "", model.RoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.ListLastActivityAt == nil || !detail.ListLastActivityAt.Equal(base.Add(2*time.Hour)) {
+		t.Fatalf("detail activity = %v", detail.ListLastActivityAt)
+	}
+	legacyDetail, err := repo.GetByID(context.Background(), "w", "newer", "", model.RoleOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyDetail.ListLastActivityAt == nil || !legacyDetail.ListLastActivityAt.Equal(base.Add(2*time.Hour)) {
+		t.Fatalf("legacy detail activity = %v", legacyDetail.ListLastActivityAt)
+	}
+	for _, sortOrder := range []string{"newest", "oldest"} {
+		t.Run(sortOrder, func(t *testing.T) {
+			got, total, err := repo.List(context.Background(), ConversationRepositoryListParams{ConversationListParams: ConversationListParams{WorkspaceID: "w", Sort: sortOrder}, Role: model.RoleOwner})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if total != 3 || len(got) != 3 {
+				t.Fatalf("got %d rows, total %d", len(got), total)
+			}
+			want := []string{"newer", "empty", "older"}
+			if sortOrder == "oldest" {
+				want = []string{"older", "empty", "newer"}
+			}
+			for _, conversation := range got {
+				if conversation.ID == "newer" {
+					if conversation.ListLastActivityAt == nil || !conversation.ListLastActivityAt.Equal(base.Add(2*time.Hour)) {
+						t.Errorf("activity timestamp = %v, want status event time", conversation.ListLastActivityAt)
+					}
+					if conversation.ListLastMessageAt == nil || !conversation.ListLastMessageAt.Equal(base) {
+						t.Errorf("message timestamp changed: %v", conversation.ListLastMessageAt)
+					}
+				}
+			}
+			for i := range want {
+				if got[i].ID != want[i] {
+					t.Errorf("row %d = %s, want %s", i, got[i].ID, want[i])
+				}
+			}
+		})
+	}
 }

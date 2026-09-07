@@ -324,6 +324,53 @@ describe('supportQueryCache', () => {
     }));
   });
 
+  it('advances note timestamps without changing public response or unread state', () => {
+    const current: ConversationListResponse = {
+      data: [{ id: 'conv-note', workspace_id: 'ws-1', display_id: 1, subject: 'Note',
+        status: 'open', priority: 'medium', source: 'widget',
+        created_at: '2026-09-07T00:00:00Z', updated_at: '2026-09-07T10:00:00Z',
+        list_last_message_at: '2026-09-07T10:00:00Z',
+        last_message: 'Customer question', unread_count: 2, awaiting_reply: true,
+      }], total: 1, page: 1, per_page: 50, total_pages: 1,
+    };
+    const updated = moveConversationToTopForMessageActivity(current, {
+      conversationId: 'conv-note', messageId: 'note', timestamp: '2026-09-07T12:00:00Z',
+      message: { sender_type: 'user', message_type: 'reply', is_internal: true, content: 'Investigating this' },
+    }) as ConversationListResponse;
+    expect(updated.data[0]).toEqual(expect.objectContaining({
+      list_last_activity_at: '2026-09-07T12:00:00Z',
+      list_last_message_id: 'note', list_last_message_at: '2026-09-07T12:00:00Z',
+      unread_count: 2, awaiting_reply: true,
+    }));
+  });
+
+  it.each([false, true])('keeps system activity separate from message state (infinite: %s)', (infinite) => {
+    const conversation = {
+      id: 'conv-1', workspace_id: 'ws-1', display_id: 1, subject: 'Subject',
+      status: 'open' as const, priority: 'medium' as const, source: 'widget' as const,
+      created_at: '2026-09-07T00:00:00Z', updated_at: '2026-09-07T10:00:00Z',
+      list_last_message_id: 'reply', list_last_message_at: '2026-09-07T10:00:00Z',
+      last_message: 'Customer question', unread_count: 2, awaiting_reply: true,
+    };
+    const page = { data: [conversation], total: 1, page: 1, per_page: 50, total_pages: 1 };
+    const current = infinite ? { pages: [page], pageParams: [1] } : page;
+    const updated = moveConversationToTopForMessageActivity(current, {
+      conversationId: 'conv-1', messageId: 'status-event', timestamp: '2026-09-07T12:00:00Z',
+      message: { sender_type: 'system', message_type: 'system', system_event_type: 'resolved' },
+    })!;
+    const row = 'pages' in updated ? updated.pages[0].data[0] : updated.data[0];
+    expect(row).toEqual(expect.objectContaining({
+      list_last_activity_at: '2026-09-07T12:00:00Z',
+      list_last_message_id: 'reply', list_last_message_at: '2026-09-07T10:00:00Z',
+      last_message: 'Customer question', unread_count: 2, awaiting_reply: true,
+    }));
+    const delayed = moveConversationToTopForMessageActivity(updated, {
+      conversationId: 'conv-1', messageId: 'old-status', timestamp: '2026-09-07T11:00:00Z',
+      message: { sender_type: 'system', message_type: 'system' },
+    });
+    expect(delayed).toBe(updated);
+  });
+
   it('ignores a delayed message older than the cached list projection', () => {
     const current: ConversationListResponse = {
       data: [{

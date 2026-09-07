@@ -787,9 +787,10 @@ describe('useRealtimeSync task ordering events', () => {
         workspace_id: 'ws-1',
         actor_id: 'user-2',
         parent_id: 'conv-replied',
-        sent_at: '2026-06-04T09:00:00Z',
+        sent_at: '2026-06-04T09:05:00Z',
         data: {
           content: 'We will check this.',
+          created_at: '2026-06-04T09:00:00Z',
           sender_type: 'user',
           message_type: 'reply',
         },
@@ -804,6 +805,8 @@ describe('useRealtimeSync task ordering events', () => {
       awaiting_reply: false,
       last_message: 'We will check this.',
       updated_at: '2026-06-04T09:00:00Z',
+      list_last_activity_at: '2026-06-04T09:00:00Z',
+      list_last_message_at: '2026-06-04T09:00:00Z',
     }))
     const messagePages = client.getQueryData<SupportMessagePages>(queryKeys.support.messages('ws-1', 'conv-replied'))
     expect(flattenSupportMessagePages(messagePages).map((message) => message.id)).toEqual(['msg-0', 'msg-1'])

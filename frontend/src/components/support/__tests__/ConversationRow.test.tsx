@@ -114,6 +114,30 @@ describe('ConversationRow', () => {
     document.body.innerHTML = ''
   })
 
+  it('shows timeline activity age without changing the last reply preview', () => {
+    const now = Date.now()
+    const { container, cleanup } = renderRow(conversation({
+      last_message: 'The last actual reply',
+      list_last_message_at: new Date(now - 9 * 3600000).toISOString(),
+      list_last_activity_at: new Date(now - 2 * 3600000).toISOString(),
+      updated_at: new Date(now - 11 * 60000).toISOString(),
+    }))
+    expect(container.querySelector('.tabular-nums')?.textContent).toBe('2h')
+    expect(container.textContent).toContain('The last actual reply')
+    cleanup()
+  })
+
+  it.each([true, false])('shows message age despite recent metadata updates (has message: %s)', (hasMessage) => {
+    const now = Date.now()
+    const { container, cleanup } = renderRow(conversation({
+      created_at: new Date(now - 12 * 3600000).toISOString(),
+      list_last_message_at: hasMessage ? new Date(now - 9 * 3600000).toISOString() : null,
+      updated_at: new Date(now - 11 * 60000).toISOString(),
+    }))
+    expect(container.querySelector('.tabular-nums')?.textContent).toBe(hasMessage ? '9h' : '12h')
+    cleanup()
+  })
+
   it('renders AI handoff as an icon and keeps user tags visible in the compact row', () => {
     const { container, cleanup } = renderRow(conversation({
       system_tags: ['ai_handoff'],
