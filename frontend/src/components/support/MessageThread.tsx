@@ -32,7 +32,7 @@ import { flattenSupportMessagePages, supportMessageRenderKey } from '@/lib/suppo
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
-import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, type SupportReceiptStatus } from './helpers';
+import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
@@ -41,6 +41,7 @@ import { AIRunApprovalCard } from './AIRunApprovalCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
 import { SupportInboxPanelHeader } from './SupportInboxPanelHeader';
+import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { getInitialThreadScrollTarget, getPrependRestoredScrollTop, isNearThreadBottom, isNearThreadTop, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
 import type { UpgradeRequiredReason } from '@/lib/upgradeRequired';
 
@@ -56,7 +57,8 @@ interface MessageThreadProps {
 }
 
 const LazyCreateTaskDialog = lazy(() => import('./CreateTaskDialog').then((module) => ({ default: module.CreateTaskDialog })));
-const LazyReplyComposer = lazy(() => import('./ReplyComposer').then((module) => ({ default: module.ReplyComposer })));
+const loadReplyComposer = () => import('./ReplyComposer').then((module) => ({ default: module.ReplyComposer }));
+const LazyReplyComposer = lazy(loadReplyComposer);
 
 const THREAD_SELECTION_FADE_MS = 160;
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -325,7 +327,6 @@ export function MessageThread({
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
-  const [composerReady, setComposerReady] = useState(false);
   const [isThreadTransitioning, setIsThreadTransitioning] = useState(false);
   const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
@@ -519,22 +520,11 @@ export function MessageThread({
   }, [conversationId, currentUser?.id, deleteMessage, messages]);
 
   useEffect(() => {
-    if (!conversationId) {
-      setComposerReady(false);
-      return;
-    }
-
-    setComposerReady(false);
-    let timeout = 0;
-    const frame = window.requestAnimationFrame(() => {
-      timeout = window.setTimeout(() => setComposerReady(true), 0);
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      if (timeout) window.clearTimeout(timeout);
-    };
-  }, [conversationId]);
+    // MessageThread mounts with Support, even before a conversation is selected.
+    // Download the editor alongside the API requests; importing does not mount it.
+    // A speculative failure is handled by the normal lazy render when needed.
+    void loadReplyComposer().catch(() => {});
+  }, []);
 
   const handleApproveRun = async (runId: string) => {
     await agentService.approveRun(workspaceId, runId, { send_message: true });
@@ -1109,7 +1099,7 @@ export function MessageThread({
         <AIRunApprovalCard
           workspaceId={workspaceId}
           conversationId={conversation.id}
-          enabled={!!conversation.ai_state}
+          enabled={isAIActiveConversation(conversation)}
         />
       )}
 
@@ -1216,19 +1206,19 @@ export function MessageThread({
       {/* Soft gradient fade between thread and composer */}
       <div className="pointer-events-none h-3 -mt-3 relative z-10 bg-gradient-to-t from-background to-transparent" />
 
-      {/* Reply composer — only show once the selected conversation and its
-          messages have loaded, so switching threads never exposes a stale
-          or half-ready composer. */}
-      {composerReady && conversationId && conversation && !isLoading && (
-        <Suspense fallback={null}>
+      {/* Reserve the editor's space immediately. Its key isolates drafts and
+          attachments when switching between already cached conversations. */}
+      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (
+        <Suspense fallback={<ReplyComposerLoading />}>
           <LazyReplyComposer
+            key={`${workspaceId}:${conversationId}`}
             workspaceId={workspaceId}
             conversationId={conversationId}
             emailFallbackHint={emailFallbackHint}
             onUpgradeRequired={setUpgradeDialogReason}
           />
         </Suspense>
-      )}
+      ) : <ReplyComposerLoading />)}
 
       {showCreateTaskDialog ? (
         <Suspense fallback={null}>

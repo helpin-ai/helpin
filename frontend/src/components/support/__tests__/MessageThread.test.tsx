@@ -66,11 +66,15 @@ vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
 }))
 
 vi.mock('../ReplyComposer', () => ({
-  ReplyComposer: () => <div data-testid="reply-composer" />,
+  ReplyComposer: ({ conversationId }: { conversationId: string }) => <div data-testid="reply-composer" data-conversation-id={conversationId} />,
 }))
 
 vi.mock('../MessageBubble', () => ({
   MessageBubble: ({ message, isConsecutive }: { message: { content: string }; isConsecutive: boolean }) => <div data-testid="message-bubble" data-consecutive={String(isConsecutive)}>{message.content}</div>,
+}))
+
+vi.mock('../AIRunApprovalCard', () => ({
+  AIRunApprovalCard: ({ enabled }: { enabled: boolean }) => <div data-testid="ai-run-approvals" data-enabled={String(enabled)} />,
 }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -97,6 +101,31 @@ describe('MessageThread', () => {
     document.body.innerHTML = ''
   })
 
+  it.each([
+    { label: 'AI handling without legacy state', flow_state: 'ai_handling', ai_state: null, human_takeover: false, enabled: true },
+    { label: 'legacy AI handling', flow_state: null, ai_state: 'pending', human_takeover: false, enabled: true },
+    { label: 'human takeover', flow_state: 'ai_handling', ai_state: 'pending', human_takeover: true, enabled: false },
+    { label: 'resolved by AI', flow_state: 'resolved_by_ai', ai_state: 'resolved', human_takeover: false, enabled: false },
+    { label: 'human queue', flow_state: 'waiting_for_human', ai_state: 'escalated', human_takeover: false, enabled: false },
+  ])('enables run approval discovery according to $label', async ({ enabled, flow_state, ai_state, human_takeover }) => {
+    supportHooks.useConversation.mockReturnValue({
+      isFetched: true,
+      data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: '2026-09-07T10:00:00Z', flow_state, ai_state, human_takeover },
+    })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([]) })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const client = createTestQueryClient()
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      expect(container.querySelector('[data-testid="ai-run-approvals"]')?.getAttribute('data-enabled')).toBe(String(enabled))
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+    }
+  })
+
   it('shows a full thread loading shell and hides the composer while switching conversations', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -117,8 +146,34 @@ describe('MessageThread', () => {
     expect(container.querySelector('[data-testid="support-thread-header-skeleton"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="support-thread-message-skeleton"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="reply-composer"]')).toBeNull()
+    expect(container.querySelector('[data-support-reply-composer][aria-busy="true"]')).toBeTruthy()
+    expect(container.querySelector<HTMLButtonElement>('[data-support-reply-composer] button')?.disabled).toBe(true)
 
     act(() => root.unmount())
+  })
+
+  it('shows the ready composer without waiting for another frame and hides stale conversation data', async () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const queryClient = createTestQueryClient()
+    const conversation = { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: '2026-09-07T10:00:00Z' }
+    supportHooks.useConversation.mockReturnValue({ data: conversation, isFetched: true })
+    supportHooks.useConversationMessages.mockReturnValue({ data: seedSupportMessagePages([]), isLoading: false })
+    const render = async (id: string) => act(async () => root.render(<QueryClientProvider client={queryClient}><MessageThread workspaceId="ws-1" conversationId={id} /></QueryClientProvider>))
+    try {
+      await render('conv-1')
+      // Leave animation frames and timers pending: a warm editor is ready now.
+      expect(container.querySelector('[data-testid="reply-composer"]')?.getAttribute('data-conversation-id')).toBe('conv-1')
+      await render('conv-2')
+      expect(container.querySelector('[data-testid="reply-composer"]')).toBeNull()
+      expect(container.querySelector('[data-support-reply-composer][aria-busy="true"]')).toBeTruthy()
+      supportHooks.useConversation.mockReturnValue({ data: { ...conversation, id: 'conv-2' }, isFetched: true })
+      await render('conv-2')
+      expect(container.querySelector('[data-testid="reply-composer"]')?.getAttribute('data-conversation-id')).toBe('conv-2')
+    } finally {
+      act(() => root.unmount())
+      queryClient.clear()
+    }
   })
 
   it('marks the thread as transitioning briefly when the selected conversation changes', () => {
