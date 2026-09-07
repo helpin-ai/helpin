@@ -66,7 +66,7 @@ vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
 }))
 
 vi.mock('../ReplyComposer', () => ({
-  ReplyComposer: () => <div data-testid="reply-composer" />,
+  ReplyComposer: ({ conversationId }: { conversationId: string }) => <div data-testid="reply-composer" data-conversation-id={conversationId} />,
 }))
 
 vi.mock('../MessageBubble', () => ({
@@ -146,8 +146,34 @@ describe('MessageThread', () => {
     expect(container.querySelector('[data-testid="support-thread-header-skeleton"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="support-thread-message-skeleton"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="reply-composer"]')).toBeNull()
+    expect(container.querySelector('[data-support-reply-composer][aria-busy="true"]')).toBeTruthy()
+    expect(container.querySelector<HTMLButtonElement>('[data-support-reply-composer] button')?.disabled).toBe(true)
 
     act(() => root.unmount())
+  })
+
+  it('shows the ready composer without waiting for another frame and hides stale conversation data', async () => {
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const queryClient = createTestQueryClient()
+    const conversation = { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: '2026-09-07T10:00:00Z' }
+    supportHooks.useConversation.mockReturnValue({ data: conversation, isFetched: true })
+    supportHooks.useConversationMessages.mockReturnValue({ data: seedSupportMessagePages([]), isLoading: false })
+    const render = async (id: string) => act(async () => root.render(<QueryClientProvider client={queryClient}><MessageThread workspaceId="ws-1" conversationId={id} /></QueryClientProvider>))
+    try {
+      await render('conv-1')
+      // Leave animation frames and timers pending: a warm editor is ready now.
+      expect(container.querySelector('[data-testid="reply-composer"]')?.getAttribute('data-conversation-id')).toBe('conv-1')
+      await render('conv-2')
+      expect(container.querySelector('[data-testid="reply-composer"]')).toBeNull()
+      expect(container.querySelector('[data-support-reply-composer][aria-busy="true"]')).toBeTruthy()
+      supportHooks.useConversation.mockReturnValue({ data: { ...conversation, id: 'conv-2' }, isFetched: true })
+      await render('conv-2')
+      expect(container.querySelector('[data-testid="reply-composer"]')?.getAttribute('data-conversation-id')).toBe('conv-2')
+    } finally {
+      act(() => root.unmount())
+      queryClient.clear()
+    }
   })
 
   it('marks the thread as transitioning briefly when the selected conversation changes', () => {
