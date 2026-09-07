@@ -867,6 +867,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if metering, ok := agentRunMeteringContext(run); ok {
 			canSuspendReservation := true
 			if usage, hasUsage := latestAgentRuntimeUsage(run); hasUsage {
+				previousSummary := run.OutputSummary
 				if err := s.usageMeter.checkpointAgentRun(ctx, run, usage); err != nil {
 					canSuspendReservation = false
 					slog.ErrorContext(ctx, "agent runtime chat-turn usage checkpoint failed",
@@ -875,7 +876,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 						"run_id", run.ID,
 						"runtime_run_id", strings.TrimSpace(derefString(run.ExternalRuntimeID)),
 					)
-				} else {
+				} else if !agentRuntimeProjectionJSONRawEqual(previousSummary, run.OutputSummary) {
 					changed = true
 				}
 			}
@@ -2914,6 +2915,11 @@ func storeLatestAgentRuntimeUsage(run *model.AgentRun, usage agentRuntimeUsagePa
 	body := map[string]any{}
 	if len(run.OutputSummary) > 0 && strings.TrimSpace(string(run.OutputSummary)) != "null" {
 		_ = json.Unmarshal(run.OutputSummary, &body)
+	}
+	if previous, ok := body[agentRuntimeLatestUsageSummaryKey].(map[string]any); ok {
+		if stored, ok := usageFromMap(previous); ok && stored == usage {
+			return false
+		}
 	}
 	body[agentRuntimeLatestUsageSummaryKey] = map[string]int{
 		"total_tokens":            usage.TotalTokens,

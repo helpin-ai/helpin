@@ -1468,12 +1468,95 @@ func TestAgentRuntimeProjectionCheckpointsDockChatUsageOnUserMessagePause(t *tes
 	if got := agentRunUsageCheckpointFromSummary(run.OutputSummary); got.Turn != 1 || got.InputTokens != 100 {
 		t.Fatalf("checkpoint summary = %#v", got)
 	}
-	if err := svc.ApplyEvent(context.Background(), pauseEvent); err != nil {
-		t.Fatal(err)
+	for _, event := range []AgentRuntimeEventEnvelope{pauseEvent, usageEvent} {
+		t.Run("unchanged "+event.Type, func(t *testing.T) {
+			beforeSummary := string(run.OutputSummary)
+			beforeUpdates, beforeNotifications := runRepo.updates, runRepo.notifications
+			if err := svc.ApplyEvent(context.Background(), event); err != nil {
+				t.Fatal(err)
+			}
+			if string(run.OutputSummary) != beforeSummary {
+				t.Error("unchanged checkpoint altered output summary")
+			}
+			if runRepo.updates != beforeUpdates || runRepo.notifications != beforeNotifications {
+				t.Errorf("unchanged checkpoint added %d updates and %d notifications, want 0/0", runRepo.updates-beforeUpdates, runRepo.notifications-beforeNotifications)
+			}
+			if store.checkpoints != 1 {
+				t.Errorf("unchanged checkpoint charges = %d, want 1", store.checkpoints)
+			}
+		})
 	}
-	if store.checkpoints != 1 {
-		t.Fatalf("redelivered pause checkpoint calls = %d, want 1", store.checkpoints)
-	}
+
+	t.Run("increased usage", func(t *testing.T) {
+		beforeUpdates, beforeNotifications := runRepo.updates, runRepo.notifications
+		beforeSuspensions := store.resizeCalls
+		usageEvent.Data["usage"] = map[string]any{
+			"input_tokens": float64(160), "cached_input_tokens": float64(30),
+			"output_tokens": float64(25), "reasoning_output_tokens": float64(5), "total_tokens": float64(185),
+		}
+		if err := svc.ApplyEvent(context.Background(), usageEvent); err != nil {
+			t.Fatal(err)
+		}
+		if runRepo.updates != beforeUpdates+1 || runRepo.notifications != beforeNotifications+1 {
+			t.Errorf("increased usage added %d updates and %d notifications, want 1/1", runRepo.updates-beforeUpdates, runRepo.notifications-beforeNotifications)
+		}
+		if store.checkpoints != 2 || store.checkpoint.Entry.InputTokensTotal != 60 ||
+			store.checkpoint.Entry.CacheReadTokens != 10 || store.checkpoint.Entry.OutputTokens != 17 ||
+			store.checkpoint.Entry.ReasoningTokens != 2 {
+			t.Errorf("increased usage checkpoint = %#v, calls=%d", store.checkpoint.Entry, store.checkpoints)
+		}
+		if got := agentRunUsageCheckpointFromSummary(run.OutputSummary); got.Turn != 2 || got.InputTokens != 160 || got.OutputTokens != 25 {
+			t.Errorf("persisted checkpoint = %#v", got)
+		}
+		if string(store.checkpoint.RunOutputSummary) != string(run.OutputSummary) {
+			t.Error("billing checkpoint did not persist current run summary")
+		}
+		if store.resizeCalls != beforeSuspensions+1 || store.resizedTo != 0 {
+			t.Error("increased usage did not suspend reservation")
+		}
+	})
+
+	t.Run("failed checkpoint retries retained usage", func(t *testing.T) {
+		previousCheckpoint := agentRunUsageCheckpointFromSummary(run.OutputSummary)
+		beforeSuspensions := store.resizeCalls
+		store.checkpointErr = errors.New("checkpoint unavailable")
+		usageEvent.Data["usage"] = map[string]any{
+			"input_tokens": float64(180), "cached_input_tokens": float64(30),
+			"output_tokens": float64(25), "reasoning_output_tokens": float64(5), "total_tokens": float64(205),
+		}
+		if err := svc.ApplyEvent(context.Background(), usageEvent); err != nil {
+			t.Fatal(err)
+		}
+		if got := agentRunUsageCheckpointFromSummary(run.OutputSummary); got != previousCheckpoint {
+			t.Errorf("failed checkpoint changed billed usage: %#v", got)
+		}
+		if got, ok := latestAgentRuntimeUsage(run); !ok || got.InputTokens != 180 {
+			t.Errorf("latest usage was not retained for retry: %#v", got)
+		}
+		if store.resizeCalls != beforeSuspensions {
+			t.Error("failed checkpoint suspended reservation")
+		}
+		failedIdempotencyKey := store.checkpoint.Entry.IdempotencyKey
+		beforeUpdates, beforeNotifications := runRepo.updates, runRepo.notifications
+		beforeCheckpoints := store.checkpoints
+		store.checkpointErr = nil
+		if err := svc.ApplyEvent(context.Background(), pauseEvent); err != nil {
+			t.Fatal(err)
+		}
+		if store.checkpoints != beforeCheckpoints+1 || store.checkpoint.Entry.IdempotencyKey != failedIdempotencyKey ||
+			store.checkpoint.Entry.InputTokensTotal != int64(180-previousCheckpoint.InputTokens) {
+			t.Error("retry did not checkpoint retained usage with the same idempotency key")
+		}
+		if got := agentRunUsageCheckpointFromSummary(run.OutputSummary); got.Turn != previousCheckpoint.Turn+1 || got.InputTokens != 180 {
+			t.Errorf("retried checkpoint = %#v", got)
+		}
+		if runRepo.updates != beforeUpdates+1 || runRepo.notifications != beforeNotifications+1 {
+			t.Error("checkpoint recovery did not persist and notify")
+		}
+		if store.resizeCalls != beforeSuspensions+1 || store.resizedTo != 0 {
+			t.Error("successful retry did not suspend reservation")
+		}
+	})
 }
 
 func TestAgentRuntimeProjectionCheckpointsUsageArrivingAfterDockChatPause(t *testing.T) {
