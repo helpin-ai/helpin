@@ -55,6 +55,8 @@ const mocks = vi.hoisted(() => ({
   uploadEditorFile: vi.fn(),
 }));
 
+vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
+
 vi.mock('sonner', () => ({
 	toast: {
 		error: mocks.toastError,
@@ -801,7 +803,7 @@ describe('AskAgentsDock', () => {
     await renderDock();
     await waitForText('Sprint questions');
     expect(mocks.listChats).toHaveBeenCalled();
-    expect(mocks.getChat).toHaveBeenCalledWith('ws-1', 'chat-1');
+    expect(mocks.getChat).toHaveBeenCalledWith('ws-1', 'chat-1', expect.any(AbortSignal));
     expect(document.querySelector('.agent-dock-chat-row-dot')).not.toBeNull();
     expect(document.querySelector('.agent-dock-chat-marker')).not.toBeNull();
     expect(document.body.textContent).not.toContain('Ask Agent · Conversation');
@@ -1312,7 +1314,7 @@ describe('AskAgentsDock', () => {
     await renderDock();
     await waitForText('The earlier run completed successfully.');
 
-    expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50);
+    expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50, expect.any(AbortSignal));
   });
 
   it('keeps earlier assistant progress and the final reply outside working groups', async () => {
@@ -1813,7 +1815,7 @@ describe('AskAgentsDock', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.listChats).toHaveBeenLastCalledWith('ws-1', 'cursor-1');
+    expect(mocks.listChats).toHaveBeenLastCalledWith('ws-1', 'cursor-1', 30, expect.any(AbortSignal));
     await waitForText('Older conversation');
   });
 
@@ -1844,7 +1846,7 @@ describe('AskAgentsDock', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.listRuns).toHaveBeenLastCalledWith('ws-1', 'run-cursor-1');
+    expect(mocks.listRuns).toHaveBeenLastCalledWith('ws-1', 'run-cursor-1', 30, expect.any(AbortSignal));
     await waitForText('Older agent run');
   });
 
@@ -2014,5 +2016,389 @@ describe('AskAgentsDock', () => {
       'int-1',
       expect.objectContaining({ response_payload: { decision: 'approve' } }),
     );
+  });
+});
+
+describe('shared dock network ownership', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  async function renderBothDocks() {
+    const context: CommandBarPageContext = { entity_type: 'support_conversation', entity_id: 'conv-42', display_title: 'Refund request' };
+    await act(async () => {
+      root.render(<TooltipProvider><PageContextProvider>
+        <AskAgentsDock hideCollapsedTrigger />
+        <AskAgentsDock presentation="embedded" requiredPageContext={context} associatedSupportConversationId="conv-42" active />
+      </PageContextProvider></TooltipProvider>);
+    });
+    await flush();
+  }
+
+  it('shares initial lists and ignores unrelated progress across global and support docks', async () => {
+    vi.useFakeTimers();
+    useDockStore.setState({ collapsed: true });
+    const chat = { ...CHAT, support_conversation_id: 'conv-42' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat }), error: null });
+    await renderBothDocks();
+    expect(mocks.listRuns).toHaveBeenCalledTimes(1);
+    expect(mocks.listChats).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      const detail = { entity_id: 'unrelated-run', status: 'running', update_kind: 'progress' };
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail }));
+      window.dispatchEvent(new CustomEvent('coding_session-updated', { detail }));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(mocks.listRuns).toHaveBeenCalledTimes(1);
+    expect(mocks.listChats).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces lifecycle aliases into one refresh for both docks', async () => {
+    vi.useFakeTimers();
+    const chat = { ...CHAT, support_conversation_id: 'conv-42' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    await renderBothDocks();
+    mocks.listRuns.mockClear();
+    mocks.listChats.mockClear();
+    await act(async () => {
+      const detail = { entity_id: 'new-run', status: 'completed', update_kind: 'lifecycle' };
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail }));
+      window.dispatchEvent(new CustomEvent('coding_session-updated', { detail }));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(mocks.listRuns).toHaveBeenCalledTimes(1);
+    expect(mocks.listChats).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not read a collapsed paused transcript and reconciles when opened', async () => {
+    vi.useFakeTimers();
+    useDockStore.setState({ collapsed: true });
+    const chat = { ...CHAT, active_run_id: 'idle-run', active_run_status: 'paused' as const };
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: { id: 'idle-run', status: 'paused', pause_reason: 'awaiting_user_message' }, error: null });
+    await renderDockWithHiddenTrigger();
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(mocks.getChatRun).not.toHaveBeenCalled();
+    expect(mocks.listChatRunEvents).not.toHaveBeenCalled();
+    await act(async () => { useDockStore.setState({ collapsed: false }); });
+    expect(mocks.getChatRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves known chat freshness for progress-classified persisted message updates', async () => {
+    vi.useFakeTimers();
+    useDockStore.setState({ collapsed: true });
+    const chat = { ...CHAT, active_run_id: 'chat-run', active_run_status: 'running' as const };
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    await renderDockWithHiddenTrigger();
+    mocks.listRuns.mockClear();
+    mocks.listChats.mockClear();
+    mocks.listChats.mockResolvedValue({ data: { chats: [{ ...chat, title: 'Generated message title', last_message_at: '2026-09-07T00:00:00Z' }] }, error: null });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'chat-run', status: 'running', update_kind: 'progress' } }));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(useDockStore.getState().chats[0].title).toBe('Generated message title');
+    expect(mocks.listChats).toHaveBeenCalledTimes(1);
+    expect(mocks.listRuns).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the chat roster for persisted message and child-result session events', async () => {
+    vi.useFakeTimers();
+    useDockStore.setState({ collapsed: true });
+    const chat = { ...CHAT, active_run_id: 'chat-run' };
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    await renderDockWithHiddenTrigger();
+    mocks.listRuns.mockClear();
+    mocks.listChats.mockClear();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('coding_session_event-created', { detail: { parent_id: 'chat-run', data: { type: 'assistant.message.completed' } } }));
+      window.dispatchEvent(new CustomEvent('coding_session_event-created', { detail: { parent_id: 'chat-run', data: { type: 'child_run.completed' } } }));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(mocks.listChats).toHaveBeenCalledTimes(1);
+    expect(mocks.listRuns).not.toHaveBeenCalled();
+  });
+
+  it('suppresses hidden roster refreshes and recovers a successor run on visibility return', async () => {
+    vi.useFakeTimers();
+    let visibility: DocumentVisibilityState = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    useDockStore.setState({ collapsed: true });
+    const chat = { ...CHAT, active_run_id: 'previous-run', active_run_status: 'completed' as const };
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    await renderDockWithHiddenTrigger();
+    mocks.listRuns.mockClear();
+    mocks.listChats.mockClear();
+    await act(async () => {
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'successor-run', status: 'running', update_kind: 'lifecycle' } }));
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(mocks.listChats).not.toHaveBeenCalled();
+    expect(mocks.listRuns).not.toHaveBeenCalled();
+    mocks.listChats.mockResolvedValue({ data: { chats: [{ ...chat, active_run_id: 'successor-run', active_run_status: 'running' }] }, error: null });
+    await act(async () => {
+      visibility = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(mocks.listChats).toHaveBeenCalledTimes(1);
+    expect(useDockStore.getState().chats[0].active_run_id).toBe('successor-run');
+  });
+});
+
+describe('chat detail network recovery', () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it('does not refresh mounted chat details while hidden and restores remote messages and approval resolution', async () => {
+    vi.useFakeTimers();
+    let visibility: DocumentVisibilityState = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    const chat = { ...CHAT, active_run_id: 'approval-run', active_run_status: 'paused' as const };
+    const run = { id: 'approval-run', status: 'paused', pause_reason: 'human_approval' } as never;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat, run }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [{ id: 'approval-remote', interaction_kind: 'approval_request', status: 'pending', request_payload: { title: 'Approve remote action', raw_input: { action: { steps: [{ instructions: 'Review' }] } } } }] }, error: null });
+    await renderDock();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(document.body.textContent).toContain('Approve remote action');
+    mocks.getChat.mockClear(); mocks.listMessages.mockClear(); mocks.getChatRun.mockClear();
+    await act(async () => {
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'approval-run', status: 'completed' } }));
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(mocks.getChat).not.toHaveBeenCalled();
+    expect(mocks.listMessages).not.toHaveBeenCalled();
+    expect(mocks.getChatRun).not.toHaveBeenCalled();
+    const completed = { id: 'approval-run', status: 'completed', pause_reason: 'none' } as never;
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat, run: completed }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: completed, error: null });
+    mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [] }, error: null });
+    mocks.listMessages.mockResolvedValue({ data: { messages: [{ id: 'remote-message', workspace_id: 'ws-1', run_id: 'approval-run', dock_chat_id: 'chat-1', dock_chat_sequence: 1, sequence_no: 1, role: 'assistant', content: 'Resolved from another browser', message_type: 'assistant_turn', created_at: '2026-09-07T00:00:00Z' }], next_before: null }, error: null });
+    await act(async () => {
+      visibility = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(document.body.textContent).toContain('Resolved from another browser');
+    expect(document.body.textContent).not.toContain('Approve remote action');
+    expect(mocks.getChat).toHaveBeenCalledTimes(1);
+    expect(mocks.listMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows a roster successor after a collapsed predecessor had populated the chat override', async () => {
+    vi.useFakeTimers();
+    const chat = { ...CHAT, active_run_id: 'previous-run', active_run_status: 'completed' as const };
+    const previous = { id: 'previous-run', status: 'completed' } as never;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat, run: previous }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: previous, error: null });
+    await renderDock();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await act(async () => { useDockStore.setState({ collapsed: true }); });
+    const successorChat = { ...chat, active_run_id: 'successor-run', active_run_status: 'paused' as const };
+    mocks.listChats.mockResolvedValue({ data: { chats: [successorChat] }, error: null });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'successor-run', status: 'paused', update_kind: 'lifecycle' } }));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    const successor = { id: 'successor-run', status: 'paused', pause_reason: 'awaiting_user_message' } as never;
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: successorChat, run: successor }), error: null });
+    mocks.getChatRun.mockClear().mockResolvedValue({ data: successor, error: null });
+    await act(async () => { useDockStore.setState({ collapsed: false }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(mocks.getChatRun).toHaveBeenCalledTimes(1);
+    expect(useDockStore.getState().chats[0].active_run_id).toBe('successor-run');
+  });
+
+  it('does not let a stale roster response overwrite an accepted sharing change', async () => {
+    vi.useFakeTimers();
+    await renderDock();
+    let resolveList!: (value: { data: { chats: DockChat[] }; error: null }) => void;
+    mocks.listChats.mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve; }));
+    await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(200); });
+    mocks.updateChat.mockResolvedValue({ data: { ...CHAT, visibility: 'workspace' }, error: null });
+    await act(async () => document.body.querySelector<HTMLButtonElement>('[aria-label="Only you can see this. Change who can see this chat"]')?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })));
+    const item = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((node) => node.textContent?.includes('Everyone at Acme'));
+    await act(async () => item?.click());
+    await act(async () => { resolveList({ data: { chats: [CHAT] }, error: null }); });
+    expect(useDockStore.getState().chats[0].visibility).toBe('workspace');
+  });
+});
+
+describe('bounded chat detail reads', () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it('queues only one fresh detail read while a previous recovery is pending', async () => {
+    vi.useFakeTimers();
+    let resolveDetail!: (value: { data: DockChatDetail; error: null }) => void;
+    mocks.getChat.mockReturnValueOnce(new Promise((resolve) => { resolveDetail = resolve; })).mockResolvedValue({ data: chatDetail(), error: null });
+    await renderDock();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(101); });
+    await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(101); });
+    expect(mocks.getChat).toHaveBeenCalledTimes(1);
+    await act(async () => { resolveDetail({ data: chatDetail(), error: null }); });
+    expect(mocks.getChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('times out hung chat details and recovers on focus', async () => {
+    vi.useFakeTimers();
+    mocks.getChat.mockReturnValueOnce(new Promise(() => {})).mockResolvedValue({ data: chatDetail(), error: null });
+    await renderDock();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_002); });
+    expect(document.body.textContent).toContain('Couldn’t refresh this conversation');
+    expect((mocks.getChat.mock.calls[0]?.[2] as AbortSignal)?.aborted).toBe(true);
+    await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(101); });
+    expect(mocks.getChat).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).not.toContain('Couldn’t refresh this conversation');
+  });
+});
+
+describe('modal-hidden dock recovery', () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+  it('drops a queued automatic detail refresh when a modal hides the dock', async () => {
+    vi.useFakeTimers();
+    let resolveDetail!: (value: { data: DockChatDetail; error: null }) => void;
+    mocks.getChat.mockReturnValueOnce(new Promise((resolve) => { resolveDetail = resolve; }))
+      .mockResolvedValue({ data: chatDetail(), error: null });
+    await renderDock();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await act(async () => { window.dispatchEvent(new Event('focus')); await vi.advanceTimersByTimeAsync(101); });
+    expect(mocks.getChat).toHaveBeenCalledTimes(1);
+    const modal = document.createElement('div');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('data-state', 'open');
+    await act(async () => { document.body.appendChild(modal); });
+    await act(async () => { resolveDetail({ data: chatDetail(), error: null }); await vi.advanceTimersByTimeAsync(500); });
+    expect(mocks.getChat).toHaveBeenCalledTimes(1);
+    expect((mocks.getChat.mock.calls[0]?.[2] as AbortSignal).aborted).toBe(true);
+    await act(async () => { modal.remove(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(mocks.getChat).toHaveBeenCalledTimes(2);
+  });
+
+  it('pauses snapshot and detail reads behind an external modal and recovers when it closes', async () => {
+    vi.useFakeTimers();
+    const chat = { ...CHAT, active_run_id: 'modal-run', active_run_status: 'running' as const };
+    const run = { id: 'modal-run', status: 'running', pause_reason: 'none' } as never;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat, run }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    await renderDock();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    const modal = document.createElement('div');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('data-state', 'open');
+    await act(async () => { document.body.appendChild(modal); });
+    mocks.getChat.mockClear(); mocks.listMessages.mockClear(); mocks.getChatRun.mockClear();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'modal-run', status: 'running', update_kind: 'progress' } }));
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(mocks.getChat).not.toHaveBeenCalled();
+    expect(mocks.listMessages).not.toHaveBeenCalled();
+    expect(mocks.getChatRun).not.toHaveBeenCalled();
+    await act(async () => { modal.remove(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(mocks.getChat).toHaveBeenCalledTimes(1);
+    expect(mocks.listMessages).toHaveBeenCalledTimes(1);
+    expect(mocks.getChatRun).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('chat detail read lifecycle', () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+  it('releases initial loading when the last queued detail-only read finishes', async () => {
+    vi.useFakeTimers();
+    const run = { id: 'load-run', status: 'completed', pause_reason: 'none' } as never;
+    const chat = { ...CHAT, active_run_id: 'load-run', active_run_status: 'completed' as const };
+    let resolveMessages!: (value: { data: { messages: []; next_before: null }; error: null }) => void;
+    let resolveDetail!: (value: { data: DockChatDetail; error: null }) => void;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    mocks.getChat.mockResolvedValueOnce({ data: chatDetail({ chat, run }), error: null }).mockReturnValueOnce(new Promise((resolve) => { resolveDetail = resolve; }));
+    mocks.listMessages.mockReturnValueOnce(new Promise((resolve) => { resolveMessages = resolve; }));
+    await renderDock();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'load-run', status: 'completed' } }));
+      await vi.advanceTimersByTimeAsync(101);
+    });
+    await act(async () => { resolveMessages({ data: { messages: [], next_before: null }, error: null }); });
+    await act(async () => { resolveDetail({ data: chatDetail({ chat }), error: null }); });
+    expect(document.body.querySelector<HTMLTextAreaElement>('textarea')?.disabled).toBe(false);
+  });
+
+  it('releases initial loading while a later automatic detail batch remains pending', async () => {
+    vi.useFakeTimers();
+    const run = { id: 'load-run', status: 'completed', pause_reason: 'none' } as never;
+    const chat = { ...CHAT, active_run_id: 'load-run', active_run_status: 'completed' as const };
+    let resolveMessages!: (value: { data: { messages: []; next_before: null }; error: null }) => void;
+    let resolveDetailB!: (value: { data: DockChatDetail; error: null }) => void;
+    let resolveDetailC!: (value: { data: DockChatDetail; error: null }) => void;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    mocks.getChat
+      .mockResolvedValueOnce({ data: chatDetail({ chat, run }), error: null })
+      .mockReturnValueOnce(new Promise((resolve) => { resolveDetailB = resolve; }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveDetailC = resolve; }));
+    mocks.listMessages.mockReturnValueOnce(new Promise((resolve) => { resolveMessages = resolve; }));
+    await renderDock();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'load-run', status: 'completed' } }));
+      await vi.advanceTimersByTimeAsync(101);
+    });
+    expect(mocks.getChat).toHaveBeenCalledTimes(2);
+    await act(async () => { resolveMessages({ data: { messages: [], next_before: null }, error: null }); });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'load-run', status: 'completed' } }));
+      await vi.advanceTimersByTimeAsync(101);
+    });
+    expect(mocks.getChat).toHaveBeenCalledTimes(2);
+    await act(async () => { resolveDetailB({ data: chatDetail({ chat }), error: null }); });
+    expect(mocks.getChat).toHaveBeenCalledTimes(3);
+    // Batch C is still pending. A later background read must not keep the
+    // initial conversation loader blocking the now-available composer.
+    expect(document.body.querySelector<HTMLTextAreaElement>('textarea')?.disabled).toBe(false);
+    await act(async () => { resolveDetailC({ data: chatDetail({ chat }), error: null }); });
+  });
+
+  it('can load details after StrictMode reattaches the dock', async () => {
+    vi.useFakeTimers();
+    await act(async () => root.render(<React.StrictMode><TooltipProvider><PageContextProvider><AskAgentsDock /></PageContextProvider></TooltipProvider></React.StrictMode>));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(mocks.getChat).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('collapsed chat lifecycle presence', () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+  it('updates the collapsed avatar from roster status without fetching its old transcript', async () => {
+    vi.useFakeTimers();
+    const chat = { ...CHAT, active_run_id: 'presence-run', active_run_status: 'running' as const };
+    const run = { id: 'presence-run', status: 'running', pause_reason: 'none' } as never;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat, run }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    await renderDock();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await act(async () => { useDockStore.setState({ collapsed: true }); });
+    mocks.getChatRun.mockClear();
+    mocks.listChats.mockResolvedValue({ data: { chats: [{ ...chat, active_run_status: 'paused' }] }, error: null });
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('agent_run-updated', { detail: { entity_id: 'presence-run', status: 'paused', pause_reason: 'awaiting_user_message', update_kind: 'lifecycle' } }));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(document.body.querySelector('[aria-label="Ask Agent"] .ask-agent-avatar')?.getAttribute('data-state')).toBe('idle');
+    expect(mocks.getChatRun).not.toHaveBeenCalled();
   });
 });

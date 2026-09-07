@@ -201,7 +201,10 @@ func (h *DockChatHandler) ListChatRunEvents(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	events, err := h.agentService.ListCodingSessionEvents(r.Context(), getWorkspaceID(r), run.ID, parseIntQuery(r, "after", 0))
+	events, err := h.agentService.ListCodingSessionEvents(
+		r.Context(), getWorkspaceID(r), run.ID, parseIntQuery(r, "after", 0),
+		service.CodingSessionEventListOptions{IncludeSnapshot: r.URL.Query().Get("include_snapshot") != "false"},
+	)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -304,6 +307,7 @@ func (h *DockChatHandler) ListRunEvents(w http.ResponseWriter, r *http.Request) 
 	}
 	events, err := h.agentService.ListCodingSessionEvents(
 		r.Context(), getWorkspaceID(r), run.ID, parseIntQuery(r, "after", 0),
+		service.CodingSessionEventListOptions{IncludeSnapshot: r.URL.Query().Get("include_snapshot") != "false"},
 	)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to load agent activity")

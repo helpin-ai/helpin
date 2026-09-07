@@ -35,10 +35,10 @@ export const dockChatService = {
 		api.del<void>(`/dock/shares/${resourceType}/${encodeURIComponent(resourceId)}${qs(workspaceId)}`),
 	getPublicSharedResource: (token: string) =>
 		api.get<PublicSharedResource>(`/public/shares/${encodeURIComponent(token)}`),
-  listChats: (workspaceId: string, cursor?: string | null, limit = 30) => {
+  listChats: (workspaceId: string, cursor?: string | null, limit = 30, signal?: AbortSignal) => {
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
     if (cursor) query.set('cursor', cursor);
-    return api.get<DockChatListResponse>(`/dock/chats?${query.toString()}`);
+    return api.get<DockChatListResponse>(`/dock/chats?${query.toString()}`, { signal });
   },
   findSupportConversationChat: (workspaceId: string, conversationId: string) => {
     const query = new URLSearchParams({ workspace_id: workspaceId, conversation_id: conversationId });
@@ -50,17 +50,18 @@ export const dockChatService = {
       ...(supportConversationId ? { support_conversation_id: supportConversationId } : {}),
       ...(moduleId ? { module_id: moduleId, visibility: 'module' } : {}),
     }),
-  getChat: (workspaceId: string, chatId: string) =>
-    api.get<DockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}${qs(workspaceId)}`),
+  getChat: (workspaceId: string, chatId: string, signal?: AbortSignal) =>
+    api.get<DockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}${qs(workspaceId)}`, { signal }),
   updateChat: (workspaceId: string, chatId: string, payload: UpdateDockChatRequest) =>
     api.patch<DockChat>(`/dock/chats/${encodeURIComponent(chatId)}${qs(workspaceId)}`, payload),
   sendMessage: (workspaceId: string, chatId: string, payload: SendDockChatMessageRequest) =>
     api.post<DockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}/messages${qs(workspaceId)}`, payload),
-  listMessages: (workspaceId: string, chatId: string, before?: number | null, limit = 50) => {
+  listMessages: (workspaceId: string, chatId: string, before?: number | null, limit = 50, signal?: AbortSignal) => {
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
     if (before) query.set('before', String(before));
     return api.get<DockChatMessageListResponse>(
       `/dock/chats/${encodeURIComponent(chatId)}/messages?${query.toString()}`,
+      { signal },
     );
   },
   getMessageWorkDetail: (workspaceId: string, chatId: string, messageId: string) =>
@@ -69,15 +70,16 @@ export const dockChatService = {
     ),
   generateTitle: (workspaceId: string, chatId: string, payload: GenerateDockChatTitleRequest) =>
     api.post<DockChat>(`/dock/chats/${encodeURIComponent(chatId)}/title${qs(workspaceId)}`, payload),
-  getChatRun: (workspaceId: string, chatId: string) =>
-    api.get<CodingSession>(`/dock/chats/${encodeURIComponent(chatId)}/run${qs(workspaceId)}`),
+  getChatRun: (workspaceId: string, chatId: string, signal?: AbortSignal) =>
+    api.get<CodingSession>(`/dock/chats/${encodeURIComponent(chatId)}/run${qs(workspaceId)}`, { signal }),
   listChatRunInteractions: (workspaceId: string, chatId: string) =>
     api.get<{ interactions: CodingSessionInteraction[] }>(
       `/dock/chats/${encodeURIComponent(chatId)}/run/interactions${qs(workspaceId)}`,
     ),
-  listChatRunEvents: (workspaceId: string, chatId: string, after = 0) =>
+  listChatRunEvents: (workspaceId: string, chatId: string, after = 0, signal?: AbortSignal) =>
     api.get<CodingSessionEventListResponse>(
-      `/dock/chats/${encodeURIComponent(chatId)}/run/events${qs(workspaceId)}&after=${encodeURIComponent(after)}`,
+      `/dock/chats/${encodeURIComponent(chatId)}/run/events${qs(workspaceId)}&after=${encodeURIComponent(after)}&include_snapshot=false`,
+      { signal },
     ),
   resolveInteraction: (
     workspaceId: string,
@@ -91,16 +93,17 @@ export const dockChatService = {
     ),
   cancelChatRun: (workspaceId: string, chatId: string) =>
     api.post<AgentRun>(`/dock/chats/${encodeURIComponent(chatId)}/run/cancel${qs(workspaceId)}`),
-  listRuns: (workspaceId: string, cursor?: string | null, limit = 30) => {
+  listRuns: (workspaceId: string, cursor?: string | null, limit = 30, signal?: AbortSignal) => {
     const query = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit) });
     if (cursor) query.set('cursor', cursor);
-    return api.get<DockRunListResponse>(`/dock/runs?${query.toString()}`);
+    return api.get<DockRunListResponse>(`/dock/runs?${query.toString()}`, { signal });
   },
-  getRunSnapshot: (workspaceId: string, runId: string) =>
-    api.get<CodingSession>(`/dock/runs/${encodeURIComponent(runId)}/snapshot${qs(workspaceId)}`),
-  listRunEvents: (workspaceId: string, runId: string, after = 0) =>
+  getRunSnapshot: (workspaceId: string, runId: string, signal?: AbortSignal) =>
+    api.get<CodingSession>(`/dock/runs/${encodeURIComponent(runId)}/snapshot${qs(workspaceId)}`, { signal }),
+  listRunEvents: (workspaceId: string, runId: string, after = 0, signal?: AbortSignal) =>
     api.get<CodingSessionEventListResponse>(
-      `/dock/runs/${encodeURIComponent(runId)}/events${qs(workspaceId)}&after=${encodeURIComponent(after)}`,
+      `/dock/runs/${encodeURIComponent(runId)}/events${qs(workspaceId)}&after=${encodeURIComponent(after)}&include_snapshot=false`,
+      { signal },
     ),
   listRunInteractions: (workspaceId: string, runId: string) =>
     api.get<{ interactions: CodingSessionInteraction[] }>(

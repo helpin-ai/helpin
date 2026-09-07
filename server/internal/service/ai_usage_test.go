@@ -252,18 +252,19 @@ func newTestAIUsageService(t *testing.T, store *fakeAIUsageStore) *AIUsageServic
 }
 
 type fakeAIUsageStore struct {
-	mode         string
-	reserveErr   error
-	reserveCalls int
-	reservation  repository.AIUsageReservationRequest
-	reconcile    repository.AIUsageReconcileRequest
-	checkpoint   repository.AIUsageCheckpointRequest
-	checkpoints  int
-	uncharged    model.AIUsageLedgerEntry
-	releasedID   string
-	resizeCalls  int
-	resizedID    string
-	resizedTo    int64
+	mode          string
+	reserveErr    error
+	reserveCalls  int
+	reservation   repository.AIUsageReservationRequest
+	reconcile     repository.AIUsageReconcileRequest
+	checkpoint    repository.AIUsageCheckpointRequest
+	checkpointErr error
+	checkpoints   int
+	uncharged     model.AIUsageLedgerEntry
+	releasedID    string
+	resizeCalls   int
+	resizedID     string
+	resizedTo     int64
 }
 
 func (f *fakeAIUsageStore) Reserve(_ context.Context, input repository.AIUsageReservationRequest) (*model.AIUsageReservation, error) {
@@ -287,6 +288,9 @@ func (f *fakeAIUsageStore) Reconcile(_ context.Context, input repository.AIUsage
 func (f *fakeAIUsageStore) Checkpoint(_ context.Context, input repository.AIUsageCheckpointRequest) (*model.AIUsagePeriod, error) {
 	f.checkpoints++
 	f.checkpoint = input
+	if f.checkpointErr != nil {
+		return nil, f.checkpointErr
+	}
 	return &model.AIUsagePeriod{}, nil
 }
 
