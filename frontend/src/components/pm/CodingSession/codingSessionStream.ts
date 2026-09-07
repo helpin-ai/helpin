@@ -552,10 +552,14 @@ function transcriptMessageFromEvent(event: CodingSessionEvent): CodingSessionTra
   if (isTranscriptMessageEvent(event)) {
     const payload = asRecord(event.payload) ?? {};
     const role = event.type === 'user.message.completed' ? 'user' : 'assistant';
+    const deliveryStatus = asString(payload.delivery_status);
 
     return {
       event_id: event.id,
       message_id: asString(payload.message_id),
+      client_message_id: asString(payload.client_message_id),
+      delivery_status: deliveryStatus === 'pending' || deliveryStatus === 'sent' || deliveryStatus === 'failed'
+        ? deliveryStatus : undefined,
       role,
       content: firstNonEmptyString(asString(payload.content), asString(payload.text)) ?? '',
       message_type: asString(payload.message_type),

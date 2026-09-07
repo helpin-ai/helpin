@@ -17,10 +17,16 @@ import { groupAdjacentDockTools } from './dockTranscriptGrouping';
 import { buildDockWorkingTimeline } from './dockWorkingGroups';
 import { DockWorkingGroup } from './DockWorkingGroup';
 import { mergePersistedChatMessages } from './dockChatTimeline';
+import { findLastMatchingIndex } from './findLastMatchingIndex';
 import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
 const DOCK_CHAT_SEGMENT_KINDS = new Set([...DOCK_SEGMENT_KINDS, 'review_decision', 'status'] as const);
 const DOCK_WORKING_SEGMENT_KINDS = new Set([...DOCK_CHAT_SEGMENT_KINDS, 'reasoning'] as const);
 const dockWorkDetailCache = new Map<string, AgentRunMessage[]>();
+
+export interface DockMessageSubmission {
+  clientMessageId: string;
+  precedingLiveSegmentIds: ReadonlySet<string>;
+}
 
 export interface DockSubAgentTimelineItem {
   id: string;
@@ -178,6 +184,7 @@ export function DockTranscript({
   completedRun = false,
   historyWorkOnly = false,
   subAgentRuns = [],
+  latestSubmission,
   className,
 }: {
   stream: CodingSessionStreamState | null;
@@ -201,6 +208,8 @@ export function DockTranscript({
   historyWorkOnly?: boolean;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
+  /** Segments already visible before the latest local send, including undated snapshots. */
+  latestSubmission?: DockMessageSubmission | null;
   className?: string;
 }) {
   const user = useAuthStore((state) => state.user);
@@ -227,8 +236,27 @@ export function DockTranscript({
     compactAssistantProgress: false,
   });
   if (segments.length === 0 && subAgentRuns.length === 0) return null;
-  const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;
   const times = transcriptSegmentTimes(stream);
+  // A submitted user turn now shares the transcript's stable row. Retained
+  // live work from before that turn must stay above it while history catches up.
+  const boundaryIndex = findLastMatchingIndex(segments, (segment) => segment.kind === 'user' || segment.kind === 'review_decision');
+  const boundary = segments[boundaryIndex];
+  if (boundary?.kind === 'user' && boundary.message.client_message_id) {
+    const boundaryTime = segmentTimestamp(boundary, times);
+    const priorLive = segments.slice(boundaryIndex + 1).filter((segment) => {
+      const time = segmentTimestamp(segment, times);
+      return (segment.id.startsWith('live:') || segment.id.startsWith('live-reasoning:'))
+        && ((latestSubmission?.clientMessageId === boundary.message.client_message_id
+          && latestSubmission?.precedingLiveSegmentIds.has(segment.id))
+          || (time !== null && boundaryTime !== null && time < boundaryTime));
+    });
+    if (priorLive.length > 0) {
+      const priorIDs = new Set(priorLive.map((segment) => segment.id));
+      const tail = segments.slice(boundaryIndex).filter((segment) => !priorIDs.has(segment.id));
+      segments.splice(boundaryIndex, segments.length - boundaryIndex, ...priorLive, ...tail);
+    }
+  }
+  const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;
   const workingTimeline = compactAssistantProgress
     ? buildDockWorkingTimeline(segments, active, {
         collapseCompletedWork: completedRun,

@@ -55,6 +55,43 @@ function stream(
 }
 
 describe('mergePersistedChatMessages', () => {
+  it('restores a locally failed message when delivery is authoritatively confirmed', () => {
+    const confirmed = { ...persisted(2, 'Delivered', '2026-08-15T10:00:00Z'),
+      role: 'user' as const, client_message_id: 'lost-ack', delivery_status: 'sent' as const };
+    const result = mergePersistedChatMessages(null, [confirmed], { failedClientMessageIds: new Set(['lost-ack']) });
+    expect(result?.transcript_messages.map((message) => message.content)).toEqual(['Delivered']);
+  });
+
+  it('keeps one client-keyed user row through optimistic, realtime and saved delivery', () => {
+    const pending = { id: 'client-new', content: 'yes', timestamp: '2026-09-07T10:00:01Z', actor_user_id: 'user-1' };
+    const previous = { ...persisted(1, 'yes', '2026-09-07T10:00:00Z'), client_message_id: 'client-old' };
+    const incoming = { ...transcript(3, 'yes', '2026-09-07T10:00:02Z'), event_id: 'msg:saved-new',
+      message_id: 'saved-new', client_message_id: pending.id, delivery_status: 'pending' as const };
+    const saved = { ...persisted(3, 'yes', incoming.timestamp), id: 'saved-new',
+      client_message_id: pending.id, delivery_status: 'sent' as const };
+    const states = [
+      mergePersistedChatMessages(null, [previous], { pendingMessage: pending }),
+      mergePersistedChatMessages(stream([incoming]), [previous], { pendingMessage: pending }),
+      mergePersistedChatMessages(stream([incoming]), [previous, saved]),
+    ];
+    for (const state of states) {
+      expect(state?.transcript_messages.map((message) => message.content)).toEqual(['yes', 'yes']);
+      expect(state?.transcript_messages[1].event_id).toBe('client:client-new');
+      expect(state?.transcript_messages[1].client_message_id).toBe(pending.id);
+    }
+    expect(states[1]?.transcript_messages[1].delivery_status).toBe('pending');
+    expect(states[2]?.transcript_messages[1].delivery_status).toBe('sent');
+  });
+
+  it('keeps rejected realtime rows out of the transcript after a failed send', () => {
+    const incoming = { ...transcript(3, 'Rejected reply', '2026-09-07T10:00:02Z'),
+      client_message_id: 'failed-client', delivery_status: 'pending' as const };
+    const previous = persisted(1, 'Earlier question', '2026-09-07T10:00:00Z');
+    expect(mergePersistedChatMessages(stream([incoming]), [previous], {
+      failedClientMessageIds: new Set(['failed-client']),
+    })?.transcript_messages.map((message) => message.content)).toEqual(['Earlier question']);
+  });
+
   it('preserves a compact historical work summary for lazy expansion', () => {
     const summary: AgentRunMessage = {
       ...persisted(2, '', '2026-08-15T08:23:04Z'),

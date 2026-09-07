@@ -119,7 +119,7 @@ func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessa
 		messageID = message.ID
 	}
 
-	return CodingSessionEvent{
+	event := CodingSessionEvent{
 		ID:          "msg:" + message.ID,
 		SessionID:   run.ID,
 		RunID:       run.ID,
@@ -143,6 +143,13 @@ func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessa
 			"source": "agent_run_message",
 		},
 	}
+	if message.ClientMessageID != nil && strings.TrimSpace(*message.ClientMessageID) != "" {
+		event.Payload["client_message_id"] = strings.TrimSpace(*message.ClientMessageID)
+	}
+	if message.DeliveryStatus != "" {
+		event.Payload["delivery_status"] = message.DeliveryStatus
+	}
+	return event
 }
 
 type CodingSessionLiveToolResult struct {

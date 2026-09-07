@@ -2402,3 +2402,99 @@ describe('collapsed chat lifecycle presence', () => {
     expect(mocks.getChatRun).not.toHaveBeenCalled();
   });
 });
+
+describe('follow-up message correlation', () => {
+  it.each(['event-first', 'ack-first', 'failed-send', 'lost-ack'] as const)('keeps one stable follow-up row for %s', async (order) => {
+    const content = 'Diagnose this follow-up question';
+    const earlier = {
+      id: 'message-earlier', workspace_id: 'ws-1', run_id: 'run-1', dock_chat_id: 'chat-1',
+      dock_chat_sequence: 1, client_message_id: 'earlier-client', role: 'user', content: 'Earlier question',
+      message_type: 'prompt', sequence_no: 1, created_at: '2026-09-07T10:00:00Z', delivery_status: 'sent',
+    };
+    const chat = { ...CHAT, support_conversation_id: 'conv-42', active_run_id: 'run-1', active_run_status: 'paused' as const };
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'awaiting_user_message' } as never;
+    mocks.listChats.mockResolvedValue({ data: { chats: [chat] }, error: null });
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat, run }), error: null });
+    mocks.getChatRun.mockResolvedValue({ data: { ...run, stream_state_snapshot: {
+      live_turn_segments: [{ kind: 'assistant_message', segment_id: 'earlier-answer', assistant_message: {
+        message_id: 'earlier-answer', content: 'Previously visible answer', status: 'completed', tool_calls: [],
+      } }],
+    } }, error: null });
+    mocks.listMessages.mockResolvedValue({ data: { messages: [earlier], next_before: null }, error: null });
+    let accept!: () => void;
+    let accepted: typeof earlier;
+    mocks.sendMessage.mockImplementation((_workspace, _chat, payload) => new Promise((resolve) => {
+      accepted = { ...earlier, id: 'message-followup', client_message_id: payload.client_message_id, content,
+        dock_chat_sequence: 2, sequence_no: 2, message_type: 'user_reply', created_at: '2026-09-07T10:00:01Z' };
+      accept = () => resolve((order === 'failed-send' || order === 'lost-ack') ? { data: null, error: 'Delivery rejected' } : { data: chatDetail({ chat, run, accepted_message: accepted as never }), error: null });
+    }));
+    await renderEmbeddedDock({ entity_type: 'support_conversation', entity_id: 'conv-42', display_title: 'Support question' });
+    await waitForCondition(() => !dockTextarea().disabled && mocks.getChatRun.mock.calls.length > 0, 'Chat not ready');
+    const bubbles = () => (document.querySelector('[data-agent-dock-chat-scroll]')?.textContent ?? '').split(content).length - 1;
+    const scroll = document.querySelector<HTMLElement>('[data-agent-dock-chat-scroll]')!;
+    const writes: number[] = [];
+    let scrollTop = 0;
+    Object.defineProperties(scroll, {
+      scrollHeight: { configurable: true, get: () => 500 + 100 * bubbles() },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, get: () => scrollTop, set: (value) => { scrollTop = value; writes.push(value); } },
+    });
+    await act(async () => {
+      setTextareaValue(dockTextarea(), content);
+      dockTextarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    });
+    await waitForCondition(() => !!accept, 'Send not pending');
+    expect(document.body.textContent).toContain('Preparing your message');
+    const expectEarlierAnswerAboveFollowup = () => {
+      const text = scroll.textContent ?? '';
+      expect(text).toContain('Previously visible answer');
+      expect(text.indexOf('Previously visible answer')).toBeLessThan(text.indexOf(content));
+    };
+    expectEarlierAnswerAboveFollowup();
+    const before = bubbles();
+    const originalRow = [...scroll.querySelectorAll('p')].find((node) => node.textContent === content);
+    expect(originalRow).toBeDefined();
+    if (order === 'ack-first') await act(async () => accept());
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('coding_session_event-created', { detail: {
+        parent_id: 'run-1', entity_id: 'msg:message-followup', data: {
+          id: 'msg:message-followup', session_id: 'run-1', run_id: 'run-1', sequence_no: 2,
+          timestamp: accepted.created_at, type: 'user.message.completed', runtime_kind: 'native_sdk',
+          payload: { message_id: accepted.id, persisted_message_id: accepted.id, role: 'user', message_type: 'user_reply',
+            content, sequence_no: 2, actor_user_id: 'user-1', client_message_id: accepted.client_message_id, delivery_status: 'pending' },
+          runtime_metadata: { source: 'agent_run_message' },
+        },
+      } }));
+    });
+    const during = bubbles();
+    expectEarlierAnswerAboveFollowup();
+    if (order !== 'ack-first') await act(async () => accept());
+    await flush();
+    const after = bubbles();
+    expectEarlierAnswerAboveFollowup();
+    expect([before, during, after]).toEqual([1, 1, 1]);
+    expect(writes).not.toContain(700);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    if (order === 'failed-send' || order === 'lost-ack') {
+      expect(scroll.textContent).toContain('Delivery rejected');
+      expect(scroll.textContent).toContain('Retry');
+      expect(scroll.textContent).not.toContain('Sending…');
+      if (order === 'lost-ack') {
+        mocks.listMessages.mockResolvedValue({ data: { messages: [earlier, accepted!], next_before: null }, error: null });
+        const reads = mocks.listMessages.mock.calls.length;
+        await act(async () => { window.dispatchEvent(new Event('focus')); await new Promise((resolve) => setTimeout(resolve, 150)); });
+        await waitForCondition(() => mocks.listMessages.mock.calls.length > reads, 'Recovery did not fetch messages');
+        await flush();
+        expect(bubbles()).toBe(1);
+        expect(scroll.textContent).not.toContain('Delivery rejected');
+        expect(scroll.textContent).not.toContain('Retry');
+        expect(scroll.textContent).not.toContain('Sending…');
+        expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+        expect(useDockStore.getState().transcripts['chat-1']?.messages.map((message) => message.id)).toContain(accepted!.id);
+      }
+    } else {
+      expect([...scroll.querySelectorAll('p')].find((node) => node.textContent === content)).toBe(originalRow);
+      expect(scroll.textContent).not.toContain('Sending…');
+    }
+  });
+});
