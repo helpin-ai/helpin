@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ArrowRight01Icon, ArrowUp01Icon, Loading01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -40,11 +40,17 @@ import {
   resolveDockComposerState,
   transformDockStream,
 } from './dockChatState';
+import { createDockReadQueue } from './dockReadQueue';
+import { useAuthStore } from '@/stores/authStore';
 import { useDockStore } from '@/stores/dockStore';
+import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
+import { isDockNetworkAvailable, useDockNetworkActivity } from './useDockNetworkActivity';
 
 interface ChatViewProps {
   workspaceId: string;
   chatId?: string;
+  rosterRunId?: string | null;
+  active?: boolean;
   onCreateChat?: () => Promise<{ id: string } | null>;
   scrollToLatestRequest: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -80,6 +86,8 @@ function newClientMessageID() {
 export function ChatView({
   workspaceId,
   chatId,
+  rosterRunId,
+  active = true,
   onCreateChat,
   scrollToLatestRequest,
   textareaRef,
@@ -95,6 +103,10 @@ export function ChatView({
   requiredPageContext,
   showComposerShortcutHint,
 }: ChatViewProps) {
+  const browserAvailable = useDockNetworkActivity();
+  const networkAvailable = browserAvailable && active;
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const detailRefreshed = useRef(false);
   const cachedTranscript = chatId ? useDockStore.getState().transcripts[chatId] : undefined;
   const cacheTranscript = useDockStore((state) => state.cacheTranscript);
   const [detail, setDetail] = useState<DockChatDetail | null>(cachedTranscript?.detail ?? null);
@@ -150,8 +162,8 @@ export function ChatView({
   const run = detail?.run ?? null;
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
   useEffect(() => {
-    onRunIdChange?.(run?.id ?? null);
-  }, [onRunIdChange, run?.id]);
+    if (detailRefreshed.current) onRunIdChange?.(run?.id ?? null);
+  }, [detail, onRunIdChange, run?.id]);
   useEffect(() => {
     onRunStatusChange?.(run?.id ?? null, run?.status ?? null);
   }, [onRunStatusChange, run?.id, run?.status]);
@@ -160,23 +172,48 @@ export function ChatView({
     streamController;
 
   const acceptedSendVersion = useRef(0);
-  const refreshDetail = useCallback(async () => {
+  const canRefresh = useCallback(() => isDockNetworkAvailable()
+    && useAuthStore.getState().user?.id === currentUserId, [currentUserId]);
+  const detailReader = useMemo(() => createDockReadQueue(
+    (signal) => dockChatService.getChat(workspaceId, chatId!, signal),
+    canRefresh,
+    setRefreshError,
+  ), [canRefresh, chatId, workspaceId]);
+  const messagesReader = useMemo(() => createDockReadQueue(
+    (signal) => dockChatService.listMessages(workspaceId, chatId!, undefined, 50, signal),
+    canRefresh,
+    setRefreshError,
+  ), [canRefresh, chatId, workspaceId]);
+  const readScopeRef = useRef(detailReader);
+  useLayoutEffect(() => {
+    readScopeRef.current = detailReader;
+  }, [detailReader]);
+  useEffect(() => {
+    detailReader.activate(); messagesReader.activate();
+    return () => { detailReader.dispose(); messagesReader.dispose(); };
+  }, [detailReader, messagesReader]);
+  useEffect(() => {
+    if (!networkAvailable) { detailReader.pause(); messagesReader.pause(); }
+  }, [detailReader, messagesReader, networkAvailable]);
+  const refreshDetail = useCallback(async (automatic = false) => {
 	if (!chatId) return null;
     const version = acceptedSendVersion.current;
-    const res = await dockChatService.getChat(workspaceId, chatId);
+    const res = await detailReader.read(automatic);
+    if (!res) return null;
     // A fetch started before send acceptance must not erase the new run.
     if (version !== acceptedSendVersion.current) return null;
     if (res.error || !res.data) {
       setRefreshError(res.error ?? 'Unable to refresh conversation');
       return null;
     }
-    if (res.data) setDetail(res.data);
+    if (res.data) { detailRefreshed.current = true; setDetail(res.data); }
     return res.data ?? null;
-  }, [chatId, workspaceId]);
+  }, [chatId, detailReader]);
 
-  const refreshMessages = useCallback(async () => {
+  const refreshMessages = useCallback(async (automatic = false) => {
 	if (!chatId) return [];
-    const res = await dockChatService.listMessages(workspaceId, chatId, undefined, 50);
+    const res = await messagesReader.read(automatic);
+    if (!res) return [];
     if (res.error || !res.data) {
       setRefreshError(res.error ?? 'Unable to refresh conversation');
       return [];
@@ -186,7 +223,7 @@ export function ChatView({
       setNextMessagesBefore(res.data.next_before ?? null);
     }
     return res.data?.messages ?? [];
-  }, [chatId, workspaceId]);
+  }, [chatId, messagesReader]);
 
   const loadEarlierMessages = useCallback(async () => {
     if (!chatId || !nextMessagesBefore || loadingEarlier) return;
@@ -202,13 +239,15 @@ export function ChatView({
   }, [chatId, loadingEarlier, nextMessagesBefore, workspaceId]);
 
   // Load chat on mount / chat switch.
-  const refreshConversation = useCallback(async () => {
+  const refreshConversation = useCallback(async (automatic = false) => {
     if (!chatId) return;
     setRefreshError(null);
     if (!useDockStore.getState().transcripts[chatId]) setDetailLoading(true);
-    await Promise.all([refreshDetail(), refreshMessages()]);
-    setDetailLoading(false);
-  }, [chatId, refreshDetail, refreshMessages]);
+    await Promise.all([refreshDetail(automatic), refreshMessages(automatic)]);
+    // This cycle owns initial loading. Later automatic batches can remain
+    // active while its detail and message reads have already settled.
+    if (readScopeRef.current === detailReader) setDetailLoading(false);
+  }, [chatId, detailReader, refreshDetail, refreshMessages]);
 
   useEffect(() => {
 	if (!chatId) {
@@ -218,38 +257,79 @@ export function ChatView({
 	  setDetailLoading(false);
 	  return;
 	}
+    if (!networkAvailable) return;
     autoFollowRef.current = true;
     const timer = window.setTimeout(() => {
-      void refreshConversation();
+      if (isDockNetworkAvailable()) void refreshConversation(true);
     }, 0);
     return () => window.clearTimeout(timer);
-	}, [chatId, refreshConversation]);
+	}, [chatId, networkAvailable, refreshConversation, rosterRunId]);
 
   useEffect(() => {
     if (!chatId || !detail || detailLoading) return;
     cacheTranscript(chatId, { detail, messages: persistedMessages, nextBefore: nextMessagesBefore });
   }, [cacheTranscript, chatId, detail, detailLoading, nextMessagesBefore, persistedMessages]);
 
-  // Refresh the run summary when its WS event fires (stream refetch is
-  // handled inside useAgentRunStream; this keeps status/pause_reason fresh).
+  // Recover persisted messages and the chat's active run after missed socket
+  // updates, including successor runs and approvals resolved in another tab.
   useEffect(() => {
-    if (!run?.id) return;
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const handler = (event: Event) => {
-      const detailPayload = (event as CustomEvent<{ entity_id?: string }>).detail;
-      if (detailPayload?.entity_id !== run.id) return;
-      if (refreshTimer) return;
-      refreshTimer = setTimeout(() => {
-        refreshTimer = null;
-        void refreshDetail();
+    if (!chatId || !networkAvailable) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let includeMessages = false;
+    const recover = (messages = true) => {
+      includeMessages ||= messages;
+      if (timer || !isDockNetworkAvailable()) return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (!isDockNetworkAvailable()) return;
+        if (includeMessages) void refreshConversation(true);
+        else void refreshDetail(true);
+        includeMessages = false;
       }, 100);
     };
-    window.addEventListener('agent_run-updated', handler);
-    return () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      window.removeEventListener('agent_run-updated', handler);
+    const onRun = (event: Event) => {
+      const payload = (event as CustomEvent<{ entity_id?: string }>).detail;
+      if (payload?.entity_id === run?.id) recover(false);
     };
-  }, [refreshDetail, run?.id]);
+    const onSession = (event: Event) => {
+      const payload = (event as CustomEvent<{ parent_id?: string; data?: { type?: string } }>).detail;
+      if (payload?.parent_id === run?.id && /message\.completed|child|interaction/.test(payload?.data?.type ?? '')) recover();
+    };
+    const onFocus = () => recover();
+    const unsubscribe = useSupportPresenceStore.subscribe((state, previous) => {
+      if (state.wsConnected && !previous.wsConnected) recover();
+    });
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('coding_session_event-created', onSession);
+    window.addEventListener('agent_run-updated', onRun);
+    window.addEventListener('coding_session-updated', onRun);
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('coding_session_event-created', onSession);
+      window.removeEventListener('agent_run-updated', onRun);
+      window.removeEventListener('coding_session-updated', onRun);
+    };
+  }, [chatId, networkAvailable, refreshConversation, refreshDetail, run?.id]);
+
+  // A visible fallback snapshot can discover a lifecycle change without WS.
+  // Re-read authoritative chat detail instead of replacing an accepted send
+  // with an older snapshot that happens to share the same run id.
+  const snapshotLifecycle = streamController.session
+    ? `${streamController.session.id}:${streamController.session.status}:${streamController.session.pause_reason}`
+    : null;
+  const previousSnapshotLifecycle = useRef(snapshotLifecycle);
+  useEffect(() => {
+    const previous = previousSnapshotLifecycle.current;
+    previousSnapshotLifecycle.current = snapshotLifecycle;
+    if (!previous || !snapshotLifecycle || previous === snapshotLifecycle || !networkAvailable) return;
+    if (!run || (streamController.session?.id === run.id
+      && streamController.session.status === run.status
+      && streamController.session.pause_reason === run.pause_reason)) return;
+    const timer = window.setTimeout(() => { void refreshConversation(true); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [networkAvailable, refreshConversation, run, snapshotLifecycle, streamController.session]);
 
   const mergedStream = useMemo(
     () => mergePersistedChatMessages(streamState, persistedMessages),
@@ -304,6 +384,7 @@ export function ChatView({
       const timer = window.setTimeout(() => setFallbackInteraction(null), 0);
       return () => window.clearTimeout(timer);
     }
+    if (!networkAvailable) return;
     let cancelled = false;
     void (async () => {
       const res = await dockChatService.listChatRunInteractions(workspaceId, chatId);
@@ -322,7 +403,7 @@ export function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [chatId, pausedOnInteraction, workspaceId]);
+  }, [chatId, networkAvailable, pausedOnInteraction, workspaceId]);
 
   const presenceState = deriveAskAgentAvatarState({
     run: run ?? streamController.session,
@@ -449,6 +530,7 @@ export function ChatView({
 		  return [];
 		});
         acceptedSendVersion.current += 1;
+        detailRefreshed.current = true;
         setDetail(res.data);
         setDetailLoading(false);
         onChatChanged?.();

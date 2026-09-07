@@ -14,9 +14,11 @@ import { AgentLiveStatus } from './AgentLiveStatus';
 import { resolveAgentLiveProgress } from './agentProgress';
 import { hasAuthoritativeDockRuntimeTimeline } from './dockChatTimeline';
 import { isDockTranscriptStreaming } from './dockChatState';
+import { useDockNetworkActivity } from './useDockNetworkActivity';
 import { useAgentRunStream, type AgentRunStreamFetchers } from './useAgentRunStream';
 
 interface DockRunViewProps {
+  active?: boolean;
   workspaceId: string;
   summary: DockRunSummary;
   draft: string;
@@ -26,6 +28,7 @@ interface DockRunViewProps {
 }
 
 export function DockRunView({
+  active = true,
   workspaceId,
   summary,
   draft,
@@ -34,6 +37,7 @@ export function DockRunView({
   onRunContinued,
 }: DockRunViewProps) {
   const run = summary.run;
+  const networkAvailable = useDockNetworkActivity();
   const [fallbackInteraction, setFallbackInteraction] = useState<CodingSessionInteraction | null>(null);
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -50,8 +54,9 @@ export function DockRunView({
   const [atBottom, setAtBottom] = useState(true);
 
   const fetchers = useMemo<AgentRunStreamFetchers>(() => ({
-    getSnapshot: (ws, runId) => dockChatService.getRunSnapshot(ws, runId),
-    listEvents: (ws, runId, after) => dockChatService.listRunEvents(ws, runId, after),
+    requestKey: 'dock-run',
+    getSnapshot: (ws, runId, signal) => dockChatService.getRunSnapshot(ws, runId, signal),
+    listEvents: (ws, runId, after, signal) => dockChatService.listRunEvents(ws, runId, after, signal),
   }), []);
   const {
     session,
@@ -61,7 +66,7 @@ export function DockRunView({
     refetch,
     clearPendingInteraction,
     loading,
-  } = useAgentRunStream(workspaceId, run.id, true, 5_000, fetchers);
+  } = useAgentRunStream(workspaceId, run.id, active, 5_000, fetchers);
   const effectiveRun = session ?? run;
   const transcriptStreaming = isDockTranscriptStreaming(effectiveRun);
   const showRuntimeTimeline = transcriptStreaming || (
@@ -87,13 +92,14 @@ export function DockRunView({
   }, [effectiveRun.status, run.id, workspaceId]);
 
   useEffect(() => {
+    if (!active || !networkAvailable) return;
     if (effectiveRun.status === 'paused') {
       const timer = window.setTimeout(() => void refreshInteractions(), 0);
       return () => window.clearTimeout(timer);
     }
     const timer = window.setTimeout(() => setFallbackInteraction(null), 0);
     return () => window.clearTimeout(timer);
-  }, [effectiveRun.status, refreshInteractions]);
+  }, [active, networkAvailable, effectiveRun.status, refreshInteractions]);
 
   useEffect(() => {
     const node = scrollRef.current;
