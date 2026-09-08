@@ -15,6 +15,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQueryClient } from '@tanstack/react-query';
 import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
 import { EpicFilterBar } from '@/pages/pm/EpicFilterBar';
+import { OwnerAvatarFilterRow } from '@/components/pm/OwnerAvatarFilterRow';
 import { EpicColorControl } from '@/components/pm/EpicColorControl';
 import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
@@ -1117,6 +1118,14 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const filterDefinitions = useMemo<EpicFilterDefinition[]>(
     () => [
       {
+        key: 'owner',
+        label: 'Owner',
+        options: assignableMembers.map((member) => ({
+          value: member.id,
+          label: member.display_name || member.email,
+        })),
+      },
+      {
         key: 'state',
         label: 'State',
         options: [
@@ -1133,14 +1142,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         options: ALL_HEALTH_OPTIONS.map((health) => ({
           value: health,
           label: healthConfig[health].label,
-        })),
-      },
-      {
-        key: 'owner',
-        label: 'Owner',
-        options: assignableMembers.map((member) => ({
-          value: member.id,
-          label: member.display_name || member.email,
         })),
       },
       {
@@ -1575,6 +1576,27 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         <EpicFilterBar
           search={search}
           onSearchChange={setSearch}
+          ownerFilter={assignableMembers.length > 0 && (
+            <OwnerAvatarFilterRow
+              workspaceId={workspaceId!}
+              members={assignableMembers}
+              selectedIds={filters.owner ?? []}
+              className="ml-0"
+              onToggle={(memberId) => {
+                setFilters((current) => {
+                  const selected = current.owner ?? [];
+                  const owner = selected.includes(memberId)
+                    ? selected.filter((id) => id !== memberId)
+                    : [...selected, memberId];
+                  if (owner.length === 0) {
+                    const { owner: _omit, ...rest } = current;
+                    return rest;
+                  }
+                  return { ...current, owner };
+                });
+              }}
+            />
+          )}
           categories={filterDefinitions
             .filter((definition) => definition.key !== 'has_target_date' && definition.key !== 'has_start_date')
             .map((definition) => {

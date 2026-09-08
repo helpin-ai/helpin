@@ -5,12 +5,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { EpicWithStats } from '@/lib/pmTypes'
+import type { AssignableMember } from '@/lib/types'
 import { queryKeys } from '@/lib/queryKeys'
 import { EPIC_PRESET_COLORS } from '@/components/pm/ColorPicker'
 
 const stableMocks = vi.hoisted(() => ({
   access: {},
   empty: [] as never[],
+  members: [] as AssignableMember[],
   openCreate: vi.fn(),
   listEpics: vi.fn(),
   listLabels: vi.fn(),
@@ -48,13 +50,14 @@ vi.mock('@/hooks/useAccessibleTeams', () => ({
 }))
 
 vi.mock('@/hooks/useAssignableWorkspaceMembers', () => ({
-  useAssignableWorkspaceMembers: () => ({ members: stableMocks.empty }),
+  useAssignableWorkspaceMembers: () => ({ members: stableMocks.members }),
 }))
 
 vi.mock('@/hooks/queries', () => ({
   useWorkspaceAccess: () => ({ data: stableMocks.access }),
   usePermissions: () => ({ canEdit: stableMocks.canEdit }),
   useEpicStates: () => ({ data: stableMocks.empty }),
+  useWorkspaceMemberPresenceMap: () => ({ data: new Map() }),
 }))
 
 vi.mock('@/lib/services/pmEpicService', () => ({
@@ -76,6 +79,7 @@ import { EpicsPage } from '../Epics'
 describe('EpicsPage scroll layout', () => {
   beforeEach(() => {
     stableMocks.canEdit = true
+    stableMocks.members = []
     stableMocks.listEpics.mockResolvedValue({ data: [], error: null })
     stableMocks.listLabels.mockResolvedValue({ data: [], error: null })
     stableMocks.listObjectives.mockResolvedValue({ data: [], error: null })
@@ -85,6 +89,52 @@ describe('EpicsPage scroll layout', () => {
     document.body.innerHTML = ''
     window.localStorage.clear()
     vi.clearAllMocks()
+  })
+
+  it('filters epics through owner avatars and the searchable overflow, then clears the selection', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+    stableMocks.members = Array.from({ length: 9 }, (_, index) => ({
+      id: `member-${index + 1}`, user_id: `user-${index + 1}`, role: 'member',
+      status: 'active', email: `member${index + 1}@example.com`, display_name: `Member ${index + 1}`,
+    })) as AssignableMember[]
+    const epics = [1, 9].map((owner) => ({
+      epic: { id: `epic-${owner}`, name: `Initiative ${owner}`, owner_member_id: `member-${owner}`, health: 'no_health', created_at: '2026-09-03T10:00:00Z', updated_at: '2026-09-03T10:00:00Z' },
+      labels: [], objectives: [], stats: { task_count: 0, done_task_count: 0, total_points: 0, done_points: 0 },
+    })) as EpicWithStats[]
+    stableMocks.listEpics.mockReturnValue(new Promise(() => {}))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    queryClient.setQueryData([...queryKeys.pm.epics('ws-1'), { archived: false, team_id: undefined }], epics)
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(<QueryClientProvider client={queryClient}><TooltipProvider><EpicsPage /></TooltipProvider></QueryClientProvider>))
+      const ownerButton = () => container.querySelector<HTMLButtonElement>('[aria-label="Filter by owner Member 1"]')!
+      await act(async () => ownerButton().click())
+      expect(ownerButton().getAttribute('aria-pressed')).toBe('true')
+      expect(container.textContent).toContain('Initiative 1')
+      expect(container.textContent).not.toContain('Initiative 9')
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show 2 more members"]')!.click())
+      const search = document.querySelector<HTMLInputElement>('input[placeholder="Search members..."]')!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'Member 9')
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      expect(document.querySelectorAll('[cmdk-item]')).toHaveLength(1)
+      const ninthOwner = document.querySelector<HTMLElement>('[cmdk-item][data-value="Member 9"]')!
+      await act(async () => ninthOwner.click())
+      expect(container.textContent).toContain('Initiative 1')
+      expect(container.textContent).toContain('Initiative 9')
+      expect(container.querySelector('[aria-label="Filter by owner Member 9"]')?.getAttribute('aria-pressed')).toBe('true')
+      const clear = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Clear Filters')!
+      await act(async () => clear.click())
+      expect(ownerButton().getAttribute('aria-pressed')).toBe('false')
+      expect(JSON.parse(localStorage.getItem('pm_epics_view_ws-1_all')!).filters.owner).toBeUndefined()
+    } finally {
+      act(() => root.unmount())
+      vi.unstubAllGlobals()
+    }
   })
 
   it('fills the route height so the virtual list can scroll vertically', async () => {
