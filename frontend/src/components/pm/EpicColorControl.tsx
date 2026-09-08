@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ColorPicker } from './ColorPicker';
+import { ColorPicker, EPIC_PRESET_COLORS } from './ColorPicker';
 import { resolveEpicColor } from './epicColor';
 import { EpicColorSwatch } from './EpicColorSwatch';
 import { cn } from '@/lib/utils';
@@ -43,7 +43,7 @@ export function EpicColorControl({ value, onChange, disabled, compact = false }:
         onKeyDown={(event) => event.stopPropagation()}
       >
         <p className="text-sm font-medium">Epic color</p>
-        <ColorPicker value={draft} onChange={setDraft} shape="square" />
+        <ColorPicker value={draft} onChange={setDraft} shape="square" presets={EPIC_PRESET_COLORS} />
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           <Button size="sm" onClick={() => { onChange(draft); setOpen(false); }}>Apply</Button>

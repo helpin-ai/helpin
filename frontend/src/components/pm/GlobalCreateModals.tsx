@@ -81,7 +81,7 @@ import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { queryKeys } from '@/lib/queryKeys';
-import { ColorPicker } from '@/components/pm/ColorPicker';
+import { ColorPicker, EPIC_PRESET_COLORS } from '@/components/pm/ColorPicker';
 import { DEFAULT_EPIC_COLOR } from '@/components/pm/epicColor';
 
 import pdfIcon from '@/assets/attachment/pdf-icon.png';
@@ -644,7 +644,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             <CreateEntityModalSidebar description="Epics are collections of tasks that together represent a major initiative or feature.">
               <CreateEntityMetadataGrid>
                 <CreateEntityMetadataRow icon={PaintBoardIcon} label="Color">
-                  <ColorPicker value={color} onChange={setColor} shape="square" />
+                  <ColorPicker value={color} onChange={setColor} shape="square" presets={EPIC_PRESET_COLORS} />
                 </CreateEntityMetadataRow>
                 <CreateEntityMetadataRow icon={UserGroupIcon} label="Team *">
                 <Select size="ui" value={meta.teamId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, teamId: v === '__none__' ? '' : v }))}>

@@ -3,6 +3,7 @@ import { PaintBoardIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { DEFAULT_EPIC_COLOR } from './epicColor';
 
 export const PRESET_COLORS = [
   '#5e6ad2', // indigo
@@ -22,6 +23,8 @@ export const PRESET_COLORS = [
   '#a08060', // brown
   '#788596', // slate
 ];
+
+export const EPIC_PRESET_COLORS = PRESET_COLORS.map((color) => color === '#788596' ? DEFAULT_EPIC_COLOR : color);
 
 // ── Color conversion utilities ──────────────────────────────────────
 
@@ -324,12 +327,14 @@ export function ColorPicker({
   value,
   onChange,
   shape = 'circle',
+  presets = PRESET_COLORS,
 }: {
   value: string;
   onChange: (color: string) => void;
   shape?: 'circle' | 'square';
+  presets?: readonly string[];
 }) {
-  const isCustom = !PRESET_COLORS.includes(value);
+  const isCustom = !presets.includes(value);
   const [customOpen, setCustomOpen] = useState(false);
   const [hsv, setHsv] = useState<HSV>(() => hexToHsv(value || '#3b82f6'));
   const [hexInput, setHexInput] = useState(value);
@@ -364,7 +369,7 @@ export function ColorPicker({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {PRESET_COLORS.map((c) => (
+      {presets.map((c) => (
         <button
           key={c}
           type="button"

@@ -2,7 +2,7 @@
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ColorPicker } from '../ColorPicker';
+import { ColorPicker, EPIC_PRESET_COLORS, PRESET_COLORS } from '../ColorPicker';
 import { EpicBadge } from '../EpicBadge';
 import { EpicColorControl } from '../EpicColorControl';
 import { DEFAULT_EPIC_COLOR, resolveEpicColor } from '../epicColor';
@@ -44,7 +44,8 @@ describe('epic colors', () => {
     const badge = container.querySelector<HTMLElement>('[title]')!;
     expect(badge.title).toBe(name);
     expect(badge.textContent).toBe(name);
-    expect(badge.style.backgroundColor).toBe('rgb(120, 133, 150)');
+    expect(badge.style.backgroundColor).toBe('rgb(226, 232, 240)');
+    expect(badge.style.color).toBe('rgb(0, 0, 0)');
   });
 
   it.each([
@@ -67,7 +68,7 @@ describe('epic colors', () => {
 
   it('exposes the selected square and sends preset changes', () => {
     const onChange = vi.fn();
-    render(<ColorPicker value={DEFAULT_EPIC_COLOR} onChange={onChange} shape="square" />);
+    render(<ColorPicker value={DEFAULT_EPIC_COLOR} onChange={onChange} shape="square" presets={EPIC_PRESET_COLORS} />);
     const selected = document.querySelector('[aria-pressed="true"]')!;
     expect(selected.getAttribute('aria-label')).toBe(`Select color ${DEFAULT_EPIC_COLOR}`);
     expect(selected.className).toContain('rounded-[4px]');
@@ -76,7 +77,7 @@ describe('epic colors', () => {
   });
 
   it('keeps the default picker circular for other callers', () => {
-    render(<ColorPicker value={DEFAULT_EPIC_COLOR} onChange={vi.fn()} />);
+    render(<ColorPicker value={PRESET_COLORS[0]} onChange={vi.fn()} />);
     expect(document.querySelector('[aria-pressed="true"]')!.className).toContain('rounded-full');
   });
 
