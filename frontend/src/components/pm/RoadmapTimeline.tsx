@@ -195,7 +195,7 @@ export function RoadmapTimeline({
   }
 
   return (
-    <div className="overflow-x-auto border-y border-quiet-divider-strong [scrollbar-gutter:stable]">
+    <div className="overflow-x-auto border-y border-quiet-divider-strong bg-background [scrollbar-gutter:stable]">
       <div className="relative" style={{ minWidth: `${labelWidth + timelineWidth}px` }}>
         <div className="sticky top-0 z-20 flex border-b border-quiet-divider-strong bg-background">
           <div className="sticky left-0 z-30 flex shrink-0 items-center border-r border-quiet-divider-strong bg-background px-3 py-2.5" style={labelStyle}>
