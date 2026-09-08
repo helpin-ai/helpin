@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverTrigger } from '@/components/ui/popover';
+import { PMDropdownContent } from './PMDropdownContent';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import type { EpicWithStats, Task } from '@/lib/pmTypes';
 import { EpicBadge } from './EpicBadge';
@@ -52,7 +53,7 @@ export function InlineEpicCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[220px] p-0"
           align="start"
           side="bottom"
@@ -77,13 +78,13 @@ export function InlineEpicCell({
                     }}
                     className="flex items-center gap-2 text-ui"
                   >
-                    <EpicBadge name={e.epic.name} color={e.epic.color} />
+                    <EpicBadge name={e.epic.name} color={e.epic.color} className="text-[length:inherit]" />
                   </CommandItem>
                 ))}
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );

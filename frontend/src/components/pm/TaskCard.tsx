@@ -8,7 +8,8 @@ import { Calendar03Icon, Tick01Icon, UserAdd01Icon } from '@/lib/pmIcons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { differenceInDays, format, formatDistanceToNow, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverTrigger } from '@/components/ui/popover';
+import { PMDropdownContent } from './PMDropdownContent';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from '@/lib/pmConstants';
@@ -505,7 +506,7 @@ function TaskCardComponent({
                   </button>
                 </PopoverTrigger>
             {severityOpen && (
-              <PopoverContent
+              <PMDropdownContent
                 className="w-[180px] p-0"
                 align="start"
                 side="bottom"
@@ -535,7 +536,7 @@ function TaskCardComponent({
                     </CommandGroup>
                   </CommandList>
                 </Command>
-              </PopoverContent>
+              </PMDropdownContent>
             )}
           </Popover>
         ) : severityCfg ? (
@@ -587,7 +588,7 @@ function TaskCardComponent({
                 <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
               </Tooltip>
               {priorityOpen && (
-                <PopoverContent
+                <PMDropdownContent
                   className="w-[180px] p-0"
                   align="start"
                   side="bottom"
@@ -617,7 +618,7 @@ function TaskCardComponent({
                       </CommandGroup>
                     </CommandList>
                   </Command>
-                </PopoverContent>
+                </PMDropdownContent>
               )}
             </Popover>
           ) : (

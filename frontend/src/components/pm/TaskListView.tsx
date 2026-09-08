@@ -23,6 +23,7 @@ import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAv
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { PMDropdownContent } from './PMDropdownContent';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -2496,7 +2497,7 @@ function InlinePriorityCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[180px] p-0"
           align="start"
           side="bottom"
@@ -2529,7 +2530,7 @@ function InlinePriorityCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
@@ -2579,7 +2580,7 @@ function InlineStateCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[200px] p-0"
           align="start"
           side="bottom"
@@ -2610,7 +2611,7 @@ function InlineStateCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
@@ -2705,7 +2706,7 @@ function InlineSeverityCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[180px] p-0"
           align="start"
           side="bottom"
@@ -2738,7 +2739,7 @@ function InlineSeverityCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
@@ -2817,7 +2818,7 @@ function InlineTeamCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[200px] p-0"
           align="start"
           side="bottom"
@@ -2847,7 +2848,7 @@ function InlineTeamCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
@@ -2907,7 +2908,7 @@ function InlineSprintCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[220px] p-0"
           align="start"
           side="bottom"
@@ -2937,7 +2938,7 @@ function InlineSprintCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
