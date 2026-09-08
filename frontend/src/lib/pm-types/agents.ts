@@ -43,6 +43,17 @@ export interface AgentExecutionConfig {
   reasoning_effort?: AgentReasoningEffort;
   service_tier?: AgentServiceTier;
   max_tool_steps?: number;
+  native_context?: {
+    enabled: boolean;
+    context_window?: number;
+    input_limit?: number;
+    max_output_tokens?: number;
+    trigger_tokens?: number;
+    keep_recent_tokens?: number;
+    summary_tokens?: number;
+    safety_tokens?: number;
+    max_total_tokens?: number;
+  };
 }
 
 export interface Agent {

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -29,7 +30,13 @@ type AIUsageReconcileRequest struct {
 	ReservationID                     string
 	Entry                             model.AIUsageLedgerEntry
 	ChargedMicrousd, AbsorbedMicrousd int64
+	AllowLateUsage                    bool
+	RunID                             string
+	RunOutputSummary                  model.JSONBlob
 }
+
+// ErrAIUsageWatermarkChanged requires reloading the run before retrying a delta.
+var ErrAIUsageWatermarkChanged = errors.New("terminal usage watermark changed")
 
 // AIUsageCheckpointRequest describes an idempotent partial usage posting that
 // keeps the execution reservation active for a later turn.
@@ -178,6 +185,22 @@ func (r *AIUsageRepository) Reconcile(ctx context.Context, input AIUsageReconcil
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing model.AIUsageLedgerEntry
 		if err := tx.Where("idempotency_key = ?", input.Entry.IdempotencyKey).First(&existing).Error; err == nil {
+			if input.AllowLateUsage && input.RunID != "" && (existing.InputTokensTotal != input.Entry.InputTokensTotal || existing.OutputTokens != input.Entry.OutputTokens || existing.ReasoningTokens != input.Entry.ReasoningTokens || existing.CacheReadTokens != input.Entry.CacheReadTokens) {
+				return ErrAIUsageWatermarkChanged
+			}
+			if input.AllowLateUsage && input.RunID != "" {
+				current, err := loadRunUsageWatermark(tx, existing.WorkspaceID, input.RunID)
+				if err != nil {
+					return err
+				}
+				requested, err := parseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
+				if err != nil {
+					return err
+				}
+				if current != requested {
+					return ErrAIUsageWatermarkChanged
+				}
+			}
 			return tx.First(&period, "id = ?", existing.PeriodID).Error
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("check AI usage ledger: %w", err)
@@ -191,7 +214,8 @@ func (r *AIUsageRepository) Reconcile(ctx context.Context, input AIUsageReconcil
 		if err := reservationQuery.First(&reservation).Error; err != nil {
 			return fmt.Errorf("load AI usage reservation: %w", err)
 		}
-		if reservation.Status != model.AIUsageReservationActive {
+		if reservation.Status != model.AIUsageReservationActive && !(input.AllowLateUsage &&
+			(reservation.Status == model.AIUsageReservationReconciled || reservation.Status == model.AIUsageReservationReleased)) {
 			return fmt.Errorf("AI usage reservation is %s", reservation.Status)
 		}
 		periodQuery := tx.Where("id = ?", reservation.PeriodID)
@@ -211,7 +235,9 @@ func (r *AIUsageRepository) Reconcile(ctx context.Context, input AIUsageReconcil
 			return fmt.Errorf("create AI usage ledger entry: %w", err)
 		}
 		period.UsedMicrousd += input.ChargedMicrousd
-		period.ReservedMicrousd -= reservation.ReservedMicrousd
+		if reservation.Status == model.AIUsageReservationActive {
+			period.ReservedMicrousd -= reservation.ReservedMicrousd
+		}
 		if period.ReservedMicrousd < 0 {
 			period.ReservedMicrousd = 0
 		}
@@ -230,9 +256,26 @@ func (r *AIUsageRepository) Reconcile(ctx context.Context, input AIUsageReconcil
 		}).Error; err != nil {
 			return fmt.Errorf("reconcile AI usage reservation: %w", err)
 		}
+		if input.RunID != "" {
+			result := tx.Model(&model.AgentRun{}).Where("id = ? AND workspace_id = ?", input.RunID, reservation.WorkspaceID).Update("output_summary", input.RunOutputSummary)
+			if result.Error != nil {
+				return fmt.Errorf("persist terminal usage watermark: %w", result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("terminal usage run not found")
+			}
+		}
 		return nil
 	})
 	if err != nil {
+		// Another process may have posted this turn after our initial lookup.
+		// Do not let its caller persist an older usage watermark over that commit.
+		if input.AllowLateUsage && input.RunID != "" {
+			var existing model.AIUsageLedgerEntry
+			if lookupErr := r.db.WithContext(ctx).Where("idempotency_key = ?", input.Entry.IdempotencyKey).First(&existing).Error; lookupErr == nil {
+				return nil, ErrAIUsageWatermarkChanged
+			}
+		}
 		return nil, err
 	}
 	return &period, nil
@@ -249,9 +292,19 @@ func (r *AIUsageRepository) Checkpoint(ctx context.Context, input AIUsageCheckpo
 		var existing model.AIUsageLedgerEntry
 		if err := tx.Where("idempotency_key = ?", input.Entry.IdempotencyKey).First(&existing).Error; err == nil {
 			if input.RunID != "" {
-				if err := tx.Model(&model.AgentRun{}).Where("id = ?", input.RunID).
-					Update("output_summary", input.RunOutputSummary).Error; err != nil {
-					return fmt.Errorf("restore AI usage checkpoint run summary: %w", err)
+				if existing.InputTokensTotal != input.Entry.InputTokensTotal || existing.OutputTokens != input.Entry.OutputTokens || existing.ReasoningTokens != input.Entry.ReasoningTokens || existing.CacheReadTokens != input.Entry.CacheReadTokens {
+					return ErrAIUsageWatermarkChanged
+				}
+				current, err := loadRunUsageWatermark(tx, existing.WorkspaceID, input.RunID)
+				if err != nil {
+					return err
+				}
+				requested, err := parseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
+				if err != nil {
+					return err
+				}
+				if current != requested {
+					return ErrAIUsageWatermarkChanged
 				}
 			}
 			return tx.First(&period, "id = ?", existing.PeriodID).Error

@@ -840,6 +840,7 @@ type AgentExecutionConfig struct {
 	ServiceTier     *string                         `json:"service_tier,omitempty"`
 	MaxToolSteps    *int                            `json:"max_tool_steps,omitempty"`
 	OpenRouter      *AgentOpenRouterExecutionConfig `json:"openrouter,omitempty"`
+	NativeContext   *AgentNativeContextConfig       `json:"native_context,omitempty"`
 }
 
 // AgentOpenRouterExecutionConfig contains OpenRouter-only request controls.
@@ -1100,7 +1101,7 @@ func (c *AgentOpenRouterExecutionConfig) providerQuantizations() []string {
 func (c AgentExecutionConfig) IsZero() bool {
 	normalized := c.Normalize()
 	return normalized.ReasoningEffort == nil && normalized.ServiceTier == nil &&
-		normalized.MaxToolSteps == nil && normalized.OpenRouter == nil
+		normalized.MaxToolSteps == nil && normalized.OpenRouter == nil && normalized.NativeContext == nil
 }
 
 func ParseAgentExecutionConfig(raw []byte) (AgentExecutionConfig, error) {
