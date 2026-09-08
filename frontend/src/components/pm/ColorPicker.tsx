@@ -24,7 +24,15 @@ export const PRESET_COLORS = [
   '#788596', // slate
 ];
 
-export const EPIC_PRESET_COLORS = PRESET_COLORS.map((color) => color === '#788596' ? DEFAULT_EPIC_COLOR : color);
+// Pastel epic presets mix in 45% white before selection and saving.
+export const EPIC_PRESET_COLORS = PRESET_COLORS.map((color) => {
+  if (color === '#788596') return DEFAULT_EPIC_COLOR;
+  const channels = [1, 3, 5].map((offset) => {
+    const channel = parseInt(color.slice(offset, offset + 2), 16);
+    return Math.round(channel + (255 - channel) * 0.45).toString(16).padStart(2, '0');
+  });
+  return `#${channels.join('')}`;
+});
 
 // ── Color conversion utilities ──────────────────────────────────────
 

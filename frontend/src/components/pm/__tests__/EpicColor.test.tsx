@@ -44,7 +44,7 @@ describe('epic colors', () => {
     const badge = container.querySelector<HTMLElement>('[title]')!;
     expect(badge.title).toBe(name);
     expect(badge.textContent).toBe(name);
-    expect(badge.style.backgroundColor).toBe('rgb(226, 232, 240)');
+    expect(badge.style.backgroundColor).toBe('rgb(176, 186, 200)');
     expect(badge.style.color).toBe('rgb(0, 0, 0)');
   });
 
@@ -72,8 +72,8 @@ describe('epic colors', () => {
     const selected = document.querySelector('[aria-pressed="true"]')!;
     expect(selected.getAttribute('aria-label')).toBe(`Select color ${DEFAULT_EPIC_COLOR}`);
     expect(selected.className).toContain('rounded-[4px]');
-    click('Select color #e2564a');
-    expect(onChange).toHaveBeenCalledWith('#e2564a');
+    click(`Select color ${EPIC_PRESET_COLORS[8]}`);
+    expect(onChange).toHaveBeenCalledWith(EPIC_PRESET_COLORS[8]);
   });
 
   it('keeps the default picker circular for other callers', () => {
@@ -105,15 +105,15 @@ describe('epic colors', () => {
     const onChange = vi.fn();
     render(<EpicColorControl value={DEFAULT_EPIC_COLOR} onChange={onChange} />);
     click('Change epic color');
-    click('Select color #e2564a');
+    click(`Select color ${EPIC_PRESET_COLORS[8]}`);
     expect(onChange).not.toHaveBeenCalled();
     click('Cancel');
     click('Change epic color');
     expect(document.querySelector('[aria-pressed="true"]')!.getAttribute('aria-label')).toBe(`Select color ${DEFAULT_EPIC_COLOR}`);
-    click('Select color #4e8fea');
+    click(`Select color ${EPIC_PRESET_COLORS[1]}`);
     click('Apply');
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange).toHaveBeenCalledWith('#4e8fea');
+    expect(onChange).toHaveBeenCalledWith(EPIC_PRESET_COLORS[1]);
   });
 
   it('shows a static square to viewers', () => {
@@ -127,9 +127,9 @@ describe('epic colors', () => {
     const onChange = vi.fn();
     render(<div onClick={onOpenEpic}><EpicColorControl compact value={DEFAULT_EPIC_COLOR} onChange={onChange} /></div>);
     click('Change epic color');
-    click('Select color #e2564a');
+    click(`Select color ${EPIC_PRESET_COLORS[8]}`);
     click('Apply');
-    expect(onChange).toHaveBeenCalledWith('#e2564a');
+    expect(onChange).toHaveBeenCalledWith(EPIC_PRESET_COLORS[8]);
     expect(onOpenEpic).not.toHaveBeenCalled();
   });
 });

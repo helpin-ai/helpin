@@ -1,4 +1,4 @@
-export const DEFAULT_EPIC_COLOR = '#e2e8f0';
+export const DEFAULT_EPIC_COLOR = '#b0bac8';
 
 /** Resolve legacy hex values without passing arbitrary CSS through to epic visuals. */
 export function resolveEpicColor(value?: string | null): string {

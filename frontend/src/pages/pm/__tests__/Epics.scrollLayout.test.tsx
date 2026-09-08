@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { EpicWithStats } from '@/lib/pmTypes'
 import { queryKeys } from '@/lib/queryKeys'
+import { EPIC_PRESET_COLORS } from '@/components/pm/ColorPicker'
 
 const stableMocks = vi.hoisted(() => ({
   access: {},
@@ -173,17 +174,17 @@ describe('EpicsPage scroll layout', () => {
       await act(async () => button!.click())
     }
     await click('Change epic color')
-    await click('Select color #e2564a')
+    await click(`Select color ${EPIC_PRESET_COLORS[8]}`)
     await click('Apply')
     expect(stableMocks.navigate).not.toHaveBeenCalled()
-    expect(stableMocks.updateEpic).toHaveBeenCalledWith('ws-1', 'epic-color', { color: '#e2564a' })
-    expect(queryClient.getQueryData<EpicWithStats[]>(listKey)?.[0].epic.color).toBe('#e2564a')
-    const updated = { ...entry, epic: { ...entry.epic, color: '#e2564a' } }
+    expect(stableMocks.updateEpic).toHaveBeenCalledWith('ws-1', 'epic-color', { color: EPIC_PRESET_COLORS[8] })
+    expect(queryClient.getQueryData<EpicWithStats[]>(listKey)?.[0].epic.color).toBe(EPIC_PRESET_COLORS[8])
+    const updated = { ...entry, epic: { ...entry.epic, color: EPIC_PRESET_COLORS[8] } }
     await act(async () => {
       resolveUpdate(failSave ? { data: null, error: 'Unable to save color' } : { data: updated, error: null })
       await new Promise((resolve) => setTimeout(resolve, 25))
     })
-    expect(queryClient.getQueryData<EpicWithStats[]>(listKey)?.[0].epic.color).toBe(failSave ? '#788596' : '#e2564a')
+    expect(queryClient.getQueryData<EpicWithStats[]>(listKey)?.[0].epic.color).toBe(failSave ? '#788596' : EPIC_PRESET_COLORS[8])
     if (failSave) expect(container.textContent).toContain('Unable to save color')
     else expect(queryClient.getQueryData(queryKeys.pm.epic('ws-1', 'epic-color'))).toEqual(updated)
     act(() => root.unmount())
