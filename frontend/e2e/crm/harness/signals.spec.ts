@@ -2,6 +2,47 @@ import { test, expect } from '@playwright/test';
 import { installSignalMocks } from '../fixtures/signals';
 
 const url = '/e2e/crm/harness/playbooks.html?signals=1';
+test('existing evidence and unassigned approvals appear by default without automation setup', async ({ page }) => {
+  const mock = await installSignalMocks(page, { evidenceOnly: true, standalone: true });
+  await page.goto(url);
+  await expect(page.getByRole('button', { name: 'Customer requested the Inbox add-on', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Assignment', exact: true })).toHaveText('Everyone');
+  await page.screenshot({ path: '/tmp/helpin-restored-signals.png', fullPage: true });
+  await page.getByRole('button', { name: 'Customer requested the Inbox add-on', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Customer signal' })).toBeVisible();
+  await page.getByText('Evidence (1)', { exact: true }).click();
+  await expect(page.getByText('Could you send the monthly and annual pricing for the Inbox add-on?')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open email' })).toHaveAttribute('href', /thread.*email-thread-1/);
+  await page.screenshot({ path: '/tmp/helpin-restored-signal-drawer.png', fullPage: true });
+  expect(mock.reads.some((read) => read.includes(`/signal-inbox/evidence/${mock.evidenceGroup.id}`))).toBeTruthy();
+  expect(mock.writes).toHaveLength(0);
+  for (const name of ['Approve', 'Apply playbook', 'Record outcome', 'Pause']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Mark evidence reviewed' }).click();
+  await expect(page.getByText('Evidence reviewed', { exact: true }).last()).toBeVisible();
+  expect(mock.writes).toEqual([{ path: '/crm/signals/evidence-1/review', body: {} }]);
+});
+
+test('personal assignment remains explicit and clearing it restores unassigned signals', async ({ page }) => {
+  const mock = await installSignalMocks(page, { evidenceOnly: true });
+  await page.goto(`${url}&scope=mine`);
+  await expect(page.getByText('No signals match this view')).toBeVisible();
+  await page.getByRole('button', { name: 'Show all signals' }).click();
+  await expect(page.getByRole('button', { name: 'Customer requested the Inbox add-on', exact: true })).toBeVisible();
+  expect(mock.reads.some((read) => read.includes('scope=mine'))).toBeTruthy();
+  expect(mock.reads.some((read) => read.includes('scope=all'))).toBeTruthy();
+  expect(mock.writes).toHaveLength(0);
+});
+
+test('read-only evidence deep links show unavailable groups without creating replacement work', async ({ page }) => {
+  const mock = await installSignalMocks(page, { evidenceOnly: true, readOnly: true, groupUnavailable: true });
+  await page.goto(`${url}&group=${mock.evidenceGroup.id}`);
+  await expect(page.getByRole('heading', { name: 'Customer signal' })).toBeVisible();
+  await expect(page.getByText('This item could not be found.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mark evidence reviewed' })).toHaveCount(0);
+  expect(mock.writes).toHaveLength(0);
+});
+
 test('scannable table, one category strip, and visible assignment/status filters use server queries', async ({ page }) => {
   const mock = await installSignalMocks(page, { unclassified: true });
   await page.goto(url);

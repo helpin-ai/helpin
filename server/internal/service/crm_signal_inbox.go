@@ -14,6 +14,10 @@ func (s *CRMSituationService) ListInbox(ctx context.Context, ws string, filters 
 		return nil, err
 	}
 	approvals := filters.Navigation.State == "needs_approval"
+	// A workspace-wide queue must not look empty before work is assigned.
+	if filters.Navigation.Scope == "" {
+		filters.Navigation.Scope = "all"
+	}
 	if approvals {
 		filters.Navigation.State = "all"
 	}

@@ -4,7 +4,7 @@ import type { CRMSituationCategory, CRMSituationItem } from '../../../src/lib/cr
 import type { CRMSignalInboxItem } from '../../../src/lib/crmSignalInboxTypes';
 import { installPlaybookMocks } from './playbooks';
 
-export async function installSignalMocks(page: Page, options: { readOnly?: boolean; empty?: boolean; failure?: boolean; conflict?: boolean; actionFailure?: boolean; actionType?: CRMSuggestion['suggestion_type']; unclassified?: boolean; standalone?: boolean } = {}) {
+export async function installSignalMocks(page: Page, options: { readOnly?: boolean; empty?: boolean; failure?: boolean; conflict?: boolean; actionFailure?: boolean; actionType?: CRMSuggestion['suggestion_type']; unclassified?: boolean; standalone?: boolean; evidenceOnly?: boolean; groupUnavailable?: boolean } = {}) {
   const base = await installPlaybookMocks(page, { readOnly: options.readOnly });
   const signal = base.signal;
   delete signal.situation.playbook_id;
@@ -22,6 +22,15 @@ export async function installSignalMocks(page: Page, options: { readOnly?: boole
   if (options.unclassified) records.push({ ...structuredClone(signal), category: '', situation: { ...structuredClone(signal.situation), id: 'unclassified', commercial_motion: 'needs_context', title: 'Confirm the customer relationship' } });
   const linked: string[] = [];
   if (options.standalone) { signal.actions = []; signal.pending_action_count = 0; action.title = 'Review a standalone recommendation'; }
+  const evidenceGroup = {
+    id: '1234567890abcdef12345678', entity_type: 'company', entity_id: 'company-1', account_name: 'Harbor Labs', commercial_motion: 'expansion',
+    priority: 9, needs_judgment: false, recommended_action_label: 'Discuss add-on pricing with the customer', signals: signal.evidence,
+  };
+  if (options.evidenceOnly) {
+    records.length = 0;
+    signal.evidence![0].summary = 'Customer requested the Inbox add-on';
+    signal.evidence![0].evidence_excerpt = 'Could you send the monthly and annual pricing for the Inbox add-on?';
+  }
   await page.route(/\/api\/crm\/(situations|signal-inbox)(\/|\?)/, async (route) => {
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '');
     const headers = { 'access-control-allow-origin': request.headers().origin || 'http://127.0.0.1:5193', 'access-control-allow-credentials': 'true' };
@@ -41,12 +50,14 @@ export async function installSignalMocks(page: Page, options: { readOnly?: boole
     }
     if (request.method() !== 'GET') return route.fallback();
     base.reads.push(request.url());
+    if (path === `/crm/signal-inbox/evidence/${evidenceGroup.id}`) return options.groupUnavailable ? json({ error: 'This item could not be found.' }, 404) : json(evidenceGroup);
     if (path === '/crm/signal-inbox/recommendations/action-1') return json({ action, linked_situations: linked });
     if (path === '/crm/signal-inbox') {
       if (options.failure) return json({ error: 'Signals could not be loaded.' }, 503);
       const search = url.searchParams.get('q')?.toLowerCase() || '';
       const category = url.searchParams.get('category') || 'all';
       const rows: CRMSignalInboxItem[] = records.map((item) => ({ id: item.situation.id, kind: 'situation', title: item.situation.title, next_step: item.situation.next_step, category: item.category, customer_name: item.company_name, owner_name: item.owner_name, owner_member_id: item.situation.owner_member_id, owner_available: item.owner_available, priority: item.situation.priority, priority_band: item.situation.priority >= 15 ? 'high' : item.situation.priority >= 8 ? 'medium' : 'low', lifecycle: item.situation.lifecycle, attention: item.effective_attention, pending_action_count: item.pending_action_count, evidence_review: item.evidence?.length ? item.evidence.every((source) => source.reviewed_at) ? 'reviewed' : 'needs_review' : 'none', created_at: item.situation.created_at }));
+      if (options.evidenceOnly) rows.push({ id: evidenceGroup.id, kind: 'evidence', title: evidenceGroup.signals![0].summary, next_step: evidenceGroup.recommended_action_label, category: 'expansion', customer_name: evidenceGroup.account_name, owner_name: '', owner_member_id: null, owner_available: false, priority: 9, priority_band: 'medium', lifecycle: 'open', attention: 'needs_context', pending_action_count: 0, evidence_review: evidenceGroup.signals![0].reviewed_at ? 'reviewed' : 'needs_review', created_at: '2026-09-07T08:00:00Z' });
       if (options.standalone && !linked.length && action.status !== 'dismissed' && action.execution_status !== 'succeeded') rows.push({ id: action.id, kind: 'recommendation', title: action.title, next_step: action.description || '', category: '', customer_name: '', owner_name: '', owner_member_id: null, owner_available: false, priority: null, priority_band: 'unscored', lifecycle: 'open', attention: action.status === 'pending' ? 'needs_approval' : 'needs_context', pending_action_count: action.status === 'pending' ? 1 : 0, evidence_review: 'none', created_at: action.created_at });
       const filter = JSON.parse(url.searchParams.get('filter') || '{"rules":[]}') as { rules: { field: string; value: string }[] };
       const state = url.searchParams.get('state');
@@ -71,5 +82,5 @@ export async function installSignalMocks(page: Page, options: { readOnly?: boole
   await page.route('**/api/crm/pipelines/pipeline-1?**', async (route) => route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': route.request().headers().origin || '', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ id: 'pipeline-1', name: 'Sales pipeline', stages: [{ id: 'stage-1', name: 'Discovery' }, { id: 'stage-2', name: 'Proposal' }] }) }));
   await page.route('**/api/crm/companies/company-1?**', async (route) => route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': route.request().headers().origin || '', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ id: 'company-1', name: 'Harbor Labs' }) }));
   await page.route('**/api/crm/deals/deal-1?**', async (route) => route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': route.request().headers().origin || '', 'access-control-allow-credentials': 'true' }, body: JSON.stringify({ id: 'deal-1', name: 'Harbor expansion', pipeline_id: 'pipeline-1', stage_id: 'stage-1' }) }));
-  return { ...base, action, records, linked };
+  return { ...base, action, records, linked, evidenceGroup };
 }

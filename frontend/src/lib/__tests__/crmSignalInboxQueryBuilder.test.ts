@@ -3,6 +3,11 @@ import { inboxQueryFilter, inboxStatus, parseSignalsSearch, reviewSignalsSearch 
 import type { CRMSignalInboxItem } from '../crmSignalInboxTypes';
 
 describe('Signals navigation', () => {
+  it('preserves an evidence-group deep link and distinguishes review from execution', () => {
+    expect(parseSignalsSearch({ group: 'abc123', scope: 'mine' })).toEqual({ group: 'abc123', scope: 'mine' });
+    expect(inboxStatus({ kind: 'evidence', evidence_review: 'needs_review' } as CRMSignalInboxItem)).toBe('Evidence to review');
+    expect(inboxStatus({ kind: 'evidence', evidence_review: 'reviewed' } as CRMSignalInboxItem)).toBe('Evidence reviewed');
+  });
   it('preserves shareable filters and either kind of drawer', () => {
     const search = { scope: 'all', state: 'needs_approval', category: 'retention', priority: 'high', evidence_review: 'needs_review', action_type: 'risk_alert', sort: 'recommended', q: 'Northstar', page: 3, recommendation: 'proposal-id' };
     expect(parseSignalsSearch(search)).toEqual(search);

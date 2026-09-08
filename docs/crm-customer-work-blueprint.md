@@ -148,7 +148,7 @@ Agents and Flows remain available for authorized advanced configuration. The exi
 
 ### Daily workspace
 
-Keep **Signals** as the page label. The table lists customer situations and standalone actionable recommendations, not raw observations or Agent runs. Linked recommendations stay with their canonical situation instead of duplicating rows. Raw signals remain inspectable as evidence and on existing entity surfaces.
+Keep **Signals** as the page label. The table lists customer situations, standalone actionable recommendations, and commercially relevant evidence grouped by customer and motion—not raw observations or Agent runs. Linked evidence/recommendations stay with their canonical situation instead of duplicating rows. Untracked evidence groups remain visible without an automation-routing policy or activation-ready rules; viewing them creates no situation or playbook enrollment. Raw signals remain inspectable as evidence and on existing entity surfaces.
 
 **Agreed category navigation:** All, Sales, Onboarding & adoption, Expansion, Retention. Use “Sales,” not the earlier proposed “New business” label.
 
@@ -163,8 +163,8 @@ This is a presentation grouping, not a data or automation migration. Preserve th
 
 - Preserve the agreed fixed Signal/Customer/Category/Owner/Priority columns, with the next step on the secondary line. Never hide columns as filters change.
 - Category is the only tab-style selector. Assignment, work state, evidence review, priority, and additional supported filter controls remain directly in the main toolbar, not inside “More filters.” Distinguish evidence review from action approval in labels.
-- Default to Mine + Needs attention: my pending decisions/actions and situations requiring my triage or escalation. An owned situation waiting solely on a colleague is Waiting, not automatically “needs my attention.” All open, waiting, automatically handled, paused, and closed work remain reachable through the visible work-state filter; never silently change scope to make an empty page look populated.
-- Filter, count, rank, and paginate situations and standalone recommendation rows together on the server. Category counts honor all filters except category. Distinguish inbox-row, participating-situation and approval totals. Aggregate before pagination; never calculate global totals from a fetched page.
+- Default to Everyone + Needs attention so existing evidence and unassigned work remain discoverable. Preserve explicitly selected personal/team filters; an empty personal view must not silently broaden itself. Under Mine, an owned situation waiting solely on a colleague is Waiting, not automatically “needs my attention.” All open, waiting, automatically handled, paused, and closed work remain reachable through the visible work-state filter.
+- Filter, count, rank, and paginate situations, standalone recommendations, and untracked evidence groups together on the server. Category counts honor all filters except category. Distinguish inbox-row, participating-situation and approval totals. Aggregate before pagination; never calculate global totals from a fetched page.
 - Retain business-priority ranking; do not replace urgency with category order or extraction confidence. Search and evidence filters must retain authorized opposing context without including unseen items in an action.
 - The drawer leads with what changed, the proposed next action, and essential evidence. One clear primary action; deeper history, diagnostics, and execution detail are available on demand. Show source excerpts when they change the decision, not repetitive AI summaries.
 - Multiple pending actions remain visible and individually scoped. “Approve response” is not “approve everything for this customer.” Preserve queue filters and position on return.

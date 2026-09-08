@@ -14,6 +14,7 @@ import type { CRMSignalInboxItem } from '@/lib/crmSignalInboxTypes';
 import { PlaybookError, PlaybookHelp, PlaybookLoading, PlaybookPagination, PlaybookSelect } from '@/components/crm/playbooks/PlaybookUI';
 import { SignalDrawer } from '@/components/crm/signals/SignalDrawer';
 import { RecommendationDrawer } from '@/components/crm/signals/RecommendationDrawer';
+import { SignalGroupDrawer } from '@/components/crm/signals/SignalGroupDrawer';
 
 interface Props { search: SignalsSearch; onChange: (search: SignalsSearch, replace?: boolean) => void }
 
@@ -29,15 +30,15 @@ export function SignalsPage({ search, onChange }: Props) {
 }
 
 function SignalsList({ ws, slug, canEdit, search, onChange }: Props & { ws: string; slug: string; canEdit: boolean }) {
-  const filters = { ...search, signal: undefined, recommendation: undefined, view: undefined };
+  const filters = { ...search, signal: undefined, recommendation: undefined, group: undefined, view: undefined };
   const query = useDeferredValue(search.q?.trim() || '');
   const list = useCRMSignalInbox(ws, { ...filters, q: query });
-  const scope = filters.scope || 'mine';
+  const scope = filters.scope || 'all';
   const state = filters.state || 'needs_attention';
   const category = filters.category || 'all';
   const change = (values: Partial<SignalsSearch>, replace = false) => onChange({ ...search, ...values, page: 1 }, replace);
-  const select = (item?: Pick<CRMSignalInboxItem, 'id' | 'kind'>) => onChange({ ...search, signal: item?.kind === 'situation' ? item.id : undefined, recommendation: item?.kind === 'recommendation' ? item.id : undefined });
-  const clear = () => onChange({ signal: search.signal, recommendation: search.recommendation, scope: 'all', state: 'all', category: 'all', page: 1 });
+  const select = (item?: Pick<CRMSignalInboxItem, 'id' | 'kind'>) => onChange({ ...search, signal: item?.kind === 'situation' ? item.id : undefined, recommendation: item?.kind === 'recommendation' ? item.id : undefined, group: item?.kind === 'evidence' ? item.id : undefined });
+  const clear = () => onChange({ signal: search.signal, recommendation: search.recommendation, group: search.group, scope: 'all', state: 'all', category: 'all', page: 1 });
   const filtered = !!search.q || scope !== 'all' || state !== 'all' || category !== 'all' || !!filters.priority || !!filters.evidence_review || !!filters.attention || !!filters.action_type;
   return <QuietPageViewport>
     <QuietPageHeader title="Signals" description="Know what needs attention. Agree the next step." actions={<div className="flex flex-wrap items-center gap-4 text-sm">
@@ -75,6 +76,6 @@ function SignalsList({ ws, slug, canEdit, search, onChange }: Props & { ws: stri
       </Table> : <QuietEmptyState title={filtered ? 'No signals match this view' : 'No signals yet'} description={filtered ? 'Try another category, assignment, or status.' : 'Customer activity and recommendations will appear here when there is something to follow up on.'} action={filtered ? <QuietTextAction onClick={clear}>Show all signals</QuietTextAction> : <Link className="text-sm text-quiet-accent hover:underline" to="/w/$slug/crm/insights" params={{ slug }} search={{ view: 'evidence' }}>Explore customer evidence</Link>} />}
       <PlaybookPagination page={filters.page || 1} total={list.data.total} pageSize={list.data.page_size} onChange={(page) => onChange({ ...search, page })} busy={list.isFetching} />
     </>}
-    {search.signal ? <SignalDrawer key={search.signal} ws={ws} slug={slug} signalId={search.signal} canEdit={canEdit} onClose={() => select()} /> : search.recommendation && <RecommendationDrawer key={search.recommendation} ws={ws} slug={slug} id={search.recommendation} canEdit={canEdit} onClose={() => select()} onSignal={(id) => select({ id, kind: 'situation' })} />}
+    {search.signal ? <SignalDrawer key={search.signal} ws={ws} slug={slug} signalId={search.signal} canEdit={canEdit} onClose={() => select()} /> : search.recommendation ? <RecommendationDrawer key={search.recommendation} ws={ws} slug={slug} id={search.recommendation} canEdit={canEdit} onClose={() => select()} onSignal={(id) => select({ id, kind: 'situation' })} /> : search.group && <SignalGroupDrawer key={search.group} ws={ws} slug={slug} id={search.group} canEdit={canEdit} onClose={() => select()} />}
   </QuietPageViewport>;
 }

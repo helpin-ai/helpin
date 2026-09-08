@@ -1,5 +1,5 @@
 import { api } from '@/lib/api';
-import type { CRMSignalDismissalReason, CRMSuggestion } from '@/lib/crmTypes';
+import type { CRMSignalAccountStory, CRMSignalDismissalReason, CRMSuggestion } from '@/lib/crmTypes';
 import type { CRMSignalInboxList, CRMInboxRecommendation } from '@/lib/crmSignalInboxTypes';
 import { inboxQueryFilter, type SignalsSearch } from '@/lib/crmSignalInboxQueryBuilder';
 
@@ -10,10 +10,11 @@ function query(ws: string, values: Record<string, string | number | undefined> =
 }
 export const crmSignalInboxService = {
   list: (ws: string, search: SignalsSearch) => api.get<CRMSignalInboxList>(`/crm/signal-inbox${query(ws, {
-    scope: search.scope || 'mine', state: search.state || 'needs_attention', category: search.category || 'all',
+    scope: search.scope || 'all', state: search.state || 'needs_attention', category: search.category || 'all',
     q: search.q?.trim(), sort: search.sort || 'priority', page: search.page || 1, page_size: 25,
     filter: JSON.stringify(inboxQueryFilter(search)),
   })}`),
+  evidence: (ws: string, id: string) => api.get<CRMSignalAccountStory>(`/crm/signal-inbox/evidence/${encodeURIComponent(id)}${query(ws)}`),
   recommendation: (ws: string, id: string) => api.get<CRMInboxRecommendation>(`/crm/signal-inbox/recommendations/${encodeURIComponent(id)}${query(ws)}`),
   accept: (ws: string, id: string, revision: string, edits?: Record<string, unknown>) => api.post<CRMSuggestion>(`/crm/signal-inbox/recommendations/${encodeURIComponent(id)}/accept${query(ws)}`, { revision, ...(edits ? { edits } : {}) }),
   dismiss: (ws: string, id: string, revision: string, reason: CRMSignalDismissalReason) => api.post<CRMSuggestion>(`/crm/signal-inbox/recommendations/${encodeURIComponent(id)}/dismiss${query(ws)}`, { revision, reason }),

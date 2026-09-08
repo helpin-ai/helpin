@@ -5,6 +5,17 @@ import { crmSignalInboxService as service } from '../crmSignalInboxService';
 vi.mock('@/lib/api', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 describe('CRM signal inbox transport', () => {
   beforeEach(() => vi.clearAllMocks());
+  it('shows everyone by default while preserving an explicit personal filter', () => {
+    service.list('ws', {});
+    expect(new URL(vi.mocked(api.get).mock.calls[0][0], 'https://local.test').searchParams.get('scope')).toBe('all');
+    service.list('ws', { scope: 'mine' });
+    expect(new URL(vi.mocked(api.get).mock.calls[1][0], 'https://local.test').searchParams.get('scope')).toBe('mine');
+  });
+  it('reads evidence through its own endpoint without creating tracked work', () => {
+    service.evidence('ws', 'group-id');
+    expect(api.get).toHaveBeenCalledWith('/crm/signal-inbox/evidence/group-id?workspace_id=ws');
+    expect(api.post).not.toHaveBeenCalled();
+  });
   it('uses a server-paginated union with structured filters', () => {
     service.list('ws', { scope: 'all', state: 'needs_approval', priority: 'unscored', action_type: 'enrichment', sort: 'recommended', page: 2 });
     const url = new URL(vi.mocked(api.get).mock.calls[0][0], 'https://local.test');
