@@ -145,10 +145,10 @@ func TestAIUsageReconcileIsIdempotentAndUpdatesPeriod(t *testing.T) {
 
 func TestAIUsageCheckpointIsIdempotentAndKeepsReservationActive(t *testing.T) {
 	repo := setupAIUsageRepository(t, model.AIUsageEnforcementStrict, 1_000_000)
-	if err := repo.db.Exec(`CREATE TABLE agent_runs (id text PRIMARY KEY, output_summary blob, updated_at datetime)`).Error; err != nil {
+	if err := repo.db.Exec(`CREATE TABLE agent_runs (id text PRIMARY KEY, workspace_id text, output_summary blob, updated_at datetime)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.db.Exec(`INSERT INTO agent_runs (id, output_summary) VALUES (?, ?)`, "run-1", `{}`).Error; err != nil {
+	if err := repo.db.Exec(`INSERT INTO agent_runs (id, workspace_id, output_summary) VALUES (?, ?, ?)`, "run-1", "ws", `{}`).Error; err != nil {
 		t.Fatal(err)
 	}
 	reservation, err := repo.Reserve(context.Background(), AIUsageReservationRequest{

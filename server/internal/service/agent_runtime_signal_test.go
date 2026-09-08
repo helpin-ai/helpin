@@ -50,8 +50,9 @@ type fakeAgentRuntimeSignalClient struct {
 }
 
 type fakeAgentRuntimeResumeCall struct {
-	runID string
-	req   AgentRuntimeResumeRunRequest
+	runID      string
+	req        AgentRuntimeResumeRunRequest
+	provenance string
 }
 
 func (c *fakeAgentRuntimeSignalClient) AppID() string {
@@ -174,6 +175,12 @@ func (c *fakeAgentRuntimeSignalClient) ResumeRun(_ context.Context, runtimeRunID
 		return nil, c.resumeErr
 	}
 	return &AgentRuntimeRun{ID: runtimeRunID, Status: model.AgentRunStatusRunning}, nil
+}
+
+func (c *fakeAgentRuntimeSignalClient) ResumeRunWithProvenance(ctx context.Context, runtimeRunID string, req AgentRuntimeResumeRunRequest, provenance string) (*AgentRuntimeRun, error) {
+	run, err := c.ResumeRun(ctx, runtimeRunID, req)
+	c.resumeCalls[len(c.resumeCalls)-1].provenance = provenance
+	return run, err
 }
 
 func (c *fakeAgentRuntimeSignalClient) CancelRun(_ context.Context, runtimeRunID string) (*AgentRuntimeRun, error) {

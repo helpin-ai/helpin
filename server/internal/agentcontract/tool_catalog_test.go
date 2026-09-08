@@ -649,7 +649,8 @@ func TestWorkspaceReadToolCatalogContracts(t *testing.T) {
 		properties, _ := schema["properties"].(map[string]any)
 		switch tool.Name {
 		case "read_files":
-			if !strings.Contains(tool.Description, "2,100-character content budget") ||
+			if !strings.Contains(tool.Description, "2,100 characters") ||
+				!strings.Contains(tool.Description, "8,192 with native context management") ||
 				!strings.Contains(tool.Description, "next_start_line") {
 				t.Fatalf("read_files description omits bounded continuation contract: %q", tool.Description)
 			}

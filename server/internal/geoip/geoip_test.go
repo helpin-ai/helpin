@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -12,7 +13,7 @@ import (
 	"testing"
 )
 
-func TestEnsureDatabaseDownloadsTarGzArchive(t *testing.T) {
+func TestDownloadDatabaseDownloadsTarGzArchive(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
@@ -52,7 +53,7 @@ func TestEnsureDatabaseDownloadsTarGzArchive(t *testing.T) {
 		}, nil
 	})}
 
-	err := ensureDatabase(targetPath, Options{
+	err := downloadDatabase(context.Background(), targetPath, Options{
 		Path:        targetPath,
 		DownloadURL: "https://download.maxmind.test/GeoLite2-City.tar.gz",
 		AccountID:   "acct-123",
@@ -69,29 +70,6 @@ func TestEnsureDatabaseDownloadsTarGzArchive(t *testing.T) {
 	}
 	if !bytes.Equal(got, expected) {
 		t.Fatalf("unexpected file content: got %q want %q", string(got), string(expected))
-	}
-}
-
-func TestEnsureDatabaseSkipsDownloadWhenFileExists(t *testing.T) {
-	t.Parallel()
-
-	tempDir := t.TempDir()
-	targetPath := filepath.Join(tempDir, "GeoLite2-City.mmdb")
-	if err := os.WriteFile(targetPath, []byte("existing"), 0o644); err != nil {
-		t.Fatalf("write existing file: %v", err)
-	}
-
-	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		t.Fatal("download should not have been attempted")
-		return nil, nil
-	})}
-
-	if err := ensureDatabase(targetPath, Options{
-		Path:        targetPath,
-		DownloadURL: "https://download.maxmind.test/GeoLite2-City.tar.gz",
-		HTTPClient:  client,
-	}); err != nil {
-		t.Fatalf("ensure database: %v", err)
 	}
 }
 
