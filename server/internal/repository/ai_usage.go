@@ -11,7 +11,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -65,6 +64,9 @@ func (r *AIUsageRepository) Reserve(ctx context.Context, input AIUsageReservatio
 	}
 	var reservation model.AIUsageReservation
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAIUsageWorkspace(tx, input.WorkspaceID); err != nil {
+			return err
+		}
 		if err := tx.Where("idempotency_key = ?", input.IdempotencyKey).First(&reservation).Error; err == nil {
 			var period model.AIUsagePeriod
 			if err := tx.Select("enforcement_mode").First(&period, "id = ?", reservation.PeriodID).Error; err != nil {
@@ -82,6 +84,9 @@ func (r *AIUsageRepository) Reserve(ctx context.Context, input AIUsageReservatio
 		var period model.AIUsagePeriod
 		if err := query.First(&period).Error; err != nil {
 			return fmt.Errorf("load open AI usage period: %w", err)
+		}
+		if !period.PeriodEnd.After(time.Now().UTC()) {
+			return ErrAIUsagePeriodExpired
 		}
 		if period.EnforcementMode == model.AIUsageEnforcementStrict && period.UsedMicrousd+period.ReservedMicrousd+input.ReservedMicrousd > period.AllowanceMicrousd {
 			return model.ErrAIUsageExhausted
@@ -115,6 +120,9 @@ func (r *AIUsageRepository) RecordUncharged(ctx context.Context, entry model.AIU
 		return fmt.Errorf("invalid uncharged AI usage entry")
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAIUsageWorkspace(tx, entry.WorkspaceID); err != nil {
+			return err
+		}
 		var existing model.AIUsageLedgerEntry
 		if err := tx.Where("idempotency_key = ?", entry.IdempotencyKey).First(&existing).Error; err == nil {
 			return nil
@@ -140,6 +148,9 @@ func (r *AIUsageRepository) ResizeReservation(ctx context.Context, id string, ta
 		return fmt.Errorf("invalid AI usage reservation resize")
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAIUsageReservationWorkspace(tx, id); err != nil {
+			return err
+		}
 		var reservation model.AIUsageReservation
 		query := tx.Where("id = ?", id)
 		if tx.Dialector.Name() == "postgres" {
@@ -147,6 +158,9 @@ func (r *AIUsageRepository) ResizeReservation(ctx context.Context, id string, ta
 		}
 		if err := query.First(&reservation).Error; err != nil {
 			return fmt.Errorf("load AI usage reservation: %w", err)
+		}
+		if err := rebindAIUsageReservation(tx, &reservation); err != nil {
+			return err
 		}
 		if reservation.Status != model.AIUsageReservationActive {
 			return nil
@@ -160,7 +174,7 @@ func (r *AIUsageRepository) ResizeReservation(ctx context.Context, id string, ta
 			return fmt.Errorf("load AI usage period: %w", err)
 		}
 		delta := targetMicrousd - reservation.ReservedMicrousd
-		if period.EnforcementMode == model.AIUsageEnforcementStrict && period.UsedMicrousd+period.ReservedMicrousd+delta > period.AllowanceMicrousd {
+		if delta > 0 && period.EnforcementMode == model.AIUsageEnforcementStrict && period.UsedMicrousd+period.ReservedMicrousd+delta > period.AllowanceMicrousd {
 			return model.ErrAIUsageExhausted
 		}
 		if heartbeat.IsZero() {
@@ -183,6 +197,27 @@ func (r *AIUsageRepository) Reconcile(ctx context.Context, input AIUsageReconcil
 	}
 	var period model.AIUsagePeriod
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAIUsageReservationWorkspace(tx, input.ReservationID); err != nil {
+			return err
+		}
+		if input.RunID != "" {
+			var reservation model.AIUsageReservation
+			if err := tx.Select("workspace_id").First(&reservation, "id = ?", input.ReservationID).Error; err != nil {
+				return err
+			}
+			current, err := loadRunUsageWatermark(tx, reservation.WorkspaceID, input.RunID)
+			if err != nil {
+				return err
+			}
+			next, err := parseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
+			if err != nil {
+				return err
+			}
+			if current.BudgetTurn > next.BudgetTurn {
+				return ErrAIUsageWatermarkChanged
+			}
+		}
+
 		var existing model.AIUsageLedgerEntry
 		if err := tx.Where("idempotency_key = ?", input.Entry.IdempotencyKey).First(&existing).Error; err == nil {
 			if input.AllowLateUsage && input.RunID != "" && (existing.InputTokensTotal != input.Entry.InputTokensTotal || existing.OutputTokens != input.Entry.OutputTokens || existing.ReasoningTokens != input.Entry.ReasoningTokens || existing.CacheReadTokens != input.Entry.CacheReadTokens) {
@@ -213,6 +248,9 @@ func (r *AIUsageRepository) Reconcile(ctx context.Context, input AIUsageReconcil
 		}
 		if err := reservationQuery.First(&reservation).Error; err != nil {
 			return fmt.Errorf("load AI usage reservation: %w", err)
+		}
+		if err := rebindAIUsageReservation(tx, &reservation); err != nil {
+			return err
 		}
 		if reservation.Status != model.AIUsageReservationActive && !(input.AllowLateUsage &&
 			(reservation.Status == model.AIUsageReservationReconciled || reservation.Status == model.AIUsageReservationReleased)) {
@@ -289,6 +327,27 @@ func (r *AIUsageRepository) Checkpoint(ctx context.Context, input AIUsageCheckpo
 	}
 	var period model.AIUsagePeriod
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAIUsageReservationWorkspace(tx, input.ReservationID); err != nil {
+			return err
+		}
+		if input.RunID != "" {
+			var reservation model.AIUsageReservation
+			if err := tx.Select("workspace_id").First(&reservation, "id = ?", input.ReservationID).Error; err != nil {
+				return err
+			}
+			current, err := loadRunUsageWatermark(tx, reservation.WorkspaceID, input.RunID)
+			if err != nil {
+				return err
+			}
+			next, err := parseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
+			if err != nil {
+				return err
+			}
+			if current.BudgetTurn > next.BudgetTurn {
+				return ErrAIUsageWatermarkChanged
+			}
+		}
+
 		var existing model.AIUsageLedgerEntry
 		if err := tx.Where("idempotency_key = ?", input.Entry.IdempotencyKey).First(&existing).Error; err == nil {
 			if input.RunID != "" {
@@ -319,6 +378,9 @@ func (r *AIUsageRepository) Checkpoint(ctx context.Context, input AIUsageCheckpo
 		}
 		if err := reservationQuery.First(&reservation).Error; err != nil {
 			return fmt.Errorf("load AI usage checkpoint reservation: %w", err)
+		}
+		if err := rebindAIUsageReservation(tx, &reservation); err != nil {
+			return err
 		}
 		if reservation.Status != model.AIUsageReservationActive {
 			return fmt.Errorf("AI usage reservation is %s", reservation.Status)
@@ -390,6 +452,9 @@ func (r *AIUsageRepository) Release(ctx context.Context, id, reason string) erro
 		return fmt.Errorf("invalid AI usage reservation release")
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAIUsageReservationWorkspace(tx, id); err != nil {
+			return err
+		}
 		var reservation model.AIUsageReservation
 		query := tx.Where("id = ?", id)
 		if tx.Dialector.Name() == "postgres" {
@@ -417,94 +482,6 @@ func (r *AIUsageRepository) Release(ctx context.Context, id, reason string) erro
 		}
 		return nil
 	})
-}
-
-// ClosePeriod snapshots exact overage for asynchronous settlement and closes the period.
-func (r *AIUsageRepository) ClosePeriod(ctx context.Context, workspaceID string, at time.Time) (*model.AIUsageSettlement, error) {
-	var settlement *model.AIUsageSettlement
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var period model.AIUsagePeriod
-		query := tx.Where("workspace_id = ? AND status = ? AND period_end <= ?", workspaceID, model.AIUsagePeriodOpen, at)
-		if tx.Dialector.Name() == "postgres" {
-			query = query.Clauses(clause.Locking{Strength: "UPDATE"})
-		}
-		if err := query.Order("period_end, id").First(&period).Error; err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("load due AI usage period: %w", err)
-			}
-			if err := tx.Where("workspace_id = ? AND status = ?", workspaceID, model.AIUsagePeriodClosed).
-				Order("period_end DESC").First(&period).Error; err != nil {
-				return fmt.Errorf("load closed AI usage period: %w", err)
-			}
-			var existing model.AIUsageSettlement
-			if err := tx.Where("period_id = ?", period.ID).First(&existing).Error; err == nil {
-				settlement = &existing
-			}
-			return nil
-		}
-		if period.ReservedMicrousd != 0 {
-			return fmt.Errorf("AI usage period has active reservations")
-		}
-		if err := tx.Model(&period).Update("status", model.AIUsagePeriodClosed).Error; err != nil {
-			return fmt.Errorf("close AI usage period: %w", err)
-		}
-		if period.EnforcementMode != model.AIUsageEnforcementExtra || period.OverageMicrousd <= 0 {
-			return nil
-		}
-		key := fmt.Sprintf("ai-usage:%s:%s:%s:v1", workspaceID, period.ID, period.PricingVersion)
-		var existing model.AIUsageSettlement
-		if err := tx.Where("idempotency_key = ?", key).First(&existing).Error; err == nil {
-			settlement = &existing
-			return nil
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		cents, adjustment, err := aiusage.RoundMicrousdToCents(period.OverageMicrousd)
-		if err != nil {
-			return err
-		}
-		created := model.AIUsageSettlement{
-			ID: uuid.NewString(), WorkspaceID: workspaceID, PeriodID: period.ID,
-			ExactOverageMicrousd: period.OverageMicrousd, RoundedInvoiceCents: cents,
-			RoundingAdjustmentMicrousd: adjustment, IdempotencyKey: key, Status: model.AIUsageSettlementPending,
-		}
-		var billing model.WorkspaceBilling
-		if err := tx.Select("stripe_customer_id", "stripe_subscription_id").Where("workspace_id = ?", workspaceID).First(&billing).Error; err == nil {
-			created.StripeCustomerID = billing.StripeCustomerID
-			created.StripeSubscriptionID = billing.StripeSubscriptionID
-		}
-		if err := tx.Create(&created).Error; err != nil {
-			return fmt.Errorf("create AI usage settlement: %w", err)
-		}
-		settlement = &created
-		return nil
-	})
-	return settlement, err
-}
-
-// OpenNextPeriod creates a zero-used period independently of prior settlement work.
-func (r *AIUsageRepository) OpenNextPeriod(ctx context.Context, input AIUsagePeriodSchedule) (*model.AIUsagePeriod, error) {
-	if input.WorkspaceID == "" || input.PricingVersion == "" || !input.End.After(input.Start) || input.AllowanceMicrousd < 0 {
-		return nil, fmt.Errorf("invalid AI usage period schedule")
-	}
-	period := model.AIUsagePeriod{
-		ID: uuid.NewString(), WorkspaceID: input.WorkspaceID, PeriodStart: input.Start, PeriodEnd: input.End,
-		AllowanceMicrousd: input.AllowanceMicrousd, EnforcementMode: input.EnforcementMode,
-		Status: model.AIUsagePeriodOpen, PricingVersion: input.PricingVersion,
-	}
-	if err := r.db.WithContext(ctx).Create(&period).Error; err != nil {
-		return nil, fmt.Errorf("open AI usage period: %w", err)
-	}
-	return &period, nil
-}
-
-// ListDuePeriods returns open periods ready to close in stable order.
-func (r *AIUsageRepository) ListDuePeriods(ctx context.Context, now time.Time, limit int) ([]model.AIUsagePeriod, error) {
-	var periods []model.AIUsagePeriod
-	err := r.db.WithContext(ctx).Where("(status = ? AND period_end <= ?) OR (status = ? AND NOT EXISTS (SELECT 1 FROM billing_ai_usage_periods successor WHERE successor.workspace_id = billing_ai_usage_periods.workspace_id AND successor.status = ?))",
-		model.AIUsagePeriodOpen, now, model.AIUsagePeriodClosed, model.AIUsagePeriodOpen).
-		Order("period_end, id").Limit(limit).Find(&periods).Error
-	return periods, err
 }
 
 // ListStaleReservations identifies candidates for execution-aware recovery without releasing them.

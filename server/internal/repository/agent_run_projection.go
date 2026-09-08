@@ -24,7 +24,7 @@ func (r *AgentRunRepository) UpdateRuntimeProjection(ctx context.Context, run *m
 		if err != nil {
 			return err
 		}
-		if current.Turn > next.Turn || current.InputTokens > next.InputTokens ||
+		if current.BudgetTurn > next.BudgetTurn || current.Turn > next.Turn || current.InputTokens > next.InputTokens ||
 			current.OutputTokens > next.OutputTokens || current.CachedInputTokens > next.CachedInputTokens ||
 			current.ReasoningOutputTokens > next.ReasoningOutputTokens {
 			return ErrAIUsageWatermarkChanged
@@ -54,6 +54,7 @@ func (r *AgentRunRepository) UpdateRuntimeProjection(ctx context.Context, run *m
 }
 
 type runUsageWatermark struct {
+	BudgetTurn            int `json:"-"`
 	Turn                  int `json:"turn"`
 	InputTokens           int `json:"input_tokens"`
 	OutputTokens          int `json:"output_tokens"`
@@ -63,13 +64,15 @@ type runUsageWatermark struct {
 
 func parseRunUsageWatermark(summary json.RawMessage) (runUsageWatermark, error) {
 	var body struct {
-		Checkpoint runUsageWatermark `json:"ai_usage_checkpoint"`
+		Checkpoint  runUsageWatermark `json:"ai_usage_checkpoint"`
+		BudgetStart runUsageWatermark `json:"ai_usage_turn_start"`
 	}
 	if len(summary) > 0 {
 		if err := json.Unmarshal(summary, &body); err != nil {
 			return runUsageWatermark{}, fmt.Errorf("decode run usage watermark: %w", err)
 		}
 	}
+	body.Checkpoint.BudgetTurn = body.BudgetStart.Turn
 	return body.Checkpoint, nil
 }
 

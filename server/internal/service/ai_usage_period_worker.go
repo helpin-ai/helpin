@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -12,9 +13,8 @@ import (
 
 // AIUsagePeriodStore is the transaction boundary for allowance rollover.
 type AIUsagePeriodStore interface {
-	ListDuePeriods(context.Context, time.Time, int) ([]model.AIUsagePeriod, error)
-	ClosePeriod(context.Context, string, time.Time) (*model.AIUsageSettlement, error)
-	OpenNextPeriod(context.Context, repository.AIUsagePeriodSchedule) (*model.AIUsagePeriod, error)
+	ListDuePeriodsAfter(context.Context, time.Time, *model.AIUsagePeriod, int) ([]model.AIUsagePeriod, error)
+	RolloverPeriod(context.Context, string, repository.AIUsagePeriodSchedule) error
 }
 
 // AIUsagePeriodScheduleResolver derives the next plan allowance and anniversary window.
@@ -31,27 +31,59 @@ func NewAIUsagePeriodWorker(store AIUsagePeriodStore, schedule AIUsagePeriodSche
 	return &AIUsagePeriodWorker{store: store, schedule: schedule}
 }
 
-// CloseDuePeriods closes due periods and then opens successors separately.
+// CloseDuePeriods renews due allowances atomically and isolates workspace failures.
 func (w *AIUsagePeriodWorker) CloseDuePeriods(ctx context.Context, now time.Time, limit int) (int, error) {
-	periods, err := w.store.ListDuePeriods(ctx, now, limit)
-	if err != nil {
-		return 0, err
+	if limit <= 0 {
+		limit = 100
 	}
 	processed := 0
-	for _, period := range periods {
-		if _, err := w.store.ClosePeriod(ctx, period.WorkspaceID, now); err != nil {
-			return processed, fmt.Errorf("close AI usage period %s: %w", period.ID, err)
+	var failures []error
+	var cursor *model.AIUsagePeriod
+	for {
+		if err := ctx.Err(); err != nil {
+			return processed, errors.Join(append(failures, err)...)
 		}
-		schedule, err := w.schedule(ctx, period.WorkspaceID, period.PeriodEnd)
+		periods, err := w.store.ListDuePeriodsAfter(ctx, now, cursor, limit)
 		if err != nil {
-			return processed, fmt.Errorf("schedule next AI usage period: %w", err)
+			return processed, errors.Join(append(failures, err)...)
 		}
-		if _, err := w.store.OpenNextPeriod(ctx, schedule); err != nil {
-			return processed, fmt.Errorf("open next AI usage period: %w", err)
+		for _, period := range periods {
+			schedule, err := currentAIUsageSchedule(ctx, w.schedule, period, now)
+			if err == nil {
+				err = w.store.RolloverPeriod(ctx, period.ID, schedule)
+			}
+			if err != nil {
+				failures = append(failures, fmt.Errorf("roll over AI usage period %s: %w", period.ID, err))
+				continue
+			}
+			processed++
 		}
-		processed++
+		if len(periods) < limit {
+			break
+		}
+		last := periods[len(periods)-1]
+		cursor = &last
 	}
-	return processed, nil
+	return processed, errors.Join(failures...)
+}
+
+// Catch up missed renewals without granting an obsolete allowance window.
+func currentAIUsageSchedule(ctx context.Context, resolve AIUsagePeriodScheduleResolver, period model.AIUsagePeriod, now time.Time) (repository.AIUsagePeriodSchedule, error) {
+	start := period.PeriodEnd
+	for attempts := 0; attempts < 1200; attempts++ {
+		schedule, err := resolve(ctx, period.WorkspaceID, start)
+		if err != nil {
+			return schedule, err
+		}
+		if schedule.WorkspaceID != period.WorkspaceID || !schedule.Start.Equal(start) || !schedule.End.After(start) {
+			return schedule, fmt.Errorf("invalid AI usage renewal schedule")
+		}
+		if schedule.End.After(now) {
+			return schedule, nil
+		}
+		start = schedule.End
+	}
+	return repository.AIUsagePeriodSchedule{}, fmt.Errorf("AI usage renewal exceeded catch-up limit")
 }
 
 // Run checks due periods until cancellation.

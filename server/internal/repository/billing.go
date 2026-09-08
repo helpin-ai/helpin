@@ -53,6 +53,9 @@ func (r *BillingRepository) EnsureOpenAIUsagePeriod(ctx context.Context, input A
 	}
 	var period model.AIUsagePeriod
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockAIUsageWorkspace(tx, input.WorkspaceID); err != nil {
+			return err
+		}
 		if err := tx.Where("workspace_id = ? AND status = ?", input.WorkspaceID, model.AIUsagePeriodOpen).First(&period).Error; err == nil {
 			return nil
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -691,12 +694,22 @@ type UsageLedgerRow struct {
 }
 
 // UsageByDayFeature groups usage ledger entries by day and feature for a
-// workspace within [start, end).
+// allowance window, including late postings. Arbitrary windows use [start, end).
 func (r *BillingRepository) UsageByDayFeature(ctx context.Context, workspaceID string, start, end time.Time) ([]UsageLedgerRow, error) {
+	period, err := r.GetAIUsagePeriodByWindow(ctx, workspaceID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	query := r.db.WithContext(ctx).Model(&model.AIUsageLedgerEntry{}).
+		Where("workspace_id = ? AND entry_kind IN ?", workspaceID, []string{"usage", "estimate"})
+	if period != nil {
+		query = query.Where("period_id = ?", period.ID)
+	} else {
+		query = query.Where("created_at >= ? AND created_at < ?", start, end)
+	}
+
 	var rows []UsageLedgerRow
-	if err := r.db.WithContext(ctx).
-		Model(&model.AIUsageLedgerEntry{}).
-		Select(`DATE(created_at) AS day, feature_key, model_tier, COUNT(*) AS entries,
+	if err := query.Select(`DATE(created_at) AS day, feature_key, model_tier, COUNT(*) AS entries,
 			SUM(CASE WHEN measurement_status = 'actual' THEN 1 ELSE 0 END) AS actual_entries,
 			SUM(CASE WHEN measurement_status = 'estimated' THEN 1 ELSE 0 END) AS estimated_entries,
 			COALESCE(SUM(final_charged_microusd),0) AS charged_microusd,
@@ -705,12 +718,33 @@ func (r *BillingRepository) UsageByDayFeature(ctx context.Context, workspaceID s
 			COALESCE(SUM(cache_write_tokens),0) AS cache_write_tokens,
 			COALESCE(SUM(output_tokens),0) AS output_tokens,
 			COALESCE(SUM(reasoning_tokens),0) AS reasoning_tokens`).
-		Where("workspace_id = ? AND entry_kind IN ? AND created_at >= ? AND created_at < ?",
-			workspaceID, []string{"usage", "estimate"}, start, end).
 		Group("DATE(created_at), feature_key, model_tier").
 		Order("day ASC").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("aggregate usage by day feature: %w", err)
 	}
 	return rows, nil
+}
+
+// GetAIUsagePeriodByWindow resolves a billing-period report by its exact bounds.
+func (r *BillingRepository) GetAIUsagePeriodByWindow(ctx context.Context, workspaceID string, start, end time.Time) (*model.AIUsagePeriod, error) {
+	var period model.AIUsagePeriod
+	err := r.db.WithContext(ctx).Where("workspace_id = ? AND period_start = ? AND period_end = ?", workspaceID, start, end).First(&period).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &period, err
+}
+
+// RolloverAIUsagePeriod advances an allowance under the shared workspace lock.
+func (r *BillingRepository) RolloverAIUsagePeriod(ctx context.Context, periodID string, schedule AIUsagePeriodSchedule) error {
+	return NewAIUsageRepository(r.db).RolloverPeriod(ctx, periodID, schedule)
+}
+
+// ListAIUsagePeriods returns recent allowance windows for billing history.
+func (r *BillingRepository) ListAIUsagePeriods(ctx context.Context, workspaceID string) ([]model.AIUsagePeriod, error) {
+	var periods []model.AIUsagePeriod
+	err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).
+		Order("period_start DESC, id DESC").Limit(24).Find(&periods).Error
+	return periods, err
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -33,16 +34,51 @@ type fakePeriodWorkerStore struct {
 	opened repository.AIUsagePeriodSchedule
 }
 
-func (f *fakePeriodWorkerStore) ListDuePeriods(context.Context, time.Time, int) ([]model.AIUsagePeriod, error) {
-	return f.due, nil
+func (f *fakePeriodWorkerStore) ListDuePeriodsAfter(_ context.Context, _ time.Time, after *model.AIUsagePeriod, limit int) ([]model.AIUsagePeriod, error) {
+	start := 0
+	if after != nil {
+		for i, p := range f.due {
+			if p.ID == after.ID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	end := min(start+limit, len(f.due))
+	return f.due[start:end], nil
 }
-
-func (f *fakePeriodWorkerStore) ClosePeriod(_ context.Context, workspaceID string, _ time.Time) (*model.AIUsageSettlement, error) {
-	f.closed = workspaceID
-	return nil, nil
-}
-
-func (f *fakePeriodWorkerStore) OpenNextPeriod(_ context.Context, schedule repository.AIUsagePeriodSchedule) (*model.AIUsagePeriod, error) {
+func (f *fakePeriodWorkerStore) RolloverPeriod(_ context.Context, id string, schedule repository.AIUsagePeriodSchedule) error {
+	if id == "blocked" {
+		return errors.New("storage unavailable")
+	}
+	f.closed = schedule.WorkspaceID
 	f.opened = schedule
-	return &model.AIUsagePeriod{}, nil
+	return nil
+}
+
+func TestAIUsagePeriodWorkerContinuesBeyondFailedBatch(t *testing.T) {
+	now := time.Now().UTC()
+	store := &fakePeriodWorkerStore{due: []model.AIUsagePeriod{
+		{ID: "blocked", WorkspaceID: "first", PeriodEnd: now},
+		{ID: "healthy", WorkspaceID: "second", PeriodEnd: now},
+	}}
+	worker := NewAIUsagePeriodWorker(store, func(_ context.Context, ws string, start time.Time) (repository.AIUsagePeriodSchedule, error) {
+		return repository.AIUsagePeriodSchedule{WorkspaceID: ws, Start: start, End: start.AddDate(0, 1, 0)}, nil
+	})
+	count, err := worker.CloseDuePeriods(context.Background(), now, 1)
+	if err == nil || count != 1 || store.closed != "second" {
+		t.Fatalf("count=%d err=%v closed=%s", count, err, store.closed)
+	}
+}
+
+func TestAIUsagePeriodWorkerCatchesUpMissedRenewals(t *testing.T) {
+	now := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
+	store := &fakePeriodWorkerStore{due: []model.AIUsagePeriod{{ID: "old", WorkspaceID: "ws", PeriodEnd: now.AddDate(0, -3, 0)}}}
+	worker := NewAIUsagePeriodWorker(store, func(_ context.Context, ws string, start time.Time) (repository.AIUsagePeriodSchedule, error) {
+		return repository.AIUsagePeriodSchedule{WorkspaceID: ws, Start: start, End: start.AddDate(0, 1, 0)}, nil
+	})
+	count, err := worker.CloseDuePeriods(context.Background(), now, 10)
+	if err != nil || count != 1 || !store.opened.Start.Equal(now) {
+		t.Fatalf("count=%d err=%v schedule=%+v", count, err, store.opened)
+	}
 }

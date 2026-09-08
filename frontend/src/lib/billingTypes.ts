@@ -117,6 +117,7 @@ export interface UsageFeatureRow {
 }
 
 export interface UsageResponse {
+  periods?: { id: string; start: string; end: string; status: string }[];
   period: string;
   period_start: string;
   period_end: string;

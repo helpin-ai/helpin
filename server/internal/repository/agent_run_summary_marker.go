@@ -50,6 +50,21 @@ func (r *AgentRunRepository) UpdateRuntimeSummaryMarker(ctx context.Context, wor
 				return nil
 			}
 		}
+		if key == "ai_usage_turn_start" {
+			current, err := parseRunUsageWatermark(json.RawMessage(row.OutputSummary))
+			if err != nil {
+				return err
+			}
+			var requested runUsageWatermark
+			if err := json.Unmarshal(value, &requested); err != nil {
+				return err
+			}
+			current.BudgetTurn = 0
+			if current != requested {
+				return ErrAIUsageWatermarkChanged
+			}
+		}
+
 		body[key] = value
 		encoded, err := json.Marshal(body)
 		if err != nil {

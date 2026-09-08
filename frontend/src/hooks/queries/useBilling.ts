@@ -28,6 +28,7 @@ export function useWorkspaceBilling(wsId?: string) {
     queryFn: async () => unwrap(await billingService.getWorkspaceBilling(wsId!)),
     enabled: !!wsId,
     staleTime: 60_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -61,6 +62,7 @@ export function useWorkspaceUsage(
     queryFn: async () => unwrap(await billingService.getUsage(wsId!, period!, mode, start, end)),
     enabled: !!wsId && !!period,
     staleTime: 60_000,
+    refetchInterval: 30_000,
   });
 }
 

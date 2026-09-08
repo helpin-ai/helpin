@@ -1446,6 +1446,23 @@ func (s *BillingService) addAIUsage(ctx context.Context, summary *BillingSummary
 			return err
 		}
 	}
+	if !period.PeriodEnd.After(s.now().UTC()) {
+		schedule, err := currentAIUsageSchedule(ctx, s.NextAIUsagePeriodSchedule, *period, s.now().UTC())
+		if err != nil {
+			return err
+		}
+		if err := s.repo.RolloverAIUsagePeriod(ctx, period.ID, schedule); err != nil {
+			return err
+		}
+		period, err = s.repo.GetOpenAIUsagePeriod(ctx, summary.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if period == nil {
+			return fmt.Errorf("renewed AI usage period is missing")
+		}
+	}
+
 	desiredMode := model.AIUsageEnforcementStrict
 	if summary.Plan == model.BillingPlanFounder {
 		desiredMode = model.AIUsageEnforcementSoft

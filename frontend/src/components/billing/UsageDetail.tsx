@@ -8,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -59,16 +60,16 @@ export function selectUsageDateTickIndexes(pointCount: number, maxTicks = 6) {
 
 export function UsageDetail({ workspaceId, periodStart, periodEnd, mockUsage }: Props) {
   const [mode, setMode] = useState<UsageMode>('daily');
+  const [selectedPeriod, setSelectedPeriod] = useState<{ workspaceId: string; start: string; end: string }>();
+  const historicalPeriod = selectedPeriod?.workspaceId === workspaceId ? selectedPeriod : undefined;
+  const start = historicalPeriod?.start ?? periodStart;
+  const end = historicalPeriod?.end ?? periodEnd;
   const period = useMemo(() => {
-    if (periodStart && periodEnd) return `${periodStart}..${periodEnd}`;
+    if (start && end) return `${start}..${end}`;
     return dayjs().format('YYYY-MM');
-  }, [periodEnd, periodStart]);
+  }, [end, start]);
   const { data: queriedUsage, isLoading, isError } = useWorkspaceUsage(
-    workspaceId,
-    period,
-    mode,
-    periodStart,
-    periodEnd,
+    workspaceId, period, mode, start, end,
   );
   const usage = mockUsage ?? queriedUsage;
 
@@ -96,6 +97,25 @@ export function UsageDetail({ workspaceId, periodStart, periodEnd, mockUsage }: 
 
   return (
     <div className="space-y-5">
+      {(usage.periods?.length ?? 0) > 1 && (
+        <Select
+          value={historicalPeriod ? usage.periods?.find((item) => item.start === start && item.end === end)?.id ?? 'current' : 'current'}
+          onValueChange={(id) => {
+            const selected = usage.periods?.find((item) => item.id === id);
+            setSelectedPeriod(selected ? { workspaceId, start: selected.start, end: selected.end } : undefined);
+          }}
+        >
+          <SelectTrigger aria-label="AI usage period" className="w-full sm:w-72">
+            <SelectValue placeholder="Current period" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="current">Current period</SelectItem>
+            {usage.periods?.filter((item) => item.status !== 'open').map((item) => (
+              <SelectItem key={item.id} value={item.id}>{formatUsagePeriod(item.start, item.end)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
       {/* Headline + mode switch */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">

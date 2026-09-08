@@ -72,3 +72,23 @@ func projectionTestRun(t *testing.T) *model.AgentRun {
 	t.Helper()
 	return &model.AgentRun{ID: "run", WorkspaceID: "ws", AgentID: "agent", TargetType: "task", TargetID: "task", RuntimeKind: "native_sdk", InvocationMode: model.InvocationModeInteractive, ApprovalState: "not_required", PauseReason: "none", Status: model.AgentRunStatusCancelled, Input: json.RawMessage(`{}`), OutputSummary: json.RawMessage(`{"ai_usage_checkpoint":{"turn":2,"input_tokens":200,"output_tokens":20,"cached_input_tokens":10,"reasoning_output_tokens":5}}`)}
 }
+
+func TestUpdateRuntimeProjectionCannotEraseResumedTurnBudget(t *testing.T) {
+	db := openAgentVersionColumnCompatDB(t)
+	repo := NewAgentRunRepository(db)
+	ctx := context.Background()
+	run := projectionTestRun(t)
+	if err := repo.Create(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	value := json.RawMessage(`{"turn":2,"input_tokens":200,"output_tokens":20,"cached_input_tokens":10,"reasoning_output_tokens":5}`)
+	if err := repo.UpdateRuntimeSummaryMarker(ctx, run.WorkspaceID, run.ID, "ai_usage_turn_start", value); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateRuntimeProjection(ctx, run); !errors.Is(err, ErrAIUsageWatermarkChanged) {
+		t.Fatalf("stale projection erased turn budget: %v", err)
+	}
+	if err := repo.UpdateRuntimeSummaryMarker(ctx, run.WorkspaceID, run.ID, "ai_usage_turn_start", json.RawMessage(`{"turn":1}`)); !errors.Is(err, ErrAIUsageWatermarkChanged) {
+		t.Fatalf("stale resume accepted: %v", err)
+	}
+}

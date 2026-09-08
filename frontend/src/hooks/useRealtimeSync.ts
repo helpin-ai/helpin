@@ -462,6 +462,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       dispatchAgentRunCompatibilityEvents(event, updateKind)
       if (attentionChanged) scheduleAgentRunInvalidation(queryKeys.automation.runAttentionCount(workspaceId))
       if (updateKind === 'lifecycle') {
+        scheduleAgentRunInvalidation(queryKeys.billing.workspace(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.runsRoot(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.activityRoot(workspaceId))
         scheduleAgentRunInvalidation(queryKeys.automation.overview(workspaceId))

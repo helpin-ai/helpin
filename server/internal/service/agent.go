@@ -5415,6 +5415,12 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 			if err := s.aiUsageMeter.usage.Heartbeat(ctx, metering); err != nil {
 				return nil, nil, fmt.Errorf("reserve AI usage for next chat turn: %w", err)
 			}
+			if err := storeAgentRunTurnBudgetStart(run); err != nil {
+				return nil, nil, err
+			}
+			if err := persistRuntimeSummaryMarker(ctx, s.runRepo, run, agentRunTurnBudgetStartKey); err != nil {
+				return nil, nil, fmt.Errorf("persist AI usage turn budget: %w", err)
+			}
 		}
 	}
 	var message *model.AgentRunMessage

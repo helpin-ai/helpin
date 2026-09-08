@@ -45,7 +45,7 @@ var maxIntValue = int64(^uint(0) >> 1)
 type agentRuntimeProjectionRunRepository interface {
 	GetByIDAny(ctx context.Context, id string) (*model.AgentRun, error)
 	GetByExternalRuntimeID(ctx context.Context, externalRuntime, externalRuntimeID string) (*model.AgentRun, error)
-	ListActiveByExternalRuntime(ctx context.Context, externalRuntime string, olderThan time.Time, limit int) ([]model.AgentRun, error)
+	ListRuntimeReconciliationCandidates(ctx context.Context, externalRuntime string, olderThan time.Time, limit int, after *model.AgentRun) ([]model.AgentRun, error)
 	UpdateRuntimeProjection(ctx context.Context, run *model.AgentRun) error
 	UpdateRuntimeSummaryMarker(ctx context.Context, workspaceID, runID, key string, value json.RawMessage) error
 	Notify(ctx context.Context, run *model.AgentRun)
@@ -312,19 +312,59 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 	if limit <= 0 {
 		limit = 50
 	}
-	runs, err := s.runRepo.ListActiveByExternalRuntime(ctx, agentRuntimeName, s.nowUTC().Add(-staleAfter), limit)
-	if err != nil {
-		return err
-	}
-	for _, run := range runs {
-		runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID))
-		if runtimeRunID == "" {
-			continue
+	cutoff := s.nowUTC().Add(-staleAfter)
+	var cursor *model.AgentRun
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" {
-			runtimeRun, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID)
+		runs, err := s.runRepo.ListRuntimeReconciliationCandidates(ctx, agentRuntimeName, cutoff, limit, cursor)
+		if err != nil {
+			return err
+		}
+		for _, run := range runs {
+			runtimeRunID := strings.TrimSpace(derefString(run.ExternalRuntimeID))
+			if runtimeRunID == "" {
+				continue
+			}
+			if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" {
+				runtimeRun, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID)
+				if err != nil {
+					slog.WarnContext(ctx, "agent runtime cancellation reconciliation failed",
+						"workspace_id", run.WorkspaceID,
+						"run_id", run.ID,
+						"runtime_run_id", runtimeRunID,
+						"error", err,
+					)
+					continue
+				}
+				event, ok := cancellationAcknowledgementEvent(runtimeRun, run, s.nowUTC())
+				if !ok {
+					continue
+				}
+				if err := s.ApplyEvent(ctx, event); err != nil {
+					slog.WarnContext(ctx, "agent runtime cancellation acknowledgement apply failed",
+						"workspace_id", run.WorkspaceID,
+						"run_id", run.ID,
+						"runtime_run_id", runtimeRunID,
+						"error", err,
+					)
+				}
+				continue
+			}
+			if s.eventProtocol == "v2" {
+				if err := s.replayV2Events(ctx, &run, runtimeRunID); err != nil {
+					slog.WarnContext(ctx, "agent runtime v2 event replay failed",
+						"workspace_id", run.WorkspaceID,
+						"run_id", run.ID,
+						"runtime_run_id", runtimeRunID,
+						"error", err,
+					)
+				}
+			}
+			runtimeRun, err := s.agentRuntimeClient.GetRun(ctx, runtimeRunID)
 			if err != nil {
-				slog.WarnContext(ctx, "agent runtime cancellation reconciliation failed",
+				slog.WarnContext(ctx, "agent runtime reconciliation fetch failed",
 					"workspace_id", run.WorkspaceID,
 					"run_id", run.ID,
 					"runtime_run_id", runtimeRunID,
@@ -332,87 +372,60 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 				)
 				continue
 			}
-			event, ok := cancellationAcknowledgementEvent(runtimeRun, run, s.nowUTC())
+			event, ok := reconciliationEventForRuntimeRun(runtimeRun, run, s.nowUTC())
 			if !ok {
 				continue
 			}
 			if err := s.ApplyEvent(ctx, event); err != nil {
-				slog.WarnContext(ctx, "agent runtime cancellation acknowledgement apply failed",
+				slog.WarnContext(ctx, "agent runtime reconciliation apply failed",
+					"workspace_id", run.WorkspaceID,
+					"run_id", run.ID,
+					"runtime_run_id", runtimeRunID,
+					"event_type", event.Type,
+					"error", err,
+				)
+			}
+			if isTerminalRuntimeEvent(event.Type) || !shouldReconcileRuntimeTranscriptFromSweep(run, runtimeRun) {
+				continue
+			}
+			projectedRun, err := s.resolveRun(ctx, event)
+			if err != nil {
+				slog.WarnContext(ctx, "agent runtime reconciliation transcript run lookup failed",
+					"workspace_id", run.WorkspaceID,
+					"run_id", run.ID,
+					"runtime_run_id", runtimeRunID,
+					"event_type", event.Type,
+					"error", err,
+				)
+				continue
+			}
+			if err := s.reconcileRuntimeTranscript(ctx, projectedRun, runtimeRunID); err != nil {
+				slog.WarnContext(ctx, "agent runtime transcript reconciliation failed",
 					"workspace_id", run.WorkspaceID,
 					"run_id", run.ID,
 					"runtime_run_id", runtimeRunID,
 					"error", err,
 				)
+				continue
 			}
-			continue
-		}
-		if s.eventProtocol == "v2" {
-			if err := s.replayV2Events(ctx, &run, runtimeRunID); err != nil {
-				slog.WarnContext(ctx, "agent runtime v2 event replay failed",
-					"workspace_id", run.WorkspaceID,
-					"run_id", run.ID,
-					"runtime_run_id", runtimeRunID,
-					"error", err,
-				)
-			}
-		}
-		runtimeRun, err := s.agentRuntimeClient.GetRun(ctx, runtimeRunID)
-		if err != nil {
-			slog.WarnContext(ctx, "agent runtime reconciliation fetch failed",
-				"workspace_id", run.WorkspaceID,
-				"run_id", run.ID,
-				"runtime_run_id", runtimeRunID,
-				"error", err,
-			)
-			continue
-		}
-		event, ok := reconciliationEventForRuntimeRun(runtimeRun, run, s.nowUTC())
-		if !ok {
-			continue
-		}
-		if err := s.ApplyEvent(ctx, event); err != nil {
-			slog.WarnContext(ctx, "agent runtime reconciliation apply failed",
-				"workspace_id", run.WorkspaceID,
-				"run_id", run.ID,
-				"runtime_run_id", runtimeRunID,
-				"event_type", event.Type,
-				"error", err,
-			)
-		}
-		if isTerminalRuntimeEvent(event.Type) || !shouldReconcileRuntimeTranscriptFromSweep(run, runtimeRun) {
-			continue
-		}
-		projectedRun, err := s.resolveRun(ctx, event)
-		if err != nil {
-			slog.WarnContext(ctx, "agent runtime reconciliation transcript run lookup failed",
-				"workspace_id", run.WorkspaceID,
-				"run_id", run.ID,
-				"runtime_run_id", runtimeRunID,
-				"event_type", event.Type,
-				"error", err,
-			)
-			continue
-		}
-		if err := s.reconcileRuntimeTranscript(ctx, projectedRun, runtimeRunID); err != nil {
-			slog.WarnContext(ctx, "agent runtime transcript reconciliation failed",
-				"workspace_id", run.WorkspaceID,
-				"run_id", run.ID,
-				"runtime_run_id", runtimeRunID,
-				"error", err,
-			)
-			continue
-		}
-		if markRuntimeTranscriptReconciled(projectedRun, runtimeRun) {
-			if err := persistRuntimeSummaryMarker(ctx, s.runRepo, projectedRun, agentRuntimeTranscriptReconciledVersionKey); err != nil {
-				slog.WarnContext(ctx, "agent runtime transcript reconciliation marker update failed",
-					"workspace_id", run.WorkspaceID,
-					"run_id", run.ID,
-					"runtime_run_id", runtimeRunID,
-					"error", err,
-				)
+			if markRuntimeTranscriptReconciled(projectedRun, runtimeRun) {
+				if err := persistRuntimeSummaryMarker(ctx, s.runRepo, projectedRun, agentRuntimeTranscriptReconciledVersionKey); err != nil {
+					slog.WarnContext(ctx, "agent runtime transcript reconciliation marker update failed",
+						"workspace_id", run.WorkspaceID,
+						"run_id", run.ID,
+						"runtime_run_id", runtimeRunID,
+						"error", err,
+					)
+				}
 			}
 		}
+		if len(runs) < limit {
+			break
+		}
+		last := runs[len(runs)-1]
+		cursor = &last
 	}
+
 	return nil
 }
 
@@ -888,6 +901,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 						return err
 					}
 					canSuspendReservation = false
+					settlementErr = err
 					slog.ErrorContext(ctx, "agent runtime chat-turn usage checkpoint failed",
 						"error", err,
 						"workspace_id", run.WorkspaceID,
@@ -900,6 +914,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 			}
 			if canSuspendReservation {
 				if err := s.usageMeter.usage.SuspendReservation(ctx, metering); err != nil {
+					settlementErr = err
 					slog.ErrorContext(ctx, "agent runtime paused chat reservation suspension failed",
 						"error", err,
 						"workspace_id", run.WorkspaceID,

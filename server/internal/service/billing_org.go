@@ -103,8 +103,17 @@ type UsageSeriesPoint struct {
 	Features map[string]int64 `json:"features"`
 }
 
+// UsagePeriod identifies a selectable allowance window without exposing ledger internals.
+type UsagePeriod struct {
+	ID     string    `json:"id"`
+	Start  time.Time `json:"start"`
+	End    time.Time `json:"end"`
+	Status string    `json:"status"`
+}
+
 // WorkspaceUsage is the response for GET /billing/usage.
 type WorkspaceUsage struct {
+	Periods                  []UsagePeriod      `json:"periods"`
 	Period                   string             `json:"period"`
 	PeriodStart              time.Time          `json:"period_start"`
 	PeriodEnd                time.Time          `json:"period_end"`
@@ -510,6 +519,17 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 	if err != nil {
 		return nil, err
 	}
+	selected, err := s.repo.GetAIUsagePeriodByWindow(ctx, workspaceID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	if selected != nil {
+		summary.AIUsageAllowanceMicrousd = selected.AllowanceMicrousd
+		summary.AIUsageUsedMicrousd = selected.UsedMicrousd
+		summary.AIUsageReservedMicrousd = selected.ReservedMicrousd
+		summary.AIUsageOverageMicrousd = selected.OverageMicrousd
+	}
+
 	rows, err := s.repo.UsageByDayFeature(ctx, workspaceID, start, end)
 	if err != nil {
 		return nil, err
@@ -578,8 +598,18 @@ func (s *BillingService) GetWorkspaceUsage(ctx context.Context, workspaceID, per
 		return features[i].FeatureKey < features[j].FeatureKey
 	})
 
+	periods, err := s.repo.ListAIUsagePeriods(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	windows := make([]UsagePeriod, 0, len(periods))
+	for _, p := range periods {
+		windows = append(windows, UsagePeriod{ID: p.ID, Start: p.PeriodStart, End: p.PeriodEnd, Status: p.Status})
+	}
+
 	return &WorkspaceUsage{
-		Period: period, PeriodStart: start, PeriodEnd: end, Mode: mode,
+		Periods: windows,
+		Period:  period, PeriodStart: start, PeriodEnd: end, Mode: mode,
 		AIUsageAllowanceMicrousd: summary.AIUsageAllowanceMicrousd,
 		AIUsageUsedMicrousd:      summary.AIUsageUsedMicrousd,
 		AIUsageReservedMicrousd:  summary.AIUsageReservedMicrousd,

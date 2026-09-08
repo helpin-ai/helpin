@@ -192,3 +192,79 @@ func TestTerminalUsageConflictAfterSettlementDoesNotNotify(t *testing.T) {
 		t.Fatal("stale projection saved or broadcast")
 	}
 }
+
+func TestAskChatHighVolumeCancellationDoesNotRebillCheckpoint(t *testing.T) {
+	svc, run, store := terminalUsageFixture(t)
+	metering, ok := agentRunMeteringContext(run)
+	if !ok {
+		t.Fatal("metering context missing")
+	}
+	metering.FeatureKey = BillingFeatureAskChat
+	metering.EnforcementMode = model.AIUsageEnforcementSoft
+	metering.Route.Rates.InputMicrousdPerMillion = 220_000
+	metering.Route.Rates.CacheReadMicrousdPerMillion = 33_000
+	metering.Route.Rates.OutputMicrousdPerMillion = 1_320_000
+	if err := storeAgentRunMeteringContext(run, metering); err != nil {
+		t.Fatal(err)
+	}
+	usage := agentRuntimeUsagePayload{InputTokens: 48_000_000, CachedInputTokens: 40_000_000, OutputTokens: 100_000, TotalTokens: 48_100_000}
+	if err := svc.usageMeter.checkpointAgentRun(context.Background(), run, usage); err != nil {
+		t.Fatal(err)
+	}
+	if store.checkpoint.ChargedMicrousd != 3_212_000 || store.checkpoint.Entry.FeatureKey != BillingFeatureAskChat {
+		t.Fatalf("checkpoint=%+v", store.checkpoint)
+	}
+	event := terminalUsageEvent(agentruntime.EventRunCancelled, usage.InputTokens, usage.OutputTokens)
+	event.Data["usage"].(map[string]any)["cached_input_tokens"] = usage.CachedInputTokens
+	for i := 0; i < 2; i++ {
+		if err := svc.ApplyEvent(context.Background(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(store.reconciles) != 0 || store.checkpoints != 1 || store.releasedID != "reservation" {
+		t.Fatalf("cancellation rebilled usage or retained hold: reconciles=%d checkpoints=%d release=%s", len(store.reconciles), store.checkpoints, store.releasedID)
+	}
+}
+
+func TestAskChatResumeBudgetExcludesPreviouslyBilledTurns(t *testing.T) {
+	svc, run, store := terminalUsageFixture(t)
+	run.DockChatID = stringPointer("chat")
+	metering, _ := agentRunMeteringContext(run)
+	metering.FeatureKey = BillingFeatureAskChat
+	metering.EnforcementMode = model.AIUsageEnforcementStrict
+	metering.MaxBillableMicrousd = 1000
+	metering.Route.Rates.InputMicrousdPerMillion = 220_000
+	if err := storeAgentRunMeteringContext(run, metering); err != nil {
+		t.Fatal(err)
+	}
+	if err := storeAgentRunUsageCheckpoint(run, agentRunUsageCheckpoint{Turn: 1, InputTokens: 9000}); err != nil {
+		t.Fatal(err)
+	}
+	if err := storeAgentRunTurnBudgetStart(run); err != nil {
+		t.Fatal(err)
+	}
+
+	usage := agentRuntimeUsagePayload{InputTokens: 10000, TotalTokens: 10000}
+	if agentRunUsageExceedsBudget(run, usage) {
+		t.Fatal("previously billed turns exhausted the new turn budget")
+	}
+	if err := svc.usageMeter.reconcileAgentRun(context.Background(), run, usage); err != nil {
+		t.Fatal(err)
+	}
+	if store.reconcile.ChargedMicrousd != 220 {
+		t.Fatalf("new turn charge=%d, want 220", store.reconcile.ChargedMicrousd)
+	}
+	for _, total := range []int{100000, 200000} {
+		if err := svc.usageMeter.reconcileAgentRun(context.Background(), run, agentRuntimeUsagePayload{InputTokens: total, TotalTokens: total}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var charged int64
+	for _, entry := range store.reconciles {
+		charged += entry.ChargedMicrousd
+	}
+	if charged != 1000 {
+		t.Fatalf("late telemetry exceeded turn cap: %d", charged)
+	}
+
+}

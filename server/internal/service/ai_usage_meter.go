@@ -753,9 +753,14 @@ func (m *AIUsageMeter) reconcileAgentRun(ctx context.Context, run *model.AgentRu
 	if checkpoint.Turn > 0 {
 		metering.IdempotencyKey = aiUsageIdempotencyKey(metering.IdempotencyKey, "turn", fmt.Sprint(checkpoint.Turn+1))
 	}
-	// The strict cap belongs to the cumulative run, not to each late settlement.
+	// Non-chat strict caps belong to the cumulative run. Ask chats reserve a
+	// fresh turn budget after each checkpoint, including across renewal.
 	if metering.EnforcementMode == model.AIUsageEnforcementStrict {
-		prior, err := aiusage.NormalizeTokens(agentRunTokenTelemetry(run, agentRuntimeUsagePayload{InputTokens: checkpoint.InputTokens, OutputTokens: checkpoint.OutputTokens, CachedInputTokens: checkpoint.CachedInputTokens, ReasoningOutputTokens: checkpoint.ReasoningOutputTokens}))
+		priorUsage := agentRuntimeUsagePayload{InputTokens: checkpoint.InputTokens, OutputTokens: checkpoint.OutputTokens, CachedInputTokens: checkpoint.CachedInputTokens, ReasoningOutputTokens: checkpoint.ReasoningOutputTokens}
+		if run.DockChatID != nil {
+			priorUsage = agentRunUsageDelta(priorUsage, agentRunTurnBudgetStart(run))
+		}
+		prior, err := aiusage.NormalizeTokens(agentRunTokenTelemetry(run, priorUsage))
 		if err != nil {
 			return err
 		}
@@ -867,6 +872,10 @@ func agentRunUsageExceedsBudget(run *model.AgentRun, usage agentRuntimeUsagePayl
 	if !ok || metering.EnforcementMode != model.AIUsageEnforcementStrict || metering.MaxBillableMicrousd <= 0 {
 		return false
 	}
+	if run.DockChatID != nil {
+		usage = agentRunUsageDelta(usage, agentRunTurnBudgetStart(run))
+	}
+
 	normalized, err := aiusage.NormalizeTokens(agentRunTokenTelemetry(run, usage))
 	if err != nil {
 		return false

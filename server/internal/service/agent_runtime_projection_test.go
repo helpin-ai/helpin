@@ -38,8 +38,17 @@ func (r *fakeAgentRuntimeProjectionRunRepo) GetByExternalRuntimeID(_ context.Con
 	return r.byExternal[externalRuntime+"|"+externalRuntimeID], nil
 }
 
-func (r *fakeAgentRuntimeProjectionRunRepo) ListActiveByExternalRuntime(_ context.Context, _ string, _ time.Time, _ int) ([]model.AgentRun, error) {
-	return r.active, nil
+func (r *fakeAgentRuntimeProjectionRunRepo) ListRuntimeReconciliationCandidates(_ context.Context, _ string, _ time.Time, limit int, after *model.AgentRun) ([]model.AgentRun, error) {
+	start := 0
+	if after != nil {
+		for i, run := range r.active {
+			if run.ID == after.ID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	return r.active[start:min(start+limit, len(r.active))], nil
 }
 
 func (r *fakeAgentRuntimeProjectionRunRepo) Update(_ context.Context, run *model.AgentRun) error {
@@ -1561,8 +1570,8 @@ func TestAgentRuntimeProjectionCheckpointsDockChatUsageOnUserMessagePause(t *tes
 			"input_tokens": float64(180), "cached_input_tokens": float64(30),
 			"output_tokens": float64(25), "reasoning_output_tokens": float64(5), "total_tokens": float64(205),
 		}
-		if err := svc.ApplyEvent(context.Background(), usageEvent); err != nil {
-			t.Fatal(err)
+		if err := svc.ApplyEvent(context.Background(), usageEvent); err == nil {
+			t.Fatal("failed checkpoint must request event redelivery")
 		}
 		if got := agentRunUsageCheckpointFromSummary(run.OutputSummary); got != previousCheckpoint {
 			t.Errorf("failed checkpoint changed billed usage: %#v", got)
