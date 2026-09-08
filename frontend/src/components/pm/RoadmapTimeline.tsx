@@ -14,9 +14,10 @@ import {
   subQuarters,
 } from 'date-fns';
 
+import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
 import { RoadmapEpicBar } from '@/components/pm/RoadmapEpicBar';
 import { buildRoadmapQuarterSegments, getRoadmapEpicRange, getScheduledRoadmapEpics } from '@/components/pm/roadmapUtils';
-import { Layers01Icon, Target01Icon, UserGroupIcon } from '@/lib/icons';
+import { Target01Icon, UserGroupIcon } from '@/lib/icons';
 import type { Objective, RoadmapEpic } from '@/lib/pmTypes';
 
 type GroupBy = 'objective' | 'team' | 'epic';
@@ -174,6 +175,9 @@ export function RoadmapTimeline({
   }, []);
 
   const labelStyle = { width: labelWidth, minWidth: labelWidth };
+  // Keep the page surface visible while preventing scrolled content from
+  // painting underneath the transparent, sticky label column.
+  const timelineClipStyle = { clipPath: 'inset(0 0 0 var(--roadmap-scroll-left, 0px))' };
   const getBarPosition = (epic: RoadmapEpic) => {
     const range = getRoadmapEpicRange(epic);
     if (!range) return { left: 0, width: 0 };
@@ -194,10 +198,15 @@ export function RoadmapTimeline({
   }
 
   return (
-    <div className="overflow-x-auto border-y border-quiet-divider-strong [scrollbar-gutter:stable]">
+    <div
+      className="overflow-x-auto border-y border-quiet-divider-strong [scrollbar-gutter:stable]"
+      onScroll={(event) => {
+        event.currentTarget.style.setProperty('--roadmap-scroll-left', `${event.currentTarget.scrollLeft}px`);
+      }}
+    >
       <div className="relative" style={{ minWidth: `${labelWidth + timelineWidth}px` }}>
-        <div className="sticky top-0 z-20 flex border-b border-quiet-divider-strong bg-background">
-          <div className="sticky left-0 z-30 flex shrink-0 items-center border-r border-quiet-divider-strong bg-background px-3 py-2.5" style={labelStyle}>
+        <div className="sticky top-0 z-20 flex border-b border-quiet-divider-strong">
+          <div className="sticky left-0 z-30 flex shrink-0 items-center border-r border-quiet-divider-strong px-3 py-2.5" style={labelStyle}>
             <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-quiet-muted">
               {groupBy === 'objective' ? 'Objective' : groupBy === 'team' ? 'Team' : 'Epic'}
             </span>
@@ -213,7 +222,7 @@ export function RoadmapTimeline({
               <span className="absolute inset-y-0 left-1/2 w-px bg-transparent transition-colors hover:bg-quiet-text-primary" />
             </button>
           </div>
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-w-0 flex-1 flex-col" style={timelineClipStyle}>
             {zoom === 'quarter' ? (
               <div className="flex border-b border-quiet-divider-light">
                 {quarterSegments.map((segment) => {
@@ -255,11 +264,11 @@ export function RoadmapTimeline({
           </div>
         </div>
 
-        {groups.map((group) => (
-          <div key={group.id}>
+        {groups.map((group, groupIndex) => (
+          <div key={group.id} className={groupIndex < groups.length - 1 ? 'border-b border-quiet-divider-light' : undefined}>
             {!isEpicGrouping ? (
-              <div className="flex border-b border-quiet-divider-strong bg-background">
-                <div className="sticky left-0 z-10 flex shrink-0 items-center gap-2 border-r border-quiet-divider-strong bg-background px-3 py-1.5" style={labelStyle}>
+              <div className="flex border-b border-quiet-divider-strong">
+                <div className="sticky left-0 z-10 flex shrink-0 items-center gap-2 border-r border-quiet-divider-strong px-3 py-1.5" style={labelStyle}>
                   <GroupIcon className="h-[14px] w-[14px] shrink-0 text-quiet-muted" />
                   <span className="min-w-0 truncate text-[12.5px] font-semibold text-quiet-text-primary">{group.name}</span>
                   <span className="shrink-0 text-[11.5px] tabular-nums text-quiet-muted">
@@ -274,13 +283,13 @@ export function RoadmapTimeline({
               const position = getBarPosition(epic);
               return (
                 <div key={`${group.id}-${epic.epic.id}`} className="flex border-b border-quiet-divider-light last:border-b-0">
-                  <div className={`sticky left-0 z-10 flex min-w-0 shrink-0 items-center gap-2 border-r border-quiet-divider-strong bg-background py-2 ${isEpicGrouping ? 'px-3' : 'pl-7 pr-3'}`} style={labelStyle}>
-                    <Layers01Icon className="h-[14px] w-[14px] shrink-0 text-quiet-muted" />
+                  <div className={`sticky left-0 z-10 flex min-w-0 shrink-0 items-center gap-2 border-r border-quiet-divider-strong py-2 ${isEpicGrouping ? 'px-3' : 'pl-7 pr-3'}`} style={labelStyle}>
+                    <EpicColorSwatch color={epic.epic.color} />
                     <span className="truncate text-sm font-medium text-quiet-text-tertiary">
                       {isEpicGrouping ? group.name : epic.epic.name}
                     </span>
                   </div>
-                  <div className="relative h-10 flex-1">
+                  <div className="relative h-10 flex-1" style={timelineClipStyle}>
                     {monthGridLines.map((line, index) => (
                       <span
                         key={index}
@@ -304,7 +313,7 @@ export function RoadmapTimeline({
         ))}
 
         {todayPct !== null ? (
-          <div className="pointer-events-none absolute inset-y-0 z-10" style={{ left: labelWidth, right: 0 }}>
+          <div className="pointer-events-none absolute inset-y-0 z-10" style={{ ...timelineClipStyle, left: labelWidth, right: 0 }}>
             <span className="absolute inset-y-0 w-px bg-quiet-accent" style={{ left: `${todayPct}%` }}>
               <span className="absolute left-1 top-1 whitespace-nowrap bg-background px-1 text-[10px] font-semibold uppercase tracking-[0.03em] text-quiet-accent">
                 Today

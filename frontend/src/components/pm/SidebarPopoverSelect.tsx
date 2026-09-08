@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ArrowDown01Icon, Tick01Icon } from '@/lib/icons';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverTrigger } from '@/components/ui/popover';
+import { PMDropdownContent } from './PMDropdownContent';
 import { cn } from '@/lib/utils';
 import { pickerTriggerVariants, type PickerTriggerVariant } from '@/components/ui/picker-trigger';
 
@@ -93,7 +94,7 @@ export function SidebarPopoverSelect<T extends string>({
             {showChevron && <ArrowDown01Icon className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
           </button>
         </PopoverTrigger>
-        <PopoverContent className={cn(width, 'p-0')} align="start">
+        <PMDropdownContent className={cn(width, 'p-0')} align="start">
           <Command
             filter={(optionValue, search) => {
               const needle = search.trim().toLowerCase();
@@ -126,7 +127,7 @@ export function SidebarPopoverSelect<T extends string>({
               ))}
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       </Popover>
     );
   }
@@ -150,7 +151,7 @@ export function SidebarPopoverSelect<T extends string>({
           {showChevron && <ArrowDown01Icon className="ml-auto h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
         </button>
       </PopoverTrigger>
-      <PopoverContent className={cn(width, 'p-0.5')} align="start">
+      <PMDropdownContent className={cn(width, 'p-0.5')} align="start">
         <div className="flex max-h-60 flex-col overflow-y-auto">
           {totalOptionCount === 0 && emptyContent ? (
             emptyContent
@@ -181,7 +182,7 @@ export function SidebarPopoverSelect<T extends string>({
             )
           ))}
         </div>
-      </PopoverContent>
+      </PMDropdownContent>
     </Popover>
   );
 }

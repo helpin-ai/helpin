@@ -71,7 +71,8 @@ export function useUpdateEpic(wsId: string) {
   return useMutation({
     mutationFn: async ({ id, ...data }: UpdateEpicRequest & { id: string }) =>
       unwrap(await pmEpicService.update(wsId, id, data)),
-    onSuccess: (_, { id }) => {
+    onSuccess: (data, { id }) => {
+      qc.setQueryData(queryKeys.pm.epic(wsId, id), data)
       qc.invalidateQueries({ queryKey: queryKeys.pm.epics(wsId) })
       qc.invalidateQueries({ queryKey: queryKeys.pm.epic(wsId, id) })
     },

@@ -1,3 +1,4 @@
+import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createColumnHelper,
@@ -15,6 +16,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQueryClient } from '@tanstack/react-query';
 import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
 import { EpicFilterBar } from '@/pages/pm/EpicFilterBar';
+import { OwnerAvatarFilterRow } from '@/components/pm/OwnerAvatarFilterRow';
+import { EpicColorControl } from '@/components/pm/EpicColorControl';
 import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
@@ -34,7 +37,6 @@ import {
   Layers01Icon,
   MinusSignIcon,
   Sun01Icon,
-  UserGroupIcon,
   Tag01Icon,
   WorkflowSquare01Icon,
   Activity01Icon,
@@ -68,6 +70,7 @@ import {
   TABLE_CELL,
   TABLE_NAME_TEXT,
   TABLE_CONTAINER,
+  TABLE_SURFACE,
   TABLE_GROUP_ROW,
   TABLE_GROUP_ROW_INNER,
   TABLE_HEADER,
@@ -93,11 +96,11 @@ const ARCHIVED_STATE_VALUE = '__archived__';
 const GROUP_HEADER_REPEAT_HEIGHT = 30;
 const EMPTY_EPICS: EpicWithStats[] = [];
 const EMPTY_LABELS: Label[] = [];
+const EMPTY_EPIC_STATES: EpicWorkflowState[] = [];
 
 const FILTER_CATEGORY_ICONS: Partial<Record<EpicFilterKey, React.ComponentType<{ className?: string }>>> = {
   state: WorkflowSquare01Icon,
   health: Activity01Icon,
-  team: UserGroupIcon,
   owner: UserIcon,
   label: Tag01Icon,
   objective: Target01Icon,
@@ -129,10 +132,6 @@ function getFilterOptionVisual(
     const config = healthConfig[value as EpicHealth];
     if (!config) return {};
     return { labelClassName: config.color };
-  }
-  if (key === 'team') {
-    return { leading: <UserGroupIcon className="h-3.5 w-3.5 text-muted-foreground" />,
-    };
   }
   if (key === 'owner') {
     const member = ctx.assignableMembers.find((candidate) => candidate.id === value);
@@ -206,7 +205,6 @@ const EPIC_GROUP_BY_OPTIONS = [
 type EpicGroupBy = (typeof EPIC_GROUP_BY_OPTIONS)[number]['value'];
 type EpicFilterKey = 'state'
   | 'health'
-  | 'team'
   | 'owner'
   | 'label'
   | 'objective'
@@ -260,6 +258,9 @@ function applyEpicPatch(entry: EpicWithStats, patch: UpdateEpicRequest, allLabel
   if (Object.prototype.hasOwnProperty.call(patch, 'health')) {
     nextEpic.health = patch.health ?? entry.epic.health;
   }
+  if (patch.color !== undefined) {
+    nextEpic.color = patch.color;
+  }
 
   const nextEntry: EpicWithStats = {
     ...entry,
@@ -299,7 +300,6 @@ function epicMatchesFilters(entry: EpicWithStats, filters: EpicFilterState) {
   const stateFilter = filters.state?.filter((v) => v !== '__archived__');
   if (stateFilter && stateFilter.length > 0 && !matchesSelectedValue(entry.epic.epic_state_id, stateFilter)) return false;
   if (!matchesSelectedValue(entry.epic.health, filters.health)) return false;
-  if (!matchesSelectedValue(entry.epic.team_id, filters.team)) return false;
   if (!matchesSelectedValue(entry.epic.owner_member_id, filters.owner)) return false;
   if (filters.label?.length && !filters.label.some((id) => labelIds.has(id))) return false;
   if (filters.objective?.length && !filters.objective.some((id) => objectiveIds.has(id))) return false;
@@ -499,7 +499,8 @@ function loadEpicViewState(storageKey: string | null): EpicViewState {
     const parsed = JSON.parse(raw) as Partial<EpicViewState>;
     return {
       groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'state',
-      filters: parsed.filters ?? {},
+      // Discard the removed Team filter from previously saved views.
+      filters: Object.fromEntries(Object.entries(parsed.filters ?? {}).filter(([key]) => key !== 'team')),
       visibleColumns: Array.isArray(parsed.visibleColumns) ? parsed.visibleColumns : undefined,
     };
   } catch {
@@ -568,6 +569,7 @@ function EpicVirtualTable({
   onColumnSizingChange,
   onToggleGroup }: EpicVirtualTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const tableSurfaceRef = useTableSurface(parentRef);
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const columnVisibilityVersion = useMemo(() => JSON.stringify(columnVisibility), [columnVisibility]);
   const table = useReactTable({
@@ -686,7 +688,7 @@ function EpicVirtualTable({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div ref={parentRef} className={TABLE_CONTAINER}>
+      <div ref={tableSurfaceRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
           {hasGroups ? null : <div className={TABLE_HEADER}>{renderColumnHeaderRow()}</div>}
 
@@ -706,7 +708,7 @@ function EpicVirtualTable({
                   {item.type === 'group' ? (
                     <>
                       <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
-                      {item.collapsed ? null : <div className="border-b border-border/60 bg-card">{renderColumnHeaderRow()}</div>}
+                      {item.collapsed ? null : <div className={`border-b border-border/60 ${TABLE_SURFACE}`}>{renderColumnHeaderRow()}</div>}
                     </>
                   ) : (
                     <MemoEpicDataRow row={item.row} onRowClick={onRowClick} columnSizing={columnSizing} columnSizingVersion={columnSizingVersion} columnVisibility={columnVisibility} columnVisibilityVersion={columnVisibilityVersion} />
@@ -1004,6 +1006,7 @@ function InlineEpicLabelsCell({ entry, workspaceId, allLabels, onLabelsChange, o
       ) : null}
       <div className={labels.length > 0 ? 'opacity-0 group-hover/lbl:opacity-100 transition-opacity shrink-0' : 'shrink-0'}>
         <LabelPicker
+          triggerClassName="text-[length:var(--text-ui)]"
           workspaceId={workspaceId}
           teamId={entry.epic.team_id || undefined}
           labels={allLabels}
@@ -1085,7 +1088,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
-  const { data: epicStates = [] } = useEpicStates(workspaceId ?? '');
+  const { data: epicStates = EMPTY_EPIC_STATES } = useEpicStates(workspaceId ?? '');
   const ownerNameMap = useMemo(() => buildAssignableMemberNameMap(assignableMembers), [assignableMembers]);
   const teamMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -1119,6 +1122,14 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const filterDefinitions = useMemo<EpicFilterDefinition[]>(
     () => [
       {
+        key: 'owner',
+        label: 'Owner',
+        options: assignableMembers.map((member) => ({
+          value: member.id,
+          label: member.display_name || member.email,
+        })),
+      },
+      {
         key: 'state',
         label: 'State',
         options: [
@@ -1135,19 +1146,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         options: ALL_HEALTH_OPTIONS.map((health) => ({
           value: health,
           label: healthConfig[health].label,
-        })),
-      },
-      {
-        key: 'team',
-        label: 'Team',
-        options: teams.map((team) => ({ value: team.id, label: team.name })),
-      },
-      {
-        key: 'owner',
-        label: 'Owner',
-        options: assignableMembers.map((member) => ({
-          value: member.id,
-          label: member.display_name || member.email,
         })),
       },
       {
@@ -1180,7 +1178,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         ],
       },
     ],
-    [allLabels, assignableMembers, epicStates, objectiveNameMap, teams],
+    [allLabels, assignableMembers, epicStates, objectiveNameMap],
   );
 
   const updateEpicField = useCallback(
@@ -1203,6 +1201,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       }
 
       setEpics((current) => current.map((entry) => (entry.epic.id === epicId ? data : entry)));
+      queryClient.setQueryData(queryKeys.pm.epic(workspaceId, epicId), data);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pm.epics(workspaceId) });
     },
     [allLabels, epicsQueryKey, queryClient, setEpics, workspaceId],
   );
@@ -1257,8 +1257,12 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Name',
         size: 280,
         cell: (info) => (
-          <div className={`flex max-w-full items-center gap-2.5 ${TABLE_NAME_TEXT}`}>
-            <Layers01Icon className="h-4 w-4 shrink-0 text-violet-500" />
+          <div className={`flex max-w-full items-center gap-1.5 ${TABLE_NAME_TEXT}`}>
+            <EpicColorControl
+              compact
+              value={info.row.original.epic.color}
+              onChange={canEdit ? (color) => { void updateEpicField(info.row.original.epic.id, { color }); } : undefined}
+            />
             <span className="min-w-0 truncate">{info.getValue()}</span>
           </div>
         ),
@@ -1542,7 +1546,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   useEffect(() => {
     setCollapsedGroupKeys((current) => {
       const validKeys = new Set(groupedEpics.map((group) => group.key));
-      return new Set([...current].filter((key) => validKeys.has(key)));
+      const remaining = [...current].filter((key) => validKeys.has(key));
+      return remaining.length === current.size ? current : new Set(remaining);
     });
   }, [groupedEpics]);
 
@@ -1576,6 +1581,27 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         <EpicFilterBar
           search={search}
           onSearchChange={setSearch}
+          ownerFilter={assignableMembers.length > 0 && (
+            <OwnerAvatarFilterRow
+              workspaceId={workspaceId!}
+              members={assignableMembers}
+              selectedIds={filters.owner ?? []}
+              className="ml-0"
+              onToggle={(memberId) => {
+                setFilters((current) => {
+                  const selected = current.owner ?? [];
+                  const owner = selected.includes(memberId)
+                    ? selected.filter((id) => id !== memberId)
+                    : [...selected, memberId];
+                  if (owner.length === 0) {
+                    const { owner: _omit, ...rest } = current;
+                    return rest;
+                  }
+                  return { ...current, owner };
+                });
+              }}
+            />
+          )}
           categories={filterDefinitions
             .filter((definition) => definition.key !== 'has_target_date' && definition.key !== 'has_start_date')
             .map((definition) => {

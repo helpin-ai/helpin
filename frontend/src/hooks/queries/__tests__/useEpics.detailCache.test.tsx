@@ -9,15 +9,17 @@ import type { EpicWithStats } from '@/lib/pmTypes'
 
 const serviceMocks = vi.hoisted(() => ({
   get: vi.fn(),
+  update: vi.fn(),
 }))
 
 vi.mock('@/lib/services/pmEpicService', () => ({
   pmEpicService: {
     get: serviceMocks.get,
+    update: serviceMocks.update,
   },
 }))
 
-import { useEpic } from '../useEpics'
+import { useEpic, useUpdateEpic } from '../useEpics'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -41,6 +43,47 @@ describe('useEpic detail cache', () => {
   afterEach(() => {
     document.body.innerHTML = ''
     vi.clearAllMocks()
+  })
+
+  it('stores the saved color and invalidates lists after a successful edit', async () => {
+    const updatedEpic = { ...cachedEpic, epic: { ...cachedEpic.epic, color: '#4e8fea' } }
+    serviceMocks.update.mockResolvedValue({ data: updatedEpic, error: null })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const listKey = [...queryKeys.pm.epics('ws-1'), undefined]
+    client.setQueryData(listKey, [cachedEpic])
+    client.setQueryData(queryKeys.pm.epic('ws-1', 'epic-2'), cachedEpic)
+    let mutation: ReturnType<typeof useUpdateEpic>
+    function EditHarness() { mutation = useUpdateEpic('ws-1'); return null }
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    act(() => root.render(<QueryClientProvider client={client}><EditHarness /></QueryClientProvider>))
+    await act(async () => { await mutation.mutateAsync({ id: 'epic-2', color: '#4e8fea' }) })
+    expect(serviceMocks.update).toHaveBeenCalledWith('ws-1', 'epic-2', { color: '#4e8fea' })
+    expect(client.getQueryData<EpicWithStats>(queryKeys.pm.epic('ws-1', 'epic-2'))?.epic.color).toBe('#4e8fea')
+    expect(client.getQueryState(listKey)?.isInvalidated).toBe(true)
+    act(() => root.unmount())
+    client.clear()
+  })
+
+  it('retains the saved color when an update fails', async () => {
+    serviceMocks.update.mockResolvedValue({ data: null, error: 'Unable to save color' })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const detailKey = queryKeys.pm.epic('ws-1', 'epic-2')
+    const saved = { ...cachedEpic, epic: { ...cachedEpic.epic, color: '#788596' } }
+    client.setQueryData(detailKey, saved)
+    let mutation: ReturnType<typeof useUpdateEpic>
+    function EditHarness() { mutation = useUpdateEpic('ws-1'); return null }
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    act(() => root.render(<QueryClientProvider client={client}><EditHarness /></QueryClientProvider>))
+    await act(async () => {
+      await expect(mutation.mutateAsync({ id: 'epic-2', color: '#4e8fea' })).rejects.toThrow('Unable to save color')
+    })
+    expect(client.getQueryData(detailKey)).toEqual(saved)
+    act(() => root.unmount())
+    client.clear()
   })
 
   it('shows an epic cached by a filtered list while its detail refresh is pending', async () => {
