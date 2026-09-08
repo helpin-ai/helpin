@@ -191,9 +191,9 @@ describe('TaskCard', () => {
     const epic = { id: 'epic-1', name: 'Current epic', color: '#e2564a' } as Epic
     const { container, root, rerender } = renderTaskCard(task, { isOverlay }, [epic])
     const badge = () => container.querySelector<HTMLElement>('[title="Current epic"]')!
-    expect(badge().style.getPropertyValue('--epic-color')).toBe('#e2564a')
+    expect(badge().style.backgroundColor).toBe('rgb(226, 86, 74)')
     rerender(task, { isOverlay }, [{ ...epic, color: '#4e8fea' }])
-    expect(badge().style.getPropertyValue('--epic-color')).toBe('#4e8fea')
+    expect(badge().style.backgroundColor).toBe('rgb(78, 143, 234)')
     act(() => root.unmount())
     container.remove()
   })
@@ -206,7 +206,7 @@ describe('TaskCard', () => {
     ] as Epic[]
     const { container, root, rerender } = renderTaskCard(task, {}, epics)
     rerender({ ...task, epic_id: 'epic-2' })
-    expect(container.querySelector<HTMLElement>('[title="Same name"]')!.style.getPropertyValue('--epic-color')).toBe('#4e8fea')
+    expect(container.querySelector<HTMLElement>('[title="Same name"]')!.style.backgroundColor).toBe('rgb(78, 143, 234)')
     act(() => root.unmount())
     container.remove()
   })

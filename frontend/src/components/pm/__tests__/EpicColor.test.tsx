@@ -44,7 +44,25 @@ describe('epic colors', () => {
     const badge = container.querySelector<HTMLElement>('[title]')!;
     expect(badge.title).toBe(name);
     expect(badge.textContent).toBe(name);
-    expect(badge.style.getPropertyValue('--epic-color')).toBe(DEFAULT_EPIC_COLOR);
+    expect(badge.style.backgroundColor).toBe('rgb(120, 133, 150)');
+  });
+
+  it.each([
+    ['#000000', 'rgb(0, 0, 0)', 'rgb(255, 255, 255)'],
+    ['#ffffff', 'rgb(255, 255, 255)', 'rgb(0, 0, 0)'],
+    ['#5e6ad2', 'rgb(94, 106, 210)', 'rgb(255, 255, 255)'],
+    ['#e2564a', 'rgb(226, 86, 74)', 'rgb(0, 0, 0)'],
+    ['#ffff00', 'rgb(255, 255, 0)', 'rgb(0, 0, 0)'],
+    ['#0000ff', 'rgb(0, 0, 255)', 'rgb(255, 255, 255)'],
+    ['#abc', 'rgb(170, 187, 204)', 'rgb(0, 0, 0)'],
+  ])('uses the exact %s background with contrasting text in both themes', (color, background, foreground) => {
+    const container = render(<EpicBadge name="Epic" color={color} />);
+    const badge = container.querySelector<HTMLElement>('[title]')!;
+    for (const dark of [false, true]) {
+      container.classList.toggle('dark', dark);
+      expect(badge.style.backgroundColor).toBe(background);
+      expect(badge.style.color).toBe(foreground);
+    }
   });
 
   it('exposes the selected square and sends preset changes', () => {

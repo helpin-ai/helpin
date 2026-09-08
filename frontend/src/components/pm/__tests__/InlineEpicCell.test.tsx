@@ -46,9 +46,9 @@ const option = (id: string) => document.querySelector<HTMLElement>(`[role="optio
 describe('task list epic dropdown', () => {
   it('shows separate colored badges for same-named epics and slate for an uncolored epic', async () => {
     await openPicker();
-    for (const [id, color] of [['epic-a', '#e2564a'], ['epic-b', '#4e8fea'], ['epic-c', '#788596']]) {
+    for (const [id, color] of [['epic-a', 'rgb(226, 86, 74)'], ['epic-b', 'rgb(78, 143, 234)'], ['epic-c', 'rgb(120, 133, 150)']]) {
       expect(option(id)).not.toBeNull();
-      expect(option(id).querySelector<HTMLElement>('[title]')!.style.getPropertyValue('--epic-color')).toBe(color);
+      expect(option(id).querySelector<HTMLElement>('[title]')!.style.backgroundColor).toBe(color);
     }
   });
 
