@@ -1258,7 +1258,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Name',
         size: 280,
         cell: (info) => (
-          <div className={`flex max-w-full items-center gap-1 ${TABLE_NAME_TEXT}`}>
+          <div className={`flex max-w-full items-center gap-1.5 ${TABLE_NAME_TEXT}`}>
             <EpicColorSwatch color={info.row.original.epic.color} />
             <span className="min-w-0 truncate">{info.getValue()}</span>
           </div>
