@@ -35,7 +35,6 @@ import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
 import { Route as AuthenticatedWSlugCrmRouteImport } from './routes/_authenticated/w/$slug/crm'
 import { Route as AuthenticatedWSlugAutomationRouteImport } from './routes/_authenticated/w/$slug/automation'
-import { Route as AuthenticatedWSlugSupportIndexRouteImport } from './routes/_authenticated/w/$slug/support/index'
 import { Route as AuthenticatedWSlugSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/sprints/index'
 import { Route as AuthenticatedWSlugSettingsIndexRouteImport } from './routes/_authenticated/w/$slug/settings/index'
 import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authenticated/w/$slug/pm/index'
@@ -44,7 +43,7 @@ import { Route as AuthenticatedWSlugCrmIndexRouteImport } from './routes/_authen
 import { Route as AuthenticatedWSlugAutomationIndexRouteImport } from './routes/_authenticated/w/$slug/automation/index'
 import { Route as AuthenticatedWSlugSupportSearchRouteImport } from './routes/_authenticated/w/$slug/support/search'
 import { Route as AuthenticatedWSlugSupportCoverageRouteImport } from './routes/_authenticated/w/$slug/support/coverage'
-import { Route as AuthenticatedWSlugSupportConversationIdRouteImport } from './routes/_authenticated/w/$slug/support/$conversationId'
+import { Route as AuthenticatedWSlugSupportInboxRouteImport } from './routes/_authenticated/w/$slug/support/_inbox'
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
 import { Route as AuthenticatedWSlugSettingsWorkflowsRouteImport } from './routes/_authenticated/w/$slug/settings/workflows'
 import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_authenticated/w/$slug/settings/teams'
@@ -98,6 +97,7 @@ import { Route as AuthenticatedWSlugAutomationLibraryRouteImport } from './route
 import { Route as AuthenticatedWSlugAutomationFlowsRouteImport } from './routes/_authenticated/w/$slug/automation/flows'
 import { Route as AuthenticatedWSlugAutomationAgentsRouteImport } from './routes/_authenticated/w/$slug/automation/agents'
 import { Route as AuthenticatedWSlugAutomationActivityRouteImport } from './routes/_authenticated/w/$slug/automation/activity'
+import { Route as AuthenticatedWSlugSupportInboxIndexRouteImport } from './routes/_authenticated/w/$slug/support/_inbox/index'
 import { Route as AuthenticatedWSlugPmTasksIndexRouteImport } from './routes/_authenticated/w/$slug/pm/tasks/index'
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
@@ -108,6 +108,7 @@ import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_a
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
 import { Route as AuthenticatedWSlugCrmCompaniesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/companies/index'
 import { Route as AuthenticatedWSlugAutomationToolsIndexRouteImport } from './routes/_authenticated/w/$slug/automation/tools/index'
+import { Route as AuthenticatedWSlugSupportInboxConversationIdRouteImport } from './routes/_authenticated/w/$slug/support/_inbox/$conversationId'
 import { Route as AuthenticatedWSlugPmTasksTaskIdRouteImport } from './routes/_authenticated/w/$slug/pm/tasks/$taskId'
 import { Route as AuthenticatedWSlugPmSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/$sprintId'
 import { Route as AuthenticatedWSlugPmObjectivesObjectiveIdRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/$objectiveId'
@@ -257,12 +258,6 @@ const AuthenticatedWSlugAutomationRoute =
     path: '/automation',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
-const AuthenticatedWSlugSupportIndexRoute =
-  AuthenticatedWSlugSupportIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedWSlugSupportRoute,
-  } as any)
 const AuthenticatedWSlugSprintsIndexRoute =
   AuthenticatedWSlugSprintsIndexRouteImport.update({
     id: '/sprints/',
@@ -311,10 +306,9 @@ const AuthenticatedWSlugSupportCoverageRoute =
     path: '/coverage',
     getParentRoute: () => AuthenticatedWSlugSupportRoute,
   } as any)
-const AuthenticatedWSlugSupportConversationIdRoute =
-  AuthenticatedWSlugSupportConversationIdRouteImport.update({
-    id: '/$conversationId',
-    path: '/$conversationId',
+const AuthenticatedWSlugSupportInboxRoute =
+  AuthenticatedWSlugSupportInboxRouteImport.update({
+    id: '/_inbox',
     getParentRoute: () => AuthenticatedWSlugSupportRoute,
   } as any)
 const AuthenticatedWSlugSprintsSprintIdRoute =
@@ -635,6 +629,12 @@ const AuthenticatedWSlugAutomationActivityRoute =
     path: '/activity',
     getParentRoute: () => AuthenticatedWSlugAutomationRoute,
   } as any)
+const AuthenticatedWSlugSupportInboxIndexRoute =
+  AuthenticatedWSlugSupportInboxIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedWSlugSupportInboxRoute,
+  } as any)
 const AuthenticatedWSlugPmTasksIndexRoute =
   AuthenticatedWSlugPmTasksIndexRouteImport.update({
     id: '/pm/tasks/',
@@ -694,6 +694,12 @@ const AuthenticatedWSlugAutomationToolsIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedWSlugAutomationToolsRoute,
+  } as any)
+const AuthenticatedWSlugSupportInboxConversationIdRoute =
+  AuthenticatedWSlugSupportInboxConversationIdRouteImport.update({
+    id: '/$conversationId',
+    path: '/$conversationId',
+    getParentRoute: () => AuthenticatedWSlugSupportInboxRoute,
   } as any)
 const AuthenticatedWSlugPmTasksTaskIdRoute =
   AuthenticatedWSlugPmTasksTaskIdRouteImport.update({
@@ -796,7 +802,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsRouteWithChildren
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
-  '/w/$slug/support': typeof AuthenticatedWSlugSupportRouteWithChildren
+  '/w/$slug/support': typeof AuthenticatedWSlugSupportInboxRouteWithChildren
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug/': typeof AuthenticatedWSlugIndexRoute
@@ -853,7 +859,6 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
-  '/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportConversationIdRoute
   '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
   '/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
@@ -862,7 +867,6 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/': typeof AuthenticatedWSlugPmIndexRoute
   '/w/$slug/settings/': typeof AuthenticatedWSlugSettingsIndexRoute
   '/w/$slug/sprints/': typeof AuthenticatedWSlugSprintsIndexRoute
-  '/w/$slug/support/': typeof AuthenticatedWSlugSupportIndexRoute
   '/w/$slug/automation/tools/connections': typeof AuthenticatedWSlugAutomationToolsConnectionsRoute
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
@@ -876,6 +880,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   '/w/$slug/pm/tasks/$taskId': typeof AuthenticatedWSlugPmTasksTaskIdRoute
+  '/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportInboxConversationIdRoute
   '/w/$slug/automation/tools/': typeof AuthenticatedWSlugAutomationToolsIndexRoute
   '/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
@@ -886,6 +891,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
   '/w/$slug/pm/tasks/': typeof AuthenticatedWSlugPmTasksIndexRoute
+  '/w/$slug/support/': typeof AuthenticatedWSlugSupportInboxIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -905,6 +911,7 @@ export interface FileRoutesByTo {
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
+  '/w/$slug/support': typeof AuthenticatedWSlugSupportInboxIndexRoute
   '/w/$slug/tasks': typeof AuthenticatedWSlugTasksRoute
   '/w/$slug/team-goals': typeof AuthenticatedWSlugTeamGoalsRoute
   '/w/$slug': typeof AuthenticatedWSlugIndexRoute
@@ -960,7 +967,6 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
-  '/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportConversationIdRoute
   '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
   '/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationIndexRoute
@@ -969,7 +975,6 @@ export interface FileRoutesByTo {
   '/w/$slug/pm': typeof AuthenticatedWSlugPmIndexRoute
   '/w/$slug/settings': typeof AuthenticatedWSlugSettingsIndexRoute
   '/w/$slug/sprints': typeof AuthenticatedWSlugSprintsIndexRoute
-  '/w/$slug/support': typeof AuthenticatedWSlugSupportIndexRoute
   '/w/$slug/automation/tools/connections': typeof AuthenticatedWSlugAutomationToolsConnectionsRoute
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
@@ -983,6 +988,7 @@ export interface FileRoutesByTo {
   '/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   '/w/$slug/pm/tasks/$taskId': typeof AuthenticatedWSlugPmTasksTaskIdRoute
+  '/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportInboxConversationIdRoute
   '/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsIndexRoute
   '/w/$slug/crm/companies': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
@@ -1075,7 +1081,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/_authenticated/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
-  '/_authenticated/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportConversationIdRoute
+  '/_authenticated/w/$slug/support/_inbox': typeof AuthenticatedWSlugSupportInboxRouteWithChildren
   '/_authenticated/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
   '/_authenticated/w/$slug/support/search': typeof AuthenticatedWSlugSupportSearchRoute
   '/_authenticated/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
@@ -1084,7 +1090,6 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/': typeof AuthenticatedWSlugPmIndexRoute
   '/_authenticated/w/$slug/settings/': typeof AuthenticatedWSlugSettingsIndexRoute
   '/_authenticated/w/$slug/sprints/': typeof AuthenticatedWSlugSprintsIndexRoute
-  '/_authenticated/w/$slug/support/': typeof AuthenticatedWSlugSupportIndexRoute
   '/_authenticated/w/$slug/automation/tools/connections': typeof AuthenticatedWSlugAutomationToolsConnectionsRoute
   '/_authenticated/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/_authenticated/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
@@ -1098,6 +1103,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/objectives/$objectiveId': typeof AuthenticatedWSlugPmObjectivesObjectiveIdRoute
   '/_authenticated/w/$slug/pm/sprints/$sprintId': typeof AuthenticatedWSlugPmSprintsSprintIdRoute
   '/_authenticated/w/$slug/pm/tasks/$taskId': typeof AuthenticatedWSlugPmTasksTaskIdRoute
+  '/_authenticated/w/$slug/support/_inbox/$conversationId': typeof AuthenticatedWSlugSupportInboxConversationIdRoute
   '/_authenticated/w/$slug/automation/tools/': typeof AuthenticatedWSlugAutomationToolsIndexRoute
   '/_authenticated/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
@@ -1108,6 +1114,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
   '/_authenticated/w/$slug/pm/tasks/': typeof AuthenticatedWSlugPmTasksIndexRoute
+  '/_authenticated/w/$slug/support/_inbox/': typeof AuthenticatedWSlugSupportInboxIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -1190,7 +1197,6 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
-    | '/w/$slug/support/$conversationId'
     | '/w/$slug/support/coverage'
     | '/w/$slug/support/search'
     | '/w/$slug/automation/'
@@ -1199,7 +1205,6 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/'
     | '/w/$slug/settings/'
     | '/w/$slug/sprints/'
-    | '/w/$slug/support/'
     | '/w/$slug/automation/tools/connections'
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
@@ -1213,6 +1218,7 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
     | '/w/$slug/pm/tasks/$taskId'
+    | '/w/$slug/support/$conversationId'
     | '/w/$slug/automation/tools/'
     | '/w/$slug/crm/companies/'
     | '/w/$slug/crm/contacts/'
@@ -1223,6 +1229,7 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/objectives/'
     | '/w/$slug/pm/sprints/'
     | '/w/$slug/pm/tasks/'
+    | '/w/$slug/support/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -1242,6 +1249,7 @@ export interface FileRouteTypes {
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
     | '/w/$slug/setup'
+    | '/w/$slug/support'
     | '/w/$slug/tasks'
     | '/w/$slug/team-goals'
     | '/w/$slug'
@@ -1297,7 +1305,6 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
-    | '/w/$slug/support/$conversationId'
     | '/w/$slug/support/coverage'
     | '/w/$slug/support/search'
     | '/w/$slug/automation'
@@ -1306,7 +1313,6 @@ export interface FileRouteTypes {
     | '/w/$slug/pm'
     | '/w/$slug/settings'
     | '/w/$slug/sprints'
-    | '/w/$slug/support'
     | '/w/$slug/automation/tools/connections'
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
@@ -1320,6 +1326,7 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/objectives/$objectiveId'
     | '/w/$slug/pm/sprints/$sprintId'
     | '/w/$slug/pm/tasks/$taskId'
+    | '/w/$slug/support/$conversationId'
     | '/w/$slug/automation/tools'
     | '/w/$slug/crm/companies'
     | '/w/$slug/crm/contacts'
@@ -1411,7 +1418,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/teams'
     | '/_authenticated/w/$slug/settings/workflows'
     | '/_authenticated/w/$slug/sprints/$sprintId'
-    | '/_authenticated/w/$slug/support/$conversationId'
+    | '/_authenticated/w/$slug/support/_inbox'
     | '/_authenticated/w/$slug/support/coverage'
     | '/_authenticated/w/$slug/support/search'
     | '/_authenticated/w/$slug/automation/'
@@ -1420,7 +1427,6 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/'
     | '/_authenticated/w/$slug/settings/'
     | '/_authenticated/w/$slug/sprints/'
-    | '/_authenticated/w/$slug/support/'
     | '/_authenticated/w/$slug/automation/tools/connections'
     | '/_authenticated/w/$slug/crm/companies/$companyId'
     | '/_authenticated/w/$slug/crm/contacts/$contactId'
@@ -1434,6 +1440,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/objectives/$objectiveId'
     | '/_authenticated/w/$slug/pm/sprints/$sprintId'
     | '/_authenticated/w/$slug/pm/tasks/$taskId'
+    | '/_authenticated/w/$slug/support/_inbox/$conversationId'
     | '/_authenticated/w/$slug/automation/tools/'
     | '/_authenticated/w/$slug/crm/companies/'
     | '/_authenticated/w/$slug/crm/contacts/'
@@ -1444,6 +1451,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/objectives/'
     | '/_authenticated/w/$slug/pm/sprints/'
     | '/_authenticated/w/$slug/pm/tasks/'
+    | '/_authenticated/w/$slug/support/_inbox/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1644,13 +1652,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugAutomationRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
-    '/_authenticated/w/$slug/support/': {
-      id: '/_authenticated/w/$slug/support/'
-      path: '/'
-      fullPath: '/w/$slug/support/'
-      preLoaderRoute: typeof AuthenticatedWSlugSupportIndexRouteImport
-      parentRoute: typeof AuthenticatedWSlugSupportRoute
-    }
     '/_authenticated/w/$slug/sprints/': {
       id: '/_authenticated/w/$slug/sprints/'
       path: '/sprints'
@@ -1707,11 +1708,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSupportCoverageRouteImport
       parentRoute: typeof AuthenticatedWSlugSupportRoute
     }
-    '/_authenticated/w/$slug/support/$conversationId': {
-      id: '/_authenticated/w/$slug/support/$conversationId'
-      path: '/$conversationId'
-      fullPath: '/w/$slug/support/$conversationId'
-      preLoaderRoute: typeof AuthenticatedWSlugSupportConversationIdRouteImport
+    '/_authenticated/w/$slug/support/_inbox': {
+      id: '/_authenticated/w/$slug/support/_inbox'
+      path: ''
+      fullPath: '/w/$slug/support'
+      preLoaderRoute: typeof AuthenticatedWSlugSupportInboxRouteImport
       parentRoute: typeof AuthenticatedWSlugSupportRoute
     }
     '/_authenticated/w/$slug/sprints/$sprintId': {
@@ -2085,6 +2086,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugAutomationActivityRouteImport
       parentRoute: typeof AuthenticatedWSlugAutomationRoute
     }
+    '/_authenticated/w/$slug/support/_inbox/': {
+      id: '/_authenticated/w/$slug/support/_inbox/'
+      path: '/'
+      fullPath: '/w/$slug/support/'
+      preLoaderRoute: typeof AuthenticatedWSlugSupportInboxIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugSupportInboxRoute
+    }
     '/_authenticated/w/$slug/pm/tasks/': {
       id: '/_authenticated/w/$slug/pm/tasks/'
       path: '/pm/tasks'
@@ -2154,6 +2162,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/automation/tools/'
       preLoaderRoute: typeof AuthenticatedWSlugAutomationToolsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugAutomationToolsRoute
+    }
+    '/_authenticated/w/$slug/support/_inbox/$conversationId': {
+      id: '/_authenticated/w/$slug/support/_inbox/$conversationId'
+      path: '/$conversationId'
+      fullPath: '/w/$slug/support/$conversationId'
+      preLoaderRoute: typeof AuthenticatedWSlugSupportInboxConversationIdRouteImport
+      parentRoute: typeof AuthenticatedWSlugSupportInboxRoute
     }
     '/_authenticated/w/$slug/pm/tasks/$taskId': {
       id: '/_authenticated/w/$slug/pm/tasks/$taskId'
@@ -2379,21 +2394,37 @@ const AuthenticatedWSlugDocsRouteWithChildren =
     AuthenticatedWSlugDocsRouteChildren,
   )
 
+interface AuthenticatedWSlugSupportInboxRouteChildren {
+  AuthenticatedWSlugSupportInboxConversationIdRoute: typeof AuthenticatedWSlugSupportInboxConversationIdRoute
+  AuthenticatedWSlugSupportInboxIndexRoute: typeof AuthenticatedWSlugSupportInboxIndexRoute
+}
+
+const AuthenticatedWSlugSupportInboxRouteChildren: AuthenticatedWSlugSupportInboxRouteChildren =
+  {
+    AuthenticatedWSlugSupportInboxConversationIdRoute:
+      AuthenticatedWSlugSupportInboxConversationIdRoute,
+    AuthenticatedWSlugSupportInboxIndexRoute:
+      AuthenticatedWSlugSupportInboxIndexRoute,
+  }
+
+const AuthenticatedWSlugSupportInboxRouteWithChildren =
+  AuthenticatedWSlugSupportInboxRoute._addFileChildren(
+    AuthenticatedWSlugSupportInboxRouteChildren,
+  )
+
 interface AuthenticatedWSlugSupportRouteChildren {
-  AuthenticatedWSlugSupportConversationIdRoute: typeof AuthenticatedWSlugSupportConversationIdRoute
+  AuthenticatedWSlugSupportInboxRoute: typeof AuthenticatedWSlugSupportInboxRouteWithChildren
   AuthenticatedWSlugSupportCoverageRoute: typeof AuthenticatedWSlugSupportCoverageRoute
   AuthenticatedWSlugSupportSearchRoute: typeof AuthenticatedWSlugSupportSearchRoute
-  AuthenticatedWSlugSupportIndexRoute: typeof AuthenticatedWSlugSupportIndexRoute
 }
 
 const AuthenticatedWSlugSupportRouteChildren: AuthenticatedWSlugSupportRouteChildren =
   {
-    AuthenticatedWSlugSupportConversationIdRoute:
-      AuthenticatedWSlugSupportConversationIdRoute,
+    AuthenticatedWSlugSupportInboxRoute:
+      AuthenticatedWSlugSupportInboxRouteWithChildren,
     AuthenticatedWSlugSupportCoverageRoute:
       AuthenticatedWSlugSupportCoverageRoute,
     AuthenticatedWSlugSupportSearchRoute: AuthenticatedWSlugSupportSearchRoute,
-    AuthenticatedWSlugSupportIndexRoute: AuthenticatedWSlugSupportIndexRoute,
   }
 
 const AuthenticatedWSlugSupportRouteWithChildren =

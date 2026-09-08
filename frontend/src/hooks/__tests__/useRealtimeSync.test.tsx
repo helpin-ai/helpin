@@ -15,6 +15,7 @@ import { flattenSupportMessagePages, seedSupportMessagePages, type SupportMessag
 const captured = {
   onEvent: null as ((event: unknown) => void) | null,
   onPresenceSnapshot: null as ((snapshot: unknown) => void) | null,
+  connected: true,
   send: vi.fn(),
 }
 
@@ -22,7 +23,7 @@ vi.mock('../useWebSocket', () => ({
   useWebSocket: vi.fn(({ onEvent, onPresenceSnapshot }) => {
     captured.onEvent = onEvent
     captured.onPresenceSnapshot = onPresenceSnapshot
-    return { send: captured.send, isConnected: true }
+    return { send: captured.send, isConnected: captured.connected }
   }),
   useWSStore: { setState: vi.fn() },
 }))
@@ -47,6 +48,7 @@ describe('useRealtimeSync task ordering events', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    captured.connected = true
     captured.send = vi.fn()
     captured.onPresenceSnapshot = null
     useAuthStore.setState({ user: { id: 'user-1' } as never })
@@ -483,10 +485,77 @@ describe('useRealtimeSync task ordering events', () => {
     const secondTask = usePMBoardStore.getState().columns[0]?.tasks[0]
     expect(secondTask).toBe(firstTask)
     expect(secondTask?.latest_run_at).toBe('2026-08-04T09:00:00Z')
-    expect(invalidateQueries).not.toHaveBeenCalled()
+    expect(invalidateQueries.mock.calls.map(([options]) => options.queryKey)).toEqual([queryKeys.automation.runAttentionCount('ws-1')])
 
     act(() => root.unmount())
     container.remove()
+  })
+
+  it.each([['agent_run', 'coding_session'], ['coding_session', 'agent_run']])('keeps repeated typed states quiet with aliases %s then %s', async (first, second) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidations = vi.spyOn(client, 'invalidateQueries')
+    const listener = vi.fn()
+    window.addEventListener('agent_run-updated', listener)
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    const data = { status: 'paused', pause_reason: 'awaiting_user_message', change_kind: 'state' }
+    const emit = async (change = {}) => act(async () => {
+      for (const entity of [first, second]) captured.onEvent?.({ entity, action: 'updated', entity_id: 'run-1', workspace_id: 'ws-1', data: { ...data, ...change } })
+      vi.advanceTimersByTime(500)
+    })
+    await emit()
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener.mock.calls[0]?.[0].detail.update_kind).toBe('lifecycle')
+    invalidations.mockClear()
+    await emit()
+    expect(listener).toHaveBeenCalledTimes(1)
+    await emit({ change_kind: 'message' })
+    expect(invalidations).not.toHaveBeenCalled()
+    expect(listener.mock.calls.at(-1)?.[0].detail.update_kind).toBe('content')
+    await emit({ pause_reason: 'human_approval' })
+    expect(invalidations).toHaveBeenCalledWith(expect.objectContaining({ queryKey: queryKeys.automation.runAttentionCount('ws-1') }))
+    invalidations.mockClear()
+    await emit({ status: 'running', pause_reason: 'none' })
+    expect(invalidations).toHaveBeenCalledWith(expect.objectContaining({ queryKey: queryKeys.automation.runAttentionCount('ws-1') }))
+    act(() => root.unmount())
+    window.removeEventListener('agent_run-updated', listener)
+  })
+
+  it('does not retain cancelled debounce handles when switching workspace', async () => {
+    const client = new QueryClient()
+    const invalidations = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const render = (id: string) => act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId={id} /></QueryClientProvider>))
+    const emit = (id: string) => captured.onEvent?.({ entity: 'agent_run', action: 'updated', entity_id: 'run-1', workspace_id: id, data: { change_kind: 'state', status: 'paused', pause_reason: 'human_approval' } })
+    render('ws-1')
+    act(() => emit('ws-1'))
+    render('ws-2')
+    await act(async () => { emit('ws-2'); vi.advanceTimersByTime(500) })
+    expect(invalidations).toHaveBeenCalledWith(expect.objectContaining({ queryKey: queryKeys.automation.runAttentionCount('ws-2') }))
+    expect(invalidations).not.toHaveBeenCalledWith(expect.objectContaining({ queryKey: queryKeys.automation.runAttentionCount('ws-1') }))
+    act(() => root.unmount())
+  })
+
+  it.each([false, true])('recovers queries on websocket reconnect with hidden=%s', (hidden) => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(hidden ? 'hidden' : 'visible')
+    const client = new QueryClient()
+    const invalidations = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const render = () => act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    render()
+    invalidations.mockClear()
+    captured.connected = false
+    render()
+    captured.connected = true
+    render()
+    for (const key of [queryKeys.automation.runAttentionCount('ws-1'), queryKeys.support.workspaceUnread(), queryKeys.support.teammatePresence('ws-1'), queryKeys.workspaces.memberPresence('ws-1')]) {
+      expect(invalidations).toHaveBeenCalledWith(expect.objectContaining({ queryKey: key, refetchType: hidden ? 'none' : 'active' }))
+    }
+    act(() => root.unmount())
+    visibility.mockRestore()
   })
 
   it('coalesces lifecycle invalidations and refreshes the standalone attention count', async () => {
