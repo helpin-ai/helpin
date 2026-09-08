@@ -200,6 +200,7 @@ describe('TaskCard', () => {
   it.each([
     ['epic-1', 'epic-2', 'epic-2'],
     ['epic-1', 'epic-1', ''],
+    ['epic-1', '__none__', ''],
     [undefined, 'epic-2', 'epic-2'],
   ])('saves board epic changes from %s via %s', async (currentId, selectedId, savedId) => {
     const task = buildTask({ epic_id: currentId, epic_name: currentId ? 'Same name' : undefined })
@@ -217,9 +218,10 @@ describe('TaskCard', () => {
       expect(shouldIgnoreTaskCardDrag(trigger, container.querySelector('article'))).toBe(true)
       await act(async () => trigger.click())
       const options = document.querySelectorAll('[role="option"]')
-      expect(options).toHaveLength(2)
-      expect(options[0].querySelector<HTMLElement>('[title]')!.style.backgroundColor).toBe('rgb(226, 86, 74)')
-      expect(options[1].querySelector<HTMLElement>('[title]')!.style.backgroundColor).toBe('rgb(78, 143, 234)')
+      expect(Array.from(options, (option) => option.getAttribute('data-value'))).toEqual(['__none__', 'epic-1', 'epic-2'])
+      expect(options[0].textContent).toBe('None')
+      expect(document.querySelector<HTMLElement>('[role="option"][data-value="epic-1"] [title]')!.style.backgroundColor).toBe('rgb(226, 86, 74)')
+      expect(document.querySelector<HTMLElement>('[role="option"][data-value="epic-2"] [title]')!.style.backgroundColor).toBe('rgb(78, 143, 234)')
       await act(async () => document.querySelector<HTMLElement>(`[role="option"][data-value="${selectedId}"]`)!.click())
       expect(pmTaskService.update).toHaveBeenCalledWith('workspace-1', 'task-1', { epic_id: savedId })
       expect(callbacks.onTaskPatched).toHaveBeenCalledWith(savedTask)
