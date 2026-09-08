@@ -137,7 +137,7 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 	seedWorkspace(t, db, workspaceID, "Support List Filters", "support-list-filters", userID)
 	repo := repository.NewSupportConversationRepository(db)
 
-	createConversation := func(id string, updatedAt time.Time, fields map[string]any) {
+	createConversation := func(id string, createdAt time.Time, fields map[string]any) {
 		t.Helper()
 		conversation := &model.SupportConversation{
 			ID:          id,
@@ -147,12 +147,13 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 			Priority:    "medium",
 			Channel:     "widget",
 			Source:      "widget",
-			UpdatedAt:   updatedAt,
+			CreatedAt:   createdAt,
+			UpdatedAt:   createdAt,
 		}
 		if err := repo.Create(ctx, conversation); err != nil {
 			t.Fatalf("create %s: %v", id, err)
 		}
-		updates := map[string]any{"updated_at": updatedAt}
+		updates := map[string]any{"updated_at": createdAt}
 		for key, value := range fields {
 			updates[key] = value
 		}
@@ -161,7 +162,8 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 		}
 	}
 
-	now := time.Now().UTC()
+	// Empty conversations sort by creation; the mention sorts by its timeline entry.
+	now := time.Date(2026, 9, 7, 10, 0, 0, 0, time.UTC)
 	createConversation("assigned-me", now.Add(-3*time.Minute), map[string]any{"assigned_user_id": userID})
 	createConversation("assigned-other", now.Add(-2*time.Minute), map[string]any{"assigned_user_id": otherUserID})
 	createConversation("unassigned", now.Add(-1*time.Minute), nil)
@@ -172,7 +174,7 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 	if err := db.Exec(`INSERT INTO support_messages
 		(id, workspace_id, conversation_id, sender_type, message_type, content, is_internal, metadata, created_at, updated_at)
 		VALUES (?, ?, ?, 'user', 'reply', 'Mentioning teammate', 1, ?, ?, ?)`,
-		"msg-assignment-filter-mention", workspaceID, "mentioned-me", `{"mentioned_user_ids":["`+userID+`"]}`, now, now,
+		"msg-assignment-filter-mention", workspaceID, "mentioned-me", `{"mentioned_user_ids":["`+userID+`"]}`, now.Add(2*time.Minute), now.Add(2*time.Minute),
 	).Error; err != nil {
 		t.Fatalf("insert mention message: %v", err)
 	}

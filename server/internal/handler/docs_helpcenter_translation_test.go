@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -32,11 +32,22 @@ func (f *scriptedDocsTranslationHandlerLLM) ChatCompletion(_ context.Context, _ 
 func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dbName := fmt.Sprintf("file:docs-helpcenter-handler-i18n-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	// Parallel tests can observe the same clock tick; each needs its own database.
+	dbName := "file:docs-helpcenter-handler-i18n-" + uuid.NewString() + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("close sqlite database: %v", err)
+		}
+	})
 
 	stmts := []string{
 		`CREATE TABLE docs_spaces (
