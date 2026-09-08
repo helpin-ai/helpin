@@ -12,13 +12,20 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
 
-// ListInbox composes work and unlinked recommendations in one repeatable-read snapshot.
+// ListInbox composes work, unlinked recommendations, and untracked evidence in one repeatable-read snapshot.
 // It never invokes source projection, changes ownership, or claims an approval.
 func (r *CRMSituationRepository) ListInbox(ctx context.Context, ws, member string, filters model.CRMSignalInboxFilters) (*model.CRMSignalInboxList, error) {
 	var result *model.CRMSignalInboxList
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var groups []model.CRMSignalAccountStory
 		var err error
-		result, err = listSignalInbox(tx, ws, member, filters)
+		if inboxIncludesEvidence(filters.Navigation.State) {
+			groups, err = r.inboxSignalGroups(ctx, tx, ws)
+			if err != nil {
+				return err
+			}
+		}
+		result, err = listSignalInbox(tx, ws, member, filters, groups)
 		return err
 	}, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	return result, err
@@ -44,11 +51,18 @@ func (r *CRMSituationRepository) InboxRecommendation(ctx context.Context, ws, id
 	return result, err
 }
 
-func listSignalInbox(db *gorm.DB, ws, member string, filters model.CRMSignalInboxFilters) (*model.CRMSignalInboxList, error) {
+func listSignalInbox(db *gorm.DB, ws, member string, filters model.CRMSignalInboxFilters, groups []model.CRMSignalAccountStory) (*model.CRMSignalInboxList, error) {
 	nav := filters.Navigation
 	work := inboxSituations(db, ws, member, nav)
 	proposals := inboxStandalone(db, ws, member, nav)
 	base := db.Table("(? UNION ALL ?) AS inbox", work, proposals)
+	if len(groups) > 0 {
+		evidence, err := inboxEvidenceQuery(db, ws, member, nav, groups)
+		if err != nil {
+			return nil, err
+		}
+		base = db.Table("(? UNION ALL ? UNION ALL ?) AS inbox", work, proposals, evidence)
+	}
 	if nav.Search != "" {
 		pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(nav.Search)) + "%"
 		base = base.Where("LOWER(inbox.search_text) LIKE ? ESCAPE '!'", pattern)

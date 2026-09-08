@@ -9,7 +9,8 @@ const (
 )
 
 // CRMSignalInboxItem is a read-only union member, never a synthetic situation.
-// Kind and ID identify either a canonical situation or a standalone recommendation.
+// Kind and ID identify a canonical situation, a standalone recommendation, or
+// a read-only evidence group. Evidence group IDs are not situation IDs.
 type CRMSignalInboxItem struct {
 	ID                 string    `json:"id"`
 	Kind               string    `json:"kind"`

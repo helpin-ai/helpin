@@ -40,6 +40,16 @@ func (h *CRMSituationHandler) Inbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// InboxSignalGroup reads a grouped signal without creating customer work.
+func (h *CRMSituationHandler) InboxSignalGroup(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.InboxSignalGroup(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
+	if err != nil {
+		writeSituationError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 // InboxRecommendation preserves direct links to canonical recommendations.
 func (h *CRMSituationHandler) InboxRecommendation(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.InboxRecommendation(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))

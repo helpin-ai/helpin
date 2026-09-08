@@ -857,6 +857,7 @@ func main() {
 	pmTaskInsightsRepo := repository.NewPMTaskInsightsRepository(db)
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
 	crmSituationRepo := repository.NewCRMSituationRepository(db)
+	crmSituationRepo.SetInboxSignalComposer(service.ComposeCRMInboxSignalGroups)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)

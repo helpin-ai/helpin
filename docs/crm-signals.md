@@ -895,7 +895,12 @@ The harness does not require the API server or a Temporal worker.
 ### Signals daily workspace
 
 The existing `/w/:slug/crm/insights` route now renders one Signal inbox containing
-canonical situations and unresolved standalone recommendations. It retains the
+canonical situations, unresolved standalone recommendations, and the existing
+commercially relevant evidence groups that are not already represented by work.
+Evidence visibility uses the same grouping, scoring, and minimum lane priority
+as the previous feed; it does not require an automation-routing policy or
+activation-ready rules. The explicit workspace shadow opt-out still applies.
+It retains the
 approved Signal/Customer/Category/Owner/Priority columns, with the next step and
 work status beneath the title. Priority uses the existing signal-scoring bands:
 High >= 15, Medium >= 8, Low < 8, with the actual score in a tooltip. Standalone
@@ -903,7 +908,8 @@ recommendations without business scoring say **Not scored**, not zero or AI
 confidence. Category is the only tab strip; assignment, work state, attention,
 priority, evidence review, recommendation type, and sorting remain visible in
 the main toolbar. The server owns filtering, category facets,
-ranking, pagination, and uncategorized counts. Defaults are Mine + Needs attention.
+ranking, pagination, and uncategorized counts. Defaults are Everyone + Needs attention;
+an explicitly selected personal/team filter remains unchanged.
 Unclassified work remains visible in All; category selection never rewrites motion.
 
 `?signal=:id` opens a shareable drawer using the same canonical record, query key,
@@ -929,13 +935,24 @@ from direct references and linked actions, without internal scoring metadata.
 
 ### Review consolidation
 
-`GET /crm/signal-inbox` composes canonical situations and unlinked unresolved
-suggestions in one repeatable-read, server-paginated query. It never projects
+`GET /crm/signal-inbox` composes canonical situations, unlinked unresolved
+suggestions, and untracked evidence groups in one repeatable-read snapshot with
+server-side filtering, counts, and pagination across the complete union. It never projects
 sources, claims actions, routes owners, or creates tasks during a read. A
 workspace-scoped `NOT EXISTS` excludes a standalone row once its suggestion is
 linked to a situation. Independent customer objectives are not merged merely
 because they share a customer. Classification follows explicit motion, the
 target deal/pipeline motion, unambiguous evidence, then recommendation type.
+
+Evidence rows have `kind=evidence` and use the previous feed's stable group ID,
+not a situation ID. `GET /crm/signal-inbox/evidence/:id` and the `?group=:id`
+drawer inspect current sources without importing situations or enqueueing
+playbook-entry events. Evidence already referenced by tracked work (including
+paused/closed work) or unresolved recommendations is excluded before grouping.
+Dismissed, superseded, acted-on, context-only, and below-floor evidence does not
+resurface as new work. Opening the drawer is read-only; marking evidence reviewed
+remains an explicit existing CRM feedback action. Automatic situation imports
+retain their independent policy gates; signal visibility cannot enable them.
 
 `/crm/review` now redirects to Signals with Everyone + Needs approval and
 recommendation-confidence sorting. The duplicate Review sidebar entry is removed.

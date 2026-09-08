@@ -3,7 +3,7 @@ import type { CRMSituationAttention, CRMSituationCategory, CRMSituationLifecycle
 
 export interface CRMSignalInboxItem {
   id: string;
-  kind: 'situation' | 'recommendation';
+  kind: 'situation' | 'recommendation' | 'evidence';
   title: string;
   next_step: string;
   category: CRMSituationCategory | '';

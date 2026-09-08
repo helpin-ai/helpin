@@ -19,7 +19,10 @@ var (
 )
 
 // CRMSituationRepository persists customer work without executing referenced actions.
-type CRMSituationRepository struct{ db *gorm.DB }
+type CRMSituationRepository struct {
+	db           *gorm.DB
+	inboxSignals CRMInboxSignalComposer
+}
 
 // NewCRMSituationRepository creates the customer-work store.
 func NewCRMSituationRepository(db *gorm.DB) *CRMSituationRepository {

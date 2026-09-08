@@ -12,6 +12,9 @@ export function useCRMSignalInbox(ws: string, search: SignalsSearch) {
 export function useCRMInboxRecommendation(ws: string, id: string) {
   return useQuery({ queryKey: [...queryKeys.crm.situations(ws), 'recommendation', id], queryFn: async () => read(await inbox.recommendation(ws, id)), enabled: !!ws && !!id });
 }
+export function useCRMInboxSignalGroup(ws: string, id: string) {
+  return useQuery({ queryKey: [...queryKeys.crm.situations(ws), 'evidence-group', id], queryFn: async () => read(await inbox.evidence(ws, id)), enabled: !!ws && !!id });
+}
 
 export function useCRMSituations(ws: string, filters: SituationListFilters) {
   return useQuery({ queryKey: [...queryKeys.crm.situations(ws), 'list', filters], queryFn: async () => read(await service.list(ws, filters)), enabled: !!ws });

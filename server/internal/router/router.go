@@ -1666,6 +1666,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Canonical Signals and the read-only inbox; legacy suggestion APIs remain available.
 				if h.CRMSituation != nil {
 					r.With(requirePerm(authorization.PermCRMRead)).Get("/signal-inbox", h.CRMSituation.Inbox)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/signal-inbox/evidence/{id}", h.CRMSituation.InboxSignalGroup)
 					r.With(requirePerm(authorization.PermCRMRead)).Get("/signal-inbox/recommendations/{id}", h.CRMSituation.InboxRecommendation)
 					r.With(requirePerm(authorization.PermCRMEdit)).Post("/signal-inbox/recommendations/{id}/{decision}", h.CRMSituation.DecideInboxRecommendation)
 					r.With(requirePerm(authorization.PermCRMRead)).Get("/situations", h.CRMSituation.List)

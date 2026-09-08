@@ -36,6 +36,7 @@ type crmSituationStore interface {
 	History(context.Context, string, string, int64, int) (*model.CRMSituationHistory, error)
 	ListInbox(context.Context, string, string, model.CRMSignalInboxFilters) (*model.CRMSignalInboxList, error)
 	InboxRecommendation(context.Context, string, string) (*model.CRMInboxRecommendation, error)
+	InboxSignalGroup(context.Context, string, string) (*model.CRMSignalAccountStory, error)
 }
 
 type crmSituationAuthorizer interface {
