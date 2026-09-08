@@ -210,7 +210,11 @@ function GlobalCreateTask({ workspaceId, onClose }: { workspaceId: string; onClo
 function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [color, setColor] = useState(DEFAULT_EPIC_COLOR);
+  const [initialColor] = useState(() => {
+    const pastels = EPIC_PRESET_COLORS.filter((preset) => preset !== DEFAULT_EPIC_COLOR);
+    return pastels[Math.floor(Math.random() * pastels.length)];
+  });
+  const [color, setColor] = useState(initialColor);
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
   const confirm = useConfirm();
   const { data: epicStates = [] } = useEpicStates(workspaceId);
@@ -409,7 +413,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     }
   };
 
-  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || color !== DEFAULT_EPIC_COLOR || pendingFiles.length > 0 || epicExternalLinks.some(l => l.url.trim());
+  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || color !== initialColor || pendingFiles.length > 0 || epicExternalLinks.some(l => l.url.trim());
 
   const handleClose = async () => {
     if (hasUnsavedChanges) {

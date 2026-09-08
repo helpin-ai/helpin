@@ -44,7 +44,7 @@ describe('epic colors', () => {
     const badge = container.querySelector<HTMLElement>('[title]')!;
     expect(badge.title).toBe(name);
     expect(badge.textContent).toBe(name);
-    expect(badge.style.backgroundColor).toBe('rgb(176, 186, 200)');
+    expect(badge.style.backgroundColor).toBe('rgb(193, 201, 211)');
     expect(badge.style.color).toBe('rgb(0, 0, 0)');
   });
 

@@ -14,9 +14,10 @@ import {
   subQuarters,
 } from 'date-fns';
 
+import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
 import { RoadmapEpicBar } from '@/components/pm/RoadmapEpicBar';
 import { buildRoadmapQuarterSegments, getRoadmapEpicRange, getScheduledRoadmapEpics } from '@/components/pm/roadmapUtils';
-import { Layers01Icon, Target01Icon, UserGroupIcon } from '@/lib/icons';
+import { Target01Icon, UserGroupIcon } from '@/lib/icons';
 import type { Objective, RoadmapEpic } from '@/lib/pmTypes';
 
 type GroupBy = 'objective' | 'team' | 'epic';
@@ -275,7 +276,7 @@ export function RoadmapTimeline({
               return (
                 <div key={`${group.id}-${epic.epic.id}`} className="flex border-b border-quiet-divider-light last:border-b-0">
                   <div className={`sticky left-0 z-10 flex min-w-0 shrink-0 items-center gap-2 border-r border-quiet-divider-strong bg-background py-2 ${isEpicGrouping ? 'px-3' : 'pl-7 pr-3'}`} style={labelStyle}>
-                    <Layers01Icon className="h-[14px] w-[14px] shrink-0 text-quiet-muted" />
+                    <EpicColorSwatch color={epic.epic.color} />
                     <span className="truncate text-sm font-medium text-quiet-text-tertiary">
                       {isEpicGrouping ? group.name : epic.epic.name}
                     </span>
