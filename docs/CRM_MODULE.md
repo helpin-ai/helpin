@@ -7,6 +7,15 @@ operations, use the canonical
 [`crm-signals.md`](crm-signals.md) reference. This module overview
 does not duplicate that changing rule catalogue.
 
+For the agreed Signals/Review and Playbooks experience, use the
+[CRM blueprint](crm-customer-work-blueprint.md). The
+[connection plan](crm-playbook-automation-change-proposal.md) documents the implemented
+Playbooks → Flows → built-in Beacon + specialized skills integration. Guided setup,
+explicit activation, durable checks, exact approvals and result inspection share the
+existing Automation runtime and owning-module services. Independently configured
+outbound sequences retain their own behavior. This overview is not a production
+deployment or activation report.
+
 ## Architecture
 
 The CRM follows Helpin's standard Handler → Service → Repository layering with RBAC authorization, GORM models, and TanStack Query on the frontend.
@@ -17,7 +26,7 @@ The CRM follows Helpin's standard Handler → Service → Repository layering wi
 |-----------|-------|-------------|
 | `crm.read` | viewer+ | Read contacts, companies, deals, activities |
 | `crm.edit` | member+ | Create/update CRM objects |
-| `crm.admin` | manager+ | Pipeline configuration, property management |
+| `crm.admin` | admin, owner | Pipeline configuration, property management, Playbook configuration/publication |
 
 ### Database
 
@@ -295,17 +304,26 @@ All endpoints are under `/api/crm/` and require workspace context (`X-Workspace-
 | `/w/:slug/crm/lists` | Lists | Static/smart list management + import wizard |
 | `/w/:slug/crm/sequences` | Sequences | Sequence list |
 | `/w/:slug/crm/sequences/:id` | SequenceDetail | Sequence builder + enrollments |
-| `/w/:slug/crm/insights` | Insights | Dashboard with health scores, signals, suggestions |
+| `/w/:slug/crm/insights` | Signals | Unified customer situations and standalone recommendations, with visible filters and exact action decisions |
+| `/w/:slug/crm/insights?view=evidence` | Insights | Preserved raw evidence, deal health, CRM search and setup destinations |
+| `/w/:slug/crm/review` | — | Compatibility redirect to Signals: Everyone + Needs approval |
+| `/w/:slug/crm/playbooks` | Playbooks | Published/draft policy, manual participation, guided automation setup and explicit activation |
+| `/w/:slug/crm/playbooks/:playbookId` | PlaybookDetail | Signals / Setup / Activity for the same canonical customer work |
 
 ### Sidebar Navigation
 
-CRM appears as a primary rail item (Briefcase icon) with sub-navigation:
-- Contacts (Users icon)
-- Companies (Building2 icon)
-- Deals (DollarSign icon)
-- Lists (LayoutList icon)
-- Sequences (Play icon)
-- Insights (Lightbulb icon)
+Current CRM sub-navigation is defined in the shared sidebar configuration:
+
+- Overview
+- Contacts
+- Companies
+- Deals
+- Meetings
+- Signals
+- Playbooks
+
+Review is not a second sidebar queue. Preserved routes are not necessarily primary
+navigation items; see the route table and the current CRM reference.
 
 ### Key Components
 

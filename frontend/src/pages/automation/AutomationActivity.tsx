@@ -1095,6 +1095,12 @@ export function AutomationActivityPage({
           params: { slug, contactId: targetID },
         });
         return;
+      case 'crm_company':
+        void navigate({
+          to: '/w/$slug/crm/companies/$companyId' as string,
+          params: { slug, companyId: targetID },
+        });
+        return;
       case 'crm_deal':
         openDealRoute(navigate as never, { pathname: location.pathname }, slug, targetID);
         return;

@@ -10,6 +10,12 @@ import {
 } from '../automationActivityRunPresentation';
 
 describe('automation activity run presentation', () => {
+  it('shows companies by name with a link to the CRM record', () => {
+    expect(buildActivityTargetPresentation({
+      targetType: 'crm_company', targetId: 'company-1', targetTitle: 'Acme',
+    })).toMatchObject({ typeLabel: 'Company', primary: 'Acme', clickable: true });
+  });
+
   it('uses task key and target title as the primary target label', () => {
     expect(
       buildActivityTargetPresentation({

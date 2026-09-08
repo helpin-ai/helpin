@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { memo, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
 import { Cancel01Icon, FilterHorizontalIcon, PlusSignIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +37,11 @@ interface QueryBuilderPopoverProps {
   triggerLabel?: string;
   triggerVariant?: ComponentProps<typeof Button>['variant'];
   triggerClassName?: string;
+  allowOr?: boolean;
+  maxRules?: number;
+  presentation?: 'default' | 'quiet';
+  emptyDescription?: string;
+  renderValue?: (rule: QueryFilterRule, onChange: (value: string) => void) => ReactNode;
 }
 
 interface DraftRule extends QueryFilterRule {
@@ -54,6 +59,8 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
   onValueChange,
   onRangeValueChange,
   onRemove,
+  logic,
+  renderValue,
 }: {
   index: number;
   rule: DraftRule;
@@ -65,11 +72,13 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
   onValueChange: (value: string) => void;
   onRangeValueChange: (position: 0 | 1, value: string) => void;
   onRemove: () => void;
+  logic: 'and' | 'or';
+  renderValue?: QueryBuilderPopoverProps['renderValue'];
 }) {
   const operators = field ? getOperatorsForField(field) : [];
   const showValue = operatorUsesValue(rule.operator);
   const showRange = operatorUsesRange(rule.operator);
-  const primaryLabel = index === 0 ? 'Where' : 'and';
+  const primaryLabel = index === 0 ? 'Where' : logic;
 
   return (
     <div className="grid gap-1.5 md:grid-cols-[48px_minmax(0,1fr)_160px_minmax(0,1fr)_24px] md:items-center">
@@ -104,7 +113,7 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
       <div className="min-w-0">
         {!showValue ? (
           <div className="h-8 rounded-md border border-dashed border-border/70 bg-muted/30" />
-        ) : field?.type === 'date' && showRange ? (
+        ) : renderValue?.(rule, onValueChange) ?? (field?.type === 'date' && showRange ? (
           <div className="grid grid-cols-2 gap-1.5">
             <Input
               type="date"
@@ -147,7 +156,7 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
             placeholder={field?.placeholder ?? 'Enter value'}
             className="h-8 text-[11px]"
           />
-        )}
+        ))}
       </div>
 
       <Button
@@ -156,6 +165,7 @@ const QueryBuilderRuleRow = memo(function QueryBuilderRuleRow({
         size="icon"
         className="h-6 w-6 self-start md:self-center"
         onClick={onRemove}
+        aria-label={`Remove filter ${index + 1}`}
         disabled={!canRemove}
       >
         <Cancel01Icon className="h-3 w-3" />
@@ -171,21 +181,24 @@ export function QueryBuilderPopover({
   triggerLabel = 'Filter',
   triggerVariant = 'outline',
   triggerClassName,
+  allowOr = false,
+  maxRules = Infinity,
+  presentation = 'default',
+  emptyDescription = 'Add one or more conditions to filter contacts.',
+  renderValue,
 }: QueryBuilderPopoverProps) {
   const [open, setOpen] = useState(false);
+  const [logic, setLogic] = useState<'and' | 'or'>(allowOr ? value?.logic ?? 'and' : 'and');
   const [draftRules, setDraftRules] = useState<DraftRule[]>(() => toDraftRules(value?.rules, fields));
 
-  useEffect(() => {
-    if (!open) {
-      setDraftRules(toDraftRules(value?.rules, fields));
+  const changeOpen = (next: boolean) => {
+    if (next) {
+      const saved = toDraftRules(value?.rules, fields);
+      setDraftRules(saved.length ? saved : fields[0] ? [createDraftRule(fields[0])] : []);
+      setLogic(allowOr ? value?.logic ?? 'and' : 'and');
     }
-  }, [fields, open, value]);
-
-  useEffect(() => {
-    if (open && draftRules.length === 0 && fields[0]) {
-      setDraftRules([createDraftRule(fields[0])]);
-    }
-  }, [draftRules.length, fields, open]);
+    setOpen(next);
+  };
 
   const activeCount = value?.rules.length ?? 0;
   const fieldMap = useMemo(
@@ -194,12 +207,12 @@ export function QueryBuilderPopover({
   );
   const hasDraftChanges = useMemo(() => {
     const normalizedDraft = normalizeQueryFilterGroup({
-      logic: 'and',
+      logic,
       rules: draftRules.map(stripDraftRule),
     });
     const normalizedValue = normalizeQueryFilterGroup(value);
     return JSON.stringify(normalizedDraft ?? null) !== JSON.stringify(normalizedValue ?? null);
-  }, [draftRules, value]);
+  }, [draftRules, logic, value]);
   const hasIncompleteRules = useMemo(
     () => draftRules.some((rule) => !isQueryFilterRuleComplete(stripDraftRule(rule))),
     [draftRules],
@@ -219,7 +232,7 @@ export function QueryBuilderPopover({
 
   return (
     <div className="flex items-center gap-1.5">
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={changeOpen}>
         <PopoverTrigger asChild>
           <Button
             type="button"
@@ -229,7 +242,8 @@ export function QueryBuilderPopover({
           >
             <FilterHorizontalIcon className="h-3 w-3" />
             {triggerLabel}
-            {activeCount > 0 && (
+            {activeCount > 0 && presentation === 'quiet' && <span className="text-quiet-text-tertiary">{activeCount}</span>}
+            {activeCount > 0 && presentation !== 'quiet' && (
               <Badge variant="secondary" className="h-4 min-w-4 rounded-full px-1 text-[10px]">
                 {activeCount}
               </Badge>
@@ -238,13 +252,14 @@ export function QueryBuilderPopover({
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className="w-[min(680px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] gap-0 p-0"
+          className={cn('w-[min(680px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] gap-0 p-0', presentation === 'quiet' && '[&_input]:rounded-none [&_input]:border-0 [&_input]:border-b [&_input]:border-quiet-field [&_input]:bg-transparent [&_input]:shadow-none [&_input]:focus-visible:ring-0 [&_input]:focus-visible:border-b-2 [&_[data-slot=select-trigger]]:rounded-none [&_[data-slot=select-trigger]]:border-0 [&_[data-slot=select-trigger]]:border-b [&_[data-slot=select-trigger]]:border-quiet-field [&_[data-slot=select-trigger]]:bg-transparent [&_[data-slot=select-trigger]]:shadow-none')}
         >
           <div className="border-b border-border/70 px-3.5 py-2.5">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium">Filters</span>
-                {activeCount > 0 && (
+                {activeCount > 0 && presentation === 'quiet' && <span className="text-xs text-quiet-text-tertiary">{activeCount} conditions</span>}
+                {activeCount > 0 && presentation !== 'quiet' && (
                   <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
                     {activeCount} active
                   </Badge>
@@ -265,9 +280,10 @@ export function QueryBuilderPopover({
           </div>
 
           <div className="space-y-2.5 px-3.5 py-2.5">
+            {allowOr && <Select value={logic} onValueChange={(value) => setLogic(value as 'and' | 'or')}><SelectTrigger aria-label="Match conditions" variant="ghost" size="sm"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="and">Match all conditions</SelectItem><SelectItem value="or">Match any condition</SelectItem></SelectContent></Select>}
             {draftRules.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-4 text-xs text-muted-foreground">
-                Add one or more conditions to filter contacts.
+                {emptyDescription}
               </div>
             ) : (
               draftRules.map((rule, index) => (
@@ -278,6 +294,8 @@ export function QueryBuilderPopover({
                   field={fieldMap.get(rule.field)}
                   fields={fields}
                   canRemove={draftRules.length > 1}
+                  logic={logic}
+                  renderValue={renderValue}
                   onFieldChange={(fieldKey) => {
                     const nextField = fieldMap.get(fieldKey);
                     if (!nextField) return;
@@ -321,7 +339,7 @@ export function QueryBuilderPopover({
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-2.5 border-t border-border/60 pt-3">
-              <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={addRule}>
+              <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={addRule} disabled={draftRules.length >= maxRules}>
                 <PlusSignIcon className="mr-1.5 h-3 w-3" />
                 Add filter
               </Button>
@@ -346,7 +364,7 @@ export function QueryBuilderPopover({
                   disabled={!hasDraftChanges || hasIncompleteRules}
                   onClick={() => {
                     onApply(normalizeQueryFilterGroup({
-                      logic: 'and',
+                      logic,
                       rules: draftRules.map(stripDraftRule),
                     }));
                     setOpen(false);

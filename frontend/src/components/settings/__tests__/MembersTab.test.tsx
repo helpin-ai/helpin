@@ -33,7 +33,7 @@ describe('MembersTab', () => {
     expect(cells[3].textContent).toContain('Support');
     expect(cells[3].textContent).not.toContain('CRM');
     expect(row.querySelector('[role="combobox"]')).toBeNull();
-    expect(Array.from(row.querySelectorAll('button')).map(item => item.textContent)).toEqual(['Edit', 'Remove']);
+    expect(Array.from(row.querySelectorAll('button')).map(item => item.getAttribute('aria-label'))).toEqual(['Edit Ada Lovelace', 'Remove Ada Lovelace']);
     const remove = row.querySelector<HTMLButtonElement>('button[aria-label="Remove Ada Lovelace"]')!;
     await act(async () => remove.click());
     expect(workspacesService.removeMember).not.toHaveBeenCalled();

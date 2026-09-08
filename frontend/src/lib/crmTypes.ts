@@ -1,5 +1,7 @@
 // CRM Module TypeScript interfaces
 
+export type * from "./crmSituationTypes";
+
 export type LifecycleStage =
   | "subscriber"
   | "lead"
@@ -1144,13 +1146,14 @@ export interface CreateCRMDealHealthScoreRequest {
 }
 
 export type CRMSuggestionType =
+  | "playbook_action"
   | "follow_up"
   | "deal_create"
   | "deal_advance"
   | "enrichment"
   | "risk_alert";
 
-export type CRMSuggestionStatus = "pending" | "accepted" | "dismissed";
+export type CRMSuggestionStatus = "pending" | "accepted" | "dismissed" | "superseded" | "expired";
 
 export interface CRMSuggestion {
   id: string;
@@ -1167,7 +1170,10 @@ export interface CRMSuggestion {
   status: CRMSuggestionStatus;
   dismissal_reason?: CRMSignalDismissalReason;
   confidence: number;
-  execution_status?: "pending" | "succeeded" | "failed";
+  execution_status?: "pending" | "in_progress" | "manual_required" | "succeeded" | "failed";
+  revision?: string;
+  assignee_member_id?: string | null;
+  assignee_available?: boolean;
   executed_at?: string;
   execution_error?: string;
   created_at: string;

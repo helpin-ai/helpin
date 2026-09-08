@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -112,12 +116,27 @@ func (h *CRMSuggestionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *CRMSuggestionHandler) Accept(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var edits map[string]interface{}
-	// Body is optional
-	_ = decodeJSON(r, &edits)
+	// An absent body is valid; malformed edits must not execute the old payload.
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	defer r.Body.Close()
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&edits); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid suggestion edits")
+		return
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		writeError(w, http.StatusBadRequest, "invalid suggestion edits")
+		return
+	}
 
 	suggestion, err := h.suggestionService.AcceptSuggestion(r.Context(), getWorkspaceID(r), id, edits)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		if errors.Is(err, service.ErrCRMSuggestionStale) {
+			writeError(w, http.StatusConflict, "this suggestion changed or is no longer pending")
+			return
+		}
+		slog.ErrorContext(r.Context(), "suggestion acceptance failed", "error", err, "workspace_id", getWorkspaceID(r), "suggestion_id", id)
+		writeError(w, http.StatusBadRequest, "the suggestion could not be accepted; reload it and check its context")
 		return
 	}
 	writeJSON(w, http.StatusOK, suggestion)

@@ -352,10 +352,19 @@ func ensureDealAssociation(tx *gorm.DB, workspaceID, dealID, targetType, targetI
 
 // Update updates a deal.
 func (r *CRMDealRepository) Update(ctx context.Context, deal *model.CRMDeal) error {
-	if err := r.db.WithContext(ctx).Save(deal).Error; err != nil {
-		return fmt.Errorf("update deal: %w", err)
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockSituationWorkspace(tx, deal.WorkspaceID); err != nil {
+			return err
+		}
+		var previous model.CRMDeal
+		if err := tx.Where("workspace_id = ? AND id = ?", deal.WorkspaceID, deal.ID).Take(&previous).Error; err != nil {
+			return err
+		}
+		if err := tx.Save(deal).Error; err != nil {
+			return fmt.Errorf("update deal: %w", err)
+		}
+		return enterWonDeal(tx, *deal, previous.StageID, deal.UpdatedAt)
+	})
 }
 
 // Delete removes a deal.

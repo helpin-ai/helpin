@@ -223,7 +223,7 @@ func normalizeDraftInvocationMode(value string) string {
 
 func isSupportedCustomAgentTarget(target string) bool {
 	switch target {
-	case "task", "epic", "sprint", "objective", "repository", "workspace", "crm_deal", "document", "support_conversation":
+	case "task", "epic", "sprint", "objective", "repository", "workspace", "crm_deal", "crm_contact", "crm_company", "document", "support_conversation":
 		return true
 	default:
 		return false
@@ -283,6 +283,8 @@ Choose only from these target types:
 - repository
 - workspace
 - crm_deal
+- crm_contact
+- crm_company
 - document
 - support_conversation
 

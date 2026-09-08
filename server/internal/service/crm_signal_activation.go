@@ -218,6 +218,24 @@ func signalTrustRank(trust string) (int, bool) {
 }
 
 func (s *CRMSignalService) setSignalActivation(ctx context.Context, signal *model.CRMSignal, policy *model.CRMSignalRoutingPolicy, profile signalScoringProfile) {
+	blockers := signalPolicyBlockers(signal, policy, profile)
+	if delivered, err := s.signalRepo.HasSignalDelivery(ctx, signal.ID, policy.ID); err != nil {
+		blockers = append(blockers, "dedupe_check_unavailable")
+	} else if delivered {
+		blockers = append(blockers, "already_delivered")
+	}
+	openTaskID, err := s.signalRepo.FindOpenTaskForSignal(ctx, *signal)
+	if err != nil {
+		blockers = append(blockers, "open_task_check_unavailable")
+	} else if openTaskID != nil {
+		signal.ExistingOpenTaskID = openTaskID
+		blockers = append(blockers, "existing_open_task")
+	}
+	signal.ActivationBlockers = blockers
+	signal.ActivationEligible = len(blockers) == 0
+}
+
+func signalPolicyBlockers(signal *model.CRMSignal, policy *model.CRMSignalRoutingPolicy, profile signalScoringProfile) []string {
 	blockers := []string{}
 	if signal.Metadata["needs_customer_context"] == true || signal.CommercialMotion == model.CRMCommercialMotionNeedsContext {
 		blockers = append(blockers, "needs_customer_context")
@@ -238,20 +256,7 @@ func (s *CRMSignalService) setSignalActivation(ctx context.Context, signal *mode
 	} else if rule, ok := profile.rules[*signal.RuleKey]; !ok || rule.Version != *signal.RuleVersion || !rule.ActivationEligible || rule.ShadowMode {
 		blockers = append(blockers, "rule_not_activation_eligible")
 	}
-	if delivered, err := s.signalRepo.HasSignalDelivery(ctx, signal.ID, policy.ID); err != nil {
-		blockers = append(blockers, "dedupe_check_unavailable")
-	} else if delivered {
-		blockers = append(blockers, "already_delivered")
-	}
-	openTaskID, err := s.signalRepo.FindOpenTaskForSignal(ctx, *signal)
-	if err != nil {
-		blockers = append(blockers, "open_task_check_unavailable")
-	} else if openTaskID != nil {
-		signal.ExistingOpenTaskID = openTaskID
-		blockers = append(blockers, "existing_open_task")
-	}
-	signal.ActivationBlockers = blockers
-	signal.ActivationEligible = len(blockers) == 0
+	return blockers
 }
 
 func (s *CRMSignalService) ListActivationSignals(ctx context.Context, workspaceID string, limit int) ([]model.CRMSignal, error) {

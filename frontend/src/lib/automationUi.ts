@@ -1,4 +1,9 @@
 import type { AutomationTriggerExecutionSearchPreset, WorkflowRuleSearchPreset } from './types';
+import type { CRMRecordTargetType } from './agentCRMTargets';
+
+export type FlowTargetMode = 'event' | 'task' | 'epic' | 'repository' | 'workspace' | CRMRecordTargetType;
+
+export const FLOW_TARGET_MODES = new Set<string>(['event', 'task', 'epic', 'repository', 'workspace', 'crm_deal', 'crm_contact', 'crm_company']);
 
 export type AutomationActivitySearch = Partial<AutomationTriggerExecutionSearchPreset> & {
   page?: number;
@@ -25,7 +30,7 @@ export type AutomationFlowsSearch = {
   base_branch?: string;
   tag_name?: string;
   conclusion?: string;
-  target_mode?: 'event' | 'task' | 'epic' | 'repository';
+  target_mode?: FlowTargetMode;
   target_id?: string;
 };
 

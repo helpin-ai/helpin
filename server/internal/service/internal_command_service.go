@@ -73,6 +73,7 @@ type InternalCommandService struct {
 	checklistService      *PMChecklistItemService
 	workspaceSearch       workspaceSearchProvider
 	crmSearch             *CRMSearchService
+	crmPlaybookActions    *CRMPlaybookActionService
 
 	supportMessageRepo        *repository.SupportMessageRepository
 	supportAttachmentRepo     *repository.SupportAttachmentRepository
@@ -2161,6 +2162,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerSupportOperationalCommands()
 	s.registerCRMReadCommands()
 	s.registerCRMOperationalCommands()
+	s.registerCRMPlaybookCommands()
 	s.registerReleaseFactsCommands()
 	s.registerDocsRuntimeToolCommands()
 	s.registerDocsOrganizationCommands()

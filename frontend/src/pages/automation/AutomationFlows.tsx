@@ -22,6 +22,8 @@ import {
 } from '@/components/design-system/quiet';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
+import { CRMRecordPicker } from '@/components/automation/CRMRecordPicker';
+import { CRM_AGENT_TARGET_OPTIONS, CRM_RECORD_TARGETS, isCRMRecordTarget } from '@/lib/agentCRMTargets';
 import { BASE_BRANCH_TOKEN, TASK_BRANCH_TOKEN, describeMergeInto, describeRunBranchOverrides } from '@/lib/branchLabels';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -52,7 +54,7 @@ import { unwrap } from '@/lib/queryUtils';
 import type { AutomationInventoryItem, Workspace, WorkspaceTeam } from '@/lib/types';
 import type { Agent, AgentApprovalMode, AgentRuntimeKind, AgentSkillRef, AgentTargetType, AutomationRule, EpicWithStats, FlowTemplateInput, FlowTemplateManifest, GitRepository, SkillCatalogEntry, Task, ToolCatalogEntry, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
-import { buildAutomationActivityPath } from '@/lib/automationUi';
+import { buildAutomationActivityPath, type FlowTargetMode } from '@/lib/automationUi';
 import { getAgentTeamIds, isAgentVisibleToActor } from '@/lib/agentAccess';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { cn } from '@/lib/utils';
@@ -77,7 +79,7 @@ export type AutomationFlowsSearch = {
   base_branch?: string;
   tag_name?: string;
   conclusion?: string;
-  target_mode?: 'event' | 'task' | 'epic' | 'repository' | 'workspace';
+  target_mode?: FlowTargetMode;
   target_id?: string;
 };
 
@@ -89,7 +91,7 @@ type FlowDraft = {
   triggerStateId: string;
   actionType: 'start_agent_run' | 'move_to_state' | 'merge_branch';
   agentId: string;
-  targetMode: 'event' | 'task' | 'epic' | 'repository' | 'workspace';
+  targetMode: FlowTargetMode;
   targetId: string;
   targetStateId: string;
   targetBranch: string;
@@ -141,6 +143,9 @@ const TARGET_LABELS: Record<FlowDraft['targetMode'], string> = {
   epic: 'a specific epic',
   repository: 'a specific repository',
   workspace: 'this workspace',
+  crm_deal: 'a specific deal',
+  crm_contact: 'a specific contact',
+  crm_company: 'a specific company',
 };
 
 const TARGET_SHORT_LABELS: Record<FlowDraft['targetMode'], string> = {
@@ -149,6 +154,9 @@ const TARGET_SHORT_LABELS: Record<FlowDraft['targetMode'], string> = {
   epic: 'a specific epic',
   repository: 'a specific repository',
   workspace: 'this workspace',
+  crm_deal: 'a specific deal',
+  crm_contact: 'a specific contact',
+  crm_company: 'a specific company',
 };
 
 const SCHEDULE_PRESET_OPTIONS = [
@@ -261,7 +269,7 @@ const TEMPLATE_TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string }> 
   { value: 'epic', label: 'Epic' },
   { value: 'repository', label: 'Repository' },
   { value: 'workspace', label: 'Workspace' },
-  { value: 'crm_deal', label: 'CRM deal' },
+  ...CRM_AGENT_TARGET_OPTIONS.map((target) => ({ value: target.value, label: `CRM ${CRM_RECORD_TARGETS[target.value].singular.toLowerCase()}` })),
   { value: 'document', label: 'Document' },
   { value: 'support_conversation', label: 'Support conversation' },
   { value: 'support_coverage_gap', label: 'Support coverage gap' },
@@ -1404,7 +1412,7 @@ export function filterAutomationFlowsForSearch(rules: AutomationRule[], search: 
   });
 }
 
-function draftFromRule(rule: AutomationRule, workflows: WorkflowWithStates[], timezone: string): FlowDraft {
+export function draftFromRule(rule: AutomationRule, workflows: WorkflowWithStates[], timezone: string): FlowDraft {
   const draft = defaultDraft();
   draft.name = rule.name;
   draft.description = rule.description ?? '';
@@ -1429,7 +1437,7 @@ function draftFromRule(rule: AutomationRule, workflows: WorkflowWithStates[], ti
   return draft;
 }
 
-function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: string) {
+export function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: string) {
   let triggerConfig: Record<string, string> = {};
   if (draft.triggerType === 'task.state_entered') {
     triggerConfig = { state_id: draft.triggerStateId };
@@ -1480,7 +1488,7 @@ function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: string)
   };
 }
 
-function validateDraft(draft: FlowDraft) {
+export function validateDraft(draft: FlowDraft) {
   if (!draft.name.trim()) return 'Give the flow a name';
   if (isWorkflowTrigger(draft.triggerType)) {
     if (!draft.workflowId) return 'Choose a workflow';
@@ -1635,6 +1643,8 @@ const AGENT_TARGET_LABELS: Record<string, string> = {
   support_conversation: 'support conversations',
   support_coverage_gap: 'support gaps',
   crm_deal: 'CRM deals',
+  crm_contact: 'CRM contacts',
+  crm_company: 'CRM companies',
 };
 
 function describeAgentTargets(targets: string[] | undefined) {
@@ -1663,6 +1673,7 @@ type FlowSummary = {
 };
 
 export function flowTriggerSummary(rule: AutomationRule, statesById: Map<string, WorkflowState>, timezone = 'UTC'): FlowSummary {
+  if (rule.trigger_type === 'crm.playbook.work_due') return { label: 'Customer updates or a playbook check', value: 'CRM' };
   const triggerStateId = stringValue(rule.trigger_config?.state_id);
   const stateName = statesById.get(triggerStateId)?.name;
 
@@ -1726,6 +1737,7 @@ export function flowActionSummary(rule: AutomationRule, statesById: Map<string, 
 }
 
 function flowIsIncomplete(rule: AutomationRule, agentNames: Map<string, string>) {
+  if (rule.trigger_type === 'crm.playbook.work_due') return !stringValue(rule.trigger_config?.playbook_id);
   if (isWorkflowTrigger(rule.trigger_type)) {
     if (!rule.workflow_id || !stringValue(rule.trigger_config?.state_id)) return true;
   }
@@ -1786,7 +1798,7 @@ function flowRunNowRuntimeBlocker(lastRunStatus?: string) {
   return '';
 }
 
-type FlowState = 'active' | 'paused' | 'error' | 'needs_review' | 'incomplete';
+type FlowState = 'active' | 'paused' | 'error' | 'needs_review' | 'incomplete' | 'playbook';
 
 function flowNeedsReview(healthItem?: AutomationInventoryItem) {
   const metrics = (healthItem?.health.metrics ?? undefined) as Record<string, unknown> | undefined;
@@ -1797,6 +1809,7 @@ function flowNeedsReview(healthItem?: AutomationInventoryItem) {
 }
 
 function deriveFlowState(rule: AutomationRule, agentNames: Map<string, string>, healthItem?: AutomationInventoryItem): FlowState {
+  if (rule.trigger_type === 'crm.playbook.work_due') return 'playbook';
   if (flowIsIncomplete(rule, agentNames)) return 'incomplete';
   if (healthItem?.health.last_error_at) return 'error';
   if (flowNeedsReview(healthItem)) return 'needs_review';
@@ -1805,6 +1818,7 @@ function deriveFlowState(rule: AutomationRule, agentNames: Map<string, string>, 
 }
 
 const FLOW_STATE_STYLES: Record<FlowState, { pill: string; dot: string; label: string; color: string; edge?: string }> = {
+  playbook: { pill: 'border-border bg-muted text-muted-foreground', dot: 'bg-current', label: 'Playbook managed', color: '#787774' },
   active: {
     pill: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
     dot: 'bg-current',
@@ -2154,11 +2168,13 @@ export function FlowRow({
   const blockerLabel = flowActivityBlockerLabel(flowState);
   const activitySearch = { page: 1, source: 'automation_rule', reference_id: rule.id };
   const runNowBlocker = flowRunNowRuntimeBlocker(lastRunStatus) || flowRunNowBlocker(rule, agentNames);
+  const managed = rule.trigger_type === 'crm.playbook.work_due';
+  const playbookPath = managed && workspaceSlug && stringValue(rule.trigger_config?.playbook_id) ? `/w/${encodeURIComponent(workspaceSlug)}/crm/playbooks/${encodeURIComponent(stringValue(rule.trigger_config?.playbook_id))}` : undefined;
   const supportsRunNow = rule.trigger_type === 'cron';
   const showRunNow = canRunNowAction;
   const canRunNow = showRunNow && supportsRunNow && !runNowBlocker;
   const stateStyle = FLOW_STATE_STYLES[flowState];
-  const triggerKind = rule.trigger_type === 'cron'
+  const triggerKind = managed ? 'CRM' : rule.trigger_type === 'cron'
     ? 'Schedule'
     : rule.trigger_type.startsWith('github.')
       ? 'GitHub'
@@ -2172,7 +2188,7 @@ export function FlowRow({
     : rule.action_type === 'merge_branch'
       ? 'Branch'
       : 'Task';
-  const desktopNextLabel = blockerLabel ?? (rule.enabled ? nextRunLabel ?? triggerRunLabel ?? 'On trigger' : 'Paused');
+  const desktopNextLabel = managed ? 'Managed in CRM' : blockerLabel ?? (rule.enabled ? nextRunLabel ?? triggerRunLabel ?? 'On trigger' : 'Paused');
 
   const openRow = () => onOpen?.(rule);
 
@@ -2242,9 +2258,10 @@ export function FlowRow({
           <DropdownMenuContent align="end" className="w-44 rounded-lg p-1.5">
             {workspaceSlug ? <DropdownMenuItem asChild><a href={buildAutomationActivityPath(workspaceSlug, activitySearch, 'trigger-executions')}>View run history</a></DropdownMenuItem> : null}
             {supportsRunNow && showRunNow ? <DropdownMenuItem disabled={!canRunNow || runningNow} onClick={() => onRunNow(rule)}>{runningNow ? 'Running…' : 'Run now'}</DropdownMenuItem> : null}
-            {canEdit ? <DropdownMenuItem onClick={() => onEdit(rule)}>Edit flow</DropdownMenuItem> : null}
-            {canEdit ? <DropdownMenuItem onClick={() => onToggle(rule)}>{rule.enabled ? 'Disable' : 'Enable'}</DropdownMenuItem> : null}
-            {canEdit ? <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete(rule)}>Delete</DropdownMenuItem> : null}
+            {playbookPath ? <DropdownMenuItem asChild><a href={playbookPath}>Open playbook</a></DropdownMenuItem> : null}
+            {canEdit && !managed ? <DropdownMenuItem onClick={() => onEdit(rule)}>Edit flow</DropdownMenuItem> : null}
+            {canEdit && !managed ? <DropdownMenuItem onClick={() => onToggle(rule)}>{rule.enabled ? 'Disable' : 'Enable'}</DropdownMenuItem> : null}
+            {canEdit && !managed ? <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete(rule)}>Delete</DropdownMenuItem> : null}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -2334,7 +2351,8 @@ function FlowDetailDrawer({
   const stateStyle = FLOW_STATE_STYLES[flowState];
   const metrics = flowMetricValues(healthItem);
   const lastRun = flowLastRunLabel(healthItem);
-  const nextRun = rule
+  const managed = rule?.trigger_type === 'crm.playbook.work_due';
+  const nextRun = managed ? 'Managed in the CRM playbook' : rule
     ? !rule.enabled
       ? 'Paused'
       : metrics.nextRunAt
@@ -2432,12 +2450,13 @@ function FlowDetailDrawer({
                 </section>
 
                 <div className="flex flex-wrap gap-2 pb-2">
-                  {canEdit ? <Button variant="outline" size="sm" onClick={() => onToggle(rule)}>{rule.enabled ? 'Pause flow' : 'Enable flow'}</Button> : null}
-                  {canEdit ? <Button variant="outline" size="sm" onClick={() => onEdit(rule)}>Edit flow</Button> : null}
+                  {managed && workspaceSlug ? <Button variant="outline" size="sm" asChild><a href={`/w/${encodeURIComponent(workspaceSlug)}/crm/playbooks/${encodeURIComponent(stringValue(rule.trigger_config?.playbook_id))}`}>Manage in Playbook Setup</a></Button> : null}
+                  {canEdit && !managed ? <Button variant="outline" size="sm" onClick={() => onToggle(rule)}>{rule.enabled ? 'Pause flow' : 'Enable flow'}</Button> : null}
+                  {canEdit && !managed ? <Button variant="outline" size="sm" onClick={() => onEdit(rule)}>Edit flow</Button> : null}
                   {rule.trigger_type === 'cron' && canRunNowAction ? (
                     <TooltipProvider><Tooltip><TooltipTrigger asChild><span><Button variant="outline" size="sm" disabled={!canRunNow} onClick={() => onRunNow(rule)}>{runningNow ? 'Running…' : 'Run now'}</Button></span></TooltipTrigger>{runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}</Tooltip></TooltipProvider>
                   ) : null}
-                  {canEdit ? <Button variant="destructive" size="sm" onClick={() => onDelete(rule)}>Delete</Button> : null}
+                  {canEdit && !managed ? <Button variant="destructive" size="sm" onClick={() => onDelete(rule)}>Delete</Button> : null}
                 </div>
               </div>
             </div>
@@ -2547,7 +2566,7 @@ function PillInput({
   );
 }
 
-function FlowComposer({
+export function FlowComposer({
   workspaceId,
   open,
   mode,
@@ -3145,6 +3164,12 @@ function FlowComposer({
                     <SelectItem value="epic">{TARGET_SHORT_LABELS.epic}</SelectItem>
                     <SelectItem value="repository">{TARGET_SHORT_LABELS.repository}</SelectItem>
                     <SelectItem value="workspace">{TARGET_SHORT_LABELS.workspace}</SelectItem>
+                    <SelectGroup>
+                      <SelectLabel>CRM</SelectLabel>
+                      {CRM_AGENT_TARGET_OPTIONS.map((target) => (
+                        <SelectItem key={target.value} value={target.value}>{TARGET_SHORT_LABELS[target.value]}</SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
                 {draft.targetMode === 'workspace' && (
@@ -3155,7 +3180,16 @@ function FlowComposer({
                     </Badge>
                   </>
                 )}
-                {draft.targetMode !== 'event' && draft.targetMode !== 'workspace' && (
+                {isCRMRecordTarget(draft.targetMode) && (
+                  <CRMRecordPicker
+                    workspaceId={workspaceId}
+                    targetType={draft.targetMode}
+                    value={draft.targetId}
+                    onChange={(value) => updateDraft((current) => ({ ...current, targetId: value }))}
+                    disabled={!canEdit || saving}
+                  />
+                )}
+                {draft.targetMode !== 'event' && draft.targetMode !== 'workspace' && !isCRMRecordTarget(draft.targetMode) && (
                   <>
                     <PillGlue>—</PillGlue>
                     <Select
@@ -4543,6 +4577,7 @@ export function AutomationFlowsPage({
   };
 
   const openEditComposer = (rule: AutomationRule) => {
+    if (rule.trigger_type === 'crm.playbook.work_due') { toast.info('Manage this Flow from its CRM Playbook.'); return; }
     setEditingRuleId(rule.id);
     setComposerMode('edit');
     setDraft(draftFromRule(rule, workflows, scheduleTimezone));
@@ -4550,6 +4585,7 @@ export function AutomationFlowsPage({
   };
 
   const handleToggle = async (rule: AutomationRule) => {
+    if (rule.trigger_type === 'crm.playbook.work_due') { toast.info('Manage this Flow from its CRM Playbook.'); return; }
     const res = await automationService.updateFlow(workspaceId, rule.id, { enabled: !rule.enabled });
     if (res.error) {
       if (showUpgradeDialogForError(res.error)) return;
