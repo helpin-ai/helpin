@@ -9,9 +9,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { QuietSearchInput } from "@/components/design-system/quiet"
+import {
+  InputGroup,
+  InputGroupAddon,
+} from "@/components/ui/input-group"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { Tick02Icon } from "@hugeicons/core-free-icons"
+import { SearchIcon, Tick02Icon } from "@hugeicons/core-free-icons"
 
 function Command({
   className,
@@ -69,14 +72,19 @@ function CommandInput({
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
     <div data-slot="command-input-wrapper" className="px-1 pt-1">
-      <CommandPrimitive.Input
-        data-slot="command-input"
-        className={className}
-        {...props}
-        asChild
-      >
-        <QuietSearchInput />
-      </CommandPrimitive.Input>
+      <InputGroup className="h-8 bg-input/50">
+        <CommandPrimitive.Input
+          data-slot="command-input"
+          className={cn(
+            "w-full text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+            className
+          )}
+          {...props}
+        />
+        <InputGroupAddon>
+          <HugeiconsIcon icon={SearchIcon} strokeWidth={2} className="size-4 shrink-0 opacity-50" />
+        </InputGroupAddon>
+      </InputGroup>
     </div>
   )
 }
