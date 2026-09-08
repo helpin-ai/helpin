@@ -19,6 +19,7 @@ function MembersSettingsContent({ workspaceId, organizationId, settings, permiss
       organizationId={organizationId}
       editable={permissions.canManageMembers}
       canManageTeams={permissions.canManageTeams}
+      canManageModuleAccess={permissions.canManageModuleAccess}
       teams={settings.teams}
       userMemberships={settings.user_memberships}
       onRefresh={() => {

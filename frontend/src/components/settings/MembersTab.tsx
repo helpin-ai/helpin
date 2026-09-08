@@ -13,24 +13,27 @@ import { EmailChipInput, classifyEmailChipInput, mergeEmailChips } from '@/compo
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { Cancel01Icon, Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Delete01Icon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
+import { Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
 import { QuietSearchInput } from '@/components/design-system/quiet';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { workspaceRoleLabel } from './roleScopePresentation';
+import { useWorkspaceModuleAccess } from '@/hooks/queries/useSettings';
+import { EditMemberDialog } from './EditMemberDialog';
+import { getMemberModuleAccess } from './memberAccess';
 
-export function MembersTab({ workspaceId, organizationId, editable, canManageTeams = false, teams, userMemberships, onRefresh }: {
+export function MembersTab({ workspaceId, organizationId, editable, canManageTeams = false, canManageModuleAccess = false, teams, userMemberships, onRefresh }: {
   workspaceId: string;
   organizationId?: string;
   editable: boolean;
   canManageTeams?: boolean;
+  canManageModuleAccess?: boolean;
   teams: WorkspaceTeam[];
   userMemberships: TeamUserMembership[];
   onRefresh?: () => void | Promise<void>;
@@ -46,11 +49,11 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
   const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
-  const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
-  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
-  const [removeMemberConfirm, setRemoveMemberConfirm] = useState<MemberWithUser | null>(null);
-  const [teamMutation, setTeamMutation] = useState<{ userId: string; teamId: string } | null>(null);
-  const [openTeamPickerUserId, setOpenTeamPickerUserId] = useState<string | null>(null);
+  const [editingMember, setEditingMember] = useState<MemberWithUser | null>(null);
+  const [managingInvitation, setManagingInvitation] = useState<Invitation | null>(null);
+  const [invitationBusy, setInvitationBusy] = useState(false);
+  const [revokeInvitationConfirm, setRevokeInvitationConfirm] = useState(false);
+  const moduleAccess = useWorkspaceModuleAccess(workspaceId, { enabled: canManageModuleAccess });
   const { user } = useAuthStore();
 
   const { data: orgMembers } = useOrganizationMembers(organizationId);
@@ -224,66 +227,8 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
     else {
       toast.success('Invitation revoked');
       setInvitations((prev) => prev.filter((inv) => inv.id !== id));
+      setManagingInvitation(null);
     }
-  };
-
-  const undoAddMemberToTeam = async (member: MemberWithUser, team: { id: string; name: string }) => {
-    const { error } = await settingsService.removeTeamMember(workspaceId, team.id, member.user_id);
-    if (error) {
-      toast.error(`Couldn't undo`, { description: error });
-      return;
-    }
-    await onRefresh?.();
-  };
-
-  const undoRemoveMemberFromTeam = async (member: MemberWithUser, team: { id: string; name: string }) => {
-    const { error } = await settingsService.addTeamMember(workspaceId, team.id, {
-      user_id: member.user_id,
-      role: 'member',
-    });
-    if (error) {
-      toast.error(`Couldn't undo`, { description: error });
-      return;
-    }
-    await onRefresh?.();
-  };
-
-  const handleAddMemberToTeam = async (member: MemberWithUser, team: WorkspaceTeam) => {
-    setTeamMutation({ userId: member.user_id, teamId: team.id });
-    const { error } = await settingsService.addTeamMember(workspaceId, team.id, {
-      user_id: member.user_id,
-      role: 'member',
-    });
-    setTeamMutation(null);
-    if (error) {
-      toast.error(`Couldn't add to ${team.name}`, { description: error });
-      return;
-    }
-    toast.success(`Added to ${team.name}`, {
-      action: {
-        label: 'Undo',
-        onClick: () => void undoAddMemberToTeam(member, { id: team.id, name: team.name }),
-      },
-    });
-    setOpenTeamPickerUserId(null);
-    await onRefresh?.();
-  };
-
-  const handleRemoveMemberFromTeam = async (member: MemberWithUser, team: { id: string; name: string }) => {
-    setTeamMutation({ userId: member.user_id, teamId: team.id });
-    const { error } = await settingsService.removeTeamMember(workspaceId, team.id, member.user_id);
-    setTeamMutation(null);
-    if (error) {
-      toast.error(`Couldn't remove from ${team.name}`, { description: error });
-      return;
-    }
-    toast.success(`Removed from ${team.name}`, {
-      action: {
-        label: 'Undo',
-        onClick: () => void undoRemoveMemberFromTeam(member, team),
-      },
-    });
-    await onRefresh?.();
   };
 
   const canEditMemberRole = (member: MemberWithUser) => {
@@ -309,19 +254,6 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
     return options;
   };
 
-  const handleUpdateRole = async (member: MemberWithUser, role: 'owner' | 'admin' | 'member' | 'viewer') => {
-    if (role === member.role) return;
-    setUpdatingMemberId(member.id);
-    const { error } = await workspacesService.updateMemberRole(workspaceId, member.id, { role });
-    setUpdatingMemberId(null);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    setMembers((prev) => prev.map((current) => current.id === member.id ? { ...current, role } : current));
-    toast.success('Workspace role updated');
-  };
-
   const canRemoveMember = (member: MemberWithUser) => {
     if (!editable || !user) return false;
     if (member.user_id === user.id) return false;
@@ -331,18 +263,6 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
     return true;
   };
 
-  const handleRemoveMember = async (member: MemberWithUser) => {
-    setRemovingMemberId(member.id);
-    const { error } = await workspacesService.removeMember(workspaceId, member.id);
-    setRemovingMemberId(null);
-    if (error) {
-      toast.error(error);
-      return;
-    }
-    setMembers((prev) => prev.filter((current) => current.id !== member.id));
-    toast.success('Member removed from workspace');
-  };
-
   if (loading) return <Skeleton className="h-96" />;
 
   return (
@@ -350,10 +270,10 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
       <div className="space-y-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <span className="text-sm text-muted-foreground">{members.length} {members.length === 1 ? 'member' : 'members'} in this workspace</span>
-          <div className="flex items-center gap-3">
-            {members.length > 10 && (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            {members.length > 0 && (
               <QuietSearchInput
-                containerClassName="w-60"
+                containerClassName="w-full sm:w-60"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search members..."
@@ -394,25 +314,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                         {new Date(inv.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-1">
-                          {inv.join_url && (
-                            <QuickTooltip label="Copy invite link">
-                              <Button size="icon" variant="ghost" onClick={() => handleCopyLink(inv.join_url!)}>
-                                <Copy01Icon className="h-3.5 w-3.5" />
-                              </Button>
-                            </QuickTooltip>
-                          )}
-                          <QuickTooltip label="Resend">
-                            <Button size="icon" variant="ghost" onClick={() => handleResend(inv.id)}>
-                              <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
-                            </Button>
-                          </QuickTooltip>
-                          <QuickTooltip label="Revoke">
-                            <Button size="icon" variant="ghost" onClick={() => handleRevoke(inv.id)}>
-                              <Delete01Icon className="h-3.5 w-3.5" />
-                            </Button>
-                          </QuickTooltip>
-                        </div>
+                        <Button variant="ghost" size="sm" aria-label={`Manage invitation for ${inv.email}`} onClick={() => setManagingInvitation(inv)}>Manage</Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -442,225 +344,101 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="w-[280px]">Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teams</TableHead>
-                  <TableHead className="w-[88px] text-center">2FA</TableHead>
+                  <TableHead className="min-w-[240px]">Member</TableHead>
                   <TableHead className="w-[160px]">Workspace role</TableHead>
-                  {editable && <TableHead className="w-[72px] text-right">Actions</TableHead>}
+                  <TableHead className="min-w-[160px]">Teams</TableHead>
+                  <TableHead className="min-w-[240px]">Module access</TableHead>
+                  <TableHead className="w-[64px] text-center">2FA</TableHead>
+                  {editable && <TableHead className="w-[72px] text-right"><span className="sr-only">Actions</span></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredMembers.map((m) => {
-                  const memberTeams = teamsByUserId.get(m.user_id) ?? [];
-                  const hasWorkspaceWideTeamAccess = m.role === 'owner' || m.role === 'admin';
-                  const memberTeamIds = new Set(memberTeams.map((t) => t.id));
-                  const availableTeams = teams.filter((t) => !memberTeamIds.has(t.id));
-                  const canEditTeams = editable && canManageTeams && !hasWorkspaceWideTeamAccess;
-                  const presenceStatus = memberPresenceByUserId?.get(m.user_id)?.status ?? null;
-
+                {filteredMembers.map((member) => {
+                  const memberTeams = teamsByUserId.get(member.user_id) ?? [];
+                  const workspaceWide = member.role === 'owner' || member.role === 'admin';
+                  const modules = getMemberModuleAccess(member.id, member.role, memberTeams, moduleAccess.data?.grants ?? []);
+                  const canEdit = canEditMemberRole(member) || canRemoveMember(member) || (editable && canManageTeams && !workspaceWide) || (canManageModuleAccess && !workspaceWide);
                   return (
-                    <TableRow key={m.id}>
-                      <TableCell>
+                    <TableRow key={member.id}>
+                      <TableCell className="py-4">
                         <div className="flex items-center gap-3">
-                          <UserAvatar
-                            name={m.full_name || m.email}
-                            avatarUrl={m.avatar_url}
-                            avatarStyle={m.avatar_style}
-                            avatarSeed={m.avatar_seed}
-                            avatarBackgroundMode={m.avatar_background_mode}
-                            avatarBackgroundColor={m.avatar_background_color}
-                            presenceStatus={presenceStatus}
-                            className="h-8 w-8"
-                            fallbackClassName="text-[10px]"
-                          />
-                          <div className="min-w-0">
-                            <p className="truncate font-medium">{m.full_name || '—'}</p>
-                            {!m.full_name && (
-                              <p className="truncate text-xs text-muted-foreground">{m.email}</p>
-                            )}
+                          <UserAvatar name={member.full_name || member.email} avatarUrl={member.avatar_url} avatarStyle={member.avatar_style} avatarSeed={member.avatar_seed} avatarBackgroundMode={member.avatar_background_mode} avatarBackgroundColor={member.avatar_background_color} presenceStatus={memberPresenceByUserId?.get(member.user_id)?.status ?? null} className="h-9 w-9 shrink-0" fallbackClassName="text-xs" />
+                          <div className="min-w-0 max-w-[260px]">
+                            <p className="truncate text-sm font-medium">{member.full_name || member.email.split('@')[0]}{member.user_id === user?.id && <span className="ml-1.5 text-xs font-normal text-muted-foreground">(you)</span>}</p>
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground" title={member.email}>{member.email}</p>
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{m.email}</TableCell>
+                      <TableCell><span className="text-sm">{workspaceRoleLabel(member.role).replace('Workspace ', '')}</span></TableCell>
                       <TableCell>
-                        {hasWorkspaceWideTeamAccess ? (
-                          <Badge variant="outline" className="text-xs font-normal">
-                            All teams
-                          </Badge>
+                        {workspaceWide ? <span className="text-sm text-muted-foreground">All teams</span> : memberTeams.length ? (
+                          <div className="flex max-w-[240px] flex-wrap gap-1.5">{memberTeams.map(team => <Badge key={team.id} variant="outline" className="max-w-full text-xs font-normal"><span className="truncate">{team.name}</span></Badge>)}</div>
+                        ) : <span className="text-sm text-muted-foreground">No teams</span>}
+                      </TableCell>
+                      <TableCell>
+                        {canManageModuleAccess && moduleAccess.isLoading && !workspaceWide ? <Skeleton className="h-6 w-36" /> : !workspaceWide && (!canManageModuleAccess || moduleAccess.isError) ? (
+                          <span className="text-xs text-muted-foreground">{canManageModuleAccess ? 'Access unavailable' : 'Access restricted'}</span>
                         ) : (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {memberTeams.map((team) => {
-                              const isRemoving =
-                                teamMutation?.userId === m.user_id && teamMutation?.teamId === team.id;
-                              return (
-                                <Badge
-                                  key={`${m.user_id}-${team.id}`}
-                                  variant="outline"
-                                  className={cn(
-                                    'text-xs font-normal',
-                                    canEditTeams && 'pr-1 gap-1',
-                                  )}
-                                >
-                                  <span>{team.name}</span>
-                                  {canEditTeams && (
-                                    <QuickTooltip label="Remove from team">
-                                      <button
-                                        type="button"
-                                        onClick={() => void handleRemoveMemberFromTeam(m, team)}
-                                        disabled={isRemoving}
-                                        aria-label={`Remove from ${team.name}`}
-                                        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                                      >
-                                        <Cancel01Icon className="h-3 w-3" />
-                                      </button>
-                                    </QuickTooltip>
-                                  )}
-                                </Badge>
-                              );
-                            })}
-                            {memberTeams.length === 0 && !canEditTeams && (
-                              <span className="text-sm text-muted-foreground">-</span>
-                            )}
-                            {canEditTeams && availableTeams.length > 0 && (
-                              <Popover
-                                open={openTeamPickerUserId === m.user_id}
-                                onOpenChange={(open) =>
-                                  setOpenTeamPickerUserId(open ? m.user_id : null)
-                                }
-                              >
-                                <PopoverTrigger asChild>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
-                                  >
-                                    <PlusSignIcon className="h-3 w-3" />
-                                    Add team
-                                  </button>
-                                </PopoverTrigger>
-                                <PopoverContent align="start" className="w-56 p-0">
-                                  <Command>
-                                    <CommandInput placeholder="Search teams..." />
-                                    <CommandList>
-                                      <CommandEmpty>No teams found.</CommandEmpty>
-                                      <CommandGroup>
-                                        {availableTeams.map((team) => {
-                                          const isAdding =
-                                            teamMutation?.userId === m.user_id &&
-                                            teamMutation?.teamId === team.id;
-                                          return (
-                                            <CommandItem
-                                              key={team.id}
-                                              value={team.name}
-                                              onSelect={() => void handleAddMemberToTeam(m, team)}
-                                              disabled={isAdding}
-                                            >
-                                              {team.name}
-                                            </CommandItem>
-                                          );
-                                        })}
-                                      </CommandGroup>
-                                    </CommandList>
-                                  </Command>
-                                </PopoverContent>
-                              </Popover>
-                            )}
-                          </div>
+                          <div className="flex max-w-[300px] flex-wrap gap-1.5">{modules.map(item => <QuickTooltip key={item.module} label={item.description}><Badge variant="secondary" className="text-[11px] font-normal">{item.label}</Badge></QuickTooltip>)}</div>
                         )}
                       </TableCell>
                       <TableCell className="text-center">
-                        {m.two_fa_enabled ? (
-                          <QuickTooltip label="Enabled">
-                            <span className="inline-flex items-center justify-center text-emerald-600">
-                              <SecurityCheckIcon className="h-4 w-4" />
-                            </span>
-                          </QuickTooltip>
-                        ) : (
-                          <QuickTooltip label="Not enabled">
-                            <span className="inline-flex items-center justify-center text-muted-foreground">
-                              <Shield01Icon className="h-4 w-4" />
-                            </span>
-                          </QuickTooltip>
-                        )}
+                        <QuickTooltip label={member.two_fa_enabled ? 'Two-factor authentication enabled' : 'Two-factor authentication not enabled'}>
+                          <span aria-label={member.two_fa_enabled ? '2FA enabled' : '2FA not enabled'} className={cn('inline-flex items-center justify-center', member.two_fa_enabled ? 'text-emerald-600' : 'text-muted-foreground/60')}>
+                            {member.two_fa_enabled ? <SecurityCheckIcon className="h-4 w-4" /> : <Shield01Icon className="h-4 w-4" />}
+                          </span>
+                        </QuickTooltip>
                       </TableCell>
-                      <TableCell>
-                        {canEditMemberRole(m) ? (
-                          <Select
-                            value={m.role}
-                            onValueChange={(value) => void handleUpdateRole(m, value as 'owner' | 'admin' | 'member' | 'viewer')}
-                            disabled={updatingMemberId === m.id}
-                          >
-                            <SelectTrigger size="sm" className="h-7 w-[152px] px-2.5 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="text-xs">
-                              {roleOptions(m).map((option) => (
-                                <SelectItem key={`${m.id}-${option.value}`} value={option.value} className="py-1 text-xs">
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{workspaceRoleLabel(m.role)}</Badge>
-                        )}
-                      </TableCell>
-                      {editable && (
-                        <TableCell className="text-right">
-                          {canRemoveMember(m) ? (
-                            <QuickTooltip label="Remove from workspace">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                                disabled={removingMemberId === m.id}
-                                onClick={() => setRemoveMemberConfirm(m)}
-                                aria-label="Remove from workspace"
-                              >
-                                <Delete01Icon className="h-3.5 w-3.5" />
-                              </Button>
-                            </QuickTooltip>
-                          ) : null}
-                        </TableCell>
-                      )}
+                      {editable && <TableCell className="text-right">{canEdit && <Button variant="ghost" size="sm" disabled={canManageModuleAccess && moduleAccess.isLoading} aria-label={`Edit ${member.full_name || member.email}`} onClick={() => setEditingMember(member)}>Edit</Button>}</TableCell>}
                     </TableRow>
                   );
                 })}
-                {filteredMembers.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={editable ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">
-                      No members match your search.
-                    </TableCell>
-                  </TableRow>
-                )}
+                {filteredMembers.length === 0 && <TableRow><TableCell colSpan={editable ? 6 : 5} className="py-12 text-center text-sm text-muted-foreground">No members match your search.</TableCell></TableRow>}
               </TableBody>
             </Table>
           </div>
         )}
       </div>
 
-      <ConfirmDialog
-        open={removeMemberConfirm !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRemoveMemberConfirm(null);
-          }
+      {editingMember && <EditMemberDialog
+        key={editingMember.id}
+        workspaceId={workspaceId}
+        member={editingMember}
+        teams={teams}
+        initialTeamIds={(teamsByUserId.get(editingMember.user_id) ?? []).map(team => team.id)}
+        grants={moduleAccess.data?.grants ?? null}
+        canEditRole={canEditMemberRole(editingMember)}
+        canEditTeams={editable && canManageTeams}
+        isSelf={editingMember.user_id === user?.id}
+        canEditModules={canManageModuleAccess}
+        canRemove={canRemoveMember(editingMember)}
+        roleOptions={roleOptions(editingMember)}
+        onClose={() => setEditingMember(null)}
+        onApplied={role => {
+          setMembers(current => current.map(member => member.id === editingMember.id ? { ...member, role } : member));
+          void onRefresh?.();
         }}
-        title="Remove member"
-        description={(
-          <>
-            This will remove <span className="font-medium text-foreground">{removeMemberConfirm?.full_name || removeMemberConfirm?.email || 'this member'}</span> from this workspace.
-            They will lose access immediately.
-          </>
-        )}
-        confirmLabel={removingMemberId === removeMemberConfirm?.id ? 'Removing...' : 'Remove'}
-        variant="destructive"
-        onConfirm={() => {
-          if (!removeMemberConfirm) return;
-          void handleRemoveMember(removeMemberConfirm);
-          setRemoveMemberConfirm(null);
-        }}
-      />
+        onRemoved={() => setMembers(current => current.filter(member => member.id !== editingMember.id))}
+      />}
+
+      <Dialog open={managingInvitation !== null} onOpenChange={open => { if (!open && !invitationBusy) setManagingInvitation(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Manage invitation</DialogTitle><DialogDescription>{managingInvitation?.email}</DialogDescription></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Workspace role</span><span>{workspaceRoleLabel(managingInvitation?.role ?? '')}</span></div>
+            {managingInvitation?.join_url && <Button variant="outline" className="w-full" onClick={() => handleCopyLink(managingInvitation.join_url!)}><Copy01Icon className="mr-2 h-4 w-4" />Copy invite link</Button>}
+            <Button variant="outline" className="w-full" disabled={invitationBusy} onClick={async () => { if (!managingInvitation) return; setInvitationBusy(true); try { await handleResend(managingInvitation.id); } finally { setInvitationBusy(false); } }}><ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />Resend invitation</Button>
+            <div className="border-t pt-4"><Button variant="ghost" className="w-full text-destructive hover:text-destructive" disabled={invitationBusy} onClick={() => setRevokeInvitationConfirm(true)}>Revoke invitation</Button></div>
+          </div>
+          <DialogFooter><Button variant="outline" disabled={invitationBusy} onClick={() => setManagingInvitation(null)}>Done</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog open={revokeInvitationConfirm} onOpenChange={setRevokeInvitationConfirm} title="Revoke invitation?" description={`The invite link for ${managingInvitation?.email ?? 'this person'} will no longer work.`} confirmLabel="Revoke invitation" onConfirm={() => {
+        if (!managingInvitation) return;
+        setRevokeInvitationConfirm(false);
+        setInvitationBusy(true);
+        void handleRevoke(managingInvitation.id).finally(() => setInvitationBusy(false));
+      }} />
 
       <Dialog open={inviteOpen} onOpenChange={closeInviteDialog}>
         <DialogContent className="sm:max-w-2xl">
