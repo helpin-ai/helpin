@@ -50,6 +50,8 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [editingMember, setEditingMember] = useState<MemberWithUser | null>(null);
+  const [removingMember, setRemovingMember] = useState<MemberWithUser | null>(null);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [managingInvitation, setManagingInvitation] = useState<Invitation | null>(null);
   const [invitationBusy, setInvitationBusy] = useState(false);
   const [revokeInvitationConfirm, setRevokeInvitationConfirm] = useState(false);
@@ -349,7 +351,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                   <TableHead className="min-w-[160px]">Teams</TableHead>
                   <TableHead className="min-w-[240px]">Module access</TableHead>
                   <TableHead className="w-[64px] text-center">2FA</TableHead>
-                  {editable && <TableHead className="w-[72px] text-right"><span className="sr-only">Actions</span></TableHead>}
+                  {editable && <TableHead className="w-[144px] text-right"><span className="sr-only">Actions</span></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -359,7 +361,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                   const modules = getMemberModuleAccess(member.id, member.role, memberTeams, moduleAccess.data?.grants ?? []);
                   const canEdit = canEditMemberRole(member) || canRemoveMember(member) || (editable && canManageTeams && !workspaceWide) || (canManageModuleAccess && !workspaceWide);
                   return (
-                    <TableRow key={member.id}>
+                    <TableRow key={member.id} className="group/member">
                       <TableCell className="py-4">
                         <div className="flex items-center gap-3">
                           <UserAvatar name={member.full_name || member.email} avatarUrl={member.avatar_url} avatarStyle={member.avatar_style} avatarSeed={member.avatar_seed} avatarBackgroundMode={member.avatar_background_mode} avatarBackgroundColor={member.avatar_background_color} presenceStatus={memberPresenceByUserId?.get(member.user_id)?.status ?? null} className="h-9 w-9 shrink-0" fallbackClassName="text-xs" />
@@ -389,7 +391,12 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                           </span>
                         </QuickTooltip>
                       </TableCell>
-                      {editable && <TableCell className="text-right">{canEdit && <Button variant="ghost" size="sm" disabled={canManageModuleAccess && moduleAccess.isLoading} aria-label={`Edit ${member.full_name || member.email}`} onClick={() => setEditingMember(member)}>Edit</Button>}</TableCell>}
+                      {editable && <TableCell className="text-right">
+                        <div className="flex justify-end gap-1 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/member:opacity-100 group-focus-within/member:opacity-100">
+                          {canEdit && <Button variant="ghost" size="sm" disabled={removingMemberId === member.id || (canManageModuleAccess && moduleAccess.isLoading)} aria-label={`Edit ${member.full_name || member.email}`} onClick={() => setEditingMember(member)}>Edit</Button>}
+                          {canRemoveMember(member) && <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={removingMemberId !== null} aria-label={`Remove ${member.full_name || member.email}`} onClick={() => setRemovingMember(member)}>{removingMemberId === member.id ? 'Removing…' : 'Remove'}</Button>}
+                        </div>
+                      </TableCell>}
                     </TableRow>
                   );
                 })}
@@ -399,6 +406,33 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={removingMember !== null}
+        onOpenChange={open => { if (!open) setRemovingMember(null); }}
+        title="Remove member?"
+        description={`${removingMember?.full_name || removingMember?.email || 'This member'} will lose access to this workspace. This does not delete their account.`}
+        confirmLabel="Remove member"
+        onConfirm={() => {
+          if (!removingMember || removingMemberId || !canRemoveMember(removingMember)) return;
+          const member = removingMember;
+          setRemovingMember(null);
+          setRemovingMemberId(member.id);
+          void (async () => {
+            try {
+              const { error } = await workspacesService.removeMember(workspaceId, member.id);
+              if (error) throw new Error(error);
+              setMembers(current => current.filter(item => item.id !== member.id));
+              toast.success('Member removed from workspace');
+              void onRefresh?.();
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : 'Could not remove member.');
+            } finally {
+              setRemovingMemberId(null);
+            }
+          })();
+        }}
+      />
 
       {editingMember && <EditMemberDialog
         key={editingMember.id}
