@@ -115,6 +115,7 @@ func (r *CRMSuggestionRepository) GetByID(ctx context.Context, workspaceID, id s
 		return nil, err
 	}
 	suggestion = items[0]
+	suggestion.Revision = model.CRMSuggestionRevision(suggestion)
 	return &suggestion, nil
 }
 
@@ -151,6 +152,9 @@ func (r *CRMSuggestionRepository) List(ctx context.Context, workspaceID string, 
 	if err := r.hydrateSignals(ctx, suggestions); err != nil {
 		return nil, 0, err
 	}
+	for i := range suggestions {
+		suggestions[i].Revision = model.CRMSuggestionRevision(suggestions[i])
+	}
 	return suggestions, total, nil
 }
 
@@ -172,9 +176,40 @@ func (r *CRMSuggestionRepository) Update(ctx context.Context, workspaceID string
 // ClaimPending atomically moves one pending suggestion into accepted state so
 // concurrent approval requests cannot execute the same CRM mutation twice.
 func (r *CRMSuggestionRepository) ClaimPending(ctx context.Context, workspaceID string, suggestion *model.CRMSuggestion) (bool, error) {
-	result := r.db.WithContext(ctx).Model(&model.CRMSuggestion{}).
+	claimed := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&model.CRMSituationReference{}) {
+			if err := lockSituationWorkspace(tx, workspaceID); err != nil {
+				return err
+			}
+		}
+		var err error
+		claimed, err = claimPendingSuggestion(tx, workspaceID, suggestion)
+		return err
+	})
+	return claimed, err
+}
+
+func claimPendingSuggestion(tx *gorm.DB, workspaceID string, suggestion *model.CRMSuggestion) (bool, error) {
+	query := tx.Model(&model.CRMSuggestion{}).
 		Where("workspace_id = ? AND id = ? AND status = ?", workspaceID, suggestion.ID, model.CRMSuggestionStatusPending).
-		Updates(map[string]interface{}{"status": model.CRMSuggestionStatusAccepted, "context": suggestion.Context, "updated_at": gorm.Expr("CURRENT_TIMESTAMP")})
+		Where("executed_at IS NULL AND (execution_status IS NULL OR execution_status IN ('','pending'))")
+	if tx.Migrator().HasTable(&model.CRMSituationReference{}) {
+		// Recheck at the atomic claim as well as at service preflight; a pause
+		// committed while the proposal was being read must stop new execution.
+		query = query.Where(`NOT EXISTS (SELECT 1 FROM crm_situation_references ref
+			JOIN crm_situations s ON s.workspace_id = ref.workspace_id AND s.id = ref.situation_id
+			WHERE ref.workspace_id = ? AND ref.kind = 'suggestion' AND ref.source_id = ? AND s.lifecycle <> 'open')`, workspaceID, suggestion.ID)
+	}
+	if !suggestion.UpdatedAt.IsZero() {
+		query = query.Where("updated_at = ?", suggestion.UpdatedAt)
+	}
+	execution := suggestion.ExecutionStatus
+	if execution == "" || execution == model.CRMSuggestionExecutionPending {
+		execution = model.CRMSuggestionExecutionInProgress
+	}
+	result := query.Updates(map[string]interface{}{"status": model.CRMSuggestionStatusAccepted, "context": suggestion.Context,
+		"execution_status": execution, "updated_at": gorm.Expr("CURRENT_TIMESTAMP")})
 	if result.Error != nil {
 		return false, fmt.Errorf("claim pending suggestion: %w", result.Error)
 	}

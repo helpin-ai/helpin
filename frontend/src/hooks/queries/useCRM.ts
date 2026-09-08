@@ -994,6 +994,9 @@ export function useCRMSignalFeedback(wsId: string, contactId?: string, dealId?: 
       unwrap(await (action === 'acted' ? crmSignalService.acted(wsId, signalId) : crmSignalService.review(wsId, signalId))),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.crm.signals(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.situations(wsId) })
+      qc.invalidateQueries({ queryKey: queryKeys.crm.playbooks(wsId) })
+      qc.invalidateQueries({ queryKey: ['crm', wsId, 'suggestions'] })
       if (contactId) qc.invalidateQueries({ queryKey: queryKeys.crm.contactSignals(wsId, contactId) })
       if (dealId) qc.invalidateQueries({ queryKey: queryKeys.crm.dealSignals(wsId, dealId) })
       if (companyId) qc.invalidateQueries({ queryKey: queryKeys.crm.companySignals(wsId, companyId) })

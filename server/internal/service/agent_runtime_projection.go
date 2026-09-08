@@ -104,6 +104,7 @@ type AgentRuntimeProjectionService struct {
 	usageMeter          *AIUsageMeter
 	agentRuntimeClient  agentRuntimeSignalClient
 	runFinalizers       *AgentRunFinalizerService
+	playbookExecution   atomic.Pointer[CRMPlaybookExecutionService]
 	// supportChatPauseHook is set after the NATS consumer may already be
 	// running, so access is atomic.
 	supportChatPauseHook atomic.Pointer[supportChatPauseHookFunc]
@@ -114,6 +115,11 @@ type AgentRuntimeProjectionService struct {
 	v2ReplayMu           sync.Mutex
 	v2ReplayThrough      map[string]int64
 	projectionLocks      [128]sync.Mutex
+}
+
+// SetCRMPlaybookExecution attaches durable follow-through without changing ordinary finalizers.
+func (s *AgentRuntimeProjectionService) SetCRMPlaybookExecution(execution *CRMPlaybookExecutionService) {
+	s.playbookExecution.Store(execution)
 }
 
 type agentRuntimeUsagePayload struct {
@@ -889,6 +895,13 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 						"reservation_id", metering.ReservationID,
 					)
 				}
+			}
+		}
+	}
+	if observer := s.playbookExecution.Load(); observer != nil && isTerminalAgentRunStatus(run.Status) {
+		if crm, err := crmPlaybookInput(run.Input); err == nil && crm != nil {
+			if err := observer.ObserveTerminalRun(ctx, *run); err != nil {
+				return err
 			}
 		}
 	}

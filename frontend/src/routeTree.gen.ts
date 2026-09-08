@@ -102,6 +102,7 @@ import { Route as AuthenticatedWSlugPmTasksIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
+import { Route as AuthenticatedWSlugCrmPlaybooksIndexRouteImport } from './routes/_authenticated/w/$slug/crm/playbooks/index'
 import { Route as AuthenticatedWSlugCrmMeetingsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/meetings/index'
 import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/deals/index'
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
@@ -114,6 +115,7 @@ import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_a
 import { Route as AuthenticatedWSlugPmCodingSessionsSessionIdRouteImport } from './routes/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
 import { Route as AuthenticatedWSlugDocsSpacesSpaceIdRouteImport } from './routes/_authenticated/w/$slug/docs/spaces/$spaceId'
 import { Route as AuthenticatedWSlugDocsDocumentsDocIdRouteImport } from './routes/_authenticated/w/$slug/docs/documents/$docId'
+import { Route as AuthenticatedWSlugCrmPlaybooksPlaybookIdRouteImport } from './routes/_authenticated/w/$slug/crm/playbooks/$playbookId'
 import { Route as AuthenticatedWSlugCrmMeetingsMeetingIdRouteImport } from './routes/_authenticated/w/$slug/crm/meetings/$meetingId'
 import { Route as AuthenticatedWSlugCrmDealsDealIdRouteImport } from './routes/_authenticated/w/$slug/crm/deals/$dealId'
 import { Route as AuthenticatedWSlugCrmContactsContactIdRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/$contactId'
@@ -657,6 +659,12 @@ const AuthenticatedWSlugPmEpicsIndexRoute =
     path: '/pm/epics/',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugCrmPlaybooksIndexRoute =
+  AuthenticatedWSlugCrmPlaybooksIndexRouteImport.update({
+    id: '/playbooks/',
+    path: '/playbooks/',
+    getParentRoute: () => AuthenticatedWSlugCrmRoute,
+  } as any)
 const AuthenticatedWSlugCrmMeetingsIndexRoute =
   AuthenticatedWSlugCrmMeetingsIndexRouteImport.update({
     id: '/meetings/',
@@ -728,6 +736,12 @@ const AuthenticatedWSlugDocsDocumentsDocIdRoute =
     id: '/documents/$docId',
     path: '/documents/$docId',
     getParentRoute: () => AuthenticatedWSlugDocsRoute,
+  } as any)
+const AuthenticatedWSlugCrmPlaybooksPlaybookIdRoute =
+  AuthenticatedWSlugCrmPlaybooksPlaybookIdRouteImport.update({
+    id: '/playbooks/$playbookId',
+    path: '/playbooks/$playbookId',
+    getParentRoute: () => AuthenticatedWSlugCrmRoute,
   } as any)
 const AuthenticatedWSlugCrmMeetingsMeetingIdRoute =
   AuthenticatedWSlugCrmMeetingsMeetingIdRouteImport.update({
@@ -854,6 +868,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
   '/w/$slug/crm/meetings/$meetingId': typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
+  '/w/$slug/crm/playbooks/$playbookId': typeof AuthenticatedWSlugCrmPlaybooksPlaybookIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -866,6 +881,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
   '/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
+  '/w/$slug/crm/playbooks/': typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -959,6 +975,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
   '/w/$slug/crm/meetings/$meetingId': typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
+  '/w/$slug/crm/playbooks/$playbookId': typeof AuthenticatedWSlugCrmPlaybooksPlaybookIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -971,6 +988,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals': typeof AuthenticatedWSlugCrmDealsIndexRoute
   '/w/$slug/crm/meetings': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
+  '/w/$slug/crm/playbooks': typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -1072,6 +1090,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/_authenticated/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
   '/_authenticated/w/$slug/crm/meetings/$meetingId': typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
+  '/_authenticated/w/$slug/crm/playbooks/$playbookId': typeof AuthenticatedWSlugCrmPlaybooksPlaybookIdRoute
   '/_authenticated/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/_authenticated/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/_authenticated/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -1084,6 +1103,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/_authenticated/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
   '/_authenticated/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
+  '/_authenticated/w/$slug/crm/playbooks/': typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -1185,6 +1205,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
     | '/w/$slug/crm/meetings/$meetingId'
+    | '/w/$slug/crm/playbooks/$playbookId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/coding-sessions/$sessionId'
@@ -1197,6 +1218,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/contacts/'
     | '/w/$slug/crm/deals/'
     | '/w/$slug/crm/meetings/'
+    | '/w/$slug/crm/playbooks/'
     | '/w/$slug/pm/epics/'
     | '/w/$slug/pm/objectives/'
     | '/w/$slug/pm/sprints/'
@@ -1290,6 +1312,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
     | '/w/$slug/crm/meetings/$meetingId'
+    | '/w/$slug/crm/playbooks/$playbookId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/coding-sessions/$sessionId'
@@ -1302,6 +1325,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/contacts'
     | '/w/$slug/crm/deals'
     | '/w/$slug/crm/meetings'
+    | '/w/$slug/crm/playbooks'
     | '/w/$slug/pm/epics'
     | '/w/$slug/pm/objectives'
     | '/w/$slug/pm/sprints'
@@ -1402,6 +1426,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/contacts/$contactId'
     | '/_authenticated/w/$slug/crm/deals/$dealId'
     | '/_authenticated/w/$slug/crm/meetings/$meetingId'
+    | '/_authenticated/w/$slug/crm/playbooks/$playbookId'
     | '/_authenticated/w/$slug/docs/documents/$docId'
     | '/_authenticated/w/$slug/docs/spaces/$spaceId'
     | '/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
@@ -1414,6 +1439,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/contacts/'
     | '/_authenticated/w/$slug/crm/deals/'
     | '/_authenticated/w/$slug/crm/meetings/'
+    | '/_authenticated/w/$slug/crm/playbooks/'
     | '/_authenticated/w/$slug/pm/epics/'
     | '/_authenticated/w/$slug/pm/objectives/'
     | '/_authenticated/w/$slug/pm/sprints/'
@@ -2087,6 +2113,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/crm/playbooks/': {
+      id: '/_authenticated/w/$slug/crm/playbooks/'
+      path: '/playbooks'
+      fullPath: '/w/$slug/crm/playbooks/'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmPlaybooksIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugCrmRoute
+    }
     '/_authenticated/w/$slug/crm/meetings/': {
       id: '/_authenticated/w/$slug/crm/meetings/'
       path: '/meetings'
@@ -2170,6 +2203,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/docs/documents/$docId'
       preLoaderRoute: typeof AuthenticatedWSlugDocsDocumentsDocIdRouteImport
       parentRoute: typeof AuthenticatedWSlugDocsRoute
+    }
+    '/_authenticated/w/$slug/crm/playbooks/$playbookId': {
+      id: '/_authenticated/w/$slug/crm/playbooks/$playbookId'
+      path: '/playbooks/$playbookId'
+      fullPath: '/w/$slug/crm/playbooks/$playbookId'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmPlaybooksPlaybookIdRouteImport
+      parentRoute: typeof AuthenticatedWSlugCrmRoute
     }
     '/_authenticated/w/$slug/crm/meetings/$meetingId': {
       id: '/_authenticated/w/$slug/crm/meetings/$meetingId'
@@ -2275,10 +2315,12 @@ interface AuthenticatedWSlugCrmRouteChildren {
   AuthenticatedWSlugCrmContactsContactIdRoute: typeof AuthenticatedWSlugCrmContactsContactIdRoute
   AuthenticatedWSlugCrmDealsDealIdRoute: typeof AuthenticatedWSlugCrmDealsDealIdRoute
   AuthenticatedWSlugCrmMeetingsMeetingIdRoute: typeof AuthenticatedWSlugCrmMeetingsMeetingIdRoute
+  AuthenticatedWSlugCrmPlaybooksPlaybookIdRoute: typeof AuthenticatedWSlugCrmPlaybooksPlaybookIdRoute
   AuthenticatedWSlugCrmCompaniesIndexRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   AuthenticatedWSlugCrmContactsIndexRoute: typeof AuthenticatedWSlugCrmContactsIndexRoute
   AuthenticatedWSlugCrmDealsIndexRoute: typeof AuthenticatedWSlugCrmDealsIndexRoute
   AuthenticatedWSlugCrmMeetingsIndexRoute: typeof AuthenticatedWSlugCrmMeetingsIndexRoute
+  AuthenticatedWSlugCrmPlaybooksIndexRoute: typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
 }
 
 const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
@@ -2293,6 +2335,8 @@ const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
   AuthenticatedWSlugCrmDealsDealIdRoute: AuthenticatedWSlugCrmDealsDealIdRoute,
   AuthenticatedWSlugCrmMeetingsMeetingIdRoute:
     AuthenticatedWSlugCrmMeetingsMeetingIdRoute,
+  AuthenticatedWSlugCrmPlaybooksPlaybookIdRoute:
+    AuthenticatedWSlugCrmPlaybooksPlaybookIdRoute,
   AuthenticatedWSlugCrmCompaniesIndexRoute:
     AuthenticatedWSlugCrmCompaniesIndexRoute,
   AuthenticatedWSlugCrmContactsIndexRoute:
@@ -2300,6 +2344,8 @@ const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
   AuthenticatedWSlugCrmDealsIndexRoute: AuthenticatedWSlugCrmDealsIndexRoute,
   AuthenticatedWSlugCrmMeetingsIndexRoute:
     AuthenticatedWSlugCrmMeetingsIndexRoute,
+  AuthenticatedWSlugCrmPlaybooksIndexRoute:
+    AuthenticatedWSlugCrmPlaybooksIndexRoute,
 }
 
 const AuthenticatedWSlugCrmRouteWithChildren =

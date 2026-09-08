@@ -9,6 +9,18 @@ import {
 } from '../customAgentCreateModel';
 
 describe('custom agent create model', () => {
+  it('keeps CRM selections explicit and summarizes them using familiar names', () => {
+    const form = {
+      ...createDefaultCustomAgentForm(),
+      name: 'Sales assistant',
+      allowed_targets: ['crm_contact', 'crm_company'] as const,
+    };
+    const selected = { ...form, allowed_targets: [...form.allowed_targets] };
+    expect(buildCustomAgentCreatePayload('workspace-1', selected, false).allowed_targets).toEqual(['crm_contact', 'crm_company']);
+    expect(summarizeCustomAgentCreate(selected)).toContain('CRM contacts and CRM companies');
+    expect(createDefaultCustomAgentForm().allowed_targets).toEqual(['task']);
+  });
+
   it('uses a public model-size default without exposing a technical route', () => {
     const form = createDefaultCustomAgentForm();
 

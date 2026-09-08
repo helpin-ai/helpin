@@ -43,6 +43,8 @@ export function activityTargetTypeLabel(targetType: string) {
       return 'Coverage gap';
     case 'crm_contact':
       return 'Contact';
+    case 'crm_company':
+      return 'Company';
     case 'crm_deal':
       return 'Deal';
     case 'repository':
@@ -55,7 +57,7 @@ export function activityTargetTypeLabel(targetType: string) {
 }
 
 export function activityTargetIsClickable(targetType: string) {
-  return ['task', 'epic', 'document', 'support_conversation', 'crm_contact', 'crm_deal'].includes(normalizeActivityTargetType(targetType));
+  return ['task', 'epic', 'document', 'support_conversation', 'crm_contact', 'crm_company', 'crm_deal'].includes(normalizeActivityTargetType(targetType));
 }
 
 export function buildActivityTargetPresentation(input: {

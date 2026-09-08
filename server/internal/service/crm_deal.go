@@ -567,6 +567,28 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 	if err != nil {
 		return nil, err
 	}
+	s.afterDealUpdate(ctx, updated, previousStageID, previousStageName, actorID)
+	return updated, nil
+}
+
+// UpdateStageForPlaybook preserves reviewed facts and an atomic canonical result.
+func (s *CRMDealService) UpdateStageForPlaybook(ctx context.Context, expected model.CRMDeal, stageID, actorID string, intent model.CRMPlaybookActionIntent) (*model.CRMDeal, error) {
+	if err := s.dealRepo.UpdateStageForPlaybook(ctx, expected, stageID, intent); err != nil {
+		return nil, err
+	}
+	updated, err := s.dealRepo.GetByID(ctx, expected.ID)
+	if err != nil {
+		return nil, err
+	}
+	previousName := expected.StageID
+	if expected.Stage != nil {
+		previousName = expected.Stage.Name
+	}
+	s.afterDealUpdate(ctx, updated, expected.StageID, previousName, actorID)
+	return updated, nil
+}
+
+func (s *CRMDealService) afterDealUpdate(ctx context.Context, updated *model.CRMDeal, previousStageID, previousStageName, actorID string) {
 	if s.motionSignals != nil {
 		if err := s.motionSignals.ReconcileDealMotionSignals(ctx, updated.WorkspaceID, updated.ID); err != nil {
 			slog.ErrorContext(ctx, "reconcile deal commercial-motion signals", "error", err, "deal_id", updated.ID)
@@ -599,7 +621,6 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 		})
 	}
 	s.requestCompanySummaryRefresh(ctx, updated.WorkspaceID, updated.ID)
-	return updated, nil
 }
 
 func validCRMDealCommercialMotion(value string) bool {

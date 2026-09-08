@@ -26,6 +26,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
@@ -33,6 +34,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/meetingcapture"
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -660,6 +662,20 @@ func main() {
 	meetingActivities := temporalapp.NewCRMMeetingActivities(meetingProcessor).SetCaptureLauncher(meetingCaptureService)
 
 	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
+	crmPlaybookAuthz := authorization.NewAuthzService(db, authorization.NewGORMMemberRepository(db), repository.NewWorkspaceModuleGrantRepository(db))
+	crmSituationService := service.NewCRMSituationService(repository.NewCRMSituationRepository(db), crmPlaybookAuthz)
+	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), crmPlaybookAuthz, crmSituationService)
+	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
+	crmPlaybookLauncher := service.NewCRMPlaybookAgentLauncher(agentService, crmPlaybookExecutionRepo, aiUsageMeter)
+	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, crmPlaybookAuthz, workspaceRepo).SetEntitlements(service.NewEntitlementService(billingService))
+	crmPlaybookLauncher.SetExecutionService(crmPlaybookExecution)
+	scheduledEventsService := service.NewAutomationScheduledEventService(repository.NewAutomationScheduledEventRepository(db),
+		map[string]service.ScheduledEventHandler{
+			model.CRMCheckpointEvent:  service.NewCRMSituationCheckpointService(repository.NewCRMSituationRepository(db)),
+			model.CRMPlaybookWorkDue:  crmPlaybookExecution,
+			model.CRMPlaybookEntryDue: crmPlaybookExecution,
+		}).SetMaintenance(crmPlaybookExecution.MaintainScheduledWork)
+	scheduledEventsActivities := temporalapp.NewScheduledEventsActivities(scheduledEventsService)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
 
 	// Sprint automation activities.
@@ -673,7 +689,7 @@ func main() {
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, emailSyncActivities, signalActivities, summaryActivities, meetingActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities, docsImportActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, emailSyncActivities, signalActivities, summaryActivities, meetingActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, scheduledEventsActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities, docsImportActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -682,6 +698,11 @@ func main() {
 		}
 	}
 	log.Printf("temporal workers started for namespace=%s queues=%v", cfg.TemporalNamespace, queueNames(queueConfigs))
+	scheduleCtx, scheduleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace).EnsureScheduledEvents(scheduleCtx); err != nil {
+		slog.Error("failed to ensure shared scheduled event delivery", "error", err)
+	}
+	scheduleCancel()
 
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -711,7 +732,7 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, meetingActivities *temporalapp.CRMMeetingActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities, docsImportActivities *service.DocsImportActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, meetingActivities *temporalapp.CRMMeetingActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, scheduledEventsActivities *temporalapp.ScheduledEventsActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities, docsImportActivities *service.DocsImportActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
@@ -804,6 +825,12 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	}
 
 	w.RegisterWorkflow(temporalapp.ScheduledRuleWorkflow)
+	w.RegisterWorkflow(temporalapp.ScheduledEventsWorkflow)
+	if scheduledEventsActivities != nil {
+		w.RegisterActivityWithOptions(scheduledEventsActivities.DispatchDue, activity.RegisterOptions{
+			Name: "ScheduledEventsActivities.DispatchDue",
+		})
+	}
 	if scheduledRuleActivities != nil {
 		w.RegisterActivityWithOptions(scheduledRuleActivities.ExecuteScheduledRule, activity.RegisterOptions{
 			Name: "ScheduledRuleActivities.ExecuteScheduledRule",

@@ -6,6 +6,7 @@ import { AgentIconPicker } from '@/components/agents/AgentIconPicker';
 import { QuietSearchInput } from '@/components/design-system/quiet';
 import { HelpCircleIcon } from '@/lib/icons';
 import { AGENT_MODEL_TIER_OPTIONS } from '@/lib/agentModelTier';
+import { CRM_AGENT_TARGET_OPTIONS } from '@/lib/agentCRMTargets';
 import {
   Command,
   CommandEmpty,
@@ -53,7 +54,7 @@ const TARGET_OPTIONS: Array<{ value: AgentTargetType; label: string }> = [
   { value: 'epic', label: 'Epics' },
   { value: 'sprint', label: 'Sprints' },
   { value: 'objective', label: 'Objectives' },
-  { value: 'crm_deal', label: 'CRM deals' },
+  ...CRM_AGENT_TARGET_OPTIONS,
   { value: 'document', label: 'Docs' },
   { value: 'support_conversation', label: 'Support' },
   { value: 'workspace', label: 'Workspace' },

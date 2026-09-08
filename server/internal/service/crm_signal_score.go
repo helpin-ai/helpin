@@ -187,9 +187,9 @@ func signalEntityMultiplier(signal *model.CRMSignal) float64 {
 
 func signalSeverity(priority float64) string {
 	switch {
-	case priority >= 15:
+	case priority >= model.CRMSignalHighPriority:
 		return "high"
-	case priority >= 8:
+	case priority >= model.CRMSignalMediumPriority:
 		return "medium"
 	default:
 		return "low"

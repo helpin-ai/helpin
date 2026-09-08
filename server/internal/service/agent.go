@@ -454,6 +454,15 @@ func runtimeStartRunRequest(
 	if run == nil {
 		return AgentRuntimeStartRunRequest{}, nil
 	}
+	if err := rejectUnclaimedCRMPlaybookRun(run.Input); err != nil {
+		return AgentRuntimeStartRunRequest{}, err
+	}
+	return buildRuntimeStartRunRequest(run, agent, runtimeAgent)
+}
+
+// buildRuntimeStartRunRequest is shared by ordinary and server-authorized bound launches.
+// Callers must establish their own durable admission boundary before using it.
+func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtimeAgent AgentRuntimeAgent) (AgentRuntimeStartRunRequest, error) {
 	var input model.AgentRunInputPayload
 	if len(run.Input) > 0 {
 		_ = json.Unmarshal(run.Input, &input)
@@ -1031,6 +1040,9 @@ func (s *AgentService) ResumeRunsAfterExternalMCPAuth(ctx context.Context, works
 		if err != nil || run == nil || run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonAuthentication {
 			continue
 		}
+		if err := rejectUnclaimedCRMPlaybookRun(run.Input); err != nil {
+			return err
+		}
 		if err := runtimeClient.UpdateRunMCPCredential(ctx, update.RuntimeRunID, update.ServerID, *update.Credential); err != nil {
 			return fmt.Errorf("rotate external MCP run credential: %w", err)
 		}
@@ -1310,6 +1322,26 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		return existing, nil
 	}
 
+	agent := newBuiltInAgentRecord(workspaceID, presetKey, presetVersionKey, preset)
+	if err := s.validateModelRouting(agent); err != nil {
+		return nil, err
+	}
+	if err := s.agentRepo.Create(ctx, agent); err != nil {
+		return nil, err
+	}
+	if s.activitySvc != nil && strings.TrimSpace(actorID) != "" {
+		newValue := agent.Name
+		_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "created", nil, nil, &newValue, nil)
+	}
+	if strings.TrimSpace(actorID) != "" {
+		s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
+	}
+	materializeAgentSystemPrompt(agent)
+	return agent, nil
+}
+
+// newBuiltInAgentRecord is the common pure default constructor. It never reconciles saved settings.
+func newBuiltInAgentRecord(workspaceID, presetKey, presetVersionKey string, preset model.AgentPresetDefinition) *model.Agent {
 	agent := &model.Agent{
 		WorkspaceID:                workspaceID,
 		IsSystem:                   true,
@@ -1336,21 +1368,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 		DefaultInvocationMode:      preset.DefaultInvocationMode,
 	}
 	normalizeAgentRecord(agent)
-	if err := s.validateModelRouting(agent); err != nil {
-		return nil, err
-	}
-	if err := s.agentRepo.Create(ctx, agent); err != nil {
-		return nil, err
-	}
-	if s.activitySvc != nil && strings.TrimSpace(actorID) != "" {
-		newValue := agent.Name
-		_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "created", nil, nil, &newValue, nil)
-	}
-	if strings.TrimSpace(actorID) != "" {
-		s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
-	}
-	materializeAgentSystemPrompt(agent)
-	return agent, nil
+	return agent
 }
 
 func (s *AgentService) reconcileBuiltInPresetAgent(ctx context.Context, workspaceID, actorID, presetKey string) error {
@@ -5265,6 +5283,9 @@ func (s *AgentService) ContinueTerminalRun(ctx context.Context, workspaceID, run
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectUnclaimedCRMPlaybookRun(run.Input); err != nil {
+		return nil, err
+	}
 	switch strings.TrimSpace(run.Status) {
 	case model.AgentRunStatusFailed, model.AgentRunStatusCancelled:
 	default:
@@ -5307,6 +5328,9 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := rejectUnclaimedCRMPlaybookRun(run.Input); err != nil {
+		return nil, nil, err
+	}
 	if run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonHumanApproval && run.ApprovalState != "pending" {
 		run.ApprovalState = "pending"
 	}
@@ -5327,6 +5351,9 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 }
 
 func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, workspaceID string, run *model.AgentRun, runtimeRunID, actorID string, req model.ResumeAgentRunRequest, intent string) (*model.AgentRun, *model.AgentRunMessage, error) {
+	if err := rejectUnclaimedCRMPlaybookRun(run.Input); err != nil {
+		return nil, nil, err
+	}
 	if s.agentRuntimeClient == nil {
 		return nil, nil, fmt.Errorf("agent runtime client is not configured")
 	}
@@ -5739,6 +5766,9 @@ func codexPendingKindForInteraction(interactionKind string) string {
 func (s *AgentService) loadRunAndAgentForCodexAuth(ctx context.Context, workspaceID, runID string) (*model.AgentRun, *model.Agent, error) {
 	run, err := s.GetAgentRun(ctx, workspaceID, runID)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := rejectUnclaimedCRMPlaybookRun(run.Input); err != nil {
 		return nil, nil, err
 	}
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, run.AgentID)
@@ -6214,6 +6244,9 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectUnclaimedCRMPlaybookRun(run.Input); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(req.Reason) == "" {
 		return nil, fmt.Errorf("reason is required")
 	}
@@ -6295,6 +6328,9 @@ type createRunParams struct {
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
+	if err := rejectUnclaimedCRMPlaybookRun(params.input); err != nil {
+		return nil, err
+	}
 	var activeRun *model.AgentRun
 	var err error
 	if params.dockChatID == nil {
@@ -6308,6 +6344,13 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		}
 	}
 	if activeRun != nil {
+		matches, err := crmPlaybookRunScopesMatch(activeRun.Input, params.input)
+		if err != nil {
+			return nil, err
+		}
+		if !matches {
+			return nil, ErrCRMPlaybookRunScopeConflict
+		}
 		if updated := s.reconcileStuckRun(ctx, activeRun); updated != nil {
 			activeRun = updated
 		}
@@ -7013,6 +7056,7 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 	documentIDs := make([]string, 0, len(runs))
 	conversationIDs := make([]string, 0, len(runs))
 	contactIDs := make([]string, 0, len(runs))
+	companyIDs := make([]string, 0, len(runs))
 	dealIDs := make([]string, 0, len(runs))
 	seen := make(map[string]struct{}, len(runs))
 	for _, run := range runs {
@@ -7041,6 +7085,8 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 			conversationIDs = append(conversationIDs, targetID)
 		case "crm_contact":
 			contactIDs = append(contactIDs, targetID)
+		case "crm_company":
+			companyIDs = append(companyIDs, targetID)
 		case "crm_deal":
 			dealIDs = append(dealIDs, targetID)
 		}
@@ -7140,6 +7186,18 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 		}
 	}
 
+	companiesByID := map[string]model.CRMCompany{}
+	if len(companyIDs) > 0 && s.crmCompanyRepo != nil {
+		companies, err := s.crmCompanyRepo.ListByIDs(ctx, workspaceID, companyIDs)
+		if err != nil {
+			slog.WarnContext(ctx, "enrich run targets: list crm companies failed", "error", err, "workspace_id", workspaceID)
+		} else {
+			for _, company := range companies {
+				companiesByID[company.ID] = company
+			}
+		}
+	}
+
 	dealsByID := map[string]model.CRMDeal{}
 	if len(dealIDs) > 0 && s.crmDealRepo != nil {
 		deals, err := s.crmDealRepo.ListByIDs(ctx, workspaceID, dealIDs)
@@ -7210,6 +7268,12 @@ func (s *AgentService) enrichRunTargets(ctx context.Context, workspaceID string,
 				continue
 			}
 			info.Title = crmContactDisplayName(&contact)
+		case "crm_company":
+			company, ok := companiesByID[targetID]
+			if !ok {
+				continue
+			}
+			info.Title = company.Name
 		case "crm_deal":
 			deal, ok := dealsByID[targetID]
 			if !ok {

@@ -83,6 +83,8 @@ type Handlers struct {
 	CRMSignal           *handler.CRMSignalHandler
 	CRMSummary          *handler.CRMSummaryHandler
 	CRMSuggestion       *handler.CRMSuggestionHandler
+	CRMSituation        *handler.CRMSituationHandler
+	CRMPlaybook         *handler.CRMPlaybookHandler
 	CRMWritingProfile   *handler.CRMWritingProfileHandler
 	CRMSearch           *handler.CRMSearchHandler
 	CRMDealAutomation   *handler.CRMDealAutomationHandler
@@ -1660,6 +1662,50 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/health-scores", h.CRMSignal.ListHealthScores)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/health-scores", h.CRMSignal.CreateHealthScore)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/deals/{id}/health-score", h.CRMSignal.GetDealHealthScore)
+
+				// Canonical Signals and the read-only inbox; legacy suggestion APIs remain available.
+				if h.CRMSituation != nil {
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/signal-inbox", h.CRMSituation.Inbox)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/signal-inbox/recommendations/{id}", h.CRMSituation.InboxRecommendation)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/signal-inbox/recommendations/{id}/{decision}", h.CRMSituation.DecideInboxRecommendation)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/situations", h.CRMSituation.List)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/situations/{id}", h.CRMSituation.Get)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/situations", h.CRMSituation.Create)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/situations/{id}/commands", h.CRMSituation.Command)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/situations/{id}/history", h.CRMSituation.History)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/situations/{id}/actions/{action_id}/{decision}", h.CRMSituation.DecideAction)
+				}
+
+				// CRM owns Playbook policy and explicit automation gates. Ordinary
+				// saved Flows and Agents are not enabled or rewritten by these routes.
+				if h.CRMPlaybook != nil {
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/{id}/automation", h.CRMPlaybook.ExecutionOverview)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/{id}/automation/activity", h.CRMPlaybook.AutomationActivity)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/agent-usage/{agentID}", h.CRMPlaybook.AgentUsage)
+					r.With(requireModule(model.ModuleAutomation), requirePerm(authorization.PermCRMAdmin), requirePerm(authorization.PermPMAdminAutomations)).Post("/playbooks/{id}/automation/setup", h.CRMPlaybook.PrepareSetup)
+					r.With(requireModule(model.ModuleAutomation), requirePerm(authorization.PermCRMAdmin), requirePerm(authorization.PermPMAdminAutomations)).Post("/playbooks/{id}/automation/settings", h.CRMPlaybook.ConfigureExecution)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/situations/{id}/automation", h.CRMPlaybook.SignalExecution)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/situations/{id}/automation", h.CRMPlaybook.AdoptExecution)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbook-actions/{action_id}", h.CRMPlaybook.ActionDetails)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/playbook-actions/{action_id}/reconcile", h.CRMPlaybook.ReconcileAction)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/playbook-actions/{action_id}/inspect", h.CRMPlaybook.InspectAction)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/templates", h.CRMPlaybook.Templates)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks", h.CRMPlaybook.List)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/{id}", h.CRMPlaybook.Get)
+					r.With(requirePerm(authorization.PermCRMAdmin)).Post("/playbooks", h.CRMPlaybook.Create)
+					r.With(requirePerm(authorization.PermCRMAdmin)).Post("/playbooks/{id}/commands", h.CRMPlaybook.Command)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/{id}/history", h.CRMPlaybook.History)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/{id}/versions", h.CRMPlaybook.Versions)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/{id}/preview", h.CRMPlaybook.Preview)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/{id}/automation/preview", h.CRMPlaybook.AutomationPreview)
+					r.With(requireModule(model.ModuleAutomation), requirePerm(authorization.PermCRMAdmin), requirePerm(authorization.PermPMAdminAutomations)).Post("/playbooks/{id}/automation/connection/preview", h.CRMPlaybook.ReviewConnection)
+					r.With(requireModule(model.ModuleAutomation), requirePerm(authorization.PermCRMAdmin), requirePerm(authorization.PermPMAdminAutomations)).Post("/playbooks/{id}/automation/connections", h.CRMPlaybook.PublishConnection)
+					r.With(requireModule(model.ModuleAutomation), requirePerm(authorization.PermCRMAdmin), requirePerm(authorization.PermPMAdminAutomations)).Get("/playbooks/{id}/automation/connections", h.CRMPlaybook.Connections)
+					r.With(requireModule(model.ModuleAutomation), requirePerm(authorization.PermCRMAdmin), requirePerm(authorization.PermPMAdminAutomations)).Get("/playbooks/{id}/automation/connections/{connection_id}", h.CRMPlaybook.Connection)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/playbooks/{id}/participants", h.CRMPlaybook.Participants)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/playbooks/{id}/apply", h.CRMPlaybook.Apply)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/playbooks/{id}/participants/{situation_id}/milestones", h.CRMPlaybook.AssessMilestone)
+				}
 
 				// Suggestions — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/suggestions", h.CRMSuggestion.List)

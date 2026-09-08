@@ -167,6 +167,8 @@ const TARGET_LABELS: Record<AgentTargetType, string> = {
   repository: 'repositories',
   workspace: 'the workspace',
   crm_deal: 'CRM deals',
+  crm_contact: 'CRM contacts',
+  crm_company: 'CRM companies',
   document: 'documents',
   support_conversation: 'support conversations',
   support_coverage_gap: 'support coverage gaps',

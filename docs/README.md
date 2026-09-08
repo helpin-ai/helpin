@@ -17,6 +17,14 @@ current document links to them explicitly.
 
 ## CRM references
 
+- [`crm-customer-work-blueprint.md`](crm-customer-work-blueprint.md) — agreed
+  complete Signals/Review and Playbooks product scope, customer outcomes and UX.
+- [`crm-playbook-automation-change-proposal.md`](crm-playbook-automation-change-proposal.md)
+  — implemented Playbooks → Flows → Beacon + skills connection, safeguards and
+  verification; the filename is retained, but the older ordered-step proposal is
+  superseded. Branch implementation does not imply production activation.
+- [`AUTOMATION_PRODUCT_MODEL.md`](AUTOMATION_PRODUCT_MODEL.md) — shared Flow,
+  Agent and Activity mental model, including the guarded CRM connection.
 - [`crm-signal-ingestion.md`](crm-signal-ingestion.md) —
   conversation and email signal extraction.
 - [`crm-email-sync.md`](crm-email-sync.md) — CRM mailbox synchronization.
@@ -26,6 +34,9 @@ current document links to them explicitly.
 The dated
 [`crm-buyer-signals-assessment.md`](crm-buyer-signals-assessment.md) is retained
 for historical design rationale. Use `crm-signals.md` for current status.
+The earlier Signals contract and design mock are also historical references;
+they do not override the reconciled blueprint and connection plan. Current-state
+references describe the inspected branch, not proof of production deployment.
 
 ## Runtime and integrations
 

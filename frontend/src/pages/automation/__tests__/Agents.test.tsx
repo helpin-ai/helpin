@@ -259,6 +259,19 @@ describe('AgentRow', () => {
 });
 
 describe('PM agent targets', () => {
+  it('offers familiar CRM labels without changing any saved agent targets', () => {
+    expect(CUSTOM_AGENT_TARGET_OPTIONS.filter((option) => option.value.startsWith('crm_'))).toEqual([
+      { value: 'crm_deal', label: 'CRM deals', description: 'Run on CRM deal records.' },
+      { value: 'crm_contact', label: 'CRM contacts', description: 'Run on CRM contact records.' },
+      { value: 'crm_company', label: 'CRM companies', description: 'Run on CRM company records.' },
+    ]);
+    const allowedTargets = ['crm_contact', 'crm_company', 'crm_contact'] as Agent['allowed_targets'];
+    expect(runNowTargetOptions({ ...baseAgent, allowed_targets: allowedTargets })).toEqual(['crm_contact', 'crm_company']);
+    expect(allowedTargets).toEqual(['crm_contact', 'crm_company', 'crm_contact']);
+    expect(runNowTargetOptions({ ...baseAgent, allowed_targets: ['task'] })).toEqual(['task']);
+    expect(runNowTargetOptions({ ...baseAgent, allowed_targets: ['crm_deal'] })).toEqual(['crm_deal']);
+  });
+
   it('shows sprint and objective targets and accepts both for Run now', () => {
     const visibleTargets = CUSTOM_AGENT_TARGET_OPTIONS.map((option) => option.value);
     expect(visibleTargets).toEqual(expect.arrayContaining(['sprint', 'objective']));

@@ -45,6 +45,11 @@ type gmailAttachmentClient interface {
 	SendMessageWithAttachments(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML string, attachments []sync.GmailAttachment) (*sync.GmailSendResult, error)
 }
 
+type gmailIntentClient interface {
+	SendMessageWithMessageID(context.Context, string, string, []string, []string, string, string, string) (*sync.GmailSendResult, error)
+	FindSentMessageByMessageID(context.Context, string, string) (*sync.GmailMessage, error)
+}
+
 type gmailThreadAttachmentClient interface {
 	SendThreadMessageWithAttachments(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string, attachments []sync.GmailAttachment) (*sync.GmailSendResult, error)
 }
@@ -633,7 +638,10 @@ func (s *CRMEmailService) SendEmailWithAttachments(ctx context.Context, workspac
 	return s.sendEmail(ctx, workspaceID, accountID, userID, to, cc, subject, bodyHTML, draftID, attachmentIDs)
 }
 
-func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID, userID string, to, cc []string, subject, bodyHTML, draftID string, attachmentIDs []string) (*model.CRMEmailMessage, error) {
+func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID, userID string, to, cc []string, subject, bodyHTML, draftID string, attachmentIDs []string, intentIDs ...string) (*model.CRMEmailMessage, error) {
+	if len(intentIDs) > 1 || len(intentIDs) == 1 && !validSituationID(intentIDs[0]) {
+		return nil, ErrCRMPlaybookInput
+	}
 	if s.gmailSync == nil {
 		return nil, fmt.Errorf("Gmail sync not configured")
 	}
@@ -667,7 +675,13 @@ func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID,
 		return nil, err
 	}
 	var sendResult *sync.GmailSendResult
-	if len(attachments) > 0 {
+	if len(intentIDs) == 1 {
+		client, ok := s.gmailSync.(gmailIntentClient)
+		if !ok || len(attachments) > 0 {
+			return nil, fmt.Errorf("email action reconciliation is not configured")
+		}
+		sendResult, err = client.SendMessageWithMessageID(ctx, accessToken, account.EmailAddress, to, cc, subject, bodyHTML, crmActionMessageID(intentIDs[0]))
+	} else if len(attachments) > 0 {
 		client, ok := s.gmailSync.(gmailAttachmentClient)
 		if !ok {
 			return nil, fmt.Errorf("email attachments are not configured")
@@ -678,6 +692,9 @@ func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID,
 	}
 	if err != nil {
 		return nil, fmt.Errorf("send email: %w", err)
+	}
+	if sendResult == nil || strings.TrimSpace(sendResult.ID) == "" {
+		return nil, fmt.Errorf("send email result is unconfirmed")
 	}
 
 	resolution, err := s.resolver.Resolve(ctx, crmemail.ResolveInput{
@@ -728,6 +745,9 @@ func (s *CRMEmailService) sendEmail(ctx context.Context, workspaceID, accountID,
 		SentAt:            now,
 		ContactID:         resolution.PrimaryContactID,
 		ContactIDs:        resolution.ContactIDs,
+	}
+	if len(intentIDs) == 1 {
+		message.RFCMessageID = optionalStringPtr(crmActionMessageID(intentIDs[0]))
 	}
 
 	if err := s.emailRepo.CreateMessage(ctx, message); err != nil {

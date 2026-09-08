@@ -106,6 +106,20 @@ function click(text: string) {
 }
 
 describe('CustomAgentCreatePanel', () => {
+  it('renders and selects CRM working areas without silently adding others', () => {
+    const form = { ...createDefaultCustomAgentForm(), allowed_targets: ['crm_deal' as const] };
+    const onChange = vi.fn();
+    renderPanel({ mode: 'edit', form, onChange });
+    expect(container?.textContent).toContain('CRM deals');
+    expect(container?.textContent).toContain('CRM contacts');
+    expect(container?.textContent).toContain('CRM companies');
+    expect(container?.textContent).not.toContain('Customer work');
+    expect(onChange).not.toHaveBeenCalled();
+    click('CRM contacts');
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ allowed_targets: ['crm_deal', 'crm_contact'] }));
+    expect(form.allowed_targets).toEqual(['crm_deal']);
+  });
+
   it('opens edit mode directly in settings with save copy', () => {
     renderPanel({
       mode: 'edit',

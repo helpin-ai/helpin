@@ -43,6 +43,7 @@ const sortOptions: Array<{ key: SortMode; label: string }> = [
 ]
 
 const typeLabels: Record<CRMSuggestionType, string> = {
+  playbook_action: 'Playbook action',
   deal_create: 'New deal',
   deal_advance: 'Stage advance',
   follow_up: 'Follow up',
@@ -300,6 +301,7 @@ export function ReviewFeed() {
 
   const allSuggestions = useMemo(() => data?.data ?? [], [data?.data])
   const counts = useMemo<Record<CRMSuggestionType, number>>(() => ({
+    playbook_action: allSuggestions.filter((item) => item.suggestion_type === 'playbook_action').length,
     deal_create: allSuggestions.filter((item) => item.suggestion_type === 'deal_create').length,
     deal_advance: allSuggestions.filter((item) => item.suggestion_type === 'deal_advance').length,
     follow_up: allSuggestions.filter((item) => item.suggestion_type === 'follow_up').length,

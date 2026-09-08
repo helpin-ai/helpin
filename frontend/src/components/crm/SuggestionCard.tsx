@@ -30,6 +30,7 @@ const suggestionDismissalReasons: Array<{ value: CRMSignalDismissalReason; label
 type SuggestionTone = 'neutral' | 'good' | 'warn' | 'danger' | 'accent'
 
 const typeConfig: Record<CRMSuggestion['suggestion_type'], { label: string; icon: typeof DollarCircleIcon; tone: SuggestionTone }> = {
+  playbook_action: { label: 'Playbook action', icon: BulbIcon, tone: 'neutral' },
   deal_create: { label: 'New Deal', icon: DollarCircleIcon, tone: 'good' },
   deal_advance: { label: 'Stage Advance', icon: ChartIncreaseIcon, tone: 'accent' },
   follow_up: { label: 'Follow Up', icon: Mail01Icon, tone: 'neutral' },
@@ -167,6 +168,10 @@ export function SuggestionCard({ suggestion, onAccept, onDismiss, isAccepting, i
     if (targetType === 'meeting') void navigate({ to: '/w/$slug/crm/meetings/$meetingId', params: { slug: workspaceSlug, meetingId: targetID } } as never)
   }
   const approve = async () => {
+    if (suggestion.suggestion_type === 'playbook_action') {
+      await navigate({ to: '/w/$slug/crm/insights', params: { slug: workspaceSlug }, search: { scope: 'all', signal: contextValue(suggestion.context?.situation_id) || undefined } } as never)
+      return
+    }
     const accepted = await confirm({ title: approval.title, description: approval.description, confirmText: approval.label })
     if (accepted) onAccept(suggestion.id)
   }
@@ -261,7 +266,7 @@ export function SuggestionCard({ suggestion, onAccept, onDismiss, isAccepting, i
                 disabled={isAccepting || isDismissing}
               >
                 <Tick01Icon className="h-3.5 w-3.5" />
-                {approval.label}
+                {suggestion.suggestion_type === 'playbook_action' ? 'Review action' : approval.label}
               </Button>
               {canOpenRecord ? <Button size="sm" variant="outline" className="h-8" onClick={openRecord}>Open record</Button> : null}
               <DropdownMenu>

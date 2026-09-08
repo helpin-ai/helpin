@@ -31,6 +31,7 @@ import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation'
 import { QuietPageHeader } from '@/components/design-system/quiet';
 
 const suggestionLabels: Record<CRMSuggestionType, string> = {
+  playbook_action: 'Playbook action',
   follow_up: 'Follow up',
   deal_create: 'New deal',
   deal_advance: 'Stage change',

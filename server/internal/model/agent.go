@@ -706,6 +706,7 @@ type AgentRunWorkspaceContext struct {
 // AgentRunInputPayload is the shared input contract for all agent runs.
 type AgentRunInputPayload struct {
 	Trigger             *AgentRunTriggerContext    `json:"trigger,omitempty"`
+	CRMPlaybook         *CRMPlaybookRunContext     `json:"crm_playbook,omitempty"`
 	Target              *AgentRunTargetContext     `json:"target,omitempty"`
 	Event               *AgentRunEventContext      `json:"event,omitempty"`
 	Output              *AgentRunOutputContext     `json:"output,omitempty"`

@@ -403,6 +403,8 @@ Common target types:
 - `support_coverage_gap`
 - `repository`
 - `crm_deal`
+- `crm_contact`
+- `crm_company`
 - `document`
 
 Important current behavior:
@@ -411,6 +413,59 @@ Important current behavior:
 - rule-driven `start_agent_run` can use either an event-derived target or an explicit fixed target
 - GitHub-triggered `start_agent_run` should be treated as fixed-target rules in practice unless the event resolves cleanly to an existing linked task
 - `support_coverage_gap` is a product-owned support/docs target used by the Documentation system agent to act on support coverage analysis through the normal `agent_run` path
+
+The Flow composer exposes **CRM → a specific deal / contact / company** using a shared, server-searched record picker. Custom Agent creation/editing and template Agent setup expose all three CRM record types using familiar Deal, Contact, and Company labels. Run now uses the same picker, restricted to the Agent's explicitly saved allowed targets. The picker resolves saved selections independently of the first search page, keeps workspace and record-type caches separate, participates in CRM invalidation, and distinguishes unavailable records from empty search results. Company run history includes the company name and a link to its CRM record.
+
+These options reuse existing generic target launch paths; they do not change saved Flow enablement, Agent defaults, tool access, approvals, AI usage preflight, or create PM work. The draft generator recognizes all three existing CRM record types but still requires user review before creation. Playbook lifecycle coordination and bound execution are implemented separately through the [CRM connection](crm-playbook-automation-change-proposal.md); selecting an ordinary CRM record does not enroll it in a Playbook or authorize Playbook actions. The agreed direction keeps Flows and reuses Beacon with specialized skills; it does not require an ordered-step builder. Do not present a new “Customer work” category or advertise unsupported Signals/Playbooks targets in the builders.
+
+## Shared scheduled product events
+
+`automation_scheduled_events` is a versioned-SQL-owned durable outbox for timed
+product events. It is not a user-authored Flow, a second Agent executor, or a
+parallel task system. Producers enqueue an immutable workspace-scoped event key,
+target, expected revision, and due time in the same transaction as the originating
+domain change. Consumers are explicitly registered by kind; unknown kinds fail
+closed. No public scheduling API or new builder controls are exposed by this layer.
+
+The stable `automation-scheduled-events` workflow ticks once per minute on
+`automation-default`. API and worker startup ensure it independently of saved
+Flow schedules. A tick drains a bounded batch; database leases, claim tokens,
+retry backoff, and a maximum of five attempts protect delivery across restarts.
+Consumers must commit their receipt and local domain effect atomically. Returning
+success without acknowledging the event is a retryable failure, not delivery.
+External actions require their own durable identity and execution policy; a
+scheduled event receipt does not grant permission to launch an Agent or skip
+AI preflight, tool authorization, or approvals.
+
+The first registered consumer is `crm.checkpoint_due`, which only reevaluates
+current Signal ownership and linked actions. Lifecycle changes atomically revoke
+older pending claims, and the consumer rechecks lifecycle, revision, due time, and
+lease under the CRM workspace lock. `delivered` means the check was processed,
+not that the customer objective succeeded. `cancelled` means event delivery was
+revoked, not that an already-started Agent or message was cancelled. Current
+checkpoint failures are available to CRM's Needs attention projection. Playbook-specific entry/check consumers and maintenance now use this same worker for bound normal Agent Runtime launch, cancellation and recovery. See `crm-signals.md` for the checkpoint contract.
+
+## CRM Playbook policy and execution boundary
+
+CRM owns draft/published business policy, enrollment, canonical Signal ownership/lifecycle, explicit human-assessed milestones and outcomes. Publication and accepting new customers are not execution authority. Policy/preview receipts keep their historical `execution_enabled: false` contract; live activation is read separately from Playbook automation settings and Signal bindings.
+
+The three supplied journeys reuse the existing built-in CRM Agent **Beacon** (`crm_operator`). Opt-in captured core/job packages live under `server/skills/crm_playbooks/`; ordinary preset skill discovery and saved Agent settings remain unchanged. Connections freeze complete files and digests, effective saved prompts, host limits, CRM scope and runtime configuration. Runtime preparation never substitutes today's mutable instructions for reviewed bytes.
+
+Guided Setup prepares a disabled, dedicated `crm.playbook.work_due` Flow. It is labelled Playbook managed in Automation and links back to CRM Setup; generic editing, enabling, deletion and direct launch cannot bypass its policy. Ordinary CRM/non-CRM Flows retain the existing When / If / Then / Using / On behavior. Beacon has a read-only Used by Playbooks section; no new saved Agent or ordered-step editor is created.
+
+Explicit settings activate a reviewed connection for manual starts or fresh automatic eligibility. Automatic entry uses qualified new source evidence or a newly confirmed won-deal transition, never a historical enrollment scan. Source creation and wake-up are transactional; overlapping policies and missing role owners require review. A Signal retains its pinned policy/connection through later publications and resumes against that binding.
+
+The shared scheduled-event worker handles entry/check claims and bounded maintenance. Each dispatch reserves a normal `agent_run` identity, rechecks permissions/billing/limits and registers a deterministic private frozen runtime profile. Existing Beacon remains the Helpin identity for access, usage and Activity. A lost start response is recovered by exact host/app/profile/target correlation, never another StartRun.
+
+Bound target, command and skill/package callbacks require durable run binding, live tenant/target/generation/member/module authority and the captured bytes. Metadata only constrains; it cannot authorize. Tools are restricted to current Playbook context, typed action proposal and finish. Generic launch/resume/approval/continuation paths reject reserved Playbook context and do not act as CRM approval.
+
+Typed email, PM task, handoff, milestone and deal-stage actions use the existing CRM suggestion lifecycle plus immutable intent/approval correlation. Exact payload, approver, revision, expiry, current facts and destination are checked before existing owning-module services execute. PM is optional and uses a real accessible team/assignee, with native CRM task links; no dummy task starts Beacon. The designated Success owner must explicitly accept a handoff.
+
+Pending approval, unresolved results and linked work use cheap checks. Material changes fence stale runs/proposals; paused/closed Signals revoke future work. Caps, escalation routing, stop conditions and visible blockers preserve follow-through. Unknown sends/creates are inspected, not blindly retried. Customer milestones/outcomes never derive from run completion.
+
+Playbooks Activity projects existing connection/gate/run receipts without raw prompts, packages or runtime output. Canonical decisions, human inspections and customer progress stay in CRM. Independently configured ordinary automations and external senders are not silently migrated into these controls.
+
+See the [CRM reference](crm-signals.md) for endpoints and the [connection plan](crm-playbook-automation-change-proposal.md) for verification and deployment boundaries. These capabilities are implemented on the branch; no production migration, activation or customer send is implied.
 
 ## Launch path comparison
 
