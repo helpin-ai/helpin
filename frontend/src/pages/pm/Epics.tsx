@@ -35,7 +35,6 @@ import {
   Layers01Icon,
   MinusSignIcon,
   Sun01Icon,
-  UserGroupIcon,
   Tag01Icon,
   WorkflowSquare01Icon,
   Activity01Icon,
@@ -98,7 +97,6 @@ const EMPTY_LABELS: Label[] = [];
 const FILTER_CATEGORY_ICONS: Partial<Record<EpicFilterKey, React.ComponentType<{ className?: string }>>> = {
   state: WorkflowSquare01Icon,
   health: Activity01Icon,
-  team: UserGroupIcon,
   owner: UserIcon,
   label: Tag01Icon,
   objective: Target01Icon,
@@ -130,10 +128,6 @@ function getFilterOptionVisual(
     const config = healthConfig[value as EpicHealth];
     if (!config) return {};
     return { labelClassName: config.color };
-  }
-  if (key === 'team') {
-    return { leading: <UserGroupIcon className="h-3.5 w-3.5 text-muted-foreground" />,
-    };
   }
   if (key === 'owner') {
     const member = ctx.assignableMembers.find((candidate) => candidate.id === value);
@@ -207,7 +201,6 @@ const EPIC_GROUP_BY_OPTIONS = [
 type EpicGroupBy = (typeof EPIC_GROUP_BY_OPTIONS)[number]['value'];
 type EpicFilterKey = 'state'
   | 'health'
-  | 'team'
   | 'owner'
   | 'label'
   | 'objective'
@@ -303,7 +296,6 @@ function epicMatchesFilters(entry: EpicWithStats, filters: EpicFilterState) {
   const stateFilter = filters.state?.filter((v) => v !== '__archived__');
   if (stateFilter && stateFilter.length > 0 && !matchesSelectedValue(entry.epic.epic_state_id, stateFilter)) return false;
   if (!matchesSelectedValue(entry.epic.health, filters.health)) return false;
-  if (!matchesSelectedValue(entry.epic.team_id, filters.team)) return false;
   if (!matchesSelectedValue(entry.epic.owner_member_id, filters.owner)) return false;
   if (filters.label?.length && !filters.label.some((id) => labelIds.has(id))) return false;
   if (filters.objective?.length && !filters.objective.some((id) => objectiveIds.has(id))) return false;
@@ -503,7 +495,8 @@ function loadEpicViewState(storageKey: string | null): EpicViewState {
     const parsed = JSON.parse(raw) as Partial<EpicViewState>;
     return {
       groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'state',
-      filters: parsed.filters ?? {},
+      // Discard the removed Team filter from previously saved views.
+      filters: Object.fromEntries(Object.entries(parsed.filters ?? {}).filter(([key]) => key !== 'team')),
       visibleColumns: Array.isArray(parsed.visibleColumns) ? parsed.visibleColumns : undefined,
     };
   } catch {
@@ -1143,11 +1136,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         })),
       },
       {
-        key: 'team',
-        label: 'Team',
-        options: teams.map((team) => ({ value: team.id, label: team.name })),
-      },
-      {
         key: 'owner',
         label: 'Owner',
         options: assignableMembers.map((member) => ({
@@ -1185,7 +1173,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         ],
       },
     ],
-    [allLabels, assignableMembers, epicStates, objectiveNameMap, teams],
+    [allLabels, assignableMembers, epicStates, objectiveNameMap],
   );
 
   const updateEpicField = useCallback(
