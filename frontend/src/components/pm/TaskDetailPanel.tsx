@@ -88,6 +88,7 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { EpicBadge } from '@/components/pm/EpicBadge';
 import { MemberPickerPopover, MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
@@ -1103,10 +1104,10 @@ function TaskDetailPanelBody({
     [effectiveStates, form.workflow_state_id],
   );
 
-  const currentEpicName = useMemo(() => {
-    if (!form.epic_id) return 'None';
-    return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? 'None';
-  }, [form.epic_id, epics]);
+  const currentEpic = useMemo(
+    () => epics.find((e) => e.epic.id === form.epic_id)?.epic,
+    [form.epic_id, epics],
+  );
 
   const currentSprintName = useMemo(() => {
     if (!form.sprint_id) return 'None';
@@ -1741,7 +1742,15 @@ function TaskDetailPanelBody({
                   const val = v === '__none__' ? '' : v;
                   updateField('epic_id', val, { epic_id: val });
                 }}
-                renderTrigger={() => <span className="truncate">{currentEpicName}</span>}
+                renderTrigger={() => currentEpic ? (
+                  <EpicBadge name={currentEpic.name} color={currentEpic.color} />
+                ) : <span>None</span>}
+                renderOption={(value) => {
+                  const epic = availableEpics.find((entry) => entry.epic.id === value)?.epic;
+                  return epic ? (
+                    <EpicBadge name={epic.name} color={epic.color} className="text-[length:inherit]" />
+                  ) : <span>None</span>;
+                }}
               />
             </MetadataRow>
             )}
