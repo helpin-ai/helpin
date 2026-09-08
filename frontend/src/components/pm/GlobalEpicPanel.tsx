@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { GitBranchIcon, Loading01Icon, Target01Icon } from '@/lib/icons';
+import { GitBranchIcon, Loading01Icon } from '@/lib/icons';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -23,6 +23,9 @@ import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { useUpdateEpic } from '@/hooks/queries/useEpics';
+import { EpicColorControl } from './EpicColorControl';
+import { SaveIndicator } from './SaveIndicator';
 
 interface GlobalEpicPanelProps {
   workspaceId: string;
@@ -57,6 +60,9 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
   const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit } = usePermissions(access);
+  const updateEpic = useUpdateEpic(workspaceId);
+  const resetEpicUpdate = updateEpic.reset;
+  useEffect(() => resetEpicUpdate(), [activeEpicId, resetEpicUpdate]);
   const openedAtRef = useRef<number | null>(null);
   const locationRef = useRef(overlayLocation);
   const navigateRef = useRef(navigate);
@@ -199,9 +205,21 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
           <div className="flex h-full min-h-0 flex-col">
             <header className="border-b border-border px-6 py-5">
               <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
-                <Target01Icon className="h-4 w-4" />
+                <EpicColorControl
+                  key={epic.epic.id}
+                  value={epic.epic.color}
+                  disabled={updateEpic.isPending}
+                  onChange={canEdit ? (color) => {
+                    updateEpic.mutate({ id: epic.epic.id, color }, {
+                      onSuccess: (data) => setEpic((current) => current?.epic.id === data.epic.id ? data : current),
+                    });
+                  } : undefined}
+                />
                 Epic
               </div>
+              {(updateEpic.isPending || updateEpic.isError) && (
+                <SaveIndicator saving={updateEpic.isPending} error={updateEpic.error?.message} presentation="quiet" />
+              )}
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h2 className="truncate text-xl font-semibold text-foreground">{epic.epic.name}</h2>

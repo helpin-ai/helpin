@@ -1,5 +1,7 @@
+import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { InlineEpicCell } from './InlineEpicCell';
 import {
   useReactTable,
   getCoreRowModel,
@@ -22,6 +24,7 @@ import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAv
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { PMDropdownContent } from './PMDropdownContent';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -88,6 +91,7 @@ import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import {
   TABLE_CONTAINER,
+  TABLE_SURFACE,
   TABLE_HEADER,
   TABLE_HEADER_CELL,
   TABLE_HEADER_CELL_SORTABLE,
@@ -667,6 +671,7 @@ export function TaskListView({
   const setGroupBy = onGroupByChange ?? setUncontrolledGroupBy;
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
+  const tableSurfaceRef = useTableSurface(parentRef);
   const headerRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
@@ -780,9 +785,9 @@ export function TaskListView({
   }, [teams]);
 
   const epicMap = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, EpicWithStats['epic']>();
     for (const e of epics) {
-      map.set(e.epic.id, e.epic.name);
+      map.set(e.epic.id, e.epic);
     }
     return map;
   }, [epics]);
@@ -1493,7 +1498,7 @@ export function TaskListView({
         }
       ),
       columnHelper.accessor(
-        (row) => (row.epic_id ? epicMap.get(row.epic_id) ?? 'Unknown' : 'No Epic'),
+        (row) => (row.epic_id ? epicMap.get(row.epic_id)?.name ?? row.epic_name ?? 'Unknown' : 'No Epic'),
         {
           id: 'epicName',
           header: 'Epic',
@@ -1501,7 +1506,6 @@ export function TaskListView({
           cell: (info) => (
             <InlineEpicCell
               task={info.row.original}
-              epics={epics}
               epicMap={epicMap}
               onUpdate={updateTaskField}
             />
@@ -2136,7 +2140,7 @@ export function TaskListView({
 
       {/* Table */}
       <div
-        ref={parentRef}
+        ref={tableSurfaceRef}
         className={cn(TABLE_CONTAINER, fitContent && 'max-h-[370px] flex-none')}
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -2202,7 +2206,7 @@ export function TaskListView({
                         summary={groupSummaries.get(row.id)}
                       />
                       {row.getIsExpanded() ? (
-                        <div className="border-b border-border/60 bg-card">
+                        <div className={`border-b border-border/60 ${TABLE_SURFACE}`}>
                           {renderColumnHeaderRow({
                             groupRow: row,
                             groupSelectionState: getGroupSelectionState(row),
@@ -2243,7 +2247,7 @@ export function TaskListView({
         </div>
       </div>
       {footer ? (
-        <div className="border-t border-border/60 bg-card">
+        <div className={`border-t border-border/60 ${TABLE_SURFACE}`}>
           {footer}
         </div>
       ) : null}
@@ -2495,7 +2499,7 @@ function InlinePriorityCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[180px] p-0"
           align="start"
           side="bottom"
@@ -2528,7 +2532,7 @@ function InlinePriorityCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
@@ -2578,7 +2582,7 @@ function InlineStateCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[200px] p-0"
           align="start"
           side="bottom"
@@ -2609,7 +2613,7 @@ function InlineStateCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
@@ -2704,7 +2708,7 @@ function InlineSeverityCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[180px] p-0"
           align="start"
           side="bottom"
@@ -2737,7 +2741,7 @@ function InlineSeverityCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
@@ -2816,7 +2820,7 @@ function InlineTeamCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[200px] p-0"
           align="start"
           side="bottom"
@@ -2846,89 +2850,7 @@ function InlineTeamCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
-      )}
-    </Popover>
-  );
-}
-
-function InlineEpicCell({
-  task,
-  epics,
-  epicMap,
-  onUpdate,
-}: {
-  task: Task;
-  epics: EpicWithStats[];
-  epicMap: Map<string, string>;
-  onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const epicName = task.epic_id ? epicMap.get(task.epic_id) ?? 'Unknown' : null;
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
-        onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-      >
-        {epicName ? (
-          <span className="truncate">{epicName}</span>
-        ) : (
-          <span className="text-muted-foreground">No Epic</span>
-        )}
-      </button>
-    );
-  }
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
-          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-        >
-          {epicName ? (
-            <span className="truncate">{epicName}</span>
-          ) : (
-            <span className="text-muted-foreground">No Epic</span>
-          )}
-        </button>
-      </PopoverTrigger>
-      {open && (
-        <PopoverContent
-          className="w-[220px] p-0"
-          align="start"
-          side="bottom"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <Command>
-            <CommandInput placeholder="Search epics..." className="h-8 text-ui" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No epics found</CommandEmpty>
-              <CommandGroup>
-                {epics.map((e) => (
-                  <CommandItem
-                    key={e.epic.id}
-                    value={e.epic.name}
-                    onSelect={() => {
-                      const newEpicId = task.epic_id === e.epic.id ? undefined : e.epic.id;
-                      onUpdate(task.id, { epic_id: newEpicId });
-                      setOpen(false);
-                    }}
-                    className="flex items-center gap-2 text-ui"
-                  >
-                    <span className="truncate">{e.epic.name}</span>
-                    {task.epic_id === e.epic.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
@@ -2988,7 +2910,7 @@ function InlineSprintCell({
         </button>
       </PopoverTrigger>
       {open && (
-        <PopoverContent
+        <PMDropdownContent
           className="w-[220px] p-0"
           align="start"
           side="bottom"
@@ -3018,7 +2940,7 @@ function InlineSprintCell({
               </CommandGroup>
             </CommandList>
           </Command>
-        </PopoverContent>
+        </PMDropdownContent>
       )}
     </Popover>
   );
@@ -3153,7 +3075,7 @@ function InlineLabelsCell({
         teamId={task.team_id || undefined}
         labels={allLabels}
         selectedLabelIds={taskLabels.map((l) => l.id)}
-        triggerClassName="text-[11px]"
+        triggerClassName="text-[length:var(--text-ui)]"
         singleLine
         onLabelsChange={onLabelsChange}
         onChange={async (labelIds) => {

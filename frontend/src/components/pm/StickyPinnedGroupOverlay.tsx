@@ -104,7 +104,7 @@ export function StickyPinnedGroupOverlay<TItem>({
 
   return (
     <div className="sticky" style={{ top, height: 0, overflow: 'visible', zIndex }}>
-      <div className="border-b border-border/60 bg-background">
+      <div data-table-overlay="" className="border-b border-border/60 bg-background">
         {renderHeader(pinnedItem, pinnedIdx)}
       </div>
     </div>

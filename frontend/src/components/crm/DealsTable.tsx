@@ -1,3 +1,4 @@
+import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useReactTable,
@@ -108,6 +109,7 @@ export function DealsTable({
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const parentRef = useRef<HTMLDivElement>(null);
+  const tableSurfaceRef = useTableSurface(parentRef);
 
   useEffect(() => { setLocalDeals(deals); }, [deals]);
 
@@ -410,7 +412,7 @@ export function DealsTable({
       </div>
 
       {/* Table */}
-      <div ref={parentRef} className={TABLE_CONTAINER}>
+      <div ref={tableSurfaceRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
           {/* Header */}
           <div className={TABLE_HEADER}>

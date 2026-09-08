@@ -34,6 +34,7 @@ import {
   type PMFilterDefinition,
   type PMFilterValues,
 } from '@/components/pm/PMFilterControls';
+import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
 import { RoadmapTimeline } from '@/components/pm/RoadmapTimeline';
 import { getRoadmapEpicRange, roadmapEpicMatchesSearch } from '@/components/pm/roadmapUtils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -666,7 +667,7 @@ function PlanningQueue({
                   className="flex max-w-full min-w-0 items-center gap-2 text-left text-[13.5px] font-semibold tracking-[-0.008em] text-quiet-text-primary hover:text-quiet-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-primary"
                   onClick={() => navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: epic.id } })}
                 >
-                  <Layers01Icon className="h-[15px] w-[15px] shrink-0 text-quiet-muted" />
+                  <EpicColorSwatch color={epic.color} />
                   <span className="truncate">{epic.name}</span>
                 </button>
                 <p className="mt-0.5 truncate text-[11.5px] text-quiet-muted md:hidden">

@@ -3,7 +3,8 @@ import type { ReactElement, ReactNode } from 'react';
 import { Tick01Icon } from '@/lib/icons';
 
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverTrigger } from '@/components/ui/popover';
+import { PMDropdownContent } from './PMDropdownContent';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { formatAssignableMemberName, matchesAssignableMemberValue } from '@/lib/assignableMembers';
@@ -212,7 +213,7 @@ export function MemberPickerPopover({
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       </TooltipWrappedTrigger>
       {!disabled ? (
-        <PopoverContent
+        <PMDropdownContent
           className={cn('z-[60] w-[240px] p-0', contentClassName)}
           align={align}
           onClick={(event) => event.stopPropagation()}
@@ -226,7 +227,7 @@ export function MemberPickerPopover({
             multiple={false}
             getMemberValue={getMemberValue}
           />
-        </PopoverContent>
+        </PMDropdownContent>
       ) : null}
     </Popover>
   );
@@ -298,7 +299,7 @@ export function MultiMemberPickerPopover({
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       </TooltipWrappedTrigger>
       {!disabled ? (
-        <PopoverContent
+        <PMDropdownContent
           className={cn('z-[60] w-[240px] p-0', contentClassName)}
           align={align}
           onClick={(event) => event.stopPropagation()}
@@ -312,7 +313,7 @@ export function MultiMemberPickerPopover({
             multiple
             getMemberValue={getMemberValue}
           />
-        </PopoverContent>
+        </PMDropdownContent>
       ) : null}
     </Popover>
   );

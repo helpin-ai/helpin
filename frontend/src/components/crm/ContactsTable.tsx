@@ -1,3 +1,4 @@
+import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTableSettings } from '@/hooks/useTableSettings';
@@ -32,6 +33,7 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { findAssignableMember } from '@/lib/assignableMembers';
 import {
   TABLE_CONTAINER,
+  TABLE_SURFACE,
   TABLE_HEADER,
   TABLE_HEADER_CELL,
   TABLE_HEADER_CELL_SORTABLE,
@@ -186,6 +188,7 @@ export function ContactsTable({
   const columnOrderVersion = useMemo(() => JSON.stringify(columnOrder), [columnOrder]);
   const columnVisibilityVersion = useMemo(() => JSON.stringify(columnVisibility), [columnVisibility]);
   const parentRef = useRef<HTMLDivElement>(null);
+  const tableSurfaceRef = useTableSurface(parentRef);
 
   useEffect(() => {
     const contactIds = new Set(contacts.map((contact) => contact.id));
@@ -651,7 +654,7 @@ export function ContactsTable({
       )}
 
       {/* Table */}
-      <div ref={parentRef} className={TABLE_CONTAINER}>
+      <div ref={tableSurfaceRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
           {/* Header */}
           {isReorderMode ? (
@@ -696,7 +699,7 @@ export function ContactsTable({
                     <>
                       <MemoGroupHeaderRow row={row} />
                       {row.getIsExpanded() ? (
-                        <div className="border-b border-border/60 bg-card">
+                        <div className={`border-b border-border/60 ${TABLE_SURFACE}`}>
                           {table.getHeaderGroups().map((headerGroup) => (
                             <div key={`${headerGroup.id}-${row.id}`} className="flex items-center">
                               {headerGroup.headers.map((header) =>

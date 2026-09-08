@@ -1,3 +1,4 @@
+import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -109,6 +110,7 @@ export function CompaniesTable({
     [columnVisibility],
   );
   const parentRef = useRef<HTMLDivElement>(null);
+  const tableSurfaceRef = useTableSurface(parentRef);
 
   useEffect(() => { setLocalCompanies(companies); }, [companies]);
 
@@ -374,7 +376,7 @@ export function CompaniesTable({
     <div className="flex h-full min-h-0 flex-1 flex-col gap-2">
       {toolbarPortal}
       {/* Table */}
-      <div ref={parentRef} className={TABLE_CONTAINER}>
+      <div ref={tableSurfaceRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
           {/* Header */}
           <div className={TABLE_HEADER}>

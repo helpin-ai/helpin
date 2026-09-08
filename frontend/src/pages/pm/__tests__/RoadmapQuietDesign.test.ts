@@ -53,10 +53,12 @@ describe('Roadmap Quiet Hairline composition', () => {
     expect(timelineSource).toContain("isEpicGrouping ? 'px-3' : 'pl-7 pr-3'");
     expect(timelineSource).toContain('text-[12.5px] font-semibold text-quiet-text-primary');
     expect(timelineSource).toContain('text-sm font-medium text-quiet-text-tertiary');
-    expect(timelineSource).toContain('<Layers01Icon');
+    expect(timelineSource).toContain('<EpicColorSwatch');
     expect(timelineSource).not.toContain('rounded-lg border');
     expect(timelineSource).not.toContain('bg-muted/30');
-    expect(barSource).toContain('bg-quiet-row-hover');
+    expect(barSource).toContain('backgroundColor: resolveEpicColor(entity.color)');
+    expect(barSource).toContain('color: getEpicBadgeTextColor(entity.color)');
+    expect(roadmapSource).toContain('<EpicColorSwatch color={epic.color}');
     expect(barSource).toContain('h-0.5');
     expect(barSource).toContain('min-w-[260px]');
     expect(barSource).toContain('shadow-lg');

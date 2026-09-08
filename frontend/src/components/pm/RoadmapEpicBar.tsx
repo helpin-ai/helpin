@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
 
+import { getEpicBadgeTextColor, resolveEpicColor } from './epicColor';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { RoadmapEpic } from '@/lib/pmTypes';
@@ -69,10 +70,15 @@ export function RoadmapEpicBar({ epic, left, width, slug, memberNameMap }: Roadm
           type="button"
           aria-label={`Open ${entity.name}`}
           onClick={() => navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: entity.id } })}
-          className={`absolute bottom-1.5 top-1.5 flex min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-[3px] border-l-[3px] bg-quiet-row-hover px-2 text-left transition-colors hover:bg-quiet-hover focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-quiet-text-primary ${tone.border}`}
-          style={{ left: `${left}%`, width: `${Math.max(width, 1)}%` }}
+          className={`absolute bottom-1.5 top-1.5 flex min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-[3px] border-l-[3px] px-2 text-left transition-shadow hover:ring-1 hover:ring-foreground/20 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-quiet-text-primary ${tone.border}`}
+          style={{
+            left: `${left}%`,
+            width: `${Math.max(width, 1)}%`,
+            backgroundColor: resolveEpicColor(entity.color),
+            color: getEpicBadgeTextColor(entity.color),
+          }}
         >
-          <span className="relative z-[1] min-w-0 flex-1 truncate text-[12px] font-medium text-foreground/90">
+          <span className="relative z-[1] min-w-0 flex-1 truncate text-[12px] font-medium">
             {entity.name}
           </span>
           {ownerName ? (
