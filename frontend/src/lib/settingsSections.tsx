@@ -174,7 +174,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'access',
-    label: 'Access',
+    label: 'Module Access',
     description: 'Grant CRM and Support access by team or by direct workspace member exception.',
     icon: Access,
     group: 'Workspace',
