@@ -3,7 +3,6 @@ import { memo, useCallback, useContext, useMemo, useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import {
   Alert01Icon,
-  Layers01Icon,
 } from '@/lib/icons';
 import { Calendar03Icon, Tick01Icon, UserAdd01Icon } from '@/lib/pmIcons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
@@ -27,6 +26,7 @@ import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 import { BoardDataContext, BoardCallbacksContext } from './KanbanBoard.contexts';
 import { ACTIVE_RUN_STATUSES } from './agentRunConstants';
+import { EpicBadge } from './EpicBadge';
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -166,6 +166,7 @@ function TaskCardComponent({
   const assignableMembers = boardData?.assignableMembers ?? assignableMembersProp;
   const ownerNameMap = boardData?.ownerNameMap ?? ownerNameMapProp;
   const agentById = boardData?.agentById;
+  const linkedEpic = task.epic_id ? boardData?.epicById.get(task.epic_id) : undefined;
   const latestRunAgent = agentById && task.latest_run_agent_id ? agentById.get(task.latest_run_agent_id) ?? null : null;
   const onOpen = callbacksRef?.current.onOpen ?? onOpenProp;
   const onOpenAgentRun = callbacksRef?.current.onOpenAgentRun ?? onOpenAgentRunProp ?? onOpen;
@@ -474,10 +475,9 @@ function TaskCardComponent({
       </div>
 
       {/* Epic row */}
-      {vis.epic && task.epic_name && (
-        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Layers01Icon className="h-3 w-3 shrink-0" />
-          <span className="truncate">{task.epic_name}</span>
+      {vis.epic && task.epic_id && (
+        <div className="mt-1.5 flex min-w-0">
+          <EpicBadge name={linkedEpic?.name ?? task.epic_name ?? 'Unknown'} color={linkedEpic?.color} />
         </div>
       )}
 
@@ -852,6 +852,7 @@ function renderedTaskFieldsEqual(prev: Task, next: Task) {
     && prev.state_name === next.state_name
     && prev.state_type === next.state_type
     && prev.epic_name === next.epic_name
+    && prev.epic_id === next.epic_id
     && prev.sprint_name === next.sprint_name
     && labelsEqual(prev.labels, next.labels)
     && prev.latest_run_id === next.latest_run_id

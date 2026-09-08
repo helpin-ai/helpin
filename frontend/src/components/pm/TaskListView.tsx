@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { EpicBadge } from './EpicBadge';
 import {
   useReactTable,
   getCoreRowModel,
@@ -780,9 +781,9 @@ export function TaskListView({
   }, [teams]);
 
   const epicMap = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, EpicWithStats['epic']>();
     for (const e of epics) {
-      map.set(e.epic.id, e.epic.name);
+      map.set(e.epic.id, e.epic);
     }
     return map;
   }, [epics]);
@@ -1493,7 +1494,7 @@ export function TaskListView({
         }
       ),
       columnHelper.accessor(
-        (row) => (row.epic_id ? epicMap.get(row.epic_id) ?? 'Unknown' : 'No Epic'),
+        (row) => (row.epic_id ? epicMap.get(row.epic_id)?.name ?? row.epic_name ?? 'Unknown' : 'No Epic'),
         {
           id: 'epicName',
           header: 'Epic',
@@ -2860,21 +2861,23 @@ function InlineEpicCell({
 }: {
   task: Task;
   epics: EpicWithStats[];
-  epicMap: Map<string, string>;
+  epicMap: Map<string, EpicWithStats['epic']>;
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const epicName = task.epic_id ? epicMap.get(task.epic_id) ?? 'Unknown' : null;
+  const linkedEpic = task.epic_id ? epicMap.get(task.epic_id) : undefined;
+  const epicName = task.epic_id ? linkedEpic?.name ?? task.epic_name ?? 'Unknown' : null;
+  const epicColor = linkedEpic?.color;
 
   if (!open) {
     return (
       <button
         type="button"
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
+        className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         {epicName ? (
-          <span className="truncate">{epicName}</span>
+          <EpicBadge name={epicName} color={epicColor} />
         ) : (
           <span className="text-muted-foreground">No Epic</span>
         )}
@@ -2887,11 +2890,11 @@ function InlineEpicCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
+          className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {epicName ? (
-            <span className="truncate">{epicName}</span>
+            <EpicBadge name={epicName} color={epicColor} />
           ) : (
             <span className="text-muted-foreground">No Epic</span>
           )}

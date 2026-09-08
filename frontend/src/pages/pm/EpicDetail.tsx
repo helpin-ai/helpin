@@ -3,6 +3,8 @@ import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTitle } from '@/hooks/useTitle';
+import { EpicColorControl } from '@/components/pm/EpicColorControl';
+import { resolveEpicColor } from '@/components/pm/epicColor';
 import {
   Activity01Icon,
   ArchiveIcon,
@@ -158,6 +160,7 @@ function MetadataRow({
 // ── Main Page ──────────────────────────────────────────────────────
 
 interface EpicFormState {
+  color: string;
   name: string;
   description: string;
   team_id: string;
@@ -170,6 +173,7 @@ interface EpicFormState {
 }
 
 const buildForm = (epic: EpicWithStats): EpicFormState => ({
+  color: resolveEpicColor(epic.epic.color),
   name: epic.epic.name,
   description: epic.epic.description ?? '',
   team_id: epic.epic.team_id ?? '',
@@ -495,6 +499,7 @@ export function EpicDetailPage() {
       } else {
         setSaveError(null);
         setEpic(data);
+        void queryClient.invalidateQueries({ queryKey: queryKeys.pm.epics(workspaceId) });
         const nextDescription = data.epic.description ?? '';
         savedDescriptionEpicIdRef.current = data.epic.id;
         savedDescriptionRef.current = nextDescription;
@@ -510,7 +515,7 @@ export function EpicDetailPage() {
       setSaving(false);
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [workspaceId, epic, pendingPatch, saving, descriptionPendingUploads, setEpic]);
+  }, [workspaceId, epic, pendingPatch, saving, descriptionPendingUploads, setEpic, queryClient]);
 
   const queuePatch = (patch: UpdateEpicRequest) => {
     setPendingPatch((current) => ({ ...current, ...patch }));
@@ -906,23 +911,26 @@ export function EpicDetailPage() {
     <div className="flex h-full flex-col">
       <QuietDetailHeader
         className="lg:px-10"
-        breadcrumbs={<QuietBreadcrumbs items={[{ id: 'epics', label: 'Epics', icon: <Layers01Icon className="h-3.5 w-3.5 text-quiet-muted" />, onClick: goBack }]} onBack={goBack} backLabel="Back to epics" />}
+        breadcrumbs={<QuietBreadcrumbs items={[{ id: 'epics', label: 'Epics', onClick: goBack }]} onBack={goBack} backLabel="Back to epics" />}
         title={(
-          <QuietTitleInput
-            type="text"
-            aria-label="Epic title"
-            presentation="header"
-            className="max-w-[42rem] border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary"
-            value={form.name}
-            onChange={(event) => updateField('name', event.target.value, { name: event.target.value })}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                event.currentTarget.blur();
-              }
-            }}
-            placeholder="Untitled"
-          />
+          <div className="flex min-w-0 items-center gap-0.5">
+            <EpicColorControl key={epic.epic.id} value={form.color} onChange={canEdit ? (color) => updateField('color', color, { color }) : undefined} />
+            <QuietTitleInput
+              type="text"
+              aria-label="Epic title"
+              presentation="header"
+              className="max-w-[42rem] border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary"
+              value={form.name}
+              onChange={(event) => updateField('name', event.target.value, { name: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+              placeholder="Untitled"
+            />
+          </div>
         )}
         meta={<QuietMetaLine items={[selectedTeam?.name ?? 'No team', `${tasks.length} task${tasks.length === 1 ? '' : 's'}`]} />}
         status={(

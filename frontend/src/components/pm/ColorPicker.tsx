@@ -323,9 +323,11 @@ export function BrandColorPicker({
 export function ColorPicker({
   value,
   onChange,
+  shape = 'circle',
 }: {
   value: string;
   onChange: (color: string) => void;
+  shape?: 'circle' | 'square';
 }) {
   const isCustom = !PRESET_COLORS.includes(value);
   const [customOpen, setCustomOpen] = useState(false);
@@ -366,8 +368,12 @@ export function ColorPicker({
         <button
           key={c}
           type="button"
+          aria-label={`Select color ${c}`}
+          aria-pressed={value === c}
+          title={c}
           className={cn(
-            'h-6 w-6 rounded-full border-2 transition-all cursor-pointer',
+            'h-6 w-6 border-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-primary',
+            shape === 'square' ? 'rounded-[4px]' : 'rounded-full',
             value === c
               ? 'border-foreground scale-110'
               : 'border-transparent hover:border-muted-foreground/40',
@@ -381,8 +387,11 @@ export function ColorPicker({
         <PopoverTrigger asChild>
           <button
             type="button"
+            aria-label="Custom color"
+            aria-pressed={isCustom}
             className={cn(
-              'relative flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all cursor-pointer',
+              'relative flex h-6 w-6 items-center justify-center border-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-primary',
+              shape === 'square' ? 'rounded-[4px]' : 'rounded-full',
               isCustom
                 ? 'border-foreground scale-110'
                 : 'border-dashed border-muted-foreground/40 hover:border-muted-foreground/70',
@@ -409,6 +418,8 @@ export function ColorPicker({
                 style={{ backgroundColor: hsvToHex(hsv) }}
               />
               <Input
+                aria-label="Hex color"
+                aria-invalid={!HEX_REGEX.test(normalizeHex(hexInput))}
                 value={hexInput}
                 onChange={(e) => setHexInput(e.target.value)}
                 onBlur={() => applyHex(hexInput)}
@@ -419,7 +430,7 @@ export function ColorPicker({
                   }
                 }}
                 placeholder="#000000"
-                className="h-8 font-mono text-xs"
+                className={cn('h-8 font-mono text-xs', shape === 'square' && 'focus-visible:ring-quiet-text-primary')}
               />
             </div>
           </div>

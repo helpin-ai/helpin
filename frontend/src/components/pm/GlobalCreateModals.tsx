@@ -14,6 +14,7 @@ import {
   LinkSquare01Icon as ExternalLinkIcon,
   PlusSignIcon,
   SourceCodeIcon,
+  PaintBoardIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -79,6 +80,9 @@ import {
 import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui/entity-created-toast';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { queryKeys } from '@/lib/queryKeys';
+import { ColorPicker } from '@/components/pm/ColorPicker';
+import { DEFAULT_EPIC_COLOR } from '@/components/pm/epicColor';
 
 import pdfIcon from '@/assets/attachment/pdf-icon.png';
 import csvIcon from '@/assets/attachment/csv-icon.png';
@@ -205,6 +209,8 @@ function GlobalCreateTask({ workspaceId, onClose }: { workspaceId: string; onClo
 
 function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [color, setColor] = useState(DEFAULT_EPIC_COLOR);
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
   const confirm = useConfirm();
   const { data: epicStates = [] } = useEpicStates(workspaceId);
@@ -304,6 +310,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       const inlineAttachmentIds = extractInlineAttachmentIds(description);
       const { data, error: createError } = await pmEpicService.create({
         workspace_id: workspaceId,
+        color,
         name: name.trim(),
         description: description.trim() || undefined,
         attachment_ids: inlineAttachmentIds.length > 0 ? inlineAttachmentIds : undefined,
@@ -328,6 +335,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       }
 
       const createdEpic = data?.epic?.epic;
+      if (createdEpic) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.pm.epics(workspaceId) });
+      }
 
       if (createdEpic && pendingFiles.length > 0) {
         for (const file of pendingFiles) {
@@ -399,7 +409,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     }
   };
 
-  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || pendingFiles.length > 0 || epicExternalLinks.some(l => l.url.trim());
+  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || color !== DEFAULT_EPIC_COLOR || pendingFiles.length > 0 || epicExternalLinks.some(l => l.url.trim());
 
   const handleClose = async () => {
     if (hasUnsavedChanges) {
@@ -633,6 +643,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
             <CreateEntityModalSidebar description="Epics are collections of tasks that together represent a major initiative or feature.">
               <CreateEntityMetadataGrid>
+                <CreateEntityMetadataRow icon={PaintBoardIcon} label="Color">
+                  <ColorPicker value={color} onChange={setColor} shape="square" />
+                </CreateEntityMetadataRow>
                 <CreateEntityMetadataRow icon={UserGroupIcon} label="Team *">
                 <Select size="ui" value={meta.teamId || '__none__'} onValueChange={(v) => setMeta((m) => ({ ...m, teamId: v === '__none__' ? '' : v }))}>
                   <SelectTrigger variant="ghost" className="w-full px-1.5">

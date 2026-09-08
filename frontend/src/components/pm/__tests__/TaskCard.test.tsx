@@ -7,7 +7,7 @@ import { TaskCard } from '../TaskCard'
 import { BoardDataContext, BoardCallbacksContext, type BoardCallbacksContextValue } from '../KanbanBoard.contexts'
 import { getDragStartTaskRect } from '../KanbanBoard.dnd'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import type { Agent, Task } from '@/lib/pmTypes'
+import type { Agent, Epic, Task } from '@/lib/pmTypes'
 import type { AssignableMember } from '@/lib/types'
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -133,7 +133,7 @@ function buildTask(patch: Partial<Task> = {}): Task {
   }
 }
 
-function renderTaskCard(task: Task, props: { isOverlay?: boolean } = {}) {
+function renderTaskCard(task: Task, props: { isOverlay?: boolean } = {}, epics: Epic[] = []) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -150,18 +150,21 @@ function renderTaskCard(task: Task, props: { isOverlay?: boolean } = {}) {
     } satisfies BoardCallbacksContextValue,
   }
 
-  const render = (nextTask: Task, nextProps: { isOverlay?: boolean } = props) => {
+  let boardData = {
+    workspaceId: 'workspace-1',
+    epicById: new Map(epics.map((epic) => [epic.id, epic])),
+    ownerNameMap: new Map([['member-1', 'Owner Person']]),
+    agentById: new Map([['agent-1', agent]]),
+    assignableMembers: [owner],
+    automatedStateIds: new Set<string>(),
+    findTeamName: () => undefined,
+  }
+  const render = (nextTask: Task, nextProps: { isOverlay?: boolean } = props, nextEpics?: Epic[]) => {
+    if (nextEpics) boardData = { ...boardData, epicById: new Map(nextEpics.map((epic) => [epic.id, epic])) }
     root.render(
       <TooltipProvider>
         <BoardDataContext.Provider
-          value={{
-            workspaceId: 'workspace-1',
-            ownerNameMap: new Map([['member-1', 'Owner Person']]),
-            agentById: new Map([['agent-1', agent]]),
-            assignableMembers: [owner],
-            automatedStateIds: new Set(),
-            findTeamName: () => undefined,
-          }}
+          value={boardData}
         >
           <BoardCallbacksContext.Provider value={callbacks}>
             <TaskCard task={nextTask} {...nextProps} />
@@ -175,12 +178,37 @@ function renderTaskCard(task: Task, props: { isOverlay?: boolean } = {}) {
     render(task)
   })
 
-  return { container, root, rerender: (nextTask: Task, nextProps?: { isOverlay?: boolean }) => act(() => render(nextTask, nextProps)) }
+  return { container, root, rerender: (nextTask: Task, nextProps?: { isOverlay?: boolean }, nextEpics?: Epic[]) => act(() => render(nextTask, nextProps, nextEpics)) }
 }
 
 describe('TaskCard', () => {
   beforeEach(() => {
     displayStoreMock.properties = { ...displayStoreMock.defaultProperties }
+  })
+
+  it.each([false, true])('updates an epic badge from board data, including overlays (%s)', (isOverlay) => {
+    const task = buildTask({ epic_id: 'epic-1', epic_name: 'Stale name' })
+    const epic = { id: 'epic-1', name: 'Current epic', color: '#e2564a' } as Epic
+    const { container, root, rerender } = renderTaskCard(task, { isOverlay }, [epic])
+    const badge = () => container.querySelector<HTMLElement>('[title="Current epic"]')!
+    expect(badge().style.getPropertyValue('--epic-color')).toBe('#e2564a')
+    rerender(task, { isOverlay }, [{ ...epic, color: '#4e8fea' }])
+    expect(badge().style.getPropertyValue('--epic-color')).toBe('#4e8fea')
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('updates color when reassigned to an epic with the same name', () => {
+    const task = buildTask({ epic_id: 'epic-1', epic_name: 'Same name' })
+    const epics = [
+      { id: 'epic-1', name: 'Same name', color: '#e2564a' },
+      { id: 'epic-2', name: 'Same name', color: '#4e8fea' },
+    ] as Epic[]
+    const { container, root, rerender } = renderTaskCard(task, {}, epics)
+    rerender({ ...task, epic_id: 'epic-2' })
+    expect(container.querySelector<HTMLElement>('[title="Same name"]')!.style.getPropertyValue('--epic-color')).toBe('#4e8fea')
+    act(() => root.unmount())
+    container.remove()
   })
 
   it('uses the whole card as the drag activator without rendering a separate handle', () => {
