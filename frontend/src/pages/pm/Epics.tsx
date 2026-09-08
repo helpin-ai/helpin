@@ -15,6 +15,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQueryClient } from '@tanstack/react-query';
 import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
 import { EpicFilterBar } from '@/pages/pm/EpicFilterBar';
+import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
 import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
@@ -1257,8 +1258,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         header: 'Name',
         size: 280,
         cell: (info) => (
-          <div className={`flex max-w-full items-center gap-2.5 ${TABLE_NAME_TEXT}`}>
-            <Layers01Icon className="h-4 w-4 shrink-0 text-violet-500" />
+          <div className={`flex max-w-full items-center gap-1 ${TABLE_NAME_TEXT}`}>
+            <EpicColorSwatch color={info.row.original.epic.color} />
             <span className="min-w-0 truncate">{info.getValue()}</span>
           </div>
         ),

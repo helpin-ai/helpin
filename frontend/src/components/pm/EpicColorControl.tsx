@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ColorPicker } from './ColorPicker';
 import { resolveEpicColor } from './epicColor';
+import { EpicColorSwatch } from './EpicColorSwatch';
 
 interface EpicColorControlProps {
   value?: string | null;
@@ -14,7 +15,7 @@ export function EpicColorControl({ value, onChange, disabled }: EpicColorControl
   const color = resolveEpicColor(value);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(color);
-  const square = <span className="block h-4 w-4 shrink-0 rounded-[4px] border border-foreground/10" style={{ backgroundColor: open ? draft : color }} />;
+  const square = <EpicColorSwatch color={open ? draft : color} />;
 
   if (!onChange) return <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center" title={`Epic color: ${color}`} aria-label={`Epic color: ${color}`}>{square}</span>;
 
