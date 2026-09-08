@@ -1,3 +1,4 @@
+import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createColumnHelper,
@@ -69,6 +70,7 @@ import {
   TABLE_CELL,
   TABLE_NAME_TEXT,
   TABLE_CONTAINER,
+  TABLE_SURFACE,
   TABLE_GROUP_ROW,
   TABLE_GROUP_ROW_INNER,
   TABLE_HEADER,
@@ -567,6 +569,7 @@ function EpicVirtualTable({
   onColumnSizingChange,
   onToggleGroup }: EpicVirtualTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const tableSurfaceRef = useTableSurface(parentRef);
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const columnVisibilityVersion = useMemo(() => JSON.stringify(columnVisibility), [columnVisibility]);
   const table = useReactTable({
@@ -685,7 +688,7 @@ function EpicVirtualTable({
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div ref={parentRef} className={TABLE_CONTAINER}>
+      <div ref={tableSurfaceRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
           {hasGroups ? null : <div className={TABLE_HEADER}>{renderColumnHeaderRow()}</div>}
 
@@ -705,7 +708,7 @@ function EpicVirtualTable({
                   {item.type === 'group' ? (
                     <>
                       <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
-                      {item.collapsed ? null : <div className="border-b border-border/60 bg-card">{renderColumnHeaderRow()}</div>}
+                      {item.collapsed ? null : <div className={`border-b border-border/60 ${TABLE_SURFACE}`}>{renderColumnHeaderRow()}</div>}
                     </>
                   ) : (
                     <MemoEpicDataRow row={item.row} onRowClick={onRowClick} columnSizing={columnSizing} columnSizingVersion={columnSizingVersion} columnVisibility={columnVisibility} columnVisibilityVersion={columnVisibilityVersion} />

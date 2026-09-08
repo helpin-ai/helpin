@@ -1,3 +1,4 @@
+import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { InlineEpicCell } from './InlineEpicCell';
@@ -90,6 +91,7 @@ import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import {
   TABLE_CONTAINER,
+  TABLE_SURFACE,
   TABLE_HEADER,
   TABLE_HEADER_CELL,
   TABLE_HEADER_CELL_SORTABLE,
@@ -669,6 +671,7 @@ export function TaskListView({
   const setGroupBy = onGroupByChange ?? setUncontrolledGroupBy;
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
+  const tableSurfaceRef = useTableSurface(parentRef);
   const headerRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
@@ -2137,7 +2140,7 @@ export function TaskListView({
 
       {/* Table */}
       <div
-        ref={parentRef}
+        ref={tableSurfaceRef}
         className={cn(TABLE_CONTAINER, fitContent && 'max-h-[370px] flex-none')}
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -2203,7 +2206,7 @@ export function TaskListView({
                         summary={groupSummaries.get(row.id)}
                       />
                       {row.getIsExpanded() ? (
-                        <div className="border-b border-border/60 bg-card">
+                        <div className={`border-b border-border/60 ${TABLE_SURFACE}`}>
                           {renderColumnHeaderRow({
                             groupRow: row,
                             groupSelectionState: getGroupSelectionState(row),
@@ -2244,7 +2247,7 @@ export function TaskListView({
         </div>
       </div>
       {footer ? (
-        <div className="border-t border-border/60 bg-card">
+        <div className={`border-t border-border/60 ${TABLE_SURFACE}`}>
           {footer}
         </div>
       ) : null}
