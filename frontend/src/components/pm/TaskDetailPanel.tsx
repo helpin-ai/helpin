@@ -89,6 +89,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { EpicBadge } from '@/components/pm/EpicBadge';
+import { groupEpicsByLifecycle } from '@/components/pm/epicPickerGroups';
 import { MemberPickerPopover, MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
@@ -850,19 +851,12 @@ function TaskDetailPanelBody({
   // Group epics by lifecycle: not started → in progress → completed.
   // Order within each group matches `availableEpics` (server-supplied order).
   const epicGroups = useMemo(() => {
-    const notStarted: typeof availableEpics = [];
-    const inProgress: typeof availableEpics = [];
-    const completed: typeof availableEpics = [];
-    for (const entry of availableEpics) {
-      if (entry.epic.completed) completed.push(entry);
-      else if (entry.epic.started) inProgress.push(entry);
-      else notStarted.push(entry);
-    }
     return [
       { label: undefined as string | undefined, options: [{ value: '__none__', label: 'None' }] },
-      { label: 'Not started', options: notStarted.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
-      { label: 'In progress', options: inProgress.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
-      { label: 'Completed', options: completed.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      ...groupEpicsByLifecycle(availableEpics.map(({ epic }) => epic)).map((group) => ({
+        label: group.label,
+        options: group.epics.map((epic) => ({ value: epic.id, label: epic.name })),
+      })),
     ];
   }, [availableEpics]);
 

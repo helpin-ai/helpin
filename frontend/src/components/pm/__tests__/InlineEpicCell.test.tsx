@@ -9,8 +9,8 @@ import { InlineEpicCell } from '../InlineEpicCell';
 
 const epics = [
   { epic: { id: 'epic-a', name: 'Shared initiative', color: '#e2564a' } },
-  { epic: { id: 'epic-b', name: 'Shared initiative', color: '#4e8fea' } },
-  { epic: { id: 'epic-c', name: 'Other initiative' } },
+  { epic: { id: 'epic-b', name: 'Shared initiative', color: '#4e8fea', started: true } },
+  { epic: { id: 'epic-c', name: 'Other initiative', started: true, completed: true } },
 ] as EpicWithStats[];
 const epicMap = new Map(epics.map(({ epic }) => [epic.id, epic]));
 let root: Root;
@@ -26,7 +26,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function openPicker(epicId = 'epic-a') {
+async function openPicker(epicId = 'epic-a', options = epicMap) {
   const onUpdate = vi.fn().mockResolvedValue(undefined);
   const onOpenTask = vi.fn();
   const container = document.createElement('div');
@@ -34,7 +34,7 @@ async function openPicker(epicId = 'epic-a') {
   root = createRoot(container);
   await act(async () => root.render(
     <div onClick={onOpenTask}>
-      <InlineEpicCell task={{ id: 'task-1', epic_id: epicId } as Task} epicMap={epicMap} onUpdate={onUpdate} />
+      <InlineEpicCell task={{ id: 'task-1', epic_id: epicId } as Task} epicMap={options} onUpdate={onUpdate} />
     </div>,
   ));
   await act(async () => container.querySelector('button')!.click());
@@ -43,7 +43,24 @@ async function openPicker(epicId = 'epic-a') {
 
 const option = (id: string) => document.querySelector<HTMLElement>(`[role="option"][data-value="${id}"]`)!;
 
-describe('task list epic dropdown', () => {
+describe('task board and list epic dropdown', () => {
+  it('groups epics by lifecycle in the same order as the detail rail', async () => {
+    await openPicker('epic-a', new Map([...epicMap].reverse()));
+    const groups = Array.from(document.querySelectorAll('[cmdk-group]')).slice(1);
+    expect(groups.map((group) => group.querySelector('[cmdk-group-heading]')?.textContent))
+      .toEqual(['Not started', 'In progress', 'Completed']);
+    expect(groups.map((group) => group.querySelector('[role="option"]')?.getAttribute('data-value')))
+      .toEqual(['epic-a', 'epic-b', 'epic-c']);
+  });
+
+  it('omits empty lifecycle groups and offers an explicit None option', async () => {
+    const { onUpdate } = await openPicker('epic-a', new Map([['epic-a', epicMap.get('epic-a')!]]));
+    expect(Array.from(document.querySelectorAll('[cmdk-group-heading]')).map((heading) => heading.textContent))
+      .toEqual(['Not started']);
+    await act(async () => option('__none__').click());
+    expect(onUpdate).toHaveBeenCalledWith('task-1', { epic_id: '' });
+  });
+
   it('shows separate colored badges for same-named epics and slate for an uncolored epic', async () => {
     await openPicker();
     for (const [id, color] of [['epic-a', 'rgb(226, 86, 74)'], ['epic-b', 'rgb(78, 143, 234)'], ['epic-c', 'rgb(193, 201, 211)']]) {

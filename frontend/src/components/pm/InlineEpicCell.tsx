@@ -5,6 +5,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import type { Epic, Task } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { EpicBadge } from './EpicBadge';
+import { groupEpicsByLifecycle } from './epicPickerGroups';
 
 export function InlineEpicCell({
   task,
@@ -61,28 +62,44 @@ export function InlineEpicCell({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <Command>
+          <Command defaultValue={task.epic_id || '__none__'}>
             <CommandInput placeholder="Search epics..." className="h-8 text-ui" />
             <CommandList>
               <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No epics found</CommandEmpty>
               <CommandGroup>
-                {Array.from(epicMap.values()).map((epic) => (
-                  <CommandItem
-                    key={epic.id}
-                    value={epic.id}
-                    keywords={[epic.name]}
-                    data-checked={task.epic_id === epic.id}
-                    onSelect={() => {
-                      const newEpicId = task.epic_id === epic.id ? '' : epic.id;
-                      onUpdate(task.id, { epic_id: newEpicId });
-                      setOpen(false);
-                    }}
-                    className="flex items-center gap-2 text-ui"
-                  >
-                    <EpicBadge name={epic.name} color={epic.color} className="text-[length:inherit]" />
-                  </CommandItem>
-                ))}
+                <CommandItem
+                  value="__none__"
+                  keywords={['None']}
+                  data-checked={!task.epic_id}
+                  onSelect={() => {
+                    onUpdate(task.id, { epic_id: '' });
+                    setOpen(false);
+                  }}
+                  className="text-ui"
+                >
+                  None
+                </CommandItem>
               </CommandGroup>
+              {groupEpicsByLifecycle(epicMap.values()).filter((group) => group.epics.length > 0).map((group) => (
+                <CommandGroup key={group.label} heading={group.label}>
+                  {group.epics.map((epic) => (
+                    <CommandItem
+                      key={epic.id}
+                      value={epic.id}
+                      keywords={[epic.name]}
+                      data-checked={task.epic_id === epic.id}
+                      onSelect={() => {
+                        const newEpicId = task.epic_id === epic.id ? '' : epic.id;
+                        onUpdate(task.id, { epic_id: newEpicId });
+                        setOpen(false);
+                      }}
+                      className="flex items-center gap-2 text-ui"
+                    >
+                      <EpicBadge name={epic.name} color={epic.color} className="text-[length:inherit]" />
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ))}
             </CommandList>
           </Command>
         </PMDropdownContent>
