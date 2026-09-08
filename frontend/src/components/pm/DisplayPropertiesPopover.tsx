@@ -38,7 +38,7 @@ export function DisplayPropertiesPopover({
           </Button>
         </PopoverTrigger>
       </QuickTooltip>
-      <PopoverContent className="w-72 p-3" align="end">
+      <PopoverContent data-dropdown-content="" className="w-72 p-3" align="end">
         <p className="mb-2.5 text-xs font-medium text-muted-foreground">Display properties</p>
         <div className="flex flex-wrap gap-1.5">
           {allProperties.map((prop) => {

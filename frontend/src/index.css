@@ -567,6 +567,7 @@
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
   --text-ui: 0.8125rem;
+  --text-dropdown: 12.2px;
   --text-ui--line-height: 1.25rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -740,6 +741,24 @@
   --tw-prose-bold: var(--rich-text-soft-foreground);
   --tw-prose-quotes: var(--rich-text-soft-foreground);
   color: var(--rich-text-soft-foreground);
+}
+
+/* Dropdown content has one exact text size, independent of the root scale
+   and local text-xs/text-sm overrides. Avatar initials and icons retain
+   their own sizing. Popovers containing forms or editors are not menus. */
+:is(
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="context-menu-content"],
+  [data-slot="select-content"],
+  [data-slot="popover-content"]:has([data-slot="command"]),
+  [data-dropdown-content]
+) {
+  font-size: var(--text-dropdown);
+
+  & :where(:not(svg, svg *, [data-slot="avatar"], [data-slot="avatar"] *)) {
+    font-size: var(--text-dropdown);
+  }
 }
 
 /* Compact PM rich text: 0.9333rem resolves to approximately 14px at the
