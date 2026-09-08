@@ -264,6 +264,7 @@ func main() {
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarPlanDismissal{},
 			&model.DockChat{},
+			&model.DockChatHandoff{},
 			&model.PublicShare{},
 			&model.SupportRunEvidence{},
 			&model.HelpcenterAnswer{},
@@ -555,15 +556,12 @@ func main() {
 		slog.Info("S3 storage not configured — attachments disabled")
 	}
 
-	geoIPResolver, err := geoip.Open(geoip.Options{
+	geoIPResolver := geoip.Open(geoip.Options{
 		Path:        cfg.MaxMindDBPath,
 		DownloadURL: cfg.MaxMindDownloadURL,
 		AccountID:   cfg.MaxMindAccountID,
 		LicenseKey:  cfg.MaxMindLicenseKey,
 	})
-	if err != nil {
-		fatalWithSentry("failed to initialize MaxMind DB", err)
-	}
 	if geoIPResolver != nil {
 		defer func() {
 			if closeErr := geoIPResolver.Close(); closeErr != nil {

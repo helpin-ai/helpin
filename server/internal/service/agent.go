@@ -795,6 +795,7 @@ func (s *AgentService) agentTierResolver() *AgentModelTierResolver {
 }
 
 type agentRuntimeSignalClient interface {
+	ResumeRunWithProvenance(context.Context, string, AgentRuntimeResumeRunRequest, string) (*AgentRuntimeRun, error)
 	GetRun(ctx context.Context, runtimeRunID string) (*AgentRuntimeRun, error)
 	ListMessages(ctx context.Context, runtimeRunID string) ([]AgentRuntimeMessage, error)
 	ListArtifacts(ctx context.Context, runtimeRunID string) ([]AgentRuntimeArtifact, error)

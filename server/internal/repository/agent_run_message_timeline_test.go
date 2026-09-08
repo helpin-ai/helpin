@@ -68,6 +68,23 @@ func TestAgentRunMessageRepositoryDockChatTimelineSpansRunsAndPaginates(t *testi
 	if got := []int64{*messages[0].DockChatSequence, *messages[1].DockChatSequence, *messages[2].DockChatSequence}; got[0] != 1 || got[1] != 2 || got[2] != 3 {
 		t.Fatalf("unexpected timeline sequences: %v", got)
 	}
+	// An insert failure after allocation must roll the counter back. Retrying
+	// the same object must allocate again rather than reuse an uncommitted ID.
+	rejected := *messages[0]
+	rejected.DockChatSequence = nil
+	if err := repo.Create(ctx, &rejected); err == nil {
+		t.Fatal("duplicate primary key insert succeeded")
+	}
+	if rejected.DockChatSequence != nil {
+		t.Fatal("failed insert retained an uncommitted sequence")
+	}
+	var nextSequence int64
+	if err := db.Raw(`SELECT next_message_sequence FROM dock_chats WHERE id = ?`, chatID).Scan(&nextSequence).Error; err != nil {
+		t.Fatal(err)
+	}
+	if nextSequence != 3 {
+		t.Fatalf("failed insert left a coverage gap: counter = %d", nextSequence)
+	}
 
 	page, before, err := repo.ListByDockChat(ctx, workspaceID, chatID, nil, 2)
 	if err != nil {
