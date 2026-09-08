@@ -445,14 +445,12 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
         canEditTeams={editable && canManageTeams}
         isSelf={editingMember.user_id === user?.id}
         canEditModules={canManageModuleAccess}
-        canRemove={canRemoveMember(editingMember)}
         roleOptions={roleOptions(editingMember)}
         onClose={() => setEditingMember(null)}
         onApplied={role => {
           setMembers(current => current.map(member => member.id === editingMember.id ? { ...member, role } : member));
           void onRefresh?.();
         }}
-        onRemoved={() => setMembers(current => current.filter(member => member.id !== editingMember.id))}
       />}
 
       <Dialog open={managingInvitation !== null} onOpenChange={open => { if (!open && !invitationBusy) setManagingInvitation(null); }}>

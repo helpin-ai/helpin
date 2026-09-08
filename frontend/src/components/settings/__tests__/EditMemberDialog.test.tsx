@@ -29,7 +29,7 @@ describe('EditMemberDialog', () => {
     api.createModuleGrant.mockResolvedValue({ data: { id: 'new-grant', module: 'crm', subject_type: 'workspace_member', subject_id: 'member-1' }, error: null });
     onClose = vi.fn();
     container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
-    await act(async () => root.render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TooltipProvider><EditMemberDialog workspaceId="ws-1" member={member} teams={teams} initialTeamIds={[]} grants={grants} canEditRole canEditTeams canEditModules canRemove roleOptions={[{ value: 'member', label: 'Workspace member' }]} onClose={onClose} onApplied={vi.fn()} onRemoved={vi.fn()} /></TooltipProvider></QueryClientProvider>));
+    await act(async () => root.render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TooltipProvider><EditMemberDialog workspaceId="ws-1" member={member} teams={teams} initialTeamIds={[]} grants={grants} canEditRole canEditTeams canEditModules roleOptions={[{ value: 'member', label: 'Workspace member' }]} onClose={onClose} onApplied={vi.fn()} /></TooltipProvider></QueryClientProvider>));
   });
   afterEach(() => { act(() => root.unmount()); document.body.innerHTML = ''; });
   const click = async (element: HTMLElement | undefined | null) => { expect(element).toBeTruthy(); await act(async () => element?.click()); };
@@ -63,12 +63,5 @@ describe('EditMemberDialog', () => {
     expect(api.addTeamMember).toHaveBeenCalledTimes(1);
     expect(api.createModuleGrant).toHaveBeenCalledTimes(2);
     expect(onClose).toHaveBeenCalledOnce();
-  });
-  it('requires confirmation before removing a member', async () => {
-    await click(button('Remove member'));
-    expect(api.removeMember).not.toHaveBeenCalled();
-    const confirm = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')).find(item => item.textContent === 'Remove member');
-    await click(confirm);
-    expect(api.removeMember).toHaveBeenCalledWith('ws-1', 'member-1');
   });
 });
