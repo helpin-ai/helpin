@@ -73,6 +73,7 @@ import { filterShortcuts, stripShortcutContent } from './shortcutFiltering';
 import { getClipboardImageFiles } from '@/lib/clipboardAttachments';
 import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './draftAttachments';
 import { SupportAskAgentsButton } from './SupportAskAgentsButton';
+import { ReplyComposerLoading } from './ReplyComposerLoading';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -1130,6 +1131,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   ], []);
 
   const editor = useEditor({
+    content: useSupportInboxStore.getState().drafts[conversationId] ?? '',
     extensions,
     editorProps: {
       attributes: {
@@ -1290,7 +1292,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
       // Debounce draft save (markdown so formatting persists across reloads)
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = setTimeout(() => setDraft(conversationId, markdown), 500);
+      draftTimerRef.current = setTimeout(() => {
+        draftTimerRef.current = null;
+        setDraft(conversationId, markdown);
+      }, 500);
 
       // Typing indicator (plain text preview is enough)
       text.trim() ? handleTyping(text) : sendTyping(false);
@@ -1369,7 +1374,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       const text = editor.getText();
       const markdown = getEditorMarkdown(editor);
       if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = setTimeout(() => setDraft(conversationId, markdown), 500);
+      draftTimerRef.current = setTimeout(() => {
+        draftTimerRef.current = null;
+        setDraft(conversationId, markdown);
+      }, 500);
       text.trim() ? handleTyping(text) : sendTyping(false);
       const mention = detectMentions(editor, membersRef.current);
       setMentionState(mention);
@@ -1419,17 +1427,20 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     const saved = useSupportInboxStore.getState().drafts[conversationId] ?? '';
     if (saved) {
       // Markdown extension parses markdown when content is a string
-      editor.commands.setContent(saved);
+      editor.commands.setContent(saved, { emitUpdate: false });
     } else {
-      editor.commands.clearContent();
+      editor.commands.clearContent(false);
     }
     return () => {
       if (draftTimerRef.current) {
         clearTimeout(draftTimerRef.current);
         draftTimerRef.current = null;
+        // A thread switch unmounts this editor immediately. Preserve typing
+        // that has not reached the debounced store write yet.
+        setDraft(conversationId, getEditorMarkdown(editor));
       }
     };
-  }, [conversationId, editor]);
+  }, [conversationId, editor, setDraft]);
 
   useEffect(() => {
     if (!editor) return;
@@ -1616,7 +1627,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     editor.chain().focus().extendMarkRange('link').unsetLink().run();
   }, [editor]);
 
-  if (!editor) return null;
+  if (!editor) return <ReplyComposerLoading />;
 
   const content = editor.getText();
   const hasContent = content.trim().length > 0;
@@ -1634,9 +1645,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
   return (
     <div
+      data-support-reply-composer
       aria-busy={isRewriting}
       className={cn(
-        'relative mx-3 mb-4 rounded-xl border border-border/40 bg-card transition-colors',
+        'relative mx-3 mb-4 min-h-[146px] shrink-0 rounded-xl border border-border/40 bg-card transition-colors',
         editorFocused && (
           isNote
             ? 'border-amber-400 dark:border-amber-500'
@@ -1897,7 +1909,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       })()}
 
       {/* Mode toggle */}
-      <div className="flex items-center justify-between gap-3 px-4 pt-3">
+      <div className="flex min-h-[40px] items-center justify-between gap-3 px-4 pt-3">
         <div className="flex min-w-0 items-center gap-1">
         <button
           type="button"

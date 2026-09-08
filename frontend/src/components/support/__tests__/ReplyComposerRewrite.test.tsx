@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ReplyComposer } from '../ReplyComposer';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { Editor } from '@tiptap/core';
 
 const mocks = vi.hoisted(() => ({
   rewrite: vi.fn(), send: vi.fn(), empty: [], mutation: { isPending: false, mutateAsync: vi.fn() },
@@ -58,6 +59,49 @@ describe('ReplyComposer AI loading state', () => {
   afterEach(() => {
     act(() => { root?.unmount(); });
     container?.remove();
+    vi.useRealTimers();
+  });
+
+  it('enables draft actions immediately for restored text without focusing the editor', () => {
+    setup();
+    expect(button('Send').disabled).toBe(false);
+    expect(button('AI Tools').disabled).toBe(false);
+  });
+
+  it('keeps the latest draft when changing conversations before the save debounce', () => {
+    vi.useFakeTimers();
+    setup();
+    const editor = (container.querySelector('.tiptap') as HTMLElement & { editor: Editor }).editor;
+    act(() => { editor.commands.setContent('Just typed'); });
+    act(() => { root.render(<TooltipProvider><ReplyComposer key="conv-2" workspaceId="ws-1" conversationId="conv-2" /></TooltipProvider>); });
+    expect(container.querySelector('.tiptap')?.textContent).not.toContain('Just typed');
+    expect(useSupportInboxStore.getState().drafts['conv-1']).toBe('Just typed');
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it.each([0, 501])('does not overwrite a newer draft from another composer on unmount after %i ms', (elapsed) => {
+    vi.useFakeTimers();
+    setup();
+    if (elapsed) {
+      const editor = (container.querySelector('.tiptap') as HTMLElement & { editor: Editor }).editor;
+      act(() => { editor.commands.setContent('Previously saved typing'); vi.advanceTimersByTime(elapsed); });
+    }
+    act(() => { useSupportInboxStore.getState().setDraft('conv-1', 'Typing in the visible mobile composer'); });
+    act(() => { root.render(<TooltipProvider><ReplyComposer key="conv-2" workspaceId="ws-1" conversationId="conv-2" /></TooltipProvider>); });
+    expect(useSupportInboxStore.getState().drafts['conv-1']).toBe('Typing in the visible mobile composer');
+  });
+
+  it('preserves mobile typing when the hidden desktop composer unmounts last', () => {
+    vi.useFakeTimers();
+    setup();
+    const desktop = <ReplyComposer key="desktop" workspaceId="ws-1" conversationId="conv-1" />;
+    act(() => root.render(<TooltipProvider>{desktop}<ReplyComposer key="mobile" workspaceId="ws-1" conversationId="conv-1" /></TooltipProvider>));
+    const mobile = (container.querySelectorAll('.tiptap')[1] as HTMLElement & { editor: Editor }).editor;
+    act(() => { mobile.commands.setContent('Latest mobile reply'); });
+    act(() => root.render(<TooltipProvider>{desktop}</TooltipProvider>));
+    expect(useSupportInboxStore.getState().drafts['conv-1']).toBe('Latest mobile reply');
+    act(() => root.render(null));
+    expect(useSupportInboxStore.getState().drafts['conv-1']).toBe('Latest mobile reply');
   });
 
   it('shows a loader and blocks editing and sending until the rewritten draft is ready', async () => {

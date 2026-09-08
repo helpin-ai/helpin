@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspacesService } from '@/lib/services/workspacesService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
+import { useRealtimeFallbackPolling } from '@/hooks/useRealtimeFallbackPolling'
 import type { WorkspaceMemberPresenceStatus } from '@/lib/types'
 
 export function useWorkspaces(organizationId?: string) {
@@ -30,13 +31,12 @@ export function useWorkspaceMembers(wsId: string) {
 }
 
 export function useWorkspaceMemberPresenceMap(wsId: string, enabled = true) {
+  const polling = useRealtimeFallbackPolling(!!wsId && enabled)
   return useQuery({
     queryKey: queryKeys.workspaces.memberPresence(wsId),
     queryFn: async (): Promise<WorkspaceMemberPresenceStatus[]> => unwrap(await workspacesService.listMemberPresence(wsId)),
-    enabled: !!wsId && enabled,
+    ...polling,
     staleTime: 15_000,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: true,
     select: (statuses) => new Map(statuses.map((status) => [status.user_id, status] as const)),
   })
 }
