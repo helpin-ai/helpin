@@ -13,6 +13,8 @@ const stableMocks = vi.hoisted(() => ({
   access: {},
   empty: [] as never[],
   members: [] as AssignableMember[],
+  epicStatesPending: false,
+  epicStateRenderCount: 0,
   openCreate: vi.fn(),
   listEpics: vi.fn(),
   listLabels: vi.fn(),
@@ -56,7 +58,11 @@ vi.mock('@/hooks/useAssignableWorkspaceMembers', () => ({
 vi.mock('@/hooks/queries', () => ({
   useWorkspaceAccess: () => ({ data: stableMocks.access }),
   usePermissions: () => ({ canEdit: stableMocks.canEdit }),
-  useEpicStates: () => ({ data: stableMocks.empty }),
+  useEpicStates: () => {
+    // Bound the loading regression so an update loop fails instead of hanging.
+    if (++stableMocks.epicStateRenderCount > 40) throw new Error('Epics entered an update loop while loading states')
+    return { data: stableMocks.epicStatesPending ? undefined : stableMocks.empty }
+  },
   useWorkspaceMemberPresenceMap: () => ({ data: new Map() }),
 }))
 
@@ -80,6 +86,8 @@ describe('EpicsPage scroll layout', () => {
   beforeEach(() => {
     stableMocks.canEdit = true
     stableMocks.members = []
+    stableMocks.epicStatesPending = false
+    stableMocks.epicStateRenderCount = 0
     stableMocks.listEpics.mockResolvedValue({ data: [], error: null })
     stableMocks.listLabels.mockResolvedValue({ data: [], error: null })
     stableMocks.listObjectives.mockResolvedValue({ data: [], error: null })
@@ -89,6 +97,23 @@ describe('EpicsPage scroll layout', () => {
     document.body.innerHTML = ''
     window.localStorage.clear()
     vi.clearAllMocks()
+  })
+
+  it('opens without an update loop while epic states are still loading', async () => {
+    stableMocks.epicStatesPending = true
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    try {
+      await act(async () => {
+        root.render(<QueryClientProvider client={queryClient}><TooltipProvider><EpicsPage /></TooltipProvider></QueryClientProvider>)
+      })
+      expect(container.textContent).toContain('Epics')
+      expect(stableMocks.epicStateRenderCount).toBeLessThan(20)
+    } finally {
+      act(() => root.unmount())
+    }
   })
 
   it('filters epics through owner avatars and the searchable overflow, then clears the selection', async () => {

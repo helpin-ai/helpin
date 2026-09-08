@@ -94,6 +94,7 @@ const ARCHIVED_STATE_VALUE = '__archived__';
 const GROUP_HEADER_REPEAT_HEIGHT = 30;
 const EMPTY_EPICS: EpicWithStats[] = [];
 const EMPTY_LABELS: Label[] = [];
+const EMPTY_EPIC_STATES: EpicWorkflowState[] = [];
 
 const FILTER_CATEGORY_ICONS: Partial<Record<EpicFilterKey, React.ComponentType<{ className?: string }>>> = {
   state: WorkflowSquare01Icon,
@@ -1084,7 +1085,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(DEFAULT_VISIBLE);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
-  const { data: epicStates = [] } = useEpicStates(workspaceId ?? '');
+  const { data: epicStates = EMPTY_EPIC_STATES } = useEpicStates(workspaceId ?? '');
   const ownerNameMap = useMemo(() => buildAssignableMemberNameMap(assignableMembers), [assignableMembers]);
   const teamMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -1542,7 +1543,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   useEffect(() => {
     setCollapsedGroupKeys((current) => {
       const validKeys = new Set(groupedEpics.map((group) => group.key));
-      return new Set([...current].filter((key) => validKeys.has(key)));
+      const remaining = [...current].filter((key) => validKeys.has(key));
+      return remaining.length === current.size ? current : new Set(remaining);
     });
   }, [groupedEpics]);
 
