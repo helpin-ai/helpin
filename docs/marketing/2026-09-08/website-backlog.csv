@@ -1,0 +1,19 @@
+id,priority,task,location,owner,target,acceptance_criteria
+W01,P0,Unify AI setup and pricing copy,Home FAQ; pricing FAQ; app onboarding,Marketing + billing owner,Week 1,Approved language matches current plans and provider options
+W02,P0,Audit import and autonomous-agent claims,Homepage FAQs and agent roster,Product owner,Week 1,Every material capability claim has evidence and availability conditions
+W03,P0,Validate conversion and activation tracking,Home; pricing; navbar; footer; signup; server,Developer + marketing,Weeks 1–2,Clicks reconcile to workspace-level activation and billing; attribution survives subdomain transition
+W04,P0,Record authentic workflow demo,/demo and homepage,Product SME + video,Weeks 1–2,Real supported steps; captions; transcript; no private data
+W05,P1,Revise homepage for initial SaaS audience,/,Marketing + design,Week 2,Specific audience and first-value workflow; comprehension test with 5 buyers
+W06,P1,Build blog content model and templates,/blog; /blog/[slug],Developer,Week 2,Reviewed article renders static HTML with metadata; durable images; mobile QA
+W07,P1,Add sitemap and validate crawler rules,/sitemap.xml; /robots.txt,Developer,Week 2,200 sitemap includes only live canonical URLs; production crawl behavior checked
+W08,P1,Publish verified trust page,/security,Product/security owner + editor,Week 2,Facts verified; no unsupported certification or model-data assertions
+W09,P1,Publish support and SaaS solution pages,/product/customer-support; /solutions/saas-teams,Marketing + product,Weeks 3–4,"Actual workflow screenshots, scope, prerequisites and CTA"
+W10,P1,Pilot Contentpen publishing transport,Contentpen → export → Next.js preview,Developer + editor,Week 2,Create/update tested; metadata/media preserved; approval precedes publication
+W11,P1,Expand navigation only to ready destinations,Navbar; footer,Developer + design,Weeks 2–4,Desktop/mobile keyboard flow works; no placeholder 404 links
+W12,P1,Add customer proof,/customers; /customers/contentstudio,Marketing + customer owner,Weeks 5–6,"Approved quotes, affiliation disclosure, measured or clearly qualitative evidence"
+W13,P1,Publish actual integration/import matrix,/integrations,Product owner + editor,Weeks 5–6,"Distinguish native connection, import, custom setup and unavailable"
+W14,P1,Add pricing worked examples,/pricing,Billing owner + marketing,Weeks 3–4,"Examples disclose assumptions, usage variability and plan limits"
+W15,P2,Measure and improve performance,Home; blog; third-party scripts,Developer,Weeks 3–6,Before/after measurements; no invented performance score
+W16,P2,Add structured data,Home; article and breadcrumb templates,Developer,Weeks 2–4,Validated metadata matches visible content; no invented reviews
+W17,P2,Publish focused comparison pages,/compare/helpin-vs-intercom; /compare/helpin-vs-clickup,Editor + product SME,Weeks 5 and 9,"Current facts, tested workflows, fair limitations, source dates"
+W18,P2,Automate publishing only after export pilot,Separate receiver/Worker and build workflow,Developer,Weeks 5–8 if justified,Authenticated payloads; revision dedupe; preview; unpublish and failure recovery tested
