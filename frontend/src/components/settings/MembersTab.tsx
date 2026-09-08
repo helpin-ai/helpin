@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
+import { PencilEdit01Icon, Delete01Icon, Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
 import { QuietSearchInput } from '@/components/design-system/quiet';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
@@ -351,7 +351,7 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                   <TableHead className="min-w-[160px]">Teams</TableHead>
                   <TableHead className="min-w-[240px]">Module access</TableHead>
                   <TableHead className="w-[64px] text-center">2FA</TableHead>
-                  {editable && <TableHead className="w-[144px] text-right"><span className="sr-only">Actions</span></TableHead>}
+                  {editable && <TableHead className="w-[88px] text-right"><span className="sr-only">Actions</span></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -393,8 +393,8 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                       </TableCell>
                       {editable && <TableCell className="text-right">
                         <div className="flex justify-end gap-1 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/member:opacity-100 group-focus-within/member:opacity-100">
-                          {canEdit && <Button variant="ghost" size="sm" disabled={removingMemberId === member.id || (canManageModuleAccess && moduleAccess.isLoading)} aria-label={`Edit ${member.full_name || member.email}`} onClick={() => setEditingMember(member)}>Edit</Button>}
-                          {canRemoveMember(member) && <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={removingMemberId !== null} aria-label={`Remove ${member.full_name || member.email}`} onClick={() => setRemovingMember(member)}>{removingMemberId === member.id ? 'Removing…' : 'Remove'}</Button>}
+                          {canEdit && <QuickTooltip label="Edit member"><Button variant="ghost" size="icon" className="h-8 w-8" disabled={removingMemberId === member.id || (canManageModuleAccess && moduleAccess.isLoading)} aria-label={`Edit ${member.full_name || member.email}`} onClick={() => setEditingMember(member)}><PencilEdit01Icon className="h-4 w-4" aria-hidden="true" /></Button></QuickTooltip>}
+                          {canRemoveMember(member) && <QuickTooltip label="Remove member"><Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={removingMemberId !== null} aria-label={`Remove ${member.full_name || member.email}`} onClick={() => setRemovingMember(member)}><Delete01Icon className="h-4 w-4" aria-hidden="true" /></Button></QuickTooltip>}
                         </div>
                       </TableCell>}
                     </TableRow>
