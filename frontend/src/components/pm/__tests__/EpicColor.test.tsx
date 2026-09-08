@@ -102,4 +102,15 @@ describe('epic colors', () => {
     expect(container.querySelector('button')).toBeNull();
     expect(container.querySelector('[aria-label="Epic color: #123456"]')).not.toBeNull();
   });
+
+  it('edits inside a clickable row without opening the epic', () => {
+    const onOpenEpic = vi.fn();
+    const onChange = vi.fn();
+    render(<div onClick={onOpenEpic}><EpicColorControl compact value={DEFAULT_EPIC_COLOR} onChange={onChange} /></div>);
+    click('Change epic color');
+    click('Select color #e2564a');
+    click('Apply');
+    expect(onChange).toHaveBeenCalledWith('#e2564a');
+    expect(onOpenEpic).not.toHaveBeenCalled();
+  });
 });

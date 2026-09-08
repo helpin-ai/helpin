@@ -4,6 +4,8 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import type { EpicWithStats } from '@/lib/pmTypes'
+import { queryKeys } from '@/lib/queryKeys'
 
 const stableMocks = vi.hoisted(() => ({
   access: {},
@@ -12,10 +14,20 @@ const stableMocks = vi.hoisted(() => ({
   listEpics: vi.fn(),
   listLabels: vi.fn(),
   listObjectives: vi.fn(),
+  updateEpic: vi.fn(),
+  navigate: vi.fn(),
+  canEdit: true,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => stableMocks.navigate,
+}))
+
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getVirtualItems: () => Array.from({ length: count }, (_, index) => ({ index, start: index * 40 })),
+    getTotalSize: () => count * 40,
+  }),
 }))
 
 vi.mock('@/hooks/useTitle', () => ({ useTitle: vi.fn() }))
@@ -40,12 +52,12 @@ vi.mock('@/hooks/useAssignableWorkspaceMembers', () => ({
 
 vi.mock('@/hooks/queries', () => ({
   useWorkspaceAccess: () => ({ data: stableMocks.access }),
-  usePermissions: () => ({ canEdit: true }),
+  usePermissions: () => ({ canEdit: stableMocks.canEdit }),
   useEpicStates: () => ({ data: stableMocks.empty }),
 }))
 
 vi.mock('@/lib/services/pmEpicService', () => ({
-  pmEpicService: { list: stableMocks.listEpics },
+  pmEpicService: { list: stableMocks.listEpics, update: stableMocks.updateEpic },
 }))
 
 vi.mock('@/lib/services/pmLabelService', () => ({
@@ -62,6 +74,7 @@ import { EpicsPage } from '../Epics'
 
 describe('EpicsPage scroll layout', () => {
   beforeEach(() => {
+    stableMocks.canEdit = true
     stableMocks.listEpics.mockResolvedValue({ data: [], error: null })
     stableMocks.listLabels.mockResolvedValue({ data: [], error: null })
     stableMocks.listObjectives.mockResolvedValue({ data: [], error: null })
@@ -137,5 +150,43 @@ describe('EpicsPage scroll layout', () => {
     expect(container.textContent).not.toContain('Create your first epic')
 
     act(() => root.unmount())
+  })
+
+  it.each([false, true])('edits color from the list and handles a failed save (%s)', async (failSave) => {
+    const entry = {
+      epic: { id: 'epic-color', workspace_id: 'ws-1', name: 'Color initiative', color: '#788596', health: 'no_health', created_at: '2026-09-03T10:00:00Z', updated_at: '2026-09-03T10:00:00Z' },
+      labels: [], objectives: [], stats: { task_count: 0, done_task_count: 0, total_points: 0, done_points: 0 },
+    } as EpicWithStats
+    stableMocks.listEpics.mockReturnValue(new Promise(() => {}))
+    let resolveUpdate!: (value: unknown) => void
+    stableMocks.updateEpic.mockReturnValue(new Promise((resolve) => { resolveUpdate = resolve }))
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const listKey = [...queryKeys.pm.epics('ws-1'), { archived: false, team_id: undefined }]
+    queryClient.setQueryData(listKey, [entry])
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    await act(async () => root.render(<QueryClientProvider client={queryClient}><TooltipProvider><EpicsPage /></TooltipProvider></QueryClientProvider>))
+    const click = async (label: string) => {
+      const button = Array.from(document.querySelectorAll('button')).find((node) => node.getAttribute('aria-label') === label || node.textContent === label)
+      expect(button, label).toBeDefined()
+      await act(async () => button!.click())
+    }
+    await click('Change epic color')
+    await click('Select color #e2564a')
+    await click('Apply')
+    expect(stableMocks.navigate).not.toHaveBeenCalled()
+    expect(stableMocks.updateEpic).toHaveBeenCalledWith('ws-1', 'epic-color', { color: '#e2564a' })
+    expect(queryClient.getQueryData<EpicWithStats[]>(listKey)?.[0].epic.color).toBe('#e2564a')
+    const updated = { ...entry, epic: { ...entry.epic, color: '#e2564a' } }
+    await act(async () => {
+      resolveUpdate(failSave ? { data: null, error: 'Unable to save color' } : { data: updated, error: null })
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    })
+    expect(queryClient.getQueryData<EpicWithStats[]>(listKey)?.[0].epic.color).toBe(failSave ? '#788596' : '#e2564a')
+    if (failSave) expect(container.textContent).toContain('Unable to save color')
+    else expect(queryClient.getQueryData(queryKeys.pm.epic('ws-1', 'epic-color'))).toEqual(updated)
+    act(() => root.unmount())
+    queryClient.clear()
   })
 })

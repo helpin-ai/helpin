@@ -15,7 +15,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQueryClient } from '@tanstack/react-query';
 import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
 import { EpicFilterBar } from '@/pages/pm/EpicFilterBar';
-import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
+import { EpicColorControl } from '@/components/pm/EpicColorControl';
 import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
@@ -260,6 +260,9 @@ function applyEpicPatch(entry: EpicWithStats, patch: UpdateEpicRequest, allLabel
   }
   if (Object.prototype.hasOwnProperty.call(patch, 'health')) {
     nextEpic.health = patch.health ?? entry.epic.health;
+  }
+  if (patch.color !== undefined) {
+    nextEpic.color = patch.color;
   }
 
   const nextEntry: EpicWithStats = {
@@ -1005,6 +1008,7 @@ function InlineEpicLabelsCell({ entry, workspaceId, allLabels, onLabelsChange, o
       ) : null}
       <div className={labels.length > 0 ? 'opacity-0 group-hover/lbl:opacity-100 transition-opacity shrink-0' : 'shrink-0'}>
         <LabelPicker
+          triggerClassName="text-sm"
           workspaceId={workspaceId}
           teamId={entry.epic.team_id || undefined}
           labels={allLabels}
@@ -1204,6 +1208,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       }
 
       setEpics((current) => current.map((entry) => (entry.epic.id === epicId ? data : entry)));
+      queryClient.setQueryData(queryKeys.pm.epic(workspaceId, epicId), data);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.pm.epics(workspaceId) });
     },
     [allLabels, epicsQueryKey, queryClient, setEpics, workspaceId],
   );
@@ -1259,7 +1265,11 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         size: 280,
         cell: (info) => (
           <div className={`flex max-w-full items-center gap-1.5 ${TABLE_NAME_TEXT}`}>
-            <EpicColorSwatch color={info.row.original.epic.color} />
+            <EpicColorControl
+              compact
+              value={info.row.original.epic.color}
+              onChange={canEdit ? (color) => { void updateEpicField(info.row.original.epic.id, { color }); } : undefined}
+            />
             <span className="min-w-0 truncate">{info.getValue()}</span>
           </div>
         ),
