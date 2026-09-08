@@ -18,11 +18,11 @@ export function useWorkspaceSettings(wsId: string, options?: { enabled?: boolean
   })
 }
 
-export function useWorkspaceModuleAccess(wsId: string) {
+export function useWorkspaceModuleAccess(wsId: string, options?: { enabled?: boolean }) {
   return useQuery<WorkspaceModuleAccessSettings>({
     queryKey: queryKeys.workspaces.moduleAccess(wsId),
     queryFn: async () => unwrap(await settingsService.getModuleAccess(wsId)),
-    enabled: !!wsId,
+    enabled: !!wsId && (options?.enabled ?? true),
     staleTime: 30_000,
   })
 }

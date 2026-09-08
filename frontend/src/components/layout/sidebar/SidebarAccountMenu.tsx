@@ -1,5 +1,6 @@
 import { HelpCircleIcon, Logout01Icon, Setting07Icon, UserIcon, UserGroupIcon } from '@/lib/icons';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import {
   DropdownMenu,
@@ -109,7 +110,19 @@ export function SidebarAccountMenu({
                 value={selectedPresenceMode}
                 onValueChange={(value) => onPresenceChange(value as 'online' | 'away' | 'offline' | 'auto')}
               >
-                <DropdownMenuRadioItem value="auto">Automatic</DropdownMenuRadioItem>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuRadioItem value="auto">
+                      Automatic
+                      <HelpCircleIcon className="ml-auto h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                    </DropdownMenuRadioItem>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-64">
+                    Online while active in Helpin. Away after 5 minutes of inactivity,
+                    or when you disconnect. Offline when disconnected with no activity
+                    in the last 5 minutes.
+                  </TooltipContent>
+                </Tooltip>
                 <DropdownMenuRadioItem value="online">Online</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="away">Away</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="offline">Offline</DropdownMenuRadioItem>
