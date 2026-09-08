@@ -3156,7 +3156,7 @@ function InlineLabelsCell({
         teamId={task.team_id || undefined}
         labels={allLabels}
         selectedLabelIds={taskLabels.map((l) => l.id)}
-        triggerClassName="text-[11px]"
+        triggerClassName="text-[length:var(--text-ui)]"
         singleLine
         onLabelsChange={onLabelsChange}
         onChange={async (labelIds) => {

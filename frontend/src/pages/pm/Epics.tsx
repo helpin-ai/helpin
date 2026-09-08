@@ -1008,7 +1008,7 @@ function InlineEpicLabelsCell({ entry, workspaceId, allLabels, onLabelsChange, o
       ) : null}
       <div className={labels.length > 0 ? 'opacity-0 group-hover/lbl:opacity-100 transition-opacity shrink-0' : 'shrink-0'}>
         <LabelPicker
-          triggerClassName="text-sm"
+          triggerClassName="text-[length:var(--text-ui)]"
           workspaceId={workspaceId}
           teamId={entry.epic.team_id || undefined}
           labels={allLabels}
