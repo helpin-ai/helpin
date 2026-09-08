@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../../node_modules/.tmp/signals-preview.tsbuildinfo",
+    "types": ["vite/client", "@tiptap/starter-kit", "@tiptap/extension-underline"]
+  },
+  "include": ["./App.tsx", "./main.tsx", "./data.ts"]
+}

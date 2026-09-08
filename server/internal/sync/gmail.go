@@ -245,6 +245,44 @@ func (c *GmailSyncClient) SendMessageWithAttachments(ctx context.Context, access
 	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, "", "", "", attachments)
 }
 
+// SendMessageWithMessageID preserves a durable host action identity for reconciliation.
+// Gmail does not promise deduplicated sends: callers must claim the intent once.
+func (c *GmailSyncClient) SendMessageWithMessageID(ctx context.Context, accessToken, from string, to, cc []string, subject, bodyHTML, messageID string) (*GmailSendResult, error) {
+	if !validOutgoingMessageID(messageID) {
+		return nil, fmt.Errorf("invalid outgoing message identity")
+	}
+	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, "", "", "", nil, messageID)
+}
+
+// FindSentMessageByMessageID is read-only. Absence is inconclusive, never permission to resend.
+func (c *GmailSyncClient) FindSentMessageByMessageID(ctx context.Context, accessToken, messageID string) (*GmailMessage, error) {
+	if !validOutgoingMessageID(messageID) {
+		return nil, fmt.Errorf("invalid outgoing message identity")
+	}
+	// The Gmail API documents rfc822msgid queries on users.messages.list.
+	// https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list
+	messages, next, err := c.ListMessages(ctx, accessToken, "in:sent rfc822msgid:"+messageID, 2, "")
+	if err != nil {
+		return nil, err
+	}
+	if next != "" || len(messages) > 1 {
+		return nil, fmt.Errorf("multiple sent messages match this action; inspection required")
+	}
+	if len(messages) == 1 && messages[0].RFCMessageID == messageID {
+		return &messages[0], nil
+	}
+	return nil, nil
+}
+
+func validOutgoingMessageID(value string) bool {
+	if len(value) < 5 || len(value) > 254 || !strings.HasPrefix(value, "<") || !strings.HasSuffix(value, ">") || strings.ContainsAny(value, "\r\n\t ") {
+		return false
+	}
+	inner := value[1 : len(value)-1]
+	parsed, err := mail.ParseAddress(inner)
+	return err == nil && parsed.Address == inner
+}
+
 // SendThreadMessage sends a reply into an existing Gmail thread.
 func (c *GmailSyncClient) SendThreadMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string) (*GmailSendResult, error) {
 	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, threadID, inReplyTo, references, nil)
@@ -254,7 +292,10 @@ func (c *GmailSyncClient) SendThreadMessageWithAttachments(ctx context.Context, 
 	return c.sendMessage(ctx, accessToken, from, to, cc, subject, bodyHTML, threadID, inReplyTo, references, attachments)
 }
 
-func (c *GmailSyncClient) sendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string, attachments []GmailAttachment) (*GmailSendResult, error) {
+func (c *GmailSyncClient) sendMessage(ctx context.Context, accessToken, from string, to []string, cc []string, subject, bodyHTML, threadID, inReplyTo, references string, attachments []GmailAttachment, messageIDs ...string) (*GmailSendResult, error) {
+	if len(messageIDs) > 1 || len(messageIDs) == 1 && !validOutgoingMessageID(messageIDs[0]) {
+		return nil, fmt.Errorf("invalid outgoing message identity")
+	}
 	fromHeader, err := safeMailHeaderAddress(from)
 	if err != nil {
 		return nil, fmt.Errorf("invalid from address: %w", err)
@@ -279,6 +320,9 @@ func (c *GmailSyncClient) sendMessage(ctx context.Context, accessToken, from str
 		b.WriteString("Cc: " + strings.Join(ccHeaders, ", ") + "\r\n")
 	}
 	b.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
+	if len(messageIDs) == 1 {
+		b.WriteString("Message-ID: " + messageIDs[0] + "\r\n")
+	}
 	if strings.TrimSpace(inReplyTo) != "" {
 		b.WriteString("In-Reply-To: " + sanitizeMessageHeader(inReplyTo) + "\r\n")
 	}

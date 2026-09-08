@@ -1,4 +1,5 @@
 import { supportQueryKeys } from '@helpin-ai/support-core'
+import { CRM_RECORD_TARGETS, type CRMRecordTargetType } from './agentCRMTargets'
 
 export const queryKeys = {
   user: {
@@ -251,6 +252,14 @@ export const queryKeys = {
   },
 
   crm: {
+    playbooks: (wsId: string) => ['crm', wsId, 'playbooks'] as const,
+    playbook: (wsId: string, id: string) => ['crm', wsId, 'playbooks', id] as const,
+    situations: (wsId: string) => ['crm', wsId, 'situations'] as const,
+    situation: (wsId: string, id: string) => ['crm', wsId, 'situations', id] as const,
+    automationRecord: (wsId: string, targetType: CRMRecordTargetType, id: string) =>
+      ['crm', wsId, CRM_RECORD_TARGETS[targetType].collection, id, 'automation-picker'] as const,
+    automationRecords: (wsId: string, targetType: CRMRecordTargetType, search: string) =>
+      ['crm', wsId, CRM_RECORD_TARGETS[targetType].collection, 'automation-picker', { search }] as const,
     contacts: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['crm', wsId, 'contacts', filters] as const) : (['crm', wsId, 'contacts'] as const),
     contact: (wsId: string, id: string) => ['crm', wsId, 'contacts', id] as const,

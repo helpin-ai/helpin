@@ -376,6 +376,9 @@ func (e *AutomationRuleEngine) matchesScope(rule model.AutomationRule, task *mod
 }
 
 func (e *AutomationRuleEngine) executeAction(ctx context.Context, rule *model.AutomationRule, event model.AutomationEvent, task *model.PMTask, execCtx *model.RuleExecutionContext) error {
+	if rule.TriggerType == model.CRMPlaybookWorkDue {
+		return fmt.Errorf("manage this Flow from its CRM Playbook")
+	}
 	switch rule.ActionType {
 	case model.ActionRunAgent:
 		return fmt.Errorf("run_agent is no longer supported")
@@ -1134,6 +1137,9 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 	if rule == nil {
 		return nil, fmt.Errorf("automation rule not found")
 	}
+	if rule.TriggerType == model.CRMPlaybookWorkDue {
+		return nil, fmt.Errorf("manage this Flow from its CRM Playbook")
+	}
 	wasScheduled := rule.TriggerType == model.TriggerCron && rule.Enabled
 
 	if req.Name != nil {
@@ -1198,6 +1204,9 @@ func (e *AutomationRuleEngine) DeleteRule(ctx context.Context, workspaceID, rule
 	}
 	if rule == nil {
 		return fmt.Errorf("automation rule not found")
+	}
+	if rule.TriggerType == model.CRMPlaybookWorkDue {
+		return fmt.Errorf("manage this Flow from its CRM Playbook")
 	}
 	if rule.TriggerType == model.TriggerCron && e.runEngine != nil {
 		if err := e.runEngine.StopRuleSchedule(ctx, rule.ID); err != nil {

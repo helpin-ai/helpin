@@ -579,6 +579,16 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: requiredEntityIDSchema("contact_id"),
 	},
 	{
+		CommandName: "crm.get_playbook_context", Alias: "get_crm_playbook_context", Category: "CRM / Playbooks",
+		Description: "Read the current objective, permitted policy, linked CRM facts, evidence and canonical actions for this server-bound Playbook run. No arbitrary customer or Playbook IDs are accepted.",
+		InputSchema: map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+	},
+	{
+		CommandName: "crm.propose_playbook_action", Alias: "propose_crm_playbook_action", Category: "CRM / Playbooks", RiskLevel: RiskLevelRoutine,
+		Description: "Prepare one exact supported action for human review on the bound CRM Signal. This does not send, create a task, change a deal, accept a handoff or mark progress. Unchanged repeated proposals reuse the canonical decision.",
+		InputSchema: crmPlaybookActionSchema(),
+	},
+	{
 		CommandName: "crm.get_company",
 		Alias:       "get_crm_company",
 		Category:    "CRM / Discovery",

@@ -27,6 +27,19 @@ func (r *AutomationRuleRepository) Create(ctx context.Context, rule *model.Autom
 	return nil
 }
 
+// CreateDisabled bypasses the model's default:true tag without briefly enabling a Flow.
+func (r *AutomationRuleRepository) CreateDisabled(ctx context.Context, rule *model.AutomationRule) error {
+	if rule == nil || rule.ID == "" {
+		return fmt.Errorf("disabled Flow requires an identity")
+	}
+	rule.Enabled = false
+	return r.db.WithContext(ctx).Model(&model.AutomationRule{}).Create(map[string]any{
+		"id": rule.ID, "workspace_id": rule.WorkspaceID, "name": rule.Name, "enabled": false, "trigger_type": rule.TriggerType,
+		"trigger_config": rule.TriggerConfig, "action_type": rule.ActionType, "action_config": rule.ActionConfig,
+		"created_by": rule.CreatedBy, "created_at": rule.CreatedAt, "updated_at": rule.UpdatedAt,
+	}).Error
+}
+
 // Update saves changes to an existing automation rule.
 func (r *AutomationRuleRepository) Update(ctx context.Context, rule *model.AutomationRule) error {
 	if err := r.db.WithContext(ctx).Save(rule).Error; err != nil {

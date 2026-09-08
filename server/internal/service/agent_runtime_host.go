@@ -38,29 +38,30 @@ var (
 // It exposes runtime contracts only; Helpin lifecycle policy remains in the
 // existing projection, billing, and finalizer services.
 type AgentRuntimeHostService struct {
-	appID            string
-	runRepo          *repository.AgentRunRepository
-	agentRepo        *repository.AgentRepository
-	workspaceRepo    *repository.WorkspaceRepository
-	taskRepo         *repository.PMTaskRepository
-	epicRepo         *repository.PMEpicRepository
-	sprintService    *PMSprintService
-	objectiveService *PMObjectiveService
-	supportRepo      *repository.SupportConversationRepository
-	supportCoverage  *SupportCoverageService
-	docsRepo         *repository.DocsDocumentRepository
-	crmContactRepo   *repository.CRMContactRepository
-	crmCompanyRepo   *repository.CRMCompanyRepository
-	crmDealRepo      *repository.CRMDealRepository
-	commandService   *InternalCommandService
-	providerCommands map[string]string
-	gitService       *GitService
-	skillRepo        *repository.WorkspaceSkillRepository
-	skillStore       skillPackageStore
-	builtInArchives  *runtimeBuiltInSkillArchiveCache
-	authz            *authorization.AuthzService
-	artifactRepo     agentRuntimeBrowserArtifactRepository
-	assetStore       agentRuntimeBrowserAssetStore
+	appID             string
+	runRepo           *repository.AgentRunRepository
+	agentRepo         *repository.AgentRepository
+	workspaceRepo     *repository.WorkspaceRepository
+	taskRepo          *repository.PMTaskRepository
+	epicRepo          *repository.PMEpicRepository
+	sprintService     *PMSprintService
+	objectiveService  *PMObjectiveService
+	supportRepo       *repository.SupportConversationRepository
+	supportCoverage   *SupportCoverageService
+	docsRepo          *repository.DocsDocumentRepository
+	crmContactRepo    *repository.CRMContactRepository
+	crmCompanyRepo    *repository.CRMCompanyRepository
+	crmDealRepo       *repository.CRMDealRepository
+	commandService    *InternalCommandService
+	providerCommands  map[string]string
+	gitService        *GitService
+	skillRepo         *repository.WorkspaceSkillRepository
+	skillStore        skillPackageStore
+	builtInArchives   *runtimeBuiltInSkillArchiveCache
+	authz             *authorization.AuthzService
+	artifactRepo      agentRuntimeBrowserArtifactRepository
+	assetStore        agentRuntimeBrowserAssetStore
+	playbookExecution *CRMPlaybookExecutionService
 }
 
 type agentRuntimeBrowserAssetStore interface {
@@ -396,6 +397,16 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 	if err := s.validateAppID(req.AppID); err != nil {
 		return nil, err
 	}
+	if scope, err := s.resolveCRMPlaybookCallback(ctx, req.RunID, req.AgentID, req.Target, req.Metadata, req.Target.Metadata); err != nil || scope != nil {
+		if err != nil {
+			return nil, err
+		}
+		return &agentruntime.TargetContext{Target: req.Target, Summary: scope.binding.Input.CRMPlaybook.CustomerObjective,
+			Data: map[string]interface{}{"crm_playbook": scope.binding.Input.CRMPlaybook, "context_tool": "get_crm_playbook_context"}}, nil
+	}
+	if err := s.rejectUnclaimedCRMPlaybookCallback(ctx, req.RunID, req.Metadata, req.Target.Metadata); err != nil {
+		return nil, err
+	}
 	target := normalizeRuntimeTarget(req.Target)
 	if target.Type == "" || target.ID == "" {
 		return nil, fmt.Errorf("%w: target.type and target.id are required", ErrAgentRuntimeHostBadRequest)
@@ -677,6 +688,9 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 	if err := s.validateAppID(req.AppID); err != nil {
 		return nil, err
 	}
+	if err := s.rejectUnclaimedCRMPlaybookCallback(ctx, req.RunID, req.Metadata, req.Target.Metadata); err != nil {
+		return nil, err
+	}
 	var contextData map[string]interface{}
 	var contextTargetMetadata map[string]interface{}
 	if req.TargetContext != nil {
@@ -738,6 +752,25 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 		return nil, fmt.Errorf("command service is not configured")
 	}
 	if err := s.validateAppID(req.Meta.AppID); err != nil {
+		return nil, err
+	}
+	boundTarget := req.Meta.Target
+	if boundTarget.Type == "" {
+		boundTarget.Type = req.Meta.TargetType
+	}
+	if boundTarget.ID == "" {
+		boundTarget.ID = req.Meta.TargetID
+	}
+	if scope, err := s.resolveCRMPlaybookCallback(ctx, req.Meta.RunID, req.Meta.AgentID, boundTarget, req.Meta.RunInputMetadata, req.Meta.TargetMetadata, req.Meta.Target.Metadata, req.Meta.WorkspaceMetadata); err != nil || scope != nil {
+		if err != nil {
+			return nil, err
+		}
+		if req.Meta.TargetType != "" && req.Meta.TargetType != boundTarget.Type || req.Meta.TargetID != "" && req.Meta.TargetID != boundTarget.ID {
+			return nil, ErrAgentRuntimeHostForbidden
+		}
+		return s.executeCRMPlaybookCommand(ctx, req, scope)
+	}
+	if err := s.rejectUnclaimedCRMPlaybookCallback(ctx, req.Meta.RunID, req.Meta.RunInputMetadata, req.Meta.TargetMetadata, req.Meta.Target.Metadata); err != nil {
 		return nil, err
 	}
 	meta := model.InternalCommandContext{
@@ -823,6 +856,12 @@ func (s *AgentRuntimeHostService) ResolveSkillByID(ctx context.Context, req Agen
 	if err := s.validateAppID(req.AppID); err != nil {
 		return nil, err
 	}
+	if skill, handled, err := s.resolveCRMPlaybookSkill(ctx, req); handled {
+		return skill, err
+	}
+	if err := s.rejectUnclaimedCRMPlaybookCallback(ctx, req.RunID, req.Metadata, req.Target.Metadata); err != nil {
+		return nil, err
+	}
 	if strings.HasPrefix(skillID, agentRuntimeHelpinBuiltInSkillIDPrefix) {
 		key := strings.TrimPrefix(skillID, agentRuntimeHelpinBuiltInSkillIDPrefix)
 		definition, ok := agentcontract.GetBuiltInSkill(key)
@@ -845,6 +884,12 @@ func (s *AgentRuntimeHostService) ResolveActiveSkillByKey(ctx context.Context, r
 		return nil, fmt.Errorf("workspace skill lookup is not configured")
 	}
 	if err := s.validateAppID(req.AppID); err != nil {
+		return nil, err
+	}
+	if skill, handled, err := s.resolveCRMPlaybookSkill(ctx, req); handled {
+		return skill, err
+	}
+	if err := s.rejectUnclaimedCRMPlaybookCallback(ctx, req.RunID, req.Metadata, req.Target.Metadata); err != nil {
 		return nil, err
 	}
 	// Product-owned built-in skill keys are immutable runtime contracts. Resolve
@@ -921,6 +966,9 @@ func (s *AgentRuntimeHostService) GetSkillPackageObject(ctx context.Context, obj
 	}
 	if objectKey == "" {
 		return nil, fmt.Errorf("%w: package object key is required", ErrAgentRuntimeHostBadRequest)
+	}
+	if strings.HasPrefix(objectKey, crmPlaybookPackagePrefix) {
+		return s.crmPlaybookPackage(ctx, objectKey)
 	}
 	if strings.HasPrefix(objectKey, agentRuntimeHelpinBuiltInSkillObjectPrefix) {
 		key := strings.TrimSuffix(strings.TrimPrefix(objectKey, agentRuntimeHelpinBuiltInSkillObjectPrefix), ".zip")

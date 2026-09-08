@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -137,7 +138,7 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 	seedWorkspace(t, db, workspaceID, "Support List Filters", "support-list-filters", userID)
 	repo := repository.NewSupportConversationRepository(db)
 
-	createConversation := func(id string, updatedAt time.Time, fields map[string]any) {
+	createConversation := func(id string, createdAt, updatedAt time.Time, fields map[string]any) {
 		t.Helper()
 		conversation := &model.SupportConversation{
 			ID:          id,
@@ -147,6 +148,7 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 			Priority:    "medium",
 			Channel:     "widget",
 			Source:      "widget",
+			CreatedAt:   createdAt,
 			UpdatedAt:   updatedAt,
 		}
 		if err := repo.Create(ctx, conversation); err != nil {
@@ -161,18 +163,22 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 		}
 	}
 
-	now := time.Now().UTC()
-	createConversation("assigned-me", now.Add(-3*time.Minute), map[string]any{"assigned_user_id": userID})
-	createConversation("assigned-other", now.Add(-2*time.Minute), map[string]any{"assigned_user_id": otherUserID})
-	createConversation("unassigned", now.Add(-1*time.Minute), nil)
-	createConversation("agent-owned", now, map[string]any{"assigned_agent_id": "agent-support-list-filters"})
-	createConversation("opened-by-me", now.Add(time.Minute), map[string]any{"opened_by_user_id": userID})
-	createConversation("mentioned-me", now.Add(2*time.Minute), nil)
+	base := time.Date(2026, 9, 7, 10, 0, 0, 0, time.UTC)
+	// Empty conversations sort by creation time, not by unrelated record updates.
+	// Keep updated_at in the opposite order to catch regressions to the old sort.
+	createConversation("assigned-me", base.Add(-3*time.Minute), base.Add(10*time.Minute), map[string]any{"assigned_user_id": userID})
+	createConversation("assigned-other", base.Add(-2*time.Minute), base.Add(9*time.Minute), map[string]any{"assigned_user_id": otherUserID})
+	createConversation("unassigned", base.Add(-time.Minute), base.Add(8*time.Minute), nil)
+	createConversation("agent-owned", base, base.Add(7*time.Minute), map[string]any{"assigned_agent_id": "agent-support-list-filters"})
+	createConversation("opened-by-me", base.Add(time.Minute), base.Add(6*time.Minute), map[string]any{"opened_by_user_id": userID})
+	// The oldest conversation has the newest activity because of its internal note.
+	createConversation("mentioned-me", base.Add(-4*time.Minute), base.Add(5*time.Minute), nil)
+	mentionAt := base.Add(2 * time.Minute)
 
 	if err := db.Exec(`INSERT INTO support_messages
 		(id, workspace_id, conversation_id, sender_type, message_type, content, is_internal, metadata, created_at, updated_at)
 		VALUES (?, ?, ?, 'user', 'reply', 'Mentioning teammate', 1, ?, ?, ?)`,
-		"msg-assignment-filter-mention", workspaceID, "mentioned-me", `{"mentioned_user_ids":["`+userID+`"]}`, now, now,
+		"msg-assignment-filter-mention", workspaceID, "mentioned-me", `{"mentioned_user_ids":["`+userID+`"]}`, mentionAt, mentionAt,
 	).Error; err != nil {
 		t.Fatalf("insert mention message: %v", err)
 	}
@@ -209,14 +215,24 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 	assertContainsExactly(t, listIDs("unknown", ""), []string{})
 	assertContainsExactly(t, listIDs("none", ""), []string{})
 
-	if got, want := listIDs("", "oldest"), []string{"assigned-me", "assigned-other", "unassigned", "agent-owned", "opened-by-me", "mentioned-me"}; len(got) != len(want) {
-		t.Fatalf("got ids %v, want %v", got, want)
-	} else {
-		for i := range want {
-			if got[i] != want[i] {
-				t.Fatalf("got ids %v, want %v", got, want)
+	for _, tt := range []struct {
+		sort string
+		want []string
+	}{
+		{
+			sort: "oldest",
+			want: []string{"assigned-me", "assigned-other", "unassigned", "agent-owned", "opened-by-me", "mentioned-me"},
+		},
+		{
+			sort: "newest",
+			want: []string{"mentioned-me", "opened-by-me", "agent-owned", "unassigned", "assigned-other", "assigned-me"},
+		},
+	} {
+		t.Run(tt.sort, func(t *testing.T) {
+			if got := listIDs("", tt.sort); !slices.Equal(got, tt.want) {
+				t.Fatalf("got ids %v, want %v", got, tt.want)
 			}
-		}
+		})
 	}
 }
 

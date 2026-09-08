@@ -14,7 +14,6 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { MEMBER_MODULES } from './memberAccess';
 import { workspaceRoleLabel } from './roleScopePresentation';
 
@@ -28,14 +27,12 @@ type Props = {
   canEditTeams: boolean;
   isSelf?: boolean;
   canEditModules: boolean;
-  canRemove: boolean;
   roleOptions: Array<{ value: string; label: string }>;
   onClose: () => void;
   onApplied: (role: string) => void;
-  onRemoved: () => void;
 };
 
-export function EditMemberDialog({ workspaceId, member, teams, initialTeamIds, grants, canEditRole, canEditTeams, isSelf = false, canEditModules, canRemove, roleOptions, onClose, onApplied, onRemoved }: Props) {
+export function EditMemberDialog({ workspaceId, member, teams, initialTeamIds, grants, canEditRole, canEditTeams, isSelf = false, canEditModules, roleOptions, onClose, onApplied }: Props) {
   const queryClient = useQueryClient();
   const [role, setRole] = useState(member.role);
   const [savedRole, setSavedRole] = useState(member.role);
@@ -49,18 +46,11 @@ export function EditMemberDialog({ workspaceId, member, teams, initialTeamIds, g
   const [teamSearch, setTeamSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [confirmRemove, setConfirmRemove] = useState(false);
   const workspaceWide = role === 'owner' || role === 'admin';
   const savedDirect = savedGrants.filter(grant => grant.subject_type === 'workspace_member' && grant.subject_id === member.id);
   const teamsChanged = teamIds.length !== savedTeamIds.length || teamIds.some(id => !savedTeamIds.includes(id));
   const modulesChanged = directModules.length !== savedDirect.length || directModules.some(module => !savedDirect.some(grant => grant.module === module));
   const changed = role !== savedRole || (canEditTeams && !workspaceWide && teamsChanged) || (canEditModules && !workspaceWide && modulesChanged);
-
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.moduleAccess(workspaceId) });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.access(workspaceId) });
-    onApplied(savedRole);
-  };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -103,22 +93,6 @@ export function EditMemberDialog({ workspaceId, member, teams, initialTeamIds, g
       void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.moduleAccess(workspaceId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.access(workspaceId) });
       onApplied(appliedRole);
-    }
-  };
-
-  const remove = async () => {
-    setSaving(true);
-    setError('');
-    try {
-      unwrap(await workspacesService.removeMember(workspaceId, member.id));
-      toast.success('Member removed from workspace');
-      onRemoved();
-      onClose();
-      refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not remove member.');
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -191,7 +165,6 @@ export function EditMemberDialog({ workspaceId, member, teams, initialTeamIds, g
               </div>
               <p className="text-xs text-muted-foreground">{canEditModules ? 'Team access follows membership. Remove a team above to remove access inherited from it.' : 'You don’t have permission to change module access.'}</p>
             </section>
-            {canRemove && savedRole !== 'owner' && <div className="flex items-center justify-between gap-4 border-t pt-4"><div><p className="text-sm font-medium">Remove from workspace</p><p className="text-xs text-muted-foreground">This member will lose access immediately.</p></div><Button type="button" variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={saving} onClick={() => setConfirmRemove(true)}>Remove member</Button></div>}
             </div>
             {error && <p role="alert" className="mx-6 mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
             <DialogFooter className="shrink-0 border-t bg-muted/20 px-6 py-4">
@@ -201,7 +174,6 @@ export function EditMemberDialog({ workspaceId, member, teams, initialTeamIds, g
           </form>
         </DialogContent>
       </Dialog>
-      <ConfirmDialog open={confirmRemove} onOpenChange={setConfirmRemove} title="Remove member?" description={`${member.full_name || member.email} will lose access to this workspace. This does not delete their account.`} confirmLabel="Remove member" onConfirm={() => { setConfirmRemove(false); void remove(); }} />
     </>
   );
 }

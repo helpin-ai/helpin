@@ -2,7 +2,7 @@
 
 This doc describes the user-facing Automation model.
 
-Use it for product, design, and UX decisions. For backend/runtime details, see [AGENTS_AND_AUTOMATION.md](/root/teampulse/docs/AGENTS_AND_AUTOMATION.md).
+Use it for product, design, and UX decisions. For backend/runtime details and implemented behavior, see [AGENTS_AND_AUTOMATION.md](AGENTS_AND_AUTOMATION.md). Planned extensions are labeled explicitly below.
 
 ## The mental model
 
@@ -169,6 +169,22 @@ We should show both in one ecosystem, but distinguish:
 - `System automations`
 
 They may share layout patterns, but should not pretend to be authored the same way.
+
+## CRM Playbooks and Beacon: agreed extension
+
+The Playbook connection is implemented on `waqar-fixes`: guided reviewed setup, separate activation/adoption, captured specialized skills, guarded normal Agent Runtime execution, durable checks and canonical CRM approvals. This is not a production activation report. The [CRM blueprint](crm-customer-work-blueprint.md) owns product scope and the [connection plan](crm-playbook-automation-change-proposal.md) owns current capability, safeguards and verification.
+
+Keep the same mental model: **when a relevant CRM event or checkpoint occurs, run Beacon with the appropriate skill on the related customer record**, subject to the active Playbook and current permissions.
+
+- **Playbooks** define customer objectives, eligibility, responsibilities, milestones, action policy and business follow-up. Standard setup prepares reviewable connected configuration through an explicit action; users need not write prompts or manually assemble a Flow.
+- **Flows** remain the trigger/condition-to-run connection, visible in Automation with the familiar When / If / Then / Using / On controls and CRM targets. They reference Playbook business settings without maintaining editable copies.
+- **Beacon**, the existing built-in CRM Agent, performs specialized jobs using relevant skills. Default to reuse, not a new Agent per Playbook or customer. Each run has isolated customer/process context; skills provide guidance, not persistent progress or authority.
+- **Shared Automation** tracks correlated wake-ups, scheduling, runtime launch, cancellation and recovery. The three journeys require durable follow-through, not an ordered-step Flow editor or a private CRM executor.
+- **CRM and existing owning modules** retain progress, canonical decisions and actual action results. **Activity** links checks, waits, actions and normal Agent runs without presenting a check or successful run as a customer outcome.
+
+Beacon's ordinary skills remain preset-owned. Separate Playbook publications now capture immutable effective Flow/Beacon/skill configuration, not just mutable IDs. Guarded runtime delivery and explicit per-Signal adoption use those publications. Live permissions and budgets constrain every bound run and approved side effect; stored settings cannot override them.
+
+Ordinary Flow saving and standalone Agent runs stay unchanged. Saving or publishing does not enable automation, enroll existing customers, widen access, or rewrite active commitments. The original CRM checkpoint consumer still only reevaluates attention. Separate Playbook entry/check consumers on the same worker perform bound dispatch; the original consumer is not repurposed into an executor.
 
 ## Navigation truth
 

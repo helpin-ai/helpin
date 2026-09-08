@@ -281,7 +281,7 @@ function HealthRow({ healthScore }: { healthScore: CRMDealHealthScore }) {
 }
 
 export function InsightsPage() {
-  useTitle('CRM Signals');
+  useTitle('CRM Evidence');
   const navigate = useNavigate();
   const { currentWorkspace } = useWorkspaceStore();
   const wsId = currentWorkspace?.id ?? '';
@@ -359,9 +359,9 @@ export function InsightsPage() {
     <div className="flex h-full min-h-0 flex-col">
       <QuietPageHeader
         variant="shell"
-        title="Signal inbox"
-        description="See what changed, why it matters, and what to do next."
-        actions={suggestions.length > 0 ? (
+        title="Evidence"
+        description="Explore customer activity, source signals, and deal health."
+        actions={<div className="flex items-center gap-3"><Button variant="ghost" size="sm" onClick={() => void navigate({ to: '/w/$slug/crm/insights', params: { slug: wsSlug }, search: {} })}>Back to Signals</Button>{suggestions.length > 0 ? (
             <Button variant="outline" size="sm" onClick={goToReview} disabled={!wsSlug}>
               <SparklesIcon className="h-4 w-4" />
               Review suggestions
@@ -371,7 +371,7 @@ export function InsightsPage() {
               <Mail01Icon className="h-4 w-4" />
               CRM email settings
             </Button>
-        )}
+        )}</div>}
       />
 
       <div className="min-h-0 flex-1 overflow-auto">

@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { CRMRecordPicker } from '@/components/automation/CRMRecordPicker';
+import { CRM_RECORD_TARGETS, isCRMRecordTarget } from '@/lib/agentCRMTargets';
 
 const TARGET_ID_LABELS: Partial<Record<AgentTargetType, string>> = {
   task: 'Task ID',
@@ -39,6 +41,7 @@ interface AgentRunNowDialogProps {
   targetType: AgentTargetType | '';
   onTargetTypeChange: (value: string) => void;
   workspaceName: string;
+  workspaceId: string;
   repositories: GitRepository[];
   runnableRepositories: GitRepository[];
   repositoriesLoading: boolean;
@@ -64,6 +67,7 @@ export function AgentRunNowDialog({
   targetType,
   onTargetTypeChange,
   workspaceName,
+  workspaceId,
   repositories,
   runnableRepositories,
   repositoriesLoading,
@@ -160,7 +164,21 @@ export function AgentRunNowDialog({
                 </div>
               ) : null}
 
-              {targetType && !['workspace', 'repository'].includes(targetType) ? (
+              {isCRMRecordTarget(targetType) ? (
+                <div className="space-y-2">
+                  <Label htmlFor="run-now-crm-record">{CRM_RECORD_TARGETS[targetType].singular}</Label>
+                  <CRMRecordPicker
+                    id="run-now-crm-record"
+                    workspaceId={workspaceId}
+                    targetType={targetType}
+                    value={targetId}
+                    onChange={onTargetIdChange}
+                    disabled={submitting}
+                  />
+                </div>
+              ) : null}
+
+              {targetType && !['workspace', 'repository'].includes(targetType) && !isCRMRecordTarget(targetType) ? (
                 <div className="space-y-2">
                   <Label htmlFor="run-now-target-id">{TARGET_ID_LABELS[targetType] ?? 'Target ID'}</Label>
                   <Input

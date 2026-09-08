@@ -35,6 +35,7 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
+import { BeaconPlaybookUsage } from '@/components/crm/playbooks/BeaconPlaybookUsage';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { useAutomationAgentFleet } from '@/hooks/queries/useAutomation';
 import { automationService } from '@/lib/services/automationService';
@@ -48,6 +49,7 @@ import {
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { getAgentTokenUsageTotal } from '@/lib/agentTokenUsage';
+import { CRM_AGENT_TARGET_OPTIONS } from '@/lib/agentCRMTargets';
 import { AGENT_MODEL_TIER_OPTIONS, agentModelTierLabel } from '@/lib/agentModelTier';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
@@ -488,7 +490,7 @@ export const CUSTOM_AGENT_TARGET_OPTIONS: Array<{ value: AgentTargetType; label:
   { value: 'epic', label: 'Epics', description: 'Run on epics and planning loops.' },
   { value: 'sprint', label: 'Sprints', description: 'Run on sprints and sprint planning loops.' },
   { value: 'objective', label: 'Objectives', description: 'Run on objectives and outcome planning loops.' },
-  { value: 'crm_deal', label: 'CRM deals', description: 'Run on CRM deal records.' },
+  ...CRM_AGENT_TARGET_OPTIONS,
   { value: 'document', label: 'Docs', description: 'Run on documents and docs-backed context.' },
   { value: 'support_conversation', label: 'Support', description: 'Run on support inbox conversations.' },
   { value: 'workspace', label: 'Workspace', description: 'Run without a fixed entity target and gather context across the workspace.' },
@@ -503,6 +505,9 @@ const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
   'repository',
   'workspace',
   'support_conversation',
+  'crm_deal',
+  'crm_contact',
+  'crm_company',
 ]);
 
 function normalizeProviderForRuntime(
@@ -1059,6 +1064,8 @@ const AGENT_RUN_TARGET_LABELS: Partial<Record<AgentTargetType, string>> = {
   objective: 'Objective',
   document: 'Document',
   crm_deal: 'Deal',
+  crm_contact: 'Contact',
+  crm_company: 'Company',
   repository: 'Repository',
   workspace: 'Workspace',
 };
@@ -5676,6 +5683,7 @@ export function AgentsPage() {
               </section>
 
               <DrawerConfigSection title="Identity" description="Name, team, and operating scope">
+                {editingAgent?.preset_key === 'crm_operator' && workspace && <BeaconPlaybookUsage ws={workspace.id} slug={workspace.slug} agentId={editingAgent.id} />}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <FieldLabel htmlFor="agent-name">Name</FieldLabel>
@@ -6538,6 +6546,7 @@ export function AgentsPage() {
             targetType={runNowTargetType}
             onTargetTypeChange={handleRunNowTargetChange}
             workspaceName={workspace.name}
+            workspaceId={workspace.id}
             repositories={repositories}
             runnableRepositories={runnableRepositories}
             repositoriesLoading={runNowRepositoriesLoading}

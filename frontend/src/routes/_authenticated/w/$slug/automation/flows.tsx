@@ -2,8 +2,7 @@ import { useEffect } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { AutomationRouteViewport } from '@/components/automation/AutomationRouteViewport';
 import { AutomationFlowsPage, type AutomationFlowsSearch } from '@/pages/automation/AutomationFlows';
-
-const TARGET_MODES = new Set(['event', 'task', 'epic', 'repository', 'workspace']);
+import { FLOW_TARGET_MODES } from '@/lib/automationUi';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/automation/flows')({
   component: AutomationFlowsRoute,
@@ -25,7 +24,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/automation/flows')
     tag_name: typeof search.tag_name === 'string' ? search.tag_name : undefined,
     conclusion: typeof search.conclusion === 'string' ? search.conclusion : undefined,
     target_mode:
-      typeof search.target_mode === 'string' && TARGET_MODES.has(search.target_mode)
+      typeof search.target_mode === 'string' && FLOW_TARGET_MODES.has(search.target_mode)
         ? search.target_mode as AutomationFlowsSearch['target_mode']
         : undefined,
     target_id: typeof search.target_id === 'string' ? search.target_id : undefined,

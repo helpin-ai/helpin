@@ -384,6 +384,616 @@ All routes are workspace-scoped and protected by CRM RBAC. Routing policy,
 rule promotion, and external-evidence ingestion routes require CRM admin
 permission.
 
+### Customer-work foundation
+
+The [customer-work blueprint](crm-customer-work-blueprint.md) owns the agreed
+complete target experience; the [automation connection plan](crm-playbook-automation-change-proposal.md)
+owns the planned Flow/Beacon/skill extension. This reference describes implemented
+behavior in the inspected branch, not production deployment. The additive foundation stores independent
+customer situations in `crm_situations`, with source links in
+`crm_situation_references`. Source adapters now reconcile eligible signals and
+unresolved Review suggestions, using `crm_situation_source_links` for stable
+source-to-work mappings. The branch now has the unified Signals inbox and a
+compatible Review redirect, described under [Review consolidation](#review-consolidation).
+This does not enable Playbook execution or new outbound automation.
+
+| Method | Route under `/api/crm` | Permission and behavior |
+|---|---|---|
+| GET | `/situations` | `crm.read`; filtered, ranked situations with full category counts |
+| GET | `/situations/{id}` | `crm.read`; situation, current identity labels, and available source links |
+| POST | `/situations` | `crm.edit`; manual creation only, no execution or approval |
+| POST | `/situations/{id}/commands` | `crm.edit`; revision-checked update, pause, resume, or explicit close |
+| GET | `/situations/{id}/history` | `crm.read`; newest-first lifecycle history and actor attribution |
+| POST | `/situations/{id}/actions/{action_id}/{decision}` | `crm.edit`; accept/dismiss one linked suggestion revision |
+
+All routes also require active workspace membership and CRM module access.
+Manual creation requires `creation_key`, `title`, `objective`, an original
+`commercial_motion`, and at least one permitted `company_id`, `contact_id`, or
+`deal_id`. A stable creation key identifies a request within its workspace:
+identical normalized retries return the existing record (200 instead of 201);
+different intent under the same key returns 409. Work is never merged merely
+because it shares a customer, motion, title, or evidence.
+
+`owner_mode` is `routing` (default), `member`, or `unassigned`. Routing snapshots
+the existing motion-aware owner policy at creation; later reads and retries do
+not reassign stored work. Explicit owner and next-action owner IDs must identify
+active members of the same workspace. Inactive or deleted owners remain visible
+as responsibility gaps. Manual creation begins `open` / `needs_context`; clients
+cannot write lifecycle, approval, execution, or outcome state through this API.
+Optional source references accept only existing workspace-local `signal` and
+`suggestion` IDs. Source payloads and action state remain in their owning systems.
+Reading a situation does not mark evidence reviewed; linking a suggestion does
+not accept or execute it. Deleted/foreign sources are omitted from disclosure
+without deleting the customer situation.
+
+The list accepts `scope` (`mine`, `my_teams`, `unassigned`, `all`), `state`
+(`needs_attention`, `waiting`, `open`, `paused`, `closed`, `all`), `category`, `q`,
+the shared JSON `filter`, `page`, and `page_size` (maximum 100). Defaults are
+Mine + Needs attention, all categories, page 1, size 25. An owned situation whose
+next action belongs solely to an active colleague is Waiting in Mine. Team scope
+uses current workspace memberships, not client-supplied team IDs.
+Open actions assigned to a different member also participate in Mine/My teams;
+they are not hidden behind the primary next-action owner. Detail responses include
+all linked canonical actions, their resolved assignees, and revision tokens.
+
+Categories are Sales (`prospecting`, `conversion`), Onboarding & adoption
+(`onboarding`, `adoption`), Expansion (`expansion`), and Retention (`renewal`,
+`retention`); the original motions remain independently filterable. Category
+keys are `sales`, `onboarding_adoption`, `expansion`, and `retention`, with `all`
+as the unfiltered view. `category_counts` honors every filter except category;
+`total` is the selected category's count before pagination. Counts and rows use
+one read snapshot. Ranking preserves fractional business priority, then uses
+creation time and ID for stable ties.
+
+Standalone suggestions without enough commercial context remain in All with
+`commercial_motion=needs_context`, reported in `uncategorized_count`; the adapter
+does not invent a customer, human creator, or fifth category tab. Explicit deal
+motion and unambiguous supporting signal motion take precedence over type-based
+fallbacks. `pending_action_total` counts distinct pending suggestions across the
+entire filtered result, including the selected category, before pagination.
+
+`effective_attention` and per-row action counts are read projections from current
+suggestions and stored checkpoints, not copied decision state. Pending proposals,
+manual follow-through, confirmed failures, and unconfirmed execution remain
+distinct. An overdue checkpoint becomes follow-up due without a page-opening
+mutation. Accepted `pending` executions and stale `in_progress` executions appear
+as uncertain work requiring review; the adapter never blindly retries them.
+Historical accepted records with missing execution status are also uncertain,
+not assumed successful or omitted from reconciliation.
+
+### Customer-work controls and history
+
+Situation `revision` starts at 1 and advances for each committed lifecycle
+command. A command requires a stable `command_key`, the displayed
+`expected_revision`, and one `operation`. Its state change and append-only
+`crm_situation_changes` receipt commit atomically. Conflicting concurrent edits
+return 409; a failed history write rolls back the state change. Identical retries
+by the same member return the original receipt with `replayed=true`, even after
+newer edits. Different intent or a different member under that key returns 409.
+Refetch detail for current state: a replay receipt describes the original change,
+not a new update. Source priority rescoring does not overwrite controlled fields
+or advance this work revision. Canonical proposals retain their own revisions.
+
+Operations:
+
+- `update` accepts partial `changes`: `owner`, `next_action_owner`, `next_step`,
+  `attention`, and `checkpoint`. Omitted fields retain their values. Owners use
+  `{member_id: "workspace-member-uuid"}`; `{member_id: null}` explicitly unassigns.
+  Checkpoints use `{at: "RFC3339 timestamp"}` or `{at: null}` to clear. Assignment
+  changes never change the account owner or silently move an existing commitment
+  or proposal to the new situation owner. New assignees must be active members of
+  this workspace; old inactive owners do not prevent someone from repairing work.
+- Manual attention accepts `needs_context`, `follow_up_due`, `waiting_customer`,
+  or `waiting_work`. Approval/failure attention remains derived from canonical
+  actions and cannot be fabricated by a work update. Open waits require a next
+  step, a checkpoint, and an active responsible member (next-action owner, falling
+  back to situation owner only when no next-action owner is assigned). A past
+  checkpoint is valid and surfaces as due; there is no read-time mutation.
+- `pause` requires a reason and an open situation. It retains the commitment and
+  deadline, allowing repair while paused. `resume` requires a paused situation and
+  revalidates any waiting commitment; it does not send, retry or launch anything.
+- `close` requires an outcome `{kind, summary}`: `achieved`, `not_pursued`,
+  `invalid`, or `duplicate`. The server records `outcome_basis=human_assessment`,
+  the authenticated member and closure time, and clears the active checkpoint.
+  A duplicate additionally requires `duplicate_of_situation_id`: a different,
+  workspace-local situation that is not itself closed as a duplicate. Neither
+  closure nor duplication changes another situation, evidence feedback, pending
+  proposals, or executor results. Closed work is read-only; source replay cannot
+  reopen it or revise its outcome.
+
+Example ownership and commitment update:
+
+```json
+{
+  "command_key": "commitment-change-unique-request-id",
+  "expected_revision": 3,
+  "operation": "update",
+  "changes": {
+    "next_step": "Confirm the kickoff date with the customer",
+    "attention": "waiting_customer",
+    "checkpoint": {"at": "2026-09-10T09:00:00Z"}
+  }
+}
+```
+
+Lifecycle commands, source enrollment and legacy suggestion execution admission
+share a short database lock. A pause/close committed first prevents a new claim;
+an action admitted first remains visible in the pause receipt's
+`in_flight_action_count`. No external execution runs under this lock. Pause does
+not pretend to cancel an already-admitted or irreversible action. Closing is
+refused while a linked accepted action is running or unconfirmed, including
+historical missing execution status. Its actual result must be reconciled first;
+human assessment cannot stand in for execution confirmation.
+
+History accepts `limit` (1–100, default 50) and `before_revision` for keyset
+pagination. Each change records operation, actor, reason, revision, before/after
+controlled facts, and timestamp. New manual creation is attributed to its member;
+new source creation is attributed to `signal` or `suggestion`, without inventing a
+human creator. Retries do not duplicate history. Existing pre-migration records
+gain no fabricated historical events; their next command starts history with its
+observed before-state. No public history edit/delete operation exists.
+
+Migration `202609060002_crm_situation_lifecycle.sql` adds the revision, outcome
+provenance, duplicate link, and history table. These remain versioned-SQL-owned,
+not AutoMigrate-owned. Checkpoint delivery now uses the shared Automation outbox
+described below. Flow/Agent adapters, cancellation of actual executions, and
+version-bound continuation remain required for the complete release; cancelling
+a checkpoint does not claim that a running Agent or outbound action was cancelled.
+
+### Durable checkpoint delivery
+
+Migration `202609060003_automation_scheduled_events.sql` adds a shared Automation
+event outbox, not a CRM-specific runtime. Creating or changing a Signal commits
+its lifecycle history and checkpoint schedule in one transaction. The durable
+identity is workspace + Signal ID + lifecycle revision. Replaying a command does
+not schedule another check. Changing the commitment revokes pending/claimed checks
+for older revisions; pause, close, or clearing the checkpoint leaves no active
+check. Resume schedules against the new revision, preserving the agreed due time.
+The migration recovers only open records with an explicit checkpoint and does not
+reset existing delivery receipts or replay historical evidence.
+
+The namespace-wide `automation-scheduled-events` Temporal workflow runs on the
+existing Automation queue once per minute. API and worker startup both ensure its
+stable identity without changing user Flow schedules. Each activity drains up to
+100 events within 40 seconds. PostgreSQL workers claim with `SKIP LOCKED`, a
+two-minute lease, and a fresh claim token. Expired claims can be recovered, but
+old workers cannot acknowledge or retry a replacement claim. Delivery gets at
+most five attempts, with persisted exponential backoff for reported failures;
+unknown event kinds fail closed. Tick timing is approximate and can lag under
+backlog or outages; persisted due times remain authoritative. Workers require
+Temporal and the versioned migration to be available.
+
+The `crm.checkpoint_due` consumer takes the same workspace lock as lifecycle and
+approval admission, then rechecks the canonical event, open lifecycle, revision,
+due time, active owner, and current linked actions. Stale events are acknowledged
+without evaluating changed work. Successful checks record a receipt such as
+`needs_owner`, `needs_approval`, `waiting_work`, or `follow_up_due`; they do not
+create an action, send a message, launch/resume an Agent, create a PM task, or
+close the customer objective. Receipt and reevaluation commit atomically.
+
+List/detail contracts expose the current revision's `checkpoint_status`,
+`checkpoint_result`, `checkpoint_attempts`, and `checkpoint_completed_at` when
+present. These are diagnostic fields, not four additional main-table columns.
+A delivery failure appears in the existing Needs attention projection. An
+unavailable commitment owner also surfaces there and in Unassigned, using live
+membership rather than a potentially stale receipt. Assignment or checkpoint
+changes establish a new revision; old delivery failures remain stored but do not
+override the new commitment. Reading the page does not run or reschedule checks.
+
+This consumer remains attention-only. Separate Playbook entry/check consumers on
+the same shared worker provide guarded normal Agent Runtime dispatch, pinned
+configuration, exact action authorization and recovery as documented below.
+
+### Source reconciliation and decision safety
+
+The existing routing sweep also reconciles customer work on startup and every
+ten minutes, with bounded workspace contexts and keyset pagination. Suggestions
+created through `CRMSuggestionService` project immediately; the sweep repairs
+transient projection failures and covers other producers. Each source import is
+transactional and replica-safe. Only an explicit, workspace-local open
+`context.situation_id` on a suggestion consolidates work; shared evidence or a
+shared customer alone does not. Replays preserve assignment and customer outcomes.
+
+Signal qualification reuses current workspace rollout, exact rule version,
+trust, priority, and routing-policy gates. Recording a situation is independent
+of notification delivery and unrelated existing PM tasks. This separation grants
+no execution authority and does not weaken existing delivery/automation gates.
+Dismissed, superseded, already-acted, and context-only signals are not enrolled.
+Historical successful/dismissed suggestions are not reopened by reconciliation.
+
+The action endpoint requires `{revision, edits?}` for `accept`, or
+`{revision, reason}` for `dismiss`. It delegates to the existing suggestion service,
+checks the exact linked proposal, rejects stale revisions, and does not decide
+other pending actions. Legacy approval routes also honor linked situation pauses
+and closure. Missing/dismissed/superseded supporting evidence blocks acceptance.
+
+Deal creation and stage changes retain their real executors. Follow-up,
+enrichment, risk, and other manual recommendations are accepted as
+`execution_status=manual_required`, with no fabricated `executed_at`. Executor
+claims persist `in_progress` before attempting work; confirmed failure/success
+remain separate from approval. Legacy status-only updates remain decisions, not
+executions, and cannot reset accepted work to pending or overwrite a concurrent
+decision. No action result automatically closes a customer situation.
+
+Shared Flow/Agent process orchestration, durable continuations and recovery
+controls, and the unified Signals/Playbooks UI remain required before
+the complete blueprint can ship. These backend integration tests are not a claim
+that the complete automated customer journeys have shipped.
+
+### Playbook configuration and manual participation
+
+CRM owns typed policy, draft/publication history, read-only eligibility preview,
+explicit participation and human-assessed progress. These business-policy APIs do
+not launch work. Their `execution_enabled: false` fields are publication/preview
+contracts, not the live automation gate.
+
+The connected execution path is implemented separately: Playbooks define the
+customer process, a managed Flow wakes the existing CRM Agent Beacon with captured
+job skills, and canonical CRM actions require exact human approval. Guided setup,
+activation, durable dispatch, live guards and recovery are described below and in
+the [connection plan](crm-playbook-automation-change-proposal.md). Ordinary saved
+Flows/Agents are preserved; there is no ordered-step builder or new saved Agent per
+customer/Playbook.
+
+Migration `202609070001_crm_playbooks.sql` owns `crm_playbooks`, immutable
+`crm_playbook_versions`, and append-only `crm_playbook_changes`. It adds nullable
+Playbook/version/progress fields directly to `crm_situations`; there is no second
+customer process or enrollment lifecycle table. No existing Signal is enrolled,
+backfilled, reassigned, or closed by this migration. Composite foreign keys keep
+each published/participating version in the correct workspace and Playbook.
+These tables/columns are versioned-SQL-owned, not AutoMigrate-owned.
+
+Configuration uses existing permissions: `crm.read` for discovery, lists, detail,
+preview and history; `crm.admin` for draft changes, publication and the admission
+gate; `crm.edit` for explicitly applying a published policy and recording progress.
+The current built-in role matrix grants `crm.admin` to workspace admins/owners;
+this increment does not introduce a new manager role or broaden CRM permissions.
+Handler and service boundaries enforce the same tenant and permission checks.
+
+| Endpoint under `/api/crm` | Contract |
+| --- | --- |
+| `GET /playbooks/templates` | Three independent draft defaults; no installation or writes. |
+| `GET /playbooks` | Server-paginated definitions and canonical open/paused/closed Signal counts. |
+| `POST /playbooks` | Create a draft using a stable `creation_key`; enrollment starts disabled. |
+| `GET /playbooks/{id}` | Current draft, published definition, admission gate, counts and execution availability. |
+| `POST /playbooks/{id}/commands` | `update_draft`, `publish`, or `set_enrollment`, bound to `expected_revision` and a stable `command_key`. |
+| `GET /playbooks/{id}/history` | Immutable command receipts, newest first; `before` revision cursor and `page_size`. |
+| `GET /playbooks/{id}/versions` | Immutable published definitions, newest first; `before` version cursor and `page_size`. |
+| `GET /playbooks/{id}/preview` | Exact `revision` required; optional `version_id` selects the current published policy instead of the draft. |
+| `GET /playbooks/{id}/automation/preview` | Read-only Beacon skill selection for the exact `revision` and optional current published `version_id`; never a runnable connection. |
+| `GET /playbooks/{id}/participants` | Canonical Signal list, including existing scope/state/category/query-builder filters and complete counts. |
+| `POST /playbooks/{id}/apply` | Explicitly confirm a published version on one eligible, open Signal. |
+| `POST /playbooks/{id}/participants/{situation_id}/milestones` | Record a human milestone assessment with an observed Signal revision and command key. |
+
+Playbook list filters are `q`, `state` (`all`, `draft`, `accepting`, `stopped`),
+`page`, and `page_size`. Page size defaults to 25 and is capped at 100. A published
+Playbook with later draft edits remains published; `draft` here means never
+published, not a separate lifecycle for participating customers. Participant lists
+default to all responsibilities and all lifecycle states within that Playbook.
+Counts aggregate before pagination; independent objectives for one customer
+remain separate rows and are not mislabeled as distinct customer counts.
+
+**Definition.** Policies contain name, description, journey, objective, eligible
+commercial motions, optional shared query-builder rules, business responsibilities,
+observable milestones, approval requirements, follow-up/escalation timing, and
+stop conditions. The three defaults cover buying intent, sales-to-success handoff,
+and renewal recovery; a `custom` journey can represent other configured CRM work.
+Defaults are configuration starters, not installed/working automation templates.
+Selecting a journey does not invent a won deal, qualified source event, or trigger.
+
+Eligibility supports `company_id`, `contact_id`, `deal_id`, `pipeline_id`,
+`stage_id`, `company_domain`, `owner_member_id`, and `created_at` through the shared
+query builder. Definitions are capped at 30 rules and 100 total values; referenced
+records/stages must belong to the workspace and explicit members must be active.
+Existing shared CRM pipeline and ownership settings are referenced, not copied.
+
+Incomplete drafts can omit an objective, milestones, success criteria or escalation
+owner. Publishing requires those details and an active workspace escalation member.
+Milestone keys are stable and unique within a version. Default outbound/CRM policy
+is `approval_required`; PM tasks default to `not_allowed`. Both modes express
+requirements for eventual Playbook-driven execution, not changes to a user's
+ordinary manual CRM permissions. Unsupported automatic-action settings are rejected
+until the shared execution contract is implemented; no confidence-based bypass is
+introduced. Follow-up and escalation hours are stored business policy, not new
+timers created by publishing or attaching a definition.
+
+**Publication and admission.** Every command uses optimistic revision checks and
+an actor-bound request fingerprint. Identical retries return their original receipt
+even after newer changes; changed intent under the same key is rejected. Publication
+creates a frozen version and updates only the Playbook's current-version pointer.
+It does not enable enrollment. `set_enrollment` with `accepting_customers: true`
+allows new explicit applications of the current published version; it installs no
+event subscriber or automatic enrollment sweep. Setting it false affects new
+applications only, not active customers or existing checkpoints. Publication,
+version creation and audit receipt commit together or all roll back.
+
+**Preview.** Preview is read-only and explicitly scoped as `existing_signals`:
+open, not-already-bound Signals with a currently available linked CRM record,
+matching motions and optional filters. It is not a full-workspace customer scan,
+trigger qualification check, or simulation of outgoing actions. Its `version_id`
+is null for a draft preview or identifies the current published policy selected by
+the caller. A changed draft/publication revision rejects stale preview requests.
+Future automatic enrollment must independently preserve source trust, activation,
+rollout and authorization gates rather than treating this manual preview as authority.
+
+**Participation.** Apply requires `confirmed: true`, `situation_id`, `version_id`,
+`expected_playbook_revision`, `expected_situation_revision`, and `command_key`.
+The transaction rechecks admission, publication identity, current eligibility,
+open lifecycle and referenced members under the same workspace lock as other
+Signal commands. It pins the published version and initializes pending milestones
+on that Signal. Existing owner, next-action owner, objective, next step, checkpoint,
+evidence and decisions remain intact; role defaults do not silently reassign
+already-existing commitments. One Signal has one pinned Playbook; another customer
+objective can independently use the same or a different Playbook. There is no
+silent replacement or active-version migration endpoint.
+
+Milestone assessments accept `pending`, `achieved`, or `not_applicable`, require a
+summary, and record the authenticated member, timestamp and `human_assessment`
+basis. The milestone must exist in the participating version, not a later draft.
+Progress changes are blocked on paused/closed Signals. They do not approve an
+action or close the customer objective. Pause/resume/reassignment/closure remain
+the existing Signal commands, with their original safeguards and outcome semantics.
+Applying a Playbook and changing progress append `apply_playbook` / `update_milestone`
+to the same Signal history, increment its revision, and atomically replace any
+older pending checkpoint. Publishing a new policy never rewrites those snapshots.
+
+### Beacon skill-selection preview
+
+`GET /crm/playbooks/{id}/automation/preview?revision=:revision` requires `crm.read`
+and active workspace membership/module access, like other Playbook reads. Omit
+`version_id` for the draft, or supply the current published version ID. Stale
+policy revisions or mismatched published versions return 409. Draft changes never
+silently replace the published journey used by a version-specific preview.
+
+The response includes policy identity/scope, journey, Beacon preset key, selected
+skill titles/keys/roles/content versions, specialization version, explanatory
+status and `execution_enabled: false`. Supported journeys report `not_connected`;
+custom journeys report `unsupported_journey` and remain usable manually. No
+matching workspace Agent/Flow is inferred or created, and no package contents,
+prompts or saved Agent configuration are returned.
+
+The [specialization compiler](../server/internal/agentcontract/crm_playbook_skills.go)
+selects the existing core skill and exactly one of the three Playbook-only jobs.
+It captures complete skill packages, including reference files, separately from
+the ordinary Agent catalogue. Digests identify captured content; they are not
+authorization or evidence that the full Flow/Agent execution connection has been
+published. Neither this preview nor normal Playbook publication persists that
+connection, assigns these skills to saved Agents, or starts a run.
+
+The [context preparer](../server/internal/agentcontract/crm_playbook_context.go)
+validates already-authorized policy/Signal/skill references and copies minimal CRM
+context into the optional shared run-input contract. It rejects stale or foreign
+work, mismatched CRM targets, paused/closed Signals and unavailable owners, without
+changing progress or rescheduling checks. The bound launcher consumes this path
+after a durable wake-up claim and live authorization. The catalogue-only preview
+does not inspect live connections; use the automation overview for current status.
+
+### Approved automation settings
+
+These endpoints require active membership, `crm.admin`, `pm.admin.automations`,
+and access to both CRM and Automation. They are separate from the catalogue-only
+skill preview above; its `not_connected` status describes that preview's lack of
+execution binding, not publication history.
+
+| Endpoint | Contract |
+| --- | --- |
+| `POST /crm/playbooks/{id}/automation/connection/preview` | Read-only review of `playbook_version_id`, `expected_revision`, `flow_id`, `agent_id`. Returns selected names/skills, `connection_version`, a content fingerprint and execution-disabled explanation. |
+| `POST /crm/playbooks/{id}/automation/connections` | Adds `command_key`, `expected_connection_version` and `review_fingerprint` to the selection. Returns 201 for an immutable publication or 200 for its identical retry. No client-supplied prompt, snapshot or enable flag is accepted. |
+| `GET /crm/playbooks/{id}/automation/connections` | Newest-first receipt metadata, paginated with `before` and `page_size`; `next_before_version` continues history. |
+| `GET /crm/playbooks/{id}/automation/connections/{connection_id}` | Exact tenant-local historical receipt, not a replacement with today's settings. |
+
+Migration `202609070002` creates `crm_playbook_connections` only. It freezes the
+immutable policy reference/hash, selected Flow configuration, effective saved
+Beacon prompt/runtime projection, host limits/access selectors and full skill
+packages. Database constraints prohibit execution enablement. No existing policy,
+Flow/Agent configuration, enrollment or customer work is updated. Active Signals
+do not adopt a new connection implicitly.
+
+Publication rechecks source settings under row locks and validates both expected
+versions and the reviewed fingerprint. Command receipts are actor-bound and checked
+before freshness checks, so a retry returns its original publication even after
+later edits. Mismatched/reused intent and stale reviews return 409; missing or
+foreign selected records return 404 without exposing their settings. Raw prompts,
+packages, runtime configuration and internal receipt fingerprints stay server-side.
+
+Legacy fixed-target connection review remains non-executing and does not turn an
+ordinary Flow into Playbook authority. Guided setup creates/reuses a dedicated,
+disabled `crm.playbook.work_due` Flow with a dynamic CRM target resolved from the
+canonical Signal. Schema-2 snapshots are required for activation. Repository/document
+output branches and uncaptured optional runtime skills are rejected. Handoff
+automation requires its receiving-owner acceptance milestone; custom journeys
+remain manually usable.
+
+Frozen runtime profiles have a deterministic private identity per publication;
+the existing Helpin Beacon ID remains authoritative for access, billing and
+Activity. The bound launcher registers that profile through the existing Agent
+Runtime and serves exact captured package bytes through guarded host routes.
+Ordinary run/approval/continuation paths cannot populate or reuse this authority.
+Host/app/profile/target identity, current workspace permissions/modules/billing,
+policy, generation and Signal revision are rechecked; metadata is never authority.
+
+### Live automation and exact action APIs
+
+All routes are workspace-scoped. CRM reads require active membership, CRM module
+access and `crm.read`. Setup/configuration requires `crm.admin`,
+`pm.admin.automations`, both modules and applicable Automation billing features.
+Signal start/pause and action review require `crm.edit`, not Automation-builder
+access. Every run also rechecks the live configuration authorizer's authority.
+
+| Endpoint | Contract |
+| --- | --- |
+| `GET /crm/playbooks/{id}/automation` | Live settings, latest reviewed connection metadata, safe Agent/Flow names and runtime availability. Settings retain the active connection ID; merely reading a newer publication does not adopt it. |
+| `POST /crm/playbooks/{id}/automation/setup` | Exact published policy ID/revision. Prepares a disabled dedicated Flow using saved Beacon, then returns review metadata. Does not publish, enable, enroll or launch. |
+| `POST /crm/playbooks/{id}/automation/settings` | Actor-bound command key, expected settings revision, reviewed connection, explicit confirmation, manual/automatic entry and bounded usage limits. Activation never starts historical/paused Signals. |
+| `GET /crm/situations/{id}/automation` | Nullable per-Signal binding, safe blocker, generation, last check and escalation time. |
+| `POST /crm/situations/{id}/automation` | Exact Signal revision, binding generation, connection ID and confirmed start/pause. Existing bindings resume their pinned configuration. |
+| `GET /crm/playbook-actions/{action_id}` | Canonical intent, designated approver, expiry and confirmed destination identity; no runtime prompts or credentials. |
+| `POST /crm/situations/{id}/actions/{action_id}/accept` | Existing revision-aware decision with optional exact `edits.playbook_action`. Wrong approver, changed facts, stale revision, expiry or revoked authority cannot execute. |
+| `POST /crm/playbook-actions/{action_id}/reconcile` | Read-only provider/local receipt inspection by the original approver. Never sends/creates/retries; absence is inconclusive. |
+| `POST /crm/playbook-actions/{action_id}/inspect` | After five minutes, the original active approver records exact action revision, confirmed completed/not-completed finding and evidence. Human attribution is distinct from provider verification. |
+| `GET /crm/playbooks/{id}/automation/activity?page=1` | Paginated safe projection of connection publications, gate/adoption receipts and normal Agent runs. |
+| `GET /crm/playbooks/agent-usage/{agentID}` | CRM-readable reviewed Playbook dependencies for Beacon; no prompt/package exposure. |
+
+Migrations `202609080001`–`202609080003` own live gates, normal-run bindings,
+action intents and confirmed-won provenance. Customer progress stays exclusively
+on canonical situations/milestones; approval/execution status stays exclusively
+on existing suggestions. New typed actions are `email`, `task`, `handoff`,
+`milestone` and `deal_stage`. Milestones/outcomes are human assessments, never
+inferred from sends, tasks or completed runs.
+
+Fresh qualified evidence and a real newly won-deal transition enter through shared
+eligibility. Both detection and creation must follow the automatic activation
+boundary; no startup/enabling backfill occurs. Multiple matches and missing role
+owners stay for review. Native won-deal creation and wake-up are committed with
+the stage change; duplicate updates cannot create another open handoff. Sales
+remains accountable until the account's designated Success owner accepts.
+
+Maintenance detects material facts, decisions and linked PM task state; it fences
+stale proposals/runs and schedules bounded follow-through. Pending approval,
+uncertain results and incomplete linked tasks use cheap checks, not repeated AI.
+No-progress/cost caps, explicit stop conditions and escalation routing remain
+visible in Signals. Temporary authority-read failure denies action but is not
+misrepresented as confirmed permission revocation.
+
+Gmail sends use the approving user's connected mailbox and one exact linked
+recipient, subject and body, with a stable RFC Message-ID. Unknown sends are
+inspected against that identity, never retried automatically. Typed Playbook
+outreach shares unresolved-intent and 24-hour recent-outreach checks, including
+CRM-recorded manual messages. Independently configured sequences, ordinary Flows
+and external senders are not silently placed under this coordination. PM tasks use
+actual authorized teams/assignees and native CRM links; PM/Support/Docs are optional.
+
+### Playbooks UI
+
+`/w/:slug/crm/playbooks` and `/w/:slug/crm/playbooks/:playbookId` expose the
+configuration, participation and explicit automation APIs. The index uses a searchable table
+with server-paginated status filtering and open/paused/closed Signal counts;
+those counts are objectives, not distinct customers. Detail separates Signals,
+Setup, and Activity. Setup reuses the shared query builder, member picker, CRM
+record picker, and Quiet page/form primitives. Additional eligibility rules
+support all/any matching and preserve the original seven commercial motions.
+
+Draft saving, publishing, allowing enrollment, applying a Playbook, recording
+milestones, and changing individual Signal lifecycle remain separate commands.
+The UI retains unsaved drafts on failed requests, protects navigation, keeps
+retry keys stable for an unchanged intent, and refetches after command receipts.
+The progress drawer resolves the Signal's pinned version through paginated
+version history rather than displaying criteria from the latest draft. Ownership
+and next-step edits use canonical Signal commands, preserving version/checkpoints.
+
+Setup includes reviewed connection, separate activation, entry choice and usage
+limits. Signal drawers expose start/resume/pause and focused execution status.
+Exact action review reuses the existing composer and real PM/CRM pickers; result
+inspection never retries the action. Activity shows recorded configuration and
+execution events without presenting them as customer success. This is branch
+implementation, not a deployment or migration of application data.
+
+Browser verification renders the production pages with an isolated mocked API:
+`cd frontend && npx playwright test --config=playwright.crm.config.ts`.
+The harness does not require the API server or a Temporal worker.
+
+### Signals daily workspace
+
+The existing `/w/:slug/crm/insights` route now renders one Signal inbox containing
+canonical situations, unresolved standalone recommendations, and the existing
+commercially relevant evidence groups that are not already represented by work.
+Evidence visibility uses the same grouping, scoring, and minimum lane priority
+as the previous feed; it does not require an automation-routing policy or
+activation-ready rules. The explicit workspace shadow opt-out still applies.
+It retains the
+approved Signal/Customer/Category/Owner/Priority columns, with the next step and
+work status beneath the title. Priority uses the existing signal-scoring bands:
+High >= 15, Medium >= 8, Low < 8, with the actual score in a tooltip. Standalone
+recommendations without business scoring say **Not scored**, not zero or AI
+confidence. Category is the only tab strip; assignment, work state, attention,
+priority, evidence review, recommendation type, and sorting remain visible in
+the main toolbar. The server owns filtering, category facets,
+ranking, pagination, and uncategorized counts. Defaults are Everyone + Needs attention;
+an explicitly selected personal/team filter remains unchanged.
+Unclassified work remains visible in All; category selection never rewrites motion.
+
+`?signal=:id` opens a shareable drawer using the same canonical record, query key,
+and `SignalDrawer` component as Playbook participation. Linked actions use the
+existing revision-bound situation approval/dismissal endpoints. Confirmation
+resolves actual deal/pipeline/stage/customer targets before CRM mutations;
+follow-up/enrichment/risk approvals explicitly record decisions only. Failed,
+running, manual-required, and unknown results are not presented as completion.
+Decision requests never automatically retry, including after a timeout. A stale
+or failed decision must be closed and the refreshed action reviewed before retry.
+All six existing dismissal reasons remain available; dismissing an action does
+not close its situation or dismiss the evidence.
+
+The shared next-step editor supports active-member assignment, a follow-up state,
+and a local-time next check using the existing member/date controls. Waiting work
+requires an active responsible member, a next step, and a checkpoint. Omitted
+fields are preserved. Pausing, resuming, milestones, and outcomes use existing
+canonical commands; none starts a Flow, Agent, outbound message, or PM task.
+Pinned Playbook progress, evidence, and paginated activity are accessible on
+demand. Opening a drawer or evidence section does not mark evidence reviewed.
+Situation detail includes a workspace-scoped, deduplicated evidence projection
+from direct references and linked actions, without internal scoring metadata.
+
+### Review consolidation
+
+`GET /crm/signal-inbox` composes canonical situations, unlinked unresolved
+suggestions, and untracked evidence groups in one repeatable-read snapshot with
+server-side filtering, counts, and pagination across the complete union. It never projects
+sources, claims actions, routes owners, or creates tasks during a read. A
+workspace-scoped `NOT EXISTS` excludes a standalone row once its suggestion is
+linked to a situation. Independent customer objectives are not merged merely
+because they share a customer. Classification follows explicit motion, the
+target deal/pipeline motion, unambiguous evidence, then recommendation type.
+
+Evidence rows have `kind=evidence` and use the previous feed's stable group ID,
+not a situation ID. `GET /crm/signal-inbox/evidence/:id` and the `?group=:id`
+drawer inspect current sources without importing situations or enqueueing
+playbook-entry events. Evidence already referenced by tracked work (including
+paused/closed work) or unresolved recommendations is excluded before grouping.
+Dismissed, superseded, acted-on, context-only, and below-floor evidence does not
+resurface as new work. Opening the drawer is read-only; marking evidence reviewed
+remains an explicit existing CRM feedback action. Automatic situation imports
+retain their independent policy gates; signal visibility cannot enable them.
+
+`/crm/review` now redirects to Signals with Everyone + Needs approval and
+recommendation-confidence sorting. The duplicate Review sidebar entry is removed.
+Needs approval checks pending actions independently of the effective attention
+status, so a failure, pause, or closed lifecycle cannot conceal another pending
+recommendation. Lifecycle restrictions still prevent approving blocked work.
+All five pending recommendation types are filterable. Search and ordering now
+apply across the entire result set, not only the current legacy Review page.
+
+Filters, pagination, `?signal=:id`, and `?recommendation=:id` are URL-backed and
+survive drawer navigation. Recommendation details resolve the original suggestion
+and revision, including after a decision or later projection. A linked
+recommendation offers an explicit link to its canonical Signal; it does not
+silently replace a drawer during an in-flight decision. The new revision-required
+decision adapters delegate to the original suggestion services and executors.
+No second approval lifecycle, execution ledger, or Flow/Agent runtime is added.
+
+Exact CRM target links retain explicit-object precedence over context fallbacks.
+Source links, all six dismissal reasons, and recommendation context/confidence
+remain available. Context recorded at detection is collapsed and labeled as
+historical; deal approval confirmations resolve current target records. Older
+non-deal approvals with a legacy `succeeded` status are shown as requiring
+follow-through, never as proof that a message was sent or a record changed.
+Evidence review filters use current, non-dismissed/non-superseded sources and
+remain separate from approval. The drawer's explicit **Mark evidence reviewed**
+action uses the existing CRM endpoint; reads never mark evidence reviewed.
+
+The prior intelligence page remains reachable at `/crm/insights?view=evidence`,
+preserving raw motion/evidence filters, source navigation, deal health, CRM search,
+and setup links. Review consolidation and guarded Playbook execution are connected
+without rewriting ordinary saved Flows/Agents. Further changes to existing
+Flow/Agent behavior still require the user's confirmation.
+
+The isolated browser suite covers the compatibility redirect, standalone and
+linked decisions, preserved filters/deep links, mixed failure/approval states,
+evidence review, permissions, stale requests, and existing Playbook interactions.
+Repository/HTTP tests also exercise the union, priority thresholds, motion
+precedence, tenant isolation, pagination, and revision guards against SQLite and
+a disposable PostgreSQL database. No application data migration is part of this
+UI cutover's verification.
+
 ## Server-authenticated customer state
 
 Commercial state is server-credential only in v1. Browser identity proofs are
@@ -470,6 +1080,15 @@ Postgres signal models participate in API startup migration, with additional
 idempotent schema work in `MigrateCRMSignalSchema`. Versioned Postgres SQL lives
 under `server/internal/dbmigrate/sql`.
 
+Customer work is owned by versioned migrations
+`202609050002_crm_customer_situations.sql` and
+`202609060001_crm_situation_sources.sql`, not GORM AutoMigrate. The source migration
+allows provenance-backed work without a fabricated CRM target or human creator;
+manual creation retains its stronger requirements. Neither migration rewrites
+signals/decisions or replays external actions. Apply them through the normal
+deployment migration process before enabling this backend. Reconciliation then
+records eligible unresolved work without sending, creating tasks, or starting agents.
+
 The motion-spine migration intentionally removes legacy signals, feedback, and
 deliveries before adding the non-null interpretation contract. Suggestions and
 external-evidence links are detached first. There is no replay or archive: the
@@ -539,6 +1158,35 @@ OPENAI_BASE_URL=
 ```
 
 ## Local verification
+
+Customer-work foundation tests run without an application database:
+
+```sh
+cd server
+go test -race ./internal/model ./internal/repository ./internal/service ./internal/handler ./internal/dbmigrate -run TestCRMSituation -count=1
+```
+
+Playbook policy, captured skills, live-gate enforcement, durable dispatch, exact
+approvals and recovery are verified with isolated fixtures and fake providers:
+
+```sh
+cd server
+go test -race ./internal/model ./internal/agentcontract ./internal/service ./internal/handler -run TestCRMPlaybook -count=1
+```
+
+Frontend API contracts are covered in
+`frontend/src/lib/services/__tests__/crmPlaybookService.test.ts`. Browser acceptance
+in `frontend/e2e/crm` covers Signals/Review parity, manual Playbooks, guided
+automation setup, explicit activation, reviewed actions and result inspection.
+Run these against local mocked endpoints with
+`pnpm exec playwright test --config=playwright.crm.config.ts` from `frontend`.
+The tests do not enable saved customer automations or send real messages.
+
+To exercise the same fixtures against PostgreSQL, set
+`CRM_SITUATION_TEST_POSTGRES_DSN` to a disposable database named
+`crm_situation_test`. Each fixture creates a unique schema, applies the actual
+migrations twice, and removes only that schema afterward. Never use an application
+database for this override; ordinary test runs use isolated SQLite databases.
 
 Start and verify the event stack from the repository root:
 

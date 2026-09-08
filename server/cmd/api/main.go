@@ -419,6 +419,8 @@ func main() {
 			&model.CRMEntitySummary{},
 			&model.CRMDealHealthScore{},
 			&model.CRMSuggestion{},
+			// Signals, Playbooks, history and scheduled events are versioned-SQL-owned;
+			// AutoMigrate must not pre-create these models without their constraints.
 			// CRM Phase 5: Writing
 			&model.CRMWritingProfile{},
 			// CRM Autonomy
@@ -854,6 +856,8 @@ func main() {
 	crmMeetingRepo := repository.NewCRMMeetingRepository(db)
 	pmTaskInsightsRepo := repository.NewPMTaskInsightsRepository(db)
 	crmSuggestionRepo := repository.NewCRMSuggestionRepository(db)
+	crmSituationRepo := repository.NewCRMSituationRepository(db)
+	crmSituationRepo.SetInboxSignalComposer(service.ComposeCRMInboxSignalGroups)
 	crmWritingProfileRepo := repository.NewCRMWritingProfileRepository(db)
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
@@ -1764,6 +1768,26 @@ func main() {
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	crmSituationService := service.NewCRMSituationService(crmSituationRepo, authzService)
+	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), authzService, crmSituationService)
+	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
+	crmPlaybookLauncher := service.NewCRMPlaybookAgentLauncher(agentService, crmPlaybookExecutionRepo, aiUsageMeter)
+	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, authzService, workspaceRepo).SetEntitlements(entitlementService)
+	crmPlaybookLauncher.SetExecutionService(crmPlaybookExecution)
+	crmPlaybookExecutor := service.NewCRMPlaybookModuleExecutor(crmPlaybookExecution, crmPlaybookExecutionRepo, crmEmailService, pmTaskService, crmDealService, workspaceRepo, agentRepo, crmDealRepo)
+	crmPlaybookActions := service.NewCRMPlaybookActionService(crmPlaybookExecutionRepo, crmSuggestionRepo, crmPlaybookExecution, crmPlaybookExecutor)
+	crmPlaybookSetup := service.NewCRMPlaybookSetupService(crmPlaybookExecution, crmPlaybookExecutionRepo, agentService)
+	crmSuggestionService.SetPlaybookActions(crmPlaybookActions)
+	crmSituationService.SetAutomationLifecycle(crmPlaybookExecution)
+	commandService.SetCRMPlaybookActions(crmPlaybookActions)
+	agentRuntimeHostService.SetCRMPlaybookExecution(crmPlaybookExecution)
+	if agentRuntimeProjectionService != nil {
+		agentRuntimeProjectionService.SetCRMPlaybookExecution(crmPlaybookExecution)
+	}
+	crmSituationSources := service.NewCRMSituationSourceService(crmSituationRepo, crmSignalService)
+	crmSuggestionService.SetSituationSources(crmSituationSources)
+	crmSuggestionService.SetSituationGuard(crmSituationRepo)
+	crmSituationService.SetActions(crmSuggestionService)
 	commandService.SetAuthorizationService(authzService)
 	commandService.SetAgentOrchestrationDependencies(commandBarService, agentRunInteractionRepo)
 	agentRuntimeHostService.SetAuthorizationService(authzService)
@@ -1965,6 +1989,8 @@ func main() {
 		CRMSignal:           handler.NewCRMSignalHandler(crmSignalService),
 		CRMSummary:          handler.NewCRMSummaryHandler(crmSummaryService),
 		CRMSuggestion:       handler.NewCRMSuggestionHandler(crmSuggestionService),
+		CRMSituation:        handler.NewCRMSituationHandler(crmSituationService),
+		CRMPlaybook:         handler.NewCRMPlaybookHandler(crmPlaybookService).SetExecution(crmPlaybookExecution, crmPlaybookSetup, crmPlaybookActions),
 		CRMWritingProfile:   handler.NewCRMWritingProfileHandler(crmWritingProfileService),
 		CRMSearch:           handler.NewCRMSearchHandler(crmSearchService),
 		CRMDealAutomation:   handler.NewCRMDealAutomationHandler(dealAutomationService),
@@ -2034,6 +2060,13 @@ func main() {
 	if err := ruleEngine.EnsureScheduledRules(context.Background()); err != nil {
 		slog.Error("failed to ensure automation rule schedules", "error", err)
 	}
+	if runEngine != nil {
+		scheduleCtx, scheduleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := runEngine.EnsureScheduledEvents(scheduleCtx); err != nil {
+			slog.Error("failed to ensure shared scheduled event delivery", "error", err)
+		}
+		scheduleCancel()
+	}
 	if terminated, err := removeLegacyAgentScheduleWorkflows(context.Background(), temporalClient); err != nil {
 		slog.Error("failed to remove legacy agent schedule workflows", "error", err)
 	} else if terminated > 0 {
@@ -2092,6 +2125,11 @@ func main() {
 				return
 			}
 			for _, workspaceID := range workspaceIDs {
+				sweepCtx, sweepCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				if err := crmSituationSources.ReconcileWorkspace(sweepCtx, workspaceID); err != nil {
+					slog.WarnContext(sweepCtx, "CRM customer work reconciliation failed", "error", err, "workspace_id", workspaceID)
+				}
+				sweepCancel()
 				if _, err := crmSignalService.RouteWorkspaceSignals(context.Background(), workspaceID); err != nil {
 					slog.Warn("CRM signal routing failed", "error", err, "workspace_id", workspaceID)
 				}

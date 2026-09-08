@@ -4,7 +4,9 @@ Date: 2026-09-05
 
 Branch: `waqar-fixes`
 
-Status: Proposed product contract; implementation and visual design have not started.
+Status: **Historical contract; superseded where it differs from the agreed CRM blueprint (2026-09-07).** The body below preserves the earlier proposal, not current implementation instructions or status.
+
+Use the [CRM blueprint](../../crm-customer-work-blueprint.md) for agreed product scope and the [Flow/Beacon/skill connection plan](../../crm-playbook-automation-change-proposal.md) for automation direction. In particular, the earlier individual-signal queue model, separate Review assumptions and proposed workflow behavior must not override the unified customer-situation/standalone-recommendation workspace or the Playbooks → Flows → Beacon + skills direction. The [CRM reference](../../crm-signals.md) describes implemented branch behavior.
 
 ## Purpose and scope
 
