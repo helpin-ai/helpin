@@ -7,7 +7,7 @@ export function PMDropdownContent({ className, ...props }: ComponentProps<typeof
   return (
     <PopoverContent
       className={cn(
-        'text-sm [&_button]:text-sm [&_input]:text-sm [&_[data-slot=command-item]]:text-sm [&_[data-slot=command-empty]]:text-sm',
+        'text-[length:var(--text-ui)] [&_button]:text-[length:var(--text-ui)] [&_input]:text-[length:var(--text-ui)] [&_[data-slot=command-item]]:text-[length:var(--text-ui)] [&_[data-slot=command-empty]]:text-[length:var(--text-ui)]',
         className,
       )}
       {...props}

@@ -1503,7 +1503,6 @@ export function TaskListView({
           cell: (info) => (
             <InlineEpicCell
               task={info.row.original}
-              epics={epics}
               epicMap={epicMap}
               onUpdate={updateTaskField}
             />

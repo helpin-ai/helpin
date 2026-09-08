@@ -34,7 +34,7 @@ async function openPicker(epicId = 'epic-a') {
   root = createRoot(container);
   await act(async () => root.render(
     <div onClick={onOpenTask}>
-      <InlineEpicCell task={{ id: 'task-1', epic_id: epicId } as Task} epics={epics} epicMap={epicMap} onUpdate={onUpdate} />
+      <InlineEpicCell task={{ id: 'task-1', epic_id: epicId } as Task} epicMap={epicMap} onUpdate={onUpdate} />
     </div>,
   ));
   await act(async () => container.querySelector('button')!.click());
@@ -90,6 +90,6 @@ describe('task list epic dropdown', () => {
   it('clears the assignment when the currently assigned epic is selected', async () => {
     const { onUpdate } = await openPicker();
     await act(async () => option('epic-a').click());
-    expect(onUpdate).toHaveBeenCalledWith('task-1', { epic_id: undefined });
+    expect(onUpdate).toHaveBeenCalledWith('task-1', { epic_id: '' });
   });
 });

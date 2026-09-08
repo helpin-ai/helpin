@@ -28,6 +28,8 @@ import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
 import { BoardDataContext, BoardCallbacksContext } from './KanbanBoard.contexts';
 import { ACTIVE_RUN_STATUSES } from './agentRunConstants';
 import { EpicBadge } from './EpicBadge';
+import { InlineEpicCell } from './InlineEpicCell';
+import { toast } from 'sonner';
 
 // ── Shared constants ────────────────────────────────────────────────
 
@@ -361,6 +363,30 @@ function TaskCardComponent({
     [workspaceId, task.id, task.severity, onTaskPatched, onSeverityChanged],
   );
 
+  const handleChangeEpic = useCallback(
+    async (_taskId: string, patch: Partial<Task>) => {
+      if (!workspaceId || !onTaskPatched) return;
+      try {
+        const { data, error } = await pmTaskService.update(workspaceId, task.id, {
+          epic_id: patch.epic_id ?? '',
+        });
+        if (error || !data?.task) {
+          toast.error(error || 'Failed to update epic');
+          return;
+        }
+        // Cleared fields may be omitted by the API; explicitly clear them in the board merge.
+        onTaskPatched({
+          ...data.task,
+          epic_id: data.task.epic_id ?? undefined,
+          epic_name: data.task.epic_name ?? undefined,
+        });
+      } catch {
+        toast.error('Failed to update epic');
+      }
+    },
+    [workspaceId, task.id, onTaskPatched],
+  );
+
   const handleChangeEstimate = useCallback(
     async (_display: string, apiValue: number | undefined) => {
       if (!workspaceId || apiValue === task.estimate) return;
@@ -376,6 +402,7 @@ function TaskCardComponent({
     [workspaceId, task.id, task.estimate, onTaskPatched, onEstimateChanged],
   );
 
+  const canEditEpic = !!(boardData && workspaceId && onTaskPatched && !isOverlay);
   const shouldShowTaskKey = vis.task_id && !!task.task_key;
   const taskTitleText = shouldShowTaskKey ? `${task.task_key}: ${task.name}` : task.name;
   const titleIsLong = taskTitleText.length > 60;
@@ -476,9 +503,20 @@ function TaskCardComponent({
       </div>
 
       {/* Epic row */}
-      {vis.epic && task.epic_id && (
+      {vis.epic && (task.epic_id || canEditEpic) && (
         <div className="mt-1.5 flex min-w-0">
-          <EpicBadge name={linkedEpic?.name ?? task.epic_name ?? 'Unknown'} color={linkedEpic?.color} />
+          {canEditEpic && boardData ? (
+            <div data-no-task-card-drag="true" className="min-w-0" onKeyDown={(event) => event.stopPropagation()}>
+              <InlineEpicCell
+                task={task}
+                epicMap={boardData.epicById}
+                onUpdate={handleChangeEpic}
+                triggerClassName="p-0"
+              />
+            </div>
+          ) : (
+            <EpicBadge name={linkedEpic?.name ?? task.epic_name ?? 'Unknown'} color={linkedEpic?.color} />
+          )}
         </div>
       )}
 

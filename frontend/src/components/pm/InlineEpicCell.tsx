@@ -2,18 +2,19 @@ import { useState } from 'react';
 import { Popover, PopoverTrigger } from '@/components/ui/popover';
 import { PMDropdownContent } from './PMDropdownContent';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import type { EpicWithStats, Task } from '@/lib/pmTypes';
+import type { Epic, Task } from '@/lib/pmTypes';
+import { cn } from '@/lib/utils';
 import { EpicBadge } from './EpicBadge';
 
 export function InlineEpicCell({
   task,
-  epics,
   epicMap,
   onUpdate,
+  triggerClassName,
 }: {
   task: Task;
-  epics: EpicWithStats[];
-  epicMap: Map<string, EpicWithStats['epic']>;
+  epicMap: ReadonlyMap<string, Epic>;
+  triggerClassName?: string;
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -25,7 +26,7 @@ export function InlineEpicCell({
     return (
       <button
         type="button"
-        className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
+        className={cn('flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer', triggerClassName)}
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
         {epicName ? (
@@ -42,7 +43,7 @@ export function InlineEpicCell({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
+          className={cn('flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer', triggerClassName)}
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
           {epicName ? (
@@ -65,20 +66,20 @@ export function InlineEpicCell({
             <CommandList>
               <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No epics found</CommandEmpty>
               <CommandGroup>
-                {epics.map((e) => (
+                {Array.from(epicMap.values()).map((epic) => (
                   <CommandItem
-                    key={e.epic.id}
-                    value={e.epic.id}
-                    keywords={[e.epic.name]}
-                    data-checked={task.epic_id === e.epic.id}
+                    key={epic.id}
+                    value={epic.id}
+                    keywords={[epic.name]}
+                    data-checked={task.epic_id === epic.id}
                     onSelect={() => {
-                      const newEpicId = task.epic_id === e.epic.id ? undefined : e.epic.id;
+                      const newEpicId = task.epic_id === epic.id ? '' : epic.id;
                       onUpdate(task.id, { epic_id: newEpicId });
                       setOpen(false);
                     }}
                     className="flex items-center gap-2 text-ui"
                   >
-                    <EpicBadge name={e.epic.name} color={e.epic.color} className="text-[length:inherit]" />
+                    <EpicBadge name={epic.name} color={epic.color} className="text-[length:inherit]" />
                   </CommandItem>
                 ))}
               </CommandGroup>
