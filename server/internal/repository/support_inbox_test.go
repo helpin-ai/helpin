@@ -99,6 +99,7 @@ func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
 		ai_state TEXT,
 		ai_resolved_at DATETIME,
 		ai_escalated_at DATETIME,
+ delayed_team_reply_sent_for DATETIME,
 		ai_resolution_type TEXT,
 		ai_turn_count INTEGER NOT NULL DEFAULT 0,
 		customer_requested_human_at DATETIME,

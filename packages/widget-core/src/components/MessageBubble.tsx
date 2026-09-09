@@ -259,6 +259,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const hasLinkPreviews = Boolean(message.linkPreviews && message.linkPreviews.length > 0);
   const showBubble = hasTextContent || hasFiles || message.viaChannel === 'email' || hasSources || hasLinkPreviews || message.isStreaming;
   const showAnswerFeedback = isAI
+    && !message.delayedTeamReply
     && message.id !== '__intro__'
     && hasTextContent
     && !message.isStreaming

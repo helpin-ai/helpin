@@ -1535,6 +1535,39 @@ describe('WidgetManager', () => {
     });
   });
 
+  describe('delayed reply email capture', () => {
+    it('persists identity only after the server confirms it and preserves handoff', async () => {
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).anonymousId = 'visitor-id';
+      (widget as any).host = 'events.helpin.ai';
+      const emailSpy = vi.fn();
+      widget.onUserEmailSupplied(emailSpy);
+      let complete!: (value: unknown) => void;
+      fetchMock.mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }));
+      const saving = (widget as any).handleCaptureEmail('visitor@example.com');
+      expect((widget as any).currentEmail).not.toBe('visitor@example.com');
+      complete({ ok: true, json: async () => ({ success: true }) });
+      await saving;
+      expect(fetchMock).toHaveBeenCalledWith('https://events.helpin.ai/widget/identify', expect.objectContaining({
+        body: JSON.stringify({ api_key: 'test-key', anonymous_id: 'visitor-id', email: 'visitor@example.com', source: 'widget_prechat' }),
+      }));
+      expect((widget as any).currentEmail).toBe('visitor@example.com');
+      expect(emailSpy).toHaveBeenCalledWith('visitor@example.com');
+      expect((widget as any).preChatDone).toBe(true);
+    });
+    it('does not save a rejected identity locally', async () => {
+      (widget as any).widgetKey = 'test-key';
+      (widget as any).anonymousId = 'visitor-id';
+      fetchMock.mockResolvedValueOnce({ ok: false, json: async () => ({ error: 'rejected' }) });
+      await expect((widget as any).handleCaptureEmail('visitor@example.com')).rejects.toThrow();
+      expect((widget as any).currentEmail).not.toBe('visitor@example.com');
+    });
+    it('preserves delayed capture metadata in restored messages', () => {
+      const mapped = (widget as any).mapSupportMessage({ sender_type: 'ai', message_type: 'system', system_event_type: 'delayed_team_reply', metadata: JSON.stringify({ delayed_team_reply: true, capture_email: true }) });
+      expect(mapped).toMatchObject({ delayedTeamReply: true, captureEmail: true, role: 'ai' });
+    });
+  });
+
   describe('pre-chat and websocket event handling', () => {
     it('persists pre-chat completion, upgrades the session, and tracks leads', () => {
       const sent: string[] = [];

@@ -86,6 +86,7 @@ test('preview is read-only; enrollment requires confirmation and exact published
   const { writes, reads } = await installPlaybookMocks(page);
   await page.goto(`${harness}?detail`);
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button', { name: /Review & automation/ }).click();
   await page.getByRole('button', { name: 'Preview matches', exact: true }).click();
   await page.getByRole('button', { name: 'Northstar', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Apply playbook', exact: true })).toHaveCount(0);
@@ -127,6 +128,7 @@ test('stopping enrollment leaves active work untouched', async ({ page }) => {
   const { writes } = await installPlaybookMocks(page);
   await page.goto(`${harness}?detail`);
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button', { name: /Review & automation/ }).click();
   await page.getByRole('button', { name: 'Stop new enrollment', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Existing signals will not be paused or closed');
   expect(writes).toHaveLength(0);

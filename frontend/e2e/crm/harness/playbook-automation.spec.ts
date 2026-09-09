@@ -9,6 +9,7 @@ test('guided setup separates configuration, activation and existing Signal adopt
   signal.situation.playbook_version_id = 'version-2';
   await page.goto(harness);
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button', { name: /Review & automation/ }).click();
   await page.getByRole('button', { name: 'Set up automation', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Connecting starts no work');
   await expect(page.getByRole('dialog')).toContainText('CRM record operations');
@@ -67,6 +68,7 @@ test('CRM readers see automation status without configuration controls', async (
   await installPlaybookMocks(page, { readOnly: true });
   await page.goto(harness);
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button', { name: /Review & automation/ }).click();
   await expect(page.getByText('An admin with Automation access can connect this playbook.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Set up automation', exact: true })).toHaveCount(0);
 });
@@ -79,6 +81,7 @@ test('updated connections require an explicit save and existing Signals resume t
   setBinding({ situation_id: 'signal-1', playbook_id: 'book-1', connection_id: 'connection-old', enabled: false, generation: 3, no_progress_runs: 0, blocker: 'paused_by_member' });
   await page.goto(harness);
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button', { name: /Review & automation/ }).click();
   await expect(page.getByText('An updated connection is ready.', { exact: false })).toBeVisible();
   expect(writes).toHaveLength(0);
   await page.getByRole('button', { name: 'Save settings', exact: true }).click();

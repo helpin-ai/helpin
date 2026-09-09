@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"sort"
 	"strconv"
@@ -2037,6 +2038,9 @@ func (r *SupportConversationRepository) Create(ctx context.Context, conversation
 
 // Update saves a conversation.
 func (r *SupportConversationRepository) Update(ctx context.Context, conversation *model.SupportConversation) error {
+	if conversation.Status == "resolved" || conversation.Status == "closed" || conversation.Status == "spam" {
+		conversation.DelayedTeamReplySentFor = conversation.AIEscalatedAt
+	}
 	if err := r.db.WithContext(ctx).Save(conversation).Error; err != nil {
 		return fmt.Errorf("update conversation: %w", err)
 	}
@@ -2045,6 +2049,11 @@ func (r *SupportConversationRepository) Update(ctx context.Context, conversation
 
 // UpdateFields updates specific fields on a conversation by ID and workspace.
 func (r *SupportConversationRepository) UpdateFields(ctx context.Context, workspaceID, conversationID string, fields map[string]any) error {
+	if status, ok := fields["status"].(string); ok && (status == "resolved" || status == "closed" || status == "spam") {
+		fields = maps.Clone(fields)
+		fields["delayed_team_reply_sent_for"] = gorm.Expr("ai_escalated_at")
+	}
+
 	if err := r.db.WithContext(ctx).
 		Model(&model.SupportConversation{}).
 		Where("id = ? AND workspace_id = ?", conversationID, workspaceID).

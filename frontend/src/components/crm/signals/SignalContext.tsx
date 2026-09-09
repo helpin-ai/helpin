@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { QuietTextAction } from '@/components/design-system/quiet';
 import { useCRMSituationHistory } from '@/hooks/queries/useCRMSituations';
@@ -6,15 +6,38 @@ import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
 import { useCRMSignalFeedback } from '@/hooks/queries/useCRM';
 import type { CRMSituationEvidence, CRMSituationItem } from '@/lib/crmSituationTypes';
 import { PlaybookError, PlaybookLoading } from '../playbooks/PlaybookUI';
+import { currentRecommendationText, signalOverviewText, repeatsSignalText } from './SignalDrawerLayout';
 
 export function SignalEvidence({ ws, slug, item, canEdit }: { ws: string; slug: string; item: CRMSituationItem; canEdit: boolean }) {
-  return <RecommendationEvidence ws={ws} slug={slug} evidence={item.evidence ?? []} canEdit={canEdit} />;
+  return <RecommendationEvidence ws={ws} slug={slug} evidence={item.evidence ?? []} canEdit={canEdit} displayedText={[...signalOverviewText(item), ...currentRecommendationText(item.actions ?? [])]} />;
 }
-export function RecommendationEvidence({ ws, slug, evidence, canEdit }: { ws: string; slug: string; evidence: CRMSituationEvidence[]; canEdit: boolean }) {
-  return <details className="border-b border-quiet-divider-strong py-4 text-sm"><summary className="cursor-pointer text-quiet-text-secondary">Evidence{evidence.length > 0 ? ` (${evidence.length})` : ''}</summary>
-    <ul className="mt-3 divide-y divide-quiet-divider-light">{evidence.map((source) => <li key={source.id} className="py-3 first:pt-0"><p className="leading-6">{source.summary}</p>{source.evidence_excerpt && <blockquote className="mt-2 border-l border-quiet-divider-strong pl-3 text-xs leading-6 text-quiet-text-secondary">{source.evidence_excerpt}</blockquote>}<div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-quiet-text-tertiary"><span>{source.source_type.replaceAll('_', ' ')} · {new Date(source.detected_at).toLocaleDateString()}</span><SourceLink slug={slug} source={source} /></div>{source.dismissed_at || source.superseded_at ? <p className="mt-2 text-xs text-quiet-accent">{source.dismissed_at ? 'Dismissed evidence' : 'Superseded evidence'} — do not rely on this as current information.</p> : <><EvidenceReview ws={ws} source={source} canEdit={canEdit} />{source.evidence_identity_trust !== 'verified' && <p className="mt-2 text-xs text-quiet-accent">Customer identity is not verified for this source.</p>}</>}</li>)}</ul>
+export function RecommendationEvidence({ ws, slug, evidence, canEdit, displayedText = [] }: { ws: string; slug: string; evidence: CRMSituationEvidence[]; canEdit: boolean; displayedText?: (string | null | undefined)[] }) {
+  return <details className="border-b border-quiet-divider-strong py-4 text-sm"><summary className="cursor-pointer text-quiet-text-secondary focus-visible:outline-2 focus-visible:outline-quiet-field">Evidence{evidence.length > 0 ? ` (${evidence.length})` : ''}</summary>
+    <ul className="mt-3 divide-y divide-quiet-divider-light">{evidence.map((source) => {
+      const showSummary = source.summary?.trim() && !repeatsSignalText(source.summary, displayedText);
+      const showExcerpt = source.evidence_excerpt?.trim() && !repeatsSignalText(source.evidence_excerpt, [...displayedText, source.summary]);
+      return <li key={source.id} className="py-4 first:pt-0 last:pb-0">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-quiet-text-tertiary">
+          <span><span className="capitalize font-medium text-quiet-text-secondary">{source.source_type.replaceAll('_', ' ')}</span> · <time dateTime={source.detected_at} title={new Date(source.detected_at).toLocaleString()}>{new Date(source.detected_at).toLocaleDateString()}</time></span>
+          <SourceLink slug={slug} source={source} />
+        </div>
+        {showSummary && <p className="text-sm leading-6 text-quiet-text-primary">{source.summary}</p>}
+        {showExcerpt && <EvidenceExcerpt text={source.evidence_excerpt!} />}
+        {source.dismissed_at || source.superseded_at ? <p className="mt-2 text-xs text-quiet-accent">{source.dismissed_at ? 'Dismissed evidence' : 'Superseded evidence'} — do not rely on this as current information.</p> : <><EvidenceReview ws={ws} source={source} canEdit={canEdit} />{source.evidence_identity_trust !== 'verified' && <p className="mt-2 text-xs text-quiet-accent">Customer identity is not verified for this source.</p>}</>}
+      </li>;
+    })}</ul>
     {!evidence.length && <p className="mt-3 text-xs text-quiet-text-tertiary">No linked source evidence is available for this signal.</p>}
   </details>;
+}
+
+function EvidenceExcerpt({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const long = text.length > 320 || text.split('\n').length > 4;
+  return <div className="mt-2">
+    <blockquote id={id} className={`whitespace-pre-wrap border-l border-quiet-divider-strong pl-3 text-sm leading-6 text-quiet-text-secondary ${long && !expanded ? 'line-clamp-3' : ''}`}>{text}</blockquote>
+    {long && <QuietTextAction className="mt-1" aria-controls={id} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Show less' : 'Read full quote'}</QuietTextAction>}
+  </div>;
 }
 
 function EvidenceReview({ ws, source, canEdit }: { ws: string; source: CRMSituationEvidence; canEdit: boolean }) {
@@ -35,9 +58,9 @@ function SourceLink({ slug, source }: { slug: string; source: CRMSituationEviden
   return null;
 }
 
-export function SignalHistory({ ws, id }: { ws: string; id: string }) {
+export function SignalHistory({ ws, id, origin }: { ws: string; id: string; origin?: string }) {
   const [open, setOpen] = useState(false);
-  return <details className="border-b border-quiet-divider-strong py-4 text-sm" onToggle={(event) => setOpen(event.currentTarget.open)}><summary className="cursor-pointer text-quiet-text-secondary">Activity</summary>{open && <HistoryEntries ws={ws} id={id} />}</details>;
+  return <details className="border-b border-quiet-divider-strong py-4 text-sm" onToggle={(event) => setOpen(event.currentTarget.open)}><summary className="cursor-pointer text-quiet-text-secondary">Activity</summary>{open && <>{origin && <p className="mt-3 text-xs text-quiet-text-tertiary">{origin}</p>}<HistoryEntries ws={ws} id={id} /></>}</details>;
 }
 function HistoryEntries({ ws, id }: { ws: string; id: string }) {
   const history = useCRMSituationHistory(ws, id);

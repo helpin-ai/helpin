@@ -500,7 +500,7 @@ export const MessageBubble = memo(function MessageBubble({
   );
 
   // ── System message: centered pill with avatar (Intercom-style) ──
-  if (message.message_type === 'system') {
+  if (message.message_type === 'system' && message.system_event_type !== 'delayed_team_reply') {
     // Dispatch on system_event_type set by the backend. The legacy
     // content-keyword branch below is a TRANSITIONAL fallback for
     // pre-migration rows only — tracked in

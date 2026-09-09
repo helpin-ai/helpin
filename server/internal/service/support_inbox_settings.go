@@ -160,6 +160,15 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.ShowTalkToHuman != nil {
 		current.ShowTalkToHuman = *patch.ShowTalkToHuman
 	}
+	if patch.DelayedTeamReplyMinutes != nil {
+		current.DelayedTeamReplyMinutes = *patch.DelayedTeamReplyMinutes
+	}
+	if patch.DelayedTeamReplyMessage != nil {
+		current.DelayedTeamReplyMessage = strings.TrimSpace(*patch.DelayedTeamReplyMessage)
+	}
+	if patch.DelayedTeamReplyMessageNoEmail != nil {
+		current.DelayedTeamReplyMessageNoEmail = strings.TrimSpace(*patch.DelayedTeamReplyMessageNoEmail)
+	}
 	if patch.EscalationMessage != nil {
 		current.EscalationMessage = *patch.EscalationMessage
 	}
@@ -641,6 +650,20 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 	current := parseSettings(inst.Settings)
 	merged := mergeSettingsUpdate(current, req)
+	if merged.DelayedTeamReplyMinutes < 1 || merged.DelayedTeamReplyMinutes > 1440 {
+		return nil, nil, fmt.Errorf("delayed team reply wait must be between 1 and 1440 minutes")
+	}
+	defaults := model.DefaultSupportInboxSettings()
+	if strings.TrimSpace(merged.DelayedTeamReplyMessage) == "" {
+		merged.DelayedTeamReplyMessage = defaults.DelayedTeamReplyMessage
+	}
+	if strings.TrimSpace(merged.DelayedTeamReplyMessageNoEmail) == "" {
+		merged.DelayedTeamReplyMessageNoEmail = defaults.DelayedTeamReplyMessageNoEmail
+	}
+	if len([]rune(merged.DelayedTeamReplyMessage)) > 2000 || len([]rune(merged.DelayedTeamReplyMessageNoEmail)) > 2000 {
+		return nil, nil, fmt.Errorf("delayed team reply messages must be at most 2000 characters")
+	}
+
 	if req.AllowedOrigins != nil {
 		origins, err := normalizeAllowedOrigins(*req.AllowedOrigins)
 		if err != nil {
