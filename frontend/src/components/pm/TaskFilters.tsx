@@ -1,3 +1,4 @@
+import { EpicColorSwatch } from './EpicColorSwatch';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { PlusSignIcon } from '@/lib/icons';
 import { PRIORITY_CONFIG, SEVERITY_CONFIG, TASK_TYPE_CONFIG } from '@/lib/pmConstants';
@@ -174,6 +175,7 @@ export function TaskFilterProvider({
     const epicOptions: FilterOption[] = epics.map((e) => ({
       value: e.epic.id,
       label: e.epic.name,
+      icon: <EpicColorSwatch color={e.epic.color} />,
     }));
 
     const sprintOptions: FilterOption[] = sprints.map((i) => ({

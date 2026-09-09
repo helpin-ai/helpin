@@ -1,4 +1,4 @@
-import { EpicBadge } from './EpicBadge';
+import { EpicColorSwatch } from './EpicColorSwatch';
 import { groupEpicsByLifecycle } from './epicPickerGroups';
 import { useCallback, useMemo, useState } from 'react';
 import { format } from 'date-fns';
@@ -831,7 +831,8 @@ export function TaskBulkActionsBar({
                       <SelectLabel>{group.label}</SelectLabel>
                       {group.epics.map(epic => (
                         <SelectItem key={epic.id} value={epic.id} textValue={epic.name}>
-                          <EpicBadge name={epic.name} color={epic.color} />
+                          <EpicColorSwatch color={epic.color} />
+                          <span className="truncate">{epic.name}</span>
                         </SelectItem>
                       ))}
                     </SelectGroup>

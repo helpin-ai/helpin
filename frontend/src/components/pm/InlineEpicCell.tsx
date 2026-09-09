@@ -4,6 +4,7 @@ import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import type { Epic, Task } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { EpicBadge } from './EpicBadge';
+import { EpicColorSwatch } from './EpicColorSwatch';
 import { groupEpicsByLifecycle } from './epicPickerGroups';
 
 export function InlineEpicCell({
@@ -69,13 +70,7 @@ export function InlineEpicCell({
           options: group.epics.map((epic) => ({
             value: epic.id,
             label: epic.name,
-            content: (
-              <EpicBadge
-                name={epic.name}
-                color={epic.color}
-                className="text-[length:inherit]"
-              />
-            ),
+            leading: <EpicColorSwatch color={epic.color} />,
           })),
         })),
       ]}

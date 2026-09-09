@@ -61,11 +61,11 @@ describe('task board and list epic dropdown', () => {
     expect(onUpdate).toHaveBeenCalledWith('task-1', { epic_id: '' });
   });
 
-  it('shows separate colored badges for same-named epics and slate for an uncolored epic', async () => {
+  it('shows color squares beside same-named epics and slate for an uncolored epic', async () => {
     await openPicker();
     for (const [id, color] of [['epic-a', 'rgb(226, 86, 74)'], ['epic-b', 'rgb(78, 143, 234)'], ['epic-c', 'rgb(193, 201, 211)']]) {
       expect(option(id)).not.toBeNull();
-      expect(option(id).querySelector<HTMLElement>('[title]')!.style.backgroundColor).toBe(color);
+      expect(option(id).querySelector<HTMLElement>('[aria-hidden="true"][style]')!.style.backgroundColor).toBe(color);
     }
   });
 
