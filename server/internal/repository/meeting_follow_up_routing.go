@@ -10,7 +10,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-// MeetingFollowUpsToRoute returns a bounded, fair sample of undecided legacy drafts.
+// MeetingFollowUpsToRoute returns a bounded, fair sample of pending drafts requiring the current routing policy.
 // Linked customer work is retained unless it is an untouched automatic projection.
 func (r *CRMSuggestionRepository) MeetingFollowUpsToRoute(ctx context.Context, limit int) ([]model.CRMSuggestion, error) {
 	if limit < 1 || limit > 3 {
@@ -19,7 +19,7 @@ func (r *CRMSuggestionRepository) MeetingFollowUpsToRoute(ctx context.Context, l
 	var items []model.CRMSuggestion
 	err := r.db.WithContext(ctx).Table("crm_suggestions a").Select("a.*").
 		Where("a.status = ? AND a.suggestion_type = ? AND a.object_type = ? AND a.object_id IS NOT NULL", model.CRMSuggestionStatusPending, model.CRMSuggestionFollowUp, model.CRMObjectMeeting).
-		Where("COALESCE(a.context->>?, '') = ''", model.MeetingFollowUpRoutingVersionKey).
+		Where("COALESCE(a.context->>?, '') <> ?", model.MeetingFollowUpRoutingVersionKey, model.MeetingFollowUpRoutingVersion).
 		Where(PMAISuggestionRoutingEligible(r.db, "a")).
 		Order("RANDOM()").Limit(limit).Find(&items).Error
 	return items, err

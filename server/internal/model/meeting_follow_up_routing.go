@@ -4,7 +4,7 @@ package model
 const (
 	MeetingFollowUpScopeKey          = "meeting_follow_up_scope"
 	MeetingFollowUpRoutingVersionKey = "meeting_follow_up_routing_version"
-	MeetingFollowUpRoutingVersion    = "v1"
+	MeetingFollowUpRoutingVersion    = "v2"
 )
 
 // IsInternalMeetingFollowUp identifies explicitly classified canonical meeting follow-ups.

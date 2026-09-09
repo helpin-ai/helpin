@@ -56,11 +56,17 @@ func (s *SupportInboxService) CreateEmailRoute(ctx context.Context, workspaceID 
 		return nil, err
 	}
 
-	existing, err := s.emailRouteRepo.GetActiveByMailbox(ctx, workspaceID, mailboxID)
+	existing, err := s.emailRouteRepo.GetByMailbox(ctx, workspaceID, mailboxID)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
+		if !existing.Active {
+			if err := s.emailRouteRepo.Reactivate(ctx, workspaceID, existing.ID, normalizeSupportEmailRouteSource(req.SourceAddress)); err != nil {
+				return nil, fmt.Errorf("restore support email route: %w", err)
+			}
+			return s.emailRouteRepo.GetByID(ctx, workspaceID, existing.ID)
+		}
 		return existing, nil
 	}
 

@@ -18,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { cn } from '@/lib/utils';
 
 export type QuietDropdownSearchMode = 'auto' | 'always' | 'off';
@@ -25,6 +26,7 @@ export interface QuietDropdownOption {
   value: string;
   label: string;
   keywords?: string[];
+  tooltip?: string;
   leading?: ReactNode;
   content?: ReactNode;
   trailing?: ReactNode;
@@ -264,6 +266,7 @@ export function QuietDropdown({
                     <QuietDropdownItem
                       key={option.value}
                       fullText={option.label}
+                      aria-description={option.tooltip}
                       value={option.value || '__quiet_empty__'}
                       keywords={[
                         option.label,
@@ -293,7 +296,11 @@ export function QuietDropdown({
                           {option.leading}
                         </span>
                       )}
-                      {option.content ?? (
+                      {option.tooltip ? (
+                        <QuickTooltip label={option.tooltip} side="right">
+                          <span className="min-w-0 flex-1 truncate">{option.content ?? option.label}</span>
+                        </QuickTooltip>
+                      ) : option.content ?? (
                         <span className="min-w-0 flex-1 truncate">
                           {option.label}
                         </span>

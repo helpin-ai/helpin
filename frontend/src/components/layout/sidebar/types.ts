@@ -6,6 +6,7 @@ export type NavItem = {
   icon: IconComponent;
   badge?: number;
   children?: NavSubItem[];
+  separatorBefore?: boolean;
 };
 
 export type NavSubItem = {

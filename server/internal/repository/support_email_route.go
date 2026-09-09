@@ -102,6 +102,38 @@ func (r *SupportEmailRouteRepository) GetActiveByMailbox(ctx context.Context, wo
 	return &route, nil
 }
 
+func (r *SupportEmailRouteRepository) GetByMailbox(ctx context.Context, workspaceID string, mailboxID *string) (*model.SupportEmailRoute, error) {
+	query := r.baseQuery(ctx).
+		Where("ser.workspace_id = ?", workspaceID).Order("ser.active DESC, ser.updated_at DESC")
+	if mailboxID == nil || strings.TrimSpace(*mailboxID) == "" {
+		query = query.Where("ser.mailbox_id IS NULL")
+	} else {
+		query = query.Where("ser.mailbox_id = ?", strings.TrimSpace(*mailboxID))
+	}
+
+	var route model.SupportEmailRoute
+	if err := query.First(&route).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get active support email route: %w", err)
+	}
+	return &route, nil
+}
+
+// Reactivate preserves the reserved address and resets setup evidence. The active
+// predicate prevents a concurrent re-enable from clearing fresh verification.
+func (r *SupportEmailRouteRepository) Reactivate(ctx context.Context, workspaceID, routeID string, sourceAddress *string) error {
+	return r.db.WithContext(ctx).Model(&model.SupportEmailRoute{}).
+		Where("workspace_id = ? AND id = ? AND active = ?", workspaceID, routeID, false).
+		Updates(map[string]any{
+			"active": true, "source_address": sourceAddress, "confirmation_received_at": nil,
+			"confirmation_conversation_id": nil, "verification_sent_at": nil,
+			"forwarding_verified_at": nil, "forwarding_verification_token": "",
+			"forwarding_last_error": nil, "updated_at": time.Now().UTC(),
+		}).Error
+}
+
 func (r *SupportEmailRouteRepository) Disable(ctx context.Context, workspaceID, routeID string) error {
 	if err := r.db.WithContext(ctx).
 		Model(&model.SupportEmailRoute{}).

@@ -124,3 +124,45 @@ func TestMeetingFollowUpProjectionClassifiesWithoutDuplicatingInternalDraft(t *t
 		t.Fatal("reprocessing duplicated an internal follow-up")
 	}
 }
+
+func TestMeetingFollowUpRoutingAcceptsExactDraftEvidenceAcrossTranscriptLanguages(t *testing.T) {
+	draft := "Hi Saira, please compile competitor landing pages so we can improve our campaign conversion rates."
+	for _, tc := range []struct{ evidence, want string }{
+		{"please compile competitor landing pages so we can improve our campaign conversion rates.", "internal"},
+		{"Everyone confirmed this was an internal meeting.", "uncertain"},
+	} {
+		got := validatedMeetingFollowUpScope("internal", tc.evidence, "ham landing pages pe kaam karenge", draft)
+		if got != tc.want {
+			t.Fatalf("scope %q, want %q", got, tc.want)
+		}
+	}
+}
+
+func TestMeetingFollowUpClassifierRetriesInvalidEvidenceInsteadOfFinalizingUncertain(t *testing.T) {
+	provider := &scriptedMeetingIntelligenceLLM{results: []meetingIntelligenceLLMResult{{response: &llm.ChatResponse{Content: `{"scope":"internal","scope_evidence":"Everyone confirmed the recap was only internal work."}`}}}}
+	processor := &CRMMeetingProcessingService{llmProvider: provider}
+	meeting := "meeting"
+	item := model.CRMSuggestion{ID: "draft", WorkspaceID: "ws", ObjectID: &meeting, Title: "Team planning", Context: model.JSONB{"draft_body": "Please prepare the next sprint backlog."}}
+	_, err := processor.classifyExistingFollowUp(context.Background(), item, &model.CRMMeetingTranscript{PlainText: "Prepare the next sprint backlog for the team."})
+	if err == nil {
+		t.Fatal("unsupported evidence was persisted as a completed uncertain classification")
+	}
+}
+
+func TestMeetingFollowUpProjectionLeavesInvalidEvidenceForAutomaticRetry(t *testing.T) {
+	manager := &routingSuggestionManager{}
+	processor := &CRMMeetingProcessingService{suggestions: manager}
+	meeting := &model.CRMMeeting{ID: "meeting", WorkspaceID: "workspace", Title: "Team planning"}
+	transcript := &model.CRMMeetingTranscript{PlainText: "Prepare the next sprint backlog."}
+	output := &meetingIntelligenceOutput{FollowUpDraft: meetingFollowUpOutput{Subject: "Team planning", Body: "Please prepare the sprint backlog.", Scope: "internal", ScopeEvidence: "Everyone confirmed this was an internal team meeting."}}
+	if err := processor.projectFollowUp(context.Background(), meeting, transcript, output); err != nil {
+		t.Fatal(err)
+	}
+	if len(manager.created) != 1 {
+		t.Fatal("draft was lost")
+	}
+	metadata := manager.created[0].Context
+	if metadata[model.MeetingFollowUpScopeKey] != "uncertain" || metadata[model.MeetingFollowUpRoutingVersionKey] != nil {
+		t.Fatalf("invalid evidence was marked final: %+v", metadata)
+	}
+}

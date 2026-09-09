@@ -12,6 +12,7 @@ export interface QuietSelectOption {
   label: string;
   leading?: ReactNode;
   labelClassName?: string;
+  tooltip?: string;
   disabled?: boolean;
 }
 

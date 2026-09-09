@@ -1,3 +1,4 @@
+import { ForwardingRelativeTime } from './ForwardingRelativeTime';
 import { EmailForwardingSetup } from './EmailForwardingSetup';
 import { emailForwardingInboxHref } from './emailForwardingLinks';
 import { ForwardingSetupTransition } from './ForwardingSetupTransition';
@@ -64,6 +65,7 @@ export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string
     });
     if (!ok) return;
     await disableRoute.mutateAsync(route.id);
+    try { localStorage.removeItem(`helpin:forwarding-setup:v1:${route.workspace_id}:${route.id}`); } catch { /* Storage may be unavailable. */ }
     toast.success('Forwarding disabled');
   }, [confirm, disableRoute]);
 
@@ -247,7 +249,7 @@ function MailboxEmailRouteRow({
   return (
     <EmailRouteRow
       title={mailbox.name}
-      description={mailbox.linked_team_name ? `Linked to ${mailbox.linked_team_name}` : 'Team inbox'}
+      description={mailbox.linked_team_name ? `Linked team: ${mailbox.linked_team_name}` : 'No linked team'}
       icon={
         <StoredIcon
           name={mailbox.icon}
@@ -289,8 +291,8 @@ function EmailRouteRow({
   onSendTest: (routeId: string, sourceAddress: string) => void | Promise<void>;
   onCheck: () => void | Promise<unknown>;
 }) {
-  const lastInbound = route?.last_inbound_at ? new Date(route.last_inbound_at).toLocaleString() : null;
-  const verifiedAt = route?.forwarding_verified_at ? new Date(route.forwarding_verified_at).toLocaleString() : null;
+  const lastInbound = route?.last_inbound_at ?? null;
+  const verifiedAt = route?.forwarding_verified_at ?? null;
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
   const confirmationHref = route?.confirmation_conversation_id
     ? emailForwardingInboxHref(workspaceSlug, route.mailbox_id, route.confirmation_conversation_id)
@@ -301,7 +303,12 @@ function EmailRouteRow({
     <div className="py-3 px-1">
       <div className="flex items-center gap-3">
         {/* Status dot */}
-        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${verifiedAt ? 'bg-emerald-500' : route ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span role="img" tabIndex={0} aria-label={verifiedAt ? 'Forwarding verified' : route ? 'Setup incomplete' : 'Forwarding not set up'} className={`h-2.5 w-2.5 shrink-0 rounded-full ${verifiedAt ? 'bg-emerald-500' : route ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+          </TooltipTrigger>
+          <TooltipContent>{verifiedAt ? 'Forwarding verified' : route ? 'Setup incomplete' : 'Forwarding not set up'}</TooltipContent>
+        </Tooltip>
 
         {/* Icon */}
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">{icon}</div>
@@ -322,15 +329,10 @@ function EmailRouteRow({
         {/* Status label */}
         {route && !verifiedAt && (
           <span className="hidden shrink-0 items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
             Setup incomplete
           </span>
         )}
-        {route && verifiedAt && (
-          <span className="hidden shrink-0 text-xs text-muted-foreground lg:inline">
-            Verified: {verifiedAt}
-          </span>
-        )}
+
 
         {/* Actions */}
         <div className="flex shrink-0 items-center gap-1">
@@ -367,7 +369,7 @@ function EmailRouteRow({
         </ForwardingSetupTransition>
       )}
       {route && verifiedAt && lastInbound && (
-        <p className="ml-11 mt-2 text-xs text-muted-foreground">Last email received: {lastInbound}</p>
+        <p className="ml-11 mt-2 text-xs text-muted-foreground">Last email received <ForwardingRelativeTime value={lastInbound} /></p>
       )}
     </div>
   );
