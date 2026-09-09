@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useBlocker } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { QuietPrimaryAction, QuietSection, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { QuietSelect, QuietPrimaryAction, QuietSection, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { QueryBuilderPopover } from '@/components/ui/query-builder/QueryBuilderPopover';
@@ -15,7 +15,7 @@ import { createPlaybookIntentKey, definitionFingerprint, newMilestoneKey, playbo
 import type { CRMPlaybookDefinition, CRMPlaybookItem } from '@/lib/crmPlaybookTypes';
 import type { CRMRecordTargetType } from '@/lib/agentCRMTargets';
 import type { QueryFilterRule } from '@/lib/queryBuilder';
-import { PlaybookError, PlaybookField, PlaybookSelect, PlaybookTextarea } from './PlaybookUI';
+import { PlaybookError, PlaybookField, PlaybookTextarea } from './PlaybookUI';
 
 const recordFields: Record<string, CRMRecordTargetType> = { company_id: 'crm_company', contact_id: 'crm_contact', deal_id: 'crm_deal' };
 const ownerRoles = [{ value: 'signal_owner', label: 'Signal owner' }, { value: 'account_owner', label: 'Company owner' }, { value: 'deal_owner', label: 'Deal owner' }, { value: 'customer_success_owner', label: 'Customer success owner' }];
@@ -67,7 +67,7 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
       const field = fields.find((entry) => entry.field === rule.field)!;
       const options = [...(field.options ?? [])];
       if (rule.value && !options.some((option) => option.value === rule.value)) options.push({ value: rule.value, label: `${field.label} unavailable` });
-      return <PlaybookSelect label={`Condition ${field.label.toLowerCase()}`} value={rule.value || '__none__'} disabled={pipelines.isPending || pipelines.isError} options={[{ value: '__none__', label: options.length ? `Choose ${field.label.toLowerCase()}` : `No ${rule.field === 'pipeline_id' ? 'pipelines' : 'stages'} available` }, ...options]} onChange={(value) => onChange(value === '__none__' ? '' : value)} />;
+      return <QuietSelect label={`Condition ${field.label.toLowerCase()}`} value={rule.value || '__none__'} disabled={pipelines.isPending || pipelines.isError} options={[{ value: '__none__', label: options.length ? `Choose ${field.label.toLowerCase()}` : `No ${rule.field === 'pipeline_id' ? 'pipelines' : 'stages'} available` }, ...options]} onChange={(value) => onChange(value === '__none__' ? '' : value)} />;
     }
     return undefined;
   };
@@ -105,13 +105,13 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
           </div>)}</div>
         </QuietSection>
         <QuietSection title="Responsibilities"><div className="space-y-5">
-          <PlaybookField label="Responsible owner" help="A role in the playbook, not a reassignment of existing work. Applying a playbook preserves each signal’s current owner.">{(id) => <PlaybookSelect id={id} label="Responsible owner" value={definition.responsibilities.owner_role} options={ownerRoles} disabled={disabled} onChange={(value) => update({ responsibilities: { ...definition.responsibilities, owner_role: value as CRMPlaybookDefinition['responsibilities']['owner_role'] } })} />}</PlaybookField>
-          <PlaybookField label="Approvals go to">{(id) => <PlaybookSelect id={id} label="Approvals go to" value={definition.responsibilities.approver_role} options={[{ value: 'next_action_owner', label: 'Next action owner' }, { value: 'signal_owner', label: 'Signal owner' }]} disabled={disabled} onChange={(value) => update({ responsibilities: { ...definition.responsibilities, approver_role: value as 'signal_owner' | 'next_action_owner' } })} />}</PlaybookField>
+          <PlaybookField label="Responsible owner" help="A role in the playbook, not a reassignment of existing work. Applying a playbook preserves each signal’s current owner.">{(id) => <QuietSelect id={id} label="Responsible owner" value={definition.responsibilities.owner_role} options={ownerRoles} disabled={disabled} onChange={(value) => update({ responsibilities: { ...definition.responsibilities, owner_role: value as CRMPlaybookDefinition['responsibilities']['owner_role'] } })} />}</PlaybookField>
+          <PlaybookField label="Approvals go to">{(id) => <QuietSelect id={id} label="Approvals go to" value={definition.responsibilities.approver_role} options={[{ value: 'next_action_owner', label: 'Next action owner' }, { value: 'signal_owner', label: 'Signal owner' }]} disabled={disabled} onChange={(value) => update({ responsibilities: { ...definition.responsibilities, approver_role: value as 'signal_owner' | 'next_action_owner' } })} />}</PlaybookField>
           <PlaybookField label="Escalation owner" help="The person responsible when work needs help. An active workspace member is required to publish.">{() => <MemberPickerPopover members={members.data ?? []} value={definition.responsibilities.escalation_member_id || ''} disabled={disabled || members.isPending || members.isError} triggerLabel="Choose escalation owner" noneLabel="Not assigned" onChange={(value) => update({ responsibilities: { ...definition.responsibilities, escalation_member_id: value === '__none__' ? null : value } })} renderTrigger={() => <span>{members.isPending ? 'Loading members…' : escalationMember ? escalationMember.display_name || escalationMember.email : definition.responsibilities.escalation_member_id ? 'Member unavailable — choose another' : 'Choose a person'}</span>} />}</PlaybookField>
         </div></QuietSection>
         <QuietSection title="Action permissions"><div className="space-y-4">
           <p className="text-sm leading-6 text-quiet-text-tertiary">These are the playbook’s rules. Saving or publishing them does not start automation.</p>
-          {([{ key: 'outbound_messages', label: 'Customer messages' }, { key: 'crm_changes', label: 'CRM changes' }, { key: 'pm_tasks', label: 'Tasks', help: 'Allow a task only when someone needs to do concrete work. This does not create a task for every signal.' }] as const).map((field) => <PlaybookField key={field.key} label={field.label} help={'help' in field ? field.help : undefined}>{(id) => <PlaybookSelect id={id} label={field.label} value={definition.policy[field.key]} disabled={disabled} options={approvalOptions} onChange={(value) => update({ policy: { ...definition.policy, [field.key]: value } })} />}</PlaybookField>)}
+          {([{ key: 'outbound_messages', label: 'Customer messages' }, { key: 'crm_changes', label: 'CRM changes' }, { key: 'pm_tasks', label: 'Tasks', help: 'Allow a task only when someone needs to do concrete work. This does not create a task for every signal.' }] as const).map((field) => <PlaybookField key={field.key} label={field.label} help={'help' in field ? field.help : undefined}>{(id) => <QuietSelect id={id} label={field.label} value={definition.policy[field.key]} disabled={disabled} options={approvalOptions} onChange={(value) => update({ policy: { ...definition.policy, [field.key]: value } })} />}</PlaybookField>)}
         </div></QuietSection>
         <QuietSection title="Follow-up and stopping"><div className="space-y-5">
           <PlaybookField label="Check after (hours)" help="The intended review interval. Playbook settings do not schedule checks until execution is connected.">{(id) => <QuietUnderlineInput id={id} type="number" min={1} max={8760} required value={definition.policy.check_after_hours || ''} onChange={(event) => update({ policy: { ...definition.policy, check_after_hours: Number(event.target.value) } })} />}</PlaybookField>

@@ -220,6 +220,7 @@ interface EpicFilterOption {
 interface EpicFilterDefinition {
   key: EpicFilterKey;
   label: string;
+  emptyLabel: string;
   options: EpicFilterOption[];
 }
 
@@ -1124,6 +1125,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       {
         key: 'owner',
         label: 'Owner',
+        emptyLabel: 'All owners',
         options: assignableMembers.map((member) => ({
           value: member.id,
           label: member.display_name || member.email,
@@ -1132,6 +1134,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       {
         key: 'state',
         label: 'State',
+        emptyLabel: 'All states',
         options: [
           ...epicStates.map((state) => ({
             value: state.id,
@@ -1143,6 +1146,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       {
         key: 'health',
         label: 'Health',
+        emptyLabel: 'Any health',
         options: ALL_HEALTH_OPTIONS.map((health) => ({
           value: health,
           label: healthConfig[health].label,
@@ -1151,6 +1155,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       {
         key: 'label',
         label: 'Label',
+        emptyLabel: 'All labels',
         options: allLabels.map((label) => ({
           value: label.id,
           label: label.name,
@@ -1159,11 +1164,13 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       {
         key: 'objective',
         label: 'Objective',
+        emptyLabel: 'All objectives',
         options: Array.from(objectiveNameMap.entries()).map(([value, label]) => ({ value, label })),
       },
       {
         key: 'has_target_date',
         label: 'Target date',
+        emptyLabel: 'Any target date',
         options: [
           { value: 'yes', label: 'Has target date' },
           { value: 'no', label: 'No target date' },
@@ -1172,6 +1179,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       {
         key: 'has_start_date',
         label: 'Start date',
+        emptyLabel: 'Any start date',
         options: [
           { value: 'yes', label: 'Has start date' },
           { value: 'no', label: 'No start date' },
@@ -1620,6 +1628,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               return {
                 key: definition.key,
                 label: definition.label,
+                emptyLabel: definition.emptyLabel,
                 options,
                 selected,
                 icon: IconCmp ? <IconCmp className="h-3.5 w-3.5" /> : undefined,

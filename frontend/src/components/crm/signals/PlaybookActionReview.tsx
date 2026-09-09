@@ -4,7 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { QuietComposerEditorSurface, QuietConversationComposer, QuietPrimaryAction, QuietPropertyRow, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { QuietSelect, QuietComposerEditorSurface, QuietConversationComposer, QuietPrimaryAction, QuietPropertyRow, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
 import { useCRMSituationDecision } from '@/hooks/queries/useCRMSituations';
 import { useCRMPlaybookActionIntent, useCRMPlaybookAutomationWrite } from '@/hooks/queries/useCRMPlaybookAutomation';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
@@ -13,7 +13,7 @@ import { useDeal, useEmailAccounts, usePipeline } from '@/hooks/queries/useCRM';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import type { CRMPlaybookAction } from '@/lib/crmPlaybookTypes';
 import type { CRMSuggestion } from '@/lib/crmTypes';
-import { PlaybookError, PlaybookField, PlaybookHelp, PlaybookSelect, PlaybookTextarea } from '../playbooks/PlaybookUI';
+import { PlaybookError, PlaybookField, PlaybookHelp, PlaybookTextarea } from '../playbooks/PlaybookUI';
 
 const actionLabels: Record<CRMPlaybookAction['kind'], string> = { email: 'Send email', task: 'Create task', handoff: 'Accept handoff', milestone: 'Confirm milestone', deal_stage: 'Change stage' };
 export function readTypedPlaybookAction(action: CRMSuggestion): CRMPlaybookAction | undefined {
@@ -71,7 +71,7 @@ function EmailReview({ ws, draft, update, disabled }: { ws: string; draft: CRMPl
   useEffect(() => { editor?.setEditable(!disabled); }, [editor, disabled]);
   return <>
     <QuietPropertyRow label="To" value={email.to} />
-    <PlaybookField label="From">{(id) => <PlaybookSelect id={id} label="Sending account" value={email.account_id || 'choose'} onChange={(value) => update({ ...draft, email: { ...email, account_id: value === 'choose' ? '' : value } })} disabled={disabled} options={[{ value: 'choose', label: 'Choose your sending account' }, ...senders.map((account) => ({ value: account.id, label: account.email_address }))]} />}</PlaybookField>
+    <PlaybookField label="From">{(id) => <QuietSelect id={id} label="Sending account" value={email.account_id || 'choose'} onChange={(value) => update({ ...draft, email: { ...email, account_id: value === 'choose' ? '' : value } })} disabled={disabled} options={[{ value: 'choose', label: 'Choose your sending account' }, ...senders.map((account) => ({ value: account.id, label: account.email_address }))]} />}</PlaybookField>
     {accounts.isError && <PlaybookError error={accounts.error} retry={() => void accounts.refetch()} />}
     {accounts.isSuccess && !senders.length && <p className="text-xs text-quiet-accent">Connect your Gmail account in CRM email settings to send this message.</p>}
     <PlaybookField label="Subject">{(id) => <QuietUnderlineInput id={id} value={email.subject} maxLength={300} onChange={(event) => update({ ...draft, email: { ...email, subject: event.target.value } })} />}</PlaybookField>
@@ -89,8 +89,8 @@ function TaskReview({ ws, draft, update, disabled }: { ws: string; draft: CRMPla
   const ownTeams = teams.teams.filter((team) => access.data?.team_memberships.some((membership) => membership.team_id === team.id));
   return <>
     <PlaybookField label="Task">{(id) => <QuietUnderlineInput id={id} value={task.name} maxLength={240} onChange={(event) => update({ ...draft, task: { ...task, name: event.target.value } })} />}</PlaybookField>
-    <PlaybookField label="Team">{(id) => <PlaybookSelect id={id} label="Task team" value={task.team_id || 'choose'} disabled={disabled} onChange={(value) => update({ ...draft, task: { ...task, team_id: value === 'choose' ? '' : value } })} options={[{ value: 'choose', label: 'Choose team' }, ...ownTeams.map((team) => ({ value: team.id, label: team.name }))]} />}</PlaybookField>
-    <PlaybookField label="Owner" help="The task owner must have access to the selected team and PM.">{(id) => <PlaybookSelect id={id} label="Task owner" value={task.owner_member_id || 'choose'} disabled={disabled} onChange={(value) => update({ ...draft, task: { ...task, owner_member_id: value === 'choose' ? '' : value } })} options={[{ value: 'choose', label: 'Choose owner' }, ...(members.data || []).filter((member) => member.status === 'active').map((member) => ({ value: member.id, label: member.display_name }))]} />}</PlaybookField>
+    <PlaybookField label="Team">{(id) => <QuietSelect id={id} label="Task team" value={task.team_id || 'choose'} disabled={disabled} onChange={(value) => update({ ...draft, task: { ...task, team_id: value === 'choose' ? '' : value } })} options={[{ value: 'choose', label: 'Choose team' }, ...ownTeams.map((team) => ({ value: team.id, label: team.name }))]} />}</PlaybookField>
+    <PlaybookField label="Owner" help="The task owner must have access to the selected team and PM.">{(id) => <QuietSelect id={id} label="Task owner" value={task.owner_member_id || 'choose'} disabled={disabled} onChange={(value) => update({ ...draft, task: { ...task, owner_member_id: value === 'choose' ? '' : value } })} options={[{ value: 'choose', label: 'Choose owner' }, ...(members.data || []).filter((member) => member.status === 'active').map((member) => ({ value: member.id, label: member.display_name }))]} />}</PlaybookField>
     <PlaybookField label="Deliverable">{(id) => <PlaybookTextarea id={id} value={task.description} maxLength={5000} onChange={(event) => update({ ...draft, task: { ...task, description: event.target.value } })} />}</PlaybookField>
     <QuietPropertyRow label="Due" value={task.deadline ? new Date(task.deadline).toLocaleString() : 'No due date'} />
     {!canAccessModule('pm') && <p className="text-xs text-quiet-accent">PM access is required to create this task.</p>}
@@ -134,7 +134,7 @@ function ActionInspection({ ws, action, stale, onClose }: { ws: string; action: 
     try { await write.mutateAsync({ kind: 'inspect', id: action.id, body: { revision: action.revision, outcome, evidence: evidence.trim(), confirmed: true } }); onClose(); } catch { /* Keep the explicit inspection, never retry the original operation. */ }
   };
   return <Dialog open onOpenChange={(open) => { if (!open && !write.isPending) onClose(); }}><DialogContent><DialogHeader><DialogTitle>Record the inspected result</DialogTitle><DialogDescription>Check the actual mailbox, task, or customer record first. This records your finding; it does not send, create, change, or retry anything.</DialogDescription></DialogHeader>
-    <PlaybookField label="What did you confirm?">{(id) => <PlaybookSelect id={id} label="Inspected outcome" value={outcome || 'choose'} onChange={(value) => setOutcome(value === 'choose' ? '' : value as typeof outcome)} disabled={write.isPending} options={[{ value: 'choose', label: 'Choose the confirmed result' }, { value: 'completed', label: 'The action completed' }, { value: 'not_completed', label: 'The action did not complete' }]} />}</PlaybookField>
+    <PlaybookField label="What did you confirm?">{(id) => <QuietSelect id={id} label="Inspected outcome" value={outcome || 'choose'} onChange={(value) => setOutcome(value === 'choose' ? '' : value as typeof outcome)} disabled={write.isPending} options={[{ value: 'choose', label: 'Choose the confirmed result' }, { value: 'completed', label: 'The action completed' }, { value: 'not_completed', label: 'The action did not complete' }]} />}</PlaybookField>
     <PlaybookField label="Where did you check, and what did you find?">{(id) => <PlaybookTextarea id={id} value={evidence} maxLength={2000} disabled={write.isPending} onChange={(event) => setEvidence(event.target.value)} placeholder="Reference the sent message, task, or record you inspected." />}</PlaybookField>
     {stale && <p role="alert" className="text-sm text-quiet-accent">The action changed. Close and check its current result.</p>}
     {write.isError && <PlaybookError error={write.error} />}

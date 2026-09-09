@@ -647,3 +647,5 @@ export {
   QuietConversationComposer,
 } from './conversation-composer';
 export type { ConversationRewriteOperation } from './conversation-composer';
+export { QuietFilterDropdown, QuietSelect } from './quiet-select';
+export type { QuietFilterDropdownProps, QuietSelectOption, QuietSelectProps } from './quiet-select';

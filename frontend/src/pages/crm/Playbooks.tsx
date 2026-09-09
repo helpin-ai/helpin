@@ -1,6 +1,6 @@
 import { useDeferredValue, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { QuietEmptyState, QuietPageHeader, QuietPageViewport, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietFilterDropdown, QuietEmptyState, QuietPageHeader, QuietPageViewport, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCRMPlaybooks, useCRMPlaybookTemplates, useCRMPlaybookWrite } from '@/hooks/queries/useCRMPlaybooks';
@@ -10,7 +10,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { blankPlaybook, createPlaybookIntentKey, playbookStatus } from '@/lib/crmPlaybookPresentation';
 import type { CRMPlaybookDefinition } from '@/lib/crmPlaybookTypes';
 import type { PlaybookListFilters } from '@/lib/services/crmPlaybookService';
-import { PlaybookError, PlaybookHelp, PlaybookLoading, PlaybookNoAccess, PlaybookPagination, PlaybookSelect } from '@/components/crm/playbooks/PlaybookUI';
+import { PlaybookError, PlaybookHelp, PlaybookLoading, PlaybookNoAccess, PlaybookPagination } from '@/components/crm/playbooks/PlaybookUI';
 
 export function PlaybooksPage() {
   useTitle('Playbooks');
@@ -38,7 +38,7 @@ function PlaybooksList({ ws, slug, canAdmin }: { ws: string; slug: string; canAd
     <QuietPageViewport className="min-h-0 flex-1">
     <div className="flex flex-wrap items-center gap-3 border-b border-quiet-divider-strong pb-3">
       <QuietSearchInput aria-label="Search playbooks" placeholder="Search playbooks…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} containerClassName="w-64 max-w-full" />
-      <PlaybookSelect label="Playbook status" value={state || 'all'} onChange={(value) => { setState(value as PlaybookListFilters['state']); setPage(1); }} options={[{ value: 'all', label: 'All statuses' }, { value: 'draft', label: 'Draft' }, { value: 'accepting', label: 'Accepting signals' }, { value: 'stopped', label: 'Enrollment stopped' }]} />
+      <QuietFilterDropdown label="Playbook status" value={state || 'all'} onChange={(value) => { setState(value as PlaybookListFilters['state']); setPage(1); }} options={[{ value: 'all', label: 'All statuses' }, { value: 'draft', label: 'Draft' }, { value: 'accepting', label: 'Accepting signals' }, { value: 'stopped', label: 'Enrollment stopped' }]} />
       {filtered && <QuietTextAction onClick={clear}>Clear filters</QuietTextAction>}
     </div>
     {list.isPending ? <PlaybookLoading /> : list.isError ? <PlaybookError error={list.error} retry={() => void list.refetch()} /> : <>

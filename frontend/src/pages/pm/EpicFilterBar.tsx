@@ -1,9 +1,7 @@
 import type { ReactNode } from 'react';
-import { QuietSearchInput } from '@/components/design-system/quiet';
+import { QuietFilterDropdown, QuietSearchInput } from '@/components/design-system/quiet';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CategoryFilterChip } from '@/components/pm/CategoryFilterChip';
 import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopover';
 
 export interface EpicFilterBarOption {
@@ -16,6 +14,7 @@ export interface EpicFilterBarOption {
 export interface EpicFilterBarCategory {
   key: string;
   label: string;
+  emptyLabel: string;
   options: EpicFilterBarOption[];
   selected: string[];
   icon?: ReactNode;
@@ -31,7 +30,7 @@ interface EpicFilterBarProps {
   search: string;
   onSearchChange: (next: string) => void;
 
-  /** Per-category multi-select chips, rendered in the order given. */
+  /** Per-category multi-select filters, rendered in the order given. */
   categories: EpicFilterBarCategory[];
   onCategoryChange: (key: string, next: string[]) => void;
   onClearAll: () => void;
@@ -56,7 +55,7 @@ interface EpicFilterBarProps {
  * The combined filter + view-controls row that sits above the Epics table.
  *
  * Layout (single row, wraps as needed):
- *   [🔍 Search] [Category chips…] [Clear Filters] [☐ Show Archived]
+ *   [Search] [Category filters…] [Clear Filters] [Show Archived]
  *                                                  → Group By  Display
  */
 export function EpicFilterBar({
@@ -79,28 +78,25 @@ export function EpicFilterBar({
 
   return (
     <div className="ui-divider-bottom-fade flex flex-col gap-1 px-4 pb-2 pt-2 md:px-6">
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] font-medium text-muted-foreground/0">
-            &nbsp;
-          </span>
-          <QuietSearchInput
-            containerClassName="w-[220px]"
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search Epics…"
-          />
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <QuietSearchInput
+          containerClassName="w-[220px] max-w-full"
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search Epics…"
+        />
 
         {categories.map((category) => category.key === 'owner' && ownerFilter ? (
-          <div key={category.key} className="flex flex-col gap-0.5">
+          <div key={category.key} className="flex items-center gap-1.5">
             <span className="text-xs font-medium text-muted-foreground">{category.label}</span>
             {ownerFilter}
           </div>
         ) : (
-          <CategoryFilterChip
+          <QuietFilterDropdown
+            multiple
             key={category.key}
             label={category.label}
+            emptyLabel={category.emptyLabel}
             icon={category.icon}
             options={category.options}
             selected={category.selected}
@@ -109,50 +105,29 @@ export function EpicFilterBar({
         ))}
 
         {hasAnyFilter ? (
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] font-medium text-muted-foreground/0">
-              &nbsp;
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground"
-              onClick={onClearAll}
-            >
-              Clear Filters
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs text-muted-foreground"
+            onClick={onClearAll}
+          >
+            Clear Filters
+          </Button>
         ) : null}
 
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] font-medium text-muted-foreground/0">
-            &nbsp;
-          </span>
-          <label className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent">
-            <Checkbox
-              checked={showArchived}
-              onCheckedChange={(value) => onToggleShowArchived(value === true)}
-              aria-label="Show archived"
-            />
-            Show Archived
-          </label>
-        </div>
+        <label className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent">
+          <Checkbox
+            checked={showArchived}
+            onCheckedChange={(value) => onToggleShowArchived(value === true)}
+            aria-label="Show archived"
+          />
+          Show Archived
+        </label>
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Group by:</span>
-          <Select value={groupBy} onValueChange={onGroupByChange}>
-            <SelectTrigger className="h-7 w-[140px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {groupByOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <QuietFilterDropdown label="Group by" value={groupBy} onChange={onGroupByChange} options={groupByOptions} />
           <DisplayPropertiesPopover
             allProperties={displayProperties}
             visible={visibleProperties}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { QuietPropertyRow, QuietSection, QuietStatusText, QuietTextAction, QuietPrimaryAction } from '@/components/design-system/quiet';
+import { QuietSelect, QuietPropertyRow, QuietSection, QuietStatusText, QuietTextAction, QuietPrimaryAction } from '@/components/design-system/quiet';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCRMPlaybookSignal, useCRMPlaybookVersion, useCRMPlaybookWrite } from '@/hooks/queries/useCRMPlaybooks';
@@ -9,7 +9,7 @@ import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
 import { createPlaybookIntentKey } from '@/lib/crmPlaybookPresentation';
 import type { CRMPlaybookMilestone, CRMPlaybookMilestoneProgress } from '@/lib/crmPlaybookTypes';
 import type { CRMSituationItem } from '@/lib/crmSituationTypes';
-import { PlaybookError, PlaybookField, PlaybookHelp, PlaybookLoading, PlaybookSelect, PlaybookTextarea } from '../playbooks/PlaybookUI';
+import { PlaybookError, PlaybookField, PlaybookHelp, PlaybookLoading, PlaybookTextarea } from '../playbooks/PlaybookUI';
 import { PlaybookSignalEdit } from '../playbooks/PlaybookSignalEdit';
 import { SignalActions } from './SignalActions';
 import { SignalAutomation } from './SignalAutomation';
@@ -79,7 +79,7 @@ function MilestoneAssessment({ ws, playbookId, signalId, selection, onClose, onR
   };
   return <Dialog open onOpenChange={(open) => { if (!open && !write.isPending) onClose(); }}><DialogContent><DialogHeader><DialogTitle>{selection.milestone.name}</DialogTitle><DialogDescription>{selection.milestone.success_criteria}</DialogDescription></DialogHeader>
     <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="space-y-5">
-      <PlaybookField label="Status">{(id) => <PlaybookSelect id={id} label="Milestone status" value={status} disabled={write.isPending} options={[{ value: 'achieved', label: 'Achieved' }, { value: 'pending', label: 'Pending' }, { value: 'not_applicable', label: 'Not applicable' }]} onChange={(value) => setStatus(value as CRMPlaybookMilestoneProgress['status'])} />}</PlaybookField>
+      <PlaybookField label="Status">{(id) => <QuietSelect id={id} label="Milestone status" value={status} disabled={write.isPending} options={[{ value: 'achieved', label: 'Achieved' }, { value: 'pending', label: 'Pending' }, { value: 'not_applicable', label: 'Not applicable' }]} onChange={(value) => setStatus(value as CRMPlaybookMilestoneProgress['status'])} />}</PlaybookField>
       <PlaybookField label="What supports this assessment?">{(id) => <PlaybookTextarea id={id} value={summary} disabled={write.isPending} required maxLength={2000} onChange={(event) => setSummary(event.target.value)} placeholder="Reference the customer’s confirmation or explain your decision." />}</PlaybookField>
       {write.isError && <PlaybookError error={write.error} retry={onReload} />}
       <DialogFooter><QuietTextAction type="button" disabled={write.isPending} onClick={onClose}>Cancel</QuietTextAction><QuietPrimaryAction type="submit" disabled={write.isPending || !summary.trim()}>{write.isPending ? 'Saving…' : 'Record progress'}</QuietPrimaryAction></DialogFooter>
@@ -99,7 +99,7 @@ function SignalLifecycle({ ws, signalId, selection, onClose, onReload }: { ws: s
   };
   return <Dialog open onOpenChange={(open) => { if (!open && !write.isPending) onClose(); }}><DialogContent><DialogHeader><DialogTitle>{operation === 'close' ? 'Record outcome' : operation === 'pause' ? 'Pause this signal?' : 'Resume this signal?'}</DialogTitle><DialogDescription>{operation === 'close' ? 'Record what happened for the customer. This closes the signal; a completed run alone is not an outcome.' : operation === 'pause' ? 'Pause this signal and its pending checks. Work already executing may still finish.' : 'Return this signal to open work with the same playbook version.'}</DialogDescription></DialogHeader>
     <form onSubmit={(event) => { event.preventDefault(); void save(); }} className="space-y-5">
-      {operation === 'close' && <PlaybookField label="Outcome">{(id) => <PlaybookSelect id={id} label="Outcome" value={kind} disabled={write.isPending} options={[{ value: 'achieved', label: 'Customer outcome achieved' }, { value: 'not_pursued', label: 'Not pursued' }, { value: 'invalid', label: 'Not a valid signal' }]} onChange={(value) => setKind(value as typeof kind)} />}</PlaybookField>}
+      {operation === 'close' && <PlaybookField label="Outcome">{(id) => <QuietSelect id={id} label="Outcome" value={kind} disabled={write.isPending} options={[{ value: 'achieved', label: 'Customer outcome achieved' }, { value: 'not_pursued', label: 'Not pursued' }, { value: 'invalid', label: 'Not a valid signal' }]} onChange={(value) => setKind(value as typeof kind)} />}</PlaybookField>}
       {operation !== 'resume' && <PlaybookField label={operation === 'close' ? 'What happened?' : 'Reason for pausing'}>{(id) => <PlaybookTextarea id={id} value={summary} disabled={write.isPending} required maxLength={2000} onChange={(event) => setSummary(event.target.value)} />}</PlaybookField>}
       {write.isError && <PlaybookError error={write.error} retry={onReload} />}
       <DialogFooter><QuietTextAction type="button" disabled={write.isPending} onClick={onClose}>Cancel</QuietTextAction><QuietPrimaryAction type="submit" disabled={write.isPending || (operation !== 'resume' && !summary.trim())}>{write.isPending ? 'Saving…' : operation === 'close' ? 'Record and close' : operation === 'pause' ? 'Pause signal' : 'Resume signal'}</QuietPrimaryAction></DialogFooter>

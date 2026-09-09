@@ -1,6 +1,6 @@
 import { useDeferredValue } from 'react';
 import { Link } from '@tanstack/react-router';
-import { QuietEmptyState, QuietPageHeader, QuietPageViewport, QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietFilterDropdown, QuietEmptyState, QuietPageHeader, QuietPageViewport, QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -11,7 +11,7 @@ import { useTitle } from '@/hooks/useTitle';
 import { signalCategories } from '@/lib/crmSituationPresentation';
 import { inboxFields, inboxNavigation, inboxStatus, type SignalsSearch } from '@/lib/crmSignalInboxQueryBuilder';
 import type { CRMSignalInboxItem } from '@/lib/crmSignalInboxTypes';
-import { PlaybookError, PlaybookHelp, PlaybookLoading, PlaybookPagination, PlaybookSelect } from '@/components/crm/playbooks/PlaybookUI';
+import { PlaybookError, PlaybookHelp, PlaybookLoading, PlaybookPagination } from '@/components/crm/playbooks/PlaybookUI';
 import { SignalDrawer } from '@/components/crm/signals/SignalDrawer';
 import { RecommendationDrawer } from '@/components/crm/signals/RecommendationDrawer';
 import { SignalGroupDrawer } from '@/components/crm/signals/SignalGroupDrawer';
@@ -53,14 +53,14 @@ function SignalsList({ ws, slug, canEdit, search, onChange }: Props & { ws: stri
     </Tabs>
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-quiet-divider-strong py-3">
       <QuietSearchInput aria-label="Search signals" placeholder="Search customers or signals…" maxLength={500} value={search.q || ''} onChange={(event) => change({ q: event.target.value }, true)} containerClassName="w-64 max-w-full" />
-      <PlaybookSelect label="Assignment" value={scope} onChange={(value) => change({ scope: value })} options={inboxNavigation.scope} />
-      <PlaybookSelect label="Signal status" value={state} onChange={(value) => change({ state: value })} options={inboxNavigation.state} />
+      <QuietFilterDropdown label="Assignment" value={scope} onChange={(value) => change({ scope: value })} options={inboxNavigation.scope} />
+      <QuietFilterDropdown label="Signal status" value={state} onChange={(value) => change({ state: value })} options={inboxNavigation.state} />
       {(['priority', 'evidence_review', 'attention'] as const).map((key) => {
         const field = inboxFields.find((entry) => entry.field === key)!;
-        return <PlaybookSelect key={key} label={field.label} value={filters[key] || 'all'} onChange={(value) => change({ [key]: value === 'all' ? undefined : value })} options={[{ value: 'all', label: key === 'priority' ? 'Any priority' : key === 'evidence_review' ? 'Any evidence review' : 'Any attention' }, ...field.options!]} />;
+        return <QuietFilterDropdown key={key} label={field.label} value={filters[key] || 'all'} onChange={(value) => change({ [key]: value === 'all' ? undefined : value })} options={[{ value: 'all', label: key === 'priority' ? 'Any priority' : key === 'evidence_review' ? 'Any evidence review' : 'Any attention' }, ...field.options!]} />;
       })}
-      <PlaybookSelect label="Recommendation type" value={filters.action_type || 'all'} onChange={(value) => change({ action_type: value === 'all' ? undefined : value })} options={[{ value: 'all', label: 'Any recommendation type' }, ...inboxNavigation.action_type]} />
-      <span className="inline-flex items-center"><PlaybookSelect label="Sort signals" value={filters.sort || 'priority'} onChange={(value) => change({ sort: value })} options={inboxNavigation.sort} /><PlaybookHelp label="About queue filters">Recommendation type matches actions awaiting approval. Evidence review tracks whether source information has been reviewed; it does not approve an action. Recommendation confidence sorts by the AI’s confidence in a pending recommendation, not business impact.</PlaybookHelp></span>
+      <QuietFilterDropdown label="Recommendation type" value={filters.action_type || 'all'} onChange={(value) => change({ action_type: value === 'all' ? undefined : value })} options={[{ value: 'all', label: 'Any recommendation type' }, ...inboxNavigation.action_type]} />
+      <div className="inline-flex items-center"><QuietFilterDropdown label="Sort signals" value={filters.sort || 'priority'} onChange={(value) => change({ sort: value })} options={inboxNavigation.sort} /><PlaybookHelp label="About queue filters">Recommendation type matches actions awaiting approval. Evidence review tracks whether source information has been reviewed; it does not approve an action. Recommendation confidence sorts by the AI’s confidence in a pending recommendation, not business impact.</PlaybookHelp></div>
       {filtered && <QuietTextAction onClick={clear}>Clear filters</QuietTextAction>}
     </div>
     {list.isPending ? <PlaybookLoading /> : list.isError ? <PlaybookError error={list.error} retry={() => void list.refetch()} /> : <>
