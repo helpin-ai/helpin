@@ -3,7 +3,7 @@ import { ReportsPage } from '@/pages/pm/Reports'
 
 export const Route = createFileRoute('/_authenticated/w/$slug/pm/reports')({
   component: () => (
-    <div className="h-full overflow-auto p-4 md:p-6">
+    <div className="h-full min-h-0 overflow-hidden">
       <ReportsPage />
     </div>
   ),
