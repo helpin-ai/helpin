@@ -106,7 +106,7 @@ function SuggestionReview({ ws, memberId, slug, canEdit, canReadCRM, item, onClo
             <p className="whitespace-pre-wrap text-sm leading-7 text-quiet-text-primary">{data.draft_body}</p>
           </>}
       </div>
-      {data && !query.isError && <div className="shrink-0 border-t border-quiet-divider-strong px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      {data && !query.isError && <div className="shrink-0 border-t border-quiet-divider-strong px-6 py-4 pb-[calc(6rem+env(safe-area-inset-bottom))]">
         {decisionError && <p role="alert" className="mb-3 text-sm text-quiet-accent">{decisionError}</p>}
         {canEdit ? <><div className="flex items-center justify-between gap-4"><QuietTextAction disabled={decision.isPending || query.isFetching} onClick={() => { setDecisionError(''); decision.mutate('dismiss'); }}>Dismiss</QuietTextAction><Button variant="outline" size="sm" disabled={decision.isPending || query.isFetching || !data.revision} onClick={() => { setDecisionError(''); decision.mutate('accept'); }}>{decision.isPending ? 'Saving…' : 'Mark reviewed'}</Button></div><p className="mt-3 text-xs text-quiet-text-tertiary">Marking reviewed records your review. Nothing is sent.</p></> : <p className="text-xs text-quiet-text-tertiary">You can read and copy this draft. PM edit access is needed to mark it reviewed or dismiss it.</p>}
       </div>}
