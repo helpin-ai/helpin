@@ -33,9 +33,10 @@ function PlaybooksList({ ws, slug, canAdmin }: { ws: string; slug: string; canAd
   const navigate = useNavigate();
   const filtered = !!search || state !== 'all';
   const clear = () => { setSearch(''); setState('all'); setPage(1); };
-  return <QuietPageViewport>
-    <QuietPageHeader title="Playbooks" description="Repeatable sales and success processes, with clear ownership and outcomes." actions={canAdmin && <QuietPrimaryAction onClick={() => setCreating(true)}>Create playbook</QuietPrimaryAction>} />
-    <div className="mt-6 flex flex-wrap items-center gap-3 border-b border-quiet-divider-strong pb-3">
+  return <div className="flex h-full min-h-0 flex-col">
+    <QuietPageHeader variant="shell" title="Playbooks" description="Repeatable sales and success processes, with clear ownership and outcomes." actions={canAdmin && <QuietPrimaryAction onClick={() => setCreating(true)}>Create playbook</QuietPrimaryAction>} />
+    <QuietPageViewport className="min-h-0 flex-1">
+    <div className="flex flex-wrap items-center gap-3 border-b border-quiet-divider-strong pb-3">
       <QuietSearchInput aria-label="Search playbooks" placeholder="Search playbooks…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} containerClassName="w-64 max-w-full" />
       <PlaybookSelect label="Playbook status" value={state || 'all'} onChange={(value) => { setState(value as PlaybookListFilters['state']); setPage(1); }} options={[{ value: 'all', label: 'All statuses' }, { value: 'draft', label: 'Draft' }, { value: 'accepting', label: 'Accepting signals' }, { value: 'stopped', label: 'Enrollment stopped' }]} />
       {filtered && <QuietTextAction onClick={clear}>Clear filters</QuietTextAction>}
@@ -51,8 +52,9 @@ function PlaybooksList({ ws, slug, canAdmin }: { ws: string; slug: string; canAd
       </Table> : <QuietEmptyState title={filtered ? 'No matching playbooks' : page > 1 ? 'No playbooks on this page' : 'Give your team a repeatable way forward'} description={filtered ? 'Try another name or status.' : 'Define the customer outcome, milestones, and who steps in when help is needed.'} action={filtered ? <QuietTextAction onClick={clear}>Clear filters</QuietTextAction> : undefined} />}
       <PlaybookPagination page={page} total={list.data.total} pageSize={list.data.page_size} onChange={setPage} busy={list.isFetching} />
     </>}
+    </QuietPageViewport>
     {creating && <CreatePlaybook ws={ws} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); void navigate({ to: '/w/$slug/crm/playbooks/$playbookId', params: { slug, playbookId: id } }); }} />}
-  </QuietPageViewport>;
+  </div>;
 }
 
 function CreatePlaybook({ ws, onClose, onCreated }: { ws: string; onClose: () => void; onCreated: (id: string) => void }) {

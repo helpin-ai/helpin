@@ -40,12 +40,13 @@ function SignalsList({ ws, slug, canEdit, search, onChange }: Props & { ws: stri
   const select = (item?: Pick<CRMSignalInboxItem, 'id' | 'kind'>) => onChange({ ...search, signal: item?.kind === 'situation' ? item.id : undefined, recommendation: item?.kind === 'recommendation' ? item.id : undefined, group: item?.kind === 'evidence' ? item.id : undefined });
   const clear = () => onChange({ signal: search.signal, recommendation: search.recommendation, group: search.group, scope: 'all', state: 'all', category: 'all', page: 1 });
   const filtered = !!search.q || scope !== 'all' || state !== 'all' || category !== 'all' || !!filters.priority || !!filters.evidence_review || !!filters.attention || !!filters.action_type;
-  return <QuietPageViewport>
-    <QuietPageHeader title="Signals" description="Know what needs attention. Agree the next step." actions={<div className="flex flex-wrap items-center gap-4 text-sm">
+  return <div className="flex h-full min-h-0 flex-col">
+    <QuietPageHeader variant="shell" title="Signals" description="Know what needs attention. Agree the next step." actions={<div className="flex flex-wrap items-center gap-4 text-sm">
       <Link to="/w/$slug/crm/insights" params={{ slug }} search={{ view: 'evidence' }} className="text-quiet-text-secondary hover:text-quiet-text-primary">Evidence</Link>
       <Link to="/w/$slug/crm/playbooks" params={{ slug }} className="text-quiet-text-secondary hover:text-quiet-text-primary">Playbooks</Link>
     </div>} />
-    <Tabs value={category} onValueChange={(value) => change({ category: value })} className="mt-6">
+    <QuietPageViewport className="min-h-0 flex-1">
+    <Tabs value={category} onValueChange={(value) => change({ category: value })}>
       <TabsList variant="quiet" aria-label="Signal category" className="h-auto w-full justify-start overflow-x-auto">
         {signalCategories.map((entry) => <TabsTrigger key={entry.value} value={entry.value} className="shrink-0 gap-2">{entry.label}<span className="text-xs tabular-nums text-quiet-text-tertiary">{list.isSuccess ? list.data.category_counts[entry.value] : '—'}</span></TabsTrigger>)}
       </TabsList>
@@ -76,6 +77,7 @@ function SignalsList({ ws, slug, canEdit, search, onChange }: Props & { ws: stri
       </Table> : <QuietEmptyState title={filtered ? 'No signals match this view' : 'No signals yet'} description={filtered ? 'Try another category, assignment, or status.' : 'Customer activity and recommendations will appear here when there is something to follow up on.'} action={filtered ? <QuietTextAction onClick={clear}>Show all signals</QuietTextAction> : <Link className="text-sm text-quiet-accent hover:underline" to="/w/$slug/crm/insights" params={{ slug }} search={{ view: 'evidence' }}>Explore customer evidence</Link>} />}
       <PlaybookPagination page={filters.page || 1} total={list.data.total} pageSize={list.data.page_size} onChange={(page) => onChange({ ...search, page })} busy={list.isFetching} />
     </>}
+    </QuietPageViewport>
     {search.signal ? <SignalDrawer key={search.signal} ws={ws} slug={slug} signalId={search.signal} canEdit={canEdit} onClose={() => select()} /> : search.recommendation ? <RecommendationDrawer key={search.recommendation} ws={ws} slug={slug} id={search.recommendation} canEdit={canEdit} onClose={() => select()} onSignal={(id) => select({ id, kind: 'situation' })} /> : search.group && <SignalGroupDrawer key={search.group} ws={ws} slug={slug} id={search.group} canEdit={canEdit} onClose={() => select()} />}
-  </QuietPageViewport>;
+  </div>;
 }
