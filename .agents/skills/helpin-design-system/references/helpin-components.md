@@ -69,11 +69,13 @@ Use the shared option-selection implementation across list and board views, tabl
 - Dropdown content uses the centralized **12.2px** typography token. Keep the shared content wrapper and its `data-dropdown-content` marker; do not add page-specific font sizes or rebuild its search spacing.
 - Leave `searchMode="auto"` as the default: hide search when every option fits without scrolling and show it when the list overflows. The shared implementation measures available space; do not use an item-count threshold. An active query must remain visible when its results fit.
 - Dropdown search uses the shared quiet `CommandInput` presentation, including the gap before the first option. Do not insert a second `QuietSearchInput` into the menu. Use `searchMode="always"` when typing is needed independently of overflow, such as remote lookup or creating an option; use `"off"` only for an intentionally non-searchable control.
-- Use stable domain IDs as option values and human-readable labels/keywords for search. Preserve avatars, epic colors and lifecycle groups, disabled/partial selections, and explicit None/Unassigned choices.
+- Use stable domain IDs as option values and human-readable labels/keywords for search. Preserve avatars, epic colors and lifecycle groups, disabled/partial selections, and explicit None/Unassigned choices. Match the reference filter category icons and semantic option icons/colors in both toolbar menus and applied-filter editors; carry `icon`/`leading` and `labelClassName` through adapters into `PMFilterControls`.
 - Keep persistence and selection semantics in the caller: single versus multiple selection, clearing, permission checks, and bulk edit's staged Cancel/Apply behavior. Preserve keyboard navigation and focus return, including table cells that replace the trigger after selection.
 - Keep specialized date/calendar, color, and action menus on their behavior-specific components. This dropdown standard covers option selection, not every overlay.
 
 ### Show applied list filters
+
+For collection pages such as Tasks, Epics, and Objectives, use a full-height flex shell with a non-scrolling `QuietPageHeader variant="shell"` and its divider. Place the full-width search/filter toolbar and applied-filter row below it, outside the content scroller. Only the table, board, or cards scroll. Do not wrap the header and toolbar in `QuietPageViewport` or a centered content-width container.
 
 Use `PMFilterBar` and `PMFilterPill` from `@/components/pm/PMFilterControls` for the established Tasks/Epics presentation. Despite the module path, these components accept generic filter definitions and values. Reuse their presentation when adding comparable filters elsewhere; retain any existing query-builder operators and domain semantics.
 
@@ -86,10 +88,26 @@ Use `PMFilterBar` and `PMFilterPill` from `@/components/pm/PMFilterControls` for
 
 Reference compositions: `frontend/src/pages/pm/EpicFilterBar.tsx`, `frontend/src/components/pm/TaskFilters.tsx`, and `frontend/src/components/pm/TaskListGroupingDropdown.tsx`.
 
+## PM detail composition
+
+Use `frontend/src/pages/pm/EpicDetail.tsx` as the visual reference for PM detail headers, property rails, and description editing. Preserve each entity's navigation contract: Objectives retains its card index and full detail page; adopting this composition does not turn a page into a sheet.
+
+- **Back navigation:** pass both `onBack` and an entity-specific `backLabel` to `QuietBreadcrumbs`, alongside its breadcrumb items. A clickable “Objectives” or “Epics” label does not replace the visible back arrow. Keep it in loading and error headers too.
+- **Title:** use `QuietTitleInput presentation="header"` inside a `flex min-w-0 items-center` wrapper in the header's `title` slot. Match Epic's `max-w-[42rem] border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary`. The wrapper matters: `QuietDetailHeader` gives direct children `max-w-full`, which can override a direct input's width cap. The underline is invisible at rest and bounded to the title control on hover/focus; it must not extend across the header. Match the header and body insets (`lg:px-10` on the reference page).
+- **Header actions:** keep `SaveIndicator presentation="quiet"` below the actions and use `FollowButton presentation="detail-header"`. Reuse the existing responsive detail actions for other controls.
+- **PM properties:** use `DetailMetadataRow` from `@/components/pm/DetailMetadataRow`, shared by Epic and Objective detail. Its parent uses `grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5`. The component owns 12px muted labels, matching icons, optional label tooltips, and value typography. Do not substitute the larger generic `QuietPropertyRow` when matching this PM rail. Preserve the reference rail's padding and section dividers.
+- **Colored options:** use `SidebarPopoverSelect` and pass each option's semantic color through `className`, as well as coloring the selected trigger. A colored trigger with uncolored menu choices is incomplete. Objective health uses the same green/yellow/red treatment as Epic health, while retaining Objective's supported values; do not add unsupported states such as “No health” merely to copy the menu.
+- **Description display/editing:** use `RichTextMentionContent variant="pm"`, `DetailDescriptionEditButton` inside `group/desc`, and `TiptapEditor variant="divider" contentVariant="pm"` with `min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:p-0`. Wrap the editor in `group/description-editor` and use `DetailDescriptionEditorActions` for Cancel/Done. Do not recreate an inline text edit link, a separate Done button, or local editor chrome.
+- **Description behavior:** retain permissions, mentions, uploads, and attachment handling. Cancel restores the description captured at the start of editing, even if autosave has already run. Do not delete attachments needed by that snapshot before the edit is accepted. Failed saves retain the draft and allow retry.
+- **Epic markers:** when a compact row shows an epic’s color beside its name, use `EpicColorSwatch`, as in the linked-epic rows on Objective cards and detail pages, including the link-epic picker. Do not substitute a colored outline icon. Keep existing `EpicBadge` presentations where the name itself is a colored badge.
+- **Progress:** preserve existing bars, labels, numbers, and calculations when replacing cards or summaries with shared metrics. On Objective detail, show epic completion and elapsed time toward the target date as bars; keep the target-date bar conditional on a date being set. A percentage or date alone does not replace these indicators.
+- **Responsive layout:** desktop main content and the rail may scroll separately. On narrow screens, use one vertically scrollable column whose sections retain their content height. Do not let constrained grid rows overlap the rail with the main content. Verify by scrolling to the final property, not only by checking the initial viewport.
+
 ## Canonical reference surfaces
 
 - Task sheet: `TaskDetailPanel`, opened through `GlobalTaskPanel`.
 - Epic detail: `EpicDetailPage`.
+- Objective cards and full detail page: `ObjectivesPage` and `ObjectiveDetailPage`; preserve the card layout and the detail’s existing route.
 - CRM identity/detail: `ContactDetailPage` and `CompanyDetailPage`.
 - Automation routes: Flows, Activity, Agents, Trigger Catalog, Skill Catalog, and Tool Catalog.
 
