@@ -235,8 +235,11 @@ test('compact toolbar keeps three selectors, explains Auto, and preserves sortin
   for (const name of ['Priority', 'Evidence review', 'Attention needed', 'Recommendation type']) await expect(page.getByRole('button', { name: new RegExp(`^${name}:`) })).toHaveCount(0);
   const sort = page.getByRole('button', { name: /^Sort signals:/ });
   await expect(sort).toHaveText('Auto');
-  await page.getByRole('button', { name: 'About Auto sorting' }).focus();
+  await expect(page.getByRole('button', { name: 'About Auto sorting' })).toHaveCount(0);
+  await sort.click();
+  await page.getByRole('option', { name: /^Auto/ }).hover();
   await expect(page.getByRole('tooltip')).toContainText('Signals ranked automatically by importance, recency, and evidence strength.');
+  await page.getByRole('option', { name: /^Auto/ }).click();
   for (const [label, value] of [['Newest first', 'newest'], ['Oldest first', 'oldest'], ['Auto', 'priority']]) {
     await sort.click();
     await expect(page.getByRole('option')).toHaveCount(3);
