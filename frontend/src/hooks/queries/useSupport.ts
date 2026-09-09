@@ -436,7 +436,7 @@ export function useMailboxMembers(workspaceId: string, mailboxId?: string | null
   });
 }
 
-export function useSupportEmailRoutes(workspaceId: string) {
+export function useSupportEmailRoutes(workspaceId: string, setupOpen = false) {
   return useQuery({
     queryKey: queryKeys.support.emailRoutes(workspaceId),
     queryFn: async (): Promise<SupportEmailRoute[]> => unwrap(await supportService.listEmailRoutes(workspaceId)),
@@ -444,6 +444,7 @@ export function useSupportEmailRoutes(workspaceId: string) {
     staleTime: 15_000,
     refetchInterval: (query) => {
       const routes = query.state.data;
+      if (setupOpen && routes?.some(route => !route.forwarding_verified_at)) return 3_000;
       const waiting = routes?.some((route) => {
         if (!route.verification_sent_at) return false;
         const verificationSentAt = new Date(route.verification_sent_at).getTime();
@@ -554,7 +555,9 @@ export function useSendSupportEmailRouteTest(workspaceId: string) {
   return useMutation({
     mutationFn: ({ routeId, sourceAddress }: { routeId: string; sourceAddress: string }) =>
       supportService.sendEmailRouteTest(workspaceId, routeId, sourceAddress).then(unwrap),
-    onSuccess: () => {
+    onSuccess: (updatedRoute) => {
+      queryClient.setQueryData<SupportEmailRoute[]>(queryKeys.support.emailRoutes(workspaceId), routes =>
+        routes?.map(route => route.id === updatedRoute.id ? updatedRoute : route));
       queryClient.invalidateQueries({ queryKey: queryKeys.support.emailRoutes(workspaceId) });
     },
     onError: (error: Error) => {
