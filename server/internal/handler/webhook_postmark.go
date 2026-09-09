@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,9 +14,17 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
+type postmarkEmailProcessor interface {
+	ProcessInboundEmail(context.Context, model.PostmarkInboundPayload, string) error
+	ProcessOpenEvent(context.Context, model.PostmarkOpenPayload, string) error
+	ProcessDeliveryEvent(context.Context, model.PostmarkDeliveryPayload, string) error
+	ProcessBounceEvent(context.Context, model.PostmarkBouncePayload, string) error
+	ProcessSpamComplaintEvent(context.Context, model.PostmarkSpamComplaintPayload, string) error
+}
+
 // PostmarkInboundHandler handles Postmark inbound webhooks.
 type PostmarkInboundHandler struct {
-	emailFallbackService *service.EmailFallbackService
+	emailFallbackService postmarkEmailProcessor
 	webhookSecrets       []string
 }
 
@@ -26,10 +36,11 @@ func NewPostmarkInboundHandler(emailFallbackService *service.EmailFallbackServic
 			normalizedSecrets = append(normalizedSecrets, trimmed)
 		}
 	}
-	return &PostmarkInboundHandler{
-		emailFallbackService: emailFallbackService,
-		webhookSecrets:       normalizedSecrets,
+	h := &PostmarkInboundHandler{webhookSecrets: normalizedSecrets}
+	if emailFallbackService != nil {
+		h.emailFallbackService = emailFallbackService
 	}
+	return h
 }
 
 // PostmarkInbound handles POST /api/webhooks/postmark/inbound.
@@ -62,6 +73,10 @@ func (h *PostmarkInboundHandler) PostmarkInbound(w http.ResponseWriter, r *http.
 	if h.emailFallbackService != nil {
 		if err := h.emailFallbackService.ProcessInboundEmail(r.Context(), payload, string(body)); err != nil {
 			slog.Warn("postmark inbound processing failed", "error", err, "mailbox_hash", payload.MailboxHash)
+			if errors.Is(err, service.ErrInboundEmailAIDispatchRetry) {
+				writeError(w, http.StatusServiceUnavailable, "inbound email processing temporarily unavailable")
+				return
+			}
 		} else {
 			slog.InfoContext(r.Context(), "postmark inbound webhook processed",
 				"message_id", strings.TrimSpace(payload.MessageID),

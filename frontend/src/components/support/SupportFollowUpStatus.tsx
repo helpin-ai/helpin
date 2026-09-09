@@ -26,15 +26,16 @@ export function SupportFollowUpStatus({ conversation }: { conversation: SupportC
   if (!followUp) {
     return conversation.ai_resolution_type === 'assumed' ? <p className="px-3 py-3 text-xs text-quiet-secondary">Closed after no reply</p> : null;
   }
-  const deadline = followUp.status === 'waiting' ? followUp.close_at : followUp.status === 'scheduled' ? followUp.due_at : undefined;
+  const waitingForSecond = followUp.status === 'waiting' && (followUp.sequence_version ?? 1) >= 2 && !followUp.second_sent_at;
+  const deadline = waitingForSecond ? followUp.due_at : followUp.status === 'waiting' ? followUp.close_at : followUp.status === 'scheduled' ? followUp.due_at : undefined;
   return (
     <div className="border-b border-quiet-divider px-3 py-3 text-xs text-quiet-secondary" role="status">
       <p className="font-medium">{labels[followUp.status] ?? 'AI follow-up'}</p>
-      {followUp.status === 'handoff' && followUp.reason && <p className="mt-1 break-words">{followUp.reason}</p>}
-      {deadline && <p className="mt-1">{followUp.status === 'waiting' ? 'Closes if no reply by ' : 'Scheduled for '}<time dateTime={deadline}>{new Date(deadline).toLocaleString()}</time></p>}
+      {(followUp.status === 'failed' || followUp.status === 'handoff') && followUp.reason && <p className="mt-1 break-words">{followUp.reason}</p>}
+      {deadline && <p className="mt-1">{waitingForSecond ? 'Second follow-up scheduled for ' : followUp.status === 'waiting' ? 'Closes if no reply by ' : 'First follow-up scheduled for '}<time dateTime={deadline}>{new Date(deadline).toLocaleString()}</time></p>}
       {(followUp.status === 'failed' || followUp.status === 'handoff') && <p className="mt-1">A teammate should review this conversation. It will not close automatically.</p>}
       {has('support.edit') && ['scheduled', 'assessing', 'waiting'].includes(followUp.status) && <QuietTextAction className="mt-2" disabled={cancel.isPending} onClick={() => cancel.mutate()}>{cancel.isPending ? 'Cancelling…' : 'Cancel follow-up'}</QuietTextAction>}
-      {followUp.status === 'waiting' && <p className="mt-1">A customer reply or teammate takeover cancels closure.</p>}
+      {followUp.status === 'waiting' && <p className="mt-1">A customer reply or teammate takeover cancels the remaining follow-ups and closure.</p>}
     </div>
   );
 }

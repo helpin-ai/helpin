@@ -4,6 +4,13 @@ import "time"
 
 // SupportAIFollowUp is durable work for one unanswered public AI message.
 type SupportAIFollowUp struct {
+	SequenceVersion    int        `json:"sequence_version"`
+	SecondDelayHours   int        `json:"-"`
+	SecondMessageID    *string    `json:"second_message_id,omitempty" gorm:"type:uuid"`
+	SecondSentAt       *time.Time `json:"second_sent_at,omitempty"`
+	ClosingNotice      string     `json:"-"`
+	AssessmentAttempts int        `json:"-"`
+
 	StartedAt       *time.Time `json:"-"`
 	ID              string     `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID     string     `json:"-" gorm:"type:uuid;not null"`

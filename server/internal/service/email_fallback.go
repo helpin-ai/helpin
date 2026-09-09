@@ -910,7 +910,7 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 			"conversation_id", strings.TrimSpace(existing.ConversationID),
 			"email_log_id", existing.ID,
 		)
-		return nil
+		return s.retryInboundCustomerAIRequest(ctx, existing)
 	}
 
 	mailboxHash := mailboxHashFromInboundPayload(payload)
@@ -1097,6 +1097,19 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	}
 	if isTeammateReply {
 		messageMetadata = mergeExternalEmailReplyMetadata(messageMetadata)
+	} else if !isProviderForwardingConfirmation(payload) {
+		metadata := map[string]any{}
+		if err := json.Unmarshal([]byte(messageMetadata), &metadata); err != nil && messageMetadata != "" {
+			return fmt.Errorf("decode inbound email metadata: %w", err)
+		}
+		// Persist dispatch intent so webhook retries can recover a failed publish
+		// without recreating the customer message or rerouting the conversation.
+		metadata["email_ai_request"] = true
+		encoded, err := json.Marshal(metadata)
+		if err != nil {
+			return fmt.Errorf("encode inbound email metadata: %w", err)
+		}
+		messageMetadata = string(encoded)
 	}
 	senderType := "customer"
 	var senderUserID *string
@@ -1202,11 +1215,13 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		if shouldReopenCustomerReply {
 			reopenFlowState := supportEmailReopenFlowState(conv)
 			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
-				"status":      model.SupportConversationStatusOpen,
-				"flow_state":  reopenFlowState,
-				"resolved_at": nil,
-				"closed_at":   nil,
-				"updated_at":  s.now(),
+				"status":             model.SupportConversationStatusOpen,
+				"flow_state":         reopenFlowState,
+				"resolved_at":        nil,
+				"closed_at":          nil,
+				"ai_resolved_at":     nil,
+				"ai_resolution_type": nil,
+				"updated_at":         s.now(),
 			}); err != nil {
 				return err
 			}
@@ -1215,6 +1230,8 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			conv.FlowState = &flowState
 			conv.ResolvedAt = nil
 			conv.ClosedAt = nil
+			conv.AIResolvedAt = nil
+			conv.AIResolutionType = nil
 			if wasResolved {
 				if err := createEmailReopenedSystemMessage(ctx, msgRepoTx, conv); err != nil {
 					return err
@@ -1256,7 +1273,11 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 				"message_id", strings.TrimSpace(payload.MessageID),
 				"conversation_id", conv.ID,
 			)
-			return nil
+			existing, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, strings.TrimSpace(payload.MessageID))
+			if err != nil {
+				return err
+			}
+			return s.retryInboundCustomerAIRequest(ctx, existing)
 		}
 		return txErr
 	}
@@ -1292,6 +1313,64 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			EntityID:    conv.ID,
 			WorkspaceID: conv.WorkspaceID,
 		})
+	}
+	if !isTeammateReply {
+		return s.publishInboundCustomerAIRequest(ctx, conv.WorkspaceID, conv.ID, createdMsg)
+	}
+	return nil
+}
+
+// ErrInboundEmailAIDispatchRetry tells the webhook handler that a saved customer
+// message still needs AI dispatch and the provider should retry delivery.
+var ErrInboundEmailAIDispatchRetry = errors.New("inbound email AI dispatch needs retry")
+
+// Inbound email has already been persisted and deduplicated before automation.
+// Keep the existing mailbox; this is a reply, not a new routing decision.
+func (s *EmailFallbackService) retryInboundCustomerAIRequest(ctx context.Context, logRow *model.SupportEmailLog) error {
+	if logRow == nil || logRow.Direction != "inbound" {
+		return nil
+	}
+	for _, id := range logRow.MessageIDs {
+		msg, err := s.messageRepo.GetByID(ctx, id)
+		if err != nil {
+			return fmt.Errorf("%w: load saved inbound customer message: %w", ErrInboundEmailAIDispatchRetry, err)
+		}
+		if msg == nil || msg.WorkspaceID != logRow.WorkspaceID || msg.ConversationID != logRow.ConversationID {
+			continue
+		}
+		if err := s.publishInboundCustomerAIRequest(ctx, logRow.WorkspaceID, logRow.ConversationID, msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *EmailFallbackService) publishInboundCustomerAIRequest(ctx context.Context, workspaceID, conversationID string, msg *model.SupportMessage) error {
+	var metadata struct {
+		AIRequest bool `json:"email_ai_request"`
+	}
+	if msg == nil || msg.SenderType != "customer" || msg.IsInternal || json.Unmarshal([]byte(msg.Metadata), &metadata) != nil || !metadata.AIRequest {
+		return nil
+	}
+	if s.supportInboxService == nil || s.supportInboxService.supportAIService == nil || s.installRepo == nil {
+		return nil
+	}
+	inst, err := s.installRepo.GetByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return fmt.Errorf("%w: load inbound email AI settings: %w", ErrInboundEmailAIDispatchRetry, err)
+	}
+	if inst == nil || !shouldAutomaticallyProcessSupportAI(parseSettings(inst.Settings)) {
+		return nil
+	}
+	conv, err := s.convRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+	if err != nil {
+		return fmt.Errorf("%w: load inbound email AI ownership: %w", ErrInboundEmailAIDispatchRetry, err)
+	}
+	if conv == nil || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman || conv.PrimaryRecipientState == model.SupportPrimaryRecipientStateUnconfirmed || isEmailFallbackInboundTerminalStatus(conv.Status) {
+		return nil
+	}
+	if err := s.supportInboxService.supportAIService.PublishAIRequest(ctx, workspaceID, conversationID, msg.ID, msg.Content); err != nil {
+		return fmt.Errorf("%w: publish inbound email AI request: %w", ErrInboundEmailAIDispatchRetry, err)
 	}
 	return nil
 }
@@ -1926,7 +2005,13 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 	outboundFrom := s.resolveOutboundFromAddress(ctx, conv)
 	fromAddress := outboundFrom.Email
 	fromDisplayName := fmt.Sprintf("%s - %s", agentName, workspaceName)
-	from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, fromAddress)
+	var replyMetadata struct {
+		Kind string `json:"ai_reply_kind"`
+	}
+	if json.Unmarshal([]byte(pending[len(pending)-1].Metadata), &replyMetadata) == nil && replyMetadata.Kind == "inactivity_follow_up" && workspace != nil && strings.TrimSpace(workspace.Name) != "" {
+		fromDisplayName = strings.TrimSpace(workspace.Name) + " Support"
+	}
+	from := fmt.Sprintf("%s <%s>", fromDisplayName, fromAddress)
 
 	logID := uuid.NewString()
 	rfcMessageID := fmt.Sprintf("<helpin-%s@%s>", logID, s.replyDomain)
@@ -1966,8 +2051,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		conversationID,
 		from,
 		fromAddress,
-		agentName,
-		workspaceName,
+		fromDisplayName,
 		strings.TrimSpace(*conv.CustomerEmail),
 		subject,
 		htmlBody,
@@ -3023,8 +3107,7 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 	conversationID string,
 	from string,
 	fromAddress string,
-	agentName string,
-	workspaceName string,
+	fromDisplayName string,
 	to string,
 	subject string,
 	htmlBody string,
@@ -3047,7 +3130,7 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 	if fallbackFromAddress == "" || strings.EqualFold(fallbackFromAddress, strings.TrimSpace(fromAddress)) {
 		return "", fromAddress, "", err
 	}
-	fallbackFrom := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, fallbackFromAddress)
+	fallbackFrom := fmt.Sprintf("%s <%s>", fromDisplayName, fallbackFromAddress)
 	s.logger.WarnContext(ctx, "email fallback branded sender rejected, retrying with verified sender",
 		"error", err,
 		"workspace_id", workspaceID,
@@ -4008,11 +4091,17 @@ func isEmailFallbackInboundTerminalStatus(status string) bool {
 // supportEmailReopenFlowState computes the flow state a conversation should
 // transition to when an inbound customer email reply makes it actionable again.
 func supportEmailReopenFlowState(conv *model.SupportConversation) string {
-	if conv != nil && conv.HumanTakeover != nil && *conv.HumanTakeover {
-		return model.SupportConversationFlowStateAssignedToHuman
-	}
 	if conv == nil {
 		return model.SupportConversationFlowStateWaitingForHuman
+	}
+	if supportConversationHumanOwned(conv) || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman {
+		return model.SupportConversationFlowStateAssignedToHuman
+	}
+	if conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" {
+		return model.SupportConversationFlowStateWaitingForHuman
+	}
+	if strings.TrimSpace(derefString(conv.AssignedAgentID)) != "" || derefString(conv.FlowState) == model.SupportConversationFlowStateAIHandling {
+		return model.SupportConversationFlowStateAIHandling
 	}
 	return defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID)
 }

@@ -21,15 +21,15 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); client.clear(); container.remove(); vi.unstubAllGlobals(); });
 
-async function setup(enabled = false) {
-  const props = { workspaceId: 'ws', enabled, delayHours: 24, closeHours: 48, maxPerConversation: 2, onEnabledChange: vi.fn(), onDelayChange: vi.fn(), onCloseChange: vi.fn(), onMaxChange: vi.fn() };
+async function setup(enabled = true) {
+  const props = { enabled, delayHours: 24, closeHours: 1, secondDelayHours: 24, onEnabledChange: vi.fn(), onDelayChange: vi.fn(), onCloseChange: vi.fn(), onSecondDelayChange: vi.fn() };
   await act(async () => root.render(<QueryClientProvider client={client}><AIFollowUpSettings {...props} /></QueryClientProvider>));
   return props;
 }
 
 describe('AI follow-up settings', () => {
-  it('keeps follow-ups off until explicitly enabled', async () => {
-    const props = await setup();
+  it('allows follow-ups to be disabled', async () => {
+    const props = await setup(false);
     const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
     expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(container.querySelector('#ai-follow-up-delay')).toBeNull();
@@ -37,22 +37,21 @@ describe('AI follow-up settings', () => {
     expect(props.onEnabledChange).toHaveBeenCalledWith(true);
     expect(preview).not.toHaveBeenCalled();
   });
-  it('previews backlog without enabling the policy', async () => {
-    preview.mockResolvedValue({ data: { candidates: 12, daily_limit: 25, lookback_days: 30, sample: [{ id: 'conv', display_id: 42, subject: 'Gmail reconnect' }] }, error: null });
-    const props = await setup();
-    const button = Array.from(container.querySelectorAll('button')).find(item => item.textContent === 'Preview existing conversations')!;
-    await act(async () => { button.click(); });
-    await vi.waitFor(() => expect(container.textContent).toContain('12 conversations could be assessed'));
-    expect(container.textContent).toContain('#42 Gmail reconnect');
-    expect(props.onEnabledChange).not.toHaveBeenCalled();
+  it('removes the existing conversation preview and lifetime limit', async () => {
+    await setup();
+    expect(container.textContent).not.toContain('Preview existing conversations');
+    expect(container.querySelector('#ai-follow-up-max')).toBeNull();
   });
   it('shows accessible timing inputs and the closure notice', async () => {
     await setup(true);
     const close = container.querySelector<HTMLInputElement>('#ai-follow-up-close')!;
-    expect(close.value).toBe('48');
+    expect(close.value).toBe('1');
     expect(close.min).toBe('1');
     expect(close.max).toBe('720');
-    expect(container.querySelector('label[for="ai-follow-up-close"]')?.textContent).toBe('Wait after follow-up (hours)');
-    expect(container.textContent).toContain('48 hours without a reply');
+    expect(container.querySelector('label[for="ai-follow-up-close"]')?.textContent).toBe('Close after final follow-up (hours)');
+    expect(container.querySelector<HTMLInputElement>('#ai-follow-up-second-delay')?.value).toBe('24');
+    expect(container.textContent).toContain('closing shortly');
+    expect(container.textContent).toContain('reply anytime');
+    expect(container.textContent).toContain('Existing follow-up sequences keep their saved timings');
   });
 });

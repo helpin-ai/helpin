@@ -24,7 +24,7 @@ func NewSupportFollowUpRepository(db *gorm.DB) *SupportFollowUpRepository {
 // EnabledInstallations returns installations explicitly opting into follow-ups.
 func (r *SupportFollowUpRepository) EnabledInstallations(ctx context.Context) ([]model.SupportWidgetInstallation, error) {
 	var rows []model.SupportWidgetInstallation
-	err := r.db.WithContext(ctx).Where("active = true AND settings->>'ai_follow_up_enabled' = 'true'").Find(&rows).Error
+	err := r.db.WithContext(ctx).Where("active = true AND coalesce(settings->>'ai_follow_up_enabled', 'true') = 'true'").Find(&rows).Error
 	return rows, err
 }
 
@@ -40,7 +40,7 @@ func (r *SupportFollowUpRepository) Seed(ctx context.Context, workspaceID string
 		if err := json.Unmarshal([]byte(installation.Settings), &settings); err != nil {
 			return err
 		}
-		if !installation.Active || !settings.AIFollowUpEnabled || !settings.AIEnabled || settings.AIResponseMode != "ai_first" || settings.AIAutoResolveTimeout == 0 {
+		if !installation.Active || !settings.AIFollowUpEnabled || !settings.AIEnabled || settings.AIResponseMode != "ai_first" {
 			return nil
 		}
 		var count int64
@@ -57,7 +57,7 @@ func (r *SupportFollowUpRepository) Seed(ctx context.Context, workspaceID string
 			return err
 		}
 		for _, conv := range rows {
-			episode := model.SupportAIFollowUp{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conv.ID, SourceMessageID: *conv.LastPublicMessageID, RunID: uuid.NewString(), Status: "scheduled", DueAt: now, CloseHours: settings.AIFollowUpCloseHours, CreatedAt: now, UpdatedAt: now}
+			episode := model.SupportAIFollowUp{ID: uuid.NewString(), WorkspaceID: workspaceID, ConversationID: conv.ID, SourceMessageID: *conv.LastPublicMessageID, RunID: uuid.NewString(), Status: "scheduled", DueAt: now, SequenceVersion: 2, AssessmentAttempts: 1, SecondDelayHours: settings.AIFollowUpSecondDelayHours, CloseHours: settings.AIFollowUpCloseHours, CreatedAt: now, UpdatedAt: now}
 			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&episode).Error; err != nil {
 				return err
 			}
@@ -137,8 +137,7 @@ func supportFollowUpCandidates(tx *gorm.DB, workspaceID string, settings model.S
    AND last_public_message_id IS NOT NULL AND NOT email_unsubscribed
    AND assigned_agent_id = ? AND last_public_sender_type = 'ai' AND last_public_message_at <= ? AND last_public_message_at >= ?
    AND NOT customer_awaiting_response
-   AND NOT EXISTS (SELECT 1 FROM support_ai_follow_ups f WHERE f.workspace_id = support_conversations.workspace_id AND f.conversation_id = support_conversations.id AND (f.source_message_id = support_conversations.last_public_message_id OR f.sent_message_id = support_conversations.last_public_message_id OR f.status IN ('scheduled','assessing','waiting')))
-   AND (SELECT count(*) FROM support_ai_follow_ups f WHERE f.workspace_id = support_conversations.workspace_id AND f.conversation_id = support_conversations.id AND f.sent_at IS NOT NULL) < ?`, workspaceID, settings.AIAgentID, now.Add(-time.Duration(settings.AIFollowUpDelayHours)*time.Hour), now.Add(-30*24*time.Hour), settings.AIFollowUpMaxPerConversation)
+   AND NOT EXISTS (SELECT 1 FROM support_ai_follow_ups f WHERE f.workspace_id = support_conversations.workspace_id AND f.conversation_id = support_conversations.id AND (f.source_message_id = support_conversations.last_public_message_id OR f.sent_message_id = support_conversations.last_public_message_id OR f.second_message_id = support_conversations.last_public_message_id OR f.status IN ('scheduled','assessing','waiting')))`, workspaceID, settings.AIAgentID, now.Add(-time.Duration(settings.AIFollowUpDelayHours)*time.Hour), now.Add(-30*24*time.Hour))
 }
 
 // Preview returns counts and a bounded sample without creating work or agent runs.
