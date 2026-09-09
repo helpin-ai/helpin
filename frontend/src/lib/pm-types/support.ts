@@ -567,6 +567,7 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'triage_routed',
   'triage_dismissed',
   'ai_escalated',
+  'delayed_team_reply',
   'customer_requested_human',
   'resolved',
   'reopened',
@@ -1114,6 +1115,9 @@ export interface SupportInboxSettings {
   escalation_message: string;
   escalation_message_busy?: string;
   escalation_message_after_hours?: string;
+  delayed_team_reply_minutes?: number;
+  delayed_team_reply_message?: string;
+  delayed_team_reply_message_no_email?: string;
   handoff_behavior: string;
   handoff_team_id: string | null;
   default_mailbox_id: string | null;

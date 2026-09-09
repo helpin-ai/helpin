@@ -14,6 +14,7 @@ export const SYSTEM_EVENT_TYPES = [
   'triage_routed',
   'triage_dismissed',
   'ai_escalated',
+  'delayed_team_reply',
   'resolved',
   'reopened',
   'closed',
@@ -31,6 +32,9 @@ export interface Message {
   senderName?: string;
   senderAvatar?: string;
   systemEventType?: SystemEventType;
+  /** One-time automated waiting update after a human handoff. */
+  delayedTeamReply?: boolean;
+  captureEmail?: boolean;
   sources?: AiSource[];
   aiConfidence?: number;
   /** AI-authored classification used to decide which response UI is appropriate. */

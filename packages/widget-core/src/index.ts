@@ -62,6 +62,7 @@ export interface MountWidgetOptions {
   onTyping?: (content: string) => void;
   showPreChatForm?: boolean;
   contactCaptureCompleted?: boolean;
+  onCaptureEmail?: (email: string) => Promise<void>;
   onPreChatSubmit?: (data: { phone: string; email: string }) => void;
   isTyping?: boolean;
   isAIThinking?: boolean;
@@ -116,6 +117,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
     showPreChatForm = false,
     contactCaptureCompleted = false,
     onPreChatSubmit = () => {},
+    onCaptureEmail,
     isTyping = false,
     isAIThinking = false,
     aiProgressLabel,
@@ -166,6 +168,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
       showPreChatForm,
       contactCaptureCompleted,
       onPreChatSubmit,
+      onCaptureEmail,
       isTyping,
       isAIThinking,
       aiProgressLabel,

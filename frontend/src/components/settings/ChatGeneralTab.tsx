@@ -34,6 +34,8 @@ import {
   type ChatSettingsDraft,
 } from './chat-widget/utils';
 import { CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION } from './chat-widget/handoffSummary';
+import { DelayedTeamReplySettings } from './chat-widget/DelayedTeamReplySettings';
+import { DEFAULT_DELAYED_TEAM_REPLY_MINUTES, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL } from './chat-widget/delayedTeamReply';
 import { CHAT_WIDGET_ESCALATION_TABS } from './chat-widget/escalationTabs';
 import {
   CHAT_WIDGET_AI_RESPONSE_MODES,
@@ -95,6 +97,9 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
   const [escalationMessage, setEscalationMessage] = useState('Let me connect you with a team member who can help further.');
   const [escalationMessageBusy, setEscalationMessageBusy] = useState('');
   const [escalationMessageAfterHours, setEscalationMessageAfterHours] = useState('');
+  const [delayedTeamReplyMinutes, setDelayedTeamReplyMinutes] = useState(DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
+  const [delayedTeamReplyMessage, setDelayedTeamReplyMessage] = useState(DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
+  const [delayedTeamReplyMessageNoEmail, setDelayedTeamReplyMessageNoEmail] = useState(DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
   const [handoffBehavior, setHandoffBehavior] = useState('unassigned');
   const [handoffTeamId, setHandoffTeamId] = useState<string | null>(null);
   const [aiHandoffMailboxId, setAiHandoffMailboxId] = useState<string | null>(null);
@@ -155,6 +160,9 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
       setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
       setEscalationMessageBusy(s.escalation_message_busy ?? '');
       setEscalationMessageAfterHours(s.escalation_message_after_hours ?? '');
+      setDelayedTeamReplyMinutes(s.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
+      setDelayedTeamReplyMessage(s.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
+      setDelayedTeamReplyMessageNoEmail(s.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
       setHandoffBehavior(s.handoff_behavior);
       setHandoffTeamId(s.handoff_team_id);
       setAiHandoffMailboxId(s.ai_handoff_mailbox_id);
@@ -211,6 +219,9 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
     escalation_message: escalationMessage,
     escalation_message_busy: escalationMessageBusy || undefined,
     escalation_message_after_hours: escalationMessageAfterHours || undefined,
+    delayed_team_reply_minutes: delayedTeamReplyMinutes,
+    delayed_team_reply_message: delayedTeamReplyMessage,
+    delayed_team_reply_message_no_email: delayedTeamReplyMessageNoEmail,
     handoff_behavior: handoffBehavior,
     handoff_team_id: handoffBehavior === 'assign_to_team' ? handoffTeamId : null,
     default_mailbox_id: data?.settings.default_mailbox_id ?? null,
@@ -849,17 +860,27 @@ function Dashboard() {
           <div className="space-y-3">
             <div>
               <Label className="text-sm font-medium">Escalation messages</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Messages shown when AI hands off to a human agent.</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Messages shown during a handoff and while waiting for a teammate to reply.</p>
             </div>
             <Tabs defaultValue="default" className="gap-2">
               <div className="overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/30">
-                <TabsList className="h-9 w-full justify-start gap-0 rounded-none border-b bg-muted/40 p-1">
+                <TabsList className="h-auto min-h-9 w-full flex-wrap justify-start gap-0 rounded-none border-b bg-muted/40 p-1">
                   {CHAT_WIDGET_ESCALATION_TABS.map((tab) => (
                     <TabsTrigger key={tab.value} value={tab.value} className="h-7 flex-none rounded px-3 text-xs">
                       {tab.label}
                     </TabsTrigger>
                   ))}
                 </TabsList>
+                <TabsContent value="delayed_team_reply" className="mt-0">
+                  <DelayedTeamReplySettings
+                    minutes={delayedTeamReplyMinutes}
+                    message={delayedTeamReplyMessage}
+                    messageNoEmail={delayedTeamReplyMessageNoEmail}
+                    onMinutesChange={setDelayedTeamReplyMinutes}
+                    onMessageChange={setDelayedTeamReplyMessage}
+                    onMessageNoEmailChange={setDelayedTeamReplyMessageNoEmail}
+                  />
+                </TabsContent>
                 <TabsContent value="default" className="mt-0">
                   <Textarea
                     id="escalation-msg"
