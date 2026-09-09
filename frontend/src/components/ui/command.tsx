@@ -72,7 +72,7 @@ function CommandInput({
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Input> & { presentation?: "default" | "quiet" }) {
   return (
-    <div data-slot="command-input-wrapper" className="px-1 pt-1">
+    <div data-slot="command-input-wrapper" className="p-1">
       <InputGroup className={cn(
         "h-8 bg-input/50",
         presentation === "quiet" && "border-border/70 bg-muted/30 hover:bg-quiet-hover focus-within:bg-background focus-within:ring-2 focus-within:ring-quiet-field",
