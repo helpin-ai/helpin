@@ -1,5 +1,5 @@
 import { EpicColorSwatch } from './EpicColorSwatch';
-import { groupEpicsByLifecycle } from './epicPickerGroups';
+import { EPIC_PICKER_WIDTH, groupEpicsByLifecycle } from './epicPickerGroups';
 import { useCallback, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -824,7 +824,7 @@ export function TaskBulkActionsBar({
                 )}>
                   <SelectValue placeholder={commonValues.epic_id === MIXED ? 'Multiple' : 'No change'} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={EPIC_PICKER_WIDTH}>
                   <SelectItem value="__none__">No epic</SelectItem>
                   {groupEpicsByLifecycle(effectiveEpics.map(entry => entry.epic)).map(group => (
                     <SelectGroup key={group.label}>

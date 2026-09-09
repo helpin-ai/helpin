@@ -1,3 +1,4 @@
+import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { useNavigate } from "@tanstack/react-router";
@@ -1746,6 +1747,7 @@ export function CreateTaskModal({
                   <SidebarPopoverSelect
                     value={form.epic_id || "__none__"}
                     groups={epicGroups}
+                    width={EPIC_PICKER_WIDTH}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,

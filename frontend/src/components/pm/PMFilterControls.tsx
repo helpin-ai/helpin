@@ -34,6 +34,7 @@ export interface PMFilterDefinition<K extends string> {
   options: PMFilterOption[];
   singleSelect?: boolean;
   searchableValues?: boolean;
+  contentClassName?: string;
 }
 
 export type PMFilterValues<K extends string> = Partial<Record<K, string[]>>;
@@ -69,7 +70,7 @@ function PMFilterValueSelect<K extends string>({
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className={`${definition.searchableValues ? 'w-80' : 'w-52'} p-0`}
+        className={cn(definition.searchableValues ? 'w-80' : 'w-52', 'p-0', definition.contentClassName)}
         align="start"
       >
         <QuietDropdownOptions
@@ -215,7 +216,7 @@ export function PMFilterTrigger<K extends string>({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className={`${selectedDefinition ? (selectedDefinition.searchableValues ? 'w-80' : 'w-52') : 'w-48'} p-0`}
+        className={cn(selectedDefinition ? (selectedDefinition.searchableValues ? 'w-80' : 'w-52') : 'w-48', 'p-0', selectedDefinition?.contentClassName)}
         align="start"
       >
         {selectedDefinition ? (

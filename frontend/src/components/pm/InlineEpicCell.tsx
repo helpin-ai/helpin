@@ -5,7 +5,7 @@ import type { Epic, Task } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { EpicBadge } from './EpicBadge';
 import { EpicColorSwatch } from './EpicColorSwatch';
-import { groupEpicsByLifecycle } from './epicPickerGroups';
+import { EPIC_PICKER_WIDTH, groupEpicsByLifecycle } from './epicPickerGroups';
 
 export function InlineEpicCell({
   task,
@@ -55,7 +55,7 @@ export function InlineEpicCell({
       onOpenChange={setOpen}
       selected={[task.epic_id || '__none__']}
       searchPlaceholder="Search epics..."
-      contentClassName="w-[220px]"
+      contentClassName={EPIC_PICKER_WIDTH}
       empty="No epics found"
       onSelect={(value) => {
         void onUpdate(task.id, {

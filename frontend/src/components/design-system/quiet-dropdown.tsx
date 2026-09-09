@@ -67,10 +67,25 @@ export function QuietDropdownItem({
   value,
   keywords,
   children,
+  fullText,
+  onPointerEnter,
   ...props
-}: ComponentProps<typeof CommandItem> & { value: string }) {
+}: ComponentProps<typeof CommandItem> & { value: string; fullText?: string }) {
   return (
-    <CommandItem value={value} keywords={keywords} {...props}>
+    <CommandItem value={value} keywords={keywords} {...props}
+      onPointerEnter={(event) => {
+        onPointerEnter?.(event);
+        const item = event.currentTarget;
+        // Measure on hover so resizing and custom option content are covered without
+        // an observer or a state update for every item in a large dropdown.
+        const truncated = [item, ...item.querySelectorAll<HTMLElement>('*')].some(
+          (element) => element.clientWidth > 0 && Boolean(element.textContent?.trim()) &&
+            (element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight),
+        );
+        if (truncated) item.title = fullText ?? item.textContent?.trim() ?? '';
+        else item.removeAttribute('title');
+      }}
+    >
       {children}
     </CommandItem>
   );
@@ -248,6 +263,7 @@ export function QuietDropdown({
                   return (
                     <QuietDropdownItem
                       key={option.value}
+                      fullText={option.label}
                       value={option.value || '__quiet_empty__'}
                       keywords={[
                         option.label,

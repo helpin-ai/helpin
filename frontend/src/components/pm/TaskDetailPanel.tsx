@@ -90,7 +90,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { EpicBadge } from '@/components/pm/EpicBadge';
 import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
-import { groupEpicsByLifecycle } from '@/components/pm/epicPickerGroups';
+import { EPIC_PICKER_WIDTH, groupEpicsByLifecycle } from '@/components/pm/epicPickerGroups';
 import { MemberPickerPopover, MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
@@ -1733,6 +1733,7 @@ function TaskDetailPanelBody({
               <SidebarPopoverSelect
                 value={form.epic_id || '__none__'}
                 groups={epicGroups}
+                width={EPIC_PICKER_WIDTH}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('epic_id', val, { epic_id: val });

@@ -60,6 +60,30 @@ afterEach(() => {
 });
 
 describe('shared PM dropdown contracts', () => {
+  it('shows the full label on hover only while nested option text is truncated', async () => {
+    const label = 'A long epic name that is displayed by a custom option renderer';
+    await render(<QuietDropdown label="Epic" trigger={<button>Epic</button>}
+      options={[{ value: 'epic', label, content: <span><span className="truncate">{label}</span></span> }]}
+      onSelect={() => {}} />);
+    await click(trigger());
+    const option = item('epic');
+    const text = option.querySelector('.truncate')!;
+    let width = 100;
+    Object.defineProperties(text, {
+      clientWidth: { get: () => width },
+      scrollWidth: { get: () => 200 },
+    });
+    const hover = async () => {
+      await act(async () => option.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })));
+      await act(async () => option.dispatchEvent(new MouseEvent('pointerout', { bubbles: true })));
+    };
+    await hover();
+    expect(option.title).toBe(label);
+    width = 250;
+    await hover();
+    expect(option.hasAttribute('title')).toBe(false);
+  });
+
   it('keeps same-named sidebar options independently keyboard-selectable', async () => {
     const change = vi.fn();
     await render(

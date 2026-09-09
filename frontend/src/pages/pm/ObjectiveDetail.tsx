@@ -1,3 +1,4 @@
+import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
 import { DetailMetadataRow as MetadataRow } from '@/components/pm/DetailMetadataRow';
 import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
 import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
@@ -363,7 +364,7 @@ function LinkEpicPopover({
   return (
     <QuietDropdown label="Epics" open={open} onOpenChange={setOpen} disabled={disabled}
       loading={loading} error={loadError ? 'Could not load epics. Close and reopen to retry.' : undefined}
-      empty="No available epics" onSelect={onLink} contentClassName="w-64"
+      empty="No available epics" onSelect={onLink} contentClassName={EPIC_PICKER_WIDTH}
       options={available.map(({ epic }) => ({ value: epic.id, label: epic.name, leading: <EpicColorSwatch color={epic.color} /> }))}
       trigger={<QuietTextAction disabled={disabled}>
         <PlusSignIcon className="mr-1 h-3 w-3" />Add Epics
