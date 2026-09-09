@@ -772,7 +772,7 @@ function Dashboard() {
 
 
               <div className="space-y-1.5">
-                <Label className="text-sm">When a message comes in</Label>
+                <ConfigurationLabel label={"When a message comes in"} help="Choose whether AI leaves a private note or replies publicly with the selected support agent." />
                 <Select value={aiResponseMode} onValueChange={setAiResponseMode}>
                   <SelectTrigger>
                     <SelectValue />
@@ -846,22 +846,17 @@ function Dashboard() {
               </div>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Choose whether AI leaves a private note or replies publicly with the selected support agent.
-          </p>
 
           <div className="flex items-center justify-between border-t border-border pt-4">
             <div>
-              <Label className="text-sm">Show "Talk to Human" button</Label>
-              <p className="text-xs text-muted-foreground">Let visitors request help from a team member at any time.</p>
+              <ConfigurationLabel label={'Show "Talk to Human" button'} help="Let visitors request help from a team member at any time." />
             </div>
             <Switch checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
           </div>
 
           <div className="space-y-3 border-t border-border pt-4">
             <div>
-              <Label className="text-sm font-medium">Escalation messages</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Messages shown during a handoff and while waiting for a teammate to reply.</p>
+              <ConfigurationLabel label={"Escalation messages"} help="Messages shown during a handoff and while waiting for a teammate to reply." />
             </div>
             <Tabs defaultValue="default" className="gap-2">
               <div className="overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/30">
@@ -946,8 +941,7 @@ function Dashboard() {
 
           <div className="border-t border-border pt-4 space-y-3">
             <div>
-              <Label className="text-sm font-medium">Routing & Assignment</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">{CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION}</p>
+              <ConfigurationLabel label="Routing &amp; Assignment" help={CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION} />
             </div>
             <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="min-w-0 text-sm text-foreground">{handoffSummaryElement}</p>
@@ -1777,5 +1771,21 @@ function Dashboard() {
 
       </div>
     </PreviewLayout>
+  );
+}
+
+function ConfigurationLabel({ label, help }: { label: string; help: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label className="text-sm">{label}</Label>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" aria-label={`About ${label}`} className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border text-[10px] font-medium text-muted-foreground hover:text-foreground">
+            ?
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[280px] text-xs leading-relaxed">{help}</TooltipContent>
+      </Tooltip>
+    </div>
   );
 }
