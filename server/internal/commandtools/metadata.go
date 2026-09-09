@@ -795,7 +795,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.write_document_content",
 		Alias:       "write_document_content",
 		Category:    "Docs",
-		Description: "Write text or structured content to the document identified by document_id, including from a workspace-targeted Dock run. Markdown is auto-converted. This tool does not embed private run artifacts: after writing the document, call insert_document_artifact with the artifact_id returned by browser_screenshot or browser_record.",
+		Description: "Write text or structured content to the document identified by document_id, including from a workspace-targeted Dock run. Markdown is auto-converted. This tool does not embed private run artifacts: after writing the document, call insert_document_artifact with the artifact_id returned by browser_screenshot or browser_record." + docsDiagramGuidance,
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -805,7 +805,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 					"description": "The document ID to update",
 				},
 				"content": map[string]any{
-					"description": "The document content to save. Use either a structured document JSON object or a markdown string.",
+					"description": "The document content to save. Use either a structured document JSON object or a markdown string." + docsDiagramMarkdownGuidance + docsDiagramJSONGuidance,
 					"oneOf": []map[string]any{
 						{"type": "object"},
 						{"type": "string"},
@@ -831,7 +831,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.create_document",
 		Alias:       "create_document",
 		Category:    "Docs",
-		Description: "Create a new document in Helpin Docs. The title is stored separately in the title field, so do not repeat it as a leading H1 in content. Accepts optional markdown content that will be auto-converted to rich text. If space_id is omitted it defaults to the workspace's only space; when several spaces exist, call list_spaces and ask the user which to use.",
+		Description: "Create a new document in Helpin Docs. The title is stored separately in the title field, so do not repeat it as a leading H1 in content. Accepts optional markdown content that will be auto-converted to rich text. If space_id is omitted it defaults to the workspace's only space; when several spaces exist, call list_spaces and ask the user which to use." + docsDiagramGuidance,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -849,7 +849,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Optional initial document body as markdown, excluding the document title and any leading H1 that repeats it. Will be auto-converted to rich text.",
+					"description": "Optional initial document body as markdown, excluding the document title and any leading H1 that repeats it. Will be auto-converted to rich text." + docsDiagramMarkdownGuidance,
 				},
 				"icon": map[string]any{
 					"type":        "string",
@@ -870,7 +870,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.update_document_block",
 		Alias:       "update_document_block",
 		Category:    "Docs",
-		Description: "Update one addressable block in a Helpin Docs document using its current revision. The response includes the block's new revision; other blocks' revisions are unaffected, so sequential updates can reuse revisions from one get_document_blocks call.",
+		Description: "Update one addressable block in a Helpin Docs document using its current revision. The response includes the block's new revision; other blocks' revisions are unaffected, so sequential updates can reuse revisions from one get_document_blocks call." + docsDiagramGuidance,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -888,7 +888,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"content": map[string]any{
 					"type":        "object",
-					"description": "The replacement block node JSON",
+					"description": "The replacement block node JSON" + docsDiagramJSONGuidance,
 				},
 			},
 			"required": []string{"document_id", "block_id", "revision", "content"},
@@ -898,7 +898,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.insert_document_block",
 		Alias:       "insert_document_block",
 		Category:    "Docs",
-		Description: "Insert new content between existing blocks of a Helpin Docs document without rewriting them. Each top-level markdown block in content becomes one document block.",
+		Description: "Insert new content between existing blocks of a Helpin Docs document without rewriting them. Each top-level markdown block in content becomes one document block." + docsDiagramGuidance,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -908,7 +908,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Markdown for the new content. May contain multiple blocks (for example a heading followed by a paragraph).",
+					"description": "Markdown for the new content. May contain multiple blocks (for example a heading followed by a paragraph)." + docsDiagramMarkdownGuidance,
 				},
 				"after_block_id": map[string]any{
 					"type":        "string",
