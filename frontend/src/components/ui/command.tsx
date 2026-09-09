@@ -2,6 +2,7 @@ import * as React from "react"
 import { Command as CommandPrimitive } from "cmdk"
 
 import { cn } from "@/lib/utils"
+import { useDropdownSearch } from "./use-dropdown-search"
 import {
   Dialog,
   DialogContent,
@@ -68,11 +69,21 @@ function CommandDialog({
 
 function CommandInput({
   className,
+  presentation = "default",
+  hideWhenFits,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+}: React.ComponentProps<typeof CommandPrimitive.Input> & {
+  presentation?: "default" | "quiet"
+  /** Controlled searches may load remote results or create items, so stay visible by default. */
+  hideWhenFits?: boolean
+}) {
+  const { wrapperRef, hidden } = useDropdownSearch(hideWhenFits ?? (props.value === undefined && !props.onValueChange))
   return (
-    <div data-slot="command-input-wrapper" className="px-1 pt-1">
-      <InputGroup className="h-8 bg-input/50">
+    <div ref={wrapperRef} hidden={hidden} data-slot="command-input-wrapper" className="p-1">
+      <InputGroup className={cn(
+        "h-8 bg-input/50",
+        presentation === "quiet" && "border-border/70 bg-muted/30 hover:bg-quiet-hover focus-within:bg-background focus-within:ring-2 focus-within:ring-quiet-field",
+      )}>
         <CommandPrimitive.Input
           data-slot="command-input"
           className={cn(

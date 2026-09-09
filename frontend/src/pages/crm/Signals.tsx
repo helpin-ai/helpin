@@ -1,8 +1,9 @@
 import { useDeferredValue } from 'react';
 import { Link } from '@tanstack/react-router';
-import { QuietEmptyState, QuietPageHeader, QuietPageViewport, QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietFilterDropdown, QuietEmptyState, QuietPageHeader, QuietPageViewport, QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PMFilterBar } from '@/components/pm/PMFilterControls';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useCRMSignalInbox } from '@/hooks/queries/useCRMSituations';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
@@ -10,9 +11,9 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useTitle } from '@/hooks/useTitle';
 import { timeAgo } from '@/lib/utils';
 import { signalCategories } from '@/lib/crmSituationPresentation';
-import { inboxNavigation, inboxStatus, parseSignalsSearch, type SignalsSearch } from '@/lib/crmSignalInboxQueryBuilder';
+import { inboxFilterDefinitions, inboxNavigation, inboxStatus, parseSignalsSearch, type SignalsSearch } from '@/lib/crmSignalInboxQueryBuilder';
 import type { CRMSignalInboxItem } from '@/lib/crmSignalInboxTypes';
-import { PlaybookError, PlaybookHelp, PlaybookLoading, PlaybookPagination, PlaybookSelect } from '@/components/crm/playbooks/PlaybookUI';
+import { PlaybookError, PlaybookHelp, PlaybookLoading, PlaybookPagination } from '@/components/crm/playbooks/PlaybookUI';
 import { SignalDrawer } from '@/components/crm/signals/SignalDrawer';
 import { RecommendationDrawer } from '@/components/crm/signals/RecommendationDrawer';
 import { SignalGroupDrawer } from '@/components/crm/signals/SignalGroupDrawer';
@@ -51,24 +52,31 @@ function SignalsList({ ws, slug, canEdit, search, onChange }: Props & { ws: stri
   const select = (item?: Pick<CRMSignalInboxItem, 'id' | 'kind'>) => onChange({ ...search, signal: item?.kind === 'situation' ? item.id : undefined, recommendation: item?.kind === 'recommendation' ? item.id : undefined, group: item?.kind === 'evidence' ? item.id : undefined });
   const clear = (status: string) => onChange({ signal: search.signal, recommendation: search.recommendation, group: search.group, sort: search.sort, scope: 'all', state: status, category: 'all', page: 1 });
   const filtered = !!query || scope !== 'all' || state !== 'all' || category !== 'all';
-  const customFilters = !!search.q?.trim() || scope !== 'all' || state !== 'needs_attention' || category !== 'all';
-  return <QuietPageViewport>
-    <QuietPageHeader title="Signals" description="Know what needs attention. Agree the next step." actions={<div className="flex flex-wrap items-center gap-4 text-sm">
+  const filterValues = { scope: scope === 'all' ? [] : [scope], state: state === 'all' ? [] : [state], category: category === 'all' ? [] : [category] };
+  const visibleKeys = new Set(inboxFilterDefinitions.filter(({ key }) => filterValues[key].length > 0).map(({ key }) => key));
+  return <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <QuietPageHeader variant="shell" title="Signals" description="Know what needs attention. Agree the next step." actions={<div className="flex flex-wrap items-center gap-4 text-sm">
       <Link to="/w/$slug/crm/insights" params={{ slug }} search={{ view: 'evidence' }} className="text-quiet-text-secondary hover:text-quiet-text-primary">Evidence</Link>
       <Link to="/w/$slug/crm/playbooks" params={{ slug }} className="text-quiet-text-secondary hover:text-quiet-text-primary">Playbooks</Link>
     </div>} />
-    <Tabs value={category} onValueChange={(value) => change({ category: value })} className="mt-6">
-      <TabsList variant="quiet" aria-label="Signal category" className="h-auto w-full justify-start overflow-x-auto">
+    <Tabs className="shrink-0" value={category} onValueChange={(value) => change({ category: value })}>
+      <TabsList variant="quiet" aria-label="Signal category" className="h-auto w-full justify-start overflow-x-auto px-4 md:px-6">
         {signalCategories.map((entry) => <TabsTrigger key={entry.value} value={entry.value} className="shrink-0 gap-2">{entry.label}<span className="text-xs tabular-nums text-quiet-text-tertiary">{list.isSuccess ? list.data.category_counts[entry.value] : '—'}</span></TabsTrigger>)}
       </TabsList>
     </Tabs>
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-quiet-divider-strong py-3">
+    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-quiet-divider-strong px-4 py-2 md:px-6">
       <QuietSearchInput aria-label="Search signals" placeholder="Search customers or signals…" maxLength={500} value={search.q || ''} onChange={(event) => change({ q: event.target.value }, true)} containerClassName="w-64 max-w-full" />
-      <PlaybookSelect label="Assignment" value={scope} onChange={(value) => change({ scope: value })} options={inboxNavigation.scope} />
-      <PlaybookSelect label="Signal status" value={state} onChange={(value) => change({ state: value })} options={inboxNavigation.state} />
-      {customFilters && <QuietTextAction onClick={() => clear('needs_attention')}>Clear filters</QuietTextAction>}
-      <span className="inline-flex items-center sm:ml-auto"><span className="text-xs text-quiet-text-tertiary">Sort</span><PlaybookSelect label="Sort signals" value={filters.sort || 'priority'} onChange={(value) => change({ sort: value })} options={inboxNavigation.sort} /><PlaybookHelp label="About Auto sorting">Signals ranked automatically by importance, recency, and evidence strength.</PlaybookHelp></span>
+      <QuietFilterDropdown label="Assignment" value={scope} onChange={(value) => change({ scope: value })} options={inboxNavigation.scope} />
+      <QuietFilterDropdown label="Signal status" value={state} onChange={(value) => change({ state: value })} options={inboxNavigation.state} />
+      {visibleKeys.size === 0 && !!search.q?.trim() && <QuietTextAction onClick={() => clear('needs_attention')}>Clear filters</QuietTextAction>}
+      <span className="inline-flex items-center sm:ml-auto"><span className="text-xs text-quiet-text-tertiary">Sort</span><QuietFilterDropdown label="Sort signals" value={filters.sort || 'priority'} onChange={(value) => change({ sort: value })} options={inboxNavigation.sort} /><PlaybookHelp label="About Auto sorting">Signals ranked automatically by importance, recency, and evidence strength.</PlaybookHelp></span>
     </div>
+    <div className="shrink-0">
+      <PMFilterBar definitions={inboxFilterDefinitions} values={filterValues} visibleKeys={visibleKeys}
+        onToggle={(key, value) => change({ [key]: filterValues[key].includes(value) ? 'all' : value })}
+        onRemove={(key) => change({ [key]: 'all' })} onClearAll={() => clear('needs_attention')} />
+    </div>
+    <QuietPageViewport className="min-h-0 flex-1">
     {list.isPending ? <PlaybookLoading /> : list.isError ? <PlaybookError error={list.error} retry={() => void list.refetch()} /> : <>
       {category === 'all' && list.data.uncategorized_count > 0 && <p className="py-3 text-xs text-quiet-text-tertiary">{list.data.uncategorized_count} {list.data.uncategorized_count === 1 ? 'signal needs' : 'signals need'} customer context before a category can be determined. Included in All.</p>}
       {list.data.data.length ? <Table aria-label="Signals" aria-busy={list.isFetching || (search.q?.trim() || '') !== query}>
@@ -83,6 +91,7 @@ function SignalsList({ ws, slug, canEdit, search, onChange }: Props & { ws: stri
       </Table> : <QuietEmptyState title={filtered ? 'No signals match this view' : 'No signals yet'} description={filtered ? 'Try another category, assignment, or status.' : 'Customer activity and recommendations will appear here when there is something to follow up on.'} action={filtered ? <QuietTextAction onClick={() => clear('all')}>Show all signals</QuietTextAction> : <Link className="text-sm text-quiet-accent hover:underline" to="/w/$slug/crm/insights" params={{ slug }} search={{ view: 'evidence' }}>Explore customer evidence</Link>} />}
       <PlaybookPagination page={filters.page || 1} total={list.data.total} pageSize={list.data.page_size} onChange={(page) => onChange({ ...search, page })} busy={list.isFetching} />
     </>}
+    </QuietPageViewport>
     {search.signal ? <SignalDrawer key={search.signal} ws={ws} slug={slug} signalId={search.signal} canEdit={canEdit} onClose={() => select()} /> : search.recommendation ? <RecommendationDrawer key={search.recommendation} ws={ws} slug={slug} id={search.recommendation} canEdit={canEdit} onClose={() => select()} onSignal={(id) => select({ id, kind: 'situation' })} /> : search.group && <SignalGroupDrawer key={search.group} ws={ws} slug={slug} id={search.group} canEdit={canEdit} onClose={() => select()} />}
-  </QuietPageViewport>;
+  </div>;
 }

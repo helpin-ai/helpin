@@ -162,7 +162,6 @@ export function RepositoryBranchPicker({
           onChange(nextValue);
         }}
         width={width ?? (variant === 'sidebar' ? 'w-72' : 'w-80')}
-        searchThreshold={10}
         searchPlaceholder="Search branches..."
         disabled={disabled}
         showChevron={variant === 'form'}

@@ -1,19 +1,22 @@
+import { QuietEmptyState, QuietFilterDropdown, QuietPageHeader, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
+import { PMFilterBar, type PMFilterDefinition, type PMFilterOption } from '@/components/pm/PMFilterControls';
+import { OwnerAvatarFilterRow } from '@/components/pm/OwnerAvatarFilterRow';
+import { UserAvatar } from '@/components/pm/UserAvatar';
+import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
 import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { Link, useLocation } from '@tanstack/react-router';
 import { format, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
 import {
+  Activity01Icon,
+  WorkflowSquare01Icon,
   ArchiveIcon,
   Calendar03Icon,
-  FilterIcon,
   Loading01Icon,
   MoreHorizontalIcon,
   PlusSignIcon,
   Target01Icon,
-  ChartIncreaseIcon,
-  Cancel01Icon,
-  CheckListIcon,
-  HexagonIcon,
   Target02Icon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -24,7 +27,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
@@ -32,20 +34,21 @@ import { useObjectives, useDeleteObjective } from '@/hooks/queries/useObjectives
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
+import { StateTypeIcon } from '@/lib/pmIcons';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const healthConfig: Record<string, { label: string; className: string }> = {
-  on_track: { label: 'On Track', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-  at_risk: { label: 'At Risk', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  off_track: { label: 'Off Track', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  on_track: { label: 'On Track', className: 'text-quiet-positive' },
+  at_risk: { label: 'At Risk', className: 'text-quiet-accent' },
+  off_track: { label: 'Off Track', className: 'text-destructive' },
 };
 
-const stateFilterOptions: { value: string; label: string }[] = [
-  { value: 'not_started', label: 'Not Started' },
-  { value: 'active', label: 'In Progress' },
-  { value: 'closed', label: 'Done' },
+const stateFilterOptions: PMFilterOption[] = [
+  { value: 'not_started', label: 'Not Started', icon: <StateTypeIcon stateType="unstarted" className="h-3.5 w-3.5 text-zinc-400" /> },
+  { value: 'active', label: 'In Progress', icon: <StateTypeIcon stateType="started" className="h-3.5 w-3.5 text-amber-500" /> },
+  { value: 'closed', label: 'Done', icon: <StateTypeIcon stateType="done" className="h-3.5 w-3.5 text-green-500" /> },
 ];
 
 const typeFilterOptions: { value: string; label: string }[] = [
@@ -53,10 +56,10 @@ const typeFilterOptions: { value: string; label: string }[] = [
   { value: 'tactical', label: 'Tactical' },
 ];
 
-const healthFilterOptions: { value: string; label: string }[] = [
-  { value: 'on_track', label: 'On Track' },
-  { value: 'at_risk', label: 'At Risk' },
-  { value: 'off_track', label: 'Off Track' },
+const healthFilterOptions: PMFilterOption[] = [
+  { value: 'on_track', label: 'On Track', labelClassName: 'text-green-600' },
+  { value: 'at_risk', label: 'At Risk', labelClassName: 'text-yellow-600' },
+  { value: 'off_track', label: 'Off Track', labelClassName: 'text-red-600' },
 ];
 
 const OBJECTIVE_CREATE_TOOLTIP = 'Only team managers can create objectives. Ask your team manager for access.';
@@ -75,10 +78,10 @@ function CreateObjectiveButton({
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="inline-flex">
-            <Button size="sm" className={`gap-2 ${className ?? ''}`} onClick={onClick} disabled={disabled}>
+            <QuietPrimaryAction className={`gap-2 ${className ?? ''}`} onClick={onClick} disabled={disabled}>
               <PlusSignIcon className="h-4 w-4" />
               Create Objective
-            </Button>
+            </QuietPrimaryAction>
           </span>
         </TooltipTrigger>
         {disabled && (
@@ -91,223 +94,102 @@ function CreateObjectiveButton({
   );
 }
 
-function FilterChip({
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  options: { value: string; label: string }[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find((o) => o.value === value);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors cursor-pointer ${
-            value
-              ? 'border-primary/30 bg-primary/5 text-foreground'
-              : 'border-border/60 text-muted-foreground hover:bg-accent'
-          }`}
-        >
-          {selected ? selected.label : label}
-          {value && (
-            <span
-              className="ml-0.5 rounded-full hover:bg-accent p-0.5"
-              onClick={(e) => { e.stopPropagation(); onChange(''); }}
-            >
-              <Cancel01Icon className="h-2.5 w-2.5" />
-            </span>
-          )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex flex-col">
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`flex items-center rounded-sm px-2 py-1.5 text-xs transition-colors cursor-pointer ${
-                value === opt.value ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-              onClick={() => { onChange(value === opt.value ? '' : opt.value); setOpen(false); }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
+type ObjectiveFilterKey = 'owner' | 'state' | 'health' | 'team' | 'type';
+type ObjectiveFilters = Partial<Record<ObjectiveFilterKey, string[]>>;
 
 export function ObjectivesPage() {
   const { pathname } = useLocation();
-  useTitle(pathname.endsWith('/team-goals') ? 'Team Goals' : 'Objectives');
-
+  const title = pathname.endsWith('/team-goals') ? 'Team Goals' : 'Objectives';
+  useTitle(title);
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
-  const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit, isAdmin, isTeamManager, teamMemberships } = usePermissions(access);
-  const { teams } = useAccessibleTeams(workspaceId || '');
-
-  // Filters
-  const [filterState, setFilterState] = useState('');
-  const [filterTeam, setFilterTeam] = useState('');
-  const [filterType, setFilterType] = useState('');
-  const [filterHealth, setFilterHealth] = useState('');
-  const deferredFilterHealth = useDeferredValue(filterHealth);
-
-  const { data: objectives = [], isLoading: loading } = useObjectives(workspaceId, {
+  const { teams } = useAccessibleTeams(workspaceId);
+  const { members } = useAssignableWorkspaceMembers(workspaceId);
+  const [filters, setFilters] = useState<ObjectiveFilters>({});
+  const [search, setSearch] = useState('');
+  const query = useDeferredValue(search.trim().toLowerCase());
+  const filterTeam = filters.team?.[0] ?? '';
+  const { data: objectives = [], isLoading, isError, refetch } = useObjectives(workspaceId, {
     archived: false,
-    state: filterState || undefined,
+    state: filters.state?.[0],
     team_id: filterTeam || undefined,
-    objective_type: filterType || undefined,
+    objective_type: filters.type?.[0],
   });
-
   const deleteObjective = useDeleteObjective(workspaceId);
-
-  // Health is client-side filtered (not in API)
-  const filtered = useMemo(() => {
-    if (!deferredFilterHealth) return objectives;
-    return objectives.filter((o) => o.objective.health === deferredFilterHealth);
-  }, [objectives, deferredFilterHealth]);
-
+  const definitions: PMFilterDefinition<ObjectiveFilterKey>[] = useMemo(() => [
+    { key: 'owner', label: 'Owner', searchableValues: true, options: members.map(member => ({
+      value: member.id, label: member.display_name || member.email,
+      icon: <UserAvatar name={member.display_name || member.email} avatarUrl={member.avatar_url}
+        avatarStyle={member.avatar_style} avatarSeed={member.avatar_seed}
+        avatarBackgroundMode={member.avatar_background_mode} avatarBackgroundColor={member.avatar_background_color}
+        fallbackColorSeed={member.email} className="h-5 w-5" />,
+    })) },
+    { key: 'state', label: 'Status', singleSelect: true, options: stateFilterOptions },
+    { key: 'health', label: 'Health', singleSelect: true, options: healthFilterOptions },
+    { key: 'team', label: 'Team', singleSelect: true, searchableValues: true, options: teams.map(team => ({ value: team.id, label: team.name })) },
+    { key: 'type', label: 'Type', singleSelect: true, options: typeFilterOptions },
+  ], [members, teams]);
+  const toggleFilter = (key: ObjectiveFilterKey, value: string) => setFilters(current => {
+    const selected = current[key] ?? [];
+    const next = selected.includes(value) ? selected.filter(item => item !== value)
+      : key === 'owner' ? [...selected, value] : [value];
+    return { ...current, [key]: next };
+  });
+  const visibleKeys = new Set(definitions.filter(definition => filters[definition.key]?.length).map(definition => definition.key));
+  const clearAll = () => { setFilters({}); setSearch(''); };
+  const hasFilters = visibleKeys.size > 0 || search.trim().length > 0;
+  const filtered = useMemo(() => objectives.filter(({ objective, owner_member_ids, owners }) =>
+    (!query || objective.name.toLowerCase().includes(query)) &&
+    (!filters.health?.length || filters.health.includes(objective.health)) &&
+    (!filters.owner?.length || filters.owner.some(id => (owner_member_ids ?? owners).includes(id)))
+  ), [objectives, query, filters.health, filters.owner]);
   const handleArchive = useCallback((id: string) => {
-    if (!workspaceId) return;
-    deleteObjective.mutate(id);
+    if (workspaceId) deleteObjective.mutate(id);
   }, [deleteObjective, workspaceId]);
-
-  const handleOpenObjective = useCallback((id: string) => {
-    if (!workspace?.slug) return;
-    navigate({ to: `/w/${workspace.slug}/pm/objectives/${id}` } as any);
-  }, [navigate, workspace?.slug]);
-
-  const activeFilterCount = [filterState, filterTeam, filterType, filterHealth].filter(Boolean).length;
-  const canCreateObjective = canEdit && (isAdmin || (filterTeam ? isTeamManager(filterTeam) : teamMemberships.some((tm) => tm.role === 'owner')));
-
-  const clearAllFilters = () => {
-    setFilterState('');
-    setFilterTeam('');
-    setFilterType('');
-    setFilterHealth('');
-  };
-
-  const teamOptions = useMemo(
-    () => teams.map((t) => ({ value: t.id, label: t.name })),
-    [teams],
-  );
-
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (objectives.length === 0 && !activeFilterCount) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 px-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10 mb-5">
-          <Target01Icon className="h-7 w-7 text-amber-500" />
-        </div>
-        <h3 className="text-lg font-semibold mb-1.5">Create your first objective</h3>
-        <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-          Objectives align your team around measurable goals with key results, keeping everyone focused on outcomes that matter.
-        </p>
-        {canEdit && (
-          <CreateObjectiveButton
-            className="mb-8"
-            disabled={!canCreateObjective}
-            onClick={() => openCreate('objective')}
-          />
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
-          {[
-            { icon: Target02Icon, title: 'Set goals', desc: 'Define clear objectives with measurable key results' },
-            { icon: ChartIncreaseIcon, title: 'Measure progress', desc: 'Track completion across key results and linked epics' },
-            { icon: CheckListIcon, title: 'Align teams', desc: 'Connect objectives to team work for shared accountability' },
-          ].map((item) => (
-            <div key={item.title} className="flex flex-col items-center text-center rounded-lg border border-border/50 bg-muted/30 p-6">
-              <item.icon className="h-5 w-5 text-muted-foreground mb-3" />
-              <p className="text-sm font-medium mb-1">{item.title}</p>
-              <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const canCreateObjective = canEdit && (isAdmin || (filterTeam ? isTeamManager(filterTeam) : teamMemberships.some(tm => tm.role === 'owner')));
 
   return (
-    <div className="max-w-7xl mx-auto">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Objectives</h1>
-          <p className="text-sm text-muted-foreground">Set measurable goals and track key results across your team.</p>
-        </div>
-        {canEdit && (
-          <CreateObjectiveButton
-            disabled={!canCreateObjective}
-            onClick={() => openCreate('objective')}
-          />
-        )}
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <QuietPageHeader variant="shell" className="shrink-0" title={title} description="Set measurable goals and track key results across your team."
+        actions={canEdit && <CreateObjectiveButton disabled={!canCreateObjective} onClick={() => openCreate('objective')} />} />
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-quiet-divider-strong px-4 py-2 md:px-6">
+        <QuietSearchInput aria-label="Search objectives" placeholder="Search objectives…" value={search}
+          onChange={event => setSearch(event.target.value)} containerClassName="w-[220px] max-w-full" />
+        {definitions.map(definition => definition.key === 'owner' && members.length > 0 ? (
+          <div key="owner" className="flex items-center gap-1.5">
+            <span className="text-xs text-quiet-text-secondary">Owner</span>
+            <OwnerAvatarFilterRow workspaceId={workspaceId} members={members} selectedIds={filters.owner ?? []}
+              className="ml-0" onToggle={id => toggleFilter('owner', id)} />
+          </div>
+        ) : (
+          <QuietFilterDropdown key={definition.key} label={definition.label} emptyLabel={definition.label}
+            icon={definition.key === 'state' ? <WorkflowSquare01Icon className="h-3.5 w-3.5" /> : definition.key === 'health' ? <Activity01Icon className="h-3.5 w-3.5" /> : undefined}
+            value={filters[definition.key]?.[0] ?? ''} options={definition.options.map(option => ({ ...option, leading: option.icon }))}
+            onChange={value => toggleFilter(definition.key, value)} />
+        ))}
+        {search && visibleKeys.size === 0 && <QuietTextAction onClick={clearAll}>Clear all</QuietTextAction>}
       </div>
-
-      {/* Filters */}
-      <div className="mb-4 flex items-center gap-2 flex-wrap">
-        <FilterIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        <FilterChip label="Status" options={stateFilterOptions} value={filterState} onChange={setFilterState} />
-        <FilterChip label="Health" options={healthFilterOptions} value={filterHealth} onChange={setFilterHealth} />
-        {teamOptions.length > 0 && (
-          <FilterChip label="Team" options={teamOptions} value={filterTeam} onChange={setFilterTeam} />
-        )}
-        <FilterChip label="Type" options={typeFilterOptions} value={filterType} onChange={setFilterType} />
-        {activeFilterCount > 0 && (
-          <button
-            type="button"
-            className="text-xs text-muted-foreground hover:text-foreground cursor-pointer ml-1"
-            onClick={clearAllFilters}
-          >
-            Clear all
-          </button>
-        )}
+      <div className="shrink-0">
+        <PMFilterBar definitions={definitions} values={filters} visibleKeys={visibleKeys}
+          onToggle={toggleFilter} onRemove={key => setFilters(current => ({ ...current, [key]: [] }))} onClearAll={clearAll} />
       </div>
-
-      {filtered.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3 max-w-6xl">
-          {filtered.map((obj) => (
-            <MemoObjectiveCard
-              key={obj.objective.id}
-              data={obj}
-              canEdit={canEdit}
-              isAdmin={isAdmin}
-              onArchive={handleArchive}
-              onOpen={handleOpenObjective}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <p className="text-sm text-muted-foreground">No objectives match the current filters</p>
-          <button
-            type="button"
-            className="mt-2 text-xs text-primary hover:underline cursor-pointer"
-            onClick={clearAllFilters}
-          >
-            Clear filters
-          </button>
-        </div>
-      )}
+      <div role="region" aria-label="Objectives" className="min-h-0 flex-1 overflow-auto p-4 pb-20 md:p-6 md:pb-24">
+        {isLoading ? <div role="status" className="flex items-center gap-2 py-8 text-sm text-quiet-text-tertiary"><Loading01Icon className="h-4 w-4 animate-spin" />Loading objectives…</div>
+          : isError ? <QuietEmptyState title="Couldn’t load objectives" description="Try loading your objectives again."
+            action={<QuietTextAction onClick={() => void refetch()}>Retry</QuietTextAction>} />
+          : filtered.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {filtered.map(objective => <MemoObjectiveCard key={objective.objective.id} data={objective}
+                slug={workspace?.slug ?? ''} canEdit={canEdit} isAdmin={isAdmin} onArchive={handleArchive} />)}
+            </div>
+          ) : <QuietEmptyState title={hasFilters ? 'No objectives match these filters' : 'Create your first objective'}
+            description={hasFilters ? 'Adjust your search or clear filters to see more objectives.' : 'Define a goal, add measurable key results, and connect the epics that contribute to it.'}
+            action={hasFilters ? <QuietTextAction onClick={clearAll}>Clear filters</QuietTextAction>
+              : canEdit ? <CreateObjectiveButton disabled={!canCreateObjective} onClick={() => openCreate('objective')} /> : undefined} />}
+      </div>
     </div>
   );
 }
@@ -321,13 +203,13 @@ function ObjectiveCard({
   canEdit,
   isAdmin,
   onArchive,
-  onOpen,
+  slug,
 }: {
   data: ObjectiveWithDetails;
   canEdit: boolean;
   isAdmin: boolean;
   onArchive: (id: string) => void;
-  onOpen: (id: string) => void;
+  slug: string;
 }) {
   const { objective, stats, epics } = data;
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
@@ -350,24 +232,24 @@ function ObjectiveCard({
 
   return (
     <article
-      className="group flex flex-col rounded-lg border border-border/60 bg-card transition-all hover:shadow-md hover:border-border cursor-pointer"
+      className="group relative flex min-w-0 flex-col rounded-lg border border-quiet-divider-strong bg-quiet-surface transition-colors hover:border-quiet-field hover:bg-quiet-row-hover focus-within:outline-2 focus-within:outline-quiet-text-primary"
       style={{ contentVisibility: 'auto', containIntrinsicSize: '280px' }}
-      onClick={() => onOpen(objective.id)}
     >
       {/* Header */}
       <div className="p-3.5 pb-0">
         <div className="flex items-start gap-2">
-          <span className={`mt-[2px] shrink-0 ${isStrategic ? 'text-violet-500' : 'text-blue-500'}`}>
+          <span className={`mt-[2px] shrink-0 ${isStrategic ? 'text-quiet-lifecycle' : 'text-quiet-text-tertiary'}`}>
             {isStrategic ? <Target02Icon className="h-3.5 w-3.5" /> : <Target01Icon className="h-3.5 w-3.5" />}
           </span>
-          <p className="min-w-0 flex-1 text-sm font-semibold text-foreground leading-snug line-clamp-2">{objective.name}</p>
-          {canEdit && (
+          <h2 className="m-0 min-w-0 flex-1 text-[13.5px] font-semibold leading-5 tracking-[-0.008em] text-quiet-text-primary"><Link to="/w/$slug/pm/objectives/$objectiveId" params={{ slug, objectiveId: objective.id }} className="line-clamp-2 after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none">{objective.name}</Link></h2>
+          {canEdit && isAdmin && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 -mt-0.5 -mr-1 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label={`Actions for ${objective.name}`}
+                  className="relative z-10 h-6 w-6 -mt-0.5 -mr-1 shrink-0 text-quiet-text-tertiary sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 transition-opacity"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontalIcon className="h-3.5 w-3.5" />
@@ -386,12 +268,12 @@ function ObjectiveCard({
         </div>
 
         {/* Meta row */}
-        <div className="mt-2 mb-3 flex items-center justify-between">
-          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${stateCfg.badge}`}>
+        <div className="mt-2 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <QuietStatusText className={stateCfg.color}>
             {stateCfg.label}
-          </span>
+          </QuietStatusText>
           {objective.state !== 'closed' && (
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${health.className}`}>
+            <span className={`text-xs ${health.className}`}>
               {health.label}
             </span>
           )}
@@ -410,14 +292,14 @@ function ObjectiveCard({
           {hasKr && (
             <>
               <span className="text-[11px] text-muted-foreground">KR Progress</span>
-              <Progress value={krProgress} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+              <Progress value={krProgress} className="h-1.5 bg-quiet-divider-light [&>[data-slot=progress-indicator]]:bg-quiet-positive" />
               <span className="text-xs font-medium tabular-nums text-right">{krProgress}%</span>
             </>
           )}
           {hasEpics && (
             <>
               <span className="text-[11px] text-muted-foreground">Epic Progress</span>
-              <Progress value={epicProgress} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+              <Progress value={epicProgress} className="h-1.5 bg-quiet-divider-light [&>[data-slot=progress-indicator]]:bg-quiet-positive" />
               <span className="text-xs font-medium tabular-nums text-right">{epicProgress}%</span>
             </>
           )}
@@ -434,10 +316,10 @@ function ObjectiveCard({
               : 0;
             return (
               <div key={e.epic.id} className="flex items-center gap-1.5 py-0.5">
-                <HexagonIcon className="h-3 w-3 shrink-0 text-violet-400" />
+                <EpicColorSwatch color={e.epic.color} />
                 <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{e.epic.name}</span>
                 <div className="w-16 shrink-0">
-                  <Progress value={epicPct} className="h-1 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+                  <Progress value={epicPct} className="h-1 bg-quiet-divider-light [&>[data-slot=progress-indicator]]:bg-quiet-positive" />
                 </div>
                 <span className="w-7 text-right text-[11px] text-muted-foreground tabular-nums">{epicPct}%</span>
               </div>
@@ -467,5 +349,5 @@ const MemoObjectiveCard = memo(ObjectiveCard, (prev, next) => (
   prev.canEdit === next.canEdit &&
   prev.isAdmin === next.isAdmin &&
   prev.onArchive === next.onArchive &&
-  prev.onOpen === next.onOpen
+  prev.slug === next.slug
 ));

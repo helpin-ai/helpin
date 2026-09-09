@@ -11,7 +11,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@/components/design-system/quiet-dropdown-select';
 import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { gitService } from '@/lib/services/gitService';
 import { gitCommitURL, gitRepoURL } from '@/lib/gitUrls';

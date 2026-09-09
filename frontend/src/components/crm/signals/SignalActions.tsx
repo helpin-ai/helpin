@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { QuietPrimaryAction, QuietPropertyRow, QuietSection, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietSelect, QuietPrimaryAction, QuietPropertyRow, QuietSection, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCompany, useContact, useDeal, usePipeline } from '@/hooks/queries/useCRM';
 import { useCRMSituationDecision } from '@/hooks/queries/useCRMSituations';
 import { actionRequiresFollowThrough, actionStatus, approvalLabel, contextText, dismissalReasons } from '@/lib/crmSituationPresentation';
 import type { CRMSignalDismissalReason, CRMSuggestion } from '@/lib/crmTypes';
 import type { CRMSituationItem } from '@/lib/crmSituationTypes';
-import { PlaybookError, PlaybookField, PlaybookSelect } from '../playbooks/PlaybookUI';
+import { PlaybookError, PlaybookField } from '../playbooks/PlaybookUI';
 import { PlaybookActionReview, PlaybookActionResult } from './PlaybookActionReview';
 import { signalOverviewText, repeatsSignalText } from './SignalDrawerLayout';
 
@@ -113,7 +113,7 @@ function SignalDecision({ ws, slug, actions, signalId, allowed, selection, onClo
     {advancing && deal.data && <QuietPropertyRow label="Deal" value={<Link to="/w/$slug/crm/deals/$dealId" params={{ slug, dealId }} className="text-quiet-accent hover:underline">{deal.data.name}</Link>} />}
     {(creating || advancing) && <div><QuietPropertyRow label="Pipeline" value={pipeline.data?.name || 'Loading pipeline…'} /><QuietPropertyRow label={advancing ? 'Move to' : 'Stage'} value={stage?.name || 'Stage unavailable'} /></div>}
     {!available && <p role="alert" className="text-sm text-quiet-accent">The proposed deal, customer, pipeline, and stage must be available before you can approve. Check the recommendation’s configuration if they cannot be loaded.</p>}
-    {!accepting && <PlaybookField label="Reason">{(id) => <PlaybookSelect id={id} label="Dismissal reason" value={reason || 'choose'} onChange={(value) => setReason(value as CRMSignalDismissalReason)} disabled={write.isPending} options={[{ value: 'choose', label: 'Choose a reason' }, ...dismissalReasons]} />}</PlaybookField>}
+    {!accepting && <PlaybookField label="Reason">{(id) => <QuietSelect id={id} label="Dismissal reason" value={reason || 'choose'} onChange={(value) => setReason(value as CRMSignalDismissalReason)} disabled={write.isPending} options={[{ value: 'choose', label: 'Choose a reason' }, ...dismissalReasons]} />}</PlaybookField>}
     {stale && !write.isPending && <p role="alert" className="text-sm text-quiet-accent">This recommendation or signal has changed. Close this dialog and review its current state.</p>}
     {write.isError && <><PlaybookError error={write.error} /><p className="text-xs leading-5 text-quiet-text-secondary">Close this dialog and check the refreshed action status before deciding again. Your request may already have reached the server.</p></>}
     <DialogFooter><QuietTextAction disabled={write.isPending} onClick={onClose}>{write.isError || stale ? 'Close' : 'Cancel'}</QuietTextAction><QuietPrimaryAction disabled={write.isPending || write.isError || stale || !available || !accepting && (!reason || !dismissalReasons.some((entry) => entry.value === reason))} onClick={() => void decide()}>{write.isPending ? 'Recording…' : accepting ? approvalLabel(action) : 'Dismiss recommendation'}</QuietPrimaryAction></DialogFooter>

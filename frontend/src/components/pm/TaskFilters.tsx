@@ -1,3 +1,5 @@
+import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
+import { EpicColorSwatch } from './EpicColorSwatch';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { PlusSignIcon } from '@/lib/icons';
 import { PRIORITY_CONFIG, SEVERITY_CONFIG, TASK_TYPE_CONFIG } from '@/lib/pmConstants';
@@ -174,6 +176,7 @@ export function TaskFilterProvider({
     const epicOptions: FilterOption[] = epics.map((e) => ({
       value: e.epic.id,
       label: e.epic.name,
+      icon: <EpicColorSwatch color={e.epic.color} />,
     }));
 
     const sprintOptions: FilterOption[] = sprints.map((i) => ({
@@ -222,7 +225,7 @@ export function TaskFilterProvider({
       { key: 'owner_member_ids' as FilterKey, label: 'Owner', options: memberOptions, searchableValues: true },
       { key: 'requester_member_id' as FilterKey, label: 'Requester', options: memberOptions, searchableValues: true },
       { key: 'label_id' as FilterKey, label: 'Label', options: labelOptions, searchableValues: true },
-      { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions, searchableValues: true },
+      { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions, searchableValues: true, contentClassName: EPIC_PICKER_WIDTH },
       { key: 'sprint_id' as FilterKey, label: 'Sprint', options: sprintOptions, searchableValues: true },
       { key: 'contact_id' as FilterKey, label: 'Contact', options: contactOptions, searchableValues: true },
       { key: 'company_id' as FilterKey, label: 'Company', options: companyOptions, searchableValues: true },

@@ -1,16 +1,17 @@
 import { useDeferredValue, useState } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { QuietEmptyState, QuietPageHeader, QuietPageViewport, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietFilterDropdown, QuietEmptyState, QuietPageHeader, QuietPageViewport, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PMFilterBar } from '@/components/pm/PMFilterControls';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCRMPlaybooks, useCRMPlaybookTemplates, useCRMPlaybookWrite } from '@/hooks/queries/useCRMPlaybooks';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useTitle } from '@/hooks/useTitle';
-import { blankPlaybook, createPlaybookIntentKey, playbookStatus } from '@/lib/crmPlaybookPresentation';
+import { blankPlaybook, createPlaybookIntentKey, playbookFilterDefinitions, playbookStatus } from '@/lib/crmPlaybookPresentation';
 import type { CRMPlaybookDefinition } from '@/lib/crmPlaybookTypes';
 import type { PlaybookListFilters } from '@/lib/services/crmPlaybookService';
-import { PlaybookError, PlaybookHelp, PlaybookLoading, PlaybookNoAccess, PlaybookPagination, PlaybookSelect } from '@/components/crm/playbooks/PlaybookUI';
+import { PlaybookError, PlaybookHelp, PlaybookLoading, PlaybookNoAccess, PlaybookPagination } from '@/components/crm/playbooks/PlaybookUI';
 
 export function PlaybooksPage() {
   useTitle('Playbooks');
@@ -33,13 +34,22 @@ function PlaybooksList({ ws, slug, canAdmin }: { ws: string; slug: string; canAd
   const navigate = useNavigate();
   const filtered = !!search || state !== 'all';
   const clear = () => { setSearch(''); setState('all'); setPage(1); };
-  return <QuietPageViewport>
-    <QuietPageHeader title="Playbooks" description="Repeatable sales and success processes, with clear ownership and outcomes." actions={canAdmin && <QuietPrimaryAction onClick={() => setCreating(true)}>Create playbook</QuietPrimaryAction>} />
-    <div className="mt-6 flex flex-wrap items-center gap-3 border-b border-quiet-divider-strong pb-3">
+  const changeState = (value: string) => { setState(value as PlaybookListFilters['state']); setPage(1); };
+  const filterValues = { state: state && state !== 'all' ? [state] : [] };
+  const visibleKeys = new Set(filterValues.state.length ? ['state' as const] : []);
+  return <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <QuietPageHeader variant="shell" title="Playbooks" description="Repeatable sales and success processes, with clear ownership and outcomes." actions={canAdmin && <QuietPrimaryAction onClick={() => setCreating(true)}>Create playbook</QuietPrimaryAction>} />
+    <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-quiet-divider-strong px-4 py-2 md:px-6">
       <QuietSearchInput aria-label="Search playbooks" placeholder="Search playbooks…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} containerClassName="w-64 max-w-full" />
-      <PlaybookSelect label="Playbook status" value={state || 'all'} onChange={(value) => { setState(value as PlaybookListFilters['state']); setPage(1); }} options={[{ value: 'all', label: 'All statuses' }, { value: 'draft', label: 'Draft' }, { value: 'accepting', label: 'Accepting signals' }, { value: 'stopped', label: 'Enrollment stopped' }]} />
-      {filtered && <QuietTextAction onClick={clear}>Clear filters</QuietTextAction>}
+      <QuietFilterDropdown label="Playbook status" value={state || 'all'} onChange={changeState} options={playbookFilterDefinitions[0].options} />
+      {search && visibleKeys.size === 0 && <QuietTextAction onClick={clear}>Clear filters</QuietTextAction>}
     </div>
+    <div className="shrink-0">
+      <PMFilterBar definitions={playbookFilterDefinitions} values={filterValues} visibleKeys={visibleKeys}
+        onToggle={(_, value) => changeState(value === state ? 'all' : value)}
+        onRemove={() => changeState('all')} onClearAll={clear} />
+    </div>
+    <QuietPageViewport className="min-h-0 flex-1">
     {list.isPending ? <PlaybookLoading /> : list.isError ? <PlaybookError error={list.error} retry={() => void list.refetch()} /> : <>
       {list.data.data.length ? <Table aria-label="Playbooks" aria-busy={list.isFetching || search.trim() !== query}>
         <TableHeader><TableRow><TableHead>Playbook</TableHead><TableHead>Status</TableHead><TableHead><span className="inline-flex items-center">Open signals<PlaybookHelp label="About signal counts">Counts are customer objectives, not unique customers. One customer can have more than one objective.</PlaybookHelp></span></TableHead><TableHead>Paused</TableHead><TableHead>Closed</TableHead></TableRow></TableHeader>
@@ -51,8 +61,9 @@ function PlaybooksList({ ws, slug, canAdmin }: { ws: string; slug: string; canAd
       </Table> : <QuietEmptyState title={filtered ? 'No matching playbooks' : page > 1 ? 'No playbooks on this page' : 'Give your team a repeatable way forward'} description={filtered ? 'Try another name or status.' : 'Define the customer outcome, milestones, and who steps in when help is needed.'} action={filtered ? <QuietTextAction onClick={clear}>Clear filters</QuietTextAction> : undefined} />}
       <PlaybookPagination page={page} total={list.data.total} pageSize={list.data.page_size} onChange={setPage} busy={list.isFetching} />
     </>}
+    </QuietPageViewport>
     {creating && <CreatePlaybook ws={ws} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); void navigate({ to: '/w/$slug/crm/playbooks/$playbookId', params: { slug, playbookId: id } }); }} />}
-  </QuietPageViewport>;
+  </div>;
 }
 
 function CreatePlaybook({ ws, onClose, onCreated }: { ws: string; onClose: () => void; onCreated: (id: string) => void }) {

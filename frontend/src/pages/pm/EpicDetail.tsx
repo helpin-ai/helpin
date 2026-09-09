@@ -1,3 +1,4 @@
+import { DetailMetadataRow as MetadataRow } from '@/components/pm/DetailMetadataRow';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from 'react';
 import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -127,34 +128,6 @@ const EMPTY_ITEMS: never[] = [];
 
 function hasDraggedFiles(event: DragEvent) {
   return event.dataTransfer.types.includes('Files');
-}
-
-// ── Metadata Row ───────────────────────────────────────────────────
-
-function MetadataRow({
-  icon: Icon,
-  label,
-  tooltip,
-  children,
-}: {
-  icon: React.ElementType;
-  label: string;
-  tooltip?: string;
-  children: React.ReactNode;
-}) {
-  const labelNode = <span className="mt-0.5 text-[12px] text-muted-foreground">{label}</span>;
-
-  return (
-    <>
-      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      {tooltip ? (
-        <QuickTooltip label={tooltip} side="left">
-          {labelNode}
-        </QuickTooltip>
-      ) : labelNode}
-      <div className="min-w-0 text-[12px]">{children}</div>
-    </>
-  );
 }
 
 // ── Main Page ──────────────────────────────────────────────────────

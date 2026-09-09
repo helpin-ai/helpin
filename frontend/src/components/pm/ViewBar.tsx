@@ -19,19 +19,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from '@/components/ui/command';
+  QuietDropdownRoot as Popover,
+  QuietDropdownContent as PopoverContent,
+  QuietDropdownTrigger as PopoverTrigger,
+} from '@/components/design-system/quiet-dropdown';
+import { QuietDropdownOptions, QuietDropdownEmpty, QuietDropdownGroup, QuietDropdownItem, QuietDropdownSeparator } from "@/components/design-system/quiet-dropdown";
 import { usePMBoardStore, type BoardFilters } from '@/stores/pmBoardStore';
 import type { PMView } from '@/lib/pmTypes';
 import { isDefaultView } from '@/lib/pmDefaultViews';
@@ -171,9 +163,9 @@ function ViewsDropdownRow({
   onTogglePin: () => void;
 }) {
   return (
-    <CommandItem
+    <QuietDropdownItem
       key={view.id}
-      value={view.name}
+      value={view.id} keywords={[view.name]}
       onSelect={onOpen}
       className="group pr-8"
     >
@@ -182,20 +174,21 @@ function ViewsDropdownRow({
         <button
           type="button"
           onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
             onTogglePin();
           }}
           className={`absolute right-1.5 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-opacity duration-150 hover:bg-accent hover:text-foreground ${
-            view.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-60 hover:!opacity-100'
+            view.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-60 focus-visible:opacity-100 hover:!opacity-100'
           }`}
           aria-label={view.is_pinned ? 'Unpin view' : 'Pin view'}
         >
           <PinIcon className="h-3 w-3" />
         </button>
       </QuickTooltip>
-    </CommandItem>
+    </QuietDropdownItem>
   );
 }
 
@@ -217,7 +210,6 @@ function ViewsDropdown({
   const sharedViews = views.filter((v) => !isDefaultView(v.id) && v.is_shared);
   const totalCustom = personalViews.length + sharedViews.length;
   const hasAnyCustom = totalCustom > 0;
-  const showSearch = totalCustom > 10;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -228,20 +220,18 @@ function ViewsDropdown({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-0" align="start">
-        <Command>
-          {showSearch ? <CommandInput placeholder="Search views..." /> : null}
-          <CommandList
-            className="[scrollbar-width:thin] [&::-webkit-scrollbar]:!block [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/40"
-          >
+        <QuietDropdownOptions searchPlaceholder="Search views..." listClassName="[scrollbar-width:thin] [&::-webkit-scrollbar]:!block [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/40" footer={<div className="border-t border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
+            Want to create a view? Apply filters, then <span className="text-foreground/80">save as view</span>.
+          </div>}>
             {!hasAnyCustom ? (
               <div className="px-3 py-4 text-center text-xs text-muted-foreground">
                 No saved views yet.
               </div>
             ) : (
-              <CommandEmpty>No views found.</CommandEmpty>
+              <QuietDropdownEmpty>No views found.</QuietDropdownEmpty>
             )}
             {personalViews.length > 0 && (
-              <CommandGroup heading="Personal">
+              <QuietDropdownGroup heading="Personal">
                 {personalViews.map((view) => (
                   <ViewsDropdownRow
                     key={view.id}
@@ -253,11 +243,11 @@ function ViewsDropdown({
                     onTogglePin={() => onTogglePin(view)}
                   />
                 ))}
-              </CommandGroup>
+              </QuietDropdownGroup>
             )}
-            {personalViews.length > 0 && sharedViews.length > 0 && <CommandSeparator />}
+            {personalViews.length > 0 && sharedViews.length > 0 && <QuietDropdownSeparator />}
             {sharedViews.length > 0 && (
-              <CommandGroup heading="Shared">
+              <QuietDropdownGroup heading="Shared">
                 {sharedViews.map((view) => (
                   <ViewsDropdownRow
                     key={view.id}
@@ -269,13 +259,9 @@ function ViewsDropdown({
                     onTogglePin={() => onTogglePin(view)}
                   />
                 ))}
-              </CommandGroup>
+              </QuietDropdownGroup>
             )}
-          </CommandList>
-          <div className="border-t border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
-            Want to create a view? Apply filters, then <span className="text-foreground/80">save as view</span>.
-          </div>
-        </Command>
+          </QuietDropdownOptions>
       </PopoverContent>
     </Popover>
   );

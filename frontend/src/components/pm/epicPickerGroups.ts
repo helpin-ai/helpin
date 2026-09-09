@@ -1,5 +1,8 @@
 import type { Epic } from '@/lib/pmTypes';
 
+/** Epic names need room; QuietDropdownContent still caps width to the viewport. */
+export const EPIC_PICKER_WIDTH = 'w-[384px]';
+
 export function groupEpicsByLifecycle(epics: Iterable<Epic>) {
   const notStarted: Epic[] = [];
   const inProgress: Epic[] = [];

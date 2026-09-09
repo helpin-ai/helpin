@@ -1,6 +1,6 @@
 import { useDeferredValue, useState } from 'react';
 import { toast } from 'sonner';
-import { QuietEmptyState, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietFilterDropdown, QuietEmptyState, QuietPrimaryAction, QuietSearchInput, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -8,7 +8,7 @@ import { useCRMPlaybookParticipants, useCRMPlaybookPreview, useCRMPlaybookWrite 
 import { attentionLabels, createPlaybookIntentKey } from '@/lib/crmPlaybookPresentation';
 import type { CRMPlaybookItem } from '@/lib/crmPlaybookTypes';
 import type { CRMSituationItem } from '@/lib/crmSituationTypes';
-import { PlaybookError, PlaybookLoading, PlaybookPagination, PlaybookSelect } from './PlaybookUI';
+import { PlaybookError, PlaybookLoading, PlaybookPagination } from './PlaybookUI';
 import { SignalDrawer } from '../signals/SignalDrawer';
 
 function SignalTable({ signals, onOpen, preview = false, busy = false }: { signals: CRMSituationItem[]; onOpen: (signal: CRMSituationItem) => void; preview?: boolean; busy?: boolean }) {
@@ -41,8 +41,8 @@ export function PlaybookParticipants({ ws, slug, item, canEdit }: { ws: string; 
   return <>
     <div className="flex flex-wrap items-center gap-3 border-b border-quiet-divider-strong py-4">
       <QuietSearchInput aria-label="Search playbook signals" placeholder="Search customers or signals…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} containerClassName="w-64 max-w-full" />
-      <PlaybookSelect label="Signal status" value={state} onChange={(value) => { setState(value); setPage(1); }} options={[{ value: 'all', label: 'All statuses' }, { value: 'needs_attention', label: 'Needs attention' }, { value: 'open', label: 'Open' }, { value: 'waiting', label: 'Waiting' }, { value: 'paused', label: 'Paused' }, { value: 'closed', label: 'Closed' }]} />
-      <PlaybookSelect label="Assignment" value={scope} onChange={(value) => { setScope(value); setPage(1); }} options={[{ value: 'all', label: 'Everyone' }, { value: 'mine', label: 'Assigned to me' }, { value: 'my_teams', label: 'My teams' }, { value: 'unassigned', label: 'Unassigned' }]} />
+      <QuietFilterDropdown label="Signal status" value={state} onChange={(value) => { setState(value); setPage(1); }} options={[{ value: 'all', label: 'All statuses' }, { value: 'needs_attention', label: 'Needs attention' }, { value: 'open', label: 'Open' }, { value: 'waiting', label: 'Waiting' }, { value: 'paused', label: 'Paused' }, { value: 'closed', label: 'Closed' }]} />
+      <QuietFilterDropdown label="Assignment" value={scope} onChange={(value) => { setScope(value); setPage(1); }} options={[{ value: 'all', label: 'Everyone' }, { value: 'mine', label: 'Assigned to me' }, { value: 'my_teams', label: 'My teams' }, { value: 'unassigned', label: 'Unassigned' }]} />
       {filtered && <QuietTextAction onClick={clear}>Clear filters</QuietTextAction>}
     </div>
     {participants.isPending ? <PlaybookLoading /> : participants.isError ? <PlaybookError error={participants.error} retry={() => void participants.refetch()} /> : <>
