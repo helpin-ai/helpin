@@ -1,3 +1,4 @@
+import { NWDIAG_EXAMPLE } from '@/lib/nwdiagRenderer';
 import type { Editor } from '@tiptap/core';
 import {
   Building03Icon,
@@ -102,6 +103,16 @@ export const slashCommands: SlashCommand[] = [
     description: 'Fenced code block',
     icon: SourceCodeIcon,
     action: (editor) => editor.chain().focus().toggleCodeBlock().run(),
+  },
+  {
+    title: 'nwdiag',
+    description: 'Network diagram from nwdiag source',
+    icon: SourceCodeIcon,
+    action: (editor) => editor.chain().focus().insertContent({
+      type: 'codeBlock',
+      attrs: { language: 'nwdiag' },
+      content: [{ type: 'text', text: NWDIAG_EXAMPLE }],
+    }).run(),
   },
   {
     title: 'Divider',

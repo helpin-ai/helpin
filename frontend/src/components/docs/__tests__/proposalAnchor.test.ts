@@ -133,9 +133,9 @@ describe('proposalPreviewKind', () => {
     expect(proposalPreviewKind({ type: 'heading' }, { type: 'heading' })).toBe('text')
   })
 
-  it('detects mermaid code blocks', () => {
-    const node = { type: 'codeBlock', attrs: { language: 'mermaid' } }
-    expect(proposalPreviewKind(node, node)).toBe('mermaid')
+  it.each(['mermaid', 'nwdiag'])('detects %s code blocks', (language) => {
+    const node = { type: 'codeBlock', attrs: { language } }
+    expect(proposalPreviewKind(node, node)).toBe(language)
   })
 
   it('treats non-mermaid code blocks as text', () => {

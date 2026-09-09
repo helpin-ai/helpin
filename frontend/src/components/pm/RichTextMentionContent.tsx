@@ -1,6 +1,7 @@
 import { createElement, useCallback, useMemo, useRef } from 'react'
 
 import { LoadingImage } from '@/components/ui/loading-image'
+import { NwdiagBlock } from '@/components/editor/NwdiagBlock'
 import { MermaidBlock } from '@/components/editor/MermaidBlock'
 import { MentionText } from '@/components/pm/MentionText'
 import { normalizeInlineAttachmentImageSrcs } from '@/components/pm/editorImageAttachments'
@@ -80,11 +81,13 @@ function renderNode(
     const code = Array.from(element.children).find((child) => child.tagName.toLowerCase() === 'code')
     const isMermaid = code && Array.from(code.classList)
       .some((className) => className.toLowerCase() === 'language-mermaid')
-    if (code && isMermaid) {
+    const isNwdiag = code && Array.from(code.classList)
+      .some((className) => className.toLowerCase() === 'language-nwdiag')
+    if (code && (isMermaid || isNwdiag)) {
       const source = code.textContent ?? ''
       return (
         <div key={key} className="my-3 overflow-hidden rounded-md border border-border bg-muted/20">
-          <MermaidBlock source={source} />
+          {isNwdiag ? <NwdiagBlock source={source} /> : <MermaidBlock source={source} />}
         </div>
       )
     }

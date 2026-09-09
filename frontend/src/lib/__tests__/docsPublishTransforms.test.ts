@@ -75,6 +75,30 @@ describe('prepareDocsContentForPublish', () => {
     });
   });
 
+  it('publishes nested nwdiag blocks in both themes and retains editable source', async () => {
+    const source = {
+      type: 'codeBlock', attrs: { language: 'NWDIAG' },
+      content: [{ type: 'text', text: 'nwdiag { network dmz { web01; } }' }],
+    };
+    const result = await prepareDocsContentForPublish({
+      type: 'doc', content: [{ type: 'blockquote', content: [source] }],
+    }, { uploadConfig });
+    const image = result?.content?.[0].content?.[0];
+    expect(image?.type).toBe('resizableImage');
+    expect(image?.attrs?.src).toContain('nwdiag-');
+    expect(image?.attrs?.src).toContain('-light.svg');
+    expect(image?.attrs?.darkSrc).toContain('-dark.svg');
+    expect(image?.attrs?.publishedFrom).toEqual({ ...source, attrs: { language: 'nwdiag' } });
+    expect(source.attrs.language).toBe('NWDIAG');
+  });
+
+  it('rejects invalid nwdiag source instead of publishing an error image', async () => {
+    await expect(prepareDocsContentForPublish({
+      type: 'codeBlock', attrs: { language: 'nwdiag' },
+      content: [{ type: 'text', text: 'not a diagram' }],
+    }, { uploadConfig })).rejects.toThrow();
+  });
+
   it('replaces Excalidraw blocks with PNG image snapshots', async () => {
     const source = {
       type: 'excalidraw',
