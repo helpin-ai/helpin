@@ -891,9 +891,9 @@ function Dashboard() {
                     rows={3}
                     className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  <p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  {/\{(?:reply_time|next_open)\}/.test(escalationMessage || ESCALATION_DEFAULT_PLACEHOLDER) && (<p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                     Preview: <span className="italic">&ldquo;{escalationPreviewDefault}&rdquo;</span>
-                  </p>
+                  </p>)}
                 </TabsContent>
                 <TabsContent value="busy" className="mt-0">
                   <Textarea
@@ -905,9 +905,9 @@ function Dashboard() {
                     rows={3}
                     className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  <p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  {/\{(?:reply_time|next_open)\}/.test(escalationMessageBusy || ESCALATION_BUSY_PLACEHOLDER) && (<p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                     Preview: <span className="italic">&ldquo;{escalationPreviewBusy}&rdquo;</span>
-                  </p>
+                  </p>)}
                 </TabsContent>
                 <TabsContent value="after_hours" className="mt-0">
                   <Textarea
@@ -919,9 +919,9 @@ function Dashboard() {
                     rows={3}
                     className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  <p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  {/\{(?:reply_time|next_open)\}/.test(escalationMessageAfterHours || ESCALATION_AFTER_HOURS_PLACEHOLDER) && (<p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                     Preview: <span className="italic">&ldquo;{escalationPreviewAfterHours}&rdquo;</span> <span className="text-muted-foreground/70">(example — actual time depends on your business hours schedule)</span>
-                  </p>
+                  </p>)}
                   {!businessHoursEnabled && (
                     <p className="px-3 pb-2 text-xs text-muted-foreground">
                       Enable business hours so customers see an accurate return time.
