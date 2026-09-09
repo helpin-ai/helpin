@@ -86,7 +86,7 @@ func TestMeetingFollowUpBackfillOnlySelectsPendingUnclassifiedAndBounded(t *test
 			item.Status = "dismissed"
 		}
 		if i == 2 {
-			item.Context[model.MeetingFollowUpRoutingVersionKey] = "v1"
+			item.Context[model.MeetingFollowUpRoutingVersionKey] = model.MeetingFollowUpRoutingVersion
 		}
 		if err := db.Create(&item).Error; err != nil {
 			t.Fatal(err)
@@ -164,5 +164,31 @@ func TestMeetingFollowUpReviewedInMyWorkCannotResurrectAfterOwnerLeaves(t *testi
 	_, total, err := NewCRMSuggestionRepository(db).List(context.Background(), f.Workspace, model.CRMSuggestionListFilters{}, model.PMPagination{Page: 1, PerPage: 25})
 	if err != nil || total != 0 {
 		t.Fatalf("reviewed suggestion reappeared in CRM: %d %v", total, err)
+	}
+}
+
+func TestMeetingFollowUpBackfillRevisitsOlderClassificationPolicy(t *testing.T) {
+	db := f.Open(t)
+	f.Exec(t, db, "DELETE FROM crm_suggestions")
+	object := "meeting"
+	for _, scope := range []string{"customer", "uncertain"} {
+		item := model.CRMSuggestion{ID: uuid.NewString(), WorkspaceID: f.Workspace, ObjectType: &object, ObjectID: f.Ptr(uuid.NewString()), SuggestionType: "follow_up", Title: "Team recap", Status: "pending", Context: model.JSONB{model.MeetingFollowUpRoutingVersionKey: "v1", model.MeetingFollowUpScopeKey: scope}, SignalIDs: model.StringArray{}}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo := NewCRMSuggestionRepository(db)
+	items, err := repo.MeetingFollowUpsToRoute(context.Background(), 3)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("old classifications were not automatically revisited: %d %v", len(items), err)
+	}
+	for _, item := range items {
+		if err := repo.RouteMeetingFollowUp(context.Background(), item, "internal"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err = repo.MeetingFollowUpsToRoute(context.Background(), 3)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("current policy was repeatedly classified: %d %v", len(items), err)
 	}
 }

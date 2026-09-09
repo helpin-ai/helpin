@@ -1,4 +1,3 @@
-import { RoutingRecheck } from './RoutingRecheck';
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -11,10 +10,10 @@ import { pmAISuggestionsService as service, type PMAISuggestion } from '@/lib/se
 import { unwrapRequired } from '@/lib/queryUtils';
 import { timeAgo } from '@/lib/utils';
 
-interface Props { ws: string; memberId: string; slug: string; canEdit: boolean; canReadCRM: boolean; canRecheck?: boolean }
+interface Props { ws: string; memberId: string; slug: string; canEdit: boolean; canReadCRM: boolean }
 const keys = (ws: string, memberId: string) => ['pm', ws, 'ai-suggestions', memberId] as const;
 
-export function AISuggestions({ ws, memberId, slug, canEdit, canReadCRM, canRecheck }: Props) {
+export function AISuggestions({ ws, memberId, slug, canEdit, canReadCRM }: Props) {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<PMAISuggestion>();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -27,7 +26,6 @@ export function AISuggestions({ ws, memberId, slug, canEdit, canReadCRM, canRech
   });
 
   return <div className="pb-28">
-    {canRecheck && <RoutingRecheck ws={ws} onComplete={() => setPage(1)} />}
     <h2 ref={heading} tabIndex={-1} className="sr-only">AI suggestions</h2>
     {query.isPending ? <p role="status" className="py-8 text-sm text-quiet-text-tertiary">Loading suggestions…</p>
       : query.isError ? <QuietEmptyState title="Unable to load suggestions" description="Try again to load your meeting follow-ups." action={<QuietTextAction onClick={() => void query.refetch()}>Try again</QuietTextAction>} />

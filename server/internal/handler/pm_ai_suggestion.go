@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -15,52 +14,10 @@ import (
 
 type PMAISuggestionHandler struct {
 	service *service.PMAISuggestionService
-	routing interface {
-		Recheck(context.Context, string, string) (*model.MeetingFollowUpRecheckResult, error)
-	}
 }
 
 func NewPMAISuggestionHandler(s *service.PMAISuggestionService) *PMAISuggestionHandler {
 	return &PMAISuggestionHandler{service: s}
-}
-
-func (h *PMAISuggestionHandler) SetRoutingRecheck(routing interface {
-	Recheck(context.Context, string, string) (*model.MeetingFollowUpRecheckResult, error)
-}) *PMAISuggestionHandler {
-	h.routing = routing
-	return h
-}
-
-func (h *PMAISuggestionHandler) RecheckRouting(w http.ResponseWriter, r *http.Request) {
-	if h.routing == nil {
-		writeError(w, http.StatusServiceUnavailable, "Routing checks are temporarily unavailable")
-		return
-	}
-	result, err := h.routing.Recheck(r.Context(), getWorkspaceID(r), r.URL.Query().Get("cursor"))
-	if err != nil {
-		var entitlementErr *service.EntitlementError
-		billing := errors.As(err, &entitlementErr) || errors.Is(err, model.ErrAIUsageExhausted) || errors.Is(err, model.ErrExtraAIUsageUnavailable) || errors.Is(err, model.ErrExtraAIUsageDisabled) || errors.Is(err, model.ErrBillingWorkspaceLocked)
-		if result != nil {
-			if billing {
-				result.BillingError = err.Error()
-			} else {
-				result.Failure = "The routing check could not finish. Please try again."
-				slog.ErrorContext(r.Context(), "routing recheck partially failed", "workspace_id", getWorkspaceID(r), "error", err)
-			}
-			writeJSON(w, http.StatusOK, result)
-			return
-		}
-		switch {
-		case errors.Is(err, service.ErrMeetingFollowUpRecheckBusy):
-			writeError(w, http.StatusTooManyRequests, err.Error())
-		case errors.As(err, &entitlementErr), errors.Is(err, model.ErrAIUsageExhausted), errors.Is(err, model.ErrExtraAIUsageUnavailable), errors.Is(err, model.ErrExtraAIUsageDisabled), errors.Is(err, model.ErrBillingWorkspaceLocked):
-			writeBillingAwareError(w, http.StatusPaymentRequired, err)
-		default:
-			h.writeError(w, r, err)
-		}
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *PMAISuggestionHandler) List(w http.ResponseWriter, r *http.Request) {

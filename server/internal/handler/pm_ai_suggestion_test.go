@@ -80,38 +80,3 @@ func TestPMAISuggestionHandlerStaleDecision(t *testing.T) {
 		t.Fatalf("stale status %d", response.Code)
 	}
 }
-
-type pmRecheckHandlerStub struct {
-	calls  int
-	result *model.MeetingFollowUpRecheckResult
-	err    error
-}
-
-func (s *pmRecheckHandlerStub) Recheck(context.Context, string, string) (*model.MeetingFollowUpRecheckResult, error) {
-	s.calls++
-	return s.result, s.err
-}
-func TestPMAISuggestionRecheckPermissionAndPartialBilling(t *testing.T) {
-	for _, role := range []string{"viewer", "member"} {
-		t.Run(role, func(t *testing.T) {
-			stub := &pmRecheckHandlerStub{result: &model.MeetingFollowUpRecheckResult{Items: []model.MeetingFollowUpRecheckItem{{ID: "first", Outcome: "internal"}}, NextCursor: "first"}, err: model.ErrAIUsageExhausted}
-			h := NewPMAISuggestionHandler(nil).SetRoutingRecheck(stub)
-			authz := authorization.NewAuthzService(nil, nil, nil)
-			router := chi.NewRouter()
-			router.With(authorization.RequirePermission(authz, authorization.PermPMEdit), authorization.RequirePermission(authz, authorization.PermCRMRead), authorization.RequirePermission(authz, authorization.PermCRMEdit)).Post("/ai-suggestions/recheck-routing", h.RecheckRouting)
-			req := httptest.NewRequest("POST", "/ai-suggestions/recheck-routing?workspace_id=ws", strings.NewReader(`{}`))
-			req = req.WithContext(authorization.WithActor(req.Context(), &authorization.Actor{UserID: "user", WorkspaceID: "ws", WorkspaceMemberID: "member", Role: role, Status: "active"}))
-			response := httptest.NewRecorder()
-			router.ServeHTTP(response, req)
-			if role == "viewer" {
-				if response.Code != 403 || stub.calls != 0 {
-					t.Fatalf("viewer invoked AI: %d %d", response.Code, stub.calls)
-				}
-				return
-			}
-			if response.Code != 200 || stub.calls != 1 || !strings.Contains(response.Body.String(), `"outcome":"internal"`) || !strings.Contains(response.Body.String(), `"billing_error"`) {
-				t.Fatalf("lost partial billing outcome: %d %s", response.Code, response.Body.String())
-			}
-		})
-	}
-}

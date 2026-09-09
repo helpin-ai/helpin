@@ -79,7 +79,7 @@ export function getUpgradeRequiredReason(error: unknown): UpgradeRequiredReason 
       primaryBenefit: 'Scheduled agents and cron',
     };
   }
-  if (normalized.includes('ai usage exhausted') || normalized.includes('ai allowance exhausted') || normalized.includes('extra ai usage disabled') || normalized.includes('extra ai usage is not available')) {
+  if (normalized.includes('ai usage exhausted') || normalized.includes('extra ai usage is not available')) {
     return {
       kind: 'ai_usage',
       title: 'Upgrade to continue',
