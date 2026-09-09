@@ -1,3 +1,4 @@
+import { TaskListGroupingDropdown } from './TaskListGroupingDropdown';
 import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -1290,19 +1291,11 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
                   </button>
                 </div>
               ) : (
-                <Select value={listGroupBy} onValueChange={(value) => setListGroupBy(value as TaskListGroupByOption)}>
-                  <SelectTrigger className="h-7 w-auto min-w-[150px] max-w-[190px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:ring-0 focus-visible:border-transparent">
-                    <span className="shrink-0 text-muted-foreground">Group by:</span>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {listGroupOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <TaskListGroupingDropdown
+                  value={listGroupBy}
+                  options={listGroupOptions}
+                  onChange={setListGroupBy}
+                />
               )}
             </BoardToolbarSlot>
             <BoardToolbarSlot className="gap-1">

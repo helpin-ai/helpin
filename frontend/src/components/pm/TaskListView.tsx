@@ -1,3 +1,4 @@
+import { TaskListGroupingDropdown } from './TaskListGroupingDropdown';
 import { useQuietDropdownFocusReturn } from '@/components/design-system/use-quiet-dropdown-focus-return';
 import { PMFilterPill, PMFilterTrigger } from './PMFilterControls';
 import { useTableSurface } from '@/hooks/useTableSurface';
@@ -24,7 +25,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Cancel01Icon, Copy01Icon, Loading01Icon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { PMDropdownContent } from './PMDropdownContent';
 import { QuietDropdownRoot, QuietDropdownTrigger, QuietDropdownOptions, QuietDropdownEmpty, QuietDropdownGroup, QuietDropdownItem } from "@/components/design-system/quiet-dropdown";
@@ -1916,19 +1916,11 @@ export function TaskListView({
           ) : null}
           <div className="ml-auto flex items-center gap-1.5">
             {toolbarActions}
-            <Select size="ui" value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
-              <SelectTrigger className="w-auto min-w-[138px] max-w-[190px]">
-                <span className="shrink-0 text-muted-foreground">Group by</span>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {visibleGroupOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <TaskListGroupingDropdown
+              value={groupBy}
+              options={visibleGroupOptions}
+              onChange={setGroupBy}
+            />
             {!usePortal ? bulkActionsBar : null}
             <ListDisplayMenu disabledKeys={teamDisabledKeys} />
           </div>

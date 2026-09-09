@@ -81,7 +81,7 @@ describe('borderless task surfaces', () => {
     expect(taskListSource).toContain('font-mono text-ui text-muted-foreground');
     expect(taskListSource).toContain('text-left ${TABLE_NAME_TEXT} hover:text-primary');
     expect(tableStylesSource).toContain("TABLE_NAME_TEXT = 'text-sm text-foreground/90'");
-    expect(taskListSource).toContain('<Select size="ui"');
+    expect(taskListSource).toContain('<TaskListGroupingDropdown');
     expect(taskListSource).toContain('QuietDropdownOptions');
     expect(taskListSource).toContain('triggerClassName="text-[length:var(--text-ui)]"');
     expect(taskListSource).toContain('singleLine');
