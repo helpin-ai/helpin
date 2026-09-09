@@ -64,6 +64,7 @@ type SupportConversation struct {
 	// AI State — separate from human Status. Null when AI is not involved.
 	AIState                  *string    `json:"ai_state" gorm:"index"` // null, "pending", "resolved", "escalated"
 	AIResolvedAt             *time.Time `json:"ai_resolved_at" gorm:"type:timestamptz"`
+	DelayedTeamReplySentFor  *time.Time `json:"-" gorm:"type:timestamptz;default:null"`
 	AIEscalatedAt            *time.Time `json:"ai_escalated_at" gorm:"type:timestamptz"`
 	AIResolutionType         *string    `json:"ai_resolution_type"` // "confirmed", "assumed", null
 	AITurnCount              int        `json:"ai_turn_count" gorm:"not null;default:0"`
@@ -1282,9 +1283,12 @@ type SupportInboxSettings struct {
 	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
 
 	// Escalation
-	EscalationMessage           string `json:"escalation_message"`             // message shown when AI hands off to human (live)
-	EscalationMessageBusy       string `json:"escalation_message_busy"`        // message shown when AI hands off while team is busy
-	EscalationMessageAfterHours string `json:"escalation_message_after_hours"` // message shown when AI hands off after hours
+	DelayedTeamReplyMinutes        int    `json:"delayed_team_reply_minutes"`
+	DelayedTeamReplyMessage        string `json:"delayed_team_reply_message"`
+	DelayedTeamReplyMessageNoEmail string `json:"delayed_team_reply_message_no_email"`
+	EscalationMessage              string `json:"escalation_message"`             // message shown when AI hands off to human (live)
+	EscalationMessageBusy          string `json:"escalation_message_busy"`        // message shown when AI hands off while team is busy
+	EscalationMessageAfterHours    string `json:"escalation_message_after_hours"` // message shown when AI hands off after hours
 
 	// Handoff Routing
 	HandoffBehavior    string  `json:"handoff_behavior"` // unassigned, assign_to_team, round_robin
@@ -1370,40 +1374,43 @@ type SupportRoutingUsageStatus struct {
 // DefaultSupportInboxSettings returns settings with sensible defaults.
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
-		RequireEmailBeforeChat:        true,
-		RequirePhoneAfterEmail:        false,
-		WelcomeMessage:                "Hi there! How can we help you today?",
-		AutoCreateCRMContact:          true,
-		DefaultLifecycleStage:         "subscriber",
-		AutoPromoteToLead:             false,
-		AIEnabled:                     false,
-		AIAgentID:                     nil,
-		AIConfidenceThreshold:         0.7,
-		AIResponseMode:                "ai_first",
-		AIPreRouterMode:               SupportAIPreRouterModeEnabled,
-		AIMaxFollowups:                5,
-		AIAutoResolveTimeout:          24,
-		ShowTalkToHuman:               true,
-		EscalationMessage:             "Let me connect you with a team member — they typically reply in {reply_time}.",
-		EscalationMessageBusy:         "I've notified the team. Everyone's helping other customers right now — expect a reply within {reply_time}.",
-		EscalationMessageAfterHours:   "I've passed this on to the team. We're away right now and back {next_open}.",
-		HandoffBehavior:               "unassigned",
-		HandoffTeamID:                 nil,
-		DefaultMailboxID:              nil,
-		AIHandoffMailboxID:            nil,
-		TriageEnabled:                 true,
-		TriageAutoMoveEnabled:         true,
-		TriageConfidenceThreshold:     0.8,
-		TriageWidgetEnabled:           true,
-		TriageEmailEnabled:            true,
-		TriageInternalEnabled:         false,
-		TriageFallbackBehavior:        "shared",
-		TriageRerunOnMeaningChange:    false,
-		TriageDailyBudget:             250,
-		TriageSkipSpamConversations:   true,
-		TriageDeduplicateFirstMessage: true,
-		BusinessHoursEnabled:          false,
-		BusinessHoursTimezone:         "America/New_York",
+		RequireEmailBeforeChat:         true,
+		RequirePhoneAfterEmail:         false,
+		WelcomeMessage:                 "Hi there! How can we help you today?",
+		AutoCreateCRMContact:           true,
+		DefaultLifecycleStage:          "subscriber",
+		AutoPromoteToLead:              false,
+		AIEnabled:                      false,
+		AIAgentID:                      nil,
+		AIConfidenceThreshold:          0.7,
+		AIResponseMode:                 "ai_first",
+		AIPreRouterMode:                SupportAIPreRouterModeEnabled,
+		AIMaxFollowups:                 5,
+		AIAutoResolveTimeout:           24,
+		ShowTalkToHuman:                true,
+		DelayedTeamReplyMinutes:        5,
+		DelayedTeamReplyMessage:        "Our team hasn’t been able to reply yet. You don’t need to keep this chat open. We’ll email you when someone responds.",
+		DelayedTeamReplyMessageNoEmail: "Our team hasn’t been able to reply yet. Leave your email and we’ll notify you when someone responds, so you don’t have to wait here.",
+		EscalationMessage:              "Let me connect you with a team member — they typically reply in {reply_time}.",
+		EscalationMessageBusy:          "I've notified the team. Everyone's helping other customers right now — expect a reply within {reply_time}.",
+		EscalationMessageAfterHours:    "I've passed this on to the team. We're away right now and back {next_open}.",
+		HandoffBehavior:                "unassigned",
+		HandoffTeamID:                  nil,
+		DefaultMailboxID:               nil,
+		AIHandoffMailboxID:             nil,
+		TriageEnabled:                  true,
+		TriageAutoMoveEnabled:          true,
+		TriageConfidenceThreshold:      0.8,
+		TriageWidgetEnabled:            true,
+		TriageEmailEnabled:             true,
+		TriageInternalEnabled:          false,
+		TriageFallbackBehavior:         "shared",
+		TriageRerunOnMeaningChange:     false,
+		TriageDailyBudget:              250,
+		TriageSkipSpamConversations:    true,
+		TriageDeduplicateFirstMessage:  true,
+		BusinessHoursEnabled:           false,
+		BusinessHoursTimezone:          "America/New_York",
 		BusinessHoursSchedule: map[string]BusinessHoursDay{
 			"mon": {Start: "09:00", End: "17:00", Enabled: true},
 			"tue": {Start: "09:00", End: "17:00", Enabled: true},
@@ -1459,6 +1466,9 @@ type UpdateInstallationSettingsRequest struct {
 	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`
 	AIAutoResolveTimeout            *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman                 *bool                       `json:"show_talk_to_human,omitempty"`
+	DelayedTeamReplyMinutes         *int                        `json:"delayed_team_reply_minutes,omitempty"`
+	DelayedTeamReplyMessage         *string                     `json:"delayed_team_reply_message,omitempty"`
+	DelayedTeamReplyMessageNoEmail  *string                     `json:"delayed_team_reply_message_no_email,omitempty"`
 	EscalationMessage               *string                     `json:"escalation_message,omitempty"`
 	EscalationMessageBusy           *string                     `json:"escalation_message_busy,omitempty"`
 	EscalationMessageAfterHours     *string                     `json:"escalation_message_after_hours,omitempty"`

@@ -13,6 +13,19 @@ test('scannable list, shared filters, template creation, and no execution writes
   await page.getByLabel('Search playbooks', { exact: true }).fill('not a match');
   await expect(page.getByText('No matching playbooks', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Clear filters', exact: true }).first().click();
+  await page.getByRole('button', { name: /^Playbook status:/ }).click();
+  await page.getByRole('option', { name: 'Draft', exact: true }).click();
+  await expect(page.getByText('No matching playbooks', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Remove Playbook status filter' })).toBeVisible();
+  await expect(page.getByRole('option')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Draft', exact: true }).click();
+  await page.getByRole('option', { name: 'Accepting signals', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: /^Playbook status:/ })).toHaveText('Accepting signals');
+  await expect(page.getByRole('table', { name: 'Playbooks', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove Playbook status filter' }).click();
+  await expect(page.getByRole('button', { name: /^Playbook status:/ })).toHaveText('All statuses');
+  await expect(page.getByRole('button', { name: 'Clear all', exact: true })).toHaveCount(0);
   await page.screenshot({ path: '/tmp/helpin-playbooks-list.png', animations: 'disabled' });
   await page.getByRole('button', { name: 'Create playbook', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Nothing runs');
@@ -86,6 +99,7 @@ test('preview is read-only; enrollment requires confirmation and exact published
   const { writes, reads } = await installPlaybookMocks(page);
   await page.goto(`${harness}?detail`);
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button', { name: /Review & automation/ }).click();
   await page.getByRole('button', { name: 'Preview matches', exact: true }).click();
   await page.getByRole('button', { name: 'Northstar', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Apply playbook', exact: true })).toHaveCount(0);
@@ -127,6 +141,7 @@ test('stopping enrollment leaves active work untouched', async ({ page }) => {
   const { writes } = await installPlaybookMocks(page);
   await page.goto(`${harness}?detail`);
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button', { name: /Review & automation/ }).click();
   await page.getByRole('button', { name: 'Stop new enrollment', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Existing signals will not be paused or closed');
   expect(writes).toHaveLength(0);

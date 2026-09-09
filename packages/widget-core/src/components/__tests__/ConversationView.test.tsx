@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/preact';
+import { fireEvent, render, waitFor } from '@testing-library/preact';
 import { ConversationView } from '../ConversationView';
 import type { Conversation, Message, WidgetConfig } from '../../types';
 
@@ -53,6 +53,7 @@ function renderConversationView(overrides: RenderOverrides = {}) {
       onBack={() => {}}
       showHumanAvailability={true}
       transcriptEmail={transcriptEmail}
+      onCaptureEmail={async () => {}}
       onRequestTranscript={async () => ({ success: true, message: 'Transcript sent' })}
     />,
   );
@@ -237,5 +238,54 @@ describe('ConversationView CSAT', () => {
     expect(oneSided.queryByText('How was your support experience?')).toBeNull();
     expect(disabled.queryByText('How was your support experience?')).toBeNull();
     expect(submitted.queryByText('How was your support experience?')).toBeNull();
+  });
+});
+
+
+describe('delayed team reply contact capture', () => {
+  const delayed: Message = { id: 'delay', conversationId: 'c1', role: 'ai', content: 'Leave your email for a reply.', delayedTeamReply: true, captureEmail: true, isInternal: false, createdAt: new Date().toISOString() };
+  it('reuses one form during a busy handoff and offers it after an earlier skip', () => {
+    const { container } = render(<ConversationView config={baseConfig} conversation={{ id: 'c1', subject: '', status: 'open', handoffState: 'busy' }} messages={[delayed]} contactCaptureCompleted onCaptureEmail={async () => {}} onSendMessage={() => {}} onBack={() => {}} />);
+    expect(container.querySelectorAll('input[type="email"]')).toHaveLength(1);
+  });
+  it('replaces joining and reply-time promises with a neutral waiting status after the delay', () => {
+    const { getByText, queryByText, rerender } = render(<ConversationView config={baseConfig} conversation={{ id: 'c1', subject: '', status: 'open', flowState: 'assigned_to_human' }} messages={[{ ...delayed, captureEmail: false }]} transcriptEmail="known@example.com" onSendMessage={() => {}} onBack={() => {}} />);
+    expect(getByText('Waiting for a teammate')).toBeTruthy();
+    expect(queryByText(/is joining|shortly|typically reply/)).toBeNull();
+    const human: Message = { ...delayed, id: 'human', role: 'agent', delayedTeamReply: false, captureEmail: false };
+    rerender(<ConversationView config={baseConfig} conversation={{ id: 'c1', subject: '', status: 'open', flowState: 'assigned_to_human' }} messages={[delayed, human]} onSendMessage={() => {}} onBack={() => {}} />);
+    expect(queryByText('Waiting for a teammate')).toBeNull();
+  });
+  it('offers capture for a new handoff after an earlier human reply, but stops after a new reply', () => {
+    const human: Message = { ...delayed, id: 'human', role: 'agent', delayedTeamReply: false, captureEmail: false };
+    const props = { config: baseConfig, conversation: { id: 'c1', subject: '', status: 'open', handoffState: 'live' as const }, onCaptureEmail: async () => {}, onSendMessage: () => {}, onBack: () => {} };
+    const { getByRole, queryByRole, rerender } = render(<ConversationView {...props} messages={[human, delayed]} />);
+    expect(getByRole('textbox', { name: 'Email for reply notifications' })).toBeTruthy();
+    rerender(<ConversationView {...props} messages={[delayed, human]} />);
+    expect(queryByRole('textbox', { name: 'Email for reply notifications' })).toBeNull();
+    rerender(<ConversationView {...props} messages={[delayed]} transcriptEmail="known@example.com" />);
+    expect(queryByRole('textbox', { name: 'Email for reply notifications' })).toBeNull();
+  });
+  it('waits for saved identity and never sends a transcript or escalates again', async () => {
+    let confirm!: () => void;
+    const save = vi.fn(() => new Promise<void>((resolve) => { confirm = resolve; }));
+    const transcript = vi.fn();
+    const escalate = vi.fn();
+    const { getByRole, queryByText } = render(<ConversationView config={baseConfig} conversation={{ id: 'c1', subject: '', status: 'open', handoffState: 'live' }} messages={[delayed]} onCaptureEmail={save} onRequestTranscript={transcript} onEscalateToHuman={escalate} onSendMessage={() => {}} onBack={() => {}} />);
+    fireEvent.input(getByRole('textbox', { name: 'Email for reply notifications' }), { target: { value: 'visitor@example.com' } });
+    fireEvent.submit(getByRole('button', { name: 'Notify me by email' }).closest('form')!);
+    expect(save).toHaveBeenCalledWith('visitor@example.com');
+    expect(queryByText(/You’re all set/)).toBeNull();
+    confirm();
+    await waitFor(() => expect(queryByText(/You’re all set/)).not.toBeNull());
+    expect(transcript).not.toHaveBeenCalled();
+    expect(escalate).not.toHaveBeenCalled();
+  });
+  it('retains the form and shows an error if identity save fails', async () => {
+    const { getByRole } = render(<ConversationView config={baseConfig} conversation={{ id: 'c1', subject: '', status: 'open', handoffState: 'live' }} messages={[delayed]} onCaptureEmail={async () => { throw new Error('failed'); }} onSendMessage={() => {}} onBack={() => {}} />);
+    fireEvent.input(getByRole('textbox', { name: 'Email for reply notifications' }), { target: { value: 'visitor@example.com' } });
+    fireEvent.submit(getByRole('button', { name: 'Notify me by email' }).closest('form')!);
+    await waitFor(() => expect(getByRole('alert').textContent).toContain('try again'));
+    expect(getByRole('textbox', { name: 'Email for reply notifications' })).toBeTruthy();
   });
 });

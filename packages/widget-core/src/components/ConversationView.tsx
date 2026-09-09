@@ -36,6 +36,7 @@ interface ConversationViewProps {
   showHumanAvailability?: boolean;
   showPreChatForm?: boolean;
   contactCaptureCompleted?: boolean;
+  onCaptureEmail?: (email: string) => Promise<void>;
   onPreChatSubmit?: (data: { phone: string; email: string }) => void;
   onImageClick?: (src: string, alt: string) => void;
   onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
@@ -69,6 +70,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   showPreChatForm = false,
   contactCaptureCompleted = false,
   onPreChatSubmit,
+  onCaptureEmail,
   onImageClick: externalImageClick,
   onAnswerFeedback,
   connectionStatus = 'connected',
@@ -86,6 +88,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const [showTranscriptForm, setShowTranscriptForm] = useState(false);
   const [transcriptEmailInput, setTranscriptEmailInput] = useState(transcriptEmail || '');
   const [transcriptStatus, setTranscriptStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [emailCaptureStatus, setEmailCaptureStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [emailCaptureError, setEmailCaptureError] = useState('');
   const [isSendingTranscript, setIsSendingTranscript] = useState(false);
   const [autoExpandDismissed, setAutoExpandDismissed] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -135,11 +139,19 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const showHumanHandoffState = showHumanAvailability && !hasHumanReply;
   const handoffState = conversation?.handoffState;
   const nobodyAvailable = handoffState === 'busy' || handoffState === 'after_hours';
-  const showEscalationEmailCapture = nobodyAvailable
+  const delayedReplyIndex = messages.reduce((latest, message, index) => message.delayedTeamReply ? index : latest, -1);
+  const delayedEmailCapture = delayedReplyIndex >= 0
+    && messages[delayedReplyIndex].captureEmail === true
+    && !messages.slice(delayedReplyIndex + 1).some((message) => message.role === 'agent');
+  const showEscalationEmailCapture = (nobodyAvailable || delayedEmailCapture)
+    && Boolean(onCaptureEmail)
+    && conversation?.status !== 'resolved'
+    && conversation?.status !== 'closed'
     && !transcriptEmail
-    && !hasHumanReply
-    && !contactCaptureCompleted
-    && !preChatDone;
+    && (delayedEmailCapture || !hasHumanReply)
+    && (delayedEmailCapture || (!contactCaptureCompleted && !preChatDone))
+    && !showHumanContactForm
+    && emailCaptureStatus !== 'saved';
   const showTalkToHumanButton = Boolean(
     config.features?.showTalkToHuman &&
       onEscalateToHuman &&
@@ -174,6 +186,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       && !isAIThinking,
   );
   const handoffProgress = useMemo(() => {
+    if (delayedReplyIndex >= 0) return { title: 'Waiting for a teammate', detail: '' };
     const detail = availability?.replyTimeText || availability?.outsideHoursMessage || 'We’ll let you know as soon as someone replies.';
     if (handoffState === 'after_hours' || conversation?.flowState === 'after_hours_queue') {
       return { title: 'Our team is currently offline', detail };
@@ -193,7 +206,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       return { title: 'You’re in the support queue', detail };
     }
     return { title: 'Finding the right teammate…', detail: 'Your request has been sent to the support team.' };
-  }, [activeTeammate?.name, availability?.outsideHoursMessage, availability?.replyTimeText, conversation?.aiState, conversation?.flowState, handoffState, hasEscalationNotice]);
+  }, [activeTeammate?.name, availability?.outsideHoursMessage, availability?.replyTimeText, conversation?.aiState, conversation?.flowState, delayedReplyIndex, handoffState, hasEscalationNotice]);
 
   // Derive the most recent responding agent from messages.
   const activeAgent = useMemo(() => {
@@ -226,6 +239,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   }, [transcriptEmail]);
 
   useEffect(() => {
+    setEmailCaptureStatus('idle');
+    setEmailCaptureError('');
     setAutoExpandDismissed(false);
     setShowHumanContactForm(false);
     autoExpandedConversationRef.current = null;
@@ -576,34 +591,50 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         </div>
       </div>
 
-      {showEscalationEmailCapture && (
+      {(showEscalationEmailCapture || emailCaptureStatus === 'saved') && (
         <div className="helpin-escalation-email-capture">
-          <p className="helpin-escalation-email-capture__label">
-            Leave your email and we'll reply there too.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void handleTranscriptRequest();
-            }}
-            className="helpin-escalation-email-capture__form"
-          >
-            <input
-              type="email"
-              required
-              placeholder="you@example.com"
-              value={transcriptEmailInput}
-              onInput={(e) => setTranscriptEmailInput((e.target as HTMLInputElement).value)}
-              className="helpin-transcript-email-input"
-            />
-            <button type="submit" disabled={isSendingTranscript}>
-              {isSendingTranscript ? 'Sending…' : 'Notify me'}
-            </button>
-          </form>
-          {transcriptStatus?.type === 'success' && (
-            <p className="helpin-escalation-email-capture__ok">
-              We'll reply to you at {transcriptEmailInput}.
+          {emailCaptureStatus === 'saved' ? (
+            <p className="helpin-escalation-email-capture__ok" role="status">
+              You’re all set. We’ll email you when our team replies.
             </p>
+          ) : (
+            <>
+              <p className="helpin-escalation-email-capture__label">
+                Leave your email and we'll reply there too.
+              </p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!onCaptureEmail || emailCaptureStatus === 'saving') return;
+                  setEmailCaptureStatus('saving');
+                  setEmailCaptureError('');
+                  try {
+                    await onCaptureEmail(transcriptEmailInput.trim());
+                    setEmailCaptureStatus('saved');
+                  } catch {
+                    setEmailCaptureStatus('idle');
+                    setEmailCaptureError('We couldn’t save your email. Please try again.');
+                  }
+                }}
+                className="helpin-escalation-email-capture__form"
+              >
+                <input
+                  type="email"
+                  required
+                  aria-label="Email for reply notifications"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={transcriptEmailInput}
+                  disabled={emailCaptureStatus === 'saving'}
+                  onInput={(e) => setTranscriptEmailInput((e.target as HTMLInputElement).value)}
+                  className="helpin-transcript-email-input"
+                />
+                <button type="submit" disabled={emailCaptureStatus === 'saving'}>
+                  {emailCaptureStatus === 'saving' ? 'Saving…' : 'Notify me by email'}
+                </button>
+              </form>
+              {emailCaptureError && <p role="alert">{emailCaptureError}</p>}
+            </>
           )}
         </div>
       )}
@@ -681,7 +712,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           )}
           <span className="helpin-waiting-teammate-copy">
             <span className="helpin-waiting-teammate-label">{handoffProgress.title}</span>
-            <span className="helpin-waiting-teammate-detail">{handoffProgress.detail}</span>
+            {handoffProgress.detail && <span className="helpin-waiting-teammate-detail">{handoffProgress.detail}</span>}
             {transcriptEmail && (
               <span className="helpin-contact-confirmation">
                 <span aria-hidden="true">✓</span> Replies will also go to {transcriptEmail}

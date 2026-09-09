@@ -40,6 +40,7 @@ interface ChatWindowProps {
   onTyping?: (content: string) => void;
   showPreChatForm: boolean;
   contactCaptureCompleted?: boolean;
+  onCaptureEmail?: (email: string) => Promise<void>;
   onPreChatSubmit: (data: { phone: string; email: string }) => void;
   isTyping?: boolean;
   isAIThinking?: boolean;
@@ -90,6 +91,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   showPreChatForm,
   contactCaptureCompleted = false,
   onPreChatSubmit,
+  onCaptureEmail,
   isTyping = false,
   isAIThinking = false,
   aiProgressLabel,
@@ -453,6 +455,7 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
             showPreChatForm={showPreChatForm}
             contactCaptureCompleted={contactCaptureCompleted}
             onPreChatSubmit={onPreChatSubmit}
+            onCaptureEmail={onCaptureEmail}
             onImageClick={onImageClick}
             onAnswerFeedback={onAnswerFeedback}
             connectionStatus={connectionStatus}

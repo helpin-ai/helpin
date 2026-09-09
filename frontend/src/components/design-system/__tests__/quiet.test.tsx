@@ -192,11 +192,11 @@ describe('Quiet Hairline primitives', () => {
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain('data-variant="quiet"');
     expect(markup).toContain('after:bg-quiet-text-primary');
-    expect(markup).toContain('group-data-[variant=quiet]/tabs-list:text-[14px]');
+    expect(markup).toContain('group-data-[variant=quiet]/tabs-list:text-sm');
     expect(markup).toContain('group-data-[variant=quiet]/tabs-list:font-medium');
     expect(markup).toContain('group-data-[variant=quiet]/tabs-list:data-active:font-semibold');
     expect(markup).not.toContain('group-data-[variant=quiet]/tabs-list:text-[13px]');
-    expect(markup).not.toContain('group-data-[variant=quiet]/tabs-list:text-sm');
+    expect(markup).not.toContain('group-data-[variant=quiet]/tabs-list:text-[14px]');
     expect(markup).not.toContain('group-data-[variant=quiet]/tabs-list:font-normal');
     expect(markup).toContain('tabular-nums');
     expect(markup).toContain('data-[variant=quiet]:rounded-none');

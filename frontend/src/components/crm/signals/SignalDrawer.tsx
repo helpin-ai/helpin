@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { QuietSelect, QuietPropertyRow, QuietSection, QuietStatusText, QuietTextAction, QuietPrimaryAction } from '@/components/design-system/quiet';
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { currentRecommendationText, signalOverviewText, SignalArrival, SignalDrawerLayout, repeatsSignalText } from './SignalDrawerLayout';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCRMPlaybookSignal, useCRMPlaybookVersion, useCRMPlaybookWrite } from '@/hooks/queries/useCRMPlaybooks';
 import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
@@ -18,10 +18,9 @@ import { signalStatus } from '@/lib/crmSituationPresentation';
 
 export function SignalDrawer({ ws, slug, playbookId, signalId, canEdit, onClose }: { ws: string; slug: string; playbookId?: string; signalId: string; canEdit: boolean; onClose: () => void }) {
   const signal = useCRMPlaybookSignal(ws, signalId);
-  return <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}><SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-[600px]">
-    <SheetHeader className="pr-14"><SheetTitle>{signal.data?.situation.title || 'Signal'}</SheetTitle><SheetDescription className="sr-only">Customer progress, milestones, and recorded outcomes.</SheetDescription></SheetHeader>
-    <div className="px-6 pb-6">{signal.isPending ? <PlaybookLoading /> : signal.isError ? <PlaybookError error={signal.error} retry={() => void signal.refetch()} /> : playbookId && signal.data.situation.playbook_id !== playbookId ? <PlaybookError error={new Error('This signal is not in this playbook. Refresh the list.')} /> : <SignalProgress ws={ws} slug={slug} playbookId={signal.data.situation.playbook_id} expandMilestones={!!playbookId} item={signal.data} canEdit={canEdit} onReload={() => void signal.refetch()} />}</div>
-  </SheetContent></Sheet>;
+  return <SignalDrawerLayout title={signal.data?.situation.title || 'Signal'} description="Customer progress, milestones, and recorded outcomes." onClose={onClose}>
+    {signal.isPending ? <PlaybookLoading /> : signal.isError ? <PlaybookError error={signal.error} retry={() => void signal.refetch()} /> : playbookId && signal.data.situation.playbook_id !== playbookId ? <PlaybookError error={new Error('This signal is not in this playbook. Refresh the list.')} /> : <SignalProgress ws={ws} slug={slug} playbookId={signal.data.situation.playbook_id} expandMilestones={!!playbookId} item={signal.data} canEdit={canEdit} onReload={() => void signal.refetch()} />}
+  </SignalDrawerLayout>;
 }
 
 function SignalProgress({ ws, slug, playbookId, expandMilestones, item, canEdit, onReload }: { ws: string; slug: string; playbookId?: string; expandMilestones: boolean; item: CRMSituationItem; canEdit: boolean; onReload: () => void }) {
@@ -37,11 +36,10 @@ function SignalProgress({ ws, slug, playbookId, expandMilestones, item, canEdit,
     <div className="flex flex-wrap items-center gap-3 pb-3 text-sm">
       {signal.company_id ? <Link to="/w/$slug/crm/companies/$companyId" params={{ slug, companyId: signal.company_id }} className="text-quiet-accent hover:underline">{item.company_name || 'View company'}</Link> : signal.contact_id ? <Link to="/w/$slug/crm/contacts/$contactId" params={{ slug, contactId: signal.contact_id }} className="text-quiet-accent hover:underline">{item.contact_name || 'View contact'}</Link> : signal.deal_id ? <Link to="/w/$slug/crm/deals/$dealId" params={{ slug, dealId: signal.deal_id }} className="text-quiet-accent hover:underline">{item.deal_name || 'View deal'}</Link> : <span className="text-quiet-text-tertiary">Customer unavailable</span>}
       <QuietStatusText>{signalStatus(item)}</QuietStatusText>
+      <SignalArrival at={signal.created_at} />
     </div>
-    <SignalActions ws={ws} slug={slug} item={item} canEdit={canEdit} />
-    {playbookId && <SignalAutomation ws={ws} item={item} canEdit={canEdit} />}
-    <QuietSection className="px-0 sm:px-0 lg:px-0" title={signal.lifecycle === 'closed' ? 'Recorded outcome' : 'Next step'} action={canEdit && signal.lifecycle !== 'closed' && <QuietTextAction onClick={() => setEditing(item)}>Edit</QuietTextAction>}>
-      <p className="text-sm leading-7 text-quiet-text-primary">{signal.lifecycle === 'closed' ? signal.outcome_summary : signal.next_step || 'No next step set.'}</p>
+    <QuietSection className="px-0 py-4 sm:px-0 lg:px-0" title={signal.lifecycle === 'closed' ? 'Recorded outcome' : 'Next step'} action={canEdit && signal.lifecycle !== 'closed' && <QuietTextAction onClick={() => setEditing(item)}>Edit</QuietTextAction>}>
+      <p className="text-sm font-medium leading-6 text-quiet-text-primary">{signal.lifecycle === 'closed' ? signal.outcome_summary : signal.next_step || 'No next step set.'}</p>
       {signal.lifecycle === 'closed' ? <p className="mt-2 text-xs text-quiet-text-tertiary">{signal.outcome_kind === 'achieved' ? 'Outcome achieved' : signal.outcome_kind?.replaceAll('_', ' ')} · Recorded by {name(signal.closed_by_member_id)}{signal.closed_at && ` · ${new Date(signal.closed_at).toLocaleDateString()}`}</p> : <>
         <QuietPropertyRow label="Owner" value={item.owner_name || 'Unassigned'} />
         {signal.next_action_owner_member_id !== signal.owner_member_id && <QuietPropertyRow label="Next action" value={item.next_action_owner_name || 'Unassigned'} />}
@@ -49,6 +47,8 @@ function SignalProgress({ ws, slug, playbookId, expandMilestones, item, canEdit,
       </>}
       {canEdit && signal.lifecycle !== 'closed' && <div className="mt-3 flex gap-2"><QuietTextAction onClick={() => setLifecycle({ operation: signal.lifecycle === 'paused' ? 'resume' : 'pause', revision: signal.revision })}>{signal.lifecycle === 'paused' ? 'Resume' : 'Pause'}</QuietTextAction><QuietTextAction onClick={() => setLifecycle({ operation: 'close', revision: signal.revision })}>Record outcome</QuietTextAction></div>}
     </QuietSection>
+    <SignalActions ws={ws} slug={slug} item={item} canEdit={canEdit} />
+    {playbookId && <SignalAutomation ws={ws} item={item} canEdit={canEdit} />}
     {playbookId && <details open={milestonesOpen} onToggle={(event) => setMilestonesOpen(event.currentTarget.open)} className="border-b border-quiet-divider-strong py-4 text-sm"><summary className="cursor-pointer text-quiet-text-secondary">Playbook progress · {(signal.playbook_milestones ?? []).filter((entry) => entry.status === 'achieved').length} / {signal.playbook_milestones?.length ?? 0} milestones achieved</summary><QuietSection className="border-0 px-0 sm:px-0 lg:px-0" title="Milestones" action={<PlaybookHelp label="About milestone progress">Milestones are assessed by your team against the published criteria. Completing every milestone does not automatically close a signal.</PlaybookHelp>}>
       {version.isPending ? <PlaybookLoading /> : version.isError ? <PlaybookError error={version.error} retry={() => void version.refetch()} /> : <>
         <p className="mb-4 text-xs text-quiet-text-tertiary"><Link className="text-quiet-accent hover:underline" to="/w/$slug/crm/playbooks/$playbookId" params={{ slug, playbookId }}>{version.data.definition.name}</Link> · Version {version.data.version}</p>
@@ -60,8 +60,8 @@ function SignalProgress({ ws, slug, playbookId, expandMilestones, item, canEdit,
       </>}
     </QuietSection></details>}
     <SignalEvidence ws={ws} slug={slug} item={item} canEdit={canEdit} />
-    <details className="border-b border-quiet-divider-strong py-4 text-sm"><summary className="cursor-pointer text-quiet-text-secondary">Customer objective</summary><p className="mt-3 leading-7">{signal.objective}</p><p className="mt-2 text-xs text-quiet-text-tertiary">{signal.origin_kind === 'manual' ? 'Created by a workspace member.' : signal.origin_kind === 'signal' ? 'Created from CRM signal evidence. Open the customer record for context.' : 'Created from a CRM suggestion. Open the customer record for context.'}</p></details>
-    <SignalHistory ws={ws} id={signal.id} />
+    {signal.objective?.trim() && !repeatsSignalText(signal.objective, [...signalOverviewText(item), ...currentRecommendationText(item.actions ?? [])]) && <details className="border-b border-quiet-divider-strong py-4 text-sm"><summary className="cursor-pointer text-quiet-text-secondary">Customer objective</summary><p className="mt-3 leading-7">{signal.objective}</p></details>}
+    <SignalHistory ws={ws} id={signal.id} origin={signal.origin_kind === 'manual' ? 'Created by a workspace member.' : signal.origin_kind === 'signal' ? 'Created from CRM signal evidence. Open the customer record for context.' : 'Created from a CRM suggestion. Open the customer record for context.'} />
     {canEdit && assess && playbookId && <MilestoneAssessment ws={ws} playbookId={playbookId} signalId={signal.id} selection={assess} onClose={() => setAssess(undefined)} onReload={onReload} />}
     {canEdit && lifecycle && <SignalLifecycle ws={ws} signalId={signal.id} selection={lifecycle} onClose={() => setLifecycle(undefined)} onReload={onReload} />}
     {canEdit && editing && <PlaybookSignalEdit ws={ws} item={editing} onClose={() => setEditing(undefined)} onReload={onReload} />}

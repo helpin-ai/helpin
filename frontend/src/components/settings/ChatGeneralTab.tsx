@@ -34,6 +34,8 @@ import {
   type ChatSettingsDraft,
 } from './chat-widget/utils';
 import { CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION } from './chat-widget/handoffSummary';
+import { DelayedTeamReplySettings } from './chat-widget/DelayedTeamReplySettings';
+import { DEFAULT_DELAYED_TEAM_REPLY_MINUTES, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL } from './chat-widget/delayedTeamReply';
 import { CHAT_WIDGET_ESCALATION_TABS } from './chat-widget/escalationTabs';
 import {
   CHAT_WIDGET_AI_RESPONSE_MODES,
@@ -95,6 +97,9 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
   const [escalationMessage, setEscalationMessage] = useState('Let me connect you with a team member who can help further.');
   const [escalationMessageBusy, setEscalationMessageBusy] = useState('');
   const [escalationMessageAfterHours, setEscalationMessageAfterHours] = useState('');
+  const [delayedTeamReplyMinutes, setDelayedTeamReplyMinutes] = useState(DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
+  const [delayedTeamReplyMessage, setDelayedTeamReplyMessage] = useState(DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
+  const [delayedTeamReplyMessageNoEmail, setDelayedTeamReplyMessageNoEmail] = useState(DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
   const [handoffBehavior, setHandoffBehavior] = useState('unassigned');
   const [handoffTeamId, setHandoffTeamId] = useState<string | null>(null);
   const [aiHandoffMailboxId, setAiHandoffMailboxId] = useState<string | null>(null);
@@ -155,6 +160,9 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
       setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
       setEscalationMessageBusy(s.escalation_message_busy ?? '');
       setEscalationMessageAfterHours(s.escalation_message_after_hours ?? '');
+      setDelayedTeamReplyMinutes(s.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES);
+      setDelayedTeamReplyMessage(s.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
+      setDelayedTeamReplyMessageNoEmail(s.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL);
       setHandoffBehavior(s.handoff_behavior);
       setHandoffTeamId(s.handoff_team_id);
       setAiHandoffMailboxId(s.ai_handoff_mailbox_id);
@@ -211,6 +219,9 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
     escalation_message: escalationMessage,
     escalation_message_busy: escalationMessageBusy || undefined,
     escalation_message_after_hours: escalationMessageAfterHours || undefined,
+    delayed_team_reply_minutes: delayedTeamReplyMinutes,
+    delayed_team_reply_message: delayedTeamReplyMessage,
+    delayed_team_reply_message_no_email: delayedTeamReplyMessageNoEmail,
     handoff_behavior: handoffBehavior,
     handoff_team_id: handoffBehavior === 'assign_to_team' ? handoffTeamId : null,
     default_mailbox_id: data?.settings.default_mailbox_id ?? null,
@@ -849,17 +860,27 @@ function Dashboard() {
           <div className="space-y-3">
             <div>
               <Label className="text-sm font-medium">Escalation messages</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Messages shown when AI hands off to a human agent.</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Messages shown during a handoff and while waiting for a teammate to reply.</p>
             </div>
             <Tabs defaultValue="default" className="gap-2">
               <div className="overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/30">
-                <TabsList className="h-9 w-full justify-start gap-0 rounded-none border-b bg-muted/40 p-1">
+                <TabsList className="h-auto min-h-9 w-full flex-wrap justify-start gap-0 rounded-none border-b bg-muted/40 p-1">
                   {CHAT_WIDGET_ESCALATION_TABS.map((tab) => (
                     <TabsTrigger key={tab.value} value={tab.value} className="h-7 flex-none rounded px-3 text-xs">
                       {tab.label}
                     </TabsTrigger>
                   ))}
                 </TabsList>
+                <TabsContent value="delayed_team_reply" className="mt-0">
+                  <DelayedTeamReplySettings
+                    minutes={delayedTeamReplyMinutes}
+                    message={delayedTeamReplyMessage}
+                    messageNoEmail={delayedTeamReplyMessageNoEmail}
+                    onMinutesChange={setDelayedTeamReplyMinutes}
+                    onMessageChange={setDelayedTeamReplyMessage}
+                    onMessageNoEmailChange={setDelayedTeamReplyMessageNoEmail}
+                  />
+                </TabsContent>
                 <TabsContent value="default" className="mt-0">
                   <Textarea
                     id="escalation-msg"
@@ -1130,8 +1151,8 @@ function Dashboard() {
               <Message01Icon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Identity Capture</p>
-              <p className="text-sm text-muted-foreground">Control what contact information is collected for human support</p>
+              <p className="text-sm font-medium">Contact details</p>
+              <p className="text-sm text-muted-foreground">Choose which contact details to ask for when visitors request human support.</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('identity-capture') && 'rotate-180')} />
           </button>
@@ -1140,24 +1161,24 @@ function Dashboard() {
             <div className="border-t border-border px-6 py-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm">Ask for email before human handoff</Label>
-                  <p className="text-xs text-muted-foreground">When visitors request a person, ask where to send replies.</p>
+                  <Label className="text-sm">Ask for email before human support</Label>
+                  <p className="text-xs text-muted-foreground">Show an email prompt when visitors request a teammate. Visitors whose email is already known are not asked again.</p>
                 </div>
                 <Switch checked={requireEmail} onCheckedChange={setRequireEmail} />
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm">Ask for phone number after email</Label>
-                  <p className="text-xs text-muted-foreground">Also collect a phone number when your support process needs it.</p>
+                  <Label className="text-sm">Also ask for a phone number</Label>
+                  <p className="text-xs text-muted-foreground">Show an optional phone number prompt after the email step.</p>
                 </div>
                 <Switch checked={requirePhone} onCheckedChange={setRequirePhone} disabled={!requireEmail} />
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm">Require contact details for handoff</Label>
-                  <p className="text-xs text-muted-foreground">Visitors must provide an email before requesting human support. When disabled, they can continue without email.</p>
+                  <Label className="text-sm">Make email required</Label>
+                  <p className="text-xs text-muted-foreground">Visitors cannot skip the email step. When off, they can continue without email. Phone number remains optional.</p>
                 </div>
                 <Switch checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} disabled={!requireEmail} />
               </div>

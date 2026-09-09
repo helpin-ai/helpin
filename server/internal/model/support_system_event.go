@@ -46,7 +46,8 @@ const (
 	// (low confidence, stuck, action unavailable, etc.). Internal-only;
 	// the customer-facing escalation reply is sent as a separate public
 	// AI reply.
-	SystemEventAIEscalated SupportSystemEventType = "ai_escalated"
+	SystemEventAIEscalated      SupportSystemEventType = "ai_escalated"
+	SystemEventDelayedTeamReply SupportSystemEventType = "delayed_team_reply"
 
 	// SystemEventCustomerRequestedHuman — customer explicitly asked to
 	// talk to a human (e.g. "I want to talk to a person"). Internal-only
@@ -90,6 +91,7 @@ var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
 	SystemEventTriageRouted:           {},
 	SystemEventTriageDismissed:        {},
 	SystemEventAIEscalated:            {},
+	SystemEventDelayedTeamReply:       {},
 	SystemEventCustomerRequestedHuman: {},
 	SystemEventResolved:               {},
 	SystemEventReopened:               {},

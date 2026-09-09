@@ -16,13 +16,22 @@ describe('CRM signal inbox transport', () => {
     expect(api.get).toHaveBeenCalledWith('/crm/signal-inbox/evidence/group-id?workspace_id=ws');
     expect(api.post).not.toHaveBeenCalled();
   });
-  it('uses a server-paginated union with structured filters', () => {
-    service.list('ws', { scope: 'all', state: 'needs_approval', priority: 'unscored', action_type: 'enrichment', sort: 'recommended', page: 2 });
+  it('uses server pagination and visible filters without sending retired filters', () => {
+    service.list('ws', { scope: 'all', state: 'needs_approval', sort: 'newest', page: 2 });
     const url = new URL(vi.mocked(api.get).mock.calls[0][0], 'https://local.test');
     expect(url.pathname).toBe('/crm/signal-inbox');
     expect(url.searchParams.get('page')).toBe('2');
     expect(url.searchParams.get('state')).toBe('needs_approval');
-    expect(JSON.parse(url.searchParams.get('filter')!)).toEqual({ logic: 'and', rules: [{ field: 'priority', operator: 'is', value: 'unscored' }, { field: 'has_enrichment', operator: 'is', value: 'yes' }] });
+    expect(url.searchParams.get('sort')).toBe('newest');
+    expect(url.searchParams.has('filter')).toBe(false);
+  });
+  it('normalizes legacy sort and filter values at the transport boundary', () => {
+    const legacy = { priority: 'high', evidence_review: 'needs_review', sort: 'recommended', page: 3 };
+    service.list('ws', legacy);
+    const params = new URL(vi.mocked(api.get).mock.calls[0][0], 'https://local.test').searchParams;
+    expect(params.get('sort')).toBe('priority');
+    expect(params.get('page')).toBe('1');
+    expect(params.has('filter')).toBe(false);
   });
   it('never sends a proposal revision as legacy context edits', () => {
     service.accept('ws', 'proposal', 'shown-revision');

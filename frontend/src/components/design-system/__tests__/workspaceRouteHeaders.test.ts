@@ -111,15 +111,15 @@ describe('workspace route header contract', () => {
     expect(quietSource).toContain('max-w-28 flex-nowrap');
   });
 
-  it('renders the private Docs title in the header instead of repeating it in the editor', () => {
+  it('keeps the Docs title in the editor with publication controls in the shared header', () => {
     const docsSource = source('../../../pages/docs/DocsDocumentDetail.tsx');
-    expect(docsSource).toContain('<QuietTitleTextarea');
-    expect(docsSource).toContain('presentation="header"');
-    expect(docsSource).toContain('allowTitleWrap');
+    expect(docsSource).toContain('title={null}');
+    expect(docsSource).not.toContain('<QuietTitleTextarea');
+    expect(docsSource).toContain('onTitleChange={isSourceLocaleActive ? handleTitleChange : handleTranslationTitleChange}');
     expect(docsSource).toContain('pageScrollOnMobile');
     expect(docsSource).toContain('iconOnly');
     expect(docsSource).toContain('className="relative z-30"');
-    expect(docsSource).toContain('docs-editor-standard-width relative isolate');
+    expect(docsSource).toContain('contentWidth={isExternalHelpCenter ? "external" : "standard"}');
     expect(docsSource).toContain('lg:w-auto lg:flex-1 xl:overflow-clip');
     expect(docsSource).not.toContain('className="relative z-30 bg-background"');
     expect(docsSource.indexOf('headerPresencePeople.length > 0')).toBeGreaterThan(docsSource.indexOf('actions={('));
@@ -127,7 +127,7 @@ describe('workspace route header contract', () => {
     expect(docsSource).toContain('flex flex-col items-end gap-0.5 sm:flex-row sm:items-center sm:gap-3');
     expect(docsSource).toContain('hidden text-[11.5px] font-medium sm:inline');
     expect(docsSource).toContain('order-first flex items-center gap-1.5 sm:order-none sm:gap-3');
-    expect(docsSource).toContain('showTitle={false}');
+    expect(docsSource).not.toContain('showTitle={false}');
   });
 
   it('preserves the established Docs publication-state typography and colors', () => {

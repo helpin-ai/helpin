@@ -35,6 +35,8 @@ export async function installPlaybookMocks(page: Page, options: { readOnly?: boo
     const headers = { 'access-control-allow-origin': request.headers().origin || 'http://127.0.0.1:5193', 'access-control-allow-credentials': 'true' };
     const json = async (data: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', headers, body: JSON.stringify(data) });
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...headers, 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' } });
+    // Analytics shares the API prefix, but is not a CRM command.
+    if (path === '/v1/event') return json({});
     if (request.method() !== 'GET') {
       const body = request.postDataJSON();
       writes.push({ path, body });

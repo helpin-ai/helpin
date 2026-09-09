@@ -1,6 +1,7 @@
 import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
 import type { WidgetConfig } from '@helpin-ai/widget-core';
 import { formatReplyTimeCopy } from '@helpin-ai/shared';
+import { DEFAULT_DELAYED_TEAM_REPLY_MINUTES, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE, DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL } from './delayedTeamReply';
 import { DAYS, DEFAULT_BUSINESS_HOURS_DAY } from './constants';
 import { getChatWidgetAIResponseModeForUI, isChatWidgetAIResponseModeActive } from './responseModes';
 
@@ -190,6 +191,9 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
 
   return {
     ...rest,
+    delayed_team_reply_minutes: rest.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES,
+    delayed_team_reply_message: rest.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE,
+    delayed_team_reply_message_no_email: rest.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL,
     ai_enabled: rest.ai_enabled && isChatWidgetAIResponseModeActive(rest.ai_response_mode),
     ai_response_mode: getChatWidgetAIResponseModeForUI(rest.ai_response_mode),
     ai_agent_id: ai_agent_id ?? '',

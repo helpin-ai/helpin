@@ -2201,6 +2201,10 @@ func main() {
 	}()
 
 	// Start background ticker for delayed support reply fallback emails.
+	delayedTeamReplyCtx, cancelDelayedTeamReply := context.WithCancel(context.Background())
+	defer cancelDelayedTeamReply()
+	go supportInboxService.StartDelayedTeamReplyWorker(delayedTeamReplyCtx)
+
 	supportReplyEmailDone := make(chan struct{})
 	go func() {
 		runSupportReplySweep := func() {

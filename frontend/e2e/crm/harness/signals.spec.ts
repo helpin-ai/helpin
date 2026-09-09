@@ -7,7 +7,7 @@ test('existing evidence and unassigned approvals appear by default without autom
   await page.goto(url);
   await expect(page.getByRole('button', { name: 'Customer requested the Inbox add-on', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: 'Assignment', exact: true })).toHaveText('Everyone');
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Everyone');
   await page.screenshot({ path: '/tmp/helpin-restored-signals.png', fullPage: true });
   await page.getByRole('button', { name: 'Customer requested the Inbox add-on', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Customer signal' })).toBeVisible();
@@ -55,9 +55,24 @@ test('scannable table, one category strip, and visible assignment/status filters
   await page.getByRole('tab', { name: 'Expansion' }).click();
   await expect(page.getByRole('button', { name: 'Team is approaching its seat limit' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pricing requested for a 40-seat rollout' })).toHaveCount(0);
-  await page.getByRole('combobox', { name: 'Assignment', exact: true }).click();
+  await page.getByRole('button', { name: /^Assignment:/ }).click();
   await page.getByRole('option', { name: 'My teams' }).click();
   await expect.poll(() => mock.reads.some((read) => read.includes('scope=my_teams') && read.includes('category=expansion'))).toBeTruthy();
+  await expect(page.getByRole('button', { name: 'Remove Assignment filter' })).toBeVisible();
+  await expect(page.getByRole('option')).toHaveCount(0);
+  await page.getByRole('button', { name: 'My teams', exact: true }).click();
+  await page.getByRole('option', { name: 'Assigned to me', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Assigned to me');
+  await expect.poll(() => mock.reads.some((read) => read.includes('scope=mine') && read.includes('category=expansion'))).toBeTruthy();
+  await page.getByRole('button', { name: 'Remove Assignment filter' }).click();
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Everyone');
+  await expect(page.getByRole('button', { name: 'Remove Category filter' })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove Category filter' }).click();
+  await expect(page.getByRole('tab', { name: /^All / })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: 'Remove Signal status filter' }).click();
+  await expect(page.getByRole('button', { name: /^Signal status:/ })).toHaveText('All statuses');
+  await expect(page.getByRole('button', { name: 'Clear all', exact: true })).toHaveCount(0);
   expect(mock.writes).toHaveLength(0);
   await expect(page.getByRole('link', { name: 'Review queue' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Evidence', exact: true })).toHaveAttribute('href', /view.*evidence/);
@@ -188,15 +203,15 @@ test('dark and narrow views keep all table columns accessible', async ({ page })
   await page.screenshot({ path: '/tmp/helpin-signals-dark.png', fullPage: true });
   await page.setViewportSize({ width: 640, height: 900 });
   await expect(page.getByRole('columnheader', { name: 'Priority', exact: false })).toBeAttached();
-  await expect(page.getByRole('combobox', { name: 'Assignment', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toBeVisible();
   await page.screenshot({ path: '/tmp/helpin-signals-narrow.png', fullPage: true });
 });
 
 test('old Review URL opens all pending recommendations, including unassigned standalone work', async ({ page }) => {
   const mock = await installSignalMocks(page, { standalone: true });
   await page.goto('/e2e/crm/harness/playbooks.html?review=1');
-  await expect(page.getByRole('combobox', { name: 'Assignment', exact: true })).toHaveText('Everyone');
-  await expect(page.getByRole('combobox', { name: 'Signal status', exact: true })).toHaveText('Needs approval');
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Everyone');
+  await expect(page.getByRole('button', { name: /^Signal status:/ })).toHaveText('Needs approval');
   await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'Not scored', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Review a standalone recommendation', exact: true }).click();
@@ -212,26 +227,53 @@ test('old Review URL opens all pending recommendations, including unassigned sta
   await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toHaveCount(0);
 });
 
-test('priority, evidence and recommendation type stay visible and compose server filters', async ({ page }) => {
+test('compact toolbar keeps three selectors, explains Auto, and preserves sorting on drawer return', async ({ page }) => {
   const mock = await installSignalMocks(page, { standalone: true, actionType: 'enrichment' });
-  await page.goto(`${url}&scope=all&state=needs_approval`);
-  for (const name of ['Priority', 'Evidence review', 'Recommendation type', 'Sort signals']) await expect(page.getByRole('combobox', { name, exact: true })).toBeVisible();
-  await page.getByRole('combobox', { name: 'Priority', exact: true }).click();
-  await page.getByRole('option', { name: 'Not scored', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Evidence review', exact: true }).click();
-  await page.getByRole('option', { name: 'No current evidence', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Recommendation type', exact: true }).click();
-  await expect(page.getByRole('option')).toHaveCount(6);
-  await page.getByRole('option', { name: 'Enrichment', exact: true }).click();
+  await page.goto(url);
+  await expect(page.getByRole('button', { name: /^(Assignment|Signal status|Sort signals):/ })).toHaveCount(3);
+  await expect(page.getByRole('button', { name: 'Clear filters', exact: true })).toHaveCount(0);
+  for (const name of ['Priority', 'Evidence review', 'Attention needed', 'Recommendation type']) await expect(page.getByRole('button', { name: new RegExp(`^${name}:`) })).toHaveCount(0);
+  const sort = page.getByRole('button', { name: /^Sort signals:/ });
+  await expect(sort).toHaveText('Auto');
+  await page.getByRole('button', { name: 'About Auto sorting' }).focus();
+  await expect(page.getByRole('tooltip')).toContainText('Signals ranked automatically by importance, recency, and evidence strength.');
+  for (const [label, value] of [['Newest first', 'newest'], ['Oldest first', 'oldest'], ['Auto', 'priority']]) {
+    await sort.click();
+    await expect(page.getByRole('option')).toHaveCount(3);
+    await page.getByRole('option', { name: label, exact: true }).click();
+    await expect(sort).toHaveText(label);
+    await expect.poll(() => mock.reads.some((read) => new URL(read).searchParams.get('sort') === value)).toBeTruthy();
+  }
+  await sort.click();
+  await page.getByRole('option', { name: 'Newest first', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toBeVisible();
-  await expect.poll(() => mock.reads.some((read) => {
-    const filter = JSON.parse(new URL(read).searchParams.get('filter') || '{}');
-    return filter.rules?.length === 3 && filter.rules.some((rule: { field: string }) => rule.field === 'has_enrichment');
-  })).toBeTruthy();
   await page.getByRole('button', { name: 'Review a standalone recommendation', exact: true }).click();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('combobox', { name: 'Priority', exact: true })).toHaveText('Not scored');
-  await expect(page.getByRole('combobox', { name: 'Recommendation type', exact: true })).toHaveText('Enrichment');
+  await expect(sort).toHaveText('Newest first');
+  await page.getByRole('button', { name: /^Assignment:/ }).click();
+  await page.getByRole('option', { name: 'Assigned to me', exact: true }).click();
+  await page.getByRole('button', { name: 'Clear all', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Everyone');
+  await expect(page.getByRole('button', { name: /^Signal status:/ })).toHaveText('Needs attention');
+  await expect(sort).toHaveText('Newest first');
+  await expect(page.getByRole('button', { name: 'Clear filters', exact: true })).toHaveCount(0);
+  expect(mock.reads.every((read) => !new URL(read).searchParams.has('filter'))).toBeTruthy();
+  expect(mock.writes).toHaveLength(0);
+});
+
+test('retired filters in old links cannot invisibly narrow the simplified queue', async ({ page }) => {
+  const mock = await installSignalMocks(page, { standalone: true });
+  await page.goto(`${url}&priority=high&evidence_review=needs_review&attention=needs_context&action_type=risk_alert&sort=recommended&page=4`);
+  await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Sort signals:/ })).toHaveText('Auto');
+  const reads = mock.reads.filter((read) => new URL(read).pathname.endsWith('/signal-inbox'));
+  expect(reads.length).toBeGreaterThan(0);
+  for (const read of reads) {
+    const params = new URL(read).searchParams;
+    expect(params.has('filter')).toBe(false);
+    expect(params.get('page')).toBe('1');
+    expect(params.get('sort')).toBe('priority');
+  }
   expect(mock.writes).toHaveLength(0);
 });
 
@@ -255,7 +297,10 @@ test('evidence review is explicit and never approves the recommendation', async 
   expect(mock.action.status).toBe('pending');
   expect(mock.writes).toEqual([{ path: '/crm/signals/evidence-1/review', body: {} }]);
   await page.keyboard.press('Escape');
-  await expect(page.getByText('No signals match this view', { exact: true })).toBeVisible();
+  // Reviewing evidence must not hide a decision still awaiting approval.
+  await expect(page.getByRole('button', { name: 'Pricing requested for a 40-seat rollout', exact: true })).toBeVisible();
+  await expect(page.getByText('Needs approval', { exact: true })).toBeVisible();
+  expect(mock.reads.every((read) => !new URL(read).searchParams.has('filter'))).toBeTruthy();
 });
 
 test('legacy recommendation deep link resolves its linked signal without duplicate decisions', async ({ page }) => {

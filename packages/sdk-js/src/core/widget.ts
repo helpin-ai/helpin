@@ -612,6 +612,7 @@ export class WidgetManager {
       onTyping: (content: string) => this.handleTyping(content),
       showPreChatForm: showPreChat,
       contactCaptureCompleted: this.preChatDone,
+      onCaptureEmail: (email: string) => this.handleCaptureEmail(email),
       onPreChatSubmit: (data: { phone: string; email: string }) => this.handlePreChatSubmit(data),
       isTyping: this.isTyping,
       isAIThinking: this.isAIThinking,
@@ -979,7 +980,7 @@ export class WidgetManager {
       try { parsedMeta = typeof raw.metadata === 'string' ? JSON.parse(raw.metadata) : raw.metadata; } catch { /* ignore */ }
     }
 
-    const isSystem = raw?.message_type === 'system';
+    const isSystem = raw?.message_type === 'system' && parsedMeta?.delayed_team_reply !== true;
     const isAI = raw?.sender_type === 'ai' || !!(parsedMeta?.ai_agent_id);
     const role: Message['role'] = isSystem
       ? 'system'
@@ -1025,6 +1026,8 @@ export class WidgetManager {
     };
 
     if (parsedMeta) {
+      message.delayedTeamReply = parsedMeta.delayed_team_reply === true;
+      message.captureEmail = parsedMeta.capture_email === true;
       if (parsedMeta.ai_sources) message.sources = parsedMeta.ai_sources;
       if (parsedMeta.ai_confidence !== undefined) message.aiConfidence = parsedMeta.ai_confidence;
       if (['answer', 'clarify', 'conversational', 'confirmation', 'greeting'].includes(parsedMeta.ai_reply_kind)) {
@@ -1582,6 +1585,35 @@ export class WidgetManager {
         handled_by: this.messages.some((message) => message.role === 'agent') ? 'human' : 'ai',
       });
     }
+  }
+
+  private async handleCaptureEmail(email: string): Promise<void> {
+    if (!this.widgetKey || !this.anonymousId || !email) {
+      throw new Error('Unable to save email without an active visitor.');
+    }
+    const widgetKey = this.widgetKey;
+    const anonymousId = this.anonymousId;
+    const response = await fetch(`https://${this.host}/widget/identify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: this.widgetKey,
+        anonymous_id: this.anonymousId,
+        email,
+        source: 'widget_prechat',
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok || result.success !== true) throw new Error('Unable to save email.');
+    if (this.widgetKey !== widgetKey || this.anonymousId !== anonymousId || this.isShutdown) {
+      throw new Error('Visitor session changed while saving email.');
+    }
+    this.currentEmail = email;
+    persistIdentity(widgetKey, email, '');
+    this.preChatDone = true;
+    try { localStorage.setItem(`helpin_prechat_${this.widgetKey}`, '1'); } catch { /* storage may be unavailable */ }
+    this.triggerCallback('onUserEmailSupplied', email);
+    this.render();
   }
 
   private handlePreChatSubmit(data: { phone: string; email: string }): void {
