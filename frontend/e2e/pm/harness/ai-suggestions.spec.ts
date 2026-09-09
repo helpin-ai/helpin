@@ -110,3 +110,30 @@ test('keeps long drafts and footer usable on a narrow dark screen and restores k
   await page.keyboard.press('Escape');
   await expect(row).toBeFocused();
 });
+
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+  test(`review action clears the chat launcher at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const writes = await setup(page, { long: true });
+    await page.evaluate(() => {
+      // Match the floating launcher's footprint, including its stacking layer.
+      const launcher = document.createElement('button');
+      launcher.dataset.testid = 'chat-launcher';
+      launcher.textContent = 'Chat';
+      launcher.style.cssText = 'position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:50%;z-index:999999;pointer-events:auto;background:#222;color:white';
+      document.body.appendChild(launcher);
+    });
+    await page.getByRole('button', { name: /Confirm the release checklist/ }).click();
+    const review = page.getByRole('button', { name: 'Mark reviewed', exact: true });
+    await expect(review).toBeVisible();
+    const launcher = await page.getByTestId('chat-launcher').boundingBox();
+    await expect.poll(async () => {
+      const action = await review.boundingBox();
+      return action!.y + action!.height;
+    }).toBeLessThan(launcher!.y - 8);
+    await page.screenshot({ path: `/tmp/helpin-review-clearance-${viewport.width}.png` });
+    await review.click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(writes).toEqual([{ path: '/pm/ai-suggestions/suggestion-1/accept', body: { revision: 'revision-1' } }]);
+  });
+}
