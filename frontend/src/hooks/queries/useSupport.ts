@@ -230,9 +230,12 @@ export function useUpdateChatSettings(workspaceId: string) {
   return useMutation({
     mutationFn: (settings: Partial<SupportInboxSettings>) =>
       supportService.updateInstallationSettings(workspaceId, settings).then(unwrap),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.routingUsage(workspaceId) });
+    onSuccess: async (installation) => {
+      queryClient.setQueryData(queryKeys.support.installation(workspaceId), installation);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.routingUsage(workspaceId) }),
+      ]);
     },
     onError: (error: Error) => {
       toast.error('Failed to update chat settings', { description: error.message });

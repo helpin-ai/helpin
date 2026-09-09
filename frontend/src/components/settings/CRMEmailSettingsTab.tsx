@@ -1,3 +1,4 @@
+import { SettingsSaveBar } from './SettingsSaveBar';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
@@ -189,6 +190,18 @@ function CRMEmailSettingsContent({
 
   return (
     <div className="space-y-4 pb-6">
+      <SettingsSaveBar>
+        {isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+        <Button onClick={() => void handleSave()} disabled={updateSettings.isPending || saved || !isDirty}>
+          {saved ? (
+            <><Tick01Icon className="mr-1.5 h-4 w-4" />Saved</>
+          ) : updateSettings.isPending ? (
+            'Saving…'
+          ) : (
+            <><FloppyDiskIcon className="mr-1.5 h-4 w-4" />Save changes</>
+          )}
+        </Button>
+      </SettingsSaveBar>
       {isError && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-muted-foreground">
           Saved sync preferences could not be loaded. Review the defaults below and save to initialize them.
@@ -361,18 +374,7 @@ function CRMEmailSettingsContent({
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-end gap-3">
-        {isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
-        <Button onClick={() => void handleSave()} disabled={updateSettings.isPending || saved || !isDirty}>
-          {saved ? (
-            <><Tick01Icon className="mr-1.5 h-4 w-4" />Saved</>
-          ) : updateSettings.isPending ? (
-            'Saving…'
-          ) : (
-            <><FloppyDiskIcon className="mr-1.5 h-4 w-4" />Save changes</>
-          )}
-        </Button>
-      </div>
+
     </div>
   );
 }

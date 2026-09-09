@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
+import { SettingsAutosaveGuard } from './SettingsAutosaveGuard';
+import { SettingsSaveBar } from './SettingsSaveBar';
+import { SettingsSaveStatus } from './SettingsSaveStatus';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
 import { toast } from 'sonner';
-import { Tick01Icon, Copy01Icon, CodeIcon, Loading01Icon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon, Alert01Icon } from '@/lib/icons';
+import { Copy01Icon, CodeIcon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon, Alert01Icon } from '@/lib/icons';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces, useWorkspaceBilling } from '@/hooks/queries';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -25,11 +29,9 @@ import { canRemoveHelpinBranding, COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DAYS, 
 import { PreviewLayout } from './chat-widget/PreviewLayout';
 import {
   buildPreviewAvailability,
-  buildSettingsDraftFromServer,
   normalizeBusinessHoursDay,
   normalizeBusinessHoursSchedule,
   previewEscalationMessage,
-  serializeSettingsDraft,
   sortHelpSpaceIds,
   type ChatSettingsDraft,
 } from './chat-widget/utils';
@@ -43,7 +45,7 @@ import {
   getChatWidgetAIResponseModeForUI,
   isChatWidgetAIResponseModeActive,
 } from './chat-widget/responseModes';
-import { getChatWidgetAIAssistantEnableBlocker, getChatWidgetAIAssistantToggleToast } from './chat-widget/aiAssistantReadiness';
+import { getChatWidgetAIAssistantEnableBlocker } from './chat-widget/aiAssistantReadiness';
 import { DEFAULT_AI_HANDOFF_FOLLOWUPS, formatAIHandoffFollowupOption } from './chat-widget/handoffFollowups';
 import { buildWidgetInstallPrompt, type WidgetInstallFramework } from './chat-widget/installPrompts';
 import { WidgetInstallAIPrompt } from './chat-widget/WidgetInstallAIPrompt';
@@ -55,6 +57,10 @@ type ChatGeneralTabMode = 'chat-widget' | 'ai-assistant';
 const HELPIN_WIDGET_HOST = 'https://client.helpin.ai';
 
 export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspaceId: string; mode?: ChatGeneralTabMode }) {
+  return <ChatGeneralSettings key={`${workspaceId}:${mode}`} workspaceId={workspaceId} mode={mode} />;
+}
+
+function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode: ChatGeneralTabMode }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const isAIAssistantPage = mode === 'ai-assistant';
   const { data, isLoading } = useChatSettings(workspaceId);
@@ -128,14 +134,15 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
   const canRemoveBranding = canRemoveHelpinBranding(billing);
   const effectiveShowBranding = canRemoveBranding ? showBranding : true;
 
+  const [hydrated, setHydrated] = useState(false);
+
   useEffect(() => {
-    if (data?.settings && !billingLoading) {
+    if (data?.settings && !billingLoading && !hydrated) {
       const s = data.settings;
       const normalizedSchedule = normalizeBusinessHoursSchedule(s.business_hours_schedule);
       const sortedHelpSpaceIds = sortHelpSpaceIds(s.widget_help_space_ids);
 
-      lastSyncedDraftRef.current = serializeSettingsDraft(buildSettingsDraftFromServer(s));
-      initializedRef.current = true;
+      setHydrated(true);
 
       setRequireEmail(s.require_email_before_chat);
       setRequirePhone(s.require_phone_after_email);
@@ -180,13 +187,7 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
       setFileUploadsEnabled(s.file_uploads_enabled ?? true);
       setForceVisitorIdentity(s.force_visitor_identity ?? false);
     }
-  }, [data, billingLoading, canRemoveBranding]);
-
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const initializedRef = useRef(false);
-  const lastSyncedDraftRef = useRef<string>('');
+  }, [data, billingLoading, canRemoveBranding, hydrated]);
 
   const aiAssistantEnableBlocker = getChatWidgetAIAssistantEnableBlocker({
     aiAgentId,
@@ -247,37 +248,16 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
     file_uploads_enabled: fileUploadsEnabled,
     force_visitor_identity: forceVisitorIdentity,
   };
-  const settingsDraftKey = serializeSettingsDraft(settingsDraft);
-  const settingsDraftRef = useRef(settingsDraft);
-  settingsDraftRef.current = settingsDraft;
-  const mutateSettingsRef = useRef(updateMutation.mutate);
-  mutateSettingsRef.current = updateMutation.mutate;
-
-  // Auto-save with debounce when any setting changes
-  useEffect(() => {
-    if (billingLoading || !initializedRef.current || settingsDraftKey === lastSyncedDraftRef.current) {
-      return;
-    }
-
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setSaveStatus('saving');
-      mutateSettingsRef.current(settingsDraftRef.current, {
-        onSuccess: () => {
-          lastSyncedDraftRef.current = settingsDraftKey;
-          setSaveStatus('saved');
-          clearTimeout(savedTimerRef.current);
-          savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
-        },
-        onError: (err: unknown) => {
-          setSaveStatus('idle');
-          toast.error(err instanceof Error ? err.message : 'Failed to save');
-        },
-      });
-    }, 800);
-
-    return () => clearTimeout(debounceRef.current);
-  }, [billingLoading, settingsDraftKey]);
+  const autosave = useSettingsAutosave({
+    scopeKey: workspaceId,
+    enabled: hydrated && !billingLoading,
+    value: settingsDraft,
+    // The hook captures this baseline only once after the form is hydrated.
+    // Later query refreshes must not replace edits made while a save is pending.
+    savedValue: hydrated ? settingsDraft : null,
+    save: (draft: ChatSettingsDraft) => updateMutation.mutateAsync(draft),
+    delayMs: 800,
+  });
 
   const updateDay = (dayKey: string, patch: Partial<BusinessHoursDay>) => {
     setSchedule(prev => ({
@@ -315,7 +295,6 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
       }
       setAiEnableAttempted(false);
       setAiEnabled(true);
-      toast.success(getChatWidgetAIAssistantToggleToast(true));
       setExpandedSections(prev => {
         if (prev.has('ai-auto-reply')) return prev;
         const next = new Set(prev);
@@ -326,7 +305,6 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
     }
     setAiEnableAttempted(false);
     setAiEnabled(false);
-    toast.success(getChatWidgetAIAssistantToggleToast(false));
   };
 
   const handleAIAgentChange = (value: string) => {
@@ -664,22 +642,13 @@ function Dashboard() {
     />
   );
 
-  const saveIndicator = saveStatus !== 'idle' ? (
-    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 duration-200">
-      {saveStatus === 'saving' && (
-        <>
-          <Loading01Icon className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-          <span className="text-muted-foreground">Saving...</span>
-        </>
-      )}
-      {saveStatus === 'saved' && (
-        <>
-          <Tick01Icon className="h-3.5 w-3.5 text-green-500" />
-          <span className="text-muted-foreground">Saved</span>
-        </>
-      )}
-    </div>
-  ) : null;
+  const saveIndicator = (
+    <SettingsSaveBar>
+      <SettingsAutosaveGuard isDirty={autosave.isDirty} error={autosave.error} onRetry={autosave.retry} />
+      <span className="mr-auto text-xs text-muted-foreground">Changes save automatically</span>
+      <SettingsSaveStatus status={autosave.status} error={autosave.error} onRetry={autosave.retry} />
+    </SettingsSaveBar>
+  );
 
   const aiAssistantHref = workspace?.slug
     ? `/w/${workspace.slug}/settings/support-ai-assistant`

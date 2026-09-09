@@ -1,3 +1,4 @@
+import { SettingsSaveBar } from './SettingsSaveBar';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -73,6 +74,13 @@ function CRMMeetingSettingsForm({
 
   return (
     <div className="space-y-4">
+      {canManage && (
+        <SettingsSaveBar>
+          <Button onClick={save} disabled={updateSettings.isPending || !botName.trim() || !isDirty}>
+            {updateSettings.isPending ? 'Saving…' : isDirty ? 'Save changes' : 'Saved'}
+          </Button>
+        </SettingsSaveBar>
+      )}
       {!canManage && (
         <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
           You can view these settings. A CRM admin is required to make changes.
@@ -132,13 +140,7 @@ function CRMMeetingSettingsForm({
         </CardContent>
       </Card>
 
-      {canManage && (
-        <div className="flex justify-end">
-          <Button onClick={save} disabled={updateSettings.isPending || !botName.trim() || !isDirty}>
-            {updateSettings.isPending ? 'Saving…' : isDirty ? 'Save changes' : 'Saved'}
-          </Button>
-        </div>
-      )}
+
     </div>
   );
 }
