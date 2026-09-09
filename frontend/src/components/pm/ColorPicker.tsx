@@ -3,6 +3,7 @@ import { PaintBoardIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { DEFAULT_EPIC_COLOR } from './epicColor';
 
 export const PRESET_COLORS = [
   '#5e6ad2', // indigo
@@ -22,6 +23,16 @@ export const PRESET_COLORS = [
   '#a08060', // brown
   '#788596', // slate
 ];
+
+// Pastel epic presets mix in 45% white before selection and saving.
+export const EPIC_PRESET_COLORS = PRESET_COLORS.map((color) => {
+  if (color === '#788596') return DEFAULT_EPIC_COLOR;
+  const channels = [1, 3, 5].map((offset) => {
+    const channel = parseInt(color.slice(offset, offset + 2), 16);
+    return Math.round(channel + (255 - channel) * 0.45).toString(16).padStart(2, '0');
+  });
+  return `#${channels.join('')}`;
+});
 
 // ── Color conversion utilities ──────────────────────────────────────
 
@@ -323,11 +334,15 @@ export function BrandColorPicker({
 export function ColorPicker({
   value,
   onChange,
+  shape = 'circle',
+  presets = PRESET_COLORS,
 }: {
   value: string;
   onChange: (color: string) => void;
+  shape?: 'circle' | 'square';
+  presets?: readonly string[];
 }) {
-  const isCustom = !PRESET_COLORS.includes(value);
+  const isCustom = !presets.includes(value);
   const [customOpen, setCustomOpen] = useState(false);
   const [hsv, setHsv] = useState<HSV>(() => hexToHsv(value || '#3b82f6'));
   const [hexInput, setHexInput] = useState(value);
@@ -362,12 +377,16 @@ export function ColorPicker({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      {PRESET_COLORS.map((c) => (
+      {presets.map((c) => (
         <button
           key={c}
           type="button"
+          aria-label={`Select color ${c}`}
+          aria-pressed={value === c}
+          title={c}
           className={cn(
-            'h-6 w-6 rounded-full border-2 transition-all cursor-pointer',
+            'h-6 w-6 border-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-primary',
+            shape === 'square' ? 'rounded-[4px]' : 'rounded-full',
             value === c
               ? 'border-foreground scale-110'
               : 'border-transparent hover:border-muted-foreground/40',
@@ -381,8 +400,11 @@ export function ColorPicker({
         <PopoverTrigger asChild>
           <button
             type="button"
+            aria-label="Custom color"
+            aria-pressed={isCustom}
             className={cn(
-              'relative flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all cursor-pointer',
+              'relative flex h-6 w-6 items-center justify-center border-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-primary',
+              shape === 'square' ? 'rounded-[4px]' : 'rounded-full',
               isCustom
                 ? 'border-foreground scale-110'
                 : 'border-dashed border-muted-foreground/40 hover:border-muted-foreground/70',
@@ -409,6 +431,8 @@ export function ColorPicker({
                 style={{ backgroundColor: hsvToHex(hsv) }}
               />
               <Input
+                aria-label="Hex color"
+                aria-invalid={!HEX_REGEX.test(normalizeHex(hexInput))}
                 value={hexInput}
                 onChange={(e) => setHexInput(e.target.value)}
                 onBlur={() => applyHex(hexInput)}
@@ -419,7 +443,7 @@ export function ColorPicker({
                   }
                 }}
                 placeholder="#000000"
-                className="h-8 font-mono text-xs"
+                className={cn('h-8 font-mono text-xs', shape === 'square' && 'focus-visible:ring-quiet-text-primary')}
               />
             </div>
           </div>

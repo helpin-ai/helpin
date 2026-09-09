@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Tick01Icon, PlusSignIcon, Target01Icon, Cancel01Icon } from '@/lib/icons';
 
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverTrigger } from '@/components/ui/popover';
+import { PMDropdownContent } from './PMDropdownContent';
 import {
   Command,
   CommandEmpty,
@@ -118,7 +119,7 @@ export function ObjectivePicker({
           </button>
         </PopoverTrigger>
         {open ? (
-          <PopoverContent
+          <PMDropdownContent
             className="w-[260px] p-0"
             align="start"
             side="bottom"
@@ -168,7 +169,7 @@ export function ObjectivePicker({
                 </CommandList>
               </Command>
             )}
-          </PopoverContent>
+          </PMDropdownContent>
         ) : null}
       </Popover>
     </div>

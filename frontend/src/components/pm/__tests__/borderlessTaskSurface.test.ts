@@ -83,7 +83,7 @@ describe('borderless task surfaces', () => {
     expect(tableStylesSource).toContain("TABLE_NAME_TEXT = 'text-sm text-foreground/90'");
     expect(taskListSource).toContain('<Select size="ui"');
     expect(taskListSource).toContain('className="h-8 text-ui"');
-    expect(taskListSource).toContain('triggerClassName="text-[11px]"');
+    expect(taskListSource).toContain('triggerClassName="text-[length:var(--text-ui)]"');
     expect(taskListSource).toContain('singleLine');
     expect(taskListSource).not.toContain('py-0.5 text-xs transition-colors hover:bg-accent');
     expect(displayMenuSource).toContain('size="icon-sm"');

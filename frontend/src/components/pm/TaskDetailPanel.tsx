@@ -88,6 +88,8 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
+import { EpicBadge } from '@/components/pm/EpicBadge';
+import { groupEpicsByLifecycle } from '@/components/pm/epicPickerGroups';
 import { MemberPickerPopover, MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
@@ -849,19 +851,12 @@ function TaskDetailPanelBody({
   // Group epics by lifecycle: not started → in progress → completed.
   // Order within each group matches `availableEpics` (server-supplied order).
   const epicGroups = useMemo(() => {
-    const notStarted: typeof availableEpics = [];
-    const inProgress: typeof availableEpics = [];
-    const completed: typeof availableEpics = [];
-    for (const entry of availableEpics) {
-      if (entry.epic.completed) completed.push(entry);
-      else if (entry.epic.started) inProgress.push(entry);
-      else notStarted.push(entry);
-    }
     return [
       { label: undefined as string | undefined, options: [{ value: '__none__', label: 'None' }] },
-      { label: 'Not started', options: notStarted.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
-      { label: 'In progress', options: inProgress.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
-      { label: 'Completed', options: completed.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      ...groupEpicsByLifecycle(availableEpics.map(({ epic }) => epic)).map((group) => ({
+        label: group.label,
+        options: group.epics.map((epic) => ({ value: epic.id, label: epic.name })),
+      })),
     ];
   }, [availableEpics]);
 
@@ -1103,10 +1098,10 @@ function TaskDetailPanelBody({
     [effectiveStates, form.workflow_state_id],
   );
 
-  const currentEpicName = useMemo(() => {
-    if (!form.epic_id) return 'None';
-    return epics.find((e) => e.epic.id === form.epic_id)?.epic.name ?? 'None';
-  }, [form.epic_id, epics]);
+  const currentEpic = useMemo(
+    () => epics.find((e) => e.epic.id === form.epic_id)?.epic,
+    [form.epic_id, epics],
+  );
 
   const currentSprintName = useMemo(() => {
     if (!form.sprint_id) return 'None';
@@ -1741,7 +1736,15 @@ function TaskDetailPanelBody({
                   const val = v === '__none__' ? '' : v;
                   updateField('epic_id', val, { epic_id: val });
                 }}
-                renderTrigger={() => <span className="truncate">{currentEpicName}</span>}
+                renderTrigger={() => currentEpic ? (
+                  <EpicBadge name={currentEpic.name} color={currentEpic.color} />
+                ) : <span>None</span>}
+                renderOption={(value) => {
+                  const epic = availableEpics.find((entry) => entry.epic.id === value)?.epic;
+                  return epic ? (
+                    <EpicBadge name={epic.name} color={epic.color} className="text-[length:inherit]" />
+                  ) : <span>None</span>;
+                }}
               />
             </MetadataRow>
             )}

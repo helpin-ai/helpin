@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Tick01Icon, Loading01Icon, PlusSignIcon, Tag01Icon, Cancel01Icon } from '@/lib/icons';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverTrigger } from '@/components/ui/popover';
+import { PMDropdownContent } from './PMDropdownContent';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Command,
@@ -224,7 +225,7 @@ export function LabelPicker({
           </button>
         </PopoverTrigger>
         {open && (
-          <PopoverContent
+          <PMDropdownContent
             className="w-[220px] p-0"
             align="start"
             side="bottom"
@@ -289,7 +290,7 @@ export function LabelPicker({
                 </CommandGroup>
               </CommandList>
             </Command>
-          </PopoverContent>
+          </PMDropdownContent>
         )}
       </Popover>
     </div>

@@ -1,32 +1,35 @@
 // Shared table design tokens for consistent styling across all tables
 
 /** Outer scrollable container */
-export const TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto bg-card';
+export const TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto bg-card dark:bg-transparent';
+
+/** Resting table surface. Keep the workspace backdrop visible in dark mode. */
+export const TABLE_SURFACE = 'bg-card dark:bg-transparent';
 
 /** Sticky header bar */
-export const TABLE_HEADER = 'sticky top-0 z-10 bg-card';
+export const TABLE_HEADER = 'shared-table-header sticky top-0 z-10 bg-card dark:bg-transparent';
 
 /** Individual header cell – compact, subtle text */
 export const TABLE_HEADER_CELL =
-  'border-b border-border/60 relative shrink-0 bg-card px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground';
+  'shared-table-cell border-b border-border/60 relative shrink-0 bg-card dark:bg-transparent px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground';
 
 /** Sortable header cell – adds cursor pointer */
-export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted';
+export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted dark:hover:bg-muted';
 
 /** Data row – pixel-pinned to ROW_HEIGHT so it exactly matches the virtualizer's translateY spacing. */
 export const TABLE_ROW =
-  'group/row flex h-[36px] cursor-pointer items-center border-b border-border/60 bg-card hover:bg-muted';
+  'shared-table-row group/row flex h-[36px] cursor-pointer items-center border-b border-border/60 bg-card dark:bg-transparent hover:bg-muted dark:hover:bg-muted';
 
 /** Data cell – right border for grid lines */
 export const TABLE_CELL =
-  'flex shrink-0 items-center self-stretch bg-inherit px-2.5';
+  'shared-table-cell flex shrink-0 items-center self-stretch bg-inherit px-2.5';
 
 /** Primary entity name shown in table cells. */
 export const TABLE_NAME_TEXT = 'text-sm text-foreground/90';
 
 /** Group header row (for grouped/expandable tables) – pixel-pinned to GROUP_ROW_HEIGHT */
 export const TABLE_GROUP_ROW =
-  'border-b border-border/60 flex h-[36px] cursor-pointer items-center bg-muted/60 text-sm font-semibold hover:bg-muted dark:bg-background/25 dark:hover:bg-background/40';
+  'shared-table-row border-b border-border/60 flex h-[36px] cursor-pointer items-center bg-muted/60 text-sm font-semibold hover:bg-muted dark:bg-transparent dark:hover:bg-muted';
 
 /** Inner sticky wrapper for group row content – pins chevron/label to viewport left during horizontal scroll */
 export const TABLE_GROUP_ROW_INNER =
@@ -51,30 +54,30 @@ export const ACTIONS_COL_SIZE = 45;
  * affordance. The actions column has no header label, so the bare TABLE_HEADER_CELL
  * would render as a visible empty box; this strips that chrome.
  */
-export const TABLE_HEADER_CELL_ACTIONS = 'shrink-0 sticky right-0 z-[11] bg-card border-l border-border/60';
+export const TABLE_HEADER_CELL_ACTIONS = 'shared-table-cell shared-table-pinned-right shrink-0 sticky right-0 z-[11] bg-card dark:bg-transparent border-l border-border/60';
 
 // --- Pinned column tokens ---
 
-/** Pinned cell (left) – sticky with background so content doesn't bleed through */
+/** Pinned cell (left) – scrolling cells are clipped behind it by useTableSurface */
 export const TABLE_PINNED_LEFT =
-  'sticky z-[3] bg-inherit border-r border-border/60';
+  'shared-table-pinned-left sticky z-[3] bg-inherit dark:bg-transparent dark:group-hover/row:bg-muted border-r border-border/60';
 
 /** Pinned cell (left, last in the pinned group) – carries the divider against the scrollable area */
 export const TABLE_PINNED_LEFT_NAME =
-  'sticky z-[4] bg-inherit border-r border-border/60';
+  'shared-table-pinned-left sticky z-[4] bg-inherit dark:bg-transparent dark:group-hover/row:bg-muted border-r border-border/60';
 
 /** Pinned cell (right) – sticky right with background */
 export const TABLE_PINNED_RIGHT =
-  'sticky right-0 z-[3] bg-inherit border-l border-border/60';
+  'shared-table-pinned-right sticky right-0 z-[3] bg-inherit dark:bg-transparent dark:group-hover/row:bg-muted border-l border-border/60';
 
 /** Pinned header cell (left) – higher z-index than both header and pinned cells */
-export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-card border-r border-border/60';
+export const TABLE_PINNED_HEADER_LEFT = 'shared-table-pinned-left sticky z-[11] bg-card dark:bg-transparent border-r border-border/60';
 
 /** Pinned header cell (left, last in the pinned group) – carries the divider against the scrollable area */
-export const TABLE_PINNED_HEADER_LEFT_NAME = 'sticky z-[12] bg-card border-r border-border/60';
+export const TABLE_PINNED_HEADER_LEFT_NAME = 'shared-table-pinned-left sticky z-[12] bg-card dark:bg-transparent border-r border-border/60';
 
 /** Pinned header cell (right) – higher z-index, sticky right */
-export const TABLE_PINNED_HEADER_RIGHT = 'sticky right-0 z-[11] bg-card border-l border-border/60';
+export const TABLE_PINNED_HEADER_RIGHT = 'shared-table-pinned-right sticky right-0 z-[11] bg-card dark:bg-transparent border-l border-border/60';
 
 /** Checkbox hover-reveal – hidden by default, visible on row hover or when checked */
 export const TABLE_CHECKBOX_HOVER =

@@ -1,10 +1,11 @@
 import { createContext, type MutableRefObject } from 'react';
-import type { Agent, Task } from '@/lib/pmTypes';
+import type { Agent, Epic, Task } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import type { DragPreviewManager } from './KanbanBoard.dnd';
 
 export interface BoardDataContextValue {
   workspaceId: string;
+  epicById: Map<string, Epic>;
   ownerNameMap: Map<string, string>;
   agentById: Map<string, Agent>;
   assignableMembers: AssignableMember[];

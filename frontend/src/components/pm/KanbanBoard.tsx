@@ -1209,12 +1209,13 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
     () => ({
       workspaceId,
       ownerNameMap,
+      epicById: new Map(refEpics.map(({ epic }) => [epic.id, epic])),
       agentById,
       assignableMembers,
       automatedStateIds,
       findTeamName: resolveTeamName,
     }),
-    [workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, resolveTeamName],
+    [workspaceId, ownerNameMap, agentById, assignableMembers, automatedStateIds, resolveTeamName, refEpics],
   );
 
   // Use a ref so the context value identity never changes — consumers never

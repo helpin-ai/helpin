@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverTrigger } from '@/components/ui/popover';
+import { PMDropdownContent } from './PMDropdownContent';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -59,7 +60,7 @@ function EstimatePickerBase({
     return (
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-        <PopoverContent className="w-auto p-2" align="start">
+        <PMDropdownContent className="w-auto p-2" align="start">
           <div className="flex flex-col gap-0.5">
             <button
               type="button"
@@ -91,7 +92,7 @@ function EstimatePickerBase({
               </button>
             ))}
           </div>
-        </PopoverContent>
+        </PMDropdownContent>
       </Popover>
     );
   }
@@ -122,7 +123,7 @@ function EstimatePickerBase({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent className="w-36 p-3" align="start">
+      <PMDropdownContent className="w-36 p-3" align="start">
         <Input
           type="number"
           min={0}
@@ -140,7 +141,7 @@ function EstimatePickerBase({
             }
           }}
         />
-      </PopoverContent>
+      </PMDropdownContent>
     </Popover>
   );
 }
