@@ -89,7 +89,8 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { EpicBadge } from '@/components/pm/EpicBadge';
-import { groupEpicsByLifecycle } from '@/components/pm/epicPickerGroups';
+import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
+import { EPIC_PICKER_WIDTH, groupEpicsByLifecycle } from '@/components/pm/epicPickerGroups';
 import { MemberPickerPopover, MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
@@ -1732,6 +1733,7 @@ function TaskDetailPanelBody({
               <SidebarPopoverSelect
                 value={form.epic_id || '__none__'}
                 groups={epicGroups}
+                width={EPIC_PICKER_WIDTH}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('epic_id', val, { epic_id: val });
@@ -1742,7 +1744,10 @@ function TaskDetailPanelBody({
                 renderOption={(value) => {
                   const epic = availableEpics.find((entry) => entry.epic.id === value)?.epic;
                   return epic ? (
-                    <EpicBadge name={epic.name} color={epic.color} className="text-[length:inherit]" />
+                    <span className="flex min-w-0 items-center gap-2">
+                      <EpicColorSwatch color={epic.color} />
+                      <span className="truncate">{epic.name}</span>
+                    </span>
                   ) : <span>None</span>;
                 }}
               />

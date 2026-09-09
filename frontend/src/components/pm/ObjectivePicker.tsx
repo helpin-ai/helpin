@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { Tick01Icon, PlusSignIcon, Target01Icon, Cancel01Icon } from '@/lib/icons';
+import { PlusSignIcon, Target01Icon, Cancel01Icon } from '@/lib/icons';
 
-import { Popover, PopoverTrigger } from '@/components/ui/popover';
+import {
+  QuietDropdownRoot as Popover,
+  QuietDropdownTrigger as PopoverTrigger,
+} from '@/components/design-system/quiet-dropdown';
 import { PMDropdownContent } from './PMDropdownContent';
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
+  QuietDropdownOptions,
+  QuietDropdownEmpty,
+  QuietDropdownGroup,
+  QuietDropdownItem,
+} from '@/components/design-system/quiet-dropdown';
 import { cn } from '@/lib/utils';
 import type { Objective } from '@/lib/pmTypes';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
@@ -69,14 +70,18 @@ export function ObjectivePicker({
   triggerOnly = false,
 }: ObjectivePickerProps) {
   const [open, setOpen] = useState(false);
-  const availableObjectives = objectives.filter((objective) => !objective.archived);
-  const selectedObjectives = selectedObjectivesProp ?? objectives
-    .filter((objective) => selectedObjectiveIds.includes(objective.id))
-    .map((objective) => ({
-      id: objective.id,
-      name: objective.name,
-      archived: objective.archived,
-    }));
+  const availableObjectives = objectives.filter(
+    (objective) => !objective.archived,
+  );
+  const selectedObjectives =
+    selectedObjectivesProp ??
+    objectives
+      .filter((objective) => selectedObjectiveIds.includes(objective.id))
+      .map((objective) => ({
+        id: objective.id,
+        name: objective.name,
+        archived: objective.archived,
+      }));
 
   const toggleObjective = (objectiveId: string) => {
     if (selectedObjectiveIds.includes(objectiveId)) {
@@ -92,17 +97,20 @@ export function ObjectivePicker({
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
-      {!triggerOnly && selectedObjectives.map((objective) => (
-        <ObjectiveBadge
-          key={objective.id}
-          objective={{
-            id: objective.id,
-            name: objective.archived ? `${objective.name} (Archived)` : objective.name,
-            archived: !!objective.archived,
-          }}
-          onRemove={() => removeObjective(objective.id)}
-        />
-      ))}
+      {!triggerOnly &&
+        selectedObjectives.map((objective) => (
+          <ObjectiveBadge
+            key={objective.id}
+            objective={{
+              id: objective.id,
+              name: objective.archived
+                ? `${objective.name} (Archived)`
+                : objective.name,
+              archived: !!objective.archived,
+            }}
+            onRemove={() => removeObjective(objective.id)}
+          />
+        ))}
 
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
@@ -129,7 +137,9 @@ export function ObjectivePicker({
             {availableObjectives.length === 0 ? (
               <div className="flex flex-col items-center gap-1.5 px-3 py-4 text-center">
                 <Target01Icon className="h-4 w-4 text-muted-foreground" />
-                <p className="text-ui text-muted-foreground">No objectives yet</p>
+                <p className="text-ui text-muted-foreground">
+                  No objectives yet
+                </p>
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-ui font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -143,31 +153,33 @@ export function ObjectivePicker({
                 </button>
               </div>
             ) : (
-              <Command>
-                <CommandInput placeholder="Search objectives..." className="h-8 text-ui" />
-                <CommandList>
-                  <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">
-                    No objectives found
-                  </CommandEmpty>
-                  <CommandGroup>
-                    {availableObjectives.map((objective) => {
-                      const isSelected = selectedObjectiveIds.includes(objective.id);
-                      return (
-                        <CommandItem
-                          key={objective.id}
-                          value={objective.name}
-                          className="flex items-center gap-2 text-ui"
-                          onSelect={() => toggleObjective(objective.id)}
-                        >
-                          <Target01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          <span className="min-w-0 flex-1 truncate">{objective.name}</span>
-                          {isSelected ? <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
+              <QuietDropdownOptions searchPlaceholder="Search objectives...">
+                <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">
+                  No objectives found
+                </QuietDropdownEmpty>
+                <QuietDropdownGroup>
+                  {availableObjectives.map((objective) => {
+                    const isSelected = selectedObjectiveIds.includes(
+                      objective.id,
+                    );
+                    return (
+                      <QuietDropdownItem
+                        data-checked={isSelected}
+                        key={objective.id}
+                        value={objective.id}
+                        keywords={[objective.name]}
+                        className="flex items-center gap-2 text-ui"
+                        onSelect={() => toggleObjective(objective.id)}
+                      >
+                        <Target01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">
+                          {objective.name}
+                        </span>
+                      </QuietDropdownItem>
+                    );
+                  })}
+                </QuietDropdownGroup>
+              </QuietDropdownOptions>
             )}
           </PMDropdownContent>
         ) : null}

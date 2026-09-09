@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'r
 import { CheckListIcon, Copy01Icon, File01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon, SparklesIcon, UserGroupIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { pmTaskTemplateService } from '@/lib/services/pmTaskTemplateService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';

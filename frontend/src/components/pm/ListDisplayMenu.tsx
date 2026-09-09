@@ -1,6 +1,6 @@
 import { ColumnsThreeCogIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import {
   useBoardDisplayStore,
   DISPLAY_PROPERTY_LABELS,
@@ -22,34 +22,24 @@ export function ListDisplayMenu({ disabledKeys }: ListDisplayMenuProps) {
     : LIST_PROPERTY_KEYS;
 
   return (
-    <Popover>
-      <QuickTooltip label="Display columns">
-        <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon-sm">
-            <ColumnsThreeCogIcon className="h-4 w-4" />
-          </Button>
-        </PopoverTrigger>
-      </QuickTooltip>
-      <PopoverContent className="w-[240px] p-3" align="end">
-        <div>
-          <p className="mb-2 text-ui font-medium text-muted-foreground">Display columns</p>
-          <div className="flex flex-wrap gap-1.5">
-            {availableKeys.map((key) => (
-              <button
-                key={key}
-                onClick={() => toggleProperty(key)}
-                className={`rounded-md border px-2 py-1 text-ui font-medium transition-colors ${
-                  properties[key]
-                    ? 'border-primary/50 bg-primary/10 text-primary'
-                    : 'border-border bg-background text-muted-foreground hover:bg-muted'
-                }`}
-              >
-                {DISPLAY_PROPERTY_LABELS[key]}
-              </button>
-            ))}
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+    <QuietDropdown
+      label="Display columns"
+      multiple
+      selected={availableKeys.filter((key) => properties[key])}
+      options={availableKeys.map((key) => ({
+        value: key,
+        label: DISPLAY_PROPERTY_LABELS[key],
+      }))}
+      onSelect={(key) => toggleProperty(key as DisplayPropertyKey)}
+      contentProps={{ align: 'end' }}
+      triggerWrapper={(trigger) => (
+        <QuickTooltip label="Display columns">{trigger}</QuickTooltip>
+      )}
+      trigger={
+        <Button variant="ghost" size="icon-sm" aria-label="Display columns">
+          <ColumnsThreeCogIcon className="h-4 w-4" />
+        </Button>
+      }
+    />
   );
 }

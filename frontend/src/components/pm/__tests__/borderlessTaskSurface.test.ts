@@ -81,12 +81,12 @@ describe('borderless task surfaces', () => {
     expect(taskListSource).toContain('font-mono text-ui text-muted-foreground');
     expect(taskListSource).toContain('text-left ${TABLE_NAME_TEXT} hover:text-primary');
     expect(tableStylesSource).toContain("TABLE_NAME_TEXT = 'text-sm text-foreground/90'");
-    expect(taskListSource).toContain('<Select size="ui"');
-    expect(taskListSource).toContain('className="h-8 text-ui"');
+    expect(taskListSource).toContain('<TaskListGroupingDropdown');
+    expect(taskListSource).toContain('QuietDropdownOptions');
     expect(taskListSource).toContain('triggerClassName="text-[length:var(--text-ui)]"');
     expect(taskListSource).toContain('singleLine');
     expect(taskListSource).not.toContain('py-0.5 text-xs transition-colors hover:bg-accent');
     expect(displayMenuSource).toContain('size="icon-sm"');
-    expect(displayMenuSource).toContain('px-2 py-1 text-ui font-medium');
+    expect(displayMenuSource).toContain('QuietDropdown');
   });
 });

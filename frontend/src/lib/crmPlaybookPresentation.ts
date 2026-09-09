@@ -1,6 +1,18 @@
 import type { CRMPlaybookDefinition, CRMPlaybookItem } from './crmPlaybookTypes';
 import type { CRMSituationAttention, CRMSituationMotion } from './crmSituationTypes';
 
+export const playbookFilterDefinitions = [{
+  key: 'state' as const,
+  label: 'Playbook status',
+  singleSelect: true,
+  options: [
+    { value: 'all', label: 'All statuses' },
+    { value: 'draft', label: 'Draft' },
+    { value: 'accepting', label: 'Accepting signals' },
+    { value: 'stopped', label: 'Enrollment stopped' },
+  ],
+}];
+
 export const playbookMotions: { value: CRMSituationMotion; label: string }[] = [
   { value: 'prospecting', label: 'Prospecting' }, { value: 'conversion', label: 'Conversion' },
   { value: 'onboarding', label: 'Onboarding' }, { value: 'adoption', label: 'Adoption' },

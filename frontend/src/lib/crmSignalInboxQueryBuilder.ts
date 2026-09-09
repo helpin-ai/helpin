@@ -1,10 +1,17 @@
 import type { CRMSignalInboxItem } from './crmSignalInboxTypes';
+import { signalCategories } from './crmSituationPresentation';
 
 export const inboxNavigation = {
   scope: [{ value: 'all', label: 'Everyone' }, { value: 'mine', label: 'Assigned to me' }, { value: 'my_teams', label: 'My teams' }, { value: 'unassigned', label: 'Unassigned' }],
   state: [{ value: 'needs_attention', label: 'Needs attention' }, { value: 'needs_approval', label: 'Needs approval' }, { value: 'open', label: 'Open' }, { value: 'waiting', label: 'Waiting' }, { value: 'paused', label: 'Paused' }, { value: 'closed', label: 'Closed' }, { value: 'all', label: 'All statuses' }],
   sort: [{ value: 'priority', label: 'Auto' }, { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }],
 };
+
+export const inboxFilterDefinitions = [
+  { key: 'scope', label: 'Assignment', options: inboxNavigation.scope, singleSelect: true },
+  { key: 'state', label: 'Signal status', options: inboxNavigation.state, singleSelect: true },
+  { key: 'category', label: 'Category', options: signalCategories, singleSelect: true },
+] satisfies { key: 'scope' | 'state' | 'category'; label: string; options: { value: string; label: string }[]; singleSelect: boolean }[];
 
 export interface SignalsSearch {
   view?: 'evidence'; signal?: string; recommendation?: string; group?: string;

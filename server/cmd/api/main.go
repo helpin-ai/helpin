@@ -1700,6 +1700,10 @@ func main() {
 		supportAIService,
 	)
 	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo, workspaceRepo)
+	supportFollowUpRepo := repository.NewSupportFollowUpRepository(db)
+	supportFollowUpService := service.NewSupportFollowUpService(supportFollowUpRepo, supportChatService)
+	commandService.SetSupportFollowUpService(supportFollowUpService)
+	supportInboxService.SetFollowUpRepository(supportFollowUpRepo)
 	if agentRuntimeProjectionService != nil {
 		agentRuntimeProjectionService.SetSupportChatPauseHook(supportChatService.OnSupportChatRunPaused)
 	}

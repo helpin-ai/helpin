@@ -1,3 +1,6 @@
+import { TaskListGroupingDropdown } from './TaskListGroupingDropdown';
+import { useQuietDropdownFocusReturn } from '@/components/design-system/use-quiet-dropdown-focus-return';
+import { PMFilterPill, PMFilterTrigger } from './PMFilterControls';
 import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -19,16 +22,14 @@ import {
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft02Icon, Cancel01Icon, Copy01Icon, FilterHorizontalIcon, Loading01Icon } from '@/lib/icons';
+import { Cancel01Icon, Copy01Icon, Loading01Icon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { PMDropdownContent } from './PMDropdownContent';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { QuietDropdownRoot, QuietDropdownTrigger, QuietDropdownOptions, QuietDropdownEmpty, QuietDropdownGroup, QuietDropdownItem } from "@/components/design-system/quiet-dropdown";
 import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { QuietSearchInput } from '@/components/design-system/quiet';
 import { format, parseISO } from 'date-fns';
@@ -58,7 +59,6 @@ import {
   LinkSquare01Icon as TaskListOpenTaskIcon,
   MoreVerticalIcon as TaskListMoreVerticalIcon,
   StickyNote01Icon as TaskListNoteIcon,
-  Tick01Icon as TaskListCheckIcon,
   UserAdd01Icon as TaskListUserAddIcon,
 } from '@/lib/pmIcons';
 import type {
@@ -355,73 +355,6 @@ function selectedLocalFilterCount(values: LocalTaskFilterValues) {
   return Object.values(values).filter((value) => value !== TASK_LIST_FILTER_ALL).length;
 }
 
-function selectedLocalFilterLabel(definition: LocalTaskFilterDefinition, value: string) {
-  return definition.options.find((option) => option.value === value)?.label ?? value;
-}
-
-function LocalTaskFilterPill({
-  definition,
-  value,
-  onChange,
-}: {
-  definition: LocalTaskFilterDefinition;
-  value: string;
-  onChange: (key: LocalTaskFilterKey, value: string) => void;
-}) {
-  return (
-    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-ui">
-      <span className="font-medium text-muted-foreground">{definition.label}</span>
-      <span className="text-muted-foreground/60">is</span>
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex max-w-[11rem] items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-ui transition-colors hover:bg-accent"
-          >
-            <span className="truncate">{selectedLocalFilterLabel(definition, value)}</span>
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className={`${definition.searchableValues ? 'w-72' : 'w-52'} p-0`} align="start">
-          <Command>
-            {definition.searchableValues ? (
-              <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} className="text-ui" />
-            ) : null}
-            <CommandList>
-              <CommandEmpty className="text-ui">No results.</CommandEmpty>
-              <CommandGroup>
-                {definition.options.map((option) => {
-                  const isSelected = option.value === value;
-                  return (
-                    <CommandItem
-                      key={option.value}
-                      value={option.label}
-                      className="text-ui"
-                      onSelect={() => onChange(definition.key, option.value)}
-                    >
-                      <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                        {isSelected ? <TaskListCheckIcon className="h-3 w-3" /> : null}
-                      </div>
-                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-      <button
-        type="button"
-        onClick={() => onChange(definition.key, TASK_LIST_FILTER_ALL)}
-        className="ml-0.5 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-        aria-label={`Remove ${definition.label} filter`}
-      >
-        <Cancel01Icon className="h-3 w-3" />
-      </button>
-    </div>
-  );
-}
-
 function LocalTaskFilterControls({
   definitions,
   values,
@@ -433,152 +366,20 @@ function LocalTaskFilterControls({
   onChange: (key: LocalTaskFilterKey, value: string) => void;
   onClear: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<LocalTaskFilterKey | null>(null);
-  const activeCount = selectedLocalFilterCount(values);
-  const activeKeys = useMemo(
-    () =>
-      new Set(
-        Object.entries(values)
-          .filter(([, value]) => value !== TASK_LIST_FILTER_ALL)
-          .map(([key]) => key as LocalTaskFilterKey),
-      ),
-    [values],
-  );
-  const availableDefinitions = definitions.filter((definition) => !activeKeys.has(definition.key) && definition.options.length > 0);
-  const activeDefinitions = definitions.filter((definition) => activeKeys.has(definition.key));
-  const selectedDefinition = selectedKey
-    ? definitions.find((definition) => definition.key === selectedKey)
-    : undefined;
-  const canChooseFilter = availableDefinitions.length > 0 || Boolean(selectedDefinition);
-
-  const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) setSelectedKey(null);
-  };
-
-  return (
-    <div className="contents">
-      {canChooseFilter ? (
-        <Popover open={open} onOpenChange={handleOpenChange}>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="min-w-[88px] justify-between gap-2 text-ui text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <FilterHorizontalIcon className="h-3.5 w-3.5" />
-                Filters
-              </span>
-              <Badge
-                variant="secondary"
-                className={`rounded-full px-1.5 py-0 text-[10px] transition-opacity ${activeCount > 0 ? 'opacity-100' : 'opacity-0'}`}
-              >
-                {activeCount || 0}
-              </Badge>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            className={`${selectedDefinition ? (selectedDefinition.searchableValues ? 'w-72' : 'w-52') : 'w-48'} p-0`}
-            align="start"
-          >
-            {selectedDefinition ? (
-              <Command>
-                <div className="flex items-center gap-1 border-b border-border/70 px-1.5 py-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    aria-label="Back to filter fields"
-                    onClick={() => setSelectedKey(null)}
-                  >
-                    <ArrowLeft02Icon className="h-3.5 w-3.5" />
-                  </Button>
-                  <span className="truncate text-ui font-medium">{selectedDefinition.label}</span>
-                </div>
-                {selectedDefinition.searchableValues ? (
-                  <CommandInput placeholder={`Search ${selectedDefinition.label.toLowerCase()}...`} className="text-ui" />
-                ) : null}
-                <CommandList>
-                  <CommandEmpty className="text-ui">No results.</CommandEmpty>
-                  <CommandGroup>
-                    {selectedDefinition.options.map((option) => {
-                      const isSelected = values[selectedDefinition.key] === option.value;
-                      return (
-                        <CommandItem
-                          key={option.value}
-                          value={option.label}
-                          className="text-ui"
-                          onSelect={() => {
-                            onChange(selectedDefinition.key, option.value);
-                            setOpen(false);
-                            setSelectedKey(null);
-                          }}
-                        >
-                          <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                            {isSelected ? <TaskListCheckIcon className="h-3 w-3" /> : null}
-                          </div>
-                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            ) : (
-              <Command>
-                <CommandInput placeholder="Filter by..." className="text-ui" />
-                <CommandList>
-                  <CommandEmpty className="text-ui">No filters.</CommandEmpty>
-                  <CommandGroup>
-                    {availableDefinitions.map((definition) => (
-                      <CommandItem
-                        key={definition.key}
-                        value={definition.label}
-                        className="text-ui"
-                        onSelect={() => setSelectedKey(definition.key)}
-                      >
-                        {definition.label}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            )}
-          </PopoverContent>
-        </Popover>
-      ) : (
-        <Button variant="ghost" size="sm" className="min-w-[88px] justify-between gap-2 text-ui text-muted-foreground" disabled>
-          <span className="inline-flex items-center gap-1">
-            <FilterHorizontalIcon className="h-3.5 w-3.5" />
-            Filters
-          </span>
-          <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
-            {activeCount}
-          </Badge>
-        </Button>
-      )}
-
-      {activeCount > 0 ? (
-        <div className="flex basis-full flex-wrap items-center gap-1.5 pt-0.5">
-          {activeDefinitions.map((definition) => (
-            <LocalTaskFilterPill
-              key={definition.key}
-              definition={definition}
-              value={values[definition.key]}
-              onChange={onChange}
-            />
-          ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-ui text-muted-foreground"
-            onClick={onClear}
-          >
-            Clear all
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
+  const activeKeys = new Set(definitions.filter(definition => values[definition.key] !== TASK_LIST_FILTER_ALL).map(definition => definition.key));
+  const sharedValues = Object.fromEntries(definitions.map(definition => [definition.key, activeKeys.has(definition.key) ? [values[definition.key]] : []]));
+  return <div className="contents">
+    <PMFilterTrigger definitions={definitions.map(definition => ({ ...definition, singleSelect: true }))}
+      values={sharedValues} visibleKeys={activeKeys} activeCount={activeKeys.size}
+      onAdd={() => {}} onToggle={onChange} />
+    {activeKeys.size > 0 && <div className="flex basis-full flex-wrap items-center gap-1.5 pt-0.5">
+      {definitions.filter(definition => activeKeys.has(definition.key)).map(definition => (
+        <PMFilterPill key={definition.key} definition={definition} selected={[values[definition.key]]}
+          onToggle={value => onChange(definition.key, value)} onRemove={() => onChange(definition.key, TASK_LIST_FILTER_ALL)} />
+      ))}
+      <Button variant="ghost" size="sm" className="h-7 px-2 text-ui text-muted-foreground" onClick={onClear}>Clear all</Button>
+    </div>}
+  </div>;
 }
 
 const columnHelper = createColumnHelper<Task>();
@@ -2115,19 +1916,11 @@ export function TaskListView({
           ) : null}
           <div className="ml-auto flex items-center gap-1.5">
             {toolbarActions}
-            <Select size="ui" value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
-              <SelectTrigger className="w-auto min-w-[138px] max-w-[190px]">
-                <span className="shrink-0 text-muted-foreground">Group by</span>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {visibleGroupOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <TaskListGroupingDropdown
+              value={groupBy}
+              options={visibleGroupOptions}
+              onChange={setGroupBy}
+            />
             {!usePortal ? bulkActionsBar : null}
             <ListDisplayMenu disabledKeys={teamDisabledKeys} />
           </div>
@@ -2471,11 +2264,12 @@ function InlinePriorityCell({
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useQuietDropdownFocusReturn(open);
   const p = task.priority;
 
   if (!open) {
     return (
-      <button
+      <button ref={triggerRef}
         type="button"
         className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
@@ -2487,8 +2281,8 @@ function InlinePriorityCell({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <QuietDropdownRoot open={open} onOpenChange={setOpen}>
+      <QuietDropdownTrigger asChild>
         <button
           type="button"
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
@@ -2497,7 +2291,7 @@ function InlinePriorityCell({
           <TaskListPriorityIcon priority={p} className="h-4 w-4" />
           {PRIORITY_CONFIG[p].label}
         </button>
-      </PopoverTrigger>
+      </QuietDropdownTrigger>
       {open && (
         <PMDropdownContent
           className="w-[180px] p-0"
@@ -2506,17 +2300,15 @@ function InlinePriorityCell({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <Command>
-            <CommandInput placeholder="Search..." className="h-8 text-ui" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No match</CommandEmpty>
-              <CommandGroup>
+          <QuietDropdownOptions searchPlaceholder="Search...">
+              <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">No match</QuietDropdownEmpty>
+              <QuietDropdownGroup>
                 {ALL_PRIORITIES.map((pri) => {
                   const cfg = PRIORITY_CONFIG[pri];
                   return (
-                    <CommandItem
+                    <QuietDropdownItem data-checked={p === pri}
                       key={pri}
-                      value={cfg.label}
+                      value={pri} keywords={[cfg.label]}
                       onSelect={() => {
                         if (pri !== p) onUpdate(task.id, { priority: pri });
                         setOpen(false);
@@ -2525,16 +2317,15 @@ function InlinePriorityCell({
                     >
                       <TaskListPriorityIcon priority={pri} className="h-4 w-4" />
                       <span>{cfg.label}</span>
-                      {p === pri && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                    </CommandItem>
+
+                    </QuietDropdownItem>
                   );
                 })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
         </PMDropdownContent>
       )}
-    </Popover>
+    </QuietDropdownRoot>
   );
 }
 
@@ -2550,11 +2341,12 @@ function InlineStateCell({
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useQuietDropdownFocusReturn(open);
   const current = stateMap.get(task.workflow_state_id);
 
   if (!open) {
     return (
-      <button
+      <button ref={triggerRef}
         type="button"
         className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
@@ -2568,8 +2360,8 @@ function InlineStateCell({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <QuietDropdownRoot open={open} onOpenChange={setOpen}>
+      <QuietDropdownTrigger asChild>
         <button
           type="button"
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
@@ -2580,7 +2372,7 @@ function InlineStateCell({
           )}
           {current?.name ?? 'Unknown'}
         </button>
-      </PopoverTrigger>
+      </QuietDropdownTrigger>
       {open && (
         <PMDropdownContent
           className="w-[200px] p-0"
@@ -2589,15 +2381,13 @@ function InlineStateCell({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <Command>
-            <CommandInput placeholder="Search..." className="h-8 text-ui" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No match</CommandEmpty>
-              <CommandGroup>
+          <QuietDropdownOptions searchPlaceholder="Search...">
+              <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">No match</QuietDropdownEmpty>
+              <QuietDropdownGroup>
                 {states.map((s) => (
-                  <CommandItem
+                  <QuietDropdownItem data-checked={task.workflow_state_id === s.id}
                     key={s.id}
-                    value={s.name}
+                    value={s.id} keywords={[s.name]}
                     onSelect={() => {
                       if (s.id !== task.workflow_state_id)
                         onUpdate(task.id, { workflow_state_id: s.id });
@@ -2607,15 +2397,14 @@ function InlineStateCell({
                   >
                     <TaskListStateTypeIcon stateType={s.state_type} className="h-3.5 w-3.5" />
                     <span>{s.name}</span>
-                    {task.workflow_state_id === s.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                  </CommandItem>
+
+                  </QuietDropdownItem>
                 ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
         </PMDropdownContent>
       )}
-    </Popover>
+    </QuietDropdownRoot>
   );
 }
 
@@ -2668,11 +2457,12 @@ function InlineSeverityCell({
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useQuietDropdownFocusReturn(open);
   const s = task.severity;
 
   if (!open) {
     return (
-      <button
+      <button ref={triggerRef}
         type="button"
         className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
@@ -2690,8 +2480,8 @@ function InlineSeverityCell({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <QuietDropdownRoot open={open} onOpenChange={setOpen}>
+      <QuietDropdownTrigger asChild>
         <button
           type="button"
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
@@ -2706,7 +2496,7 @@ function InlineSeverityCell({
             <span className="text-muted-foreground">None</span>
           )}
         </button>
-      </PopoverTrigger>
+      </QuietDropdownTrigger>
       {open && (
         <PMDropdownContent
           className="w-[180px] p-0"
@@ -2715,17 +2505,15 @@ function InlineSeverityCell({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <Command>
-            <CommandInput placeholder="Search..." className="h-8 text-ui" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No match</CommandEmpty>
-              <CommandGroup>
+          <QuietDropdownOptions searchPlaceholder="Search...">
+              <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">No match</QuietDropdownEmpty>
+              <QuietDropdownGroup>
                 {ALL_SEVERITIES.map((sev) => {
                   const cfg = SEVERITY_CONFIG[sev];
                   return (
-                    <CommandItem
+                    <QuietDropdownItem data-checked={s === sev}
                       key={sev}
-                      value={cfg.label}
+                      value={sev} keywords={[cfg.label]}
                       onSelect={() => {
                         if (sev !== s) onUpdate(task.id, { severity: sev });
                         setOpen(false);
@@ -2734,16 +2522,15 @@ function InlineSeverityCell({
                     >
                       <TaskListSeverityIcon severity={sev} className="h-4 w-4" />
                       <span>{cfg.label}</span>
-                      {s === sev && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                    </CommandItem>
+
+                    </QuietDropdownItem>
                   );
                 })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
         </PMDropdownContent>
       )}
-    </Popover>
+    </QuietDropdownRoot>
   );
 }
 
@@ -2786,11 +2573,12 @@ function InlineTeamCell({
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useQuietDropdownFocusReturn(open);
   const teamName = task.team_id ? teamMap.get(task.team_id) ?? 'Unknown' : null;
 
   if (!open) {
     return (
-      <button
+      <button ref={triggerRef}
         type="button"
         className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
@@ -2805,8 +2593,8 @@ function InlineTeamCell({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <QuietDropdownRoot open={open} onOpenChange={setOpen}>
+      <QuietDropdownTrigger asChild>
         <button
           type="button"
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
@@ -2818,7 +2606,7 @@ function InlineTeamCell({
             <span className="text-muted-foreground">No Team</span>
           )}
         </button>
-      </PopoverTrigger>
+      </QuietDropdownTrigger>
       {open && (
         <PMDropdownContent
           className="w-[200px] p-0"
@@ -2827,15 +2615,13 @@ function InlineTeamCell({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <Command>
-            <CommandInput placeholder="Search teams..." className="h-8 text-ui" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No teams found</CommandEmpty>
-              <CommandGroup>
+          <QuietDropdownOptions searchPlaceholder="Search teams...">
+              <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">No teams found</QuietDropdownEmpty>
+              <QuietDropdownGroup>
                 {teams.map((t) => (
-                  <CommandItem
+                  <QuietDropdownItem data-checked={task.team_id === t.id}
                     key={t.id}
-                    value={t.name}
+                    value={t.id} keywords={[t.name]}
                     onSelect={() => {
                       const newTeamId = task.team_id === t.id ? undefined : t.id;
                       onUpdate(task.id, { team_id: newTeamId });
@@ -2844,15 +2630,14 @@ function InlineTeamCell({
                     className="flex items-center gap-2 text-ui"
                   >
                     <span className="truncate">{t.name}</span>
-                    {task.team_id === t.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                  </CommandItem>
+
+                  </QuietDropdownItem>
                 ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
         </PMDropdownContent>
       )}
-    </Popover>
+    </QuietDropdownRoot>
   );
 }
 
@@ -2872,6 +2657,7 @@ function InlineSprintCell({
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useQuietDropdownFocusReturn(open);
   const sprintName = task.sprint_id ? sprintMap.get(task.sprint_id) ?? 'Unknown' : null;
   const visibleSprints = useMemo(
     () => getVisibleSprintsForTaskScope(sprints, { taskTeamId, listTeamId, currentSprintId: task.sprint_id }),
@@ -2880,7 +2666,7 @@ function InlineSprintCell({
 
   if (!open) {
     return (
-      <button
+      <button ref={triggerRef}
         type="button"
         className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
@@ -2895,8 +2681,8 @@ function InlineSprintCell({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <QuietDropdownRoot open={open} onOpenChange={setOpen}>
+      <QuietDropdownTrigger asChild>
         <button
           type="button"
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
@@ -2908,7 +2694,7 @@ function InlineSprintCell({
             <span className="text-muted-foreground">No Sprint</span>
           )}
         </button>
-      </PopoverTrigger>
+      </QuietDropdownTrigger>
       {open && (
         <PMDropdownContent
           className="w-[220px] p-0"
@@ -2917,15 +2703,13 @@ function InlineSprintCell({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <Command>
-            <CommandInput placeholder="Search sprints..." className="h-8 text-ui" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No sprints found</CommandEmpty>
-              <CommandGroup>
+          <QuietDropdownOptions searchPlaceholder="Search sprints...">
+              <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">No sprints found</QuietDropdownEmpty>
+              <QuietDropdownGroup>
                 {visibleSprints.map((sp) => (
-                  <CommandItem
+                  <QuietDropdownItem data-checked={task.sprint_id === sp.sprint.id}
                     key={sp.sprint.id}
-                    value={sp.sprint.name}
+                    value={sp.sprint.id} keywords={[sp.sprint.name]}
                     onSelect={() => {
                       const newSprintId = task.sprint_id === sp.sprint.id ? undefined : sp.sprint.id;
                       onUpdate(task.id, { sprint_id: newSprintId });
@@ -2934,15 +2718,14 @@ function InlineSprintCell({
                     className="flex items-center gap-2 text-ui"
                   >
                     <span className="truncate">{sp.sprint.name}</span>
-                    {task.sprint_id === sp.sprint.id && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                  </CommandItem>
+
+                  </QuietDropdownItem>
                 ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
         </PMDropdownContent>
       )}
-    </Popover>
+    </QuietDropdownRoot>
   );
 }
 

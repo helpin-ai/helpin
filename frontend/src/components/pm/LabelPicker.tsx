@@ -1,16 +1,26 @@
 import { useState } from 'react';
-import { Tick01Icon, Loading01Icon, PlusSignIcon, Tag01Icon, Cancel01Icon } from '@/lib/icons';
-import { Popover, PopoverTrigger } from '@/components/ui/popover';
-import { PMDropdownContent } from './PMDropdownContent';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
+  Loading01Icon,
+  PlusSignIcon,
+  Tag01Icon,
+  Cancel01Icon,
+} from '@/lib/icons';
+import {
+  QuietDropdownRoot as Popover,
+  QuietDropdownTrigger as PopoverTrigger,
+} from '@/components/design-system/quiet-dropdown';
+import { PMDropdownContent } from './PMDropdownContent';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+  QuietDropdownOptions,
+  QuietDropdownEmpty,
+  QuietDropdownGroup,
+  QuietDropdownItem,
+} from '@/components/design-system/quiet-dropdown';
 import { cn } from '@/lib/utils';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { PRESET_COLORS } from '@/components/pm/ColorPicker';
@@ -40,7 +50,11 @@ interface LabelBadgeProps {
 }
 
 export function LabelBadge({ label, onRemove, className }: LabelBadgeProps) {
-  const color = label.color?.startsWith('#') ? label.color : label.color ? `#${label.color}` : undefined;
+  const color = label.color?.startsWith('#')
+    ? label.color
+    : label.color
+      ? `#${label.color}`
+      : undefined;
 
   return (
     <span
@@ -117,7 +131,9 @@ export function LabelPicker({
     if (!teamId) return !l.team_id;
     return !l.team_id || l.team_id === teamId;
   });
-  const selectedLabels = availableLabels.filter((l) => selectedLabelIds.includes(l.id));
+  const selectedLabels = availableLabels.filter((l) =>
+    selectedLabelIds.includes(l.id),
+  );
 
   const toggleLabel = (labelId: string) => {
     if (selectedLabelIds.includes(labelId)) {
@@ -157,17 +173,23 @@ export function LabelPicker({
   };
 
   const labelBadges = selectedLabels.map((label) => (
-    <LabelBadge key={label.id} label={label} onRemove={() => removeLabel(label.id)} />
+    <LabelBadge
+      key={label.id}
+      label={label}
+      onRemove={() => removeLabel(label.id)}
+    />
   ));
   const visibleColorLabels = selectedLabels.slice(0, 10);
   const hiddenColorCount = selectedLabels.length - visibleColorLabels.length;
 
   return (
-    <div className={cn(
-      'flex min-w-0 items-center gap-1',
-      singleLine ? 'w-full flex-nowrap overflow-hidden' : 'flex-wrap',
-      className,
-    )}>
+    <div
+      className={cn(
+        'flex min-w-0 items-center gap-1',
+        singleLine ? 'w-full flex-nowrap overflow-hidden' : 'flex-wrap',
+        className,
+      )}
+    >
       {!triggerOnly && singleLine && selectedLabels.length > 0 ? (
         <div
           data-slot="label-picker-viewport"
@@ -177,26 +199,45 @@ export function LabelPicker({
             <TooltipTrigger asChild>
               <span
                 className="flex h-5 min-w-0 items-center gap-1 overflow-hidden px-0.5"
-                aria-label={selectedLabels.map((label) => label.name).join(', ')}
+                aria-label={selectedLabels
+                  .map((label) => label.name)
+                  .join(', ')}
               >
                 {visibleColorLabels.map((label) => (
                   <span
                     key={label.id}
                     className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: label.color?.startsWith('#') ? label.color : label.color ? `#${label.color}` : 'var(--muted-foreground)' }}
+                    style={{
+                      backgroundColor: label.color?.startsWith('#')
+                        ? label.color
+                        : label.color
+                          ? `#${label.color}`
+                          : 'var(--muted-foreground)',
+                    }}
                   />
                 ))}
                 {hiddenColorCount > 0 ? (
-                  <span className="shrink-0 text-[10px] text-muted-foreground">+{hiddenColorCount}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    +{hiddenColorCount}
+                  </span>
                 ) : null}
               </span>
             </TooltipTrigger>
             <TooltipContent className="flex max-w-64 flex-col items-start gap-1 py-2">
               {selectedLabels.map((label) => (
-                <span key={label.id} className="flex max-w-full items-center gap-1.5">
+                <span
+                  key={label.id}
+                  className="flex max-w-full items-center gap-1.5"
+                >
                   <span
                     className="size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: label.color?.startsWith('#') ? label.color : label.color ? `#${label.color}` : 'var(--muted-foreground)' }}
+                    style={{
+                      backgroundColor: label.color?.startsWith('#')
+                        ? label.color
+                        : label.color
+                          ? `#${label.color}`
+                          : 'var(--muted-foreground)',
+                    }}
                   />
                   <span className="truncate">{label.name}</span>
                 </span>
@@ -204,9 +245,17 @@ export function LabelPicker({
             </TooltipContent>
           </Tooltip>
         </div>
-      ) : !triggerOnly ? labelBadges : null}
+      ) : !triggerOnly ? (
+        labelBadges
+      ) : null}
 
-      <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) setSearch(''); }}>
+      <Popover
+        open={open}
+        onOpenChange={(v) => {
+          setOpen(v);
+          if (!v) setSearch('');
+        }}
+      >
         <PopoverTrigger asChild>
           <button
             type="button"
@@ -232,64 +281,65 @@ export function LabelPicker({
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
           >
-            <Command shouldFilter={true}>
-              <CommandInput
-                placeholder="Search labels..."
-                className="h-8 text-ui"
-                value={search}
-                onValueChange={setSearch}
-              />
-              <CommandList>
-                <CommandEmpty className="py-1.5 px-2">
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-ui text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                    onClick={createAndSelect}
-                    disabled={creating}
-                  >
-                    {creating ? (
-                      <Loading01Icon className="h-3.5 w-3.5 animate-spin shrink-0" />
-                    ) : (
-                      <PlusSignIcon className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    Create &ldquo;{search.trim()}&rdquo;
-                  </button>
-                </CommandEmpty>
-                <CommandGroup>
-                  {availableLabels.map((label) => {
-                    const isSelected = selectedLabelIds.includes(label.id);
-                    const color = label.color?.startsWith('#')
-                      ? label.color
-                      : label.color
-                        ? `#${label.color}`
-                        : undefined;
+            <QuietDropdownOptions
+              shouldFilter={true}
+              searchPlaceholder="Search labels..."
+              query={search}
+              onQueryChange={setSearch}
+              searchMode="always"
+            >
+              <QuietDropdownEmpty className="py-1.5 px-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-ui text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+                  onClick={createAndSelect}
+                  disabled={creating}
+                >
+                  {creating ? (
+                    <Loading01Icon className="h-3.5 w-3.5 animate-spin shrink-0" />
+                  ) : (
+                    <PlusSignIcon className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  Create &ldquo;{search.trim()}&rdquo;
+                </button>
+              </QuietDropdownEmpty>
+              <QuietDropdownGroup>
+                {availableLabels.map((label) => {
+                  const isSelected = selectedLabelIds.includes(label.id);
+                  const color = label.color?.startsWith('#')
+                    ? label.color
+                    : label.color
+                      ? `#${label.color}`
+                      : undefined;
 
-                    const isPartial = !!partialLabelIds?.includes(label.id);
-                    return (
-                      <CommandItem
-                        key={label.id}
-                        value={label.name}
-                        onSelect={() => toggleLabel(label.id)}
-                        className={cn(
-                          'flex items-center gap-2 text-ui',
-                          isPartial && 'italic text-muted-foreground',
-                        )}
-                      >
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: color ?? 'var(--muted-foreground)' }}
-                        />
-                        <span className="truncate">{label.name}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {label.team_id ? 'Team' : 'Shared'}
-                        </span>
-                        {isSelected && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </CommandList>
-            </Command>
+                  const isPartial = !!partialLabelIds?.includes(label.id);
+                  return (
+                    <QuietDropdownItem
+                      data-checked={isSelected}
+                      key={label.id}
+                      value={label.id}
+                      keywords={[label.name]}
+                      onSelect={() => toggleLabel(label.id)}
+                      className={cn(
+                        'flex items-center gap-2 text-ui',
+                        isPartial && 'italic text-muted-foreground',
+                      )}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{
+                          backgroundColor: color ?? 'var(--muted-foreground)',
+                        }}
+                      />
+                      <span className="truncate">{label.name}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {label.team_id ? 'Team' : 'Shared'}
+                      </span>
+                    </QuietDropdownItem>
+                  );
+                })}
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
           </PMDropdownContent>
         )}
       </Popover>

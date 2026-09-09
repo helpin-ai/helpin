@@ -915,6 +915,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/assignees", h.SupportInbox.ListConversationAssignableUsers)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/associations", h.Associations.ListConversationAssociations)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/status", h.SupportInbox.UpdateConversationStatus)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/follow-up/cancel", h.SupportInbox.CancelConversationFollowUp)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages", h.SupportInbox.ListConversationMessages)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/message-pages", h.SupportInbox.ListConversationMessagePage)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/messages/{id}/email", h.SupportInbox.GetMessageEmailDetail)
@@ -951,6 +952,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Installation settings
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/installations", h.SupportInbox.GetInstallation)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/installations/follow-up-preview", h.SupportInbox.PreviewConversationFollowUps)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/routing-usage", h.SupportInbox.GetRoutingUsageStatus)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Patch("/inbox/installations", h.SupportInbox.UpdateInstallationSettings)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/installations/regenerate-key", h.SupportInbox.RegenerateWidgetKey)

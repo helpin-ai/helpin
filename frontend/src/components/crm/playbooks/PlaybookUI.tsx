@@ -1,6 +1,5 @@
 import { useId, useState, type ReactNode } from 'react';
 import { QuietEmptyState, QuietIconAction, QuietTextAction, quietUnderlineControlClassName } from '@/components/design-system/quiet';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Textarea } from '@/components/ui/textarea';
 import { InformationCircleIcon } from '@/lib/icons';
@@ -10,16 +9,6 @@ import { getUpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 export function PlaybookHelp({ label, children }: { label: string; children: string }) {
   return <QuickTooltip label={children}><QuietIconAction type="button" aria-label={label}><InformationCircleIcon className="size-3.5" /></QuietIconAction></QuickTooltip>;
-}
-
-export function PlaybookSelect({ label, value, options, onChange, disabled, id }: {
-  label: string; value: string; options: { value: string; label: string }[];
-  onChange: (value: string) => void; disabled?: boolean; id?: string;
-}) {
-  return <Select value={value} onValueChange={onChange} disabled={disabled} size="ui">
-    <SelectTrigger id={id} aria-label={label} variant="ghost" className="max-w-full text-quiet-text-secondary focus-visible:ring-2 focus-visible:ring-quiet-field"><SelectValue /></SelectTrigger>
-    <SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-  </Select>;
 }
 
 export function PlaybookField({ label, help, children }: { label: string; help?: string; children: (id: string) => ReactNode }) {

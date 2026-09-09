@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { QuietPrimaryAction, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietSelect, QuietPrimaryAction, QuietTextAction } from '@/components/design-system/quiet';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
@@ -10,7 +10,7 @@ import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
 import { useCRMPlaybookWrite } from '@/hooks/queries/useCRMPlaybooks';
 import type { CRMSituationChanges, CRMSituationItem } from '@/lib/crmSituationTypes';
 import { createPlaybookIntentKey } from '@/lib/crmPlaybookPresentation';
-import { PlaybookError, PlaybookField, PlaybookSelect, PlaybookTextarea } from './PlaybookUI';
+import { PlaybookError, PlaybookField, PlaybookTextarea } from './PlaybookUI';
 import { PlaybookRequestError } from '@/lib/services/crmPlaybookService';
 
 export function PlaybookSignalEdit({ ws, item, onClose, onReload }: { ws: string; item: CRMSituationItem; onClose: () => void; onReload: () => void }) {
@@ -48,7 +48,7 @@ export function PlaybookSignalEdit({ ws, item, onClose, onReload }: { ws: string
       <PlaybookField label="Next step">{(id) => <PlaybookTextarea id={id} value={nextStep} disabled={write.isPending} maxLength={1000} onChange={(event) => setNextStep(event.target.value)} required={waiting} />}</PlaybookField>
       <div className="grid gap-5 sm:grid-cols-2"><PlaybookField label="Signal owner">{() => <MemberPickerPopover members={members.data?.filter((member) => member.status === 'active') ?? []} value={owner || ''} disabled={write.isPending || members.isPending || members.isError} onChange={(id) => setOwner(id === '__none__' ? null : id)} triggerLabel="Choose signal owner" noneLabel="Unassigned" renderTrigger={() => <span>{name(owner)}</span>} />}</PlaybookField>
       <PlaybookField label="Next action owner" help="Responsible for the next step. When unassigned, the signal owner is responsible.">{() => <MemberPickerPopover members={members.data?.filter((member) => member.status === 'active') ?? []} value={nextOwner || ''} disabled={write.isPending || members.isPending || members.isError} onChange={(id) => setNextOwner(id === '__none__' ? null : id)} triggerLabel="Choose next action owner" noneLabel="Signal owner" renderTrigger={() => <span>{nextOwner ? name(nextOwner) : 'Signal owner'}</span>} />}</PlaybookField></div>
-      <PlaybookField label="Follow-up status" help="Approvals and action failures remain visible until they are resolved.">{(id) => <PlaybookSelect id={id} label="Follow-up status" value={attention} disabled={write.isPending} onChange={(value) => setAttention(value as typeof attention)} options={[{ value: 'needs_context', label: 'Needs context' }, { value: 'follow_up_due', label: 'Follow-up due' }, { value: 'waiting_customer', label: 'Waiting on customer' }, { value: 'waiting_work', label: 'Work in progress' }, ...(['needs_approval', 'automation_failed'].includes(item.situation.attention) ? [{ value: item.situation.attention, label: 'Keep current status' }] : [])]} />}</PlaybookField>
+      <PlaybookField label="Follow-up status" help="Approvals and action failures remain visible until they are resolved.">{(id) => <QuietSelect id={id} label="Follow-up status" value={attention} disabled={write.isPending} onChange={(value) => setAttention(value as typeof attention)} options={[{ value: 'needs_context', label: 'Needs context' }, { value: 'follow_up_due', label: 'Follow-up due' }, { value: 'waiting_customer', label: 'Waiting on customer' }, { value: 'waiting_work', label: 'Work in progress' }, ...(['needs_approval', 'automation_failed'].includes(item.situation.attention) ? [{ value: item.situation.attention, label: 'Keep current status' }] : [])]} />}</PlaybookField>
       <fieldset disabled={write.isPending} className="flex flex-wrap items-end gap-5"><PlaybookField label="Next check" help="Schedules an attention check, not an outbound message. Times use your current time zone.">{() => <DatePicker label="Next check" value={date} onChange={(value) => { if (!write.isPending) setDate(value); }} placeholder="Choose a date" />}</PlaybookField>{date && <PlaybookField label="Time">{(id) => <Input id={id} aria-label="Next check time" type="time" className="w-32" value={time} onChange={(event) => setTime(event.target.value)} required />}</PlaybookField>}</fieldset>
       {!valid && <p role="alert" className="text-sm text-quiet-accent">Waiting signals need a next step, an active responsible person, and a valid next check.</p>}
       {members.isError && <PlaybookError error={members.error} retry={() => void members.refetch()} />}
