@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -32,6 +33,9 @@ func TestSupportEmailRoutePersistsForwardingVerificationState(t *testing.T) {
 func TestSupportInboxServiceCreateEmailRouteUsesWorkspaceSlugNamespace(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
+	if err := db.Exec("CREATE UNIQUE INDEX route_address_unique_test ON support_email_routes(inbound_address)").Error; err != nil {
+		t.Fatal(err)
+	}
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
 	actorID := "22222222-2222-2222-2222-222222222222"
@@ -71,11 +75,16 @@ func TestSupportInboxServiceCreateEmailRouteUsesWorkspaceSlugNamespace(t *testin
 	if !strings.HasPrefix(route.RouteKey, "route-") {
 		t.Fatalf("expected internal route key to be preserved, got %q", route.RouteKey)
 	}
+	assertRouteCanBeReenabled(t, svc, route, actorID)
+
 }
 
 func TestSupportInboxServiceCreateEmailRouteUsesInboxForSharedRoute(t *testing.T) {
 	ctx := context.Background()
 	db := newTestDB(t)
+	if err := db.Exec("CREATE UNIQUE INDEX route_address_unique_test ON support_email_routes(inbound_address)").Error; err != nil {
+		t.Fatal(err)
+	}
 
 	workspaceID := "11111111-1111-1111-1111-111111111111"
 	actorID := "22222222-2222-2222-2222-222222222222"
@@ -96,6 +105,8 @@ func TestSupportInboxServiceCreateEmailRouteUsesInboxForSharedRoute(t *testing.T
 	if route.InboundAddress != "inbox@acme.on.helpin.email" {
 		t.Fatalf("expected shared branded route, got %q", route.InboundAddress)
 	}
+	assertRouteCanBeReenabled(t, svc, route, actorID)
+
 }
 
 func TestSupportInboxServiceSendEmailRouteTestStoresPendingTestAndSendsToSource(t *testing.T) {
@@ -1077,4 +1088,38 @@ func sameStringSet(got, want []string) bool {
 		counts[value]--
 	}
 	return true
+}
+
+func assertRouteCanBeReenabled(t *testing.T, svc *SupportInboxService, first *model.SupportEmailRoute, actorID string) {
+	t.Helper()
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		now := time.Now().UTC()
+		failure := "previous failure"
+		first.ForwardingVerifiedAt = &now
+		first.VerificationSentAt = &now
+		first.ConfirmationReceivedAt = &now
+		first.ForwardingVerificationToken = "old-token"
+		first.ForwardingLastError = &failure
+		if err := svc.emailRouteRepo.Update(ctx, first); err != nil {
+			t.Fatal(err)
+		}
+		active, err := svc.CreateEmailRoute(ctx, first.WorkspaceID, model.CreateSupportEmailRouteRequest{MailboxID: first.MailboxID}, actorID)
+		if err != nil || active.ID != first.ID || active.ForwardingVerifiedAt == nil {
+			t.Fatal("active route must remain unchanged", err)
+		}
+		if err := svc.DisableEmailRoute(ctx, first.WorkspaceID, first.ID); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := svc.CreateEmailRoute(ctx, first.WorkspaceID, model.CreateSupportEmailRouteRequest{MailboxID: first.MailboxID}, actorID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if restored.ForwardingVerifiedAt != nil || restored.VerificationSentAt != nil || restored.ConfirmationReceivedAt != nil || restored.ForwardingVerificationToken != "" || restored.ForwardingLastError != nil {
+			t.Fatal("stale verification state was retained")
+		}
+		if restored.ID != first.ID || restored.InboundAddress != first.InboundAddress || !restored.Active {
+			t.Fatalf("expected existing route restored, got %+v", restored)
+		}
+	}
 }

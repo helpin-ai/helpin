@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Tick01Icon } from '@/lib/icons';
 
 export function ForwardingSetupTransition({ verified, children }: { verified: boolean; children: ReactNode }) {
   const [showInstructions, setShowInstructions] = useState(!verified);
@@ -27,9 +26,7 @@ export function ForwardingSetupTransition({ verified, children }: { verified: bo
       )}
       <div role="status" aria-live="polite" aria-atomic="true">
         {verified && (
-          <p className="ml-11 mt-2 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300">
-            <Tick01Icon className="size-3.5" aria-hidden="true" />Forwarding verified
-          </p>
+          <span className="sr-only">Forwarding verified</span>
         )}
       </div>
     </>
