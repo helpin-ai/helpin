@@ -25,8 +25,8 @@ describe('Signals navigation', () => {
     }
     expect(parseSignalsSearch({ sort: 'recommended', state: 'needs_approval', page: 4 })).toEqual({ state: 'needs_approval', page: 1 });
   });
-  it('offers only Auto and chronological sorting without changing the priority algorithm', () => {
-    expect(inboxNavigation.sort).toEqual([{ value: 'priority', label: 'Auto' }, { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }]);
+  it('offers only priority and chronological sorting without changing the priority algorithm', () => {
+    expect(inboxNavigation.sort).toEqual([{ value: 'priority', label: 'High priority' }, { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }]);
   });
   it('does not conceal pending approvals behind lifecycle or execution problems', () => {
     expect(inboxStatus({ lifecycle: 'open', attention: 'automation_failed', pending_action_count: 1 } as CRMSignalInboxItem)).toBe('Action needs attention · Approval pending');

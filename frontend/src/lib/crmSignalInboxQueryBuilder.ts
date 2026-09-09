@@ -4,7 +4,7 @@ import { signalCategories } from './crmSituationPresentation';
 export const inboxNavigation = {
   scope: [{ value: 'all', label: 'Everyone' }, { value: 'mine', label: 'Assigned to me' }, { value: 'my_teams', label: 'My teams' }, { value: 'unassigned', label: 'Unassigned' }],
   state: [{ value: 'needs_attention', label: 'Needs attention' }, { value: 'needs_approval', label: 'Needs approval' }, { value: 'open', label: 'Open' }, { value: 'waiting', label: 'Waiting' }, { value: 'paused', label: 'Paused' }, { value: 'closed', label: 'Closed' }, { value: 'all', label: 'All statuses' }],
-  sort: [{ value: 'priority', label: 'Auto' }, { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }],
+  sort: [{ value: 'priority', label: 'High priority' }, { value: 'newest', label: 'Newest first' }, { value: 'oldest', label: 'Oldest first' }],
 };
 
 export const inboxFilterDefinitions = [

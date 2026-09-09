@@ -227,20 +227,16 @@ test('old Review URL opens all pending recommendations, including unassigned sta
   await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toHaveCount(0);
 });
 
-test('compact toolbar keeps three selectors, explains Auto, and preserves sorting on drawer return', async ({ page }) => {
+test('compact toolbar keeps three selectors and preserves sorting on drawer return', async ({ page }) => {
   const mock = await installSignalMocks(page, { standalone: true, actionType: 'enrichment' });
   await page.goto(url);
   await expect(page.getByRole('button', { name: /^(Assignment|Signal status|Sort signals):/ })).toHaveCount(3);
   await expect(page.getByRole('button', { name: 'Clear filters', exact: true })).toHaveCount(0);
   for (const name of ['Priority', 'Evidence review', 'Attention needed', 'Recommendation type']) await expect(page.getByRole('button', { name: new RegExp(`^${name}:`) })).toHaveCount(0);
   const sort = page.getByRole('button', { name: /^Sort signals:/ });
-  await expect(sort).toHaveText('Auto');
+  await expect(sort).toHaveText('High priority');
   await expect(page.getByRole('button', { name: 'About Auto sorting' })).toHaveCount(0);
-  await sort.click();
-  await page.getByRole('option', { name: /^Auto/ }).hover();
-  await expect(page.getByRole('tooltip')).toContainText('Signals ranked automatically by importance, recency, and evidence strength.');
-  await page.getByRole('option', { name: /^Auto/ }).click();
-  for (const [label, value] of [['Newest first', 'newest'], ['Oldest first', 'oldest'], ['Auto', 'priority']]) {
+  for (const [label, value] of [['Newest first', 'newest'], ['Oldest first', 'oldest'], ['High priority', 'priority']]) {
     await sort.click();
     await expect(page.getByRole('option')).toHaveCount(3);
     await page.getByRole('option', { name: label, exact: true }).click();
@@ -268,7 +264,7 @@ test('retired filters in old links cannot invisibly narrow the simplified queue'
   const mock = await installSignalMocks(page, { standalone: true });
   await page.goto(`${url}&priority=high&evidence_review=needs_review&attention=needs_context&action_type=risk_alert&sort=recommended&page=4`);
   await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: /^Sort signals:/ })).toHaveText('Auto');
+  await expect(page.getByRole('button', { name: /^Sort signals:/ })).toHaveText('High priority');
   const reads = mock.reads.filter((read) => new URL(read).pathname.endsWith('/signal-inbox'));
   expect(reads.length).toBeGreaterThan(0);
   for (const read of reads) {
