@@ -754,22 +754,23 @@ function Dashboard() {
             </Alert>
           ) : null}
           <div className="space-y-4">
-            <div className="max-w-md space-y-1.5">
-              <Label className="text-sm">Support agent</Label>
-              <Select value={aiAgentId} onValueChange={handleAIAgentChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a support agent..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_AGENT_VALUE}>No support agent selected</SelectItem>
-                  {supportAgents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.9fr)]">
+              <div className="min-w-0 space-y-1.5">
+                <Label className="text-sm">Support agent</Label>
+                <Select value={aiAgentId} onValueChange={handleAIAgentChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a support agent..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_AGENT_VALUE}>No support agent selected</SelectItem>
+                    {supportAgents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="grid gap-y-4 gap-x-3 lg:grid-cols-[minmax(220px,1fr)_minmax(140px,0.65fr)_minmax(160px,0.75fr)]">
+
               <div className="space-y-1.5">
                 <Label className="text-sm">When a message comes in</Label>
                 <Select value={aiResponseMode} onValueChange={setAiResponseMode}>
@@ -849,7 +850,7 @@ function Dashboard() {
             Choose whether AI leaves a private note or replies publicly with the selected support agent.
           </p>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-t border-border pt-4">
             <div>
               <Label className="text-sm">Show "Talk to Human" button</Label>
               <p className="text-xs text-muted-foreground">Let visitors request help from a team member at any time.</p>
@@ -857,7 +858,7 @@ function Dashboard() {
             <Switch checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3 border-t border-border pt-4">
             <div>
               <Label className="text-sm font-medium">Escalation messages</Label>
               <p className="text-xs text-muted-foreground mt-0.5">Messages shown during a handoff and while waiting for a teammate to reply.</p>
