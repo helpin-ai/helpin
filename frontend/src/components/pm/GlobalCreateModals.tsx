@@ -1,3 +1,4 @@
+import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -21,7 +22,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
@@ -62,7 +63,6 @@ import { gitService } from '@/lib/services/gitService';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePMBoardStore } from '@/stores/pmBoardStore';
 import type { GitRepository, ObjectiveType, ObjectiveState, WorkflowWithStates } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
@@ -1199,45 +1199,16 @@ function MultiSelectPopover({
 
   const selectedNames = items.filter((i) => selected.includes(i.id)).map((i) => i.name);
 
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-ui transition-colors hover:bg-accent cursor-pointer truncate"
-        >
-          {selectedNames.length > 0 ? selectedNames.join(', ') : <span className="text-muted-foreground">{placeholder}</span>}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-56 p-1" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`flex items-center gap-2 rounded-sm px-2 py-1.5 text-ui cursor-pointer transition-colors ${
-                selected.includes(item.id) ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-              onClick={() => toggle(item.id)}
-            >
-              <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border ${
-                selected.includes(item.id) ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/30'
-              }`}>
-                {selected.includes(item.id) && <span className="text-[9px]">✓</span>}
-              </span>
-              <span className="truncate">{item.name}</span>
-            </button>
-          ))}
-          {items.length === 0 && (
-            <p className="px-2 py-1.5 text-ui text-muted-foreground">No options</p>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
+  return <QuietDropdown label={placeholder} open={open} onOpenChange={setOpen} multiple
+    selected={selected} onSelect={toggle} options={items.map(item => ({ value: item.id, label: item.name }))}
+    empty="No options" contentClassName="w-56"
+    trigger={<button type="button" className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 text-ui transition-colors hover:bg-accent cursor-pointer truncate">
+      {selectedNames.length > 0 ? selectedNames.join(', ') : <span className="text-muted-foreground">{placeholder}</span>}
+    </button>} />;
 }
 
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
   const confirm = useConfirm();
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit } = usePermissions(access);
@@ -1293,6 +1264,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
       setError(createError);
       return;
     }
+    void queryClient.invalidateQueries({ queryKey: queryKeys.pm.objectives(workspaceId) });
     window.dispatchEvent(new CustomEvent('objective-created'));
     onClose();
   };

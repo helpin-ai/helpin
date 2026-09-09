@@ -320,6 +320,24 @@ describe('DocsEditor', () => {
     expect(container.querySelector('[data-docs-title-row]')).toBeNull()
   })
 
+  it('edits the document title above the body and preserves title keyboard actions', async () => {
+    const onTitleChange = vi.fn()
+    const onTitleCancel = vi.fn()
+    await act(async () => root.render(<DocsEditor title="Original document" onTitleChange={onTitleChange}
+      onTitleCancel={onTitleCancel} onSave={vi.fn().mockResolvedValue(undefined)} />))
+    const title = container.querySelector<HTMLTextAreaElement>('[data-docs-title-row] textarea')!
+    expect(title.getAttribute('aria-label')).toBe('Document title')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(title, 'Updated document')
+      title.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onTitleChange).toHaveBeenCalledWith('Updated document')
+    await act(async () => title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(testState.editorBundle?.editor.commands.focus).toHaveBeenCalledWith('start')
+    await act(async () => title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(onTitleCancel).toHaveBeenCalledOnce()
+  })
+
   it('supports the standard max-w-7xl document canvas used by detail pages', async () => {
     await act(async () => {
       root.render(
@@ -332,6 +350,16 @@ describe('DocsEditor', () => {
 
     expect(container.querySelector('.docs-editor-wrapper')?.classList.contains('docs-editor-standard-width')).toBe(true)
     expect(container.querySelector('.docs-editor-content-frame')).toBeTruthy()
+  })
+
+  it('uses the 4xl canvas for external-space documents with the standard editor scroller', async () => {
+    await act(async () => {
+      root.render(<DocsEditor contentWidth="external" pageScrollOnMobile onSave={vi.fn().mockResolvedValue(undefined)} />)
+    })
+    const wrapper = container.querySelector('.docs-editor-wrapper')!
+    expect(wrapper.classList.contains('docs-editor-external-width')).toBe(true)
+    expect(wrapper.className).toContain('lg:overflow-y-auto')
+    expect(wrapper.parentElement?.className).toContain('lg:overflow-hidden')
   })
 
   it('skips redundant autosave and manual save when content matches the last saved snapshot', async () => {

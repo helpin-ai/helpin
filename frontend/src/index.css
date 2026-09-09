@@ -957,9 +957,15 @@
   --docs-content-width: 80rem;
   --docs-editor-page-gutter: 1rem;
 }
+/* External-space document canvas matches max-w-4xl. */
+.docs-editor-external-width {
+  --docs-content-width: 56rem;
+  --docs-editor-page-gutter: 1rem;
+}
 @media (min-width: 768px) {
   .docs-editor-wrapper,
-  .docs-editor-standard-width {
+  .docs-editor-standard-width,
+  .docs-editor-external-width {
     --docs-editor-page-gutter: 1.5rem;
   }
 }

@@ -1,13 +1,28 @@
+import { useQuietDropdownFocusReturn } from '@/components/design-system/use-quiet-dropdown-focus-return';
 import { useMemo, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { Tick01Icon } from '@/lib/icons';
 
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Popover, PopoverTrigger } from '@/components/ui/popover';
+import {
+  QuietDropdownOptions,
+  QuietDropdownEmpty,
+  QuietDropdownGroup,
+  QuietDropdownItem,
+} from '@/components/design-system/quiet-dropdown';
+import {
+  QuietDropdownRoot as Popover,
+  QuietDropdownTrigger as PopoverTrigger,
+} from '@/components/design-system/quiet-dropdown';
 import { PMDropdownContent } from './PMDropdownContent';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { formatAssignableMemberName, matchesAssignableMemberValue } from '@/lib/assignableMembers';
+import {
+  formatAssignableMemberName,
+  matchesAssignableMemberValue,
+} from '@/lib/assignableMembers';
 import { cn } from '@/lib/utils';
 import type { AssignableMember } from '@/lib/types';
 
@@ -89,63 +104,65 @@ function MemberList({
   getMemberValue: MemberValueGetter;
 }) {
   return (
-    <Command>
-      <CommandInput placeholder="Search members..." className="h-8 text-ui" />
-      <CommandList>
-        <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">
-          No members found
-        </CommandEmpty>
-        <CommandGroup>
-          {!multiple && noneLabel ? (
-            <CommandItem
-              value={noneLabel}
-              onSelect={() => onToggle('__none__')}
+    <QuietDropdownOptions searchPlaceholder="Search members...">
+      <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">
+        No members found
+      </QuietDropdownEmpty>
+      <QuietDropdownGroup>
+        {!multiple && noneLabel ? (
+          <QuietDropdownItem
+            data-checked={selectedValues.includes('__none__')}
+            value="__none__"
+            keywords={[noneLabel]}
+            onSelect={() => onToggle('__none__')}
+            className={cn(
+              'flex min-w-0 items-center gap-2 text-ui',
+              selectedValues.includes('__none__') &&
+                'font-medium text-foreground',
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">{noneLabel}</span>
+          </QuietDropdownItem>
+        ) : null}
+
+        {members.map((member) => {
+          const optionValue = `${formatAssignableMemberName(member)} ${member.email}`;
+          const memberId = getMemberValue(member);
+          const isSelected = selectedValues.some((value) =>
+            matchesAssignableMemberValue(member, value, getMemberValue),
+          );
+
+          const isPartial = !!partialValues?.includes(memberId);
+          return (
+            <QuietDropdownItem
+              data-checked={isSelected}
+              key={memberId}
+              value={memberId}
+              keywords={[optionValue]}
+              onSelect={() => onToggle(memberId)}
               className={cn(
                 'flex min-w-0 items-center gap-2 text-ui',
-                selectedValues.includes('__none__') && 'font-medium text-foreground',
+                isPartial && 'italic text-muted-foreground',
               )}
             >
-              <span className="min-w-0 flex-1 truncate">{noneLabel}</span>
-              {selectedValues.includes('__none__') && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
-            </CommandItem>
-          ) : null}
-
-          {members.map((member) => {
-            const optionValue = `${formatAssignableMemberName(member)} ${member.email}`;
-            const memberId = getMemberValue(member);
-            const isSelected = selectedValues.some((value) =>
-              matchesAssignableMemberValue(member, value, getMemberValue),
-            );
-
-            const isPartial = !!partialValues?.includes(memberId);
-            return (
-              <CommandItem
-                key={memberId}
-                value={optionValue}
-                onSelect={() => onToggle(memberId)}
-                className={cn(
-                  'flex min-w-0 items-center gap-2 text-ui',
-                  isPartial && 'italic text-muted-foreground',
-                )}
-              >
-                <UserAvatar
-                  name={member.display_name || member.email}
-                  avatarUrl={member.avatar_url}
-                  avatarStyle={member.avatar_style}
-                  avatarSeed={member.avatar_seed}
-                  avatarBackgroundMode={member.avatar_background_mode}
-                  avatarBackgroundColor={member.avatar_background_color}
-                  className="h-5 w-5"
-                  fallbackClassName="text-[8px]"
-                />
-                <span className="min-w-0 flex-1 truncate">{member.display_name || member.email}</span>
-                {isSelected && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
-              </CommandItem>
-            );
-          })}
-        </CommandGroup>
-      </CommandList>
-    </Command>
+              <UserAvatar
+                name={member.display_name || member.email}
+                avatarUrl={member.avatar_url}
+                avatarStyle={member.avatar_style}
+                avatarSeed={member.avatar_seed}
+                avatarBackgroundMode={member.avatar_background_mode}
+                avatarBackgroundColor={member.avatar_background_color}
+                className="h-5 w-5"
+                fallbackClassName="text-[8px]"
+              />
+              <span className="min-w-0 flex-1 truncate">
+                {member.display_name || member.email}
+              </span>
+            </QuietDropdownItem>
+          );
+        })}
+      </QuietDropdownGroup>
+    </QuietDropdownOptions>
   );
 }
 
@@ -167,6 +184,7 @@ export function MemberPickerPopover({
 }: MemberPickerPopoverProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isOpen = open ?? uncontrolledOpen;
+  const triggerRef = useQuietDropdownFocusReturn(isOpen, lazyMount);
   const setOpen = onOpenChange ?? setUncontrolledOpen;
 
   const selectableMembers = useMemo(
@@ -181,10 +199,15 @@ export function MemberPickerPopover({
 
   const trigger = (
     <button
+      ref={triggerRef}
       type="button"
       disabled={disabled}
       aria-label={triggerLabel}
-      className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
+      className={cn(
+        DEFAULT_TRIGGER_CLASSNAME,
+        disabled && 'cursor-default hover:bg-transparent',
+        triggerClassName,
+      )}
       onClick={(event) => {
         event.stopPropagation();
         if (lazyMount && !disabled && !isOpen) {
@@ -251,6 +274,7 @@ export function MultiMemberPickerPopover({
 }: MultiMemberPickerPopoverProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isOpen = open ?? uncontrolledOpen;
+  const triggerRef = useQuietDropdownFocusReturn(isOpen, lazyMount);
   const setOpen = onOpenChange ?? setUncontrolledOpen;
 
   const selectableMembers = useMemo(
@@ -267,10 +291,15 @@ export function MultiMemberPickerPopover({
 
   const trigger = (
     <button
+      ref={triggerRef}
       type="button"
       disabled={disabled}
       aria-label={triggerLabel}
-      className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
+      className={cn(
+        DEFAULT_TRIGGER_CLASSNAME,
+        disabled && 'cursor-default hover:bg-transparent',
+        triggerClassName,
+      )}
       onClick={(event) => {
         event.stopPropagation();
         if (lazyMount && !disabled && !isOpen) {

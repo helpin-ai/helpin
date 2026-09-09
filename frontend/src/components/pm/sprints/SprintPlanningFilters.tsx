@@ -1,5 +1,5 @@
 import { QuietSearchInput } from '@/components/design-system/quiet';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 
 export type SprintStatusFilter = 'all' | 'upcoming' | 'active' | 'completed' | 'archived';
 

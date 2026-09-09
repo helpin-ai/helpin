@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import type { LabelWithStats } from '@/lib/pmTypes';

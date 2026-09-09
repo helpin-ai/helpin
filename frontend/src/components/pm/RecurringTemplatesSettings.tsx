@@ -5,7 +5,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { QuietSearchInput } from '@/components/design-system/quiet';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { RecurringTemplateList } from '@/components/pm/RecurringTemplateList';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';

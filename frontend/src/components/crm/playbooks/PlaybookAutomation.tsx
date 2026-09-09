@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { QuietPrimaryAction, QuietPropertyRow, QuietSection, QuietStatusText, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { QuietSelect, QuietPrimaryAction, QuietPropertyRow, QuietSection, QuietStatusText, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCRMPlaybookAutomation, useCRMPlaybookAutomationWrite } from '@/hooks/queries/useCRMPlaybookAutomation';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { createPlaybookIntentKey } from '@/lib/crmPlaybookPresentation';
 import type { CRMPlaybookAutomationOverview, CRMPlaybookConnectionReview, CRMPlaybookItem } from '@/lib/crmPlaybookTypes';
-import { PlaybookError, PlaybookField, PlaybookHelp, PlaybookSelect } from './PlaybookUI';
+import { PlaybookError, PlaybookField, PlaybookHelp } from './PlaybookUI';
 
 export function PlaybookAutomation({ ws, slug, item, dirty }: { ws: string; slug: string; item: CRMPlaybookItem; dirty: boolean }) {
   const access = useWorkspaceAccess(ws);
@@ -64,7 +64,7 @@ function AutomationSettings({ ws, slug, item, overview, canConfigure, dirty }: {
       <QuietPropertyRow label="Agent" value={canConfigure ? <Link to="/w/$slug/automation/agents" params={{ slug }} className="text-quiet-accent hover:underline">{overview.agent_name || 'Beacon'}</Link> : overview.agent_name || 'Beacon'} />
       <QuietPropertyRow label="Flow" value={<span>{overview.flow_name}<PlaybookHelp label="About the connected flow">The Flow wakes Beacon for new information and scheduled checks. Its configuration is managed here; ordinary Flows and Beacon’s saved settings are unchanged.</PlaybookHelp></span>} />
       {canConfigure && <div className="mt-4 space-y-4">
-        <PlaybookField label="Start automation for" help="Turning automation on never imports or starts existing signals. Existing work is started explicitly from each signal.">{(id) => <PlaybookSelect id={id} label="Start automation for" value={entry} onChange={(value) => setEntry(value as typeof entry)} disabled={write.isPending} options={[{ value: 'manual', label: 'Signals the team starts' }, { value: 'automatic', label: 'New matching signals automatically' }]} />}</PlaybookField>
+        <PlaybookField label="Start automation for" help="Turning automation on never imports or starts existing signals. Existing work is started explicitly from each signal.">{(id) => <QuietSelect id={id} label="Start automation for" value={entry} onChange={(value) => setEntry(value as typeof entry)} disabled={write.isPending} options={[{ value: 'manual', label: 'Signals the team starts' }, { value: 'automatic', label: 'New matching signals automatically' }]} />}</PlaybookField>
         {entry === 'automatic' && !item.playbook.accepting_customers && <p className="text-xs text-quiet-accent">Allow new enrollment above before choosing automatic entry.</p>}
         <details className="text-xs text-quiet-text-secondary"><summary className="cursor-pointer">Usage limits</summary><div className="mt-3 grid grid-cols-2 gap-5">
           <PlaybookField label="Checks per signal / day" help="An upper limit, not a schedule. Waiting for an approval does not need another AI run.">{(id) => <QuietUnderlineInput id={id} type="number" min={1} max={24} value={maxRuns} onChange={(event) => setMaxRuns(Number(event.target.value))} disabled={write.isPending} />}</PlaybookField>

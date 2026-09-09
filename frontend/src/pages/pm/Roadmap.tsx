@@ -1,3 +1,4 @@
+import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { isValid, parseISO } from 'date-fns';
@@ -20,12 +21,7 @@ import {
   QuietSectionHeader,
   QuietTextAction,
 } from '@/components/design-system/quiet';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+
 import { Skeleton } from '@/components/ui/skeleton';
 import { InlineEpicDateControl, InlineEpicObjectivesControl } from '@/components/pm/InlineEpicPlanningFields';
 import {
@@ -552,32 +548,16 @@ function RoadmapToolbar({
         />
 
         <div className="ml-auto flex items-center gap-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <QuietTextAction className="h-8 gap-1.5 px-1">
-                Group by {groupBy === 'objective' ? 'objective' : groupBy === 'team' ? 'team' : 'epic'}
-                <ArrowDown01Icon className="h-3 w-3 text-quiet-muted" />
-              </QuietTextAction>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => onGroupByChange('epic')}>Epic</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onGroupByChange('objective')}>Objective</DropdownMenuItem>
-              {teams.length > 1 ? <DropdownMenuItem onSelect={() => onGroupByChange('team')}>Team</DropdownMenuItem> : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <QuietTextAction className="h-8 gap-1.5 px-1">
-                {zoom === 'month' ? 'Month' : 'Quarter'}
-                <ArrowDown01Icon className="h-3 w-3 text-quiet-muted" />
-              </QuietTextAction>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => onZoomChange('month')}>Month</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onZoomChange('quarter')}>Quarter</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <QuietDropdown label="Group by" selected={[groupBy]} onSelect={value => onGroupByChange(value as typeof groupBy)}
+            options={[{ value: 'epic', label: 'Epic' }, { value: 'objective', label: 'Objective' }, ...(teams.length > 1 ? [{ value: 'team', label: 'Team' }] : [])]}
+            contentProps={{ align: 'end' }} trigger={<QuietTextAction className="h-8 gap-1.5 px-1">
+              Group by {groupBy}<ArrowDown01Icon className="h-3 w-3 text-quiet-muted" />
+            </QuietTextAction>} />
+          <QuietDropdown label="Zoom" selected={[zoom]} onSelect={value => onZoomChange(value as typeof zoom)}
+            options={[{ value: 'month', label: 'Month' }, { value: 'quarter', label: 'Quarter' }]}
+            contentProps={{ align: 'end' }} trigger={<QuietTextAction className="h-8 gap-1.5 px-1">
+              {zoom === 'month' ? 'Month' : 'Quarter'}<ArrowDown01Icon className="h-3 w-3 text-quiet-muted" />
+            </QuietTextAction>} />
         </div>
       </div>
 

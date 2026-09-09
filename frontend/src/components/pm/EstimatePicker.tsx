@@ -1,3 +1,5 @@
+import { useQuietDropdownFocusReturn } from '@/components/design-system/use-quiet-dropdown-focus-return';
+import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { useState } from 'react';
 import { Popover, PopoverTrigger } from '@/components/ui/popover';
 import { PMDropdownContent } from './PMDropdownContent';
@@ -29,6 +31,7 @@ function EstimatePickerBase({
   lazyMount = false,
 }: EstimatePickerBaseProps) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useQuietDropdownFocusReturn(open, lazyMount);
 
   // If team has estimate settings enabled, use scale-aware picker
   if (config?.enabled) {
@@ -37,6 +40,7 @@ function EstimatePickerBase({
     const displayLabel = formatEstimateValue(numValue, config.scale);
     const trigger = (
       <button
+      ref={triggerRef}
         type="button"
         className={cn(
           'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer',
@@ -57,49 +61,16 @@ function EstimatePickerBase({
       return trigger;
     }
 
-    return (
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-        <PMDropdownContent className="w-auto p-2" align="start">
-          <div className="flex flex-col gap-0.5">
-            <button
-              type="button"
-              className={cn(
-                'rounded-md px-3 py-1.5 text-left text-ui transition-colors hover:bg-accent',
-                value === '' && 'bg-accent font-medium',
-              )}
-              onClick={() => {
-                onChange('', undefined);
-                setOpen(false);
-              }}
-            >
-              None
-            </button>
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-left text-ui transition-colors hover:bg-accent',
-                  numValue === opt.value && 'bg-accent font-medium',
-                )}
-                onClick={() => {
-                  onChange(String(opt.value), opt.value);
-                  setOpen(false);
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </PMDropdownContent>
-      </Popover>
-    );
+    return <QuietDropdown label="Estimate" trigger={trigger} open={open} onOpenChange={setOpen}
+      selected={[value || '__none__']} contentClassName="w-40"
+      options={[{ value: '__none__', label: 'None' }, ...options.map(option => ({ value: String(option.value), label: option.label }))]}
+      onSelect={next => onChange(next === '__none__' ? '' : next, next === '__none__' ? undefined : Number(next))} />;
   }
 
   // Fallback: free-form number input (no team config or disabled)
   const trigger = (
     <button
+      ref={triggerRef}
       type="button"
       className={cn(
         'inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer',

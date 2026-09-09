@@ -7,7 +7,7 @@ test('existing evidence and unassigned approvals appear by default without autom
   await page.goto(url);
   await expect(page.getByRole('button', { name: 'Customer requested the Inbox add-on', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: 'Assignment', exact: true })).toHaveText('Everyone');
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Everyone');
   await page.screenshot({ path: '/tmp/helpin-restored-signals.png', fullPage: true });
   await page.getByRole('button', { name: 'Customer requested the Inbox add-on', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Customer signal' })).toBeVisible();
@@ -55,9 +55,24 @@ test('scannable table, one category strip, and visible assignment/status filters
   await page.getByRole('tab', { name: 'Expansion' }).click();
   await expect(page.getByRole('button', { name: 'Team is approaching its seat limit' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Pricing requested for a 40-seat rollout' })).toHaveCount(0);
-  await page.getByRole('combobox', { name: 'Assignment', exact: true }).click();
+  await page.getByRole('button', { name: /^Assignment:/ }).click();
   await page.getByRole('option', { name: 'My teams' }).click();
   await expect.poll(() => mock.reads.some((read) => read.includes('scope=my_teams') && read.includes('category=expansion'))).toBeTruthy();
+  await expect(page.getByRole('button', { name: 'Remove Assignment filter' })).toBeVisible();
+  await expect(page.getByRole('option')).toHaveCount(0);
+  await page.getByRole('button', { name: 'My teams', exact: true }).click();
+  await page.getByRole('option', { name: 'Assigned to me', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Assigned to me');
+  await expect.poll(() => mock.reads.some((read) => read.includes('scope=mine') && read.includes('category=expansion'))).toBeTruthy();
+  await page.getByRole('button', { name: 'Remove Assignment filter' }).click();
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Everyone');
+  await expect(page.getByRole('button', { name: 'Remove Category filter' })).toBeVisible();
+  await page.getByRole('button', { name: 'Remove Category filter' }).click();
+  await expect(page.getByRole('tab', { name: /^All / })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: 'Remove Signal status filter' }).click();
+  await expect(page.getByRole('button', { name: /^Signal status:/ })).toHaveText('All statuses');
+  await expect(page.getByRole('button', { name: 'Clear all', exact: true })).toHaveCount(0);
   expect(mock.writes).toHaveLength(0);
   await expect(page.getByRole('link', { name: 'Review queue' })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Evidence', exact: true })).toHaveAttribute('href', /view.*evidence/);
@@ -188,15 +203,15 @@ test('dark and narrow views keep all table columns accessible', async ({ page })
   await page.screenshot({ path: '/tmp/helpin-signals-dark.png', fullPage: true });
   await page.setViewportSize({ width: 640, height: 900 });
   await expect(page.getByRole('columnheader', { name: 'Priority', exact: false })).toBeAttached();
-  await expect(page.getByRole('combobox', { name: 'Assignment', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toBeVisible();
   await page.screenshot({ path: '/tmp/helpin-signals-narrow.png', fullPage: true });
 });
 
 test('old Review URL opens all pending recommendations, including unassigned standalone work', async ({ page }) => {
   const mock = await installSignalMocks(page, { standalone: true });
   await page.goto('/e2e/crm/harness/playbooks.html?review=1');
-  await expect(page.getByRole('combobox', { name: 'Assignment', exact: true })).toHaveText('Everyone');
-  await expect(page.getByRole('combobox', { name: 'Signal status', exact: true })).toHaveText('Needs approval');
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Everyone');
+  await expect(page.getByRole('button', { name: /^Signal status:/ })).toHaveText('Needs approval');
   await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'Not scored', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Review a standalone recommendation', exact: true }).click();
@@ -215,10 +230,10 @@ test('old Review URL opens all pending recommendations, including unassigned sta
 test('compact toolbar keeps three selectors, explains Auto, and preserves sorting on drawer return', async ({ page }) => {
   const mock = await installSignalMocks(page, { standalone: true, actionType: 'enrichment' });
   await page.goto(url);
-  await expect(page.getByRole('combobox')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: /^(Assignment|Signal status|Sort signals):/ })).toHaveCount(3);
   await expect(page.getByRole('button', { name: 'Clear filters', exact: true })).toHaveCount(0);
-  for (const name of ['Priority', 'Evidence review', 'Attention needed', 'Recommendation type']) await expect(page.getByRole('combobox', { name, exact: true })).toHaveCount(0);
-  const sort = page.getByRole('combobox', { name: 'Sort signals', exact: true });
+  for (const name of ['Priority', 'Evidence review', 'Attention needed', 'Recommendation type']) await expect(page.getByRole('button', { name: new RegExp(`^${name}:`) })).toHaveCount(0);
+  const sort = page.getByRole('button', { name: /^Sort signals:/ });
   await expect(sort).toHaveText('Auto');
   await page.getByRole('button', { name: 'About Auto sorting' }).focus();
   await expect(page.getByRole('tooltip')).toContainText('Signals ranked automatically by importance, recency, and evidence strength.');
@@ -235,11 +250,11 @@ test('compact toolbar keeps three selectors, explains Auto, and preserves sortin
   await page.getByRole('button', { name: 'Review a standalone recommendation', exact: true }).click();
   await page.keyboard.press('Escape');
   await expect(sort).toHaveText('Newest first');
-  await page.getByRole('combobox', { name: 'Assignment', exact: true }).click();
+  await page.getByRole('button', { name: /^Assignment:/ }).click();
   await page.getByRole('option', { name: 'Assigned to me', exact: true }).click();
-  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Assignment', exact: true })).toHaveText('Everyone');
-  await expect(page.getByRole('combobox', { name: 'Signal status', exact: true })).toHaveText('Needs attention');
+  await page.getByRole('button', { name: 'Clear all', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Assignment:/ })).toHaveText('Everyone');
+  await expect(page.getByRole('button', { name: /^Signal status:/ })).toHaveText('Needs attention');
   await expect(sort).toHaveText('Newest first');
   await expect(page.getByRole('button', { name: 'Clear filters', exact: true })).toHaveCount(0);
   expect(mock.reads.every((read) => !new URL(read).searchParams.has('filter'))).toBeTruthy();
@@ -250,7 +265,7 @@ test('retired filters in old links cannot invisibly narrow the simplified queue'
   const mock = await installSignalMocks(page, { standalone: true });
   await page.goto(`${url}&priority=high&evidence_review=needs_review&attention=needs_context&action_type=risk_alert&sort=recommended&page=4`);
   await expect(page.getByRole('button', { name: 'Review a standalone recommendation', exact: true })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: 'Sort signals', exact: true })).toHaveText('Auto');
+  await expect(page.getByRole('button', { name: /^Sort signals:/ })).toHaveText('Auto');
   const reads = mock.reads.filter((read) => new URL(read).pathname.endsWith('/signal-inbox'));
   expect(reads.length).toBeGreaterThan(0);
   for (const read of reads) {

@@ -85,7 +85,6 @@ import {
   QuietEmptyState,
   QuietMetaLine,
   QuietTextAction,
-  QuietTitleTextarea,
 } from '@/components/design-system/quiet'
 import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
@@ -1402,7 +1401,7 @@ export function DocsDocumentDetail({
       <div className="flex h-full flex-col overflow-hidden">
         <QuietDetailHeader
           breadcrumbs={<QuietBreadcrumbs items={[{ id: 'docs', label: 'Docs' }]} onBack={() => router.history.back()} backLabel="Back" />}
-          title={<div className="h-8 w-64 max-w-full animate-pulse bg-quiet-icon-well" />}
+          title={null}
           meta={<div className="h-3 w-40 animate-pulse bg-quiet-icon-well" />}
         />
         <div className="flex-1 animate-pulse bg-muted/20" />
@@ -1435,7 +1434,6 @@ export function DocsDocumentDetail({
       </div>
       <QuietDetailHeader
         className="relative z-30"
-        allowTitleWrap
         breadcrumbs={(
           <QuietBreadcrumbs
             onBack={() => router.history.back()}
@@ -1463,42 +1461,7 @@ export function DocsDocumentDetail({
             ]}
           />
         )}
-        title={!effectiveReadOnly ? (
-          <QuietTitleTextarea
-            aria-label="Document title"
-            presentation="header"
-            className="border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary"
-            value={displayedTitle}
-            placeholder="Untitled"
-            onFocus={() => handleEditingPresenceChange({ area: 'title', section: 'Title' })}
-            onChange={(event) => {
-              if (isSourceLocaleActive) handleTitleChange(event.target.value)
-              else handleTranslationTitleChange(event.target.value)
-              handleEditingPresenceChange({ area: 'title', section: 'Title' })
-            }}
-            onBlur={() => handleEditingPresenceChange(null)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                editorInstance?.commands.focus('start')
-              } else if (event.key === 'Escape') {
-                event.preventDefault()
-                if (isSourceLocaleActive) {
-                  if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
-                  setTitleDraftState({ docId, value: doc.title ?? '' })
-                } else {
-                  if (translationSaveTimerRef.current) clearTimeout(translationSaveTimerRef.current)
-                  setTranslationDrafts((current) => ({
-                    ...current,
-                    [translationDraftKey(docId, activeLocale)]: translationDraftFromTranslation(activeLocale, activeTranslation),
-                  }))
-                }
-                handleEditingPresenceChange(null)
-                event.currentTarget.blur()
-              }
-            }}
-          />
-        ) : <div className="break-words">{displayedTitle || 'Untitled'}</div>}
+        title={null}
         meta={(
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
             {activeSlug ? <SlugDisplay slug={activeSlug} onSlugChange={handleActiveSlugChange} readOnly={effectiveReadOnly} presentation="header" /> : null}
@@ -1784,7 +1747,7 @@ export function DocsDocumentDetail({
       ) : (
       <div className="flex min-h-0 flex-none lg:flex-1">
         {/* Editor */}
-        <div ref={setEditorShellRef} className="docs-editor-standard-width relative isolate flex w-full min-w-0 flex-none flex-col lg:w-auto lg:flex-1 xl:overflow-clip">
+        <div ref={setEditorShellRef} className={cn("relative isolate flex w-full min-w-0 flex-none flex-col lg:w-auto lg:flex-1 xl:overflow-clip", isExternalHelpCenter ? "docs-editor-external-width" : "docs-editor-standard-width")}>
           {/* Right-side scrollspy outline minimap */}
           <DocsOutlineMinimap
             items={outlineItems}
@@ -1827,8 +1790,7 @@ export function DocsDocumentDetail({
           {previewVersion ? (
             <DocsEditor
               key={`preview-${previewVersion.id}`}
-              title={titleDraft}
-              showTitle={false}
+              title={displayedTitle}
               initialContent={previewVersion.content as JSONContent | null}
               onSave={handleSave}
               readOnly
@@ -1841,7 +1803,7 @@ export function DocsDocumentDetail({
               onSaveStatusChange={handleEditorSaveStatusChange}
               onEditorReady={setEditorInstance}
               hasSideComments={hasVisibleInlineComments}
-              contentWidth="standard"
+              contentWidth={isExternalHelpCenter ? "external" : "standard"}
               pageScrollOnMobile
               commentAnchors={commentAnchors}
               onOpenComment={handleOpenComment}
@@ -1849,8 +1811,21 @@ export function DocsDocumentDetail({
           ) : (
             <DocsEditor
               key={isSourceLocaleActive ? 'source-editor' : `translation-${activeLocale}`}
-              title={isSourceLocaleActive ? titleDraft : activeTranslationDraft.title}
-              showTitle={false}
+              title={displayedTitle}
+              onTitleChange={isSourceLocaleActive ? handleTitleChange : handleTranslationTitleChange}
+              onTitleCancel={() => {
+                if (isSourceLocaleActive) {
+                  if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
+                  setTitleDraftState({ docId, value: doc.title ?? '' })
+                } else {
+                  if (translationSaveTimerRef.current) clearTimeout(translationSaveTimerRef.current)
+                  setTranslationDrafts((current) => ({
+                    ...current,
+                    [translationDraftKey(docId, activeLocale)]: translationDraftFromTranslation(activeLocale, activeTranslation),
+                  }))
+                }
+                handleEditingPresenceChange(null)
+              }}
               initialContent={
                 isSourceLocaleActive
                   ? coverageInitialContent ?? (content?.content as JSONContent | null)
@@ -1889,7 +1864,7 @@ export function DocsDocumentDetail({
               onSaveStatusChange={handleEditorSaveStatusChange}
               onEditorReady={setEditorInstance}
               hasSideComments={hasVisibleInlineComments}
-              contentWidth="standard"
+              contentWidth={isExternalHelpCenter ? "external" : "standard"}
               pageScrollOnMobile
             />
           )}

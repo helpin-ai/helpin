@@ -14,15 +14,16 @@ describe('description editor style parity', () => {
     const createEntities = readFileSync(resolve(__dirname, '../GlobalCreateModals.tsx'), 'utf8');
     const taskDetail = readFileSync(resolve(__dirname, '../TaskDetailPanel.tsx'), 'utf8');
     const epicDetail = readFileSync(resolve(__dirname, '../../../pages/pm/EpicDetail.tsx'), 'utf8');
+    const objectiveDetail = readFileSync(resolve(__dirname, '../../../pages/pm/ObjectiveDetail.tsx'), 'utf8');
     const detailActions = readFileSync(resolve(__dirname, '../DetailDescriptionEditorActions.tsx'), 'utf8');
     const quietDesignSystem = readFileSync(resolve(__dirname, '../../design-system/quiet.tsx'), 'utf8');
 
-    for (const source of [createTask, createEntities, taskDetail, epicDetail]) {
+    for (const source of [createTask, createEntities, taskDetail, epicDetail, objectiveDetail]) {
       expect(source).toContain('variant="divider"');
       expect(source).toContain('contentVariant="pm"');
     }
 
-    for (const detailSource of [taskDetail, epicDetail]) {
+    for (const detailSource of [taskDetail, epicDetail, objectiveDetail]) {
       expect(detailSource).toContain('variant="pm"');
       expect(detailSource).toContain(detailEditorClassName);
       expect(detailSource).toContain('<DetailDescriptionEditorActions');

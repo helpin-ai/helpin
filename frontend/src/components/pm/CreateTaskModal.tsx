@@ -1,3 +1,4 @@
+import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { useNavigate } from "@tanstack/react-router";
@@ -32,12 +33,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { TiptapEditor } from "@/components/ui/tiptap-editor";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from "@/lib/pmConstants";
 import type {
   AttachmentResponse,
@@ -284,97 +279,6 @@ export function isCreateTaskModalDirty({
 }
 
 const CODE_REPO_TOOLTIP = "Gives agents code context for planning and execution.";
-
-function GroupedSidebarPopoverSelect<T extends string>({
-  value,
-  groups,
-  onChange,
-  renderTrigger,
-  searchPlaceholder = 'Search...',
-  emptyLabel = 'No options',
-  showGroupHeadings = true,
-}: {
-  value: T;
-  groups: Array<{ key: string; label: string; options: { value: T; label: string }[] }>;
-  onChange: (value: T) => void;
-  renderTrigger: () => React.ReactNode;
-  searchPlaceholder?: string;
-  emptyLabel?: string;
-  showGroupHeadings?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-ui transition-colors hover:bg-accent cursor-pointer"
-        >
-          {renderTrigger()}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-48 p-0.5" align="start">
-        <Command>
-          <CommandInput placeholder={searchPlaceholder} className="h-8 text-xs" />
-          <CommandList className="max-h-56">
-            <CommandEmpty>{emptyLabel}</CommandEmpty>
-            <CommandGroup>
-              <CommandItem
-                className="gap-1.5 px-2 py-1 text-xs"
-                value="No sprint"
-                onSelect={() => {
-                  onChange('__none__' as T);
-                  setOpen(false);
-                }}
-              >
-                <span>No sprint</span>
-                {value === '__none__' ? <Tick01Icon className="ml-auto h-3 w-3 shrink-0" /> : null}
-              </CommandItem>
-            </CommandGroup>
-            {showGroupHeadings ? (
-              groups.map((group) => (
-                <CommandGroup key={group.key} heading={group.label}>
-                  {group.options.map((option) => (
-                    <CommandItem
-                      className="gap-1.5 px-2 py-1 text-xs"
-                      key={option.value}
-                      value={`${group.label} ${option.label}`}
-                      onSelect={() => {
-                        onChange(option.value);
-                        setOpen(false);
-                      }}
-                    >
-                      <span className="truncate">{option.label}</span>
-                      {value === option.value ? <Tick01Icon className="ml-auto h-3 w-3 shrink-0" /> : null}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))
-            ) : (
-              <CommandGroup>
-                {groups.flatMap((group) => group.options).map((option) => (
-                  <CommandItem
-                    className="gap-1.5 px-2 py-1 text-xs"
-                    key={option.value}
-                    value={option.label}
-                    onSelect={() => {
-                      onChange(option.value);
-                      setOpen(false);
-                    }}
-                  >
-                    <span className="truncate">{option.label}</span>
-                    {value === option.value ? <Tick01Icon className="ml-auto h-3 w-3 shrink-0" /> : null}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 export function CreateTaskModal({
   open,
@@ -1843,6 +1747,7 @@ export function CreateTaskModal({
                   <SidebarPopoverSelect
                     value={form.epic_id || "__none__"}
                     groups={epicGroups}
+                    width={EPIC_PICKER_WIDTH}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
@@ -1865,10 +1770,9 @@ export function CreateTaskModal({
                 {/* Sprint */}
                 {fieldVis.sprint && teamSprintsEnabled && (
                 <MetadataRow icon={SprintIcon} label="Sprint">
-                  <GroupedSidebarPopoverSelect
+                  <SidebarPopoverSelect
                     value={form.sprint_id || "__none__"}
-                    groups={sprintOptionGroups}
-                    showGroupHeadings={!form.team_id}
+                    groups={[{ options: [{ value: '__none__', label: 'No sprint' }] }, ...sprintOptionGroups.map(group => ({ ...group, label: form.team_id ? undefined : group.label }))]}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
@@ -1876,7 +1780,7 @@ export function CreateTaskModal({
                       }))
                     }
                     searchPlaceholder="Search sprints..."
-                    emptyLabel="No sprints"
+                    emptyContent="No sprints"
                     renderTrigger={() => <span>{currentSprintName}</span>}
                   />
                 </MetadataRow>

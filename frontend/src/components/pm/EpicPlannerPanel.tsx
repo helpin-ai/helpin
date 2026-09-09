@@ -15,7 +15,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@/components/design-system/quiet-dropdown-select';
 import { Textarea } from '@/components/ui/textarea';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { isAgentAvailableForTarget } from '@/lib/agentAccess';

@@ -4,13 +4,12 @@ import { useSortable } from '@dnd-kit/sortable';
 import {
   Alert01Icon,
 } from '@/lib/icons';
-import { Calendar03Icon, Tick01Icon, UserAdd01Icon } from '@/lib/pmIcons';
+import { Calendar03Icon, UserAdd01Icon } from '@/lib/pmIcons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { differenceInDays, format, formatDistanceToNow, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Popover, PopoverTrigger } from '@/components/ui/popover';
 import { PMDropdownContent } from './PMDropdownContent';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { QuietDropdownRoot, QuietDropdownTrigger, QuietDropdownOptions, QuietDropdownEmpty, QuietDropdownGroup, QuietDropdownItem } from "@/components/design-system/quiet-dropdown";
 import { cn } from '@/lib/utils';
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from '@/lib/pmConstants';
 import { pmTaskService } from '@/lib/services/pmTaskService';
@@ -532,8 +531,8 @@ function TaskCardComponent({
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {/* Severity pill — clickable dropdown */}
         {vis.severity && (severityCfg && workspaceId ? (
-          <Popover open={severityOpen} onOpenChange={setSeverityOpen}>
-                <PopoverTrigger asChild>
+          <QuietDropdownRoot open={severityOpen} onOpenChange={setSeverityOpen}>
+                <QuietDropdownTrigger asChild>
                   <button
                     type="button"
                     className={cn(pillBase, 'border-border bg-muted/50 transition-colors hover:bg-muted', severityCfg.color)}
@@ -542,7 +541,7 @@ function TaskCardComponent({
                     <SeverityIcon severity={task.severity} className="h-3 w-3" />
                     {severityCfg.label}
                   </button>
-                </PopoverTrigger>
+                </QuietDropdownTrigger>
             {severityOpen && (
               <PMDropdownContent
                 className="w-[180px] p-0"
@@ -551,32 +550,29 @@ function TaskCardComponent({
                 onClick={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
               >
-                <Command>
-                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
-                  <CommandList>
-                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
-                    <CommandGroup>
+                <QuietDropdownOptions searchPlaceholder="Search...">
+                    <QuietDropdownEmpty className="py-3 text-center text-xs text-muted-foreground">No match</QuietDropdownEmpty>
+                    <QuietDropdownGroup>
                       {ALL_SEVERITIES.map((sev) => {
                         const cfg = SEVERITY_CONFIG[sev];
                         return (
-                          <CommandItem
+                          <QuietDropdownItem data-checked={task.severity === sev}
                             key={sev}
-                            value={cfg.label}
+                            value={sev} keywords={[cfg.label]}
                             onSelect={() => handleChangeSeverity(sev)}
                             className="flex items-center gap-2 text-xs"
                           >
                             <SeverityIcon severity={sev} className="h-3.5 w-3.5" />
                             <span>{cfg.label}</span>
-                            {task.severity === sev && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                          </CommandItem>
+
+                          </QuietDropdownItem>
                         );
                       })}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
+                    </QuietDropdownGroup>
+                  </QuietDropdownOptions>
               </PMDropdownContent>
             )}
-          </Popover>
+          </QuietDropdownRoot>
         ) : severityCfg ? (
               <span className={cn(pillBase, 'border-border bg-muted/50', severityCfg.color)}>
                 <SeverityIcon severity={task.severity} className="h-3 w-3" />
@@ -607,10 +603,10 @@ function TaskCardComponent({
         <div data-task-card-footer-metadata="true" className="flex min-w-0 items-center gap-1.5">
           {/* Priority pill — clickable dropdown (hidden when 'none') */}
           {vis.priority && task.priority !== 'none' && (workspaceId ? (
-            <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
+            <QuietDropdownRoot open={priorityOpen} onOpenChange={setPriorityOpen}>
               <Tooltip open={priorityOpen ? false : undefined}>
                 <TooltipTrigger asChild>
-                  <PopoverTrigger asChild>
+                  <QuietDropdownTrigger asChild>
                     <button
                       type="button"
                       className={cn(
@@ -621,7 +617,7 @@ function TaskCardComponent({
                     >
                       <PriorityIcon priority={task.priority} className="h-4 w-4" />
                     </button>
-                  </PopoverTrigger>
+                  </QuietDropdownTrigger>
                 </TooltipTrigger>
                 <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
               </Tooltip>
@@ -633,32 +629,29 @@ function TaskCardComponent({
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => e.stopPropagation()}
                 >
-                  <Command>
-                    <CommandInput placeholder="Search..." className="h-8 text-xs" />
-                    <CommandList>
-                      <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
-                      <CommandGroup>
+                  <QuietDropdownOptions searchPlaceholder="Search...">
+                      <QuietDropdownEmpty className="py-3 text-center text-xs text-muted-foreground">No match</QuietDropdownEmpty>
+                      <QuietDropdownGroup>
                         {ALL_PRIORITIES.map((p) => {
                           const cfg = PRIORITY_CONFIG[p];
                           return (
-                            <CommandItem
+                            <QuietDropdownItem data-checked={task.priority === p}
                               key={p}
-                              value={cfg.label}
+                              value={p} keywords={[cfg.label]}
                               onSelect={() => handleChangePriority(p)}
                               className="flex items-center gap-2 text-xs"
                             >
                               <PriorityIcon priority={p} className="h-3.5 w-3.5" />
                               <span>{cfg.label}</span>
-                              {task.priority === p && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                            </CommandItem>
+
+                            </QuietDropdownItem>
                           );
                         })}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
+                      </QuietDropdownGroup>
+                    </QuietDropdownOptions>
                 </PMDropdownContent>
               )}
-            </Popover>
+            </QuietDropdownRoot>
           ) : (
             <Tooltip>
               <TooltipTrigger asChild>

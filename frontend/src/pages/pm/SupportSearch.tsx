@@ -3,7 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Search01Icon, Cancel01Icon, ArrowLeft02Icon, ArrowRight02Icon, InboxIcon, FilterHorizontalIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { QuietSearchInput } from '@/components/design-system/quiet';
+import { QuietFilterDropdown, QuietSearchInput } from '@/components/design-system/quiet';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import {
@@ -12,10 +12,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@/components/design-system/quiet-dropdown-select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { CategoryFilterChip } from '@/components/pm/CategoryFilterChip';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import {
@@ -212,25 +211,33 @@ export function SupportSearchToolbar({
       </div>
 
       <div data-slot="support-search-filter-row" className="flex flex-wrap items-end gap-2">
-        <CategoryFilterChip
+        <QuietFilterDropdown
+          multiple
+          showLabel
           label="Status"
           options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))}
           selected={splitFilterValues(draft.statuses)}
           onChange={(next) => onDraftChange('statuses', joinFilterValues(next))}
         />
-        <CategoryFilterChip
+        <QuietFilterDropdown
+          multiple
+          showLabel
           label="Priority"
           options={Object.entries(PRIORITY_LABELS).map(([value, label]) => ({ value, label }))}
           selected={splitFilterValues(draft.priorities)}
           onChange={(next) => onDraftChange('priorities', joinFilterValues(next))}
         />
-        <CategoryFilterChip
+        <QuietFilterDropdown
+          multiple
+          showLabel
           label="Assignee"
           options={assignmentOptions}
           selected={splitFilterValues(draft.assigned_to)}
           onChange={(next) => onDraftChange('assigned_to', joinFilterValues(next))}
         />
-        <CategoryFilterChip
+        <QuietFilterDropdown
+          multiple
+          showLabel
           label="Inbox"
           options={[
             { value: 'shared', label: 'Main inbox' },
@@ -239,7 +246,9 @@ export function SupportSearchToolbar({
           selected={splitFilterValues(draft.mailbox_ids)}
           onChange={(next) => onDraftChange('mailbox_ids', joinFilterValues(next))}
         />
-        <CategoryFilterChip
+        <QuietFilterDropdown
+          multiple
+          showLabel
           label="Tag"
           options={tags.map((tag) => ({
             value: tag.id,
@@ -249,7 +258,9 @@ export function SupportSearchToolbar({
           selected={splitFilterValues(draft.tag_ids)}
           onChange={(next) => onDraftChange('tag_ids', joinFilterValues(next))}
         />
-        <CategoryFilterChip
+        <QuietFilterDropdown
+          multiple
+          showLabel
           label="AI state"
           options={aiStateOptions}
           selected={splitFilterValues(draft.ai)}
