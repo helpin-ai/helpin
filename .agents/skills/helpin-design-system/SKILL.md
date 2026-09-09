@@ -18,6 +18,7 @@ Build Helpin product surfaces in the Quiet Hairline language: a warm, document-l
 - Quiet Hairline is the visual authority. Generic frontend-design advice yields when it conflicts.
 - Existing Helpin components remain the authority for behavior, accessibility, routing, permissions, data flow, and domain logic.
 - Prefer the centralized Quiet components and established domain components over copying Tailwind class strings into pages.
+- For option-selection dropdowns, use `QuietDropdown` or an existing adapter built on it. For list filters, show the shared editable applied-filter pills below the toolbar, as Tasks and Epics do. Read [Dropdowns and applied filters](references/helpin-components.md#dropdowns-and-applied-filters) for component selection and behavior.
 - For human-authored conversation messages, comments, and email outside Support, compose with the centralized `QuietConversationComposer` primitives. `ReplyComposer` remains the heavily used Support reference implementation; preserve its domain behavior and mirror intentional visual-contract changes between it and the primitives.
 - Keep search visually distinct from data entry: use the centralized `QuietSearchInput` throughout product surfaces; it owns the Skill Catalog's compact bordered treatment and leading icon. Never use `QuietUnderlineInput` for search. Preserve behavior-owned `CommandInput`, editor search/replace, and content-preview search controls.
 - Use semantic Quiet tokens. Do not hard-code a near-match when a token exists.

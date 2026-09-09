@@ -4,6 +4,8 @@
 
 Structure comes from hairlines, whitespace, and type weight—never from boxes. Do not use bordered inputs, rounded field outlines, cards, pills, tinted status chips, filled section wells, or decorative shadows. If a border seems necessary to group content, use a 1px divider and an eyebrow label.
 
+Functional exceptions include the centralized search field and editable applied-filter pills described below. Preserve their shared components rather than restyling them as plain text.
+
 The only sanctioned elevation is an existing product overlay such as a Sheet, Dialog, Popover, command surface, or menu. Preserve its established behavior and use the quietest compatible chrome.
 
 ## Voice
@@ -54,6 +56,7 @@ Use Helpin's centralized `font-sans` stack. Do not introduce another font. Use o
 - Row title or subject: `13.5px / 600`, `-.008em`; this is the strongest row element.
 - Body prose: `14px / 1.7`, maximum measure `680–760px`, `text-wrap: pretty`.
 - UI label: use Helpin's `text-sm` token (about `13.125px` under the current 93.75% root scale); secondary: `12.5px`; meta: `11.5–12px`. Do not use `text-[13px]` for the UI-label role.
+- Dropdown content: explicit `12.2px` through the centralized dropdown typography token and content wrapper.
 - Eyebrow: `12px / 600`, `.06em`, uppercase, muted.
 - Tone label: `11.5px / 600`, `.03em`, uppercase, meaning-colored word—not a pill.
 
@@ -89,7 +92,9 @@ Detail pages that combine breadcrumbs, editable identity, state, and specialized
 
 ### Tabs and filters
 
-Primary tab labels use an explicit `14px` in every state. This is a deliberate exception to Helpin's globally scaled type tokens: `text-sm` renders smaller than 14px, while `text-base` renders larger. Inactive and hover labels use weight 500; active labels use weight 600, primary text color, and a 2px underline. Hover changes only the text color, not the weight. Counts are inline muted text, never badges. Secondary filters are plain text; active is 12.5px/600 and inactive is 12.5px/400. Do not use pills at either level.
+Primary tab labels use an explicit `14px` in every state. This is a deliberate exception to Helpin's globally scaled type tokens: `text-sm` renders smaller than 14px, while `text-base` renders larger. Inactive and hover labels use weight 500; active labels use weight 600, primary text color, and a 2px underline. Hover changes only the text color, not the weight. Counts are inline muted text, never badges. Secondary quick-filter tabs are plain text; active is 12.5px/600 and inactive is 12.5px/400. Do not turn either level of tabs into pills.
+
+Applied list filters follow the shared Tasks/Epics pattern: a row below the toolbar with a field label, operator, editable value, individual remove action, and Clear all. These functional pills are an explicit exception to the decorative-chip rule. Keep Owner first when present. Option selectors use the shared dropdown with 12.2px content text, centralized search spacing, and search shown only when needed for overflow or an explicit typing workflow. Group by keeps its label inside the trigger and remains separate from applied filters. See [Dropdowns and applied filters](helpin-components.md#dropdowns-and-applied-filters) for the component contract.
 
 ### Actions
 
@@ -147,4 +152,4 @@ Use bubbles only for genuine turn-taking. Inbound is warm hover neutral and outb
 
 ## Anti-patterns
 
-Do not introduce bordered inputs, rounded field boxes, outlined section cards, pills/chips for ordinary status or filters, tinted enrichment cards, blue focus treatments, blue send buttons, centered empty illustrations, raw function names without an outcome sentence, emoji, gradients, ornamental metrics, or more than two dark actions per screen.
+Do not introduce bordered data-entry inputs, rounded field boxes, outlined section cards, decorative pills/chips for ordinary status or filter tabs, tinted enrichment cards, blue focus treatments, blue send buttons, centered empty illustrations, raw function names without an outcome sentence, emoji, gradients, ornamental metrics, or more than two dark actions per screen. Preserve the shared search field and editable applied-filter exceptions above.
