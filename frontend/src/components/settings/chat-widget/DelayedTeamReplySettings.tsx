@@ -47,7 +47,7 @@ export function DelayedTeamReplySettings({ minutes, message, messageNoEmail, onM
           <span className="text-sm text-muted-foreground">minutes</span>
         </div>
         <p id="delayed-team-reply-timing-help" className="text-xs text-muted-foreground">
-          Sent automatically once if no teammate has replied within this time after the handoff, including outside business hours. Assignments, internal notes, and customer messages don’t reset the timer.
+          Sent once if the handoff remains unanswered. Runs outside business hours; assignments, notes, and customer messages don’t reset it.
         </p>
         {invalidMinutes && <p role="alert" className="text-xs text-destructive">Enter a whole number from 1 to 1,440 minutes.</p>}
       </div>
