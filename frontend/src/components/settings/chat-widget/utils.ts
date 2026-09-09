@@ -191,6 +191,10 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
 
   return {
     ...rest,
+    ai_follow_up_enabled: rest.ai_follow_up_enabled ?? false,
+    ai_follow_up_delay_hours: rest.ai_follow_up_delay_hours ?? 24,
+    ai_follow_up_close_hours: rest.ai_follow_up_close_hours ?? 48,
+    ai_follow_up_max_per_conversation: rest.ai_follow_up_max_per_conversation ?? 2,
     delayed_team_reply_minutes: rest.delayed_team_reply_minutes ?? DEFAULT_DELAYED_TEAM_REPLY_MINUTES,
     delayed_team_reply_message: rest.delayed_team_reply_message ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE,
     delayed_team_reply_message_no_email: rest.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL,

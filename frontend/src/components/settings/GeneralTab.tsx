@@ -1,3 +1,4 @@
+import { SettingsSaveBar } from './SettingsSaveBar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { workspacesService } from '@/lib/services/workspacesService';
@@ -238,6 +239,13 @@ export function GeneralTab({ workspaceId, editable }: {
 
   return (
     <div className="space-y-6">
+      {editable && (
+        <SettingsSaveBar>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </SettingsSaveBar>
+      )}
       <Card className={LINEAR_CARD_CLASS}>
         <CardContent className="space-y-6 pt-6">
           <div className="space-y-2">
@@ -447,13 +455,7 @@ export function GeneralTab({ workspaceId, editable }: {
             Current date and time: <span className="font-medium text-foreground">{currentTime}</span>
           </p>
 
-          {editable && (
-            <div className="flex justify-end">
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          )}
+
         </CardContent>
       </Card>
       {editable && (

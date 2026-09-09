@@ -361,6 +361,9 @@ func (s *AgentRunFinalizerService) finalizeRunCompletedRules(ctx context.Context
 // reply message ID equals the run ID (create-if-not-exists) and the recorded
 // sent_message_id short-circuits replays.
 func (s *AgentRunFinalizerService) finalizeSupportDraft(ctx context.Context, run *model.AgentRun) error {
+	if runInputTriggerType(run) == supportFollowUpTriggerType {
+		return nil
+	}
 	if s.supportMessageRepo == nil || s.conversationRepo == nil || s.runRepo == nil {
 		return nil
 	}

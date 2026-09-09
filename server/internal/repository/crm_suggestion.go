@@ -122,6 +122,9 @@ func (r *CRMSuggestionRepository) GetByID(ctx context.Context, workspaceID, id s
 // List returns suggestions with optional filters.
 func (r *CRMSuggestionRepository) List(ctx context.Context, workspaceID string, filters model.CRMSuggestionListFilters, pagination model.PMPagination) ([]model.CRMSuggestion, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.CRMSuggestion{}).Where("workspace_id = ?", workspaceID)
+	if !filters.IncludeInternalMeetingFollowUps {
+		query = query.Where(CRMVisibleMeetingFollowUpsSQL(r.db, "crm_suggestions"))
+	}
 
 	if filters.UserID != nil && *filters.UserID != "" {
 		query = query.Where("user_id = ?", *filters.UserID)

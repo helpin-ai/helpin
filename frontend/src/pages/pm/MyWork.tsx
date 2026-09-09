@@ -17,7 +17,8 @@ import {
 } from '@/lib/icons';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useWorkspaceAccess } from '@/hooks/queries/useSession';
+import { AISuggestions } from '@/components/pm/my-work/AISuggestions';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { PRIORITY_CONFIG, StateTypeIcon, PriorityIcon } from '@/lib/pmConstants';
@@ -36,9 +37,10 @@ import {
   QuietStatusText,
   QuietTextAction,
 } from '@/components/design-system/quiet';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type Mode = 'assigned' | 'requested';
+type TaskMode = 'assigned' | 'requested';
+type Mode = TaskMode | 'suggestions';
 
 const AGENT_RUN_LABEL: Record<string, string> = {
   queued: 'Agent queued',
@@ -74,18 +76,19 @@ export function MyWorkPage() {
 
   const { data: access, isLoading: accessLoading } = useWorkspaceAccess(workspaceId);
   const memberId = access?.membership?.id;
+  const { has } = usePermissions(access);
 
   const { teams, hasTeams, isAdmin, findTeamName, loading: teamsLoading } = useAccessibleTeams(workspaceId);
   const showTeam = teams.length > 1;
 
   const [mode, setMode] = useState<Mode>('assigned');
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [loadedMode, setLoadedMode] = useState<Mode | null>(null);
+  const [loadedMode, setLoadedMode] = useState<TaskMode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    if (!workspaceId || !memberId) return;
+    if (!workspaceId || !memberId || mode === 'suggestions') return;
     let ignore = false;
     const filters =
       mode === 'assigned'
@@ -261,7 +264,7 @@ export function MyWorkPage() {
       <QuietPageHeader
         variant="shell"
         title="My Work"
-        description={`Tasks assigned to you and requested by you across ${isAdmin ? 'all' : 'your'} teams.`}
+        description={mode === 'suggestions' ? 'Suggested next steps for your work, ready for your review.' : `Tasks assigned to you and requested by you across ${isAdmin ? 'all' : 'your'} teams.`}
       />
 
       <Tabs
@@ -272,13 +275,17 @@ export function MyWorkPage() {
         }}
         className="min-h-0 flex-1 gap-0"
       >
-        <TabsList variant="quiet" aria-label="My Work views" className="w-full shrink-0 justify-start px-4 sm:px-6 lg:px-8">
+        <TabsList variant="quiet" aria-label="My Work views" className="w-full shrink-0 justify-start overflow-x-auto px-4 sm:px-6 lg:px-8">
           <TabsTrigger value="assigned">Assigned to me</TabsTrigger>
           <TabsTrigger value="requested">Requested by me</TabsTrigger>
+          <TabsTrigger value="suggestions">AI suggestions</TabsTrigger>
         </TabsList>
 
+        <TabsContent value={mode} className="flex min-h-0 flex-1 flex-col">
         <QuietPageViewport className="min-h-0 flex-1">
-          {showingLoading ? (
+          {mode === 'suggestions' ? (
+            accessLoading ? <MyWorkLoadingState /> : memberId && has('pm.read') ? <AISuggestions key={`${workspaceId}:${memberId}`} ws={workspaceId} memberId={memberId} slug={wsSlug} canEdit={has('pm.edit')} canReadCRM={has('crm.read')} /> : <QuietEmptyState title="AI suggestions unavailable" description="PM access is needed to view your suggestions." />
+          ) : showingLoading ? (
             <MyWorkLoadingState />
           ) : !hasTeams && !isAdmin ? (
             <NoTeamEmptyState />
@@ -342,6 +349,7 @@ export function MyWorkPage() {
             </div>
           )}
         </QuietPageViewport>
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -368,7 +376,7 @@ const WORKFLOW_STEPS = [
   { icon: ChartColumnIcon, title: 'Track progress', description: 'Tasks move through workflow states as work gets done' },
 ];
 
-function MyWorkEmptyState({ mode }: { mode: Mode }) {
+function MyWorkEmptyState({ mode }: { mode: TaskMode }) {
   return (
     <div className="flex flex-col items-center px-4 py-16">
       <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500/10">
