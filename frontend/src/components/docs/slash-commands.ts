@@ -105,6 +105,16 @@ export const slashCommands: SlashCommand[] = [
     action: (editor) => editor.chain().focus().toggleCodeBlock().run(),
   },
   {
+    title: 'Mermaid',
+    description: 'Flowchart or sequence diagram from Mermaid source',
+    icon: SourceCodeIcon,
+    action: (editor) => editor.chain().focus().insertContent({
+      type: 'codeBlock',
+      attrs: { language: 'mermaid' },
+      content: [{ type: 'text', text: 'flowchart TD\n  A[Start] --> B[Next step]\n  B --> C[Done]' }],
+    }).run(),
+  },
+  {
     title: 'nwdiag',
     description: 'Network diagram from nwdiag source',
     icon: SourceCodeIcon,
