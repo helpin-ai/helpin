@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { QuietFilterDropdown, QuietSearchInput } from '@/components/design-system/quiet';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { PMFilterBar } from '@/components/pm/PMFilterControls';
 import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopover';
 
 export interface EpicFilterBarOption {
@@ -52,11 +53,7 @@ interface EpicFilterBarProps {
 }
 
 /**
- * The combined filter + view-controls row that sits above the Epics table.
- *
- * Layout (single row, wraps as needed):
- *   [Search] [Category filters…] [Clear Filters] [Show Archived]
- *                                                  → Group By  Display
+ * Filter and view controls, followed by the shared applied-filter pills.
  */
 export function EpicFilterBar({
   search,
@@ -74,11 +71,23 @@ export function EpicFilterBar({
   visibleProperties,
   onVisiblePropertiesChange,
 }: EpicFilterBarProps) {
-  const hasAnyFilter = categories.some((cat) => cat.selected.length > 0) || showArchived || search.trim().length > 0;
+  const visibleKeys = new Set(categories.filter((category) => category.selected.length > 0).map((category) => category.key));
+  const values = Object.fromEntries(categories.map((category) => [category.key, category.selected]));
+  const definitions = categories.map((category) => ({
+    key: category.key,
+    label: category.label,
+    options: category.options.map((option) => ({
+      value: option.value,
+      label: option.label,
+      icon: option.leading,
+    })),
+    searchableValues: ['owner', 'label', 'objective'].includes(category.key),
+  }));
+  const showToolbarClear = visibleKeys.size === 0 && (showArchived || search.trim().length > 0);
 
   return (
-    <div className="ui-divider-bottom-fade flex flex-col gap-1 px-4 pb-2 pt-2 md:px-6">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col">
+      <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-4 pb-2 pt-2 md:px-6">
         <QuietSearchInput
           containerClassName="w-[220px] max-w-full"
           value={search}
@@ -104,7 +113,7 @@ export function EpicFilterBar({
           />
         ))}
 
-        {hasAnyFilter ? (
+        {showToolbarClear ? (
           <Button
             type="button"
             variant="ghost"
@@ -135,6 +144,19 @@ export function EpicFilterBar({
           />
         </div>
       </div>
+      <PMFilterBar
+        definitions={definitions}
+        values={values}
+        visibleKeys={visibleKeys}
+        onToggle={(key, value) => {
+          const selected = values[key] ?? [];
+          onCategoryChange(key, selected.includes(value)
+            ? selected.filter((item) => item !== value)
+            : [...selected, value]);
+        }}
+        onRemove={(key) => onCategoryChange(key, [])}
+        onClearAll={onClearAll}
+      />
     </div>
   );
 }

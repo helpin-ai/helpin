@@ -138,6 +138,7 @@ describe('EpicsPage scroll layout', () => {
       const ownerButton = () => container.querySelector<HTMLButtonElement>('[aria-label="Filter by owner Member 1"]')!
       await act(async () => ownerButton().click())
       expect(ownerButton().getAttribute('aria-pressed')).toBe('true')
+      expect(container.querySelector('[aria-label="Remove Owner filter"]')?.parentElement?.textContent).toContain('Member 1')
       expect(container.textContent).toContain('Initiative 1')
       expect(container.textContent).not.toContain('Initiative 9')
       await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Show 2 more members"]')!.click())
@@ -152,7 +153,7 @@ describe('EpicsPage scroll layout', () => {
       expect(container.textContent).toContain('Initiative 1')
       expect(container.textContent).toContain('Initiative 9')
       expect(container.querySelector('[aria-label="Filter by owner Member 9"]')?.getAttribute('aria-pressed')).toBe('true')
-      const clear = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Clear Filters')!
+      const clear = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Clear all')!
       await act(async () => clear.click())
       expect(ownerButton().getAttribute('aria-pressed')).toBe('false')
       expect(JSON.parse(localStorage.getItem('pm_epics_view_ws-1_all')!).filters.owner).toBeUndefined()
