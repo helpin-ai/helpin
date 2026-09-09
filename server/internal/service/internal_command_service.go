@@ -94,6 +94,7 @@ type InternalCommandService struct {
 	commandBarService         *CommandBarService
 	supportKnowledgeSearcher  supportKnowledgeSearcher
 	supportRunEvidenceRepo    *repository.SupportRunEvidenceRepository
+	supportFollowUpService    *SupportFollowUpService
 	supportAIService          *SupportAIService
 	supportProcessingRepo     *repository.AIMessageProcessingRepository
 	supportUsageMeter         *AIUsageMeter
@@ -2157,6 +2158,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerAgentOrchestrationCommands()
 	s.registerSupportKnowledgeCommands()
 	s.registerSupportReplyCommands()
+	s.registerSupportFollowUpCommand()
 	s.registerSupportCommands()
 	s.registerSupportCoverageCommands()
 	s.registerSupportOperationalCommands()

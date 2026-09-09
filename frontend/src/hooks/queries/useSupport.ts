@@ -835,6 +835,10 @@ export function useConversation(workspaceId: string, conversationId: string | nu
     queryFn: async () => unwrap(await supportService.getConversation(workspaceId, conversationId!)),
     enabled: !!workspaceId && !!conversationId,
     staleTime: 30_000,
+    refetchInterval: (query) => {
+      const state = query.state.data?.ai_follow_up?.status;
+      return state && ['scheduled', 'assessing', 'waiting'].includes(state) ? 30_000 : false;
+    },
   });
 }
 

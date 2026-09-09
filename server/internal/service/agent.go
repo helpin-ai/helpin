@@ -6307,6 +6307,7 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 }
 
 type createRunParams struct {
+	runID                string // Reserved by durable product work before launching.
 	workspaceID          string
 	agent                *model.Agent
 	targetType           string
@@ -6343,6 +6344,31 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		if err != nil {
 			return nil, err
 		}
+	}
+	// Scheduled support assessments are independent of visitor chat runs.
+	// A visitor must never be resumed into a restricted assessment run.
+	if activeRun != nil && runInputTriggerType(activeRun) == supportFollowUpTriggerType {
+		if params.trigger == nil || params.trigger.TriggerType != supportFollowUpTriggerType {
+			activeRun = nil
+			candidates, err := s.runRepo.ListActiveByTarget(ctx, params.workspaceID, params.targetType, params.targetID)
+			if err != nil {
+				return nil, err
+			}
+			for i := range candidates {
+				if runInputTriggerType(&candidates[i]) != supportFollowUpTriggerType {
+					activeRun = &candidates[i]
+					break
+				}
+			}
+		} else if activeRun.ID != params.runID {
+			return nil, fmt.Errorf("another support follow-up assessment is active")
+		}
+	}
+	if activeRun != nil && params.trigger != nil && params.trigger.TriggerType == supportFollowUpTriggerType && runInputTriggerType(activeRun) != supportFollowUpTriggerType {
+		if !model.IsAgentRunPausedStatus(activeRun.Status) || activeRun.PauseReason != model.AgentRunPauseReasonUserMessage {
+			return nil, fmt.Errorf("support conversation is busy")
+		}
+		activeRun = nil
 	}
 	if activeRun != nil {
 		matches, err := crmPlaybookRunScopesMatch(activeRun.Input, params.input)
@@ -6385,8 +6411,12 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	resolved := agentcontract.ResolveAgentProfile(params.agent, params.invocationMode)
 	approvalState := agentcontract.ResolveApprovalState(resolved)
 
+	runID := params.runID
+	if runID == "" {
+		runID = uuid.NewString()
+	}
 	run := &model.AgentRun{
-		ID:                uuid.NewString(),
+		ID:                runID,
 		WorkspaceID:       params.workspaceID,
 		AgentID:           params.agent.ID,
 		TaskID:            params.taskID,

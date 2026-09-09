@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -315,14 +316,8 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	}
 
 	if req.ResolvesConversation && kind == supportReplyKindConfirm {
-		resolved := "resolved"
-		confirmed := "confirmed"
-		if updateErr := supportAI.conversationRepo.UpdateFields(ctx, meta.WorkspaceID, conversationID, map[string]any{
-			"ai_state":           &resolved,
-			"ai_resolution_type": &confirmed,
-			"flow_state":         model.SupportConversationFlowStateResolvedByAI,
-		}); updateErr != nil {
-			slog.WarnContext(ctx, "send_reply: mark resolved failed", "error", updateErr, "conversation_id", conversationID)
+		if updateErr := resolveSupportAIConversation(ctx, supportAI.conversationRepo.DB(), conv, "confirmed", time.Now().UTC()); updateErr != nil {
+			slog.WarnContext(ctx, "mark confirmed resolution failed", "error", updateErr, "conversation_id", conversationID)
 		}
 	}
 
