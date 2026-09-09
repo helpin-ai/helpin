@@ -240,6 +240,12 @@ export const supportService = {
     api.post<SupportAIRewriteDraftResponse>(`/support/inbox/rewrite-draft${qs(workspaceId)}`, payload),
   rewriteConversationDraft: (workspaceId: string, conversationId: string, payload: SupportAIRewriteDraftRequest) =>
     api.post<SupportAIRewriteDraftResponse>(`/support/inbox/conversations/${conversationId}/rewrite-draft${qs(workspaceId)}`, payload),
+  previewConversationFollowUps: (workspaceId: string) =>
+    api.get<{ candidates: number; daily_limit: number; lookback_days: number; sample: Pick<SupportConversation, 'id' | 'display_id' | 'subject'>[] }>(`/support/inbox/installations/follow-up-preview${qs(workspaceId)}`),
+
+  cancelConversationFollowUp: (workspaceId: string, conversationId: string) =>
+    api.post<SupportConversation>(`/support/inbox/conversations/${conversationId}/follow-up/cancel${qs(workspaceId)}`, {}),
+
   updateConversationStatus: (workspaceId: string, conversationId: string, status: ConversationStatus) =>
     api.put<SupportConversation>(`/support/inbox/conversations/${conversationId}/status${qs(workspaceId)}`, { status }),
   linkConversationTask: (workspaceId: string, conversationId: string, payload: LinkTaskRequest) =>
