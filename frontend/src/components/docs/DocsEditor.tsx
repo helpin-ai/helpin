@@ -813,6 +813,7 @@ interface DocsEditorProps {
   title?: string
   showTitle?: boolean
   onTitleChange?: (title: string) => void
+  onTitleCancel?: () => void
   slug?: string
   onSlugChange?: (slug: string) => Promise<void>
   slugHelperText?: string
@@ -839,8 +840,8 @@ interface DocsEditorProps {
   onEditorReady?: (editor: ReturnType<typeof useEditor> | null) => void
   /** When true, the centered doc column slides left (left margin shrinks) so the right-side gutter can host comment cards. Doc width is unchanged. */
   hasSideComments?: boolean
-  /** Controls the document canvas width. Authenticated detail pages use the standard max-w-7xl canvas; embeds keep the narrower reading measure. */
-  contentWidth?: 'reading' | 'standard'
+  /** Internal documents use 7xl, external-space documents use 4xl, and embeds keep the reading measure. */
+  contentWidth?: 'reading' | 'standard' | 'external'
   /** Lets the authenticated Docs page own mobile scrolling so its page header can scroll away. Desktop keeps the editor's contained scroller. */
   pageScrollOnMobile?: boolean
 }
@@ -849,6 +850,7 @@ export function DocsEditor({
   title,
   showTitle = true,
   onTitleChange,
+  onTitleCancel,
   slug,
   initialContent,
   onSave,
@@ -1930,7 +1932,7 @@ img { max-width: 100%; }
           : pageScrollOnMobile
             ? 'min-h-0 flex-none overflow-visible lg:flex-1 lg:overflow-y-auto'
             : 'min-h-0 flex-1 overflow-y-auto'
-      } ${hasSideComments ? 'has-side-comments' : ''} ${contentWidth === 'standard' ? 'docs-editor-standard-width' : ''}`}>
+      } ${hasSideComments ? 'has-side-comments' : ''} ${contentWidth === 'standard' ? 'docs-editor-standard-width' : contentWidth === 'external' ? 'docs-editor-external-width' : ''}`}>
         {generatingOverlay && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground mb-3" />
@@ -2053,6 +2055,7 @@ img { max-width: 100%; }
                 {slug && <SlugDisplay slug={slug} onSlugChange={onSlugChange} readOnly={readOnly} helperText={slugHelperText} />}
                 {onTitleChange && !readOnly ? (
                   <textarea
+                    aria-label="Document title"
                     value={title}
                     ref={(el) => {
                       if (el) {
@@ -2060,6 +2063,7 @@ img { max-width: 100%; }
                         el.style.height = `${el.scrollHeight}px`
                       }
                     }}
+                    onFocus={() => emitEditingPresence({ area: 'title', section: 'Title' })}
                     onChange={(e) => {
                       onTitleChange(e.target.value)
                       emitEditingPresence({ area: 'title', section: 'Title' })
@@ -2070,6 +2074,10 @@ img { max-width: 100%; }
                       if (e.key === 'Enter') {
                         e.preventDefault()
                         editor?.commands.focus('start')
+                      } else if (e.key === 'Escape' && onTitleCancel) {
+                        e.preventDefault()
+                        onTitleCancel()
+                        e.currentTarget.blur()
                       }
                     }}
                     onBlur={() => scheduleClearEditingPresence()}

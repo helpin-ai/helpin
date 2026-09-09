@@ -179,10 +179,10 @@ export function QuietDetailHeader({
   className?: string;
 }) {
   return (
-    <header className={cn('shrink-0 border-b border-quiet-divider-strong px-4 pb-2 pt-2 sm:px-6 lg:px-8', workspaceSidebarSafeInsetClassName, className)}>
-      {breadcrumbs ? <div className="mb-0.5 min-w-0">{breadcrumbs}</div> : null}
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 sm:gap-x-5">
-        <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
+    <header className={cn('shrink-0 border-b border-quiet-divider-strong px-4 pb-2 pt-2 sm:px-6 lg:px-8', workspaceSidebarSafeInsetClassName, breadcrumbs && 'md:grid md:grid-cols-[minmax(0,1fr)_auto] md:gap-x-5', className)}>
+      {breadcrumbs ? <div className="mb-0.5 min-w-0 md:col-start-1 md:row-start-1">{breadcrumbs}</div> : null}
+      <div className={cn("grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 sm:gap-x-5", breadcrumbs && "md:contents")}>
+        <div className={cn("flex min-w-0 items-start gap-2.5 sm:gap-3", breadcrumbs && "md:col-start-1 md:row-start-2")}>
           {avatar ? (
             <div className="h-8 w-8 shrink-0 sm:h-9 sm:w-9 [&>*]:h-full [&>*]:w-full">
               {avatar}
@@ -204,7 +204,7 @@ export function QuietDetailHeader({
           </div>
         </div>
         {state || actions ? (
-          <div className="flex min-w-0 shrink-0 flex-col items-end gap-0.5 overflow-hidden">
+          <div className={cn("flex min-w-0 shrink-0 flex-col items-end gap-0.5 overflow-hidden", breadcrumbs && "md:col-start-2 md:row-start-1 md:row-span-2 md:self-center")}>
             {actions ? <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1.5 sm:gap-3">{actions}</div> : null}
             {state ? <div className="flex min-w-0 max-w-28 flex-nowrap items-center justify-end gap-x-3 overflow-hidden whitespace-nowrap sm:max-w-none">{state}</div> : null}
           </div>
