@@ -80,9 +80,11 @@ type UpdateCRMSuggestionRequest struct {
 
 // CRMSuggestionListFilters applies filters when listing suggestions.
 type CRMSuggestionListFilters struct {
-	UserID         *string
-	SuggestionType *string
-	ObjectType     *string
-	ObjectID       *string
-	Status         *string
+	// IncludeInternalMeetingFollowUps is reserved for canonical processing/deduplication.
+	IncludeInternalMeetingFollowUps bool `json:"-"`
+	UserID                          *string
+	SuggestionType                  *string
+	ObjectType                      *string
+	ObjectID                        *string
+	Status                          *string
 }

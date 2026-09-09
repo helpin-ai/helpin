@@ -23,6 +23,24 @@ func (r *CRMSituationRepository) ImportSource(ctx context.Context, input model.C
 		if err := tx.Table("workspaces").Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", ws).Take(&workspace).Error; err != nil {
 			return fmt.Errorf("lock source workspace: %w", err)
 		}
+		if input.Kind == model.CRMSituationReferenceSuggestion {
+			var current model.CRMSuggestion
+			if err := tx.Where("workspace_id = ? AND id = ?", ws, input.SourceID).Take(&current).Error; err != nil {
+				return err
+			}
+			if model.IsInternalMeetingFollowUp(current) {
+				if current.Context["meeting_follow_up_reviewed_in"] == "my_work" {
+					return nil
+				}
+				var routable int64
+				if err := tx.Model(&model.CRMSuggestion{}).Where("workspace_id = ? AND id = ?", ws, input.SourceID).Where(PMAISuggestionRoutingEligible(tx, "crm_suggestions")).Count(&routable).Error; err != nil {
+					return err
+				}
+				if routable > 0 {
+					return nil
+				}
+			}
+		}
 		var link model.CRMSituationSourceLink
 		err := tx.Where("workspace_id = ? AND kind = ? AND source_id = ?", ws, input.Kind, input.SourceID).Take(&link).Error
 		if err == nil {

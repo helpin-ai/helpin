@@ -40,6 +40,7 @@ type Handlers struct {
 	PMLabel             *handler.PMLabelHandler
 	PMEpic              *handler.PMEpicHandler
 	PMSprint            *handler.PMSprintHandler
+	PMAISuggestion      *handler.PMAISuggestionHandler
 	PMTask              *handler.PMTaskHandler
 	PMTaskInsights      *handler.PMTaskInsightsHandler
 	PMComment           *handler.PMCommentHandler
@@ -1018,6 +1019,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(wsActive)
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/rewrite-draft", h.SupportAI.RewritePMCommentDraft)
+				}
+
+				if h.PMAISuggestion != nil {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/ai-suggestions", h.PMAISuggestion.List)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/ai-suggestions/{id}", h.PMAISuggestion.Get)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/ai-suggestions/{id}/{decision}", h.PMAISuggestion.Decide)
 				}
 
 				// Workflows — read: pm.read, write: pm.admin.workflows

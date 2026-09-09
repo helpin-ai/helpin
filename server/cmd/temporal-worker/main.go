@@ -654,12 +654,12 @@ func main() {
 			&http.Client{Timeout: 30 * time.Minute}, recallMeetingProvider, vexaMeetingProvider,
 		)
 	}
-	meetingProcessor.SetCRMOutputs(signalDetectionService, crmActivityService, crmSuggestionService)
+	meetingProcessor.SetCRMOutputs(signalDetectionService, crmActivityService, crmSuggestionService).SetFollowUpRoutingStore(crmSuggestionRepo)
 	meetingCaptureService := service.NewCRMMeetingService(
 		crmMeetingRepo, nil, nil, recallMeetingProvider, vexaMeetingProvider,
 	).SetCaptureProvider(cfg.CRMMeetingCaptureProvider).
 		SetAIUsageMeter(service.NewTokenPricedAIUsageMeter(aiUsageService))
-	meetingActivities := temporalapp.NewCRMMeetingActivities(meetingProcessor).SetCaptureLauncher(meetingCaptureService)
+	meetingActivities := temporalapp.NewCRMMeetingActivities(meetingProcessor).SetCaptureLauncher(meetingCaptureService).SetFollowUpRouter(meetingProcessor)
 
 	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
 	crmPlaybookAuthz := authorization.NewAuthzService(db, authorization.NewGORMMemberRepository(db), repository.NewWorkspaceModuleGrantRepository(db))
@@ -703,6 +703,11 @@ func main() {
 		slog.Error("failed to ensure shared scheduled event delivery", "error", err)
 	}
 	scheduleCancel()
+	routingScheduleCtx, routingScheduleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := temporalapp.NewRunEngine(temporalClient, cfg.TemporalNamespace).EnsureMeetingFollowUpRouting(routingScheduleCtx); err != nil {
+		slog.Warn("meeting follow-up routing schedule unavailable", "error", err)
+	}
+	routingScheduleCancel()
 
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -781,7 +786,9 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	// Register provider-neutral CRM meeting capture and processing.
 	w.RegisterWorkflow(temporalapp.CRMMeetingCaptureScheduleWorkflow)
 	w.RegisterWorkflow(temporalapp.CRMMeetingProcessingWorkflow)
+	w.RegisterWorkflow(temporalapp.CRMMeetingFollowUpRoutingWorkflow)
 	if meetingActivities != nil {
+		w.RegisterActivityWithOptions(meetingActivities.RouteMeetingFollowUps, activity.RegisterOptions{Name: "CRMMeetingActivities.RouteMeetingFollowUps"})
 		w.RegisterActivityWithOptions(meetingActivities.ProcessMeetingActivity, activity.RegisterOptions{
 			Name: "CRMMeetingActivities.ProcessMeetingActivity",
 		})
