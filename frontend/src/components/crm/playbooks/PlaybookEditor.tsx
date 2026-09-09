@@ -1,4 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Button } from '@/components/ui/button';
 import { useBlocker } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { QuietPrimaryAction, QuietSection, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
@@ -27,8 +29,9 @@ const stops: { value: CRMPlaybookDefinition['policy']['stop_conditions'][number]
   { value: 'no_longer_eligible', label: 'The signal no longer matches' }, { value: 'contact_restricted', label: 'Contact is restricted' },
 ];
 
-export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPreview, step, onStepChange, renderReview }: {
+export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPreview, step, onStepChange, renderReview, saveActionContainer }: {
   ws: string; item: CRMPlaybookItem; canAdmin: boolean; onDirty: (dirty: boolean) => void; onReload: () => void; onPreview: () => void;
+  saveActionContainer: HTMLDivElement | null;
   step: PlaybookSetupStep; onStepChange: (step: PlaybookSetupStep) => void; renderReview: (dirty: boolean) => ReactNode;
 }) {
   const formId = useId();
@@ -113,7 +116,7 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
     <div className="max-w-6xl">
       <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-quiet-divider-strong bg-quiet-surface py-4">
         <p className="text-xs text-quiet-text-tertiary">{canAdmin ? dirty ? 'Unsaved changes' : 'Saved draft' : 'Read-only configuration'}{item.published_version && ' · Existing signals keep their published version'}</p>
-        {canAdmin && <QuietPrimaryAction type="submit" form={formId} disabled={!dirty || disabled || stale}>{write.isPending ? 'Saving…' : 'Save draft'}</QuietPrimaryAction>}
+        {canAdmin && saveActionContainer && createPortal(<Button type="submit" variant="outline" size="sm" form={formId} disabled={!dirty || disabled || stale}>{write.isPending ? 'Saving…' : 'Save draft'}</Button>, saveActionContainer)}
       </div>
       {stale && dirty && <div role="alert" className="border-b border-quiet-divider-strong py-3 text-sm text-quiet-accent">This playbook changed while you were editing. Your draft is still here.<QuietTextAction type="button" onClick={() => setDiscard(true)}>Review saved version</QuietTextAction></div>}
       {write.isError && <PlaybookError error={write.error} retry={onReload} />}
@@ -185,7 +188,7 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
       </QuietSection>
       {renderReview(dirty || write.isPending)}
     </div>
-    <div className="flex items-center justify-between gap-3 border-t border-quiet-divider-strong py-4"><QuietTextAction type="button" disabled={index === 0} onClick={() => go(playbookSetupSteps[index - 1].id)}>Back</QuietTextAction>{index < playbookSetupSteps.length - 1 && <QuietTextAction type="button" onClick={() => go(playbookSetupSteps[index + 1].id)}>Continue</QuietTextAction>}</div>
+    <div className="flex items-center justify-between gap-3 border-t border-quiet-divider-strong py-4"><QuietTextAction type="button" disabled={index === 0} onClick={() => go(playbookSetupSteps[index - 1].id)}>Back</QuietTextAction>{index < playbookSetupSteps.length - 1 && <Button type="button" variant="outline" size="sm" onClick={() => go(playbookSetupSteps[index + 1].id)}>Continue</Button>}</div>
     </div></div></div>
     <Dialog open={discard || blocker.status === 'blocked'} onOpenChange={(open) => { if (!open) { setDiscard(false); blocker.reset?.(); } }}><DialogContent><DialogHeader><DialogTitle>Discard unsaved changes?</DialogTitle><DialogDescription>Your saved playbook is safe. The edits on this page will be lost.</DialogDescription></DialogHeader><DialogFooter><QuietTextAction onClick={() => { setDiscard(false); blocker.reset?.(); }}>Keep editing</QuietTextAction><QuietPrimaryAction onClick={() => { if (blocker.status === 'blocked') blocker.proceed(); else { setDefinition(item.playbook.draft); setBaseline(item.playbook); setDiscard(false); write.reset(); } }}>Discard changes</QuietPrimaryAction></DialogFooter></DialogContent></Dialog>
   </>;

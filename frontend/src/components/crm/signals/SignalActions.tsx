@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { QuietPrimaryAction, QuietPropertyRow, QuietSection, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
@@ -36,7 +37,7 @@ export function RecommendationActions({ ws, slug, actions, signalId, lifecycle =
           {action.execution_status === 'failed' && <p className="mt-1 text-xs leading-5 text-quiet-text-secondary">Check the target record and configuration before taking another action.</p>}
         </div>}
         {action.status === 'pending' && <div className="mt-3 flex items-center gap-3">
-          {canEdit && lifecycle === 'open' && !blockedReason ? <><QuietPrimaryAction disabled={!action.revision} onClick={() => setSelection({ action, kind: 'accept' })}>Review action</QuietPrimaryAction><QuietTextAction disabled={!action.revision} onClick={() => setSelection({ action, kind: 'dismiss' })}>Dismiss</QuietTextAction></> : <p className="text-xs text-quiet-text-tertiary">{blockedReason || (lifecycle === 'paused' ? 'Resume this signal to review actions.' : lifecycle === 'closed' ? 'This signal is closed. No further actions can be approved.' : 'A teammate with CRM edit access can review this action.')}</p>}
+          {canEdit && lifecycle === 'open' && !blockedReason ? <><Button type="button" variant="outline" size="sm" disabled={!action.revision} onClick={() => setSelection({ action, kind: 'accept' })}>Review action</Button><QuietTextAction disabled={!action.revision} onClick={() => setSelection({ action, kind: 'dismiss' })}>Dismiss</QuietTextAction></> : <p className="text-xs text-quiet-text-tertiary">{blockedReason || (lifecycle === 'paused' ? 'Resume this signal to review actions.' : lifecycle === 'closed' ? 'This signal is closed. No further actions can be approved.' : 'A teammate with CRM edit access can review this action.')}</p>}
           {!action.revision && <span className="text-xs text-quiet-accent">Refresh to load the latest recommendation.</span>}
         </div>}
       </div>)}</div>
