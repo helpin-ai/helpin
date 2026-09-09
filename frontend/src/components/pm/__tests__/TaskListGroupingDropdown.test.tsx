@@ -33,10 +33,12 @@ describe('task list grouping toolbar', () => {
   it('keeps Group by visible and updates the grouping through the shared menu', async () => {
     const { container, change } = await render();
     const trigger = () => container.querySelector<HTMLButtonElement>('button')!;
+    expect(trigger().textContent).toContain('Group by:');
     expect(trigger().getAttribute('aria-label')).toBe('Group by: State');
     await act(async () => trigger().click());
     await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="priority"]')!.click());
     expect(change).toHaveBeenCalledWith('priority');
+    expect(trigger().textContent).toContain('Group by:');
     expect(trigger().getAttribute('aria-label')).toBe('Group by: Priority');
     expect(trigger().getAttribute('aria-expanded')).toBe('false');
     await act(async () => trigger().click());

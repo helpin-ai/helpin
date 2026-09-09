@@ -15,6 +15,7 @@ export function TaskListGroupingDropdown<T extends string>({
   return (
     <QuietFilterDropdown
       label="Group by"
+      showLabel="inline"
       value={value}
       options={options}
       onChange={next => onChange(next as T)}

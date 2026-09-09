@@ -49,8 +49,8 @@ interface QuietFilterDropdownBaseProps {
   icon?: ReactNode;
   disabled?: boolean;
   id?: string;
-  /** Keep a visible category label above the trigger in dense filter bars. */
-  showLabel?: boolean;
+  /** Show the category above the trigger, or inline before the selected value. */
+  showLabel?: boolean | 'inline';
   /** Context shown when no values are selected, e.g. "All states". */
   emptyLabel?: string;
   /** Search matches option labels; enabled by default in both selection modes. */
@@ -91,7 +91,7 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
 
   return (
     <div className="flex min-w-0 max-w-full flex-col gap-0.5">
-      {showLabel && <label htmlFor={triggerId} className="text-xs font-medium text-quiet-text-tertiary">{label}</label>}
+      {showLabel === true && <label htmlFor={triggerId} className="text-xs font-medium text-quiet-text-tertiary">{label}</label>}
       <div className="flex min-w-0 items-center">
         <QuietDropdown label={label} open={open} onOpenChange={setOpen} disabled={disabled}
           selected={selected} options={options.map(option => ({ ...option, className: option.labelClassName }))}
@@ -107,6 +107,7 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
               className={cn(quietSelectTriggerClassName, 'inline-flex h-8 items-center justify-between gap-1.5 px-2 text-ui')}
             >
               {icon && <span className="shrink-0" aria-hidden="true">{icon}</span>}
+              {showLabel === 'inline' && <span className="shrink-0 text-quiet-text-tertiary">{label}:</span>}
               <span className="truncate">{props.multiple && selected.length > 1 && !showLabel ? `${label}: ` : ''}{summary}</span>
               <ArrowDown01Icon aria-hidden="true" className="size-3.5 shrink-0 text-quiet-text-tertiary" />
             </button>
