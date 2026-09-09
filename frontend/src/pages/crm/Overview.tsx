@@ -164,7 +164,7 @@ export function CRMOverviewPage() {
         )}
       />
 
-      <div className="min-h-0 flex-1 overflow-auto p-4 md:p-6">
+      <div className="min-h-0 flex-1 overflow-auto px-4 pt-4 pb-32 md:px-6 md:pt-6">
         <div className="mx-auto w-full max-w-4xl">
 
         {hasLoadError && (
