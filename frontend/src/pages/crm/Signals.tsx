@@ -8,6 +8,7 @@ import { useCRMSignalInbox } from '@/hooks/queries/useCRMSituations';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useTitle } from '@/hooks/useTitle';
+import { timeAgo } from '@/lib/utils';
 import { signalCategories } from '@/lib/crmSituationPresentation';
 import { inboxNavigation, inboxStatus, parseSignalsSearch, type SignalsSearch } from '@/lib/crmSignalInboxQueryBuilder';
 import type { CRMSignalInboxItem } from '@/lib/crmSignalInboxTypes';
@@ -17,6 +18,16 @@ import { RecommendationDrawer } from '@/components/crm/signals/RecommendationDra
 import { SignalGroupDrawer } from '@/components/crm/signals/SignalGroupDrawer';
 
 interface Props { search: SignalsSearch; onChange: (search: SignalsSearch, replace?: boolean) => void }
+
+function SignalReceivedTime({ item }: { item: CRMSignalInboxItem }) {
+  const received = new Date(item.created_at);
+  if (Number.isNaN(received.getTime())) return <span aria-label="Arrival time unavailable">—</span>;
+  const exactTime = received.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'long' });
+  return <Tooltip>
+    <TooltipTrigger asChild><time dateTime={item.created_at} tabIndex={0} className="rounded-sm focus-visible:outline-2 focus-visible:outline-quiet-field">{timeAgo(received)}</time></TooltipTrigger>
+    <TooltipContent>{item.kind === 'evidence' ? 'Latest signal received' : 'Received'}: {exactTime}</TooltipContent>
+  </Tooltip>;
+}
 
 export function SignalsPage({ search, onChange }: Props) {
   useTitle('Signals');
@@ -61,13 +72,14 @@ function SignalsList({ ws, slug, canEdit, search, onChange }: Props & { ws: stri
     {list.isPending ? <PlaybookLoading /> : list.isError ? <PlaybookError error={list.error} retry={() => void list.refetch()} /> : <>
       {category === 'all' && list.data.uncategorized_count > 0 && <p className="py-3 text-xs text-quiet-text-tertiary">{list.data.uncategorized_count} {list.data.uncategorized_count === 1 ? 'signal needs' : 'signals need'} customer context before a category can be determined. Included in All.</p>}
       {list.data.data.length ? <Table aria-label="Signals" aria-busy={list.isFetching || (search.q?.trim() || '') !== query}>
-        <TableHeader><TableRow><TableHead>Signal</TableHead><TableHead>Customer</TableHead><TableHead>Category</TableHead><TableHead>Owner</TableHead><TableHead><span className="inline-flex items-center">Priority<PlaybookHelp label="About signal priority">Based on signal importance, recency, evidence confidence, and available deal context. High: 15 or above. Medium: 8 to below 15. Low: below 8.</PlaybookHelp></span></TableHead></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead>Signal</TableHead><TableHead>Customer</TableHead><TableHead>Category</TableHead><TableHead>Owner</TableHead><TableHead><span className="inline-flex items-center">Priority<PlaybookHelp label="About signal priority">Based on signal importance, recency, evidence confidence, and available deal context. High: 15 or above. Medium: 8 to below 15. Low: below 8.</PlaybookHelp></span></TableHead><TableHead>Received</TableHead></TableRow></TableHeader>
         <TableBody>{list.data.data.map((item) => <TableRow key={item.kind + ':' + item.id} className="cursor-pointer" onClick={(event) => { if (!(event.target as HTMLElement).closest('a,button')) select(item); }}>
           <TableCell className="min-w-72 max-w-xl whitespace-normal"><button type="button" onClick={() => select(item)} className="text-left font-semibold leading-6 text-quiet-text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-quiet-field">{item.title}</button>{item.next_step && <p className="mt-1 text-xs leading-5 text-quiet-text-secondary">{item.next_step}</p>}<p className="mt-1 text-xs text-quiet-text-tertiary">{inboxStatus(item)}</p></TableCell>
           <TableCell className="min-w-40 max-w-56 whitespace-normal text-quiet-text-secondary">{item.customer_name || 'Customer unavailable'}</TableCell>
           <TableCell className="max-w-40 whitespace-normal text-xs text-quiet-text-secondary">{signalCategories.find((entry) => entry.value === item.category)?.label || 'Needs customer context'}</TableCell>
           <TableCell className="min-w-32 max-w-44 whitespace-normal">{item.owner_name || 'Unassigned'}{item.owner_member_id && !item.owner_available && <span className="block text-xs text-quiet-accent">Unavailable</span>}</TableCell>
           <TableCell className="text-sm tabular-nums text-quiet-text-secondary"><Tooltip><TooltipTrigger asChild><span tabIndex={0}>{{ high: 'High', medium: 'Medium', low: 'Low', unscored: 'Not scored' }[item.priority_band]}</span></TooltipTrigger><TooltipContent>{item.priority === null ? 'This recommendation has no signal priority score yet.' : 'Signal priority score: ' + item.priority.toLocaleString(undefined, { maximumFractionDigits: 1 })}</TooltipContent></Tooltip></TableCell>
+          <TableCell className="whitespace-nowrap text-xs tabular-nums text-quiet-text-tertiary"><SignalReceivedTime item={item} /></TableCell>
         </TableRow>)}</TableBody>
       </Table> : <QuietEmptyState title={filtered ? 'No signals match this view' : 'No signals yet'} description={filtered ? 'Try another category, assignment, or status.' : 'Customer activity and recommendations will appear here when there is something to follow up on.'} action={filtered ? <QuietTextAction onClick={() => clear('all')}>Show all signals</QuietTextAction> : <Link className="text-sm text-quiet-accent hover:underline" to="/w/$slug/crm/insights" params={{ slug }} search={{ view: 'evidence' }}>Explore customer evidence</Link>} />}
       <PlaybookPagination page={filters.page || 1} total={list.data.total} pageSize={list.data.page_size} onChange={(page) => onChange({ ...search, page })} busy={list.isFetching} />
