@@ -1,25 +1,31 @@
+import { DetailMetadataRow as MetadataRow } from '@/components/pm/DetailMetadataRow';
+import { DetailDescriptionEditButton } from '@/components/pm/DetailDescriptionEditButton';
+import { DetailDescriptionEditorActions } from '@/components/pm/DetailDescriptionEditorActions';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { useObjective } from '@/hooks/queries/useObjectives';
+import { queryKeys } from '@/lib/queryKeys';
+import { unwrap } from '@/lib/queryUtils';
+import { useObjectiveAutosave } from './useObjectiveAutosave';
+import { QuietBreadcrumbs, QuietDetailHeader, QuietDetailLayout, QuietEmptyState, QuietMetricBlock, QuietMetricGrid, QuietSectionHeader, QuietStatusText, QuietTextAction, QuietTitleInput } from '@/components/design-system/quiet';
+import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { getRouteApi, useNavigate, useBlocker } from '@tanstack/react-router';
 import { differenceInDays, format, formatDistanceToNow, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
 import {
-  ArrowLeft02Icon,
   Calendar03Icon,
   FavouriteIcon,
   InformationCircleIcon,
   Loading01Icon,
-  PencilEdit01Icon,
   PlusSignIcon,
-  Target01Icon,
   Delete01Icon,
   UserIcon,
   UserGroupIcon,
   Cancel01Icon,
   HashtagIcon,
-  HexagonIcon,
-  Target02Icon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -53,13 +59,13 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import type {
   AttachmentResponse,
-  EpicWithStats,
   KeyResult,
   KeyResultType,
   ObjectiveHealth,
   ObjectiveState,
   ObjectiveWithDetails,
   UpdateObjectiveRequest,
+  UpdateKeyResultRequest,
 } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
@@ -71,9 +77,9 @@ const stateOptions: { value: ObjectiveState; label: string; className: string }[
 ).map(([value, cfg]) => ({ value, label: cfg.label, className: cfg.color }));
 
 const healthOptions: { value: ObjectiveHealth; label: string; color: string }[] = [
-  { value: 'on_track', label: 'On Track', color: 'text-green-600' },
-  { value: 'at_risk', label: 'At Risk', color: 'text-amber-600' },
-  { value: 'off_track', label: 'Off Track', color: 'text-red-600' },
+  { value: 'on_track', label: 'On track', color: 'text-green-600' },
+  { value: 'at_risk', label: 'At risk', color: 'text-yellow-600' },
+  { value: 'off_track', label: 'Off track', color: 'text-red-600' },
 ];
 
 const OBJECTIVE_MANAGER_TOOLTIP = 'Only team managers can edit objectives. Ask your team manager for access.';
@@ -99,28 +105,6 @@ function ManagerOnlyTooltip({
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
-  );
-}
-
-// ── Sidebar Popover Select ─────────────────────────────────────────
-
-// ── Metadata Row ───────────────────────────────────────────────────
-
-function MetadataRow({
-  icon: Icon,
-  label,
-  children,
-}: {
-  icon: React.ElementType;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <>
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-[12px] text-muted-foreground self-center">{label}</span>
-      <div className="min-w-0 self-center text-[12px]">{children}</div>
-    </>
   );
 }
 
@@ -151,7 +135,7 @@ function MultiValueList({
         <span className="text-xs text-muted-foreground px-1.5 py-0.5">None</span>
       )}
       {selected.map((item) => (
-        <div key={item.id} className="flex items-center justify-between rounded-md bg-muted/50 px-2 py-0.5 text-xs">
+        <div key={item.id} className="flex items-center justify-between gap-2 py-0.5 text-xs">
           <span className="truncate">{item.name}</span>
           <ManagerOnlyTooltip disabled={!!readOnly}>
             <button
@@ -196,6 +180,8 @@ function KeyResultRow({
   onUpdate,
   onDelete,
   readOnly,
+  registerSave,
+  onDirtyChange,
 }: {
   kr: KeyResult;
   workspaceId: string;
@@ -203,46 +189,54 @@ function KeyResultRow({
   onUpdate: (updated: KeyResult) => void;
   onDelete: () => void;
   readOnly?: boolean;
+  registerSave: (id: string, save: (() => Promise<void>) | null) => void;
+  onDirtyChange: (id: string, dirty: boolean) => void;
 }) {
   const [editingName, setEditingName] = useState(false);
-  const [name, setName] = useState(kr.name);
-  const [currentValue, setCurrentValue] = useState(String(kr.current_value));
-  // Sync local state when kr prop changes (after save)
-  useEffect(() => { setName(kr.name); }, [kr.name]);
-  useEffect(() => { setCurrentValue(String(kr.current_value)); }, [kr.current_value]);
+  const [nameDraft, setName] = useState<string | null>(null);
+  const [valueDraft, setCurrentValue] = useState<string | null>(null);
+  const name = nameDraft ?? kr.name;
+  const currentValue = valueDraft ?? String(kr.current_value);
+  const [source, setSource] = useState(kr);
 
-  const saveValue = async () => {
-    const val = parseFloat(currentValue);
-    if (isNaN(val) || val === kr.current_value) return;
-    const { data } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, { current_value: val });
-    if (data) onUpdate(data);
-  };
+  const { queuePatch, flush, saving, dirty, error } = useObjectiveAutosave<UpdateKeyResultRequest>({
+    pendingUploads: 0,
+    debounceMs: null,
+    save: async patch => {
+      const { data, error: saveError } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, patch);
+      if (saveError || !data) throw new Error(saveError ?? 'Could not save key result');
+      onUpdate(data);
+    },
+  });
+  if (source !== kr && !dirty) {
+    setSource(kr); setName(null); setCurrentValue(null);
+  }
+  useEffect(() => {
+    registerSave(kr.id, flush);
+    return () => registerSave(kr.id, null);
+  }, [registerSave, kr.id, flush]);
+  useEffect(() => {
+    onDirtyChange(kr.id, dirty);
+    return () => onDirtyChange(kr.id, false);
+  }, [onDirtyChange, kr.id, dirty]);
 
+  const saveValue = () => { void flush().catch(() => undefined); };
   const saveName = async () => {
-
-    if (name.trim() === kr.name || !name.trim()) {
-      setName(kr.name);
-      setEditingName(false);
-      return;
-    }
-    const { data } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, { name: name.trim() });
-    if (data) onUpdate(data);
-    setEditingName(false);
+    try { await flush(); setEditingName(false); } catch { /* Keep the edit and show Retry. */ }
   };
-
 
   const lastUpdated = formatDistanceToNow(parseISO(kr.updated_at), { addSuffix: true });
   const updatedByName = kr.updated_by ? memberMap.get(kr.updated_by) : undefined;
 
   return (
-    <div className="group flex items-center gap-3 rounded-lg border border-border/60 px-4 py-3">
+    <div className="group flex flex-wrap items-center gap-3 border-b border-quiet-divider-light py-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {!readOnly && editingName ? (
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); queuePatch({ name: e.target.value.trim() || kr.name }); }}
               onBlur={saveName}
               onKeyDown={(e) => e.key === 'Enter' && saveName()}
               className="w-full bg-transparent text-sm font-medium focus:outline-none"
@@ -261,28 +255,30 @@ function KeyResultRow({
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5">
-          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground uppercase">{kr.result_type}</span>
+          <span className="text-[11px] text-quiet-text-tertiary">{kr.result_type}</span>
           {kr.result_type === 'boolean' ? (
             readOnly ? (
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              <span className={`rounded px-1 py-0.5 text-xs ${
                 kr.progress >= 100
-                  ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                  : 'bg-muted text-muted-foreground'
+                  ? 'text-quiet-positive'
+                  : 'text-quiet-text-tertiary'
               }`}>
                 {kr.progress >= 100 ? 'Done' : 'Not done'}
               </span>
             ) : (
               <button
                 type="button"
-                className={`rounded-full px-2 py-0.5 text-[10px] font-medium cursor-pointer ${
+                className={`rounded px-1 py-0.5 text-xs cursor-pointer ${
                   kr.progress >= 100
-                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-muted text-muted-foreground'
+                    ? 'text-quiet-positive'
+                    : 'text-quiet-text-tertiary'
                 }`}
+                aria-label={`Mark ${kr.name} ${kr.progress >= 100 ? 'not done' : 'done'}`}
+                disabled={saving}
                 onClick={async () => {
                   const newVal = kr.current_value >= kr.target_value ? 0 : kr.target_value;
-                  const { data } = await pmObjectiveService.updateKeyResult(workspaceId, kr.id, { current_value: newVal });
-                  if (data) onUpdate(data);
+                  queuePatch({ current_value: newVal });
+                  await flush().catch(() => undefined);
                 }}
               >
                 {kr.progress >= 100 ? 'Done' : 'Not done'}
@@ -299,10 +295,15 @@ function KeyResultRow({
                   <input
                     type="number"
                     value={currentValue}
-                    onChange={(e) => setCurrentValue(e.target.value)}
+                    aria-label={`Current value for ${kr.name}`}
+                    onChange={(e) => {
+                      setCurrentValue(e.target.value);
+                      const value = Number(e.target.value);
+                      queuePatch({ current_value: e.target.value.trim() && Number.isFinite(value) ? value : kr.current_value });
+                    }}
                     onBlur={saveValue}
                     onKeyDown={(e) => e.key === 'Enter' && saveValue()}
-                    className="w-14 rounded border border-border bg-transparent px-1.5 py-0.5 text-[11px] text-center font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-14 border-0 border-b border-quiet-field bg-transparent px-1 py-0.5 text-xs text-center font-medium text-quiet-text-primary focus-visible:outline-2 focus-visible:outline-quiet-text-primary"
                   />
                 </QuickTooltip>
               )}
@@ -315,18 +316,20 @@ function KeyResultRow({
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground tabular-nums">{Math.round(kr.progress)}%</span>
           <div className="w-24">
-            <Progress value={kr.progress} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+            <Progress value={kr.progress} className="h-1.5 bg-quiet-divider-light [&>[data-slot=progress-indicator]]:bg-quiet-positive" />
           </div>
           {!readOnly && (
             <button
               type="button"
-              className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
+              className="text-quiet-text-tertiary sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
               onClick={onDelete}
+              aria-label={`Delete key result ${kr.name}`}
             >
               <Delete01Icon className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
+        {error && <div className="flex items-center gap-2 text-xs text-destructive" role="alert">{error}<QuietTextAction onClick={() => void flush().catch(() => undefined)}>Retry</QuietTextAction></div>}
         <span className={`text-[11px] text-muted-foreground ${readOnly ? '' : 'pr-6'}`}>
           {updatedByName ? `${updatedByName}, ${lastUpdated}` : `Updated ${lastUpdated}`}
         </span>
@@ -349,22 +352,11 @@ function LinkEpicPopover({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    let active = true;
-    setLoading(true);
-    setLoadError(false);
-    pmEpicService.list(workspaceId, { archived: false }).then(({ data, error }) => {
-      if (!active) return;
-      setAllEpics(data ?? []);
-      setLoadError(Boolean(error));
-    }).catch(() => { if (active) setLoadError(true); }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [open, workspaceId]);
+  const { data: allEpics = [], isLoading: loading, isError: loadError } = useQuery({
+    queryKey: [...queryKeys.pm.epics(workspaceId), { archived: false }],
+    queryFn: async () => unwrap(await pmEpicService.list(workspaceId, { archived: false })),
+    enabled: open,
+  });
 
   const available = allEpics.filter((e) => !linkedEpicIds.includes(e.epic.id));
 
@@ -372,10 +364,10 @@ function LinkEpicPopover({
     <QuietDropdown label="Epics" open={open} onOpenChange={setOpen} disabled={disabled}
       loading={loading} error={loadError ? 'Could not load epics. Close and reopen to retry.' : undefined}
       empty="No available epics" onSelect={onLink} contentClassName="w-64"
-      options={available.map(({ epic }) => ({ value: epic.id, label: epic.name, leading: <HexagonIcon className="h-3 w-3 text-violet-500" /> }))}
-      trigger={<Button variant="outline" size="sm" className="h-7 text-ui" disabled={disabled}>
+      options={available.map(({ epic }) => ({ value: epic.id, label: epic.name, leading: <EpicColorSwatch color={epic.color} /> }))}
+      trigger={<QuietTextAction disabled={disabled}>
         <PlusSignIcon className="mr-1 h-3 w-3" />Add Epics
-      </Button>} />
+      </QuietTextAction>} />
   );
 }
 
@@ -410,15 +402,16 @@ export function ObjectiveDetailPage() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit, isAdmin, canManageTeam } = usePermissions(access);
 
-  const [data, setData] = useState<ObjectiveWithDetails | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const objectiveQuery = useObjective(workspaceId ?? '', objectiveId);
+  const { data, isLoading: loading, error } = objectiveQuery;
+  const setData = useCallback((next: ObjectiveWithDetails | ((previous: ObjectiveWithDetails | undefined) => ObjectiveWithDetails | undefined)) => {
+    queryClient.setQueryData<ObjectiveWithDetails>(queryKeys.pm.objective(workspaceId ?? '', objectiveId), next);
+  }, [queryClient, workspaceId, objectiveId]);
+  const refreshObjectives = useCallback(() => queryClient.invalidateQueries({ queryKey: queryKeys.pm.objectives(workspaceId ?? ''), refetchType: 'all' }), [queryClient, workspaceId]);
 
   const [form, setForm] = useState<FormState | null>(null);
-  const [pendingPatch, setPendingPatch] = useState<UpdateObjectiveRequest>({});
-  const pendingPatchRef = useRef<UpdateObjectiveRequest>({});
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [formSource, setFormSource] = useState<ObjectiveWithDetails>();
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const savedDescriptionRef = useRef('');
 
@@ -442,92 +435,99 @@ export function ObjectiveDetailPage() {
   const [newKrTarget, setNewKrTarget] = useState('100');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
+  const descriptionEditStartRef = useRef('');
+  const removedDescriptionAttachments = useRef(new Set<string>());
 
-  // Load data
-  const loadData = useCallback(async () => {
-    if (!workspaceId) return;
-    setLoading(true);
-    setError(null);
-    const { data: obj, error: err } = await pmObjectiveService.get(workspaceId, objectiveId);
-    if (err || !obj) {
-      setError(err ?? 'Objective not found');
-      setLoading(false);
-      return;
-    }
-    setData(obj);
-    savedDescriptionRef.current = obj.objective.description ?? '';
-    setForm(buildForm(obj));
-    setLoading(false);
-  }, [workspaceId, objectiveId]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // Auto-save debounce
-  useEffect(() => {
-    if (
-      saving ||
-      Object.keys(pendingPatch).length === 0 ||
-      !workspaceId ||
-      !data ||
-      (pendingPatch.description !== undefined && descriptionPendingUploads > 0)
-    ) return;
-    const timer = window.setTimeout(async () => {
-      const patch = pendingPatch;
-      const previousDescription = savedDescriptionRef.current;
-      setPendingPatch({});
-      pendingPatchRef.current = {};
-      setSaving(true);
-      const { data: updated, error: err } = await pmObjectiveService.update(workspaceId, data.objective.id, patch);
-      if (err || !updated) {
-        setSaveError(err ?? 'Failed to save');
-        setPendingPatch((current) => {
-          const next = { ...patch, ...current };
-          pendingPatchRef.current = next;
-          return next;
-        });
-      } else {
-        setSaveError(null);
-        setData(updated);
-        const nextDescription = updated.objective.description ?? '';
-        savedDescriptionRef.current = nextDescription;
-        if (patch.description !== undefined) {
-          const removedAttachmentIds = diffRemovedInlineAttachmentIds(previousDescription, nextDescription);
-          if (removedAttachmentIds.length > 0) {
-            await Promise.allSettled(
-              removedAttachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
-            );
-          }
-        }
-        // Re-sync form from server, but don't overwrite fields the user edited during the save
-        const fresh = buildForm(updated);
-        const stillPending = pendingPatchRef.current;
-        setForm((current) => {
-          if (!current) return current;
-          const synced = { ...current };
-          for (const key of Object.keys(fresh) as (keyof FormState)[]) {
-            if (!(key in stillPending)) {
-              (synced as any)[key] = fresh[key];
-            }
-          }
-          return synced;
-        });
-      }
-      setSaving(false);
-    }, 650);
-    return () => window.clearTimeout(timer);
-  }, [workspaceId, data, pendingPatch, saving, descriptionPendingUploads]);
-
-  const queuePatch = (patch: UpdateObjectiveRequest) => {
-    setPendingPatch((current) => {
-      const next = { ...current, ...patch };
-      pendingPatchRef.current = next;
+  const keyResultSaves = useRef(new Map<string, () => Promise<void>>());
+  const [dirtyKeyResults, setDirtyKeyResults] = useState<Set<string>>(() => new Set());
+  const registerKeyResultSave = useCallback((id: string, save: (() => Promise<void>) | null) => {
+    if (save) keyResultSaves.current.set(id, save);
+    else keyResultSaves.current.delete(id);
+  }, []);
+  const onKeyResultDirtyChange = useCallback((id: string, isDirty: boolean) => {
+    setDirtyKeyResults(current => {
+      if (current.has(id) === isDirty) return current;
+      const next = new Set(current);
+      if (isDirty) next.add(id); else next.delete(id);
       return next;
     });
+  }, []);
+
+  const cleanupDescriptionAttachments = useCallback(async (description: string) => {
+    if (!workspaceId) return;
+    const retained = new Set(extractInlineAttachmentIds(description));
+    const removed = [...removedDescriptionAttachments.current].filter(id => !retained.has(id));
+    await Promise.allSettled(removed.map(async id => {
+      const result = await pmAttachmentService.remove(workspaceId, id);
+      if (!result.error) removedDescriptionAttachments.current.delete(id);
+    }));
+    for (const id of retained) removedDescriptionAttachments.current.delete(id);
+  }, [workspaceId]);
+
+  const { queuePatch, flush, saving, error: saveError, dirty } = useObjectiveAutosave({
+    pendingUploads: descriptionPendingUploads,
+    save: async (patch) => {
+      if (!workspaceId) throw new Error('Workspace unavailable');
+      const previousDescription = savedDescriptionRef.current;
+      const { data: updated, error: updateError } = await pmObjectiveService.update(workspaceId, objectiveId, patch);
+      if (updateError || !updated) throw new Error(updateError ?? 'Failed to save objective');
+      setData(updated);
+      const nextDescription = updated.objective.description ?? '';
+      savedDescriptionRef.current = nextDescription;
+      if (patch.description !== undefined) {
+        for (const id of diffRemovedInlineAttachmentIds(previousDescription, nextDescription)) removedDescriptionAttachments.current.add(id);
+        // Cancel can restore the description that was present when editing began.
+        if (!editingDescription) await cleanupDescriptionAttachments(nextDescription);
+      }
+      await refreshObjectives();
+    },
+  });
+
+  // Adopt remote changes only when the local draft is clean.
+  if (data && !dirty && formSource !== data) {
+    setFormSource(data);
+    setForm(buildForm(data));
+  }
+  useEffect(() => {
+    if (data && !dirty) savedDescriptionRef.current = data.objective.description ?? '';
+  }, [data, dirty]);
+
+  const flushAll = async () => {
+    await flush();
+    await Promise.all([...keyResultSaves.current.values()].map(save => save()));
+    await cleanupDescriptionAttachments(form?.description ?? savedDescriptionRef.current);
   };
+  useBlocker({
+    shouldBlockFn: async () => {
+      if (!dirty && dirtyKeyResults.size === 0 && !editingDescription) return false;
+      try { await flushAll(); return false; } catch { return true; }
+    },
+    enableBeforeUnload: dirty || dirtyKeyResults.size > 0,
+  });
+
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateObjectiveRequest) => {
     setForm((current) => current ? { ...current, [key]: value } : current);
     queuePatch(patch);
+  };
+
+  const beginDescriptionEditing = () => {
+    if (!form || !canEdit) return;
+    descriptionEditStartRef.current = form.description;
+    setEditingDescription(true);
+  };
+  const finishDescriptionEditing = async () => {
+    try {
+      await flush();
+      await cleanupDescriptionAttachments(form?.description ?? savedDescriptionRef.current);
+      setEditingDescription(false);
+    } catch { /* Keep the editor open so the failed save can be retried. */ }
+  };
+  const cancelDescriptionEditing = () => {
+    if (!form) return;
+    const initialDescription = descriptionEditStartRef.current;
+    if (form.description !== initialDescription) updateField('description', initialDescription, { description: initialDescription });
+    setEditingDescription(false);
   };
 
   const handleDescriptionAttachmentDelete = useCallback(
@@ -548,133 +548,71 @@ export function ObjectiveDetailPage() {
         return 'prevent' as const;
       }
 
-      const previousDescription = form.description;
-      const nextDescription = removeInlineImagesByAttachmentIds(previousDescription, [entry.attachment.id]);
-
-      setForm((current) => (current ? { ...current, description: nextDescription } : current));
-      setPendingPatch((current) => {
-        const { description, ...rest } = current;
-        pendingPatchRef.current = rest;
-        return rest;
-      });
-      setSaving(true);
-
-      const { data: updated, error: err } = await pmObjectiveService.update(workspaceId, data.objective.id, {
-        description: nextDescription,
-      });
-      if (err || !updated) {
-        setForm((current) => (current ? { ...current, description: previousDescription } : current));
-        setSaveError(err ?? 'Failed to save');
-        setSaving(false);
+      const nextDescription = removeInlineImagesByAttachmentIds(form.description, [entry.attachment.id]);
+      setForm(current => current ? { ...current, description: nextDescription } : current);
+      queuePatch({ description: nextDescription });
+      try {
+        await flush();
+        return 'handled' as const;
+      } catch {
         return 'prevent' as const;
       }
-
-      setSaveError(null);
-      setData(updated);
-      savedDescriptionRef.current = updated.objective.description ?? '';
-      await pmAttachmentService.remove(workspaceId, entry.attachment.id);
-      setSaving(false);
-      return 'handled' as const;
     },
-    [workspaceId, data, form],
+    [workspaceId, data, form, confirm, queuePatch, flush],
   );
 
-  // Key result handlers
+  const runMutation = async <T,>(action: () => Promise<{ data: T | null; error: string | null }>) => {
+    try {
+      await flush();
+      const result = await action();
+      if (result.error) throw new Error(result.error);
+      await refreshObjectives();
+      return { ok: true, data: result.data };
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : 'Could not update objective');
+      return { ok: false, data: null };
+    }
+  };
+
   const handleCreateKeyResult = async () => {
     if (!workspaceId || !data || !newKrName.trim()) return;
-    const startVal = parseFloat(newKrStart) || 0;
-    const targetVal = newKrType === 'boolean' ? 1 : (parseFloat(newKrTarget) || 100);
-    const { data: kr } = await pmObjectiveService.createKeyResult(workspaceId, data.objective.id, {
-      name: newKrName.trim(),
-      result_type: newKrType,
-      initial_value: startVal,
-      current_value: startVal,
-      target_value: targetVal,
-    });
-    if (kr) {
-      setData((prev) => prev ? { ...prev, key_results: [...prev.key_results, kr] } : prev);
-      setNewKrName('');
-      setNewKrType('percent');
-      setNewKrStart('0');
-      setNewKrTarget('100');
-      setKrModalOpen(false);
+    const startVal = Number(newKrStart);
+    const targetVal = newKrType === 'boolean' ? 1 : Number(newKrTarget);
+    if (!Number.isFinite(startVal) || !Number.isFinite(targetVal)) {
+      toast.error('Enter valid initial and target values');
+      return;
+    }
+    const result = await runMutation(() => pmObjectiveService.createKeyResult(workspaceId, objectiveId, {
+      name: newKrName.trim(), result_type: newKrType,
+      initial_value: startVal, current_value: startVal, target_value: targetVal,
+    }));
+    if (result.ok) {
+      setNewKrName(''); setNewKrType('percent'); setNewKrStart('0'); setNewKrTarget('100'); setKrModalOpen(false);
     }
   };
 
   const handleUpdateKeyResult = (updated: KeyResult) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        key_results: prev.key_results.map((kr) => kr.id === updated.id ? updated : kr),
-      };
-    });
+    setData(previous => previous ? { ...previous, key_results: previous.key_results.map(kr => kr.id === updated.id ? updated : kr) } : previous);
+    void refreshObjectives();
   };
-
   const handleDeleteKeyResult = async (id: string) => {
-    if (!workspaceId) return;
-    await pmObjectiveService.deleteKeyResult(workspaceId, id);
-    setData((prev) => {
-      if (!prev) return prev;
-      return { ...prev, key_results: prev.key_results.filter((kr) => kr.id !== id) };
-    });
+    if (workspaceId) await runMutation(() => pmObjectiveService.deleteKeyResult(workspaceId, id));
   };
-
-  // Team/Owner handlers
   const handleAddTeam = async (teamId: string) => {
-    if (!workspaceId || !data) return;
-    await pmObjectiveService.addTeam(workspaceId, data.objective.id, teamId);
-    setData((prev) => prev ? { ...prev, teams: [...prev.teams, teamId] } : prev);
+    if (workspaceId) await runMutation(() => pmObjectiveService.addTeam(workspaceId, objectiveId, teamId));
   };
-
   const handleRemoveTeam = async (teamId: string) => {
-    if (!workspaceId || !data) return;
-    await pmObjectiveService.removeTeam(workspaceId, data.objective.id, teamId);
-    setData((prev) => prev ? { ...prev, teams: prev.teams.filter((t) => t !== teamId) } : prev);
+    if (workspaceId) await runMutation(() => pmObjectiveService.removeTeam(workspaceId, objectiveId, teamId));
   };
-
-  const handleAddOwner = async (workspaceMemberId: string) => {
-    if (!workspaceId || !data) return;
-    await pmObjectiveService.addOwner(workspaceId, data.objective.id, workspaceMemberId);
-    setData((prev) => prev ? {
-      ...prev,
-      owner_member_ids: [...new Set([...(prev.owner_member_ids ?? []), workspaceMemberId])],
-    } : prev);
-  };
-
-  const handleRemoveOwner = async (workspaceMemberId: string) => {
-    if (!workspaceId || !data) return;
-    await pmObjectiveService.removeOwner(workspaceId, data.objective.id, workspaceMemberId);
-    setData((prev) => prev ? {
-      ...prev,
-      owner_member_ids: (prev.owner_member_ids ?? []).filter((id) => id !== workspaceMemberId),
-    } : prev);
-  };
-
   const handleOwnerSelectionChange = async (nextOwnerIds: string[]) => {
-    const currentOwnerIds = data?.owner_member_ids ?? data?.owners ?? [];
-    const ownersToAdd = nextOwnerIds.filter((id) => !currentOwnerIds.includes(id));
-    const ownersToRemove = currentOwnerIds.filter((id) => !nextOwnerIds.includes(id));
-
-    for (const ownerId of ownersToAdd) {
-      await handleAddOwner(ownerId);
-    }
-    for (const ownerId of ownersToRemove) {
-      await handleRemoveOwner(ownerId);
-    }
+    if (!workspaceId) return;
+    await runMutation(() => pmObjectiveService.update(workspaceId, objectiveId, { owner_member_ids: nextOwnerIds }));
   };
-
-  // Epic handlers
   const handleLinkEpic = async (epicId: string) => {
-    if (!workspaceId || !data) return;
-    await pmObjectiveService.addEpic(workspaceId, data.objective.id, epicId);
-    loadData();
+    if (workspaceId) await runMutation(() => pmObjectiveService.addEpic(workspaceId, objectiveId, epicId));
   };
-
   const handleUnlinkEpic = async (epicId: string) => {
-    if (!workspaceId || !data) return;
-    await pmObjectiveService.removeEpic(workspaceId, data.objective.id, epicId);
-    setData((prev) => prev ? { ...prev, epics: prev.epics.filter((e) => e.epic.id !== epicId) } : prev);
+    if (workspaceId) await runMutation(() => pmObjectiveService.removeEpic(workspaceId, objectiveId, epicId));
   };
 
   // Derived
@@ -692,24 +630,11 @@ export function ObjectiveDetailPage() {
 
   const goBack = () => navigate({ to: '/w/$slug/pm/objectives', params: { slug } });
 
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+  if (loading || (!form && data)) {
+    return <div className="flex h-full flex-col"><QuietDetailHeader title="Objective" breadcrumbs={<QuietBreadcrumbs items={[{ id: 'objectives', label: 'Objectives', onClick: goBack }]} onBack={goBack} backLabel="Back to objectives" />} /><div role="status" className="flex items-center gap-2 px-6 py-8 text-sm text-quiet-text-tertiary"><Loading01Icon className="h-4 w-4 animate-spin" />Loading objective…</div></div>;
   }
-
   if (error || !data || !form) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-muted-foreground">{error ?? 'Objective not found'}</p>
-        <Button variant="outline" size="sm" onClick={goBack}>
-          <ArrowLeft02Icon className="mr-1 h-3.5 w-3.5" />
-          Back to Objectives
-        </Button>
-      </div>
-    );
+    return <div className="flex h-full flex-col"><QuietDetailHeader title="Objective" breadcrumbs={<QuietBreadcrumbs items={[{ id: 'objectives', label: 'Objectives', onClick: goBack }]} onBack={goBack} backLabel="Back to objectives" />} /><QuietEmptyState title="Couldn’t load objective" description={error?.message ?? 'This objective is unavailable.'} action={<QuietTextAction onClick={() => void objectiveQuery.refetch()}>Retry</QuietTextAction>} /></div>;
   }
 
   const krAvgProgress = data.key_results.length > 0
@@ -719,101 +644,63 @@ export function ObjectiveDetailPage() {
   const epicProgress = data.stats.epic_task_count > 0
     ? Math.round((data.stats.epic_done_tasks / data.stats.epic_task_count) * 100)
     : 0;
+  const deadlineProgress = form.deadline ? (() => {
+    const start = parseISO(form.planned_start_date || data.objective.created_at);
+    const totalDays = Math.max(differenceInDays(parseISO(form.deadline), start), 1);
+    return Math.min(Math.max(Math.round(differenceInDays(new Date(), start) / totalDays * 100), 0), 100);
+  })() : 0;
   const ownerIds = data.owner_member_ids ?? data.owners;
   const canManageObjective = canEdit && (isAdmin || data.teams.some((teamId) => canManageTeam(teamId)));
 
   return (
     <div className="flex h-full flex-col">
-      {/* ── Header bar ──────────────────────────────────────────── */}
-      <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>
-          <ArrowLeft02Icon className="h-4 w-4" />
-        </Button>
-
-        <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
-          {isStrategic
-            ? <Target02Icon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-            : <Target01Icon className="h-3.5 w-3.5 shrink-0 text-blue-500" />}
-          <span className="text-xs font-medium uppercase tracking-wide">
-            {isStrategic ? 'Strategic' : 'Tactical'} Objective
-          </span>
-        </div>
-
-        <div className="ml-auto flex items-center gap-1">
-          <SaveIndicator saving={saving} error={saveError} />
-          <FollowButton entityType="objective" entityId={data.objective.id} />
-        </div>
-      </div>
+      <QuietDetailHeader
+        className="lg:px-10"
+        breadcrumbs={<QuietBreadcrumbs items={[{ id: 'objectives', label: 'Objectives', onClick: goBack }]} onBack={goBack} backLabel="Back to objectives" />}
+        title={<div className="flex min-w-0 items-center gap-0.5">{canEdit ? <ManagerOnlyTooltip disabled={!canManageObjective} className="w-full">
+          <QuietTitleInput presentation="header" aria-label="Objective title" value={form.name}
+            className="max-w-[42rem] border-b-transparent hover:border-quiet-field focus-visible:border-quiet-text-primary"
+            onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
+            disabled={!canManageObjective} placeholder="Untitled"
+            onChange={event => updateField('name', event.target.value, { name: event.target.value })} />
+        </ManagerOnlyTooltip> : <h1>{form.name}</h1>}</div>}
+        meta={<span className="text-xs text-quiet-text-tertiary">{isStrategic ? 'Strategic' : 'Tactical'} objective</span>}
+        status={<QuietStatusText className={currentState.className}>{currentState.label}</QuietStatusText>}
+        actions={<FollowButton entityType="objective" entityId={data.objective.id} presentation="detail-header" />}
+        state={<div className="flex items-center gap-2"><SaveIndicator saving={saving || (dirty && !saveError)} error={saveError} presentation="quiet" />
+          {saveError && <QuietTextAction onClick={() => void flush().catch(() => undefined)}>Retry</QuietTextAction>}</div>}
+      />
 
       {/* ── Two-column layout ───────────────────────────────────── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]">
-        {/* ── Left column ────────────────────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 py-8">
-          {/* ── Objective Header Card ──────────────────────────── */}
-          <div className="rounded-lg border border-border/60 p-6">
-            {canEdit ? (
-              <ManagerOnlyTooltip disabled={!canManageObjective} className="w-full">
-                <input
-                  type="text"
-                  aria-label="Objective title"
-                  value={form.name}
-                  disabled={!canManageObjective}
-                  onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-                  className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
-                  placeholder="Untitled"
+      <QuietDetailLayout className="flex flex-col overflow-y-auto lg:grid lg:overflow-hidden [&>div]:shrink-0 [&>div]:overflow-visible lg:[&>div]:overflow-hidden"
+        railClassName="shrink-0 px-5 py-5 pb-40"
+        main={(
+        <div className="min-h-0 px-4 py-5 sm:px-6 lg:h-full lg:overflow-y-auto lg:px-10">
+          <section aria-label="Description" className="group/desc relative rounded-lg pb-3">
+            {editingDescription ? (
+              <div className="group/description-editor">
+                <TiptapEditor
+                  content={form.description}
+                  onChange={(html) => updateField('description', html, { description: html })}
+                  placeholder="Add a description..."
+                  variant="divider"
+                  contentVariant="pm"
+                  className="min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:p-0"
+                  uploadConfig={{ workspaceId: workspaceId!, entityType: 'editor_upload', entityId: workspaceId! }}
+                  onUploadStateChange={setDescriptionPendingUploads}
+                  teams={mentionTeams}
+                  members={assignableMembers}
                 />
-              </ManagerOnlyTooltip>
+                <DetailDescriptionEditorActions onCancel={cancelDescriptionEditing} onDone={() => void finishDescriptionEditing()} />
+              </div>
             ) : (
-              <h1 className="text-2xl font-bold text-foreground">{form.name}</h1>
+              <div className={`relative min-h-9 ${canManageObjective ? 'pr-12' : ''}`}>
+                {form.description ? <RichTextMentionContent html={form.description} members={assignableMembers} teams={mentionTeams} variant="pm" />
+                  : <p className="text-sm text-muted-foreground">{canManageObjective ? 'No description yet' : 'No description'}</p>}
+                {canManageObjective && <DetailDescriptionEditButton onClick={beginDescriptionEditing} />}
+              </div>
             )}
-            <div className="mt-3">
-              {editingDescription ? (
-                <div>
-                  <TiptapEditor
-                    content={form.description}
-                    onChange={(html) => updateField('description', html, { description: html })}
-                    placeholder="Add a description..."
-                    className="border-transparent shadow-none"
-                    uploadConfig={{ workspaceId: workspaceId!, entityType: 'editor_upload', entityId: workspaceId! }}
-                    onUploadStateChange={setDescriptionPendingUploads}
-                    teams={mentionTeams}
-                    members={assignableMembers}
-                  />
-                  <div className="mt-2 flex justify-end">
-                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
-                      Done
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="group/desc relative">
-                  {form.description ? (
-                    <RichTextMentionContent
-                      html={form.description}
-                      members={assignableMembers}
-                      teams={mentionTeams}
-                      className="prose prose-sm dark:prose-invert max-w-none text-sm"
-                    />
-                  ) : (
-                    <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
-                  )}
-                  {canEdit && (
-                    <ManagerOnlyTooltip disabled={!canManageObjective}>
-                      <button
-                        type="button"
-                        disabled={!canManageObjective}
-                        className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-                        onClick={() => setEditingDescription(true)}
-                      >
-                        <PencilEdit01Icon className="h-3 w-3" />
-                        Edit description
-                      </button>
-                    </ManagerOnlyTooltip>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          </section>
 
           <div className="mt-6">
             <Attachments
@@ -826,112 +713,33 @@ export function ObjectiveDetailPage() {
             />
           </div>
 
-          {/* ── Progress Summary ────────────────────────────────── */}
-          <div className="mt-8">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-foreground">Progress Summary</h3>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <FavouriteIcon className="h-3.5 w-3.5" />
-                <span>Health:</span>
-                {canEdit ? (
-                  <ManagerOnlyTooltip disabled={!canManageObjective}>
-                    <SidebarPopoverSelect
-                      value={form.health}
-                      options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
-                      onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
-                      renderTrigger={() => (
-                        <span className={currentHealth.color}>{currentHealth.label}</span>
-                      )}
-                      disabled={!canManageObjective}
-                    />
-                  </ManagerOnlyTooltip>
-                ) : (
-                  <span className={currentHealth.color}>{currentHealth.label}</span>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              {/* Epic Progress Card */}
-              <div className="rounded-lg border border-border/60 p-5">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <HexagonIcon className="h-4 w-4 text-violet-500" />
-                  Epic Progress
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <InformationCircleIcon className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-[240px] text-xs">
-                        Percentage of done tasks across all linked epics: done tasks ÷ total tasks.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <div className="mt-3">
-                  <span className="text-3xl font-bold">{epicProgress}%</span>
-                  <span className="ml-1.5 text-sm text-muted-foreground">Complete</span>
-                </div>
-                <Progress value={epicProgress} className="mt-3 h-2.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Last updated {data.epics.length > 0 ? formatDistanceToNow(parseISO(data.epics.reduce((latest, e) => e.epic.updated_at > latest ? e.epic.updated_at : latest, data.epics[0].epic.updated_at)), { addSuffix: true }) : 'never'}
-                </p>
-              </div>
-
-              {/* Target Date Card */}
-              <div className="rounded-lg border border-border/60 p-5">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Calendar03Icon className="h-4 w-4 text-blue-500" />
-                  Target Date
-                </div>
-                <div className="mt-3">
-                  {form.deadline ? (
-                    <>
-                      <span className="text-3xl font-bold">{format(parseISO(form.deadline), 'MMM d,')}</span>
-                      <span className="ml-1.5 text-lg text-muted-foreground">{format(parseISO(form.deadline), 'yyyy')}</span>
-                    </>
-                  ) : (
-                    <span className="text-lg text-muted-foreground">No target date</span>
-                  )}
-                </div>
-                {form.deadline && (() => {
-                  const start = form.planned_start_date ? parseISO(form.planned_start_date) : data.objective.created_at ? parseISO(data.objective.created_at) : new Date();
-                  const end = parseISO(form.deadline);
-                  const now = new Date();
-                  const totalDays = Math.max(differenceInDays(end, start), 1);
-                  const elapsed = Math.max(differenceInDays(now, start), 0);
-                  const timePct = Math.min(Math.round((elapsed / totalDays) * 100), 100);
-                  const daysLeft = differenceInDays(end, now);
-                  return (
-                    <>
-                      <Progress value={timePct} className="mt-3 h-2.5 bg-sky-500/15 [&>[data-slot=progress-indicator]]:bg-sky-500" />
-                      <p className={`mt-2 text-xs ${form.state === 'closed' ? 'text-muted-foreground' : daysLeft <= 7 ? 'text-red-500 font-medium' : daysLeft <= 14 ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                        {form.state === 'closed'
-                          ? 'Completed'
-                          : daysLeft > 0
-                          ? `Time remaining: ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`
-                          : daysLeft === 0 ? 'Due today' : `${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? 's' : ''} overdue`}
-                      </p>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-
-            {/* Progress insight */}
+          <section className="mt-6" aria-label="Progress summary">
+            <QuietSectionHeader title="Progress" />
+            <QuietMetricGrid className="mt-2 md:grid-cols-3 xl:grid-cols-3">
+              <QuietMetricBlock label="Epic progress" value={`${epicProgress}%`} tone="positive" className="items-start [&>span:first-child]:w-full"
+                description={<><Progress value={epicProgress} aria-valuenow={epicProgress} aria-label="Epic progress" className="my-3 h-1.5 bg-quiet-divider-light" indicatorClassName="bg-quiet-positive" /><span>{data.stats.epic_done_tasks} of {data.stats.epic_task_count} linked tasks completed</span></>} />
+              <QuietMetricBlock label="Key results" className="items-start" value={data.key_results.length ? `${krAvgProgress}%` : '—'}
+                description={data.key_results.length ? `Average across ${data.key_results.length} key results` : 'No key results yet'} />
+              <QuietMetricBlock label="Target date" value={form.deadline ? format(parseISO(form.deadline), 'MMM d, yyyy') : 'Not set'} className="items-start [&>span:first-child]:w-full"
+                description={form.deadline ? <><Progress value={deadlineProgress} aria-valuenow={deadlineProgress} aria-label="Time elapsed toward target date" className="my-3 h-1.5 bg-quiet-divider-light" indicatorClassName="bg-sky-500" /><span>{(() => {
+                  const days = differenceInDays(parseISO(form.deadline), new Date());
+                  return form.state === 'closed' ? 'Completed' : days > 0 ? `${days} days remaining` : days === 0 ? 'Due today' : `${Math.abs(days)} days overdue`;
+                })()}</span></> : 'Set a target date in properties'} />
+            </QuietMetricGrid>
             {data.key_results.length > 0 && Math.abs(epicProgress - krAvgProgress) >= 20 && (
-              <p className="mt-3 rounded-lg border border-border/60 p-3 text-xs text-muted-foreground">
+              <p className="mt-3 text-xs text-quiet-text-tertiary">
                 {epicProgress > krAvgProgress
-                  ? `${epicProgress}% of work is done but only ${krAvgProgress}% of outcomes achieved — results may be lagging behind effort.`
-                  : `${krAvgProgress}% of outcomes achieved with ${epicProgress}% of work done — good outcome efficiency.`}
+                  ? `${epicProgress}% of work is done and ${krAvgProgress}% of outcomes achieved.`
+                  : `${krAvgProgress}% of outcomes achieved with ${epicProgress}% of work done.`}
+                {' '}Based on linked task completion and average key-result progress.
               </p>
             )}
-          </div>
+          </section>
 
           {/* ── Key Results ─────────────────────────────────────── */}
           <div className="mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-foreground">Key Results</h3>
+              <QuietSectionHeader title="Key Results" count={data.key_results.length} />
               <div className="flex items-center gap-2">
                 {data.key_results.length > 0 && (
                   <TooltipProvider>
@@ -947,16 +755,13 @@ export function ObjectiveDetailPage() {
                 )}
                 {canEdit && (
                   <ManagerOnlyTooltip disabled={!canManageObjective}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
+                    <QuietTextAction
                       disabled={!canManageObjective}
                       onClick={() => setKrModalOpen(true)}
                     >
                       <PlusSignIcon className="mr-1 h-3 w-3" />
                       Add Key Results
-                    </Button>
+                    </QuietTextAction>
                   </ManagerOnlyTooltip>
                 )}
               </div>
@@ -971,12 +776,14 @@ export function ObjectiveDetailPage() {
                     memberMap={memberMap}
                     onUpdate={handleUpdateKeyResult}
                     onDelete={() => handleDeleteKeyResult(kr.id)}
+                    registerSave={registerKeyResultSave}
+                    onDirtyChange={onKeyResultDirtyChange}
                     readOnly={!canManageObjective}
                   />
                 ))}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border/60 p-6 text-center">
+              <div className="border-y border-quiet-divider-light py-5 text-left">
                 <p className="text-sm text-muted-foreground">No key results yet</p>
                 <p className="mt-1 text-xs text-muted-foreground/60">Add key results to track outcome progress</p>
               </div>
@@ -986,7 +793,7 @@ export function ObjectiveDetailPage() {
           {/* ── Epics ───────────────────────────────────────────── */}
           <div className="mt-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-foreground">Epics</h3>
+              <QuietSectionHeader title="Linked Epics" count={data.epics.length} />
               {canEdit && (
                 <ManagerOnlyTooltip disabled={!canManageObjective}>
                   <span>
@@ -1009,23 +816,23 @@ export function ObjectiveDetailPage() {
                     ? Math.round((getEpicDoneTaskCount(e.stats) / totalTasks) * 100)
                     : 0;
                   const epicState = e.epic.completed ? 'Done' : e.epic.started ? 'In Progress' : 'Not Started';
-                  const epicStateColor = e.epic.completed ? 'text-green-500' : e.epic.started ? 'text-amber-500' : 'text-zinc-400';
+                  const epicStateColor = e.epic.completed ? 'text-quiet-positive' : e.epic.started ? 'text-quiet-accent' : 'text-quiet-muted';
                   const epicUpdated = formatDistanceToNow(parseISO(e.epic.updated_at), { addSuffix: true });
                   return (
                     <div
                       key={e.epic.id}
                       role="button"
                       tabIndex={0}
-                      className="group flex w-full items-center gap-3 rounded-lg border border-border/60 px-4 py-3 text-left transition-colors hover:border-border hover:bg-accent/30 cursor-pointer"
+                      className="group flex w-full flex-wrap items-center gap-3 border-b border-quiet-divider-light py-3 text-left transition-colors hover:bg-quiet-row-hover focus-visible:outline-2 focus-visible:outline-quiet-text-primary cursor-pointer"
                       onClick={() => navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: e.epic.id } })}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
+                        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
                           event.preventDefault();
                           void navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: e.epic.id } });
                         }
                       }}
                     >
-                      <HexagonIcon className="h-4 w-4 shrink-0 text-violet-500" />
+                      <EpicColorSwatch color={e.epic.color} />
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate" title={e.epic.name}>{e.epic.name}</p>
                         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -1036,14 +843,14 @@ export function ObjectiveDetailPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground tabular-nums">{pct}%</span>
                           <div className="w-24">
-                            <Progress value={pct} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+                            <Progress value={pct} className="h-1.5 bg-quiet-divider-light [&>[data-slot=progress-indicator]]:bg-quiet-positive" />
                           </div>
                           {canEdit && (
                             <ManagerOnlyTooltip disabled={!canManageObjective}>
                               <button
                                 type="button"
                                 disabled={!canManageObjective}
-                                className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground"
+                                className="text-quiet-text-tertiary sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive cursor-pointer transition-opacity disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground"
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   void handleUnlinkEpic(e.epic.id);
@@ -1061,16 +868,17 @@ export function ObjectiveDetailPage() {
                 })}
               </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-border/60 p-8 text-center">
+              <div className="border-y border-quiet-divider-light py-5 text-left">
                 <p className="text-sm text-muted-foreground">No epics linked yet</p>
               </div>
             )}
           </div>
+          <div className="h-20 shrink-0 lg:h-40" aria-hidden="true" />
         </div>
-
-        {/* ── Right column — metadata sidebar ────────────────────── */}
-        <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
-          <div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
+        )}
+        rail={(
+        <>
+          <div className="mt-5 grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
             {/* State */}
             <MetadataRow icon={HashtagIcon} label="State">
               {canEdit ? (
@@ -1096,7 +904,7 @@ export function ObjectiveDetailPage() {
                   <ManagerOnlyTooltip disabled={!canManageObjective}>
                     <SidebarPopoverSelect
                       value={form.health}
-                      options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
+                      options={healthOptions.map((h) => ({ value: h.value, label: h.label, className: h.color }))}
                       onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
                       renderTrigger={() => (
                         <span className={currentHealth.color}>{currentHealth.label}</span>
@@ -1286,8 +1094,9 @@ export function ObjectiveDetailPage() {
               </Button>
             </div>
           )}
-        </aside>
-      </div>
+        </>
+        )}
+      />
 
       {/* ── Add Key Result Modal ─────────────────────────────────── */}
       <Dialog open={krModalOpen} onOpenChange={setKrModalOpen}>
@@ -1303,7 +1112,7 @@ export function ObjectiveDetailPage() {
                 value={newKrName}
                 onChange={(e) => setNewKrName(e.target.value)}
                 placeholder="e.g., Increase activation rate"
-                className="mt-1 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                className="mt-1 w-full border-0 border-b border-quiet-field bg-transparent py-2 text-sm placeholder:text-quiet-muted focus-visible:outline-2 focus-visible:outline-quiet-text-primary"
                 autoFocus
               />
             </div>
@@ -1349,7 +1158,7 @@ export function ObjectiveDetailPage() {
                         type="number"
                         value={newKrStart}
                         onChange={(e) => setNewKrStart(e.target.value)}
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="w-full border-0 border-b border-quiet-field bg-transparent py-2 text-sm focus-visible:outline-2 focus-visible:outline-quiet-text-primary"
                       />
                       {newKrType === 'percent' && (
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
@@ -1363,7 +1172,7 @@ export function ObjectiveDetailPage() {
                         type="number"
                         value={newKrTarget}
                         onChange={(e) => setNewKrTarget(e.target.value)}
-                        className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="w-full border-0 border-b border-quiet-field bg-transparent py-2 text-sm focus-visible:outline-2 focus-visible:outline-quiet-text-primary"
                       />
                       {newKrType === 'percent' && (
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
@@ -1392,8 +1201,8 @@ export function ObjectiveDetailPage() {
         variant="destructive"
         onConfirm={async () => {
           if (!workspaceId || !data) return;
-          await pmObjectiveService.remove(workspaceId, data.objective.id);
-          goBack();
+          const result = await runMutation(() => pmObjectiveService.remove(workspaceId, data.objective.id));
+          if (result.ok) void goBack();
         }}
       />
     </div>

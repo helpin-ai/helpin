@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 
 import {
   ArrowLeft02Icon,
@@ -24,6 +25,7 @@ export interface PMFilterOption {
   value: string;
   label: string;
   icon?: ReactNode;
+  labelClassName?: string;
 }
 
 export interface PMFilterDefinition<K extends string> {
@@ -92,7 +94,7 @@ function PMFilterValueSelect<K extends string>({
                   {option.icon ? (
                     <span className="mr-1.5 shrink-0">{option.icon}</span>
                   ) : null}
-                  <span className="min-w-0 flex-1 truncate">
+                  <span className={cn("min-w-0 flex-1 truncate", option.labelClassName)}>
                     {option.label}
                   </span>
                 </QuietDropdownItem>
@@ -265,7 +267,7 @@ export function PMFilterTrigger<K extends string>({
                     {option.icon ? (
                       <span className="mr-1.5 shrink-0">{option.icon}</span>
                     ) : null}
-                    <span className="min-w-0 flex-1 truncate">
+                    <span className={cn("min-w-0 flex-1 truncate", option.labelClassName)}>
                       {option.label}
                     </span>
                   </QuietDropdownItem>

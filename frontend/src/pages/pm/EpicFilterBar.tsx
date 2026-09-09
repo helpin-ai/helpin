@@ -80,6 +80,7 @@ export function EpicFilterBar({
       value: option.value,
       label: option.label,
       icon: option.leading,
+      labelClassName: option.labelClassName,
     })),
     searchableValues: ['owner', 'label', 'objective'].includes(category.key),
   }));

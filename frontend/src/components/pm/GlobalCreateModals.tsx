@@ -1208,6 +1208,7 @@ function MultiSelectPopover({
 }
 
 function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
   const confirm = useConfirm();
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { canEdit } = usePermissions(access);
@@ -1263,6 +1264,7 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
       setError(createError);
       return;
     }
+    void queryClient.invalidateQueries({ queryKey: queryKeys.pm.objectives(workspaceId) });
     window.dispatchEvent(new CustomEvent('objective-created'));
     onClose();
   };
