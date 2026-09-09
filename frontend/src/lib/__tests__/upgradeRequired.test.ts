@@ -37,3 +37,7 @@ describe('upgradeRequired', () => {
     expect(isUpgradeRequiredError(undefined)).toBe(false);
   });
 });
+
+it.each(['AI completion failed: AI allowance exhausted', 'extra AI usage disabled'])('recognizes backend allowance failure: %s', (message) => {
+  expect(getUpgradeRequiredReason(message)?.kind).toBe('ai_usage');
+});

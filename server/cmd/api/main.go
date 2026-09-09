@@ -1921,6 +1921,9 @@ func main() {
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 
+	meetingRoutingProcessor := service.NewCRMMeetingProcessingService(crmMeetingRepo, crmAssociationRepo, supportLLMProvider, nil, nil, nil, nil)
+	meetingRoutingRecheck := service.NewMeetingFollowUpRecheckService(crmSuggestionRepo, meetingRoutingProcessor)
+
 	handlers := router.Handlers{
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
@@ -1947,7 +1950,7 @@ func main() {
 		PMEpic:              handler.NewPMEpicHandler(pmEpicService),
 		PMRoadmap:           handler.NewPMRoadmapHandler(pmRoadmapService),
 		PMSprint:            handler.NewPMSprintHandler(pmSprintService),
-		PMAISuggestion:      handler.NewPMAISuggestionHandler(pmAISuggestionService),
+		PMAISuggestion:      handler.NewPMAISuggestionHandler(pmAISuggestionService).SetRoutingRecheck(meetingRoutingRecheck),
 		PMTask:              handler.NewPMTaskHandler(pmTaskService),
 		PMTaskInsights:      handler.NewPMTaskInsightsHandler(pmTaskInsightsService),
 		PMComment:           handler.NewPMCommentHandler(pmCommentService),

@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 const suggestion = { id: 'suggestion-1', title: 'Confirm the release checklist', meeting_id: 'meeting-1', meeting_title: 'Engineering weekly sync', meeting_at: '2026-09-08T10:00:00Z', created_at: '2026-09-09T09:00:00Z' };
 const draft = { ...suggestion, draft_subject: suggestion.title, draft_body: 'Please confirm the release checklist and share the remaining blockers before Thursday.', revision: 'revision-1' };
-async function setup(page: Page, options: { readOnly?: boolean; crm?: boolean; empty?: boolean; failList?: boolean; stale?: boolean; long?: boolean; pages?: boolean } = {}) {
+async function setup(page: Page, options: { readOnly?: boolean; crm?: boolean; empty?: boolean; failList?: boolean; stale?: boolean; long?: boolean; pages?: boolean; billing?: boolean } = {}) {
   let reviewed = false;
   let failList = !!options.failList;
   const writes: { path: string; body: unknown }[] = [];
@@ -15,11 +15,15 @@ async function setup(page: Page, options: { readOnly?: boolean; crm?: boolean; e
     const json = (body: unknown, status = 200) => route.fulfill({ status, headers, contentType: 'application/json', body: JSON.stringify(body) });
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...headers, 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' } });
     if (path.endsWith('/v1/event')) return json({});
-    if (path.endsWith('/me')) return json({ membership: { id: 'member-1', role: 'admin' }, permissions: ['pm.read', ...(!options.readOnly ? ['pm.edit'] : []), ...(options.crm ? ['crm.read'] : [])], modules: ['pm'], team_memberships: [] });
+    if (path.endsWith('/me')) return json({ membership: { id: 'member-1', role: 'admin' }, permissions: ['pm.read', ...(!options.readOnly ? ['pm.edit'] : []), ...(options.crm ? ['crm.read', 'crm.edit'] : [])], modules: ['pm'], team_memberships: [] });
     if (path.endsWith('/teams')) return json([]);
     if (path === '/pm/tasks') return json({ data: [], total: 0 });
     if (request.method() === 'POST') {
       writes.push({ path, body: request.postDataJSON() });
+      if (path.endsWith('/recheck-routing')) {
+        if (options.billing) return json({ items: [{ id: 'first', title: 'Completed recap', outcome: 'internal' }], billing_error: 'AI completion failed: AI allowance exhausted' });
+        return json(url.searchParams.has('cursor') ? { items: [] } : { items: [{ id: 'one', title: 'Product team recap', outcome: 'internal' }, { id: 'two', title: 'Customer proposal', outcome: 'customer' }, { id: 'three', title: 'Recording without transcript', outcome: 'missing_transcript' }], next_cursor: 'cursor-1' });
+      }
       if (options.stale) return json({ error: 'stale' }, 409);
       reviewed = true;
       return json({ id: suggestion.id, status: path.endsWith('/accept') ? 'accepted' : 'dismissed', execution_status: 'manual_required' });
@@ -108,4 +112,31 @@ test('keeps long drafts and footer usable on a narrow dark screen and restores k
   await page.screenshot({ path: '/tmp/helpin-my-work-ai-mobile.png' });
   await page.keyboard.press('Escape');
   await expect(row).toBeFocused();
+});
+
+
+test('rechecks routing with concise outcomes and checks the next batch without reviewing drafts', async ({ page }) => {
+  const writes = await setup(page, { crm: true, empty: true });
+  await page.getByRole('button', { name: 'Recheck routing', exact: true }).click();
+  await expect(page.getByText('Product team recap', { exact: true })).toBeVisible();
+  await expect(page.getByText('Moved to the recipient’s AI suggestions', { exact: true })).toBeVisible();
+  await expect(page.getByText('Customer-related · stays in CRM', { exact: true })).toBeVisible();
+  await expect(page.getByText('Transcript unavailable · stays in CRM', { exact: true })).toBeVisible();
+  await page.screenshot({ path: '/tmp/helpin-ai-routing-recheck.png' });
+  await page.getByRole('button', { name: 'Check more', exact: true }).click();
+  await expect(page.getByText('No more unchecked meeting follow-ups found.', { exact: true })).toBeVisible();
+  expect(writes.every(write => write.path === '/pm/ai-suggestions/recheck-routing')).toBe(true);
+  expect(writes).toHaveLength(2);
+});
+
+test('routing recheck is unavailable without CRM access and reports AI billing failures', async ({ page }) => {
+  await setup(page, { readOnly: true });
+  await expect(page.getByRole('button', { name: 'Recheck routing', exact: true })).toHaveCount(0);
+  await page.unrouteAll({ behavior: 'wait' });
+  await setup(page, { crm: true, billing: true });
+  await page.getByRole('button', { name: 'Recheck routing', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText(/AI usage|AI credits|allowance/i);
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('Completed recap', { exact: true })).toBeVisible();
 });

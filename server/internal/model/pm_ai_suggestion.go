@@ -28,3 +28,22 @@ type PMAISuggestionDecisionResult struct {
 	Status          string `json:"status"`
 	ExecutionStatus string `json:"execution_status"`
 }
+
+// MeetingFollowUpRoutingCandidate is internal repository data, never an API payload.
+type MeetingFollowUpRoutingCandidate struct {
+	CRMSuggestion   `gorm:"embedded"`
+	RoutingEligible bool
+}
+
+type MeetingFollowUpRecheckItem struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Outcome string `json:"outcome"`
+}
+
+type MeetingFollowUpRecheckResult struct {
+	BillingError string                       `json:"billing_error,omitempty"`
+	Failure      string                       `json:"failure,omitempty"`
+	Items        []MeetingFollowUpRecheckItem `json:"items"`
+	NextCursor   string                       `json:"next_cursor,omitempty"`
+}

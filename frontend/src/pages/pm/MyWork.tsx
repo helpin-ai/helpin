@@ -284,7 +284,7 @@ export function MyWorkPage() {
         <TabsContent value={mode} className="flex min-h-0 flex-1 flex-col">
         <QuietPageViewport className="min-h-0 flex-1">
           {mode === 'suggestions' ? (
-            accessLoading ? <MyWorkLoadingState /> : memberId && has('pm.read') ? <AISuggestions key={`${workspaceId}:${memberId}`} ws={workspaceId} memberId={memberId} slug={wsSlug} canEdit={has('pm.edit')} canReadCRM={has('crm.read')} /> : <QuietEmptyState title="AI suggestions unavailable" description="PM access is needed to view your suggestions." />
+            accessLoading ? <MyWorkLoadingState /> : memberId && has('pm.read') ? <AISuggestions key={`${workspaceId}:${memberId}`} ws={workspaceId} memberId={memberId} slug={wsSlug} canEdit={has('pm.edit')} canReadCRM={has('crm.read')} canRecheck={has('pm.edit') && has('crm.read') && has('crm.edit')} /> : <QuietEmptyState title="AI suggestions unavailable" description="PM access is needed to view your suggestions." />
           ) : showingLoading ? (
             <MyWorkLoadingState />
           ) : !hasTeams && !isAdmin ? (

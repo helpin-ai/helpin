@@ -1025,6 +1025,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				if h.PMAISuggestion != nil {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/ai-suggestions", h.PMAISuggestion.List)
+					r.With(requirePerm(authorization.PermPMEdit), requirePerm(authorization.PermCRMRead), requirePerm(authorization.PermCRMEdit)).Post("/ai-suggestions/recheck-routing", h.PMAISuggestion.RecheckRouting)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/ai-suggestions/{id}", h.PMAISuggestion.Get)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/ai-suggestions/{id}/{decision}", h.PMAISuggestion.Decide)
 				}

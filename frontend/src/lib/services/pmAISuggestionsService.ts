@@ -27,3 +27,12 @@ export const pmAISuggestionsService = {
   decide: (ws: string, id: string, decision: 'accept' | 'dismiss', revision: string) =>
     api.post<{ id: string; status: string; execution_status: string }>(`/pm/ai-suggestions/${encodeURIComponent(id)}/${decision}?${query(ws)}`, { revision }),
 };
+
+export interface RoutingRecheckResult {
+  billing_error?: string;
+  failure?: string;
+  items: { id: string; title: string; outcome: 'internal' | 'customer' | 'uncertain' | 'missing_transcript' | 'not_eligible' | 'changed' | 'retry_needed' }[];
+  next_cursor?: string;
+}
+export const recheckSuggestionRouting = (ws: string, cursor?: string) =>
+  api.post<RoutingRecheckResult>(`/pm/ai-suggestions/recheck-routing?${query(ws)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, {});
