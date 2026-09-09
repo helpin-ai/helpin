@@ -1,7 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Tick01Icon } from '@/lib/icons';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import {
+  QuietDropdownRoot as Popover,
+  QuietDropdownContent as PopoverContent,
+  QuietDropdownTrigger as PopoverTrigger,
+} from '@/components/design-system/quiet-dropdown';
+import {
+  QuietDropdownOptions,
+  QuietDropdownEmpty,
+  QuietDropdownGroup,
+  QuietDropdownItem,
+} from '@/components/design-system/quiet-dropdown';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useWorkspaceMemberPresenceMap } from '@/hooks/queries';
 import type { AssignableMember } from '@/lib/types';
@@ -10,14 +18,21 @@ import { UserAvatar } from './UserAvatar';
 
 const OWNER_AVATAR_INLINE_CAP = 7;
 
-export function OwnerAvatarFilterRow({ workspaceId, members, selectedIds, onToggle, className }: {
+export function OwnerAvatarFilterRow({
+  workspaceId,
+  members,
+  selectedIds,
+  onToggle,
+  className,
+}: {
   workspaceId: string;
   members: AssignableMember[];
   selectedIds: string[];
   onToggle: (memberId: string) => void;
   className?: string;
 }) {
-  const { data: memberPresenceByUserId } = useWorkspaceMemberPresenceMap(workspaceId);
+  const { data: memberPresenceByUserId } =
+    useWorkspaceMemberPresenceMap(workspaceId);
   const [overflowOpen, setOverflowOpen] = useState(false);
 
   // Sort selected first so they're guaranteed visible in the inline row.
@@ -43,7 +58,9 @@ export function OwnerAvatarFilterRow({ workspaceId, members, selectedIds, onTogg
       {visible.map((member) => {
         const isSelected = selectedIds.includes(member.id);
         const label = member.display_name?.trim() || member.email;
-        const presenceStatus = member.user_id ? (memberPresenceByUserId?.get(member.user_id)?.status ?? null) : null;
+        const presenceStatus = member.user_id
+          ? (memberPresenceByUserId?.get(member.user_id)?.status ?? null)
+          : null;
         return (
           <QuickTooltip key={member.id} label={label}>
             <button
@@ -90,40 +107,41 @@ export function OwnerAvatarFilterRow({ workspaceId, members, selectedIds, onTogg
             </PopoverTrigger>
           </QuickTooltip>
           <PopoverContent className="w-64 p-0" align="start">
-            <Command>
-              <CommandInput placeholder="Search members..." />
-              <CommandList>
-                <CommandEmpty>No members.</CommandEmpty>
-                <CommandGroup>
-                  {members.map((member) => {
-                    const isSelected = selectedIds.includes(member.id);
-                    const label = member.display_name?.trim() || member.email;
-                    const presenceStatus = member.user_id ? (memberPresenceByUserId?.get(member.user_id)?.status ?? null) : null;
-                    return (
-                      <CommandItem
-                        key={member.id}
-                        value={label}
-                        onSelect={() => onToggle(member.id)}
-                      >
-                        <UserAvatar
-                          name={label}
-                          avatarUrl={member.avatar_url}
-                          avatarStyle={member.avatar_style}
-                          avatarSeed={member.avatar_seed}
-                          avatarBackgroundMode={member.avatar_background_mode}
-                          avatarBackgroundColor={member.avatar_background_color}
-                          presenceStatus={presenceStatus}
-                          className="mr-2 h-5 w-5"
-                          fallbackClassName="text-[8px]"
-                        />
-                        <span className="min-w-0 flex-1 truncate">{label}</span>
-                        {isSelected && <Tick01Icon className="ml-2 h-3.5 w-3.5 text-primary" />}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </CommandList>
-            </Command>
+            <QuietDropdownOptions searchPlaceholder="Search members...">
+              <QuietDropdownEmpty>No members.</QuietDropdownEmpty>
+              <QuietDropdownGroup>
+                {members.map((member) => {
+                  const isSelected = selectedIds.includes(member.id);
+                  const label = member.display_name?.trim() || member.email;
+                  const presenceStatus = member.user_id
+                    ? (memberPresenceByUserId?.get(member.user_id)?.status ??
+                      null)
+                    : null;
+                  return (
+                    <QuietDropdownItem
+                      data-checked={isSelected}
+                      key={member.id}
+                      value={member.id}
+                      keywords={[label, member.email]}
+                      onSelect={() => onToggle(member.id)}
+                    >
+                      <UserAvatar
+                        name={label}
+                        avatarUrl={member.avatar_url}
+                        avatarStyle={member.avatar_style}
+                        avatarSeed={member.avatar_seed}
+                        avatarBackgroundMode={member.avatar_background_mode}
+                        avatarBackgroundColor={member.avatar_background_color}
+                        presenceStatus={presenceStatus}
+                        className="mr-2 h-5 w-5"
+                        fallbackClassName="text-[8px]"
+                      />
+                      <span className="min-w-0 flex-1 truncate">{label}</span>
+                    </QuietDropdownItem>
+                  );
+                })}
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
           </PopoverContent>
         </Popover>
       )}

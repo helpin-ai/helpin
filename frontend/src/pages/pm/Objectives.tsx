@@ -1,3 +1,4 @@
+import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { format, parseISO } from 'date-fns';
@@ -24,7 +25,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
@@ -106,9 +106,9 @@ function FilterChip({
   const selected = options.find((o) => o.value === value);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
+    <QuietDropdown label={label} options={options} selected={[value]} open={open} onOpenChange={setOpen}
+      onSelect={next => onChange(value === next ? '' : next)} contentClassName="w-48"
+      trigger={        <button
           type="button"
           className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors cursor-pointer ${
             value
@@ -125,25 +125,7 @@ function FilterChip({
               <Cancel01Icon className="h-2.5 w-2.5" />
             </span>
           )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex flex-col">
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`flex items-center rounded-sm px-2 py-1.5 text-xs transition-colors cursor-pointer ${
-                value === opt.value ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-              onClick={() => { onChange(value === opt.value ? '' : opt.value); setOpen(false); }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
+        </button>} />
   );
 }
 

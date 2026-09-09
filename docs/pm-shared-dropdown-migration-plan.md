@@ -1,12 +1,12 @@
 # PM shared dropdown migration plan
 
-Status: proposed implementation plan.
+Status: implemented, including bulk edit. Final validation is recorded below.
 
 Baseline: local `develop` at `9f52f1f2d`, 2026-09-09. The adaptive-search implementation passes TypeScript checks and 2,481 frontend tests across 415 files.
 
 ## Outcome
 
-Move every PM option-selection dropdown onto the implementation behind the new shared dropdown. Filters, assignments, right rails, inline table/board editing, creation forms, saved views, and display-property selection must use the same option list, search behavior, typography, selection indicators, and keyboard handling.
+Move every PM option-selection dropdown onto the implementation behind the new shared dropdown. Filters, assignments, right rails, inline table/board editing, bulk editing, creation forms, saved views, and display-property selection must use the same option list, search behavior, typography, selection indicators, and keyboard handling.
 
 Adoption means sharing the implementation, not merely copying its classes or wrapping an existing custom list in a new component name.
 
@@ -27,15 +27,12 @@ All option selectors are included, even short lists such as priority, health, gr
 | Epic detail and sheet | Editable metadata, objectives, owner, repository and agent selection; embedded task table |
 | Task detail and right rail | Team, state, owners, requester, priority, severity, type, epic, sprint, labels, estimate scale, repository and agent selection |
 | Task list and board | Filters, toolbar team/grouping, inline editors, owners, epic badges, saved views and display settings |
+| Bulk edit | Team, state, owners, priority, severity, epic, sprint and labels; preserve staging, mixed values, Cancel and Apply |
 | Sprints | Status filter, backlog priority/state/assignee, detail team selector and task table |
 | Creation and templates | Task/template, epic, sprint and objective fields; template selection; sprint cadence/day/count selectors |
 | Objectives | Local metadata pickers, owner selection and Add Epics |
 | Other PM pages | Roadmap filters/grouping/zoom, label/template scope, Reports team/period/sprint, PM Support Search filters/sort |
 | Shared tables | Every option picker supplied through column renderers; table containers do not own field selection |
-
-Excluded from this migration:
-
-- **Bulk edit:** keep its current controls, staging and Apply flow. Do not migrate TaskBulkActionsBar. Shared adapter APIs must remain compatible with its existing consumers.
 
 Specialized interactions retain their purpose:
 
@@ -93,63 +90,64 @@ No capability is scheduled for removal. Preserve the removed Epic team filter, t
 
 ### 1. Build and verify the shared foundation
 
-- [ ] Extract `QuietDropdown` from `frontend/src/components/design-system/quiet-select.tsx` and export it through the design-system entry point.
-- [ ] Add the contract above without changing existing QuietFilterDropdown behavior.
-- [ ] Centralize ID-based matching, None handling, active/checked indicators and grouped rendering.
-- [ ] Integrate explicit search modes with `CommandInput` / `useDropdownSearch`.
-- [ ] Bound the list by available viewport height, including search/header/footer space.
-- [ ] Establish behavioral tests and an isolated browser fixture before migrating consumers.
+- [x] Extract `QuietDropdown` from `frontend/src/components/design-system/quiet-select.tsx` and export it through the design-system entry point.
+- [x] Add the contract above without changing existing QuietFilterDropdown behavior.
+- [x] Centralize ID-based matching, None handling, active/checked indicators and grouped rendering.
+- [x] Integrate explicit search modes with `CommandInput` / `useDropdownSearch`.
+- [x] Bound the list by available viewport height, including search/header/footer space.
+- [x] Establish behavioral tests and an isolated browser fixture before migrating consumers.
 
 Exit: existing filter tests pass; duplicate labels, grouped overflow and active-query visibility work through the new core.
 
 ### 2. Migrate domain adapters and right rails
 
-- [ ] Replace both branches of `SidebarPopoverSelect` with the shared core; remove `searchThreshold` and update its callers.
-- [ ] Migrate MemberPickerPopover/MultiMemberPickerPopover, OwnerAvatarFilterRow, ObjectivePicker, InlineEpicCell and LabelPicker.
-- [ ] Migrate configured EstimatePicker options; retain its free-form numeric variant.
-- [ ] Keep AgentPickerCard as a domain wrapper using the migrated field picker.
-- [ ] Remove ObjectiveDetail's local SidebarPopoverSelect and use the shared adapter.
-- [ ] Verify task detail/create, epic detail, sprint detail, repositories and agent selectors through those adapters.
+- [x] Replace both branches of `SidebarPopoverSelect` with the shared core; remove `searchThreshold` and update its callers.
+- [x] Migrate MemberPickerPopover/MultiMemberPickerPopover, OwnerAvatarFilterRow, ObjectivePicker, InlineEpicCell and LabelPicker.
+- [x] Migrate configured EstimatePicker options; retain its free-form numeric variant.
+- [x] Keep AgentPickerCard as a domain wrapper using the migrated field picker.
+- [x] Remove ObjectiveDetail's local SidebarPopoverSelect and use the shared adapter.
+- [x] Verify task detail/create, epic detail, sprint detail, repositories and agent selectors through those adapters.
 
 Exit: right rails no longer choose a different implementation by count, and same-named records work with mouse and keyboard throughout the migrated adapters.
 
-### 3. Migrate tables and board cards
+### 3. Migrate tables, board cards and bulk editing
 
-- [ ] Replace page-owned Command lists in TaskListView, TaskCard and Epics with the shared core/domain adapters.
-- [ ] Preserve task/epic lifecycle grouping, colored badges, avatars, custom cell triggers and lazy mounting.
-- [ ] Verify embedded task tables in EpicDetail and SprintDetail, plus sheet openings from My Work and other tables.
+- [x] Replace page-owned Command lists in TaskListView, TaskCard and Epics with the shared core/domain adapters.
+- [x] Preserve task/epic lifecycle grouping, colored badges, avatars, custom cell triggers and lazy mounting.
+- [x] Migrate TaskBulkActionsBar selectors and verify mixed/no-change values, staging, Cancel and Apply.
+- [x] Verify embedded task tables in EpicDetail and SprintDetail, plus sheet openings from My Work and other tables.
 
 Exit: the same field uses the same list behavior in a table, board card and detail rail. Inline edits do not trigger task navigation or dragging.
 
 ### 4. Migrate filters, toolbars and saved views
 
-- [ ] Make PMFilterControls delegate to QuietFilterDropdown/shared core while preserving staged filter-category navigation.
-- [ ] Remove duplicate filter dropdown implementations from TaskListView.
-- [ ] Migrate task toolbar team/grouping and retain Epics filters on the same core.
-- [ ] Migrate sprint status and backlog priority/state/assignee; render member avatars in assignee options.
-- [ ] Migrate Roadmap grouping/zoom, Reports team/period/sprint, label/template scope, and PM Support Search sort.
-- [ ] Remove the ViewBar `> 10` gate and migrate its grouped options and pin actions. Pinning must not open the view.
+- [x] Make PMFilterControls delegate to QuietFilterDropdown/shared core while preserving staged filter-category navigation.
+- [x] Remove duplicate filter dropdown implementations from TaskListView.
+- [x] Migrate task toolbar team/grouping and retain Epics filters on the same core.
+- [x] Migrate sprint status and backlog priority/state/assignee; render member avatars in assignee options.
+- [x] Migrate Roadmap grouping/zoom, Reports team/period/sprint, label/template scope, and PM Support Search sort.
+- [x] Remove the ViewBar `> 10` gate and migrate its grouped options and pin actions. Pinning must not open the view.
 
 Exit: filters preserve URL/persistence semantics and clear behavior, and all enumerated selectors use the shared core even when search is hidden.
 
 ### 5. Finish creation, objectives and display settings
 
-- [ ] Migrate GlobalCreateModals' remaining Select controls, including short cadence/day/count and objective state lists.
-- [ ] Remove CreateTaskModal's local GroupedSidebarPopoverSelect after migrating its sprint behavior.
-- [ ] Migrate ObjectiveDetail Add Epics to the shared list, retaining asynchronous loading and the exclusion of linked epics.
-- [ ] Migrate BoardDisplayMenu, ListDisplayMenu and DisplayPropertiesPopover to shared multi-select options with their existing custom triggers.
-- [ ] Preserve per-team hidden properties, stored column choices, and the board's Show empty columns switch through an appropriate footer slot.
-- [ ] Standardize typography on genuine action/settings menus that intentionally retain their specialized primitives.
+- [x] Migrate GlobalCreateModals' remaining Select controls, including short cadence/day/count and objective state lists.
+- [x] Remove CreateTaskModal's local GroupedSidebarPopoverSelect after migrating its sprint behavior.
+- [x] Migrate ObjectiveDetail Add Epics to the shared list, retaining asynchronous loading and the exclusion of linked epics.
+- [x] Migrate BoardDisplayMenu, ListDisplayMenu and DisplayPropertiesPopover to shared multi-select options with their existing custom triggers.
+- [x] Preserve per-team hidden properties, stored column choices, and the board's Show empty columns switch through an appropriate footer slot.
+- [x] Standardize typography on genuine action/settings menus that intentionally retain their specialized primitives.
 
 Exit: display choices use the shared option rows rather than separate chip-grid implementations; all existing settings remain available.
 
 ### 6. Remove legacy implementations and validate all surfaces
 
-- [ ] Remove dead count gates, duplicate option renderers and obsolete props/imports.
-- [ ] Refresh the PM dropdown inventory, tracing imports so a local component with the same name cannot be mistaken for the shared one.
-- [ ] Review remaining direct Select/native-select/Command/custom option-list usage in PM pages and components. Every remaining use must be a documented exception, including the excluded bulk editor; sharing typography alone does not qualify as migrated.
-- [ ] Confirm non-PM users of shared components still work; migration scope does not justify breaking existing consumers elsewhere.
-- [ ] Run the final checks below and document results against the resulting commit.
+- [x] Remove dead count gates, duplicate option renderers and obsolete props/imports.
+- [x] Refresh the PM dropdown inventory, tracing imports so a local component with the same name cannot be mistaken for the shared one.
+- [x] Review remaining direct Select/native-select/Command/custom option-list usage in PM pages and components. Every remaining use must be a documented exception, for specialized interactions; sharing typography alone does not qualify as migrated.
+- [x] Confirm non-PM users of shared components still work; migration scope does not justify breaking existing consumers elsewhere.
+- [x] Run the final checks below and document results against the resulting commit.
 
 ## Validation
 
@@ -168,6 +166,7 @@ Representative integration flows:
 - Edit the same task's epic, state and owners from board, list and detail rail.
 - Edit epic metadata and objectives in list/detail; open tasks from epic and sprint tables.
 - Filter sprint backlog by an owner with an avatar; verify selected values and persisted filters.
+- Stage bulk changes, cancel, then apply; verify exact payloads and team/state dependencies.
 - Create and assign a label from a short list; search and select asynchronously loaded records.
 - Change saved views and pin them; toggle display columns and Show empty columns.
 - Exercise loading, save failure and disabled permission states through existing domain behavior.
@@ -176,13 +175,22 @@ Run focused behavior tests per phase, then `pnpm --dir frontend test` and the fr
 
 ## Completion criteria
 
-- [ ] Every in-scope PM option selector delegates to the shared implementation, including short fixed lists.
-- [ ] No label-based entity identity or option-count search gate remains in migrated selectors.
-- [ ] All named pages, rails, table cells, board cards and creation flows are covered in the final inventory.
-- [ ] Avatars, badges, grouping, creation, permissions, persistence and save behavior retain parity.
-- [ ] Shared dropdown text is 12.2px; the search-to-options spacing and both themes are consistent.
-- [ ] Keyboard, viewport-fit and remote/creatable scenarios pass; existing bulk-edit tests retain compatibility coverage.
-- [ ] Full frontend tests and TypeScript checks pass; browser verification is documented.
-- [ ] Each specialized exception has a concrete reason and location.
+- [x] Every in-scope PM option selector delegates to the shared implementation, including short fixed lists.
+- [x] No label-based entity identity or option-count search gate remains in migrated selectors.
+- [x] All named pages, rails, table cells, board cards, bulk editing and creation flows are covered in the final inventory.
+- [x] Avatars, badges, grouping, creation, permissions, persistence and save behavior retain parity.
+- [x] Shared dropdown text is 12.2px; the search-to-options spacing and both themes are consistent.
+- [x] Keyboard, viewport-fit and remote/creatable scenarios pass; bulk staging and Apply scenarios pass.
+- [x] Full frontend tests and TypeScript checks pass; browser verification is documented.
+- [x] Each specialized exception has a concrete reason and location.
 
-Implement in the order above with reviewable commits per phase. This document plans the migration; the application migration has not started.
+Implementation coverage and exceptions are documented in [the completed audit](pm-shared-dropdown-migration-audit.md).
+
+## Final validation — 2026-09-09
+
+- Frontend suite: **2,491 tests passed across 417 files**.
+- TypeScript: `tsc -b --pretty false` passed.
+- ESLint: shared dropdown, Select adapter, focus helper and filter wrapper passed.
+- Isolated Chromium: light/dark themes, fit/overflow, grouped/narrow viewport, active queries, duplicate IDs, focus restoration, saved-view pinning and display settings passed.
+- Production build: `pnpm --dir frontend run build` passed (existing chunk-size warning only).
+- No frontend servers were started. Authenticated deployed-page walkthroughs were not performed; the audit distinguishes component/browser checks from page regression coverage.

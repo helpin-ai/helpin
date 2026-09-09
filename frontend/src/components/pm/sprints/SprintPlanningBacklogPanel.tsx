@@ -1,3 +1,4 @@
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useDroppable } from '@dnd-kit/core';
 import { memo, useMemo, useState } from 'react';
 import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, FilterHorizontalIcon, InboxIcon, PlusSignCircleIcon } from '@/lib/icons';
@@ -5,7 +6,7 @@ import { Collapsible } from 'radix-ui';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import type { AssignableMember } from '@/lib/types';
 import type { Priority, SprintPlanningTaskPreview, StateType } from '@/lib/pmTypes';
 import { SprintPlanningTaskCard } from './SprintPlanningTaskCard';
@@ -184,7 +185,11 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
                   <SelectItem value="__all__" className="text-xs">All assignees</SelectItem>
                   {ownerOptions.map((member) => (
                     <SelectItem key={member.id} value={member.id} className="text-xs">
-                      {member.display_name}
+                      <UserAvatar name={member.display_name || member.email} avatarUrl={member.avatar_url}
+                        avatarStyle={member.avatar_style} avatarSeed={member.avatar_seed}
+                        avatarBackgroundMode={member.avatar_background_mode} avatarBackgroundColor={member.avatar_background_color}
+                        className="h-5 w-5" />
+                      <span>{member.display_name || member.email}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>

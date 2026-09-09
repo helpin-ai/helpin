@@ -18,7 +18,7 @@ import { BotIcon, CollapseIcon, ExpandIcon, LayoutTwoColumnIcon, LayoutTable01Ic
 import { ChartColumnIcon, StickyNote01Icon } from '@/lib/pmIcons';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { usePMBoardStore, type BoardFilters } from '@/stores/pmBoardStore';
 import type { CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes';
 import { pmTaskService } from '@/lib/services/pmTaskService';

@@ -649,3 +649,6 @@ export {
 export type { ConversationRewriteOperation } from './conversation-composer';
 export { QuietFilterDropdown, QuietSelect } from './quiet-select';
 export type { QuietFilterDropdownProps, QuietSelectOption, QuietSelectProps } from './quiet-select';
+
+export { QuietDropdown } from './quiet-dropdown';
+export type { QuietDropdownOption, QuietDropdownOptionGroup, QuietDropdownProps, QuietDropdownSearchMode } from './quiet-dropdown';

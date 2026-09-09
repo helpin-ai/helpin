@@ -70,11 +70,22 @@ vi.mock('@/components/ui/dialog', () => ({
   DialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
-vi.mock('@/components/ui/popover', () => ({
-  Popover: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  PopoverTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}))
+vi.mock('@/components/ui/popover', async () => {
+  const React = await import('react')
+  const Context = React.createContext<{ open?: boolean; onOpenChange?: (open: boolean) => void }>({})
+  return {
+    Popover: ({ children, open, onOpenChange }: { children: React.ReactNode; open?: boolean; onOpenChange?: (open: boolean) => void }) =>
+      <Context.Provider value={{ open, onOpenChange }}><div>{children}</div></Context.Provider>,
+    PopoverTrigger: ({ children }: { children: React.ReactElement<{ onClick?: (event: React.MouseEvent) => void }> }) => {
+      const context = React.useContext(Context)
+      return React.cloneElement(children, { onClick: (event: React.MouseEvent) => {
+        children.props.onClick?.(event)
+        context.onOpenChange?.(!context.open)
+      } })
+    },
+    PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  }
+})
 
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -87,7 +98,7 @@ vi.mock('@/components/ui/command', () => ({
   Command: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   CommandEmpty: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   CommandGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  CommandInput: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
+  CommandInput: ({ placeholder }: { placeholder?: string }) => <input placeholder={placeholder} />,
   CommandItem: ({
     children,
     onSelect,
@@ -99,6 +110,7 @@ vi.mock('@/components/ui/command', () => ({
       {children}
     </button>
   ),
+  CommandSeparator: () => <hr />,
   CommandList: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 

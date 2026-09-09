@@ -98,7 +98,8 @@ describe('TaskFilters', () => {
     expect(document.body.textContent).toContain('Urgent');
     expect(document.body.textContent).toContain('High');
     expect(rendered.container.textContent).toContain('Choose value');
-    expect(document.body.querySelector('input[placeholder="Search priority..."]')).toBeFalsy();
+    // Search availability is measured by the shared dropdown, including short lists in constrained viewports.
+    expect(document.body.querySelector('input[placeholder="Search priority..."]')).toBeTruthy();
     expect(document.body.textContent).not.toContain('Back');
     expect(document.body.querySelector('button[aria-label="Back to filter fields"]')).toBeTruthy();
 

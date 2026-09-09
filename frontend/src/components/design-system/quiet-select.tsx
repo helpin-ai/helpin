@@ -1,8 +1,7 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
 
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { QuietDropdown } from './quiet-dropdown';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './quiet-dropdown-select';
 import { ArrowDown01Icon, Cancel01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
@@ -94,8 +93,11 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
     <div className="flex min-w-0 max-w-full flex-col gap-0.5">
       {showLabel && <label htmlFor={triggerId} className="text-xs font-medium text-quiet-text-tertiary">{label}</label>}
       <div className="flex min-w-0 items-center">
-        <Popover open={open && !disabled} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
+        <QuietDropdown label={label} open={open} onOpenChange={setOpen} disabled={disabled}
+          selected={selected} options={options.map(option => ({ ...option, className: option.labelClassName }))}
+          multiple={props.multiple} onSelect={select} searchMode={searchable ? 'auto' : 'off'}
+          searchPlaceholder={`Search ${label.toLowerCase()}…`} contentClassName={popoverClassName}
+          trigger={(
             <button
               ref={triggerRef}
               id={triggerId}
@@ -108,39 +110,7 @@ export function QuietFilterDropdown(props: QuietFilterDropdownProps) {
               <span className="truncate">{props.multiple && selected.length > 1 && !showLabel ? `${label}: ` : ''}{summary}</span>
               <ArrowDown01Icon aria-hidden="true" className="size-3.5 shrink-0 text-quiet-text-tertiary" />
             </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" collisionPadding={8} aria-label={`${label} options`} className={cn('w-60 max-w-[calc(100vw-2rem)] p-0', popoverClassName)}>
-            <Command
-              label={`${label} options`}
-              tabIndex={searchable ? undefined : 0}
-              filter={(_value, search, keywords) => keywords?.some((keyword) => keyword.toLowerCase().includes(search.trim().toLowerCase())) ? 1 : 0}
-            >
-              {searchable && <CommandInput presentation="quiet" aria-label={`Search ${label.toLowerCase()}`} placeholder={`Search ${label.toLowerCase()}…`} />}
-              <CommandList>
-                <CommandEmpty>No results</CommandEmpty>
-                <CommandGroup>
-                  {options.map((option) => {
-                    const checked = selected.includes(option.value);
-                    return (
-                      <CommandItem
-                        key={option.value}
-                        value={option.value}
-                        keywords={[option.label]}
-                        disabled={option.disabled}
-                        data-checked={checked}
-                        aria-label={`${option.label}${checked ? ', selected' : ''}`}
-                        onSelect={() => select(option.value)}
-                      >
-                        {option.leading && <span className="flex shrink-0 items-center" aria-hidden="true">{option.leading}</span>}
-                        <span className={cn('min-w-0 flex-1 truncate', option.labelClassName)}>{option.label}</span>
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
+          )} />
         {props.multiple && selected.length > 0 && (
           <button
             type="button"

@@ -1,3 +1,4 @@
+import { QuietFilterDropdown } from '@/components/design-system/quiet';
 import { useMemo, useState } from 'react'
 import { useTitle } from '@/hooks/useTitle'
 import { useSprintCloseouts } from '@/hooks/queries'
@@ -171,46 +172,14 @@ function SprintCloseoutsReport({ onBack }: { onBack: () => void }) {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-muted-foreground">Team</span>
-          <select
-            value={teamId}
-            onChange={(event) => { setTeamId(event.target.value); setSelectedSprintId(''); }}
-            className="h-8 rounded-md border border-border bg-background px-2.5 text-xs"
-          >
-            <option value="">All teams</option>
-            {teams.map((team) => (
-              <option key={team.id} value={team.id}>{team.name}</option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-muted-foreground">Period</span>
-          <select
-            value={timeRange}
-            onChange={(event) => { setTimeRange(event.target.value as TimeRange); setSelectedSprintId(''); }}
-            className="h-8 rounded-md border border-border bg-background px-2.5 text-xs"
-          >
-            {TIME_RANGES.map((range) => (
-              <option key={range.value} value={range.value}>{range.label}</option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-xs text-muted-foreground">Sprint</span>
-          <select
-            value={selectedSprintId}
-            onChange={(event) => setSelectedSprintId(event.target.value)}
-            className="h-8 rounded-md border border-border bg-background px-2.5 text-xs"
-          >
-            <option value="">All in range</option>
-            {rangedItems.map((item) => (
-              <option key={item.sprint_id} value={item.sprint_id}>{item.sprint_name}</option>
-            ))}
-          </select>
-        </label>
+        <QuietFilterDropdown label="Team" showLabel value={teamId}
+          options={[{ value: '', label: 'All teams' }, ...teams.map(team => ({ value: team.id, label: team.name }))]}
+          onChange={value => { setTeamId(value); setSelectedSprintId(''); }} />
+        <QuietFilterDropdown label="Period" showLabel value={timeRange} options={TIME_RANGES}
+          onChange={value => { setTimeRange(value as TimeRange); setSelectedSprintId(''); }} />
+        <QuietFilterDropdown label="Sprint" showLabel value={selectedSprintId}
+          options={[{ value: '', label: 'All in range' }, ...rangedItems.map(item => ({ value: item.sprint_id, label: item.sprint_name }))]}
+          onChange={setSelectedSprintId} />
 
         {selectedSprintId && (
           <button

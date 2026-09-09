@@ -22,7 +22,6 @@ import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
-  Tick01Icon,
   ArrowDown02Icon,
   Calendar03Icon,
   ArrowDown01Icon,
@@ -46,8 +45,8 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { InlineEpicDateControl, InlineEpicObjectivesControl } from '@/components/pm/InlineEpicPlanningFields';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { QuietDropdownOptions, QuietDropdownEmpty, QuietDropdownGroup, QuietDropdownItem } from "@/components/design-system/quiet-dropdown";
+import { QuietDropdownRoot as Popover, QuietDropdownContent as PopoverContent, QuietDropdownTrigger as PopoverTrigger } from '@/components/design-system/quiet-dropdown';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { QuietPageHeader, QuietPrimaryAction } from '@/components/design-system/quiet';
@@ -816,18 +815,16 @@ function InlineEpicStateCell({ entry, epicStateMap, epicStates, onUpdate }: { en
       </PopoverTrigger>
       {open ? (
         <PopoverContent className="w-[220px] p-0" align="start" side="bottom" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-          <Command>
-            <CommandInput placeholder="Search states..." className="h-8 text-ui" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No states found</CommandEmpty>
-              <CommandGroup>
+          <QuietDropdownOptions searchPlaceholder="Search states...">
+              <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">No states found</QuietDropdownEmpty>
+              <QuietDropdownGroup>
                 {epicStates.map((epicState) => {
                   const optionCfg = STATE_TYPE_ICON_CONFIG[epicState.state_type as StateType];
                   const OptionIcon = optionCfg?.icon ?? MinusSignIcon;
                   return (
-                    <CommandItem
+                    <QuietDropdownItem data-checked={entry.epic.epic_state_id === epicState.id}
                       key={epicState.id}
-                      value={epicState.name}
+                      value={epicState.id} keywords={[epicState.name]}
                       className="flex items-center gap-2 text-ui"
                       onSelect={() => {
                         if (epicState.id !== entry.epic.epic_state_id) {
@@ -840,13 +837,12 @@ function InlineEpicStateCell({ entry, epicStateMap, epicStates, onUpdate }: { en
                     >
                       <OptionIcon className={`h-3.5 w-3.5 shrink-0 ${optionCfg?.color ?? 'text-muted-foreground'}`} />
                       <span className="truncate">{epicState.name}</span>
-                      {entry.epic.epic_state_id === epicState.id ? <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
-                    </CommandItem>
+
+                    </QuietDropdownItem>
                   );
                 })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
         </PopoverContent>
       ) : null}
     </Popover>
@@ -873,15 +869,13 @@ function InlineEpicHealthCell({ entry, onUpdate }: { entry: EpicWithStats; onUpd
       </PopoverTrigger>
       {open ? (
         <PopoverContent className="w-[180px] p-0" align="start" side="bottom" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-          <Command>
-            <CommandInput placeholder="Search health..." className="h-8 text-ui" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No match</CommandEmpty>
-              <CommandGroup>
+          <QuietDropdownOptions searchPlaceholder="Search health...">
+              <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">No match</QuietDropdownEmpty>
+              <QuietDropdownGroup>
                 {ALL_HEALTH_OPTIONS.map((option) => (
-                  <CommandItem
+                  <QuietDropdownItem data-checked={health === option}
                     key={option}
-                    value={healthConfig[option].label}
+                    value={option} keywords={[healthConfig[option].label]}
                     className="flex items-center gap-2 text-ui"
                     onSelect={() => {
                       if (option !== health) {
@@ -891,12 +885,11 @@ function InlineEpicHealthCell({ entry, onUpdate }: { entry: EpicWithStats; onUpd
                     }}
                   >
                     <span className={healthConfig[option].color}>{healthConfig[option].label}</span>
-                    {health === option ? <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
-                  </CommandItem>
+
+                  </QuietDropdownItem>
                 ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
         </PopoverContent>
       ) : null}
     </Popover>
@@ -955,15 +948,13 @@ function InlineEpicTeamCell({ entry, teams, teamMap, onUpdate }: { entry: EpicWi
       </PopoverTrigger>
       {open ? (
         <PopoverContent className="w-[220px] p-0" align="start" side="bottom" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-          <Command>
-            <CommandInput placeholder="Search teams..." className="h-8 text-ui" />
-            <CommandList>
-              <CommandEmpty className="py-3 text-center text-ui text-muted-foreground">No teams found</CommandEmpty>
-              <CommandGroup>
+          <QuietDropdownOptions searchPlaceholder="Search teams...">
+              <QuietDropdownEmpty className="py-3 text-center text-ui text-muted-foreground">No teams found</QuietDropdownEmpty>
+              <QuietDropdownGroup>
                 {teams.map((team) => (
-                  <CommandItem
+                  <QuietDropdownItem data-checked={entry.epic.team_id === team.id}
                     key={team.id}
-                    value={team.name}
+                    value={team.id} keywords={[team.name]}
                     className="flex items-center gap-2 text-ui"
                     onSelect={() => {
                       if (team.id !== entry.epic.team_id) {
@@ -973,12 +964,11 @@ function InlineEpicTeamCell({ entry, teams, teamMap, onUpdate }: { entry: EpicWi
                     }}
                   >
                     <span className="truncate">{team.name}</span>
-                    {entry.epic.team_id === team.id ? <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" /> : null}
-                  </CommandItem>
+
+                  </QuietDropdownItem>
                 ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
+              </QuietDropdownGroup>
+            </QuietDropdownOptions>
         </PopoverContent>
       ) : null}
     </Popover>

@@ -147,7 +147,7 @@ describe('EpicsPage scroll layout', () => {
         search.dispatchEvent(new Event('input', { bubbles: true }))
       })
       expect(document.querySelectorAll('[cmdk-item]')).toHaveLength(1)
-      const ninthOwner = document.querySelector<HTMLElement>('[cmdk-item][data-value="Member 9"]')!
+      const ninthOwner = document.querySelector<HTMLElement>('[cmdk-item][data-value="member-9"]')!
       await act(async () => ninthOwner.click())
       expect(container.textContent).toContain('Initiative 1')
       expect(container.textContent).toContain('Initiative 9')

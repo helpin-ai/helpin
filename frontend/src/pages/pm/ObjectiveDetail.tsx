@@ -1,3 +1,5 @@
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
+import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { differenceInDays, format, formatDistanceToNow, parseISO } from 'date-fns';
@@ -22,8 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
@@ -103,52 +104,6 @@ function ManagerOnlyTooltip({
 
 // ── Sidebar Popover Select ─────────────────────────────────────────
 
-function SidebarPopoverSelect<T extends string>({
-  value,
-  options,
-  onChange,
-  renderTrigger,
-  disabled = false,
-}: {
-  value: T;
-  options: { value: T; label: string; className?: string }[];
-  onChange: (value: T) => void;
-  renderTrigger: () => React.ReactNode;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
-        >
-          {renderTrigger()}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-40 p-0.5" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs transition-colors cursor-pointer
-                ${value === option.value ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}
-              `}
-              onClick={() => { onChange(option.value); setOpen(false); }}
-            >
-              <span className={`truncate ${option.className ?? ''}`}>{option.label}</span>
-            </button>
-          ))}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 // ── Metadata Row ───────────────────────────────────────────────────
 
 function MetadataRow({
@@ -222,34 +177,11 @@ function MultiValueList({
           </button>
         </ManagerOnlyTooltip>
       ) : (
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent cursor-pointer"
-            >
-              <PlusSignIcon className="h-3 w-3" />
-              {placeholder}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-48 p-1" align="start">
-            <div className="flex max-h-48 flex-col overflow-y-auto">
-              {available.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer"
-                  onClick={() => { onAdd(opt.id); setOpen(false); }}
-                >
-                  <span className="truncate">{opt.name}</span>
-                </button>
-              ))}
-              {available.length === 0 && (
-                <p className="px-2 py-1.5 text-xs text-muted-foreground">No more options</p>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <QuietDropdown label={placeholder} open={open} onOpenChange={setOpen} onSelect={onAdd}
+          options={available.map(option => ({ value: option.id, label: option.name }))} empty="No more options"
+          trigger={<button type="button" className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-ui text-muted-foreground transition-colors hover:bg-accent cursor-pointer">
+            <PlusSignIcon className="h-3 w-3" />{placeholder}
+          </button>} />
       )}
     </div>
   );
@@ -418,43 +350,32 @@ function LinkEpicPopover({
 }) {
   const [open, setOpen] = useState(false);
   const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    pmEpicService.list(workspaceId, { archived: false }).then(({ data }) => {
+    let active = true;
+    setLoading(true);
+    setLoadError(false);
+    pmEpicService.list(workspaceId, { archived: false }).then(({ data, error }) => {
+      if (!active) return;
       setAllEpics(data ?? []);
-    });
+      setLoadError(Boolean(error));
+    }).catch(() => { if (active) setLoadError(true); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [open, workspaceId]);
 
   const available = allEpics.filter((e) => !linkedEpicIds.includes(e.epic.id));
 
   return (
-    <Popover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 text-xs" disabled={disabled}>
-          <PlusSignIcon className="mr-1 h-3 w-3" />
-          Add Epics
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-64 p-1" align="start">
-        <div className="flex max-h-60 flex-col overflow-y-auto">
-          {available.map((e) => (
-            <button
-              key={e.epic.id}
-              type="button"
-              className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground cursor-pointer"
-              onClick={() => { onLink(e.epic.id); setOpen(false); }}
-            >
-              <HexagonIcon className="h-3 w-3 shrink-0 text-violet-500" />
-              <span className="truncate">{e.epic.name}</span>
-            </button>
-          ))}
-          {available.length === 0 && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">No available epics</p>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <QuietDropdown label="Epics" open={open} onOpenChange={setOpen} disabled={disabled}
+      loading={loading} error={loadError ? 'Could not load epics. Close and reopen to retry.' : undefined}
+      empty="No available epics" onSelect={onLink} contentClassName="w-64"
+      options={available.map(({ epic }) => ({ value: epic.id, label: epic.name, leading: <HexagonIcon className="h-3 w-3 text-violet-500" /> }))}
+      trigger={<Button variant="outline" size="sm" className="h-7 text-ui" disabled={disabled}>
+        <PlusSignIcon className="mr-1 h-3 w-3" />Add Epics
+      </Button>} />
   );
 }
 

@@ -1,3 +1,5 @@
+import { EpicBadge } from './EpicBadge';
+import { groupEpicsByLifecycle } from './epicPickerGroups';
 import { useCallback, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -8,9 +10,11 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectGroup,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@/components/design-system/quiet-dropdown-select';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { LabelBadge, LabelPicker } from '@/components/pm/LabelPicker';
 import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
@@ -822,10 +826,15 @@ export function TaskBulkActionsBar({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">No epic</SelectItem>
-                  {effectiveEpics.map((entry) => (
-                    <SelectItem key={entry.epic.id} value={entry.epic.id}>
-                      {entry.epic.name}
-                    </SelectItem>
+                  {groupEpicsByLifecycle(effectiveEpics.map(entry => entry.epic)).map(group => (
+                    <SelectGroup key={group.label}>
+                      <SelectLabel>{group.label}</SelectLabel>
+                      {group.epics.map(epic => (
+                        <SelectItem key={epic.id} value={epic.id} textValue={epic.name}>
+                          <EpicBadge name={epic.name} color={epic.color} />
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   ))}
                 </SelectContent>
               </Select>

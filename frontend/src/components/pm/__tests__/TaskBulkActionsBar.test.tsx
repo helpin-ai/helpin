@@ -492,6 +492,31 @@ describe('TaskBulkActionsBar', () => {
     unmount(root, container);
   });
 
+  it('stages a dropdown choice until Apply and discards it on Cancel', async () => {
+    updateMock.mockResolvedValue({ error: null });
+    const { container, root } = renderBar();
+    const button = (name: string) => Array.from(document.querySelectorAll('button')).find(element => element.textContent?.trim() === name)!;
+    const choosePriority = async () => {
+      await act(async () => button('Medium').click());
+      await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="high"]')!.click());
+    };
+    try {
+      await act(async () => container.querySelector('button')!.click());
+      await choosePriority();
+      expect(updateMock).not.toHaveBeenCalled();
+      await act(async () => button('Cancel').click());
+      expect(updateMock).not.toHaveBeenCalled();
+      await act(async () => container.querySelector('button')!.click());
+      expect(button('Medium')).toBeDefined();
+      expect(button('Apply').disabled).toBe(true);
+      await choosePriority();
+      await act(async () => button('Apply').click());
+      expect(updateMock).toHaveBeenCalledTimes(2);
+      expect(updateMock).toHaveBeenCalledWith('ws-1', 'task-1', { priority: 'high' });
+      expect(updateMock).toHaveBeenCalledWith('ws-1', 'task-2', { priority: 'high' });
+    } finally { unmount(root, container); }
+  });
+
   it('disables the Apply button when there are no staged changes', () => {
     const { container, root } = renderBar();
     act(() => {
