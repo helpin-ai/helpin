@@ -44,14 +44,25 @@ function MetricCard({
   value,
   icon: Icon,
   attention,
+  onClick,
 }: {
   label: string;
   value: number | string;
   icon: typeof Clock03Icon;
   attention?: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border/30 bg-muted/20 px-4 py-3">
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        attention
+          ? 'border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10'
+          : 'border-border/30 bg-muted/20 text-muted-foreground hover:border-border/60 hover:bg-muted/40',
+      )}
+    >
       <Icon className={cn(
         'h-4 w-4 shrink-0',
         attention ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground',
@@ -60,7 +71,7 @@ function MetricCard({
         <p className="text-lg font-semibold leading-none tabular-nums">{value}</p>
         <p className="mt-0.5 text-[11px] text-muted-foreground/70">{label}</p>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -179,24 +190,28 @@ export function CRMOverviewPage() {
 
         <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetricCard
+            onClick={() => void navigate({ to: '/w/$slug/pm/my-work', params: { slug: workspaceSlug } })}
             label="CRM follow-ups"
             value={accessLoading || tasksQuery.isLoading ? '-' : dueTasks.length}
             icon={CheckListIcon}
             attention={dueTasks.length > 0}
           />
           <MetricCard
+            onClick={() => void navigate({ to: '/w/$slug/crm/meetings', params: { slug: workspaceSlug } })}
             label="Meetings today"
             value={meetingsQuery.isLoading ? '-' : meetingsToday}
             icon={Calendar01Icon}
           />
           <MetricCard
+            onClick={() => void navigate({ to: '/w/$slug/crm/deals', params: { slug: workspaceSlug } })}
             label="Deals to review"
             value={dealsQuery.isLoading || healthQuery.isLoading ? '-' : dealsNeedingAttention.length}
             icon={DollarCircleIcon}
             attention={dealsNeedingAttention.length > 0}
           />
           <MetricCard
-            label="AI review"
+            onClick={openSuggestion}
+            label="Awaiting review"
             value={suggestionsQuery.isLoading ? '-' : suggestions.length}
             icon={SparklesIcon}
             attention={suggestions.length > 0}
@@ -219,7 +234,7 @@ export function CRMOverviewPage() {
           <div className="space-y-10">
           <main className="contents">
             <Card className="gap-0 border-0 bg-transparent py-0 shadow-none">
-              <CardHeader className="mb-1 flex-row items-center justify-between px-1 py-0">
+              <CardHeader className="mb-1 flex flex-row items-center justify-between gap-3 px-1 py-0">
                 <div>
                   <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">CRM follow-ups</CardTitle>
                 </div>
@@ -264,7 +279,7 @@ export function CRMOverviewPage() {
             </Card>
 
             <Card className="gap-0 border-0 bg-transparent py-0 shadow-none">
-              <CardHeader className="mb-1 flex-row items-center justify-between px-1 py-0">
+              <CardHeader className="mb-1 flex flex-row items-center justify-between gap-3 px-1 py-0">
                 <div>
                   <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upcoming meetings</CardTitle>
                 </div>
@@ -312,7 +327,7 @@ export function CRMOverviewPage() {
 
           <aside className="contents">
             <Card className="gap-0 border-0 bg-transparent py-0 shadow-none">
-              <CardHeader className="mb-1 flex-row items-center justify-between px-1 py-0">
+              <CardHeader className="mb-1 flex flex-row items-center justify-between gap-3 px-1 py-0">
                 <div>
                   <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Deals needing attention</CardTitle>
                 </div>
@@ -342,7 +357,7 @@ export function CRMOverviewPage() {
             </Card>
 
             <Card className="gap-0 border-0 bg-transparent py-0 shadow-none">
-              <CardHeader className="mb-1 flex-row items-center justify-between px-1 py-0">
+              <CardHeader className="mb-1 flex flex-row items-center justify-between gap-3 px-1 py-0">
                 <div>
                   <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground">AI review</CardTitle>
                 </div>
