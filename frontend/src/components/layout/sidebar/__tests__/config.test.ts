@@ -43,9 +43,10 @@ describe('workspace rail navigation', () => {
       'Companies',
       'Deals',
       'Meetings',
-      'Signals',
       'Playbooks',
+      'Signals',
     ]);
+    expect(groups.crm[0]?.items.find((item) => item.label === 'Playbooks')?.separatorBefore).toBe(true);
   });
 });
 

@@ -541,7 +541,9 @@ export function useCreateSupportEmailRoute(workspaceId: string) {
   return useMutation({
     mutationFn: (payload: CreateSupportEmailRouteRequest) =>
       supportService.createEmailRoute(workspaceId, payload).then(unwrap),
-    onSuccess: () => {
+    onSuccess: (route) => {
+      // Restored routes keep their ID, but start a fresh setup attempt.
+      try { localStorage.removeItem(`helpin:forwarding-setup:v1:${workspaceId}:${route.id}`); } catch { /* Storage may be unavailable. */ }
       queryClient.invalidateQueries({ queryKey: queryKeys.support.emailRoutes(workspaceId) });
     },
     onError: (error: Error) => {

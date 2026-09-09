@@ -4,6 +4,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from '@/components/ui/sidebar';
 import type { NavGroup } from './types';
 
@@ -26,6 +27,7 @@ export function StandardRailNav({ groups, isActive, onNavigate }: StandardRailNa
           <SidebarMenu>
             {group.items.map((item) => (
               <SidebarMenuItem key={item.link}>
+                {item.separatorBefore && <SidebarSeparator className="mx-0 my-2 bg-quiet-divider-strong" />}
                 <SidebarMenuButton
                   asChild
                   tooltip={item.label}

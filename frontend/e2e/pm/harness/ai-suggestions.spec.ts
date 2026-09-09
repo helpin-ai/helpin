@@ -40,6 +40,7 @@ async function setup(page: Page, options: { readOnly?: boolean; crm?: boolean; e
 
 test('shows a concise source-backed list and records review without sending or creating tasks', async ({ page }) => {
   const writes = await setup(page, { crm: true });
+  await expect(page.getByRole('button', { name: /Recheck routing|Check more/ })).toHaveCount(0);
   await expect(page.getByText(suggestion.meeting_title, { exact: false })).toBeVisible();
   await expect(page.getByText(draft.draft_body)).toHaveCount(0);
   await page.screenshot({ path: '/tmp/helpin-my-work-ai-list.png' });
