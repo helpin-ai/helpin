@@ -10,22 +10,24 @@ import type { CRMSignalDismissalReason, CRMSuggestion } from '@/lib/crmTypes';
 import type { CRMSituationItem } from '@/lib/crmSituationTypes';
 import { PlaybookError, PlaybookField, PlaybookSelect } from '../playbooks/PlaybookUI';
 import { PlaybookActionReview, PlaybookActionResult } from './PlaybookActionReview';
+import { signalOverviewText, repeatsSignalText } from './SignalDrawerLayout';
 
 export function SignalActions({ ws, slug, item, canEdit }: { ws: string; slug: string; item: CRMSituationItem; canEdit: boolean }) {
-  return <RecommendationActions ws={ws} slug={slug} actions={item.actions ?? []} signalId={item.situation.id} lifecycle={item.situation.lifecycle} canEdit={canEdit} />;
+  return <RecommendationActions ws={ws} slug={slug} actions={item.actions ?? []} displayedText={signalOverviewText(item)} signalId={item.situation.id} lifecycle={item.situation.lifecycle} canEdit={canEdit} />;
 }
 
-export function RecommendationActions({ ws, slug, actions, signalId, lifecycle = 'open', canEdit, blockedReason }: { ws: string; slug: string; actions: CRMSuggestion[]; signalId?: string; lifecycle?: string; canEdit: boolean; blockedReason?: string }) {
+export function RecommendationActions({ ws, slug, actions, signalId, lifecycle = 'open', canEdit, blockedReason, displayedText = [] }: { ws: string; slug: string; actions: CRMSuggestion[]; signalId?: string; lifecycle?: string; canEdit: boolean; blockedReason?: string; displayedText?: (string | null | undefined)[] }) {
   const [selection, setSelection] = useState<{ action: CRMSuggestion; kind: 'accept' | 'dismiss' }>();
   const pending = actions.filter((action) => action.status === 'pending');
   const active = actions.filter((action) => action.status === 'accepted' && (action.execution_status !== 'succeeded' || actionRequiresFollowThrough(action)));
   const completed = actions.filter((action) => ['dismissed', 'superseded', 'expired'].includes(action.status) || action.status === 'accepted' && action.execution_status === 'succeeded' && !actionRequiresFollowThrough(action));
+  const titleShownAbove = pending.length + active.length === 1 && repeatsSignalText((pending[0] || active[0]).title, displayedText);
   if (!actions.length) return null;
   return <>
-    {(pending.length > 0 || active.length > 0) && <QuietSection className="px-0 sm:px-0 lg:px-0" title={pending.length ? 'Recommended action' : 'Action progress'}>
+    {(pending.length > 0 || active.length > 0) && <QuietSection className="px-0 py-4 sm:px-0 lg:px-0" title={pending.length ? titleShownAbove ? 'Review next step' : 'Recommended action' : 'Action progress'}>
       <div className="divide-y divide-quiet-divider-light">{[...pending, ...active].map((action) => <div key={action.id} className="py-3 first:pt-0 last:pb-0">
-        <p className="text-sm font-medium leading-6">{action.title}</p>
-        {action.description && <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-quiet-text-secondary">{action.description}</p>}
+        {!titleShownAbove && <p className="text-sm font-medium leading-6">{action.title}</p>}
+        {action.description && !repeatsSignalText(action.description, [...displayedText, action.title]) && <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-quiet-text-secondary">{action.description}</p>}
         <RecommendationTarget slug={slug} action={action} />
         {action.suggestion_type !== 'playbook_action' && <RecommendationDetails action={action} />}
         {action.suggestion_type === 'playbook_action' && action.status === 'accepted' && <PlaybookActionResult ws={ws} slug={slug} action={action} canEdit={canEdit} />}
