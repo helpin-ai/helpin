@@ -1130,8 +1130,8 @@ function Dashboard() {
               <Message01Icon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Identity Capture</p>
-              <p className="text-sm text-muted-foreground">Control what contact information is collected for human support</p>
+              <p className="text-sm font-medium">Contact details</p>
+              <p className="text-sm text-muted-foreground">Choose which contact details to ask for when visitors request human support.</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('identity-capture') && 'rotate-180')} />
           </button>
@@ -1140,24 +1140,24 @@ function Dashboard() {
             <div className="border-t border-border px-6 py-6 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm">Ask for email before human handoff</Label>
-                  <p className="text-xs text-muted-foreground">When visitors request a person, ask where to send replies.</p>
+                  <Label className="text-sm">Ask for email before human support</Label>
+                  <p className="text-xs text-muted-foreground">Show an email prompt when visitors request a teammate. Visitors whose email is already known are not asked again.</p>
                 </div>
                 <Switch checked={requireEmail} onCheckedChange={setRequireEmail} />
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm">Ask for phone number after email</Label>
-                  <p className="text-xs text-muted-foreground">Also collect a phone number when your support process needs it.</p>
+                  <Label className="text-sm">Also ask for a phone number</Label>
+                  <p className="text-xs text-muted-foreground">Show an optional phone number prompt after the email step.</p>
                 </div>
                 <Switch checked={requirePhone} onCheckedChange={setRequirePhone} disabled={!requireEmail} />
               </div>
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm">Require contact details for handoff</Label>
-                  <p className="text-xs text-muted-foreground">Visitors must provide an email before requesting human support. When disabled, they can continue without email.</p>
+                  <Label className="text-sm">Make email required</Label>
+                  <p className="text-xs text-muted-foreground">Visitors cannot skip the email step. When off, they can continue without email. Phone number remains optional.</p>
                 </div>
                 <Switch checked={forceVisitorIdentity} onCheckedChange={setForceVisitorIdentity} disabled={!requireEmail} />
               </div>
