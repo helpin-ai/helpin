@@ -1,3 +1,5 @@
+import { emailForwardingInboxHref } from './emailForwardingLinks';
+import { ForwardingSetupTransition } from './ForwardingSetupTransition';
 import { type ReactNode, useCallback, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Copy01Icon, InboxIcon, LinkSquare01Icon, MailAdd01Icon, Delete01Icon } from '@/lib/icons';
@@ -300,12 +302,10 @@ function EmailRouteRow({
   const verifiedAt = route?.forwarding_verified_at ? new Date(route.forwarding_verified_at).toLocaleString() : null;
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
   const [sourceAddress, setSourceAddress] = useState(route?.source_address ?? '');
-  const confirmationHref = route?.confirmation_conversation_id && workspaceSlug
-    ? `/w/${workspaceSlug}/support/${route.confirmation_conversation_id}`
+  const confirmationHref = route?.confirmation_conversation_id
+    ? emailForwardingInboxHref(workspaceSlug, route.mailbox_id, route.confirmation_conversation_id)
     : null;
-  const inboxHref = route?.mailbox_id && workspaceSlug
-    ? `/w/${workspaceSlug}/support?mailbox_ids=${encodeURIComponent(route.mailbox_id)}`
-    : workspaceSlug ? `/w/${workspaceSlug}/support` : null;
+  const inboxHref = emailForwardingInboxHref(workspaceSlug, route?.mailbox_id);
 
   return (
     <div className="py-3 px-1">
@@ -371,7 +371,8 @@ function EmailRouteRow({
           )}
         </div>
       </div>
-      {route && !verifiedAt && (
+      {route && (
+        <ForwardingSetupTransition key={route.id} verified={Boolean(verifiedAt)}>
         <div className="ml-11 mt-3 rounded-lg border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
           <p className="text-sm font-medium text-amber-950 dark:text-amber-100">Complete forwarding setup</p>
           <div className="mt-3 space-y-2 text-sm">
@@ -431,6 +432,7 @@ function EmailRouteRow({
           )}
           {route.forwarding_last_error && <p className="mt-2 text-xs text-destructive">{route.forwarding_last_error}</p>}
         </div>
+        </ForwardingSetupTransition>
       )}
       {route && verifiedAt && lastInbound && (
         <p className="ml-11 mt-2 text-xs text-muted-foreground">Last email received: {lastInbound}</p>
