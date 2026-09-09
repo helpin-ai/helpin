@@ -24,7 +24,7 @@ Build Helpin product surfaces in the Quiet Hairline language: a warm, document-l
 - For human-authored conversation messages, comments, and email outside Support, compose with the centralized `QuietConversationComposer` primitives. `ReplyComposer` remains the heavily used Support reference implementation; preserve its domain behavior and mirror intentional visual-contract changes between it and the primitives.
 - Keep search visually distinct from data entry: use the centralized `QuietSearchInput` throughout product surfaces; it owns the Skill Catalog's compact bordered treatment and leading icon. Never use `QuietUnderlineInput` for search. Preserve behavior-owned `CommandInput`, editor search/replace, and content-preview search controls.
 - Use semantic Quiet tokens. Do not hard-code a near-match when a token exists.
-- Preserve visible keyboard focus with the system's warm 2px focus treatment. "No focus ring" means no default blue ring, not no focus indicator.
+- Form dialogs default to Create Deal’s underline fields: `QuietUnderlineInput` and full-width selectors with `variant="underline"`. Focus emphasizes the underline, without a rectangular outline or filled block. See [Form dialogs](references/helpin-components.md#form-dialogs). Preserve visible keyboard focus on other controls with the system’s warm focus treatment.
 - Preserve dark mode and current responsive application behavior.
 - Do not introduce a second icon library. Use `@/lib/icons` or `@/lib/pmIcons`.
 - Treat derived content as incomplete without provenance.

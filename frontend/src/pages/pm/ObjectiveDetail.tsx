@@ -8,7 +8,7 @@ import { useObjective } from '@/hooks/queries/useObjectives';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import { useObjectiveAutosave } from './useObjectiveAutosave';
-import { QuietBreadcrumbs, QuietDetailHeader, QuietDetailLayout, QuietEmptyState, QuietMetricBlock, QuietMetricGrid, QuietSectionHeader, QuietStatusText, QuietTextAction, QuietTitleInput } from '@/components/design-system/quiet';
+import { QuietBreadcrumbs, QuietDetailHeader, QuietDetailLayout, QuietEmptyState, QuietMetricBlock, QuietMetricGrid, QuietPrimaryAction, QuietSectionHeader, QuietStatusText, QuietTextAction, QuietTitleInput, QuietUnderlineInput } from '@/components/design-system/quiet';
 import { EpicColorSwatch } from '@/components/pm/EpicColorSwatch';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
@@ -1107,20 +1107,21 @@ export function ObjectiveDetailPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Name</label>
-              <input
+              <label htmlFor="key-result-name" className="text-sm font-medium text-quiet-text-secondary">Name</label>
+              <QuietUnderlineInput
+                id="key-result-name"
                 type="text"
                 value={newKrName}
                 onChange={(e) => setNewKrName(e.target.value)}
                 placeholder="e.g., Increase activation rate"
-                className="mt-1 w-full border-0 border-b border-quiet-field bg-transparent py-2 text-sm placeholder:text-quiet-muted focus-visible:outline-2 focus-visible:outline-quiet-text-primary"
+                className="mt-1"
                 autoFocus
               />
             </div>
             <div className={`grid gap-3 ${newKrType === 'boolean' ? 'grid-cols-1' : 'grid-cols-3'}`}>
               <div>
                 <div className="flex items-center gap-1">
-                  <label className="text-xs font-medium text-muted-foreground">Measure as</label>
+                  <label htmlFor="key-result-type" className="text-sm font-medium text-quiet-text-secondary">Measure as</label>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -1140,7 +1141,7 @@ export function ObjectiveDetailPage() {
                   if (v === 'boolean') { setNewKrStart('0'); setNewKrTarget('1'); }
                   else if (v === 'percent') { setNewKrStart('0'); setNewKrTarget('100'); }
                 }}>
-                  <SelectTrigger className="mt-1 h-9 text-sm">
+                  <SelectTrigger id="key-result-type" variant="underline" className="mt-1 w-full px-0.5">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1153,13 +1154,14 @@ export function ObjectiveDetailPage() {
               {newKrType !== 'boolean' && (
                 <>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">Starting value</label>
+                    <label htmlFor="key-result-start" className="text-sm font-medium text-quiet-text-secondary">Starting value</label>
                     <div className="relative mt-1">
-                      <input
+                      <QuietUnderlineInput
+                        id="key-result-start"
                         type="number"
                         value={newKrStart}
                         onChange={(e) => setNewKrStart(e.target.value)}
-                        className="w-full border-0 border-b border-quiet-field bg-transparent py-2 text-sm focus-visible:outline-2 focus-visible:outline-quiet-text-primary"
+                        className={newKrType === 'percent' ? 'pr-7' : undefined}
                       />
                       {newKrType === 'percent' && (
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
@@ -1167,13 +1169,14 @@ export function ObjectiveDetailPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground">Target value</label>
+                    <label htmlFor="key-result-target" className="text-sm font-medium text-quiet-text-secondary">Target value</label>
                     <div className="relative mt-1">
-                      <input
+                      <QuietUnderlineInput
+                        id="key-result-target"
                         type="number"
                         value={newKrTarget}
                         onChange={(e) => setNewKrTarget(e.target.value)}
-                        className="w-full border-0 border-b border-quiet-field bg-transparent py-2 text-sm focus-visible:outline-2 focus-visible:outline-quiet-text-primary"
+                        className={newKrType === 'percent' ? 'pr-7' : undefined}
                       />
                       {newKrType === 'percent' && (
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
@@ -1185,10 +1188,10 @@ export function ObjectiveDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setKrModalOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={handleCreateKeyResult} disabled={!canManageObjective || !newKrName.trim()}>
+            <QuietTextAction onClick={() => setKrModalOpen(false)}>Cancel</QuietTextAction>
+            <QuietPrimaryAction onClick={handleCreateKeyResult} disabled={!canManageObjective || !newKrName.trim()}>
               Add Key Result
-            </Button>
+            </QuietPrimaryAction>
           </DialogFooter>
         </DialogContent>
       </Dialog>
