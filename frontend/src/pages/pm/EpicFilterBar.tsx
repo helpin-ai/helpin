@@ -126,8 +126,7 @@ export function EpicFilterBar({
         </label>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Group by:</span>
-          <QuietFilterDropdown label="Group by" value={groupBy} onChange={onGroupByChange} options={groupByOptions} />
+          <QuietFilterDropdown label="Group by" showLabel="inline" value={groupBy} onChange={onGroupByChange} options={groupByOptions} />
           <DisplayPropertiesPopover
             allProperties={displayProperties}
             visible={visibleProperties}
