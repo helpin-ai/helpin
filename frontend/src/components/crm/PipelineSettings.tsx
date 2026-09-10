@@ -1,25 +1,18 @@
 import { useState } from "react";
-import {
-  PlusSignIcon,
-  Delete01Icon,
-  PencilEdit01Icon,
-  ArrowUp02Icon,
-  ArrowDown02Icon,
-  ArrowDown01Icon,
-  ArrowUp01Icon,
-} from "@/lib/icons";
 import { toast } from "sonner";
+import {
+  QuietEmptyState,
+  QuietTextAction,
+  QuietStatusText,
+} from "@/components/design-system/quiet";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -27,686 +20,456 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { ConfirmDialog } from "@/components/pm/ConfirmDialog";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+} from "@/components/design-system/quiet-dropdown-select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  usePipelines,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   useCreatePipeline,
-  useUpdatePipeline,
   useDeletePipeline,
+  usePermissions,
+  usePipelines,
+  useUpdatePipeline,
+  useWorkspaceAccess,
 } from "@/hooks/queries";
-import { StageTypeIcon } from "@/lib/crmConstants";
+import { Delete01Icon, PencilEdit01Icon, PlusSignIcon } from "@/lib/icons";
 import type {
-  CRMDealCommercialMotion,
   CRMPipeline,
   CRMPipelineStage,
   PipelineStageType,
+  UpdateCRMPipelineRequest,
 } from "@/lib/crmTypes";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { PipelineStageTable } from "./pipelines/PipelineStageTable";
+import {
+  DeletePipelineStageDialog,
+  PipelineDetailsDialog,
+  PipelineStageDialog,
+} from "./pipelines/PipelineSettingsDialogs";
+import { MOTION_LABELS, stagePayload } from "./pipelines/pipelineSettingsUtils";
 
-const STAGE_TYPE_ORDER: PipelineStageType[] = ["open", "won", "lost"];
-const STAGE_TYPE_LABEL: Record<PipelineStageType, string> = {
-  open: "Open",
-  won: "Won",
-  lost: "Lost",
-};
-const COMMERCIAL_MOTION_LABEL: Record<CRMDealCommercialMotion, string> = {
-  new_business: "New business",
-  expansion: "Expansion",
-  renewal: "Renewal",
-};
-const LINEAR_CARD_CLASS = "rounded-xl border-border shadow-none";
-
-const DEFAULT_STAGES = [
-  {
-    name: "Qualification",
-    stage_type: "open" as PipelineStageType,
-    position: 0,
-    probability: 10,
-  },
-  {
-    name: "Proposal",
-    stage_type: "open" as PipelineStageType,
-    position: 1,
-    probability: 30,
-  },
-  {
-    name: "Negotiation",
-    stage_type: "open" as PipelineStageType,
-    position: 2,
-    probability: 60,
-  },
-  {
-    name: "Closed Won",
-    stage_type: "won" as PipelineStageType,
-    position: 3,
-    probability: 100,
-  },
-  {
-    name: "Closed Lost",
-    stage_type: "lost" as PipelineStageType,
-    position: 4,
-    probability: 0,
-  },
-];
+type Editor =
+  | { kind: "pipeline"; pipeline?: CRMPipeline }
+  | {
+      kind: "stage";
+      pipeline: CRMPipeline;
+      stage?: CRMPipelineStage;
+      type: PipelineStageType;
+    }
+  | { kind: "delete-stage"; pipeline: CRMPipeline; stage: CRMPipelineStage }
+  | { kind: "delete-pipeline"; pipeline: CRMPipeline };
 
 export function PipelineSettings() {
-  const { currentWorkspace } = useWorkspaceStore();
-  const wsId = currentWorkspace?.id ?? "";
-  const { data: pipelines, isLoading } = usePipelines(wsId);
+  const wsId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? "");
+  const {
+    data: pipelines = [],
+    isLoading,
+    isError,
+    isLoadingError,
+    refetch,
+  } = usePipelines(wsId);
+  const { data: access } = useWorkspaceAccess(wsId);
+  const editable = usePermissions(access).has("crm.admin");
   const createPipeline = useCreatePipeline(wsId);
   const updatePipeline = useUpdatePipeline(wsId);
   const deletePipeline = useDeletePipeline(wsId);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [conflict, setConflict] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [editorRevision, setEditorRevision] = useState(0);
+  const [lastSaved, setLastSaved] = useState(false);
+  const pending =
+    reloading ||
+    createPipeline.isPending ||
+    updatePipeline.isPending ||
+    deletePipeline.isPending;
+  const pipeline =
+    pipelines.find((item) => item.id === selectedId) ??
+    pipelines.find((item) => item.is_default) ??
+    pipelines[0];
 
-  const [expandedPipelineId, setExpandedPipelineId] = useState<string | null>(
-    null,
-  );
-  const [pipelineDialogOpen, setPipelineDialogOpen] = useState(false);
-  const [editPipeline, setEditPipeline] = useState<CRMPipeline | null>(null);
-  const [pipelineName, setPipelineName] = useState("");
-  const [pipelineIsDefault, setPipelineIsDefault] = useState(false);
-  const [pipelineCommercialMotion, setPipelineCommercialMotion] =
-    useState<CRMDealCommercialMotion>("new_business");
-
-  const [stageDialogOpen, setStageDialogOpen] = useState(false);
-  const [editStage, setEditStage] = useState<CRMPipelineStage | null>(null);
-  const [targetPipelineId, setTargetPipelineId] = useState<string | null>(null);
-  const [stageName, setStageName] = useState("");
-  const [stageType, setStageType] = useState<PipelineStageType>("open");
-  const [stageProbability, setStageProbability] = useState(0);
-
-  const [deletePipelineConfirm, setDeletePipelineConfirm] = useState<
-    string | null
-  >(null);
-  const [deleteStageConfirm, setDeleteStageConfirm] = useState<{
-    pipelineId: string;
-    stageId: string;
-  } | null>(null);
-
-  // ── Pipeline dialog ──
-
-  const openCreatePipeline = () => {
-    setEditPipeline(null);
-    setPipelineName("");
-    setPipelineIsDefault(false);
-    setPipelineCommercialMotion("new_business");
-    setPipelineDialogOpen(true);
+  const openEditor = (next: Editor) => {
+    setConflict(false);
+    setEditor(next);
   };
-
-  const openEditPipeline = (p: CRMPipeline) => {
-    setEditPipeline(p);
-    setPipelineName(p.name);
-    setPipelineIsDefault(p.is_default);
-    setPipelineCommercialMotion(p.default_commercial_motion ?? "new_business");
-    setPipelineDialogOpen(true);
-  };
-
-  const handleSavePipeline = async () => {
-    if (!pipelineName.trim()) return;
+  const reloadEditor = async () => {
+    if (!editor || !editor.pipeline) return;
+    setReloading(true);
     try {
-      if (editPipeline) {
-        await updatePipeline.mutateAsync({
-          id: editPipeline.id,
-          name: pipelineName.trim(),
-          is_default: pipelineIsDefault,
-          default_commercial_motion: pipelineCommercialMotion,
-        });
-        toast.success("Pipeline updated");
-      } else {
-        await createPipeline.mutateAsync({
-          workspace_id: wsId,
-          name: pipelineName.trim(),
-          is_default: pipelineIsDefault,
-          default_commercial_motion: pipelineCommercialMotion,
-          stages: DEFAULT_STAGES,
-        });
-        toast.success("Pipeline created");
-      }
-      setPipelineDialogOpen(false);
-    } catch {
-      toast.error(
-        editPipeline
-          ? "Failed to update pipeline"
-          : "Failed to create pipeline",
+      const result = await refetch();
+      if (result.error) throw result.error;
+      const latest = result.data?.find(
+        (item) => item.id === editor.pipeline?.id,
       );
-    }
-  };
-
-  const handleDeletePipeline = async () => {
-    if (!deletePipelineConfirm) return;
-    try {
-      await deletePipeline.mutateAsync(deletePipelineConfirm);
-      toast.success("Pipeline deleted");
-      if (expandedPipelineId === deletePipelineConfirm)
-        setExpandedPipelineId(null);
-    } catch {
-      toast.error("Failed to delete pipeline");
-    }
-    setDeletePipelineConfirm(null);
-  };
-
-  // ── Stage helpers ──
-
-  const getPipeline = (id: string) => pipelines?.find((p) => p.id === id);
-
-  // @ts-expect-error -- wired in upcoming UI iteration
-  const openAddStage = (pipelineId: string) => {
-    setEditStage(null);
-    setTargetPipelineId(pipelineId);
-    setStageName("");
-    setStageType("open");
-    setStageProbability(0);
-    setStageDialogOpen(true);
-  };
-
-  const openEditStage = (pipelineId: string, stage: CRMPipelineStage) => {
-    setEditStage(stage);
-    setTargetPipelineId(pipelineId);
-    setStageName(stage.name);
-    setStageType(stage.stage_type);
-    setStageProbability(stage.probability);
-    setStageDialogOpen(true);
-  };
-
-  const saveStages = async (pipelineId: string, stages: CRMPipelineStage[]) => {
-    const mapped = stages.map((s, i) => ({
-      id: s.id || undefined,
-      name: s.name,
-      stage_type: s.stage_type,
-      position: i,
-      probability: s.probability,
-    }));
-    try {
-      await updatePipeline.mutateAsync({ id: pipelineId, stages: mapped });
-    } catch {
-      toast.error("Failed to update stages");
-    }
-  };
-
-  const handleSaveStage = async () => {
-    if (!stageName.trim() || !targetPipelineId) return;
-    const pipeline = getPipeline(targetPipelineId);
-    if (!pipeline) return;
-
-    const existing = [...(pipeline.stages ?? [])];
-
-    if (editStage) {
-      const idx = existing.findIndex((s) => s.id === editStage.id);
-      if (idx >= 0) {
-        existing[idx] = {
-          ...existing[idx],
-          name: stageName.trim(),
-          stage_type: stageType,
-          probability: stageProbability,
-        };
+      if (!latest) {
+        setEditor(null);
+        return;
       }
-    } else {
-      const newStage = {
-        id: "",
-        pipeline_id: targetPipelineId,
-        name: stageName.trim(),
-        stage_type: stageType,
-        position: existing.length,
-        probability: stageProbability,
-        created_at: "",
-        updated_at: "",
-      } satisfies CRMPipelineStage;
-      existing.push(newStage);
-    }
-
-    // Sort by stage_type order, preserving relative order within each group
-    const sorted = sortStages(existing);
-    await saveStages(targetPipelineId, sorted);
-    toast.success(editStage ? "Stage updated" : "Stage added");
-    setStageDialogOpen(false);
-  };
-
-  const handleDeleteStage = async () => {
-    if (!deleteStageConfirm) return;
-    const pipeline = getPipeline(deleteStageConfirm.pipelineId);
-    if (!pipeline) return;
-
-    const remaining = (pipeline.stages ?? []).filter(
-      (s) => s.id !== deleteStageConfirm.stageId,
-    );
-    await saveStages(deleteStageConfirm.pipelineId, remaining);
-    toast.success("Stage deleted");
-    setDeleteStageConfirm(null);
-  };
-
-  const handleReorder = async (
-    pipelineId: string,
-    stageId: string,
-    direction: "up" | "down",
-  ) => {
-    const pipeline = getPipeline(pipelineId);
-    if (!pipeline) return;
-
-    const stages = sortStages([...(pipeline.stages ?? [])]);
-    // Find stage and its group
-    const stage = stages.find((s) => s.id === stageId);
-    if (!stage) return;
-
-    const group = stages.filter((s) => s.stage_type === stage.stage_type);
-    const groupIdx = group.findIndex((s) => s.id === stageId);
-    if (direction === "up" && groupIdx <= 0) return;
-    if (direction === "down" && groupIdx >= group.length - 1) return;
-
-    const swapIdx = direction === "up" ? groupIdx - 1 : groupIdx + 1;
-    // Swap within group
-    [group[groupIdx], group[swapIdx]] = [group[swapIdx], group[groupIdx]];
-
-    // Rebuild full list preserving group order
-    const rebuilt: CRMPipelineStage[] = [];
-    for (const type of STAGE_TYPE_ORDER) {
-      if (type === stage.stage_type) {
-        rebuilt.push(...group);
+      if (editor.kind === "stage" || editor.kind === "delete-stage") {
+        const stage = latest.stages?.find(
+          (item) => item.id === editor.stage?.id,
+        );
+        if (editor.stage && !stage) {
+          setEditor(null);
+          toast.info("This stage has already been removed.");
+          return;
+        }
+        if (editor.kind === "delete-stage" && stage)
+          setEditor({ ...editor, pipeline: latest, stage });
+        else if (editor.kind === "stage")
+          setEditor({ ...editor, pipeline: latest, stage });
       } else {
-        rebuilt.push(...stages.filter((s) => s.stage_type === type));
+        setEditor({ ...editor, pipeline: latest });
       }
+      setConflict(false);
+      setEditorRevision((value) => value + 1);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not reload the pipeline.",
+      );
+    } finally {
+      setReloading(false);
     }
-    await saveStages(pipelineId, rebuilt);
+  };
+  const reportError = (error: unknown) => {
+    if (error instanceof Error && "status" in error && error.status === 409)
+      setConflict(true);
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Could not save changes. Please try again.",
+    );
+  };
+  const save = async (
+    target: CRMPipeline,
+    data: UpdateCRMPipelineRequest,
+    success: string,
+  ) => {
+    if (pending || !editable) return;
+    setLastSaved(false);
+    try {
+      await updatePipeline.mutateAsync({
+        id: target.id,
+        expected_updated_at: target.updated_at,
+        ...data,
+      });
+      setEditor(null);
+      setLastSaved(true);
+      toast.success(success);
+    } catch (error) {
+      reportError(error);
+    }
   };
 
-  if (isLoading) {
+  if (isLoading)
     return (
-      <div className="p-4 text-muted-foreground">Loading pipelines...</div>
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-72" />
+        <Skeleton className="h-96 w-full" />
+      </div>
     );
-  }
+  if (isLoadingError)
+    return (
+      <div className="rounded-xl border p-6 text-center">
+        <p className="mb-3 text-sm text-muted-foreground">
+          Could not load pipelines.
+        </p>
+        <Button variant="outline" onClick={() => void refetch()}>
+          Try again
+        </Button>
+      </div>
+    );
 
-  const pipelineList = pipelines ?? [];
+  const deleteBlock = pipeline?.is_default
+    ? "Choose another default pipeline before deleting this one."
+    : (pipeline?.deal_count ?? 0) > 0
+      ? "Move all deals to another pipeline before deleting this one, including won and lost deals."
+      : null;
 
   return (
-    <>
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-base font-medium">Pipelines</CardTitle>
-            <Badge variant="secondary" className="text-xs">
-              {pipelineList.length}
-            </Badge>
-          </div>
-          <Button size="sm" variant="outline" onClick={openCreatePipeline}>
-            <PlusSignIcon className="mr-1 h-3.5 w-3.5" />
-            Create
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-1.5 pt-0">
-          {pipelineList.length === 0 && (
-            <p className="text-xs text-muted-foreground py-4 text-center">
-              No pipelines configured. Create one to start managing deals.
-            </p>
-          )}
-          {pipelineList.map((pipeline) => {
-            const isExpanded = expandedPipelineId === pipeline.id;
-            const hasDealCount = pipeline.deal_count > 0;
-
-            return (
-              <div
-                key={pipeline.id}
-                className="rounded-xl border border-border"
+    <div className="space-y-5">
+      {isError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-quiet-divider-strong pb-3 text-sm text-quiet-text-secondary"
+        >
+          <span>
+            Could not refresh pipelines. Showing the last loaded version.
+          </span>
+          <QuietTextAction onClick={() => void refetch()}>
+            Try again
+          </QuietTextAction>
+        </div>
+      )}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-2 sm:max-w-sm">
+          <label
+            htmlFor="pipeline-selector"
+            className="text-xs font-medium text-muted-foreground"
+          >
+            Pipeline{pipelines.length > 0 ? ` · ${pipelines.length}` : ""}
+          </label>
+          {pipeline && (
+            <Select
+              value={pipeline.id}
+              disabled={pending}
+              onValueChange={(id) => {
+                setSelectedId(id);
+                setLastSaved(false);
+              }}
+            >
+              <SelectTrigger
+                variant="underline"
+                id="pipeline-selector"
+                className="w-full px-0.5"
               >
-                {/* Pipeline row */}
-                <div className="flex items-center justify-between px-3 py-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm font-medium truncate">
-                      {pipeline.name}
-                    </span>
-                    {pipeline.is_default && (
-                      <Badge
-                        variant="secondary"
-                        className="text-[10px] shrink-0"
-                      >
-                        Default
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="text-[10px] shrink-0">
-                      {
-                        COMMERCIAL_MOTION_LABEL[
-                          pipeline.default_commercial_motion ?? "new_business"
-                        ]
-                      }
-                    </Badge>
-                    {hasDealCount && (
-                      <Badge variant="outline" className="text-[10px] shrink-0">
-                        {pipeline.deal_count}{" "}
-                        {pipeline.deal_count === 1 ? "deal" : "deals"}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => openEditPipeline(pipeline)}
-                    >
-                      <PencilEdit01Icon className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() =>
-                        setExpandedPipelineId(isExpanded ? null : pipeline.id)
-                      }
-                    >
-                      {isExpanded ? (
-                        <ArrowUp01Icon className="h-3.5 w-3.5" />
-                      ) : (
-                        <ArrowDown01Icon className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive"
-                      disabled={hasDealCount}
-                      title={
-                        hasDealCount
-                          ? "Pipeline has active deals"
-                          : "Delete pipeline"
-                      }
-                      onClick={() => setDeletePipelineConfirm(pipeline.id)}
-                    >
-                      <Delete01Icon className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {pipelines.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.name}
+                    {item.is_default ? " · Default" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+        {editable && (
+          <QuietTextAction
+            disabled={pending}
+            onClick={() => openEditor({ kind: "pipeline" })}
+          >
+            <PlusSignIcon className="size-4" />
+            Create pipeline
+          </QuietTextAction>
+        )}
+      </div>
 
-                {/* Expanded stage management */}
-                {isExpanded && (
-                  <div className="border-t border-border px-3 py-2 space-y-4">
-                    {STAGE_TYPE_ORDER.map((type) => {
-                      const groupStages = sortStages(
-                        pipeline.stages ?? [],
-                      ).filter((s) => s.stage_type === type);
-                      return (
-                        <section key={type} className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide">
-                              <StageTypeIcon
-                                stageType={type}
-                                className="h-3.5 w-3.5"
-                              />
-                              {STAGE_TYPE_LABEL[type]}
-                            </h4>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setEditStage(null);
-                                setTargetPipelineId(pipeline.id);
-                                setStageName("");
-                                setStageType(type);
-                                setStageProbability(
-                                  type === "won"
-                                    ? 100
-                                    : type === "lost"
-                                      ? 0
-                                      : 0,
-                                );
-                                setStageDialogOpen(true);
-                              }}
-                            >
-                              <PlusSignIcon className="h-3.5 w-3.5 mr-1" /> Add
-                            </Button>
-                          </div>
-                          {groupStages.length === 0 ? (
-                            <div className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                              No stages in this group.
-                            </div>
-                          ) : (
-                            <div className="space-y-1.5">
-                              {groupStages.map((stage, idx) => (
-                                <div
-                                  key={stage.id}
-                                  className="rounded-xl border border-border px-2.5 py-1.5"
-                                >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div>
-                                      <div className="flex items-center gap-1.5">
-                                        <p className="text-sm font-medium">
-                                          {stage.name}
-                                        </p>
-                                        <Badge
-                                          variant="outline"
-                                          className="text-xs"
-                                        >
-                                          {stage.probability}%
-                                        </Badge>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-7 w-7"
-                                        disabled={idx === 0}
-                                        onClick={() =>
-                                          handleReorder(
-                                            pipeline.id,
-                                            stage.id,
-                                            "up",
-                                          )
-                                        }
-                                      >
-                                        <ArrowUp02Icon className="h-3.5 w-3.5" />
-                                      </Button>
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-7 w-7"
-                                        disabled={
-                                          idx === groupStages.length - 1
-                                        }
-                                        onClick={() =>
-                                          handleReorder(
-                                            pipeline.id,
-                                            stage.id,
-                                            "down",
-                                          )
-                                        }
-                                      >
-                                        <ArrowDown02Icon className="h-3.5 w-3.5" />
-                                      </Button>
-                                      <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-7 w-7"
-                                        onClick={() =>
-                                          openEditStage(pipeline.id, stage)
-                                        }
-                                      >
-                                        <PencilEdit01Icon className="h-3.5 w-3.5" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </section>
-                      );
-                    })}
-                  </div>
+      {!pipeline ? (
+        <QuietEmptyState
+          title="Build your first sales pipeline"
+          description="Start with a few stages that match how your team sells. You can rename, reorder, and add stages as your process evolves."
+        />
+      ) : (
+        <>
+          <div className="flex flex-wrap items-start justify-between gap-3 border-t pt-5">
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="break-words text-lg font-semibold tracking-tight">
+                  {pipeline.name}
+                </h2>
+                {pipeline.is_default && (
+                  <QuietStatusText>Default</QuietStatusText>
                 )}
               </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      {/* Create/Edit Pipeline Dialog */}
-      <Dialog open={pipelineDialogOpen} onOpenChange={setPipelineDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {editPipeline ? "Edit Pipeline" : "Create Pipeline"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="pipeline-name">Name</Label>
-              <Input
-                id="pipeline-name"
-                value={pipelineName}
-                onChange={(e) => setPipelineName(e.target.value)}
-                placeholder="e.g. Sales Pipeline"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                id="pipeline-default"
-                checked={pipelineIsDefault}
-                onCheckedChange={setPipelineIsDefault}
-              />
-              <Label htmlFor="pipeline-default">Default pipeline</Label>
-            </div>
-            <div className="space-y-2">
-              <Label>Commercial motion</Label>
-              <Select
-                value={pipelineCommercialMotion}
-                onValueChange={(value) =>
-                  setPipelineCommercialMotion(value as CRMDealCommercialMotion)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="new_business">New business</SelectItem>
-                  <SelectItem value="expansion">Expansion</SelectItem>
-                  <SelectItem value="renewal">Renewal</SelectItem>
-                </SelectContent>
-              </Select>
               <p className="text-xs text-muted-foreground">
-                Deals inherit this motion unless a deal has an explicit
-                override.
+                {
+                  MOTION_LABELS[
+                    pipeline.default_commercial_motion ?? "new_business"
+                  ]
+                }
+                <span className="mx-2">·</span>
+                {pipeline.stages?.length ?? 0} stages
+                <span className="mx-2">·</span>
+                {pipeline.deal_count ?? 0}{" "}
+                {pipeline.deal_count === 1 ? "deal" : "deals"}
               </p>
             </div>
+            {editable && (
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={pending}
+                  onClick={() => openEditor({ kind: "pipeline", pipeline })}
+                >
+                  <PencilEdit01Icon className="size-3.5" />
+                  Edit pipeline
+                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={deleteBlock ? 0 : undefined}
+                      aria-label={deleteBlock ?? undefined}
+                    >
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-8 text-muted-foreground hover:text-destructive"
+                        aria-label="Delete pipeline"
+                        disabled={pending || !!deleteBlock}
+                        onClick={() =>
+                          openEditor({ kind: "delete-pipeline", pipeline })
+                        }
+                      >
+                        <Delete01Icon className="size-4" />
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {deleteBlock ?? "Delete pipeline"}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )}
           </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setPipelineDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSavePipeline}
-              disabled={!pipelineName.trim()}
-            >
-              {editPipeline ? "Save" : "Create"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add/Edit Stage Dialog */}
-      <Dialog open={stageDialogOpen} onOpenChange={setStageDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editStage ? "Edit Stage" : "Add Stage"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="stage-name">Name</Label>
-              <Input
-                id="stage-name"
-                value={stageName}
-                onChange={(e) => setStageName(e.target.value)}
-                placeholder="e.g. Qualification"
-              />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-medium">Stages</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {editable
+                  ? "Drag a handle or choose a position to reorder stages within their outcome."
+                  : "Stages define how deals progress through this pipeline."}
+              </p>
             </div>
-            <div className="space-y-2">
-              <Label>Stage Type</Label>
-              <Select
-                value={stageType}
-                onValueChange={(v) => setStageType(v as PipelineStageType)}
+            <span className="text-xs text-muted-foreground" role="status">
+              {pending
+                ? "Saving changes…"
+                : lastSaved
+                  ? "All changes saved"
+                  : editable
+                    ? "Changes save automatically"
+                    : "View only"}
+            </span>
+          </div>
+          <PipelineStageTable
+            key={pipeline.id}
+            stages={pipeline.stages ?? []}
+            editable={editable}
+            pending={pending}
+            onReorder={(stages) =>
+              save(
+                pipeline,
+                { stages: stagePayload(stages) },
+                "Stage order updated",
+              )
+            }
+            onAdd={(type) => openEditor({ kind: "stage", pipeline, type })}
+            onEdit={(stage) =>
+              openEditor({
+                kind: "stage",
+                pipeline,
+                stage,
+                type: stage.stage_type,
+              })
+            }
+            onDelete={(stage) =>
+              openEditor({ kind: "delete-stage", pipeline, stage })
+            }
+          />
+        </>
+      )}
+
+      {editor?.kind === "pipeline" && (
+        <PipelineDetailsDialog
+          key={editorRevision}
+          onReload={conflict ? () => void reloadEditor() : undefined}
+          pipeline={editor.pipeline}
+          pipelines={pipelines}
+          pending={pending}
+          onClose={() => setEditor(null)}
+          onSave={async (data) => {
+            if (!editable || pending) return;
+            if (editor.pipeline) {
+              await save(editor.pipeline, data, "Pipeline updated");
+              return;
+            }
+            try {
+              const created = await createPipeline.mutateAsync({
+                ...data,
+                workspace_id: wsId,
+              });
+              setSelectedId(created.id);
+              setEditor(null);
+              setLastSaved(true);
+              toast.success("Pipeline created");
+            } catch (error) {
+              reportError(error);
+            }
+          }}
+        />
+      )}
+      {editor?.kind === "stage" && (
+        <PipelineStageDialog
+          key={editorRevision}
+          onReload={conflict ? () => void reloadEditor() : undefined}
+          pipeline={editor.pipeline}
+          stage={editor.stage}
+          initialType={editor.type}
+          pending={pending}
+          onClose={() => setEditor(null)}
+          onSave={(data) =>
+            save(
+              editor.pipeline,
+              data,
+              editor.stage ? "Stage updated" : "Stage added",
+            )
+          }
+        />
+      )}
+      {editor?.kind === "delete-stage" && (
+        <DeletePipelineStageDialog
+          key={editorRevision}
+          onReload={conflict ? () => void reloadEditor() : undefined}
+          pipeline={editor.pipeline}
+          stage={editor.stage}
+          pending={pending}
+          onClose={() => setEditor(null)}
+          onSave={(data) => save(editor.pipeline, data, "Stage deleted")}
+        />
+      )}
+      {editor?.kind === "delete-pipeline" && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !pending) setEditor(null);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete “{editor.pipeline.name}”?</DialogTitle>
+              <DialogDescription>
+                This pipeline and its stages will be permanently removed. This
+                action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={() => setEditor(null)}
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="won">Won</SelectItem>
-                  <SelectItem value="lost">Lost</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="stage-probability">Probability (%)</Label>
-              <Input
-                id="stage-probability"
-                type="number"
-                min={0}
-                max={100}
-                value={stageProbability}
-                onChange={(e) =>
-                  setStageProbability(
-                    Math.min(100, Math.max(0, parseInt(e.target.value) || 0)),
-                  )
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStageDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveStage} disabled={!stageName.trim()}>
-              {editStage ? "Save" : "Add"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Pipeline Confirm */}
-      <ConfirmDialog
-        open={deletePipelineConfirm !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeletePipelineConfirm(null);
-        }}
-        title="Delete Pipeline"
-        description="This will permanently delete this pipeline and all its stages. This action cannot be undone."
-        confirmLabel="Delete"
-        onConfirm={handleDeletePipeline}
-      />
-
-      {/* Delete Stage Confirm */}
-      <ConfirmDialog
-        open={deleteStageConfirm !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteStageConfirm(null);
-        }}
-        title="Delete Stage"
-        description={
-          deleteStageConfirm &&
-          (getPipeline(deleteStageConfirm.pipelineId)?.deal_count ?? 0) > 0
-            ? "This pipeline has active deals. Removing this stage may affect deals currently in this stage."
-            : "This will remove the stage from the pipeline."
-        }
-        confirmLabel="Delete"
-        onConfirm={handleDeleteStage}
-      />
-    </>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={pending}
+                onClick={async () => {
+                  if (!editable || pending) return;
+                  try {
+                    await deletePipeline.mutateAsync(editor.pipeline.id);
+                    setEditor(null);
+                    setSelectedId(null);
+                    toast.success("Pipeline deleted");
+                  } catch (error) {
+                    reportError(error);
+                  }
+                }}
+              >
+                {pending ? "Deleting…" : "Delete pipeline"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
   );
-}
-
-/** Sort stages by stage_type order, preserving relative position within each group. */
-function sortStages(stages: CRMPipelineStage[]): CRMPipelineStage[] {
-  const byType: Record<string, CRMPipelineStage[]> = {
-    open: [],
-    won: [],
-    lost: [],
-  };
-  for (const s of stages) {
-    (byType[s.stage_type] ?? byType.open).push(s);
-  }
-  for (const type of STAGE_TYPE_ORDER) {
-    byType[type].sort((a, b) => a.position - b.position);
-  }
-  return [...byType.open, ...byType.won, ...byType.lost];
 }

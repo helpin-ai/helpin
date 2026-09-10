@@ -37,6 +37,7 @@ type CRMPipelineStage struct {
 	StageType   string    `json:"stage_type" gorm:"not null;default:'open'"` // open, won, lost
 	Position    int       `json:"position" gorm:"not null;default:0"`
 	Probability int       `json:"probability" gorm:"not null;default:0"` // 0-100
+	DealCount   int64     `json:"deal_count" gorm:"-"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -89,6 +90,8 @@ type UpdateCRMPipelineRequest struct {
 	IsDefault               *bool                        `json:"is_default"`
 	DefaultCommercialMotion *string                      `json:"default_commercial_motion"`
 	Stages                  []UpdateCRMPipelineStageItem `json:"stages"`
+	StageMigrations         map[string]string            `json:"stage_migrations,omitempty"`
+	ExpectedUpdatedAt       *time.Time                   `json:"expected_updated_at,omitempty"`
 }
 
 // UpdateCRMPipelineStageItem is a stage within a pipeline update request.
