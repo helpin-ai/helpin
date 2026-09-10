@@ -95,35 +95,8 @@ func (r *DocsContentRepository) Upsert(ctx context.Context, documentID string, c
 // block repository is wired, synchronizes addressable block rows in the same
 // transaction.
 func (r *DocsContentRepository) UpsertWithActor(ctx context.Context, documentID string, content json.RawMessage, actorID string) (*model.DocsContent, error) {
-	if r.blockRepo != nil {
-		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			normalized, blocks, err := r.blockRepo.NormalizeDocumentContentTx(ctx, tx, documentID, content, actorID)
-			if err != nil {
-				return err
-			}
-			if len(normalized) > 0 {
-				content = normalized
-			}
-			if err := r.upsertTx(ctx, tx, documentID, content); err != nil {
-				return err
-			}
-			if err := r.blockRepo.SyncDocumentBlocksTx(ctx, tx, documentID, blocks, actorID); err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-		return r.GetByDocumentID(ctx, documentID)
-	}
-
-	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return r.upsertTx(ctx, tx, documentID, content)
-	}); err != nil {
-		return nil, err
-	}
-	return r.GetByDocumentID(ctx, documentID)
+	_, saved, err := r.transformContent(ctx, documentID, "", actorID, func(json.RawMessage) (json.RawMessage, error) { return content, nil })
+	return saved, err
 }
 
 func (r *DocsContentRepository) upsertTx(ctx context.Context, tx *gorm.DB, documentID string, content json.RawMessage) error {

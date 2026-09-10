@@ -18,6 +18,9 @@ import (
 // the document editor.
 var ErrDocsInvalidContent = errors.New("invalid document content")
 
+// ErrDocsContentConflict identifies a save based on an outdated document snapshot.
+var ErrDocsContentConflict = repository.ErrDocsContentConflict
+
 // DocsContentService handles business logic for document content.
 type DocsContentService struct {
 	contentRepo         *repository.DocsContentRepository
@@ -75,6 +78,38 @@ func (s *DocsContentService) Save(ctx context.Context, documentID string, conten
 	if err != nil {
 		return nil, err
 	}
+	s.afterContentSave(ctx, documentID, actorID, previousText, saved)
+	return saved, nil
+}
+
+// SaveVersioned replaces content only if the snapshot still matches.
+func (s *DocsContentService) SaveVersioned(ctx context.Context, documentID string, content json.RawMessage, actorID, version string) (*model.DocsContent, error) {
+	if version == "" {
+		return s.Save(ctx, documentID, content, actorID)
+	}
+	content = s.restoreImportedToggleAttrs(ctx, documentID, content)
+	return s.mutateContent(ctx, documentID, actorID, version, func(json.RawMessage) (json.RawMessage, error) { return content, nil })
+}
+
+func (s *DocsContentService) mutateContent(ctx context.Context, documentID, actorID, version string, transform func(json.RawMessage) (json.RawMessage, error)) (*model.DocsContent, error) {
+	before, saved, err := s.contentRepo.MutateWithActor(ctx, documentID, version, actorID, func(raw json.RawMessage) (json.RawMessage, error) {
+		next, err := transform(raw)
+		if err != nil {
+			return nil, err
+		}
+		if err := tiptap.ValidateDocument(next); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrDocsInvalidContent, err)
+		}
+		return next, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.afterContentSave(ctx, documentID, actorID, before.ContentText, saved)
+	return saved, nil
+}
+
+func (s *DocsContentService) afterContentSave(ctx context.Context, documentID, actorID, previousText string, saved *model.DocsContent) {
 	if s.translationSvc != nil {
 		if err := s.translationSvc.RefreshArticleSource(ctx, documentID); err != nil {
 			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after content save", "document_id", documentID, "error", err)
@@ -87,7 +122,6 @@ func (s *DocsContentService) Save(ctx context.Context, documentID string, conten
 			s.startNewAgentMentionRuns(ctx, doc, previousText, saved.ContentText, actorID)
 		}
 	}
-	return saved, nil
 }
 
 func isMarkdownSourceEnvelope(content json.RawMessage) bool {

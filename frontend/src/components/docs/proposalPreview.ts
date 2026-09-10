@@ -1,6 +1,6 @@
 /** Shape helpers for rendering a change proposal against its current block. */
 
-export type ProposalPreviewKind = 'text' | 'mermaid' | 'image'
+export type ProposalPreviewKind = 'text' | 'nwdiag' | 'mermaid' | 'image'
 
 export interface ProposalBlockNode {
   type?: string
@@ -33,6 +33,7 @@ export function proposalPreviewKind(
   if (type === 'resizableImage' || type === 'image') return 'image'
   if (type === 'codeBlock') {
     const language = String(proposed?.attrs?.language ?? current?.attrs?.language ?? '').toLowerCase()
+    if (language === 'nwdiag') return 'nwdiag'
     if (language === 'mermaid') return 'mermaid'
   }
   return 'text'
