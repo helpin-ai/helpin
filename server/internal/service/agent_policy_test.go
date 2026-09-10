@@ -444,10 +444,10 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
 		}
 	}
-	if len(preset.AvailableSkills) != 29 {
-		t.Fatalf("Ask Agent default must expose 29 curated optional skills, got %d: %v", len(preset.AvailableSkills), preset.AvailableSkills)
+	if len(preset.AvailableSkills) != 31 {
+		t.Fatalf("Ask Agent default must expose 31 curated optional skills, got %d: %v", len(preset.AvailableSkills), preset.AvailableSkills)
 	}
-	for _, skillKey := range []string{"internal_docs_maintenance", "marketing_plan", "crm_record_operations", "competitors_changelog_tracking_report"} {
+	for _, skillKey := range []string{"internal_docs_maintenance", "marketing_plan", "crm_record_operations", "competitors_changelog_tracking_report", "simplediag", "mermaid"} {
 		if !slices.Contains(preset.AvailableSkills, skillKey) {
 			t.Errorf("Ask Agent is missing available skill %q", skillKey)
 		}

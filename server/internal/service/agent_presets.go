@@ -869,6 +869,8 @@ func askAgentPresetTools() []string {
 // require tools outside the Dock's managed surface.
 func askAgentAvailableSkills() []string {
 	return []string{
+		"simplediag",
+		"mermaid",
 		"docs_architecture_review",
 		"public_help_doc_writing",
 		"api_reference_doc_writing",

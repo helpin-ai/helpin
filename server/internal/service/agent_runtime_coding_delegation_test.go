@@ -177,7 +177,7 @@ func TestRuntimeAgentFromHelpinAgentRegistersManagedAskSkillsAndTools(t *testing
 	}
 
 	out := runtimeAgentFromHelpinAgent(ask, "helpin")
-	if len(out.Skills) != 29 {
+	if len(out.Skills) != 31 {
 		t.Fatalf("expected curated Ask skills to be registered, got %d: %#v", len(out.Skills), out.Skills)
 	}
 	for _, skill := range out.Skills {
@@ -394,6 +394,41 @@ func TestRuntimeAgentFromHelpinAgentSendsOnlyOptionalSkillsForDiscovery(t *testi
 		if err := json.Unmarshal(ref.Config, &config); err != nil || config[runtimeSkillRoleConfigKey] != "available" {
 			t.Fatalf("optional skill %q was not classified for discovery: %#v", ref.Key, ref.Config)
 		}
+	}
+}
+
+func TestDefaultDiagramSkillsAreAvailableToExistingAgents(t *testing.T) {
+	for _, presetKey := range []string{model.AgentPresetDocumentationAgent, model.AgentPresetAskAgent} {
+		t.Run(presetKey, func(t *testing.T) {
+			agent := &model.Agent{
+				ID:               "existing-agent",
+				IsSystem:         true,
+				PresetKey:        presetKey,
+				PresetVersionKey: defaultPresetVersionKeyForPresetKey(presetKey),
+				RuntimeKind:      "native_sdk",
+				Skills:           model.AgentSkillRefs{{Key: "internal_docs_maintenance"}},
+			}
+			out := runtimeAgentFromHelpinAgent(agent, "helpin")
+			for _, key := range []string{"simplediag", "mermaid"} {
+				count := 0
+				for _, ref := range out.Skills {
+					if ref.Key != key {
+						continue
+					}
+					count++
+					var config map[string]any
+					if err := json.Unmarshal(ref.Config, &config); err != nil {
+						t.Fatalf("decode %s config: %v", key, err)
+					}
+					if config[runtimeSkillRoleConfigKey] != "available" {
+						t.Errorf("%s must load on demand, got %v", key, config)
+					}
+				}
+				if count != 1 {
+					t.Errorf("expected one discoverable %s skill, got %d", key, count)
+				}
+			}
+		})
 	}
 }
 

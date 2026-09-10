@@ -120,6 +120,8 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 			"api_docs_maintenance",
 			"post_release_docs_update",
 			"support_gap_docs_update",
+			"simplediag",
+			"mermaid",
 		},
 		AvailableSkillKeys: []string{
 			"docs_architecture_review",
@@ -130,6 +132,8 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 			"api_docs_maintenance",
 			"post_release_docs_update",
 			"support_gap_docs_update",
+			"simplediag",
+			"mermaid",
 		},
 	},
 	model.AgentPresetMarketer: {
@@ -346,6 +350,7 @@ Use public help docs skills for customer-facing how-to, troubleshooting, onboard
 Use API docs skills for endpoints, schemas, authentication, permissions, examples, errors, and integration behavior.
 Use release documentation skills when shipped work, changelogs, tasks, or epics require documentation updates.
 Use support-gap skills when customer questions or support evidence reveal missing, stale, or weak documentation.
+Use the simplediag skill for nwdiag network topology, and the mermaid skill for workflows, API sequences, data models, states, and timelines.
 
 ## Operating Rules
 
