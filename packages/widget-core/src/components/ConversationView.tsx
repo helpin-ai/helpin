@@ -1,6 +1,8 @@
+import { useAttachmentUploads } from '../hooks/useAttachmentUploads';
+import type { UploadAttachment } from '../hooks/useAttachmentUploads';
 import { FunctionComponent } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import type { ActiveTeammate, Conversation, Message, PendingAttachment, WidgetConfig } from '../types';
+import type { ActiveTeammate, Conversation, Message, WidgetConfig } from '../types';
 import { MessageList } from './MessageList';
 import { ComposeBar } from './ComposeBar';
 import { TypingIndicator } from './TypingIndicator';
@@ -11,7 +13,6 @@ import { AIThinkingMark } from './AIThinkingMark';
 import { CsatRating } from './CsatRating';
 import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 interface ConversationViewProps {
   config: WidgetConfig;
@@ -20,7 +21,7 @@ interface ConversationViewProps {
   activeTeammate?: ActiveTeammate;
   onSendMessage: (content: string, attachmentIds?: string[]) => void;
   onTyping?: (content: string) => void;
-  onUploadAttachment?: (file: File, localId: string) => Promise<{ attachmentId: string; url: string } | null>;
+  onUploadAttachment?: UploadAttachment;
   isTyping?: boolean;
   isAIThinking?: boolean;
   aiProgressLabel?: string;
@@ -82,7 +83,8 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const [introCreatedAt] = useState(() => new Date().toISOString());
   const [preChatDone, setPreChatDone] = useState(false);
   const [showHumanContactForm, setShowHumanContactForm] = useState(false);
-  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const uploads = useAttachmentUploads(conversationKey, onUploadAttachment);
+  const { pendingAttachments } = uploads;
   const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showTranscriptForm, setShowTranscriptForm] = useState(false);
@@ -332,67 +334,11 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
     };
   }, [autoExpandDismissed, conversationKey, displayMessages, isExpanded, onToggleExpanded]);
 
-  const handleFilesSelected = useCallback(async (files: File[]) => {
-    if (!onUploadAttachment) return;
-
-    for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) continue;
-
-      const localId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
-
-      const pending: PendingAttachment = {
-        id: localId,
-        fileName: file.name,
-        fileType: file.type || 'application/octet-stream',
-        fileSize: file.size,
-        progress: 0,
-        status: 'uploading',
-        previewUrl,
-      };
-
-      setPendingAttachments(prev => [...prev, pending]);
-
-      try {
-        const result = await onUploadAttachment(file, localId);
-        if (result) {
-          setPendingAttachments(prev =>
-            prev.map(a => a.id === localId
-              ? { ...a, status: 'uploaded' as const, progress: 100, attachmentId: result.attachmentId }
-              : a
-            )
-          );
-        } else {
-          setPendingAttachments(prev =>
-            prev.map(a => a.id === localId ? { ...a, status: 'error' as const } : a)
-          );
-        }
-      } catch {
-        setPendingAttachments(prev =>
-          prev.map(a => a.id === localId ? { ...a, status: 'error' as const } : a)
-        );
-      }
-    }
-  }, [onUploadAttachment]);
-
-  const handleRemoveAttachment = useCallback((id: string) => {
-    setPendingAttachments(prev => {
-      const att = prev.find(a => a.id === id);
-      if (att?.previewUrl) URL.revokeObjectURL(att.previewUrl);
-      return prev.filter(a => a.id !== id);
-    });
-  }, []);
-
   const handleSendMessage = useCallback((content: string, attachmentIds?: string[]) => {
+    if (pendingAttachments.some(a => a.status !== 'uploaded')) return;
     onSendMessage(content, attachmentIds);
-    // Clean up preview URLs and clear pending attachments.
-    setPendingAttachments(prev => {
-      for (const a of prev) {
-        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
-      }
-      return [];
-    });
-  }, [onSendMessage]);
+    uploads.clear();
+  }, [onSendMessage, pendingAttachments, uploads.clear]);
 
   const handleImageClick = useCallback((src: string, alt: string) => {
     if (externalImageClick) {
@@ -731,10 +677,12 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       <ComposeBar
         onSend={handleSendMessage}
         onTyping={onTyping}
-        onFilesSelected={handleFilesSelected}
+        onFilesSelected={uploads.select}
         showBranding={config.branding?.showBranding ?? true}
         pendingAttachments={pendingAttachments}
-        onRemoveAttachment={handleRemoveAttachment}
+        onRemoveAttachment={uploads.remove}
+        onRetryAttachment={uploads.retry}
+        attachmentError={uploads.validationError}
         fileUploadsEnabled={fileUploadsEnabled}
         disabled={composeDisabled}
         placeholder={composePlaceholder}

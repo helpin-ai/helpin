@@ -642,3 +642,99 @@ func TestSupportAIServiceEscalateToHumanHandoffStateFollowsPresence(t *testing.T
 		})
 	}
 }
+
+func TestCreateConversationMessageFirstHumanReplyPreservesMessageProjection(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	// Mirror the message insert projection so an older conversation snapshot
+	// cannot silently overwrite the state written when the reply is inserted.
+	mustExec(t, db, `CREATE TRIGGER test_reply_projection AFTER INSERT ON support_messages
+ WHEN NEW.message_type = 'reply' AND NEW.is_internal = false AND NEW.system_event_type IS NULL
+ BEGIN UPDATE support_conversations SET
+ list_last_message_id=NEW.id, list_last_message_at=NEW.created_at,
+ list_last_message_preview=NEW.content, last_public_message_id=NEW.id,
+ last_public_message_at=NEW.created_at,last_public_sender_type=NEW.sender_type,
+ support_state_version=support_state_version+1
+ WHERE id=NEW.conversation_id; END`)
+
+	workspaceID := "ws-flow-reply"
+	userID := "user-flow-reply"
+	seedUser(t, db, userID, "agent@example.com", "Agent User", "hash")
+	seedWorkspace(t, db, workspaceID, "Flow Reply WS", "flow-reply-ws", userID)
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	userRepo := repository.NewUserRepository(db)
+
+	conv := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Escalated conversation",
+		Status:      "open",
+		FlowState:   strPtr(model.SupportConversationFlowStateWaitingForHuman),
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	customerMessage := &model.SupportMessage{
+		WorkspaceID: workspaceID, ConversationID: conv.ID, SenderType: "customer",
+		MessageType: "reply", Content: "I still need help.",
+	}
+	if err := messageRepo.Create(ctx, customerMessage); err != nil {
+		t.Fatalf("create customer message: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		userRepo,
+		nil,
+		nil,
+		nil,
+	)
+
+	displayName := "Agent User"
+	if _, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "I can help with this.", MessageType: "reply"},
+		"user",
+		&userID,
+		nil,
+		&displayName,
+	); err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if derefString(updated.ListLastMessagePreview) != "I can help with this." || derefString(updated.LastPublicSenderType) != "user" || updated.SupportStateVersion != 2 {
+		t.Fatalf("reply projection overwritten: preview=%q sender=%q version=%d", derefString(updated.ListLastMessagePreview), derefString(updated.LastPublicSenderType), updated.SupportStateVersion)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateAssignedToHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateAssignedToHuman)
+	}
+	if updated.OpenedByUserID == nil || *updated.OpenedByUserID != userID {
+		t.Fatalf("opened_by_user_id = %#v, want %q", updated.OpenedByUserID, userID)
+	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
+	if updated.TeamLastSeenAt == nil {
+		t.Fatal("team_last_seen_at = nil, want teammate reply to advance the read cursor")
+	}
+	if updated.UnreadCount != 0 {
+		t.Fatalf("unread_count = %d, want 0 after teammate reply", updated.UnreadCount)
+	}
+}

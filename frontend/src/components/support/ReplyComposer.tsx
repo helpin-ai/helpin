@@ -864,17 +864,24 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadMutation = useUploadSupportAttachment(workspaceId, conversationId);
   const [pendingAttachments, setPendingAttachments] = useState<PendingSupportAttachment[]>([]);
+  const attachmentsPending = pendingAttachments.some((attachment) => attachment.status !== 'done' || !attachment.attachmentId);
 
   const uploadFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
+    const batch: { file: File; attachment: PendingSupportAttachment }[] = [];
     for (const file of files) {
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error(`${file.name} exceeds 10 MB limit`);
+      if (file.size > 100 * 1024 * 1024) {
+        toast.error(`${file.name} exceeds 100 MB limit`);
         continue;
       }
       const localId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
-      setPendingAttachments((prev) => [...prev, { localId, fileName: file.name, fileType: file.type, status: 'uploading', previewUrl, previewObjectUrl: !!previewUrl }]);
+      batch.push({ file, attachment: { localId, fileName: file.name, fileType: file.type, status: 'uploading', previewUrl, previewObjectUrl: !!previewUrl } });
+    }
+    // Register the entire selection before awaiting the first upload so Send
+    // cannot drop files that are still queued behind a large video.
+    setPendingAttachments((prev) => [...prev, ...batch.map(({ attachment }) => attachment)]);
+    for (const { file, attachment: { localId } } of batch) {
       try {
         const result = await uploadMutation.mutateAsync({ file });
         setPendingAttachments((prev) => prev.map((a) => a.localId === localId ? { ...a, status: 'done', attachmentId: result.id } : a));
@@ -1475,7 +1482,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   }, [editor, isNote]);
 
   const sendReply = useCallback(async () => {
-    if (!editor || !editor.isEditable) return;
+    if (!editor || !editor.isEditable || attachmentsPending) return;
     const markdown = getEditorMarkdown(editor).trim();
     const doneAttachments = pendingAttachments.filter((a) => a.status === 'done' && a.attachmentId);
     if ((!markdown && doneAttachments.length === 0) || sendMutation.isPending) return;
@@ -1506,10 +1513,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     editor.commands.clearContent();
     clearDraft(conversationId);
     editor.commands.focus();
-  }, [clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, emailFallbackHint?.email, pendingAttachments, sendMutation, sendTyping]);
+  }, [attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, emailFallbackHint?.email, pendingAttachments, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async () => {
-    if (!editor || !editor.isEditable) return;
+    if (!editor || !editor.isEditable || attachmentsPending) return;
     const markdown = getEditorMarkdown(editor).trim();
     const hasUploadedAttachments = pendingAttachments.some((a) => a.status === 'done' && a.attachmentId);
     if ((!markdown && !hasUploadedAttachments) || sendMutation.isPending) return;
@@ -1526,7 +1533,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     }
 
     await sendReply();
-  }, [conversation?.primary_recipient_state, editor, emailFallbackHint, isNote, pendingAttachments, sendMutation.isPending, sendReply, skipOfflineEmailConfirm]);
+  }, [attachmentsPending, conversation?.primary_recipient_state, editor, emailFallbackHint, isNote, pendingAttachments, sendMutation.isPending, sendReply, skipOfflineEmailConfirm]);
 
   const handleRewrite = useCallback(async (operation: SupportAIRewriteOperation) => {
     if (!editor || sendMutation.isPending) return;
@@ -2076,6 +2083,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
               )}
               <button
                 type="button"
+                aria-label={`Remove ${att.fileName}`}
                 onClick={() => removeAttachment(att.localId)}
                 className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-foreground/80 text-background hover:bg-foreground"
               >
@@ -2116,7 +2124,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
             type="file"
             className="hidden"
             multiple
-            accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md"
+            accept="image/*,video/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md"
             onChange={(e) => handleFileSelect(e.target.files)}
           />
           <div className="mx-0.5 h-4 w-px bg-border/40" />
@@ -2194,7 +2202,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
           </kbd>
           <Button
             size="sm"
-            disabled={isRewriting || sendMutation.isPending || (!isNote && primaryRecipientUnconfirmed) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
+            disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && primaryRecipientUnconfirmed) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
             onClick={handleSend}
             className={cn(
               'h-7 gap-1.5 rounded-full px-3 text-xs',
