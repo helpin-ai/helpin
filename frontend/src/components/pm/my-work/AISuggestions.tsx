@@ -37,7 +37,7 @@ export function AISuggestions({ ws, memberId, slug, canEdit, canReadCRM }: Props
             detail={<span className="block truncate">{item.meeting_title || 'Meeting'}{validDate(item.meeting_at) && <> · {meetingDate(item.meeting_at!)}</>}</span>}
             provenance={<span>Suggested {validDate(item.created_at) ? timeAgo(item.created_at) : 'recently'}</span>}
             trailing={<span className="text-xs text-quiet-text-secondary">Review</span>}
-            className="px-0 focus-visible:outline-2 focus-visible:outline-quiet-field"
+            className="focus-visible:outline-2 focus-visible:outline-quiet-field"
             onClick={() => { opener.current = document.activeElement as HTMLElement; setSelected(item); }} />)}
         </div>
         {query.data.total_pages > 1 && <nav aria-label="Suggestion pages" className="flex items-center justify-between gap-4 py-5">
