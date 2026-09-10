@@ -236,10 +236,10 @@ spec:
           resources:
             limits:
               cpu: "500m"
-              memory: 512Mi
+              memory: 2Gi
             requests:
               cpu: "200m"
-              memory: 256Mi
+              memory: 768Mi
           volumeMounts:
             # - name: secret-volume        # Uncomment for mTLS
             #   mountPath: /app/data/tls
