@@ -13,7 +13,7 @@ test('five direct steps preserve edits and save the entire draft from review wit
   await page.getByLabel('Playbook name', { exact: true }).fill('A focused customer journey');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByLabel('Milestone 1', { exact: true }).fill('Customer confirms the need');
-  await step(page, 'Follow-up').click();
+  await step(page, 'Monitoring').click();
   await page.getByLabel('Check after (hours)', { exact: true }).fill('72');
   await step(page, 'Purpose & scope').click();
   await expect(page.getByLabel('Playbook name', { exact: true })).toHaveValue('A focused customer journey');

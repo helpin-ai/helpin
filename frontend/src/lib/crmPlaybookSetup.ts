@@ -4,7 +4,7 @@ export const playbookSetupSteps = [
   { id: 'purpose', label: 'Purpose & scope' },
   { id: 'milestones', label: 'Milestones' },
   { id: 'team', label: 'Team & permissions' },
-  { id: 'follow_up', label: 'Follow-up' },
+  { id: 'follow_up', label: 'Monitoring' },
   { id: 'review', label: 'Review & automation' },
 ] as const;
 export type PlaybookSetupStep = typeof playbookSetupSteps[number]['id'];
