@@ -308,8 +308,9 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			config, err := model.ParseAgentExecutionConfig(preset.ExecutionConfig)
 			if err != nil {
 				t.Errorf("preset %q execution config: %v", preset.Key, err)
-			} else if config.MaxToolSteps == nil || *config.MaxToolSteps != managedAssistantMaxToolSteps || config.OpenRouter != nil {
-				t.Errorf("preset %q execution config = %s, want only max_tool_steps=%d", preset.Key, preset.ExecutionConfig, managedAssistantMaxToolSteps)
+			} else if config.MaxToolSteps == nil || *config.MaxToolSteps != managedAssistantMaxToolSteps || config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
+				!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
+				t.Errorf("preset %q execution config = %s, want FP8-or-higher routing and max_tool_steps=%d", preset.Key, preset.ExecutionConfig, managedAssistantMaxToolSteps)
 			}
 			continue
 		}
