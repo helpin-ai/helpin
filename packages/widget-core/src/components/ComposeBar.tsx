@@ -1,3 +1,4 @@
+import { SUPPORT_FILE_ACCEPT } from '../hooks/useAttachmentUploads';
 import { FunctionComponent } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { PaperclipIcon, SendIcon, XIcon } from './icons';
@@ -14,6 +15,8 @@ interface ComposeBarProps {
   showBranding?: boolean;
   pendingAttachments?: PendingAttachment[];
   onRemoveAttachment?: (id: string) => void;
+  onRetryAttachment?: (id: string) => void;
+  attachmentError?: string;
   fileUploadsEnabled?: boolean;
   workspaceId?: string;
   workspaceName?: string;
@@ -38,6 +41,8 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
   showBranding = true,
   pendingAttachments = [],
   onRemoveAttachment,
+  onRetryAttachment,
+  attachmentError,
   fileUploadsEnabled = true,
   workspaceId,
   workspaceName,
@@ -58,7 +63,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
     .filter(a => a.status === 'uploaded' && a.attachmentId)
     .map(a => a.attachmentId!);
 
-  const canSend = (message.trim().length > 0 || uploadedAttachmentIds.length > 0) && !disabled;
+  const canSend = (message.trim().length > 0 || uploadedAttachmentIds.length > 0) && !disabled && !pendingAttachments.some(a => a.status !== 'uploaded');
 
   const handleSubmit = (e?: Event) => {
     e?.preventDefault();
@@ -149,33 +154,22 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {attachmentError && <div className="helpin-compose-upload-error" role="alert">{attachmentError}</div>}
         {pendingAttachments.length > 0 && (
-          <div className="helpin-compose-attachments">
+          <div className="helpin-compose-upload-list">
             {pendingAttachments.map(att => (
-              <div key={att.id} className={`helpin-compose-attachment-item ${att.status === 'error' ? 'helpin-compose-attachment-item--error' : ''}`}>
-                {att.previewUrl && isImageType(att.fileType) ? (
-                  <img src={att.previewUrl} alt={att.fileName} />
-                ) : (
-                  <div className="helpin-compose-attachment-file">
-                    <span className="helpin-compose-attachment-filename">{att.fileName}</span>
-                    <span className="helpin-compose-attachment-filesize">{formatFileSize(att.fileSize)}</span>
-                  </div>
-                )}
-                {att.status === 'uploading' && (
-                  <div className="helpin-compose-attachment-progress">
-                    {att.progress}%
-                  </div>
-                )}
-                {onRemoveAttachment && (
-                  <button
-                    type="button"
-                    className="helpin-compose-attachment-remove"
-                    onClick={() => onRemoveAttachment(att.id)}
-                    aria-label={`Remove ${att.fileName}`}
-                  >
-                    <XIcon size={10} />
-                  </button>
-                )}
+              <div key={att.id} className="helpin-compose-upload-row">
+                {att.previewUrl && isImageType(att.fileType) && <img src={att.previewUrl} alt="" />}
+                <div className="helpin-compose-upload-details">
+                  <span className="helpin-compose-upload-name" title={att.fileName}>{att.fileName}</span>
+                  <span className="helpin-compose-upload-status">
+                    {formatFileSize(att.fileSize)} · {att.status === 'uploaded' ? 'Ready to send' : att.status === 'error' ? 'Upload failed' : att.progress >= 99 ? 'Finishing upload…' : `Uploading ${att.progress}%`}
+                  </span>
+                  {att.status === 'uploading' && <progress max={100} value={att.progress} aria-label={`Uploading ${att.fileName}`} />}
+                  {att.status === 'error' && <span className="helpin-compose-upload-error" role="alert">{att.error || 'Upload failed. Please try again.'}</span>}
+                </div>
+                {att.status === 'error' && onRetryAttachment && <button type="button" className="helpin-compose-upload-retry" onClick={() => onRetryAttachment(att.id)}>Retry</button>}
+                {onRemoveAttachment && <button type="button" className="helpin-compose-upload-remove" onClick={() => onRemoveAttachment(att.id)} aria-label={`${att.status === 'uploading' ? 'Cancel upload of' : 'Remove'} ${att.fileName}`}><XIcon size={14} /></button>}
               </div>
             ))}
           </div>
@@ -222,7 +216,7 @@ export const ComposeBar: FunctionComponent<ComposeBarProps> = ({
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/*,application/pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md"
+            accept={SUPPORT_FILE_ACCEPT}
             style={{ display: 'none' }}
             onChange={handleFileInputChange}
           />

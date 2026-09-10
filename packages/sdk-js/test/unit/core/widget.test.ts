@@ -1426,6 +1426,26 @@ describe('WidgetManager', () => {
   });
 
   describe('uploads and transcripts', () => {
+    let uploadXHR: any;
+    beforeEach(() => {
+      uploadXHR = {
+        status: 200, upload: {}, open: vi.fn(), setRequestHeader: vi.fn(), abort: vi.fn(),
+        send: vi.fn(() => queueMicrotask(() => uploadXHR.onload?.())),
+      };
+      vi.stubGlobal('XMLHttpRequest', vi.fn(() => uploadXHR));
+    });
+
+    it('passes upload cancellation and progress options through the mounted callback', async () => {
+      (widget as any).widgetConfig = { workspaceId: 'ws_test', branding: {}, features: {} };
+      (widget as any).mountContainer = document.createElement('div');
+      const upload = vi.spyOn(widget as any, 'handleUploadAttachment').mockResolvedValue(null);
+      (widget as any).render();
+      const mounted = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      const file = new File(['hello'], 'note.txt');
+      const options = { signal: new AbortController().signal, onProgress: vi.fn() };
+      await mounted.onUploadAttachment(file, 'local', options);
+      expect(upload).toHaveBeenCalledWith(file, 'local', options);
+    });
     it('uploads attachments through init, put, and confirm requests', async () => {
       fetchMock
         .mockResolvedValueOnce({
@@ -1436,7 +1456,6 @@ describe('WidgetManager', () => {
             public_url: 'https://cdn.example.com/att-1.png',
           }),
         })
-        .mockResolvedValueOnce({ ok: true })
         .mockResolvedValueOnce({ ok: true });
 
       (widget as any).host = 'client.prod.helpin.ai';
@@ -1457,19 +1476,16 @@ describe('WidgetManager', () => {
           headers: expect.objectContaining({ 'X-Session-Token': 'session-123' }),
         }),
       );
+      expect(uploadXHR.open).toHaveBeenCalledWith('PUT', 'https://upload.example.com/att-1', true);
+      expect(uploadXHR.send).toHaveBeenCalledWith(file);
       expect(fetchMock).toHaveBeenNthCalledWith(
         2,
-        'https://upload.example.com/att-1',
-        expect.objectContaining({ method: 'PUT', body: file }),
-      );
-      expect(fetchMock).toHaveBeenNthCalledWith(
-        3,
         'https://client.prod.helpin.ai/widget/support/attachments/att-1/confirm',
         expect.objectContaining({ method: 'PATCH' }),
       );
     });
 
-    it('returns null when attachment confirm fails', async () => {
+    it('throws a helpful error when attachment confirmation fails', async () => {
       fetchMock
         .mockResolvedValueOnce({
           ok: true,
@@ -1479,14 +1495,13 @@ describe('WidgetManager', () => {
             public_url: 'https://cdn.example.com/att-2.png',
           }),
         })
-        .mockResolvedValueOnce({ ok: true })
         .mockResolvedValueOnce({ ok: false, status: 500 });
 
       (widget as any).host = 'client.prod.helpin.ai';
       (widget as any).sessionToken = 'session-123';
 
       const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
-      await expect((widget as any).handleUploadAttachment(file, 'local-2')).resolves.toBeNull();
+      await expect((widget as any).handleUploadAttachment(file, 'local-2')).rejects.toThrow('Unable to confirm the file upload (HTTP 500)');
     });
 
     it('requests a transcript and stores the supplied email after success', async () => {

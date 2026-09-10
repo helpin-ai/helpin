@@ -14,6 +14,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/storage"
 )
 
+const maxSupportFileSize = 100 * 1024 * 1024 // 100 MiB, displayed as 100 MB.
+
 // SupportAttachmentService contains support attachment business logic.
 type SupportAttachmentService struct {
 	attachmentRepo *repository.SupportAttachmentRepository
@@ -47,8 +49,8 @@ func (s *SupportAttachmentService) Create(
 	if req.FileSize <= 0 {
 		return nil, fmt.Errorf("file_size must be positive")
 	}
-	if req.FileSize > maxFileSize {
-		return nil, fmt.Errorf("file exceeds maximum size of 10MB")
+	if req.FileSize > maxSupportFileSize {
+		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(maxSupportFileSize))
 	}
 	if req.ContentType == "" {
 		return nil, fmt.Errorf("content_type is required")
@@ -196,8 +198,8 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 		return nil, fmt.Errorf("attachment content is empty")
 	}
 	fileSize := int64(len(data))
-	if fileSize > maxFileSize {
-		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(maxFileSize))
+	if fileSize > maxSupportFileSize {
+		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(maxSupportFileSize))
 	}
 
 	messageID := strings.TrimSpace(req.MessageID)

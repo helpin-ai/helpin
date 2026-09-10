@@ -4,6 +4,7 @@ import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai
 import widgetStyles from '@helpin-ai/widget-core/styles?inline';
 import type { IdentityVerification } from './types';
 import { isBot } from '../utils/bot-detect';
+import { uploadAttachment, type AttachmentUploadOptions } from '../transport/attachment-upload';
 import {
   getOrCreateAnonymousId,
   clearAnonymousId,
@@ -608,7 +609,7 @@ export class WidgetManager {
       onSendMessage: (content: string, attachmentIds?: string[]) => this.handleSendMessage(content, { attachmentIds }),
       onSendMessageFromHome: (content: string) => this.handleSendMessage(content, { startNewConversation: true }),
       onQuickReply: (content: string) => this.handleSendMessage(content),
-      onUploadAttachment: (file: File, localId: string) => this.handleUploadAttachment(file, localId),
+      onUploadAttachment: (file: File, localId: string, options?: AttachmentUploadOptions) => this.handleUploadAttachment(file, localId, options),
       onTyping: (content: string) => this.handleTyping(content),
       showPreChatForm: showPreChat,
       contactCaptureCompleted: this.preChatDone,
@@ -1408,70 +1409,8 @@ export class WidgetManager {
     }
   }
 
-  private async handleUploadAttachment(file: File, _localId: string): Promise<{ attachmentId: string; url: string } | null> {
-    if (!this.sessionToken) return null;
-
-    try {
-      // Step 1: Initiate — get presigned URL from server
-      const initResp = await fetch(`https://${this.host}/widget/support/attachments`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Session-Token': this.sessionToken,
-        },
-        body: JSON.stringify({
-          file_name: file.name,
-          file_size: file.size,
-          content_type: file.type || 'application/octet-stream',
-        }),
-      });
-
-      if (!initResp.ok) {
-        console.error('[helpin] Failed to initiate attachment upload:', initResp.status);
-        return null;
-      }
-
-      const initData = await initResp.json();
-      const attachmentId = initData.attachment?.id;
-      const uploadUrl = initData.upload_url;
-      const publicUrl = initData.public_url;
-
-      if (!attachmentId || !uploadUrl) return null;
-
-      // Step 2: Upload file directly to S3 via presigned PUT URL
-      const uploadResp = await fetch(uploadUrl, {
-        method: 'PUT',
-        body: file,
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-          'x-amz-acl': 'public-read',
-        },
-      });
-
-      if (!uploadResp.ok) {
-        console.error('[helpin] Failed to upload file to storage:', uploadResp.status);
-        return null;
-      }
-
-      // Step 3: Confirm upload with server
-      const confirmResp = await fetch(`https://${this.host}/widget/support/attachments/${attachmentId}/confirm`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Session-Token': this.sessionToken,
-        },
-      });
-
-      if (!confirmResp.ok) {
-        console.error('[helpin] Failed to confirm attachment upload:', confirmResp.status);
-        return null;
-      }
-
-      return { attachmentId, url: publicUrl };
-    } catch (error) {
-      console.error('[helpin] Attachment upload error:', error);
-      return null;
-    }
+  private async handleUploadAttachment(file: File, _localId: string, options?: AttachmentUploadOptions): Promise<{ attachmentId: string; url: string }> {
+    return uploadAttachment(this.host, this.sessionToken || '', file, options);
   }
 
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
