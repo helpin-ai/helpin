@@ -128,6 +128,7 @@ func setupDocsBlockTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_locked BOOLEAN NOT NULL DEFAULT 0,
+ deleted_at DATETIME,
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE docs_contents (

@@ -72,6 +72,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"write_document_content": RiskLevelRoutine, "update_document_block": RiskLevelRoutine,
 	"insert_document_block": RiskLevelRoutine, "insert_document_artifact": RiskLevelRoutine,
 	"insert_document_image":   RiskLevelRoutine,
+	"edit_document":           RiskLevelRoutine,
 	"link_document_to_object": RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
 	"ensure_task_plan_doc": RiskLevelRoutine, "publish_document_change_proposal": RiskLevelRoutine,
 	"publish_ai_section_candidate": RiskLevelRoutine,
@@ -93,7 +94,9 @@ var runtimeToolRiskLevels = map[string]string{
 	"run_epic_delivery_pipeline": RiskLevelDestructive,
 }
 
-var sharedRuntimeTools = []RuntimeToolMetadata{
+var sharedRuntimeTools = append(baseRuntimeTools, documentReadTools...)
+
+var baseRuntimeTools = []RuntimeToolMetadata{
 	{CommandName: "support.finish_follow_up", Alias: "finish_support_follow_up", Category: "Support", Description: "Complete a scheduled inactivity assessment. Only callable from its assigned follow-up run. The server validates current ownership and message history before sending or handing off.", InputSchema: map[string]any{
 		"type": "object", "properties": map[string]any{
 			"action":             map[string]any{"type": "string", "enum": []string{"follow_up", "handoff", "skip"}},
@@ -156,7 +159,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.search_documents",
 		Alias:       "search_documents",
 		Category:    "Docs",
-		Description: "Search documents by keyword across the workspace. Every displayed document must use its returned markdown_link verbatim. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.",
+		Description: "Search documents by keyword across the workspace. Every displayed document must use its returned markdown_link verbatim. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document. Results include a matching passage and match_block_id when available; use get_document_blocks with that anchor for local context.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -806,17 +809,18 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.write_document_content",
 		Alias:       "write_document_content",
 		Category:    "Docs",
-		Description: "Write text or structured content to the document identified by document_id, including from a workspace-targeted Dock run. Markdown is auto-converted. This tool does not embed private run artifacts: after writing the document, call insert_document_artifact with the artifact_id returned by browser_screenshot or browser_record.",
+		Description: "Write text or structured content to the document identified by document_id, including from a workspace-targeted Dock run. Markdown is auto-converted. This tool does not embed private run artifacts: after writing the document, call insert_document_artifact with the artifact_id returned by browser_screenshot or browser_record." + docsDiagramGuidance,
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
+				"expected_version": documentString("Optional snapshot version. For local edits to existing documents prefer edit_document."),
 				"document_id": map[string]any{
 					"type":        "string",
 					"description": "The document ID to update",
 				},
 				"content": map[string]any{
-					"description": "The document content to save. Use either a structured document JSON object or a markdown string.",
+					"description": "The document content to save. Use either a structured document JSON object or a markdown string." + docsDiagramMarkdownGuidance + docsDiagramJSONGuidance,
 					"oneOf": []map[string]any{
 						{"type": "object"},
 						{"type": "string"},
@@ -842,7 +846,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.create_document",
 		Alias:       "create_document",
 		Category:    "Docs",
-		Description: "Create a new document in Helpin Docs. The title is stored separately in the title field, so do not repeat it as a leading H1 in content. Accepts optional markdown content that will be auto-converted to rich text. If space_id is omitted it defaults to the workspace's only space; when several spaces exist, call list_spaces and ask the user which to use.",
+		Description: "Create a new document in Helpin Docs. The title is stored separately in the title field, so do not repeat it as a leading H1 in content. Accepts optional markdown content that will be auto-converted to rich text. If space_id is omitted it defaults to the workspace's only space; when several spaces exist, call list_spaces and ask the user which to use." + docsDiagramGuidance,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -860,7 +864,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Optional initial document body as markdown, excluding the document title and any leading H1 that repeats it. Will be auto-converted to rich text.",
+					"description": "Optional initial document body as markdown, excluding the document title and any leading H1 that repeats it. Will be auto-converted to rich text." + docsDiagramMarkdownGuidance,
 				},
 				"icon": map[string]any{
 					"type":        "string",
@@ -881,7 +885,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.update_document_block",
 		Alias:       "update_document_block",
 		Category:    "Docs",
-		Description: "Update one addressable block in a Helpin Docs document using its current revision. The response includes the block's new revision; other blocks' revisions are unaffected, so sequential updates can reuse revisions from one get_document_blocks call.",
+		Description: "Update one addressable block in a Helpin Docs document using its current revision. The response includes the block's new revision; other blocks' revisions are unaffected, so sequential updates can reuse revisions from one get_document_blocks call." + docsDiagramGuidance,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -899,7 +903,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"content": map[string]any{
 					"type":        "object",
-					"description": "The replacement block node JSON",
+					"description": "The replacement block node JSON" + docsDiagramJSONGuidance,
 				},
 			},
 			"required": []string{"document_id", "block_id", "revision", "content"},
@@ -909,7 +913,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.insert_document_block",
 		Alias:       "insert_document_block",
 		Category:    "Docs",
-		Description: "Insert new content between existing blocks of a Helpin Docs document without rewriting them. Each top-level markdown block in content becomes one document block.",
+		Description: "Insert new content between existing blocks of a Helpin Docs document without rewriting them. Each top-level markdown block in content becomes one document block." + docsDiagramGuidance,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -919,7 +923,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "Markdown for the new content. May contain multiple blocks (for example a heading followed by a paragraph).",
+					"description": "Markdown for the new content. May contain multiple blocks (for example a heading followed by a paragraph)." + docsDiagramMarkdownGuidance,
 				},
 				"after_block_id": map[string]any{
 					"type":        "string",

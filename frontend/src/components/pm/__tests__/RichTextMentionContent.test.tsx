@@ -12,6 +12,13 @@ vi.mock('@/components/editor/MermaidBlock', () => ({
   }),
 }));
 
+vi.mock('@/components/editor/NwdiagBlock', () => ({
+  NwdiagBlock: ({ source }: { source: string }) => createElement('div', {
+    'data-testid': 'saved-nwdiag-diagram',
+    'data-source': source,
+  }),
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('RichTextMentionContent', () => {
@@ -41,7 +48,7 @@ describe('RichTextMentionContent', () => {
     container.remove()
   })
 
-  it('renders a saved Mermaid code block as a diagram', () => {
+  it.each([['mermaid', 'graph TD\nA-->B'], ['nwdiag', 'nwdiag { network dmz { web01; } }']])('renders a saved %s code block as a diagram', (language, source) => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -49,13 +56,13 @@ describe('RichTextMentionContent', () => {
     act(() => {
       root.render(
         <RichTextMentionContent
-          html={'<pre><code class="language-mermaid">graph TD\nA--&gt;B</code></pre>'}
+          html={'<pre><code class="language-' + language + '">' + source + '</code></pre>'}
         />,
       )
     })
 
-    const diagram = container.querySelector('[data-testid="saved-mermaid-diagram"]')
-    expect(diagram?.getAttribute('data-source')).toBe('graph TD\nA-->B')
+    const diagram = container.querySelector('[data-testid="saved-' + language + '-diagram"]')
+    expect(diagram?.getAttribute('data-source')).toBe(source)
     expect(container.querySelector('pre')).toBeNull()
 
     act(() => {

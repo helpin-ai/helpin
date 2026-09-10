@@ -32,7 +32,9 @@ func NewDocsSearchRepository(db *gorm.DB) *DocsSearchRepository {
 // DocsSearchResult is a search result with rank score.
 type DocsSearchResult struct {
 	model.DocsDocument
-	Rank float64 `json:"rank"`
+	Rank         float64 `json:"rank"`
+	MatchBlockID string  `json:"match_block_id"`
+	MatchText    string  `json:"match_text"`
 }
 
 // Search performs a Postgres full-text search across document titles and content.
@@ -82,6 +84,49 @@ func (r *DocsSearchRepository) Search(ctx context.Context, workspaceID, query st
 	var results []DocsSearchResult
 	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&results).Error; err != nil {
 		return nil, fmt.Errorf("docs search: %w", err)
+	}
+	return results, nil
+}
+
+// SearchWithContext enriches only the ranked result set, avoiding block scans for
+// every document considered by workspace search.
+func (r *DocsSearchRepository) SearchWithContext(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchResult, error) {
+	results, err := r.Search(ctx, workspaceID, query, nil, nil, limit)
+	if err != nil || len(results) == 0 {
+		return results, err
+	}
+	ids := make([]string, 0, len(results))
+	for _, result := range results {
+		ids = append(ids, result.ID)
+	}
+	var matches []struct {
+		DocumentID   string
+		MatchBlockID string
+		MatchText    string
+	}
+	err = r.db.WithContext(ctx).Raw(`
+ SELECT c.document_id, hit.id AS match_block_id,
+   ts_headline('english', COALESCE(hit.content_text,c.content_text,''),to_tsquery('english',?), 'MaxWords=35, MinWords=10') AS match_text
+ FROM docs_contents c
+ LEFT JOIN LATERAL (
+   SELECT b.id,b.content_text FROM docs_blocks b
+   WHERE b.document_id=c.document_id AND b.workspace_id=? AND b.deleted_at IS NULL
+     AND to_tsvector('english',COALESCE(b.content_text,'')) @@ to_tsquery('english',?)
+   ORDER BY (b.type='heading') DESC,b.sort_key,b.id LIMIT 1
+ ) hit ON true
+ WHERE c.document_id IN ?`, toTSQuery(query), workspaceID, toTSQuery(query), ids).Scan(&matches).Error
+	if err != nil {
+		return nil, fmt.Errorf("read document search matches: %w", err)
+	}
+	byID := make(map[string]int, len(results))
+	for i, result := range results {
+		byID[result.ID] = i
+	}
+	for _, match := range matches {
+		if i, ok := byID[match.DocumentID]; ok {
+			results[i].MatchBlockID = match.MatchBlockID
+			results[i].MatchText = match.MatchText
+		}
 	}
 	return results, nil
 }

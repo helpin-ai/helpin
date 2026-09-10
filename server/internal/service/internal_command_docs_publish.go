@@ -19,6 +19,11 @@ import (
 // native docs search and product publish tools.
 func (s *InternalCommandService) registerDocsRuntimeToolCommands() {
 	s.register(InternalCommandDefinition{
+		Name: "docs.edit_document", Module: "docs", Mutating: true,
+		Tool: mustCommandToolMetadata("docs.edit_document"), Execute: s.executeEditDocument,
+	})
+
+	s.register(InternalCommandDefinition{
 		Name:                 "docs.insert_document_artifact",
 		Module:               "docs",
 		Mutating:             true,
@@ -312,7 +317,7 @@ func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, met
 	if s.docsSearchRepo == nil {
 		return nil, fmt.Errorf("docs search is not available")
 	}
-	results, err := s.docsSearchRepo.Search(ctx, meta.WorkspaceID, query, nil, nil, req.Offset+req.Limit+1)
+	results, err := s.docsSearchRepo.SearchWithContext(ctx, meta.WorkspaceID, query, req.Offset+req.Limit+1)
 	if err != nil {
 		return nil, fmt.Errorf("search documents: %w", err)
 	}
@@ -320,16 +325,19 @@ func (s *InternalCommandService) executeSearchDocuments(ctx context.Context, met
 		ID           string `json:"id"`
 		MarkdownLink string `json:"markdown_link"`
 		Title        string `json:"title"`
+		MatchBlockID string `json:"match_block_id,omitempty"`
+		MatchText    string `json:"match_text,omitempty"`
 	}
 	start := min(req.Offset, len(results))
 	end := min(start+req.Limit, len(results))
 	hits := make([]docsSearchHit, 0, end-start)
 	for _, result := range results[start:end] {
-		hits = append(hits, docsSearchHit{ID: result.ID, MarkdownLink: helpinMarkdownLink(result.Title, "documents", result.ID), Title: result.Title})
+		hits = append(hits, docsSearchHit{ID: result.ID, MarkdownLink: helpinMarkdownLink(truncateCommandBarText(result.Title, 500), "documents", result.ID), Title: truncateCommandBarText(result.Title, 500), MatchBlockID: result.MatchBlockID, MatchText: truncateCommandBarText(strings.NewReplacer("<b>", "", "</b>", "").Replace(result.MatchText), 500)})
 	}
 	response := commandPaginationOutput(int64(len(results)), req.Offset, req.Limit, len(hits))
 	response["documents"] = hits
-	return mustJSON(response), nil
+	response["_agent_runtime_compaction"] = map[string]any{"exempt": true, "max_runes": documentOutputBudget}
+	return marshalBoundedDocument(response)
 }
 
 // executePublishRunPreview persists a run preview artifact for fixed-panel

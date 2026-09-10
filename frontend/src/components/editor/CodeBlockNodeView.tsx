@@ -3,8 +3,9 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { Alert01Icon, ArrowDown01Icon, Copy01Icon, SourceCodeIcon, Tick01Icon, ViewIcon } from '@/lib/icons'
 import { common } from 'lowlight'
 import { MermaidBlock } from './MermaidBlock'
+import { NwdiagBlock } from './NwdiagBlock'
 
-const LANGUAGES = Array.from(new Set([...Object.keys(common), 'mermaid'])).sort()
+const LANGUAGES = Array.from(new Set([...Object.keys(common), 'mermaid', 'nwdiag'])).sort()
 
 const DISPLAY_NAMES: Record<string, string> = {
   bash: 'Bash',
@@ -25,6 +26,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   makefile: 'Makefile',
   markdown: 'Markdown',
   mermaid: 'Mermaid',
+  nwdiag: 'nwdiag',
   objectivec: 'Objective-C',
   php: 'PHP',
   plaintext: 'Plain text',
@@ -47,11 +49,12 @@ function displayName(lang: string): string {
 
 export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeViewProps) {
   const language = (node.attrs.language as string) || extension.options.defaultLanguage || 'plaintext'
-  const isMermaid = language.toLowerCase() === 'mermaid'
+  const isNwdiag = language.toLowerCase() === 'nwdiag'
+  const isDiagram = language.toLowerCase() === 'mermaid' || isNwdiag
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [copied, setCopied] = useState(false)
-  const [mermaidMode, setMermaidMode] = useState<'diagram' | 'source'>('diagram')
+  const [diagramMode, setDiagramMode] = useState<'diagram' | 'source'>('diagram')
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -93,13 +96,13 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
     <NodeViewWrapper className="relative my-3">
       <div className="relative rounded-md border border-border bg-muted/50">
         <div className="flex items-center justify-end gap-1 px-3 py-1.5 border-b border-border/50" ref={dropdownRef}>
-          {isMermaid && (
+          {isDiagram && (
             <div className="mr-auto flex items-center gap-1 rounded border border-border/60 bg-background/70 p-0.5" contentEditable={false}>
               <button
                 type="button"
-                onClick={() => setMermaidMode('diagram')}
+                onClick={() => setDiagramMode('diagram')}
                 className={`flex h-6 items-center gap-1 rounded px-2 text-xs transition-colors ${
-                  mermaidMode === 'diagram'
+                  diagramMode === 'diagram'
                     ? 'bg-accent text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
@@ -110,9 +113,9 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
               </button>
               <button
                 type="button"
-                onClick={() => setMermaidMode('source')}
+                onClick={() => setDiagramMode('source')}
                 className={`flex h-6 items-center gap-1 rounded px-2 text-xs transition-colors ${
-                  mermaidMode === 'source'
+                  diagramMode === 'source'
                     ? 'bg-accent text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
@@ -189,14 +192,14 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
           )}
         </div>
 
-        {isMermaid && mermaidMode === 'diagram' && (
+        {isDiagram && diagramMode === 'diagram' && (
           <div contentEditable={false}>
             {node.textContent.trim() ? (
-              <MermaidBlock source={node.textContent} />
+              isNwdiag ? <NwdiagBlock source={node.textContent} /> : <MermaidBlock source={node.textContent} />
             ) : (
               <div className="flex min-h-32 items-center gap-3 px-4 py-3 text-sm text-muted-foreground">
                 <Alert01Icon className="h-4 w-4 shrink-0" />
-                Add Mermaid source to render a diagram.
+                Add {isNwdiag ? 'nwdiag' : 'Mermaid'} source to render a diagram.
               </div>
             )}
           </div>
@@ -205,7 +208,7 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
         <pre
           className="!m-0 !rounded-t-none !border-0"
           spellCheck={false}
-          style={isMermaid && mermaidMode === 'diagram' ? { display: 'none' } : undefined}
+          style={isDiagram && diagramMode === 'diagram' ? { display: 'none' } : undefined}
         >
           <NodeViewContent as={"code" as "div"} />
         </pre>

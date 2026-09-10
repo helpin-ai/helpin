@@ -26,6 +26,8 @@ import (
 // leak to the wire.
 func writeDocsError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, service.ErrDocsContentConflict):
+		writeError(w, http.StatusConflict, "document changed; reread and retry")
 	case errors.Is(err, service.ErrDocsCollectionNotFound),
 		errors.Is(err, service.ErrDocsSpaceNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -48,6 +50,8 @@ func writeDocsError(w http.ResponseWriter, err error) {
 
 func writeDocsBlockMutationError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, service.ErrDocsContentConflict):
+		writeError(w, http.StatusConflict, "document changed; reread and retry")
 	case errors.Is(err, service.ErrDocsStaleBlockRevision):
 		writeError(w, http.StatusConflict, "block revision is stale")
 	case errors.Is(err, service.ErrDocsDocumentLocked):
@@ -1030,6 +1034,8 @@ func (h *DocsHandler) ApplyChangeProposal(w http.ResponseWriter, r *http.Request
 	proposal, content, err := h.changeProposalSvc.Apply(r.Context(), getWorkspaceID(r), docID, chi.URLParam(r, "proposalId"), userID)
 	if err != nil {
 		switch {
+		case errors.Is(err, service.ErrDocsContentConflict):
+			writeError(w, http.StatusConflict, "document changed; reread and retry")
 		case errors.Is(err, service.ErrDocsStaleBlockRevision):
 			writeError(w, http.StatusConflict, "block revision is stale")
 		case errors.Is(err, service.ErrDocsDocumentLocked):

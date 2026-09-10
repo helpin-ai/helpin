@@ -779,60 +779,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Mutating:             false,
 		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "crm_deal", "support_coverage_gap"},
 		Tool:                 internalReadDocumentToolMetadata(),
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			if s.docsDocumentService == nil {
-				return nil, fmt.Errorf("docs document service is not available")
-			}
-			var req struct {
-				DocumentID string `json:"document_id"`
-			}
-			if len(input) > 0 {
-				if err := json.Unmarshal(input, &req); err != nil {
-					return nil, fmt.Errorf("parse read document input: %w", err)
-				}
-			}
-			documentID := firstNonEmptyCommand(req.DocumentID, currentDocumentTargetID(meta))
-			if documentID == "" {
-				return nil, fmt.Errorf("document_id is required")
-			}
-			doc, err := s.docsDocumentService.Get(ctx, documentID)
-			if err != nil {
-				return nil, err
-			}
-			if doc == nil || doc.WorkspaceID != meta.WorkspaceID {
-				return nil, fmt.Errorf("document not found")
-			}
-			out := map[string]any{
-				"id":            doc.ID,
-				"document_id":   doc.ID,
-				"markdown_link": helpinMarkdownLink(doc.Title, "documents", doc.ID),
-				"title":         doc.Title,
-				"status":        doc.Status,
-			}
-			if doc.TeamID != nil && strings.TrimSpace(*doc.TeamID) != "" {
-				out["team_id"] = strings.TrimSpace(*doc.TeamID)
-			}
-			if s.docsContentService != nil {
-				if content, err := s.docsContentService.Get(ctx, documentID); err == nil && content != nil {
-					text, truncated := truncateCommandBarTextWithFlag(content.ContentText, 2400)
-					out["content_text"] = text
-					out["content_text_runes"] = len([]rune(strings.TrimSpace(content.ContentText)))
-					out["content_text_truncated"] = truncated
-				}
-			}
-			if s.docsBlockService != nil {
-				if blocks, err := s.docsBlockService.List(ctx, meta.WorkspaceID, documentID); err == nil {
-					out["blocks_total"] = len(blocks)
-					page := blocks
-					if len(page) > 40 {
-						out["blocks_next_offset"] = 40
-						page = page[:40]
-					}
-					out["blocks"] = internalCompactDocumentBlocks(page)
-				}
-			}
-			return mustJSON(out), nil
-		},
+		Execute:              s.executeReadDocument,
 	})
 	s.register(InternalCommandDefinition{
 		Name:                 "docs.get_document_blocks",
@@ -840,125 +787,7 @@ func (s *InternalCommandService) registerDefaults() {
 		Mutating:             false,
 		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "crm_deal", "support_coverage_gap"},
 		Tool:                 internalGetDocumentBlocksToolMetadata(),
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			if s.docsBlockService == nil {
-				return nil, fmt.Errorf("docs block service is not available")
-			}
-			var req struct {
-				DocumentID    string   `json:"document_id"`
-				BlockIDs      []string `json:"block_ids"`
-				Include       bool     `json:"include_content"`
-				Offset        int      `json:"offset"`
-				Limit         int      `json:"limit"`
-				AnchorBlockID string   `json:"anchor_block_id"`
-				Around        int      `json:"around"`
-			}
-			if len(input) > 0 {
-				if err := json.Unmarshal(input, &req); err != nil {
-					return nil, fmt.Errorf("parse get document blocks input: %w", err)
-				}
-			}
-			documentID := firstNonEmptyCommand(req.DocumentID, currentDocumentTargetID(meta))
-			if documentID == "" {
-				return nil, fmt.Errorf("document_id is required")
-			}
-			blocks, err := s.docsBlockService.List(ctx, meta.WorkspaceID, documentID)
-			if err != nil {
-				return nil, err
-			}
-			filtered := blocks
-			offset := 0
-			limit := 40
-			if len(req.BlockIDs) > 0 {
-				requested := make(map[string]struct{}, len(req.BlockIDs))
-				for _, id := range req.BlockIDs {
-					id = strings.TrimSpace(id)
-					if id != "" {
-						requested[id] = struct{}{}
-					}
-				}
-				filtered = make([]model.DocsBlock, 0, len(requested))
-				found := make(map[string]struct{}, len(requested))
-				for _, block := range blocks {
-					if _, ok := requested[block.ID]; ok {
-						filtered = append(filtered, block)
-						found[block.ID] = struct{}{}
-					}
-				}
-				for id := range requested {
-					if _, ok := found[id]; !ok {
-						return nil, fmt.Errorf("block %s not found", id)
-					}
-				}
-				limit = len(filtered)
-			} else if strings.TrimSpace(req.AnchorBlockID) != "" {
-				anchorID := strings.TrimSpace(req.AnchorBlockID)
-				anchorIndex := -1
-				for i, block := range blocks {
-					if block.ID == anchorID {
-						anchorIndex = i
-						break
-					}
-				}
-				if anchorIndex < 0 {
-					return nil, fmt.Errorf("anchor block %s not found", anchorID)
-				}
-				around := req.Around
-				if around <= 0 {
-					around = 5
-				}
-				if around > 25 {
-					around = 25
-				}
-				start := anchorIndex - around
-				if start < 0 {
-					start = 0
-				}
-				end := anchorIndex + around + 1
-				if end > len(blocks) {
-					end = len(blocks)
-				}
-				filtered = blocks[start:end]
-				offset = start
-				limit = end - start
-			} else {
-				if req.Offset < 0 {
-					return nil, fmt.Errorf("offset must be >= 0")
-				}
-				if req.Limit > 0 {
-					limit = req.Limit
-				}
-				if limit > 100 {
-					limit = 100
-				}
-				offset = req.Offset
-				if offset >= len(blocks) {
-					filtered = nil
-				} else {
-					end := offset + limit
-					if end > len(blocks) {
-						end = len(blocks)
-					}
-					filtered = blocks[offset:end]
-				}
-			}
-			if req.Include && len(filtered) > 20 {
-				return nil, fmt.Errorf("include_content is limited to 20 blocks; provide block_ids or a smaller limit/window")
-			}
-			nextOffset := (*int)(nil)
-			if offset+len(filtered) < len(blocks) {
-				next := offset + len(filtered)
-				nextOffset = &next
-			}
-			return mustJSON(map[string]any{
-				"document_id": documentID,
-				"total":       len(blocks),
-				"offset":      offset,
-				"limit":       limit,
-				"next_offset": nextOffset,
-				"blocks":      internalDetailedDocumentBlocks(filtered, req.Include),
-			}), nil
-		},
+		Execute:              s.executeGetDocumentBlocks,
 	})
 	s.register(InternalCommandDefinition{
 		Name:                 "docs.ensure_spec_doc",
@@ -1590,8 +1419,9 @@ func (s *InternalCommandService) registerDefaults() {
 		Tool:                 mustCommandToolMetadata("docs.write_document_content"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
-				DocumentID string          `json:"document_id"`
-				Content    json.RawMessage `json:"content"`
+				DocumentID      string          `json:"document_id"`
+				ExpectedVersion string          `json:"expected_version"`
+				Content         json.RawMessage `json:"content"`
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse document content input: %w", err)
@@ -1623,11 +1453,11 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := s.requireCommandDocumentInWorkspace(ctx, meta.WorkspaceID, req.DocumentID); err != nil {
 				return nil, err
 			}
-			content, err := s.docsContentService.Save(ctx, req.DocumentID, docContent, meta.ActorID)
+			content, err := s.docsContentService.SaveVersioned(ctx, req.DocumentID, docContent, meta.ActorID, req.ExpectedVersion)
 			if err != nil {
 				return nil, err
 			}
-			return mustJSON(map[string]any{"document_id": req.DocumentID, "content_id": content.ID}), nil
+			return mustJSON(map[string]any{"document_id": req.DocumentID, "content_id": content.ID, "version": tiptap.DocumentVersion(content.Content)}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -2468,66 +2298,10 @@ func internalDetailedDocumentBlocks(blocks []model.DocsBlock, includeContent boo
 }
 
 func internalReadDocumentToolMetadata() *commandtools.RuntimeToolMetadata {
-	return &commandtools.RuntimeToolMetadata{
-		CommandName: "docs.read_document",
-		Alias:       "read_document",
-		Category:    "Docs",
-		Description: "Read a known Helpin Docs document by ID. Returns metadata including markdown_link, a bounded plain-text excerpt, and the first page of compact addressable blocks.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"document_id": map[string]any{
-					"type":        "string",
-					"description": "The document ID to read. Defaults to the current document target when omitted.",
-				},
-			},
-			"additionalProperties": false,
-		},
-	}
+	return mustCommandToolMetadata("docs.read_document")
 }
-
 func internalGetDocumentBlocksToolMetadata() *commandtools.RuntimeToolMetadata {
-	return &commandtools.RuntimeToolMetadata{
-		CommandName: "docs.get_document_blocks",
-		Alias:       "get_document_blocks",
-		Category:    "Docs",
-		Description: "Fetch addressable blocks for a known Helpin Docs document. Use after read_document when more document context is needed.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"document_id": map[string]any{
-					"type":        "string",
-					"description": "The document ID whose blocks should be fetched. Defaults to the current document target when omitted.",
-				},
-				"block_ids": map[string]any{
-					"type":        "array",
-					"description": "Optional stable block IDs to fetch.",
-					"items":       map[string]any{"type": "string"},
-				},
-				"include_content": map[string]any{
-					"type":        "boolean",
-					"description": "When true, include full block node JSON. Limited to 20 blocks per call.",
-				},
-				"offset": map[string]any{
-					"type":        "integer",
-					"description": "Optional zero-based block offset for paging.",
-				},
-				"limit": map[string]any{
-					"type":        "integer",
-					"description": "Optional page size, default 40, max 100.",
-				},
-				"anchor_block_id": map[string]any{
-					"type":        "string",
-					"description": "Optional block ID to center a window around.",
-				},
-				"around": map[string]any{
-					"type":        "integer",
-					"description": "Optional number of sibling blocks before and after anchor_block_id, default 5, max 25.",
-				},
-			},
-			"additionalProperties": false,
-		},
-	}
+	return mustCommandToolMetadata("docs.get_document_blocks")
 }
 
 func mustCommandToolMetadata(commandName string) *commandtools.RuntimeToolMetadata {
