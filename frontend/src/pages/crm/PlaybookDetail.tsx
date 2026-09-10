@@ -17,7 +17,7 @@ import { PlaybookEditor } from '@/components/crm/playbooks/PlaybookEditor';
 import { PlaybookAutomation } from '@/components/crm/playbooks/PlaybookAutomation';
 import { PlaybookExecutionActivity } from '@/components/crm/playbooks/PlaybookExecutionActivity';
 import { PlaybookParticipants, PlaybookPreview } from '@/components/crm/playbooks/PlaybookSignals';
-import { PlaybookError, PlaybookLoading, PlaybookNoAccess } from '@/components/crm/playbooks/PlaybookUI';
+import { PlaybookError, PlaybookHelp, PlaybookLabel, PlaybookLoading, PlaybookNoAccess } from '@/components/crm/playbooks/PlaybookUI';
 
 export function PlaybookDetailPage({ playbookId }: { playbookId: string }) {
   useTitle('Playbook');
@@ -75,8 +75,8 @@ function PlaybookDetail({ ws, slug, item, canAdmin, canEdit, onReload }: { ws: s
         <TabsContent value="work"><PlaybookParticipants ws={ws} slug={slug} item={item} canEdit={canEdit} /></TabsContent>
         <TabsContent value="setup" forceMount hidden={tab !== 'setup'}>
           <PlaybookEditor saveActionContainer={saveActionContainer} ws={ws} item={item} canAdmin={canAdmin} onDirty={setDirty} onReload={onReload} onPreview={() => setPreview('draft')} step={setupStep} onStepChange={setSetupStep} renderReview={(editing) => <>
-            {canAdmin && unpublished && <div className="border-b border-quiet-divider-strong py-4"><QuietPrimaryAction disabled={editing || write.isPending} onClick={() => openConfirmation('publish')}>Review & publish</QuietPrimaryAction></div>}
-            {item.published_version && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-quiet-divider-strong py-4 text-sm"><div><p>New enrollment is {item.playbook.accepting_customers ? 'allowed' : 'stopped'}</p><p className="mt-1 text-xs text-quiet-text-tertiary">Existing work is controlled separately. Signals are added with confirmation.</p></div>{canAdmin && <QuietTextAction disabled={write.isPending || editing} onClick={() => openConfirmation(item.playbook.accepting_customers ? 'stop' : 'start')}>{item.playbook.accepting_customers ? 'Stop new enrollment' : 'Allow new enrollment'}</QuietTextAction>}</div>}
+            {canAdmin && unpublished && <div className="border-b border-quiet-divider-strong py-4"><QuietPrimaryAction disabled={editing || write.isPending} onClick={() => openConfirmation('publish')}>Review & publish</QuietPrimaryAction><PlaybookHelp label="About publishing">Publish the saved draft for new signals. Existing signals keep their version. Publishing does not start automation.</PlaybookHelp></div>}
+            {item.published_version && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-quiet-divider-strong py-4 text-sm"><p className="flex flex-wrap items-center gap-2"><PlaybookLabel label="New enrollment" help="Allow new signals to enter this playbook, manually or through automation. Stopping enrollment leaves existing work unchanged." /><span className="text-quiet-text-secondary">{item.playbook.accepting_customers ? 'Allowed' : 'Stopped'}</span></p>{canAdmin && <QuietTextAction disabled={write.isPending || editing} onClick={() => openConfirmation(item.playbook.accepting_customers ? 'stop' : 'start')}>{item.playbook.accepting_customers ? 'Stop new enrollment' : 'Allow new enrollment'}</QuietTextAction>}</div>}
             <PlaybookAutomation ws={ws} slug={slug} item={item} dirty={editing} />
           </>} />
         </TabsContent>

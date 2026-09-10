@@ -551,6 +551,9 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 	if err != nil {
 		return AgentRuntimeStartRunRequest{}, err
 	}
+	if err := validateScheduledSupportFollowUpTools(run, allowedTools); err != nil {
+		return AgentRuntimeStartRunRequest{}, err
+	}
 	return AgentRuntimeStartRunRequest{
 		HostRunID:       strings.TrimSpace(run.ID),
 		AgentID:         strings.TrimSpace(run.AgentID),
@@ -6502,7 +6505,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
-	runtimeAgent := runtimeAgentFromHelpinAgent(params.agent, runtimeLauncher.AppID())
+	runtimeAgent, err := runtimeAgentForScheduledSupportFollowUp(run, runtimeAgentFromHelpinAgent(params.agent, runtimeLauncher.AppID()))
+	if err != nil {
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
+	}
 
 	params.agent.Status = "working"
 	if params.taskID != nil {

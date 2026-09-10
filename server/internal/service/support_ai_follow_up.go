@@ -124,14 +124,17 @@ func (s *SupportFollowUpService) process(ctx context.Context, row model.SupportA
 			return err
 		}
 		if run == nil && e.StartedAt != nil && now.Sub(*e.StartedAt) > time.Hour {
-			return s.failAndHandoff(ctx, tx, c, e, settings, "assessment_launch_timeout", now)
+			sent, err = s.stopWithFailure(ctx, tx, c, e, "assessment_launch_timeout", now)
+			return err
 		}
 		if run != nil {
 			if !model.IsAgentRunActiveStatus(run.Status) {
-				return s.retryOrHandoff(ctx, tx, c, e, settings, "assessment_did_not_complete", now)
+				sent, err = s.retryOrStop(ctx, tx, c, e, "assessment_did_not_complete", now)
+				return err
 			}
 			if e.StartedAt != nil && now.Sub(*e.StartedAt) > time.Hour {
-				return s.failAndHandoff(ctx, tx, c, e, settings, "assessment_timeout", now)
+				sent, err = s.stopWithFailure(ctx, tx, c, e, "assessment_timeout", now)
+				return err
 			}
 			return nil
 		}
@@ -150,7 +153,7 @@ func (s *SupportFollowUpService) process(ctx context.Context, row model.SupportA
 		return tx.Model(e).Updates(map[string]any{"status": "assessing", "started_at": e.StartedAt, "updated_at": now}).Error
 	})
 	if err == nil && sent != nil {
-		publishSupportAIMessageStream(s.chat.supportAIService.wsPublisher, row.WorkspaceID, sent, "ai:"+derefString(sent.SenderAgentID))
+		s.publishFollowUpMessage(row.WorkspaceID, sent)
 	}
 	if err != nil || !launch {
 		return err
@@ -215,4 +218,12 @@ func finishFollowUpRow(tx *gorm.DB, e *model.SupportAIFollowUp, status, reason s
 // SetFollowUpRepository enables follow-up visibility on conversation details.
 func (s *SupportInboxService) SetFollowUpRepository(repo *repository.SupportFollowUpRepository) {
 	s.followUpRepo = repo
+}
+
+func (s *SupportFollowUpService) publishFollowUpMessage(workspaceID string, message *model.SupportMessage) {
+	if message.IsInternal {
+		s.chat.supportAIService.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, message, "support:follow_up"))
+		return
+	}
+	publishSupportAIMessageStream(s.chat.supportAIService.wsPublisher, workspaceID, message, "ai:"+derefString(message.SenderAgentID))
 }

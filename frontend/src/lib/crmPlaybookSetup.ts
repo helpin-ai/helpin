@@ -1,11 +1,11 @@
 import type { CRMPlaybookDefinition } from './crmPlaybookTypes';
 
 export const playbookSetupSteps = [
-  { id: 'purpose', label: 'Purpose & scope', description: 'The outcome and matching signals' },
-  { id: 'milestones', label: 'Milestones', description: 'What meaningful progress looks like' },
-  { id: 'team', label: 'Team & permissions', description: 'Who acts and who approves' },
-  { id: 'follow_up', label: 'Follow-up', description: 'When to check, escalate, and stop' },
-  { id: 'review', label: 'Review & automation', description: 'Publish, then automate if needed' },
+  { id: 'purpose', label: 'Purpose & scope' },
+  { id: 'milestones', label: 'Milestones' },
+  { id: 'team', label: 'Team & permissions' },
+  { id: 'follow_up', label: 'Follow-up' },
+  { id: 'review', label: 'Review & automation' },
 ] as const;
 export type PlaybookSetupStep = typeof playbookSetupSteps[number]['id'];
 

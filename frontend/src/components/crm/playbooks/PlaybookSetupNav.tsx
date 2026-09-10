@@ -11,7 +11,7 @@ export function PlaybookSetupNav({ current, complete, onChange }: { current: Pla
           <span aria-hidden="true" className={cn('flex size-5 shrink-0 items-center justify-center rounded-full text-xs tabular-nums', current === step.id ? 'bg-quiet-text-primary font-semibold text-quiet-surface' : complete[step.id] ? 'text-quiet-positive' : 'text-quiet-text-tertiary')}>
             {complete[step.id] && current !== step.id ? <Tick01Icon className="size-3.5" /> : index + 1}
           </span>
-          <span className="min-w-0"><span className={cn('block text-sm group-hover:text-quiet-text-primary', current === step.id ? 'font-semibold text-quiet-text-primary' : 'text-quiet-text-secondary')}>{step.label}</span><span className="mt-1 hidden text-xs leading-5 text-quiet-text-tertiary lg:block">{step.description}</span></span>
+          <span className="min-w-0"><span className={cn('block text-sm group-hover:text-quiet-text-primary', current === step.id ? 'font-semibold text-quiet-text-primary' : 'text-quiet-text-secondary')}>{step.label}</span></span>
         </button>
       </li>)}
     </ol>

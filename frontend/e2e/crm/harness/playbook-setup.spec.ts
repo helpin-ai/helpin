@@ -10,13 +10,13 @@ test('five direct steps preserve edits and save the entire draft from review wit
   await expect(page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button')).toHaveCount(5);
   await expect(step(page, 'Purpose & scope')).toHaveAttribute('aria-current', 'step');
   await expect(page.getByLabel('Milestone 1', { exact: true })).not.toBeVisible();
-  await page.getByLabel('Name', { exact: true }).fill('A focused customer journey');
+  await page.getByLabel('Playbook name', { exact: true }).fill('A focused customer journey');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByLabel('Milestone 1', { exact: true }).fill('Customer confirms the need');
   await step(page, 'Follow-up').click();
   await page.getByLabel('Check after (hours)', { exact: true }).fill('72');
   await step(page, 'Purpose & scope').click();
-  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('A focused customer journey');
+  await expect(page.getByLabel('Playbook name', { exact: true })).toHaveValue('A focused customer journey');
   await step(page, 'Milestones').click();
   await expect(page.getByLabel('Milestone 1', { exact: true })).toHaveValue('Customer confirms the need');
   await step(page, 'Review & automation').click();
@@ -56,9 +56,9 @@ test('read-only users can navigate every step on a narrow dark view', async ({ p
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${url}&theme=dark`);
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
-  await expect(page.getByLabel('Name', { exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Playbook name', { exact: true })).toBeDisabled();
   await step(page, 'Team & permissions').click();
-  await expect(page.getByRole('combobox', { name: 'Responsible owner', exact: true })).toBeDisabled();
+  await expect(page.getByRole('combobox', { name: 'Owner role', exact: true })).toBeDisabled();
   await step(page, 'Review & automation').click();
   await expect(step(page, 'Review & automation')).toHaveAccessibleName('Review & automation, complete');
   await expect(page.getByText('An admin with Automation access can connect this playbook.')).toBeVisible();
