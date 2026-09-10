@@ -11,9 +11,15 @@ export const STAGE_LABELS: Record<PipelineStageType, string> = {
   lost: "Lost",
 };
 export const MOTION_LABELS: Record<CRMDealCommercialMotion, string> = {
-  new_business: "New business",
-  expansion: "Expansion",
-  renewal: "Renewal",
+  new_business: "New sales",
+  expansion: "Upsells & expansion",
+  renewal: "Renewals",
+};
+export const MOTION_DESCRIPTIONS: Record<CRMDealCommercialMotion, string> = {
+  new_business: "Win new customers.",
+  expansion:
+    "Grow existing accounts with upgrades, more seats, or additional products.",
+  renewal: "Extend an existing customer’s subscription or contract.",
 };
 export const DEFAULT_STAGES = [
   {

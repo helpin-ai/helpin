@@ -34,6 +34,7 @@ import {
   DEFAULT_STAGES,
   deletionBlock,
   MOTION_LABELS,
+  MOTION_DESCRIPTIONS,
   sortStages,
   stagePayload,
   STAGE_LABELS,
@@ -192,7 +193,7 @@ export function PipelineDetailsDialog({
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="pipeline-motion">Commercial motion</Label>
+              <Label htmlFor="pipeline-motion">Default deal type</Label>
               <Select
                 disabled={pending}
                 value={motion}
@@ -204,6 +205,7 @@ export function PipelineDetailsDialog({
                   variant="underline"
                   className="w-full px-0.5"
                   id="pipeline-motion"
+                  aria-describedby="pipeline-motion-help"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -215,8 +217,12 @@ export function PipelineDetailsDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Deals inherit this motion unless they have an explicit override.
+              <p
+                id="pipeline-motion-help"
+                className="text-xs text-muted-foreground"
+              >
+                {MOTION_DESCRIPTIONS[motion]} Deals in this pipeline use this
+                type unless you choose another on an individual deal.
               </p>
             </div>
             <div className="flex items-start justify-between gap-4 border-y border-quiet-divider-strong py-3">
