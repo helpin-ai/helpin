@@ -72,6 +72,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"write_document_content": RiskLevelRoutine, "update_document_block": RiskLevelRoutine,
 	"insert_document_block": RiskLevelRoutine, "insert_document_artifact": RiskLevelRoutine,
 	"insert_document_image":   RiskLevelRoutine,
+	"edit_document":           RiskLevelRoutine,
 	"link_document_to_object": RiskLevelRoutine, "ensure_epic_spec_doc": RiskLevelRoutine,
 	"ensure_task_plan_doc": RiskLevelRoutine, "publish_document_change_proposal": RiskLevelRoutine,
 	"publish_ai_section_candidate": RiskLevelRoutine,
@@ -92,7 +93,9 @@ var runtimeToolRiskLevels = map[string]string{
 	"run_epic_delivery_pipeline": RiskLevelDestructive,
 }
 
-var sharedRuntimeTools = []RuntimeToolMetadata{
+var sharedRuntimeTools = append(baseRuntimeTools, documentReadTools...)
+
+var baseRuntimeTools = []RuntimeToolMetadata{
 	{
 		CommandName: "workspace.search",
 		Alias:       "search_workspace",
@@ -145,7 +148,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		CommandName: "docs.search_documents",
 		Alias:       "search_documents",
 		Category:    "Docs",
-		Description: "Search documents by keyword across the workspace. Every displayed document must use its returned markdown_link verbatim. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.",
+		Description: "Search documents by keyword across the workspace. Every displayed document must use its returned markdown_link verbatim. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document. Results include a matching passage and match_block_id when available; use get_document_blocks with that anchor for local context.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -800,6 +803,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
+				"expected_version": documentString("Optional snapshot version. For local edits to existing documents prefer edit_document."),
 				"document_id": map[string]any{
 					"type":        "string",
 					"description": "The document ID to update",
