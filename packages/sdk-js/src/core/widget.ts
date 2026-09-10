@@ -136,7 +136,7 @@ export class WidgetManager {
   private connectionIssueStartedAt: number | null = null;
   private isShutdown = false;
   private hasBeenOpened = false;
-  private host = 'client.prod.helpin.ai';
+  private host = 'client.helpin.ai';
   private widgetKey: string | null = null;
   private anonymousId: string | null = null;
   private connectionStatus: ConnectionStatus = 'idle';
