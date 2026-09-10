@@ -230,9 +230,12 @@ export function useUpdateChatSettings(workspaceId: string) {
   return useMutation({
     mutationFn: (settings: Partial<SupportInboxSettings>) =>
       supportService.updateInstallationSettings(workspaceId, settings).then(unwrap),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.routingUsage(workspaceId) });
+    onSuccess: async (installation) => {
+      queryClient.setQueryData(queryKeys.support.installation(workspaceId), installation);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.routingUsage(workspaceId) }),
+      ]);
     },
     onError: (error: Error) => {
       toast.error('Failed to update chat settings', { description: error.message });
@@ -433,7 +436,7 @@ export function useMailboxMembers(workspaceId: string, mailboxId?: string | null
   });
 }
 
-export function useSupportEmailRoutes(workspaceId: string) {
+export function useSupportEmailRoutes(workspaceId: string, setupOpen = false) {
   return useQuery({
     queryKey: queryKeys.support.emailRoutes(workspaceId),
     queryFn: async (): Promise<SupportEmailRoute[]> => unwrap(await supportService.listEmailRoutes(workspaceId)),
@@ -441,6 +444,7 @@ export function useSupportEmailRoutes(workspaceId: string) {
     staleTime: 15_000,
     refetchInterval: (query) => {
       const routes = query.state.data;
+      if (setupOpen && routes?.some(route => !route.forwarding_verified_at)) return 3_000;
       const waiting = routes?.some((route) => {
         if (!route.verification_sent_at) return false;
         const verificationSentAt = new Date(route.verification_sent_at).getTime();
@@ -537,7 +541,9 @@ export function useCreateSupportEmailRoute(workspaceId: string) {
   return useMutation({
     mutationFn: (payload: CreateSupportEmailRouteRequest) =>
       supportService.createEmailRoute(workspaceId, payload).then(unwrap),
-    onSuccess: () => {
+    onSuccess: (route) => {
+      // Restored routes keep their ID, but start a fresh setup attempt.
+      try { localStorage.removeItem(`helpin:forwarding-setup:v1:${workspaceId}:${route.id}`); } catch { /* Storage may be unavailable. */ }
       queryClient.invalidateQueries({ queryKey: queryKeys.support.emailRoutes(workspaceId) });
     },
     onError: (error: Error) => {
@@ -551,7 +557,9 @@ export function useSendSupportEmailRouteTest(workspaceId: string) {
   return useMutation({
     mutationFn: ({ routeId, sourceAddress }: { routeId: string; sourceAddress: string }) =>
       supportService.sendEmailRouteTest(workspaceId, routeId, sourceAddress).then(unwrap),
-    onSuccess: () => {
+    onSuccess: (updatedRoute) => {
+      queryClient.setQueryData<SupportEmailRoute[]>(queryKeys.support.emailRoutes(workspaceId), routes =>
+        routes?.map(route => route.id === updatedRoute.id ? updatedRoute : route));
       queryClient.invalidateQueries({ queryKey: queryKeys.support.emailRoutes(workspaceId) });
     },
     onError: (error: Error) => {
@@ -835,6 +843,10 @@ export function useConversation(workspaceId: string, conversationId: string | nu
     queryFn: async () => unwrap(await supportService.getConversation(workspaceId, conversationId!)),
     enabled: !!workspaceId && !!conversationId,
     staleTime: 30_000,
+    refetchInterval: (query) => {
+      const state = query.state.data?.ai_follow_up?.status;
+      return state && ['scheduled', 'assessing', 'waiting'].includes(state) ? 30_000 : false;
+    },
   });
 }
 

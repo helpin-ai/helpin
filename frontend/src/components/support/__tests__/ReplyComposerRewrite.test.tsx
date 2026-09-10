@@ -62,6 +62,35 @@ describe('ReplyComposer AI loading state', () => {
     vi.useRealTimers();
   });
 
+  it('blocks button and keyboard sending for the full upload batch and failed attachments', async () => {
+    let completeFirst!: (value: { id: string }) => void;
+    let failSecond!: (error: Error) => void;
+    mocks.mutation.mutateAsync.mockReset();
+    mocks.mutation.mutateAsync
+      .mockImplementationOnce(() => new Promise((resolve) => { completeFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise((_, reject) => { failSecond = reject; }));
+    setup();
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [new File(['video'], 'first.mp4', { type: 'video/mp4' }), new File(['video'], 'second.mp4', { type: 'video/mp4' })] });
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(container.querySelector('[aria-label="Remove first.mp4"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Remove second.mp4"]')).not.toBeNull();
+    expect(mocks.mutation.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(button('Send').disabled).toBe(true);
+    act(() => { container.querySelector('.tiptap')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); });
+    expect(mocks.send).not.toHaveBeenCalled();
+    await act(async () => { completeFirst({ id: 'uploaded-first' }); });
+    expect(mocks.mutation.mutateAsync).toHaveBeenCalledTimes(2);
+    expect(button('Send').disabled).toBe(true);
+    await act(async () => { failSecond(new Error('upload failed')); });
+    expect(button('Send').disabled).toBe(true);
+    act(() => { container.querySelector('.tiptap')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); });
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(container.querySelector('.tiptap')?.textContent).toContain('Original');
+    act(() => { (container.querySelector('[aria-label="Remove second.mp4"]') as HTMLButtonElement).click(); });
+    expect(button('Send').disabled).toBe(false);
+  });
+
   it('enables draft actions immediately for restored text without focusing the editor', () => {
     setup();
     expect(button('Send').disabled).toBe(false);

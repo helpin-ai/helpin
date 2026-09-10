@@ -154,6 +154,21 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.AIMaxFollowups != nil {
 		current.AIMaxFollowups = *patch.AIMaxFollowups
 	}
+	if patch.AIFollowUpEnabled != nil {
+		current.AIFollowUpEnabled = *patch.AIFollowUpEnabled
+	}
+	if patch.AIFollowUpSecondDelayHours != nil {
+		current.AIFollowUpSecondDelayHours = *patch.AIFollowUpSecondDelayHours
+	}
+	if patch.AIFollowUpDelayHours != nil {
+		current.AIFollowUpDelayHours = *patch.AIFollowUpDelayHours
+	}
+	if patch.AIFollowUpCloseHours != nil {
+		current.AIFollowUpCloseHours = *patch.AIFollowUpCloseHours
+	}
+	if patch.AIFollowUpMaxPerConversation != nil {
+		current.AIFollowUpMaxPerConversation = *patch.AIFollowUpMaxPerConversation
+	}
 	if patch.AIAutoResolveTimeout != nil {
 		current.AIAutoResolveTimeout = *patch.AIAutoResolveTimeout
 	}
@@ -405,6 +420,9 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	}
 	if settings.AIMaxFollowups < 0 || settings.AIMaxFollowups > 50 {
 		return fmt.Errorf("ai_max_followups must be between 0 and 50")
+	}
+	if settings.AIFollowUpSecondDelayHours < 1 || settings.AIFollowUpSecondDelayHours > 720 || settings.AIFollowUpDelayHours < 1 || settings.AIFollowUpDelayHours > 720 || settings.AIFollowUpCloseHours < 1 || settings.AIFollowUpCloseHours > 720 || settings.AIFollowUpMaxPerConversation < 1 || settings.AIFollowUpMaxPerConversation > 5 {
+		return fmt.Errorf("AI follow-up delays must be 1–720 hours and conversation limit 1–5")
 	}
 	if settings.AIAutoResolveTimeout < 0 {
 		return fmt.Errorf("ai_auto_resolve_timeout must be >= 0")

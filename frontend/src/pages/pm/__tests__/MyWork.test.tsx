@@ -28,6 +28,8 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => stableMocks.navigate,
 }))
 
+vi.mock('@/components/pm/my-work/AISuggestions', () => ({ AISuggestions: () => <div>Meeting follow-up suggestions</div> }))
+
 vi.mock('@/hooks/useTitle', () => ({
   useTitle: vi.fn(),
 }))
@@ -38,6 +40,7 @@ vi.mock('@/stores/workspaceStore', () => ({
 
 vi.mock('@/hooks/queries/useSession', () => ({
   useWorkspaceAccess: () => stableMocks.access,
+  usePermissions: () => ({ has: () => true }),
 }))
 
 vi.mock('@/hooks/useAccessibleTeams', () => ({
@@ -173,6 +176,23 @@ describe('MyWorkPage', () => {
     act(() => {
       root.unmount()
     })
+  })
+
+  it('opens AI suggestions without requesting another task list and restores assigned work', async () => {
+    const { container, root } = await renderPage()
+    const calls = vi.mocked(pmTaskService.list).mock.calls.length
+    const tab = (name: string) => Array.from(container.querySelectorAll('[role="tab"]')).find((node) => node.textContent === name)
+    await act(async () => {
+      tab('AI suggestions')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    })
+    expect(container.textContent).toContain('Meeting follow-up suggestions')
+    expect(container.textContent).not.toContain('Testing one more')
+    expect(pmTaskService.list).toHaveBeenCalledTimes(calls)
+    await act(async () => {
+      tab('Assigned to me')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    })
+    expect(container.textContent).toContain('Testing one more')
+    act(() => root.unmount())
   })
 
   it('ignores a late response from the previously selected tab', async () => {

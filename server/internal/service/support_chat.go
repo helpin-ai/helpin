@@ -39,6 +39,7 @@ type SupportChatService struct {
 	supportAIService *SupportAIService
 	evidenceRepo     *repository.SupportRunEvidenceRepository
 	workspaceRepo    *repository.WorkspaceRepository
+	followUpService  *SupportFollowUpService
 }
 
 // SetResearchEvidenceDependencies wires the stores used to turn completed
@@ -114,6 +115,8 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 		// Visitor came back after resolution: reopen for AI handling.
 		pending := "pending"
 		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+			"status":      model.SupportConversationStatusOpen,
+			"resolved_at": nil, "ai_resolved_at": nil, "ai_resolution_type": nil,
 			"ai_state":   &pending,
 			"flow_state": model.SupportConversationFlowStateAIHandling,
 		}); err != nil {

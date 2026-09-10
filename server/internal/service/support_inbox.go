@@ -32,6 +32,7 @@ import (
 
 // SupportInboxService contains support business logic.
 type SupportInboxService struct {
+	followUpRepo     *repository.SupportFollowUpRepository
 	conversationRepo *repository.SupportConversationRepository
 	productAnalyticsEmitter
 	mailboxRepo             *repository.SupportMailboxRepository
@@ -1568,6 +1569,12 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 	s.hydrateConversationTags(ctx, workspaceID, hydrated)
 	ticket.Tags = hydrated[0].Tags
 	ticket.SystemTags = hydrated[0].SystemTags
+	if s.followUpRepo != nil {
+		ticket.AIFollowUp, err = s.followUpRepo.Latest(ctx, workspaceID, id)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return ticket, nil
 }
 
@@ -2202,7 +2209,14 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 			conv.OpenedByUserID = senderUserID
 			conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
 			conv.HumanTakeover = boolPtr(true)
-			if err := s.conversationRepo.Update(ctx, conv); err != nil {
+			// The message insert has already advanced the database projections.
+			// Saving the pre-reply snapshot here would restore the old preview,
+			// sender and workload state along with these ownership changes.
+			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
+				"opened_by_user_id": senderUserID,
+				"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
+				"human_takeover":    true,
+			}); err != nil {
 				slog.ErrorContext(ctx, "failed to set support conversation owner", "error", err, "conversation_id", ticketID)
 			}
 		}

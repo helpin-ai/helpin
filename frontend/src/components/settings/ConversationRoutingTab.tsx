@@ -1,3 +1,4 @@
+import { SettingsSaveBar } from './SettingsSaveBar';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Alert01Icon, ArchiveIcon, ArrowDown01Icon, DragDropVerticalIcon, InboxIcon, InformationCircleIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, UndoIcon, UserGroupIcon } from '@/lib/icons';
 import {
@@ -1025,14 +1026,14 @@ export function ConversationRoutingTab({
 
   return (
     <div className="space-y-3">
-      {/* Floating save bar */}
+      {/* Keep save controls in the settings scroll viewport. */}
       {isDirty && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-lg border bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur">
+        <SettingsSaveBar>
           <Badge variant="secondary">Unsaved changes</Badge>
           <Button size="sm" onClick={handleSaveSettings} disabled={updateSettings.isPending}>
             {updateSettings.isPending ? 'Saving...' : 'Save'}
           </Button>
-        </div>
+        </SettingsSaveBar>
       )}
 
       {routingUsage?.triage_enabled && routingUsage.exhausted ? (

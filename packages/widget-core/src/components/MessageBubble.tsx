@@ -41,16 +41,27 @@ function ImageAttachments({ attachments, onImageClick }: { attachments: Attachme
   );
 }
 
+function VideoAttachment({ url, name }: { url: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [url]);
+  return failed
+    ? <p className="helpin-video-fallback">This video cannot play in your browser. Open or download the file below.</p>
+    : <video src={url} controls playsInline preload="metadata" aria-label={name} onError={() => setFailed(true)} />;
+}
+
 function FileAttachments({ attachments }: { attachments: Attachment[] }) {
   const files = attachments.filter(a => a.url && !isImageType(a.fileType));
   if (files.length === 0) return null;
   return (
     <div className="helpin-message-attachments">
       {files.map((att, i) => (
+        <div key={att.id || i} className={att.fileType.startsWith('video/') ? 'helpin-attachment-video' : undefined}>
+        {att.fileType.startsWith('video/') && <VideoAttachment url={att.url!} name={att.fileName} />}
         <a
           key={att.id || i}
           className="helpin-attachment-file"
           href={att.url}
+          download={att.fileName}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -58,6 +69,7 @@ function FileAttachments({ attachments }: { attachments: Attachment[] }) {
           <span className="helpin-attachment-filename">{att.fileName}</span>
           <span className="helpin-attachment-size">{formatFileSize(att.fileSize)}</span>
         </a>
+        </div>
       ))}
     </div>
   );

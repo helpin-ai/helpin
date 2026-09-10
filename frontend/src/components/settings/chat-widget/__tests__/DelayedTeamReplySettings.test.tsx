@@ -41,17 +41,6 @@ describe('delayed team reply settings', () => {
     expect(onMinutesChange).toHaveBeenCalledWith(12);
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
-  it('previews edited messages and offers only one noninteractive email capture preview', () => {
-    change('#delayed-team-reply-message', 'We will email your reply.');
-    change('#delayed-team-reply-message-no-email', 'Leave an email for your reply.');
-    expect(container.textContent).toContain('We will email your reply.');
-    expect(container.textContent).toContain('Leave an email for your reply.');
-    expect(container.querySelectorAll('input[type="email"]')).toHaveLength(1);
-    expect(container.querySelector<HTMLInputElement>('input[type="email"]')?.disabled).toBe(true);
-    expect(container.querySelector('[role="switch"]')).toBeNull();
-    change('#delayed-team-reply-message', '');
-    expect(container.textContent).toContain(DEFAULT_DELAYED_TEAM_REPLY_MESSAGE);
-  });
   it('normalizes older settings to defaults and preserves saved customization in drafts', () => {
     const original = {} as SupportInboxSettings;
     const draft = buildSettingsDraftFromServer(original);

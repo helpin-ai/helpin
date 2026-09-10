@@ -66,7 +66,8 @@ export function SupportAttachmentGallery({
   className = '',
 }: SupportAttachmentGalleryProps) {
   const imageAttachments = useMemo(() => attachments.filter(isImageAttachment), [attachments]);
-  const fileAttachments = useMemo(() => attachments.filter((attachment) => !isImageAttachment(attachment)), [attachments]);
+  const fileAttachments = useMemo(() => attachments.filter((attachment) => !isImageAttachment(attachment) && !(attachment.file_type.startsWith('video/') && attachment.url)), [attachments]);
+  const [failedVideoURLs, setFailedVideoURLs] = useState<Set<string>>(() => new Set());
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
@@ -267,6 +268,31 @@ export function SupportAttachmentGallery({
             )}
           </div>
         )}
+
+        {attachments.filter((attachment) => attachment.file_type.startsWith('video/') && attachment.url).map((attachment) => (
+          <div key={attachment.id} className="max-w-lg overflow-hidden rounded-lg border border-border/70">
+            <video
+              controls
+              onErrorCapture={() => setFailedVideoURLs((previous) => new Set(previous).add(attachment.url))}
+              playsInline
+              preload="metadata"
+              aria-label={`Play ${attachment.file_name}`}
+              className="max-h-80 w-full bg-black"
+            >
+              <source src={attachment.url} type={attachment.file_type} />
+              Your browser cannot play this video. Use the download link below.
+            </video>
+            {failedVideoURLs.has(attachment.url) && (
+              <p role="status" className="px-3 py-2 text-xs text-muted-foreground">This video cannot be played here. Download it to watch.</p>
+            )}
+            <a href={attachment.url} target="_blank" rel="noopener noreferrer" download={attachment.file_name} className={fileLinkClassName}>
+              <span className="truncate font-medium">{attachment.file_name}</span>
+              <span className="shrink-0 opacity-60">{formatFileSize(attachment.file_size)}</span>
+              <Download04Icon className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
+              <span className="sr-only">Download video</span>
+            </a>
+          </div>
+        ))}
 
         {fileAttachments.length > 0 && (
           <div className="space-y-1.5">

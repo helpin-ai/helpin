@@ -704,19 +704,19 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner); err == nil {
 		if conv != nil && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
 			conv.Status = model.SupportConversationStatusOpen
-			if conv.HumanTakeover != nil && *conv.HumanTakeover {
-				conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
-			} else {
-				conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID))
-			}
+			conv.FlowState = strPtr(supportEmailReopenFlowState(conv))
 			conv.ResolvedAt = nil
 			conv.ClosedAt = nil
+			conv.AIResolvedAt = nil
+			conv.AIResolutionType = nil
 			if err := s.conversationRepo.UpdateFields(ctx, session.WorkspaceID, *session.ConversationID, map[string]any{
-				"status":      conv.Status,
-				"flow_state":  derefString(conv.FlowState),
-				"resolved_at": nil,
-				"closed_at":   nil,
-				"updated_at":  time.Now(),
+				"status":             conv.Status,
+				"flow_state":         derefString(conv.FlowState),
+				"resolved_at":        nil,
+				"closed_at":          nil,
+				"ai_resolved_at":     nil,
+				"ai_resolution_type": nil,
+				"updated_at":         time.Now(),
 			}); err != nil {
 				slog.ErrorContext(ctx, "failed to reopen widget support conversation after customer reply", "error", err, "conversation_id", *session.ConversationID)
 			} else {
@@ -755,7 +755,7 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 
 	if shouldAutomaticallyProcessSupportAI(settings) && s.supportAIService != nil {
 		conv, convErr := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
-		if convErr == nil && conv != nil && conv.HumanTakeover != nil && *conv.HumanTakeover {
+		if convErr != nil || conv == nil || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman {
 			return
 		}
 

@@ -1,4 +1,9 @@
+import { AIFollowUpSettings } from './chat-widget/AIFollowUpSettings';
 import { useEffect, useRef, useState } from 'react';
+import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
+import { SettingsAutosaveGuard } from './SettingsAutosaveGuard';
+import { SettingsSaveBar } from './SettingsSaveBar';
+import { SettingsSaveStatus } from './SettingsSaveStatus';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
 import { toast } from 'sonner';
-import { Tick01Icon, Copy01Icon, CodeIcon, Loading01Icon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon, Alert01Icon } from '@/lib/icons';
+import { Copy01Icon, CodeIcon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon, Alert01Icon } from '@/lib/icons';
 import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces, useWorkspaceBilling } from '@/hooks/queries';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
@@ -25,11 +30,9 @@ import { canRemoveHelpinBranding, COLOR_SCHEME_OPTIONS, COMMON_TIMEZONES, DAYS, 
 import { PreviewLayout } from './chat-widget/PreviewLayout';
 import {
   buildPreviewAvailability,
-  buildSettingsDraftFromServer,
   normalizeBusinessHoursDay,
   normalizeBusinessHoursSchedule,
   previewEscalationMessage,
-  serializeSettingsDraft,
   sortHelpSpaceIds,
   type ChatSettingsDraft,
 } from './chat-widget/utils';
@@ -43,7 +46,7 @@ import {
   getChatWidgetAIResponseModeForUI,
   isChatWidgetAIResponseModeActive,
 } from './chat-widget/responseModes';
-import { getChatWidgetAIAssistantEnableBlocker, getChatWidgetAIAssistantToggleToast } from './chat-widget/aiAssistantReadiness';
+import { getChatWidgetAIAssistantEnableBlocker } from './chat-widget/aiAssistantReadiness';
 import { DEFAULT_AI_HANDOFF_FOLLOWUPS, formatAIHandoffFollowupOption } from './chat-widget/handoffFollowups';
 import { buildWidgetInstallPrompt, type WidgetInstallFramework } from './chat-widget/installPrompts';
 import { WidgetInstallAIPrompt } from './chat-widget/WidgetInstallAIPrompt';
@@ -55,6 +58,10 @@ type ChatGeneralTabMode = 'chat-widget' | 'ai-assistant';
 const HELPIN_WIDGET_HOST = 'https://client.helpin.ai';
 
 export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspaceId: string; mode?: ChatGeneralTabMode }) {
+  return <ChatGeneralSettings key={`${workspaceId}:${mode}`} workspaceId={workspaceId} mode={mode} />;
+}
+
+function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode: ChatGeneralTabMode }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const isAIAssistantPage = mode === 'ai-assistant';
   const { data, isLoading } = useChatSettings(workspaceId);
@@ -92,6 +99,10 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
   const [aiAgentId, setAiAgentId] = useState(NO_AGENT_VALUE);
   const [confidenceThreshold, setConfidenceThreshold] = useState('0.7');
   const [aiResponseMode, setAiResponseMode] = useState(DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE);
+  const [aiFollowUpEnabled, setAiFollowUpEnabled] = useState(true);
+  const [aiFollowUpDelay, setAiFollowUpDelay] = useState(24);
+  const [aiFollowUpClose, setAiFollowUpClose] = useState(1);
+  const [aiFollowUpSecondDelay, setAiFollowUpSecondDelay] = useState(24);
   const [aiMaxFollowups, setAiMaxFollowups] = useState(DEFAULT_AI_HANDOFF_FOLLOWUPS);
   const [showTalkToHuman, setShowTalkToHuman] = useState(true);
   const [escalationMessage, setEscalationMessage] = useState('Let me connect you with a team member who can help further.');
@@ -128,14 +139,15 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
   const canRemoveBranding = canRemoveHelpinBranding(billing);
   const effectiveShowBranding = canRemoveBranding ? showBranding : true;
 
+  const [hydrated, setHydrated] = useState(false);
+
   useEffect(() => {
-    if (data?.settings && !billingLoading) {
+    if (data?.settings && !billingLoading && !hydrated) {
       const s = data.settings;
       const normalizedSchedule = normalizeBusinessHoursSchedule(s.business_hours_schedule);
       const sortedHelpSpaceIds = sortHelpSpaceIds(s.widget_help_space_ids);
 
-      lastSyncedDraftRef.current = serializeSettingsDraft(buildSettingsDraftFromServer(s));
-      initializedRef.current = true;
+      setHydrated(true);
 
       setRequireEmail(s.require_email_before_chat);
       setRequirePhone(s.require_phone_after_email);
@@ -155,6 +167,10 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
       setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
       setConfidenceThreshold(String(s.ai_confidence_threshold));
       setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
+      setAiFollowUpEnabled(s.ai_follow_up_enabled ?? true);
+      setAiFollowUpDelay(s.ai_follow_up_delay_hours ?? 24);
+      setAiFollowUpClose(s.ai_follow_up_close_hours ?? 1);
+      setAiFollowUpSecondDelay(s.ai_follow_up_second_delay_hours ?? 24);
       setAiMaxFollowups(s.ai_max_followups ?? DEFAULT_AI_HANDOFF_FOLLOWUPS);
       setShowTalkToHuman(s.show_talk_to_human);
       setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
@@ -180,13 +196,7 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
       setFileUploadsEnabled(s.file_uploads_enabled ?? true);
       setForceVisitorIdentity(s.force_visitor_identity ?? false);
     }
-  }, [data, billingLoading, canRemoveBranding]);
-
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const initializedRef = useRef(false);
-  const lastSyncedDraftRef = useRef<string>('');
+  }, [data, billingLoading, canRemoveBranding, hydrated]);
 
   const aiAssistantEnableBlocker = getChatWidgetAIAssistantEnableBlocker({
     aiAgentId,
@@ -214,6 +224,11 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
     ai_confidence_threshold: parseFloat(confidenceThreshold),
     ai_response_mode: aiResponseMode,
     ai_max_followups: aiMaxFollowups,
+    ai_follow_up_enabled: aiFollowUpEnabled,
+    ai_follow_up_delay_hours: aiFollowUpDelay,
+    ai_follow_up_close_hours: aiFollowUpClose,
+    ai_follow_up_second_delay_hours: aiFollowUpSecondDelay,
+    ai_follow_up_max_per_conversation: data?.settings.ai_follow_up_max_per_conversation ?? 2,
     ai_auto_resolve_timeout: data?.settings.ai_auto_resolve_timeout ?? 24,
     show_talk_to_human: showTalkToHuman,
     escalation_message: escalationMessage,
@@ -247,37 +262,16 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
     file_uploads_enabled: fileUploadsEnabled,
     force_visitor_identity: forceVisitorIdentity,
   };
-  const settingsDraftKey = serializeSettingsDraft(settingsDraft);
-  const settingsDraftRef = useRef(settingsDraft);
-  settingsDraftRef.current = settingsDraft;
-  const mutateSettingsRef = useRef(updateMutation.mutate);
-  mutateSettingsRef.current = updateMutation.mutate;
-
-  // Auto-save with debounce when any setting changes
-  useEffect(() => {
-    if (billingLoading || !initializedRef.current || settingsDraftKey === lastSyncedDraftRef.current) {
-      return;
-    }
-
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setSaveStatus('saving');
-      mutateSettingsRef.current(settingsDraftRef.current, {
-        onSuccess: () => {
-          lastSyncedDraftRef.current = settingsDraftKey;
-          setSaveStatus('saved');
-          clearTimeout(savedTimerRef.current);
-          savedTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
-        },
-        onError: (err: unknown) => {
-          setSaveStatus('idle');
-          toast.error(err instanceof Error ? err.message : 'Failed to save');
-        },
-      });
-    }, 800);
-
-    return () => clearTimeout(debounceRef.current);
-  }, [billingLoading, settingsDraftKey]);
+  const autosave = useSettingsAutosave({
+    scopeKey: workspaceId,
+    enabled: hydrated && !billingLoading,
+    value: settingsDraft,
+    // The hook captures this baseline only once after the form is hydrated.
+    // Later query refreshes must not replace edits made while a save is pending.
+    savedValue: hydrated ? settingsDraft : null,
+    save: (draft: ChatSettingsDraft) => updateMutation.mutateAsync(draft),
+    delayMs: 800,
+  });
 
   const updateDay = (dayKey: string, patch: Partial<BusinessHoursDay>) => {
     setSchedule(prev => ({
@@ -315,7 +309,6 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
       }
       setAiEnableAttempted(false);
       setAiEnabled(true);
-      toast.success(getChatWidgetAIAssistantToggleToast(true));
       setExpandedSections(prev => {
         if (prev.has('ai-auto-reply')) return prev;
         const next = new Set(prev);
@@ -326,7 +319,6 @@ export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspac
     }
     setAiEnableAttempted(false);
     setAiEnabled(false);
-    toast.success(getChatWidgetAIAssistantToggleToast(false));
   };
 
   const handleAIAgentChange = (value: string) => {
@@ -664,22 +656,13 @@ function Dashboard() {
     />
   );
 
-  const saveIndicator = saveStatus !== 'idle' ? (
-    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border bg-background/95 px-3 py-2 text-sm shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 duration-200">
-      {saveStatus === 'saving' && (
-        <>
-          <Loading01Icon className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-          <span className="text-muted-foreground">Saving...</span>
-        </>
-      )}
-      {saveStatus === 'saved' && (
-        <>
-          <Tick01Icon className="h-3.5 w-3.5 text-green-500" />
-          <span className="text-muted-foreground">Saved</span>
-        </>
-      )}
-    </div>
-  ) : null;
+  const saveIndicator = (
+    <SettingsSaveBar>
+      <SettingsAutosaveGuard isDirty={autosave.isDirty} error={autosave.error} onRetry={autosave.retry} />
+      <span className="mr-auto text-xs text-muted-foreground">Changes save automatically</span>
+      <SettingsSaveStatus status={autosave.status} error={autosave.error} onRetry={autosave.retry} />
+    </SettingsSaveBar>
+  );
 
   const aiAssistantHref = workspace?.slug
     ? `/w/${workspace.slug}/settings/support-ai-assistant`
@@ -754,24 +737,25 @@ function Dashboard() {
             </Alert>
           ) : null}
           <div className="space-y-4">
-            <div className="max-w-md space-y-1.5">
-              <Label className="text-sm">Support agent</Label>
-              <Select value={aiAgentId} onValueChange={handleAIAgentChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a support agent..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_AGENT_VALUE}>No support agent selected</SelectItem>
-                  {supportAgents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.9fr)]">
+              <div className="min-w-0 space-y-1.5">
+                <Label className="text-sm">Support agent</Label>
+                <Select value={aiAgentId} onValueChange={handleAIAgentChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a support agent..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_AGENT_VALUE}>No support agent selected</SelectItem>
+                    {supportAgents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="grid gap-y-4 gap-x-3 lg:grid-cols-[minmax(220px,1fr)_minmax(140px,0.65fr)_minmax(160px,0.75fr)]">
+
               <div className="space-y-1.5">
-                <Label className="text-sm">When a message comes in</Label>
+                <ConfigurationLabel label={"When a message comes in"} help="Choose whether AI leaves a private note or replies publicly with the selected support agent." />
                 <Select value={aiResponseMode} onValueChange={setAiResponseMode}>
                   <SelectTrigger>
                     <SelectValue />
@@ -845,22 +829,17 @@ function Dashboard() {
               </div>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Choose whether AI leaves a private note or replies publicly with the selected support agent.
-          </p>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between border-t border-border pt-4">
             <div>
-              <Label className="text-sm">Show "Talk to Human" button</Label>
-              <p className="text-xs text-muted-foreground">Let visitors request help from a team member at any time.</p>
+              <ConfigurationLabel label={'Show "Talk to Human" button'} help="Let visitors request help from a team member at any time." />
             </div>
             <Switch checked={showTalkToHuman} onCheckedChange={setShowTalkToHuman} />
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3 border-t border-border pt-4">
             <div>
-              <Label className="text-sm font-medium">Escalation messages</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Messages shown during a handoff and while waiting for a teammate to reply.</p>
+              <ConfigurationLabel label={"Escalation messages"} help="Messages shown during a handoff and while waiting for a teammate to reply." />
             </div>
             <Tabs defaultValue="default" className="gap-2">
               <div className="overflow-hidden rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring/30">
@@ -891,9 +870,9 @@ function Dashboard() {
                     rows={3}
                     className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  <p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  {/\{(?:reply_time|next_open)\}/.test(escalationMessage || ESCALATION_DEFAULT_PLACEHOLDER) && (<p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                     Preview: <span className="italic">&ldquo;{escalationPreviewDefault}&rdquo;</span>
-                  </p>
+                  </p>)}
                 </TabsContent>
                 <TabsContent value="busy" className="mt-0">
                   <Textarea
@@ -905,9 +884,9 @@ function Dashboard() {
                     rows={3}
                     className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  <p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  {/\{(?:reply_time|next_open)\}/.test(escalationMessageBusy || ESCALATION_BUSY_PLACEHOLDER) && (<p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                     Preview: <span className="italic">&ldquo;{escalationPreviewBusy}&rdquo;</span>
-                  </p>
+                  </p>)}
                 </TabsContent>
                 <TabsContent value="after_hours" className="mt-0">
                   <Textarea
@@ -919,9 +898,9 @@ function Dashboard() {
                     rows={3}
                     className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
-                  <p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  {/\{(?:reply_time|next_open)\}/.test(escalationMessageAfterHours || ESCALATION_AFTER_HOURS_PLACEHOLDER) && (<p className="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                     Preview: <span className="italic">&ldquo;{escalationPreviewAfterHours}&rdquo;</span> <span className="text-muted-foreground/70">(example — actual time depends on your business hours schedule)</span>
-                  </p>
+                  </p>)}
                   {!businessHoursEnabled && (
                     <p className="px-3 pb-2 text-xs text-muted-foreground">
                       Enable business hours so customers see an accurate return time.
@@ -943,10 +922,11 @@ function Dashboard() {
             </Tabs>
           </div>
 
+          <AIFollowUpSettings enabled={aiFollowUpEnabled} delayHours={aiFollowUpDelay} closeHours={aiFollowUpClose} secondDelayHours={aiFollowUpSecondDelay} onEnabledChange={setAiFollowUpEnabled} onDelayChange={setAiFollowUpDelay} onCloseChange={setAiFollowUpClose} onSecondDelayChange={setAiFollowUpSecondDelay} />
+
           <div className="border-t border-border pt-4 space-y-3">
             <div>
-              <Label className="text-sm font-medium">Routing & Assignment</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">{CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION}</p>
+              <ConfigurationLabel label="Routing &amp; Assignment" help={CHAT_WIDGET_ROUTING_ASSIGNMENT_DESCRIPTION} />
             </div>
             <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="min-w-0 text-sm text-foreground">{handoffSummaryElement}</p>
@@ -1776,5 +1756,21 @@ function Dashboard() {
 
       </div>
     </PreviewLayout>
+  );
+}
+
+function ConfigurationLabel({ label, help }: { label: string; help: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label className="text-sm">{label}</Label>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" aria-label={`About ${label}`} className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border text-[10px] font-medium text-muted-foreground hover:text-foreground">
+            ?
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[280px] text-xs leading-relaxed">{help}</TooltipContent>
+      </Tooltip>
+    </div>
   );
 }

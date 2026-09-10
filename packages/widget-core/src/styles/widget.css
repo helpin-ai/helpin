@@ -4370,3 +4370,18 @@
   margin: 4px 0;
   display: block;
 }
+
+/* Upload rows keep progress, errors and recovery actions visible on mobile. */
+.helpin-compose-upload-list { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 0; max-height: 200px; overflow-y: auto; }
+.helpin-compose-upload-row { display: flex; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--helpin-border); border-radius: 8px; background: var(--helpin-bg-muted); }
+.helpin-compose-upload-row img { width: 36px; height: 36px; border-radius: 4px; object-fit: cover; }
+.helpin-compose-upload-details { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.helpin-compose-upload-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--helpin-fg); }
+.helpin-compose-upload-status { font-size: 11px; color: var(--helpin-fg-muted); }
+.helpin-compose-upload-details progress { width: 100%; height: 5px; accent-color: var(--helpin-primary); }
+.helpin-compose-upload-error { color: #b91c1c; font-size: 12px; overflow-wrap: anywhere; padding: 6px 12px; }
+.helpin-compose-upload-details .helpin-compose-upload-error { padding: 0; }
+.helpin-compose-upload-retry, .helpin-compose-upload-remove { flex-shrink: 0; background: transparent; color: var(--helpin-fg); border: none; cursor: pointer; padding: 8px; font: inherit; font-size: 12px; }
+.helpin-attachment-video { width: 100%; min-width: 0; }
+.helpin-attachment-video video { display: block; width: 100%; max-height: 280px; border-radius: 8px; background: #111; }
+.helpin-video-fallback { font-size: 12px; margin: 4px 0; }

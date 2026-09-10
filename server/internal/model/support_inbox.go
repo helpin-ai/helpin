@@ -72,8 +72,9 @@ type SupportConversation struct {
 	// AIActiveRunID points at the agent-runtime chat run currently backing
 	// this conversation's AI turns (nil before the first AI turn; repointed
 	// when an idle-expired run gets a successor).
-	AIActiveRunID *string `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
-	HumanTakeover *bool   `json:"human_takeover" gorm:"default:false;index"`
+	AIFollowUp    *SupportAIFollowUp `json:"ai_follow_up,omitempty" gorm:"-"`
+	AIActiveRunID *string            `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
+	HumanTakeover *bool              `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -1273,14 +1274,19 @@ type SupportInboxSettings struct {
 	AutoPromoteToLead     bool   `json:"auto_promote_to_lead"`
 
 	// AI Auto-Reply
-	AIEnabled             bool    `json:"ai_enabled"`
-	AIAgentID             *string `json:"ai_agent_id"`
-	AIConfidenceThreshold float64 `json:"ai_confidence_threshold"` // 0.0–1.0
-	AIResponseMode        string  `json:"ai_response_mode"`        // "ai_first" | "internal_note" | "off"
-	AIPreRouterMode       string  `json:"ai_pre_router_mode"`      // "off" | "shadow" | "enabled"
-	AIMaxFollowups        int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 5)
-	AIAutoResolveTimeout  int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
-	ShowTalkToHuman       bool    `json:"show_talk_to_human"`
+	AIEnabled                    bool    `json:"ai_enabled"`
+	AIAgentID                    *string `json:"ai_agent_id"`
+	AIConfidenceThreshold        float64 `json:"ai_confidence_threshold"` // 0.0–1.0
+	AIResponseMode               string  `json:"ai_response_mode"`        // "ai_first" | "internal_note" | "off"
+	AIPreRouterMode              string  `json:"ai_pre_router_mode"`      // "off" | "shadow" | "enabled"
+	AIMaxFollowups               int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 5)
+	AIFollowUpEnabled            bool    `json:"ai_follow_up_enabled"`
+	AIFollowUpSecondDelayHours   int     `json:"ai_follow_up_second_delay_hours"`
+	AIFollowUpDelayHours         int     `json:"ai_follow_up_delay_hours"`
+	AIFollowUpCloseHours         int     `json:"ai_follow_up_close_hours"`
+	AIFollowUpMaxPerConversation int     `json:"ai_follow_up_max_per_conversation"`
+	AIAutoResolveTimeout         int     `json:"ai_auto_resolve_timeout"` // hours before assumed resolution (default: 24, 0 = disabled)
+	ShowTalkToHuman              bool    `json:"show_talk_to_human"`
 
 	// Escalation
 	DelayedTeamReplyMinutes        int    `json:"delayed_team_reply_minutes"`
@@ -1386,6 +1392,11 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIResponseMode:                 "ai_first",
 		AIPreRouterMode:                SupportAIPreRouterModeEnabled,
 		AIMaxFollowups:                 5,
+		AIFollowUpEnabled:              true,
+		AIFollowUpSecondDelayHours:     24,
+		AIFollowUpDelayHours:           24,
+		AIFollowUpCloseHours:           1,
+		AIFollowUpMaxPerConversation:   2,
 		AIAutoResolveTimeout:           24,
 		ShowTalkToHuman:                true,
 		DelayedTeamReplyMinutes:        5,
@@ -1464,6 +1475,11 @@ type UpdateInstallationSettingsRequest struct {
 	AIResponseMode                  *string                     `json:"ai_response_mode,omitempty"`
 	AIPreRouterMode                 *string                     `json:"ai_pre_router_mode,omitempty"`
 	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`
+	AIFollowUpEnabled               *bool                       `json:"ai_follow_up_enabled,omitempty"`
+	AIFollowUpSecondDelayHours      *int                        `json:"ai_follow_up_second_delay_hours,omitempty"`
+	AIFollowUpDelayHours            *int                        `json:"ai_follow_up_delay_hours,omitempty"`
+	AIFollowUpCloseHours            *int                        `json:"ai_follow_up_close_hours,omitempty"`
+	AIFollowUpMaxPerConversation    *int                        `json:"ai_follow_up_max_per_conversation,omitempty"`
 	AIAutoResolveTimeout            *int                        `json:"ai_auto_resolve_timeout,omitempty"`
 	ShowTalkToHuman                 *bool                       `json:"show_talk_to_human,omitempty"`
 	DelayedTeamReplyMinutes         *int                        `json:"delayed_team_reply_minutes,omitempty"`

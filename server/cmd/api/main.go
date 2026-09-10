@@ -662,6 +662,7 @@ func main() {
 	pmLabelRepo := repository.NewPMLabelRepository(db)
 	pmEpicRepo := repository.NewPMEpicRepository(db)
 	pmSprintRepo := repository.NewPMSprintRepository(db)
+	pmAISuggestionRepo := repository.NewPMAISuggestionRepository(db)
 	pmTaskRepo := repository.NewPMTaskRepository(db)
 	pmCommentRepo := repository.NewPMCommentRepository(db)
 	pmActivityRepo := repository.NewPMActivityRepository(db)
@@ -913,6 +914,7 @@ func main() {
 	}
 	pushSenderService := service.NewPushSenderService(pushDeviceRepo, fcmClient)
 	followerService := service.NewFollowerService(followerRepo)
+	pmAISuggestionService := service.NewPMAISuggestionService(pmAISuggestionRepo)
 	pmTaskService := service.NewPMTaskService(pmTaskRepo, workspaceRepo, pmWorkflowRepo, pmEpicRepo, pmSprintRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmAttachmentRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
 	pmTaskService.SetProductAnalyticsService(productAnalytics)
 	pmTaskService.SetTaskTemplateRepository(pmTaskTemplateRepo)
@@ -1698,6 +1700,10 @@ func main() {
 		supportAIService,
 	)
 	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo, workspaceRepo)
+	supportFollowUpRepo := repository.NewSupportFollowUpRepository(db)
+	supportFollowUpService := service.NewSupportFollowUpService(supportFollowUpRepo, supportChatService)
+	commandService.SetSupportFollowUpService(supportFollowUpService)
+	supportInboxService.SetFollowUpRepository(supportFollowUpRepo)
 	if agentRuntimeProjectionService != nil {
 		agentRuntimeProjectionService.SetSupportChatPauseHook(supportChatService.OnSupportChatRunPaused)
 	}
@@ -1941,6 +1947,7 @@ func main() {
 		PMEpic:              handler.NewPMEpicHandler(pmEpicService),
 		PMRoadmap:           handler.NewPMRoadmapHandler(pmRoadmapService),
 		PMSprint:            handler.NewPMSprintHandler(pmSprintService),
+		PMAISuggestion:      handler.NewPMAISuggestionHandler(pmAISuggestionService),
 		PMTask:              handler.NewPMTaskHandler(pmTaskService),
 		PMTaskInsights:      handler.NewPMTaskInsightsHandler(pmTaskInsightsService),
 		PMComment:           handler.NewPMCommentHandler(pmCommentService),

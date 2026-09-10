@@ -118,6 +118,7 @@ func inboxSituations(db *gorm.DB, ws, member string, nav model.CRMSituationListF
 		state = "all"
 	}
 	query := stateSituationQuery(scopeSituationQuery(situationReadQuery(db, ws), ws, member, nav.Scope), member, nav.Scope, state)
+	query = query.Where(`NOT EXISTS (SELECT 1 FROM crm_suggestions internal_follow_up WHERE internal_follow_up.workspace_id = s.workspace_id AND s.creation_key = 'source:suggestion:' || CAST(internal_follow_up.id AS TEXT) AND NOT (` + CRMVisibleMeetingFollowUpsSQL(db, "internal_follow_up") + `))`)
 	priority := "CASE WHEN s.origin_kind = 'suggestion' AND s.priority = 0 THEN NULL ELSE s.priority END"
 	actions := `SELECT a.* FROM crm_suggestions a JOIN crm_situation_references ar ON ar.workspace_id = a.workspace_id AND ar.source_id = a.id AND ar.kind = 'suggestion' WHERE ar.workspace_id = s.workspace_id AND ar.situation_id = s.id`
 	evidence := inboxSituationEvidenceSQL(db)
@@ -139,6 +140,7 @@ func inboxSituations(db *gorm.DB, ws, member string, nav model.CRMSituationListF
 func inboxStandalone(db *gorm.DB, ws, member string, nav model.CRMSituationListFilters) *gorm.DB {
 	query := db.Table("crm_suggestions a").Where("a.workspace_id = ?", ws).
 		Where(situationOpenActionSQL).
+		Where(CRMVisibleMeetingFollowUpsSQL(db, "a")).
 		Where(`NOT EXISTS (SELECT 1 FROM crm_situation_references ref JOIN crm_situations s ON s.workspace_id = ref.workspace_id AND s.id = ref.situation_id WHERE ref.workspace_id = a.workspace_id AND ref.kind = 'suggestion' AND ref.source_id = a.id)`).
 		Joins("LEFT JOIN workspace_members am ON am.workspace_id = a.workspace_id AND am.user_id = a.user_id AND am.status = 'active'").
 		Joins("LEFT JOIN crm_companies c ON c.workspace_id = a.workspace_id AND CAST(c.id AS TEXT) = COALESCE(CASE WHEN a.object_type = 'company' THEN CAST(a.object_id AS TEXT) END, a.context->>'company_id')").

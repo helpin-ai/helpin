@@ -39,6 +39,7 @@ function PlaybookLoader({ ws, slug, id, canAdmin, canEdit }: { ws: string; slug:
 function PlaybookDetail({ ws, slug, item, canAdmin, canEdit, onReload }: { ws: string; slug: string; item: CRMPlaybookItem; canAdmin: boolean; canEdit: boolean; onReload: () => void }) {
   const [tab, setTab] = useState(item.published_version ? 'work' : 'setup');
   const [dirty, setDirty] = useState(false);
+  const [saveActionContainer, setSaveActionContainer] = useState<HTMLDivElement | null>(null);
   const [setupStep, setSetupStep] = useState<PlaybookSetupStep>('purpose');
   const [preview, setPreview] = useState<'draft' | 'published'>();
   const [confirm, setConfirm] = useState<'publish' | 'start' | 'stop'>();
@@ -65,6 +66,7 @@ function PlaybookDetail({ ws, slug, item, canAdmin, canEdit, onReload }: { ws: s
   return <div className="flex h-full min-h-0 flex-col">
     <QuietDetailHeader breadcrumbs={<Link to="/w/$slug/crm/playbooks" params={{ slug }} className="text-xs text-quiet-text-tertiary hover:text-quiet-text-primary">Playbooks</Link>} title={item.playbook.draft.name} meta={<span className="text-xs text-quiet-text-tertiary">{item.published_version ? `Published version ${item.published_version.version}${unpublished ? ' · Unpublished changes' : ''}` : 'Not published'}</span>} status={<QuietStatusText tone={item.playbook.accepting_customers ? 'positive' : 'neutral'}>{playbookStatus(item)}</QuietStatusText>} actions={<>
       {canEdit && item.playbook.accepting_customers && <QuietDetailAction icon={<PlusSignIcon className="size-3.5" />} label="Add signals" tone={unpublished && canAdmin ? 'secondary' : 'primary'} onClick={() => setPreview('published')} />}
+      <div ref={setSaveActionContainer} hidden={tab !== 'setup'} />
       {canAdmin && unpublished && <QuietDetailAction icon={<Tick01Icon className="size-3.5" />} label="Publish" tone="primary" disabled={dirty || write.isPending} onClick={() => openConfirmation('publish')} />}
     </>} />
     <div className="min-h-0 flex-1 overflow-auto px-4 pb-12 sm:px-6 lg:px-8">
@@ -72,7 +74,7 @@ function PlaybookDetail({ ws, slug, item, canAdmin, canEdit, onReload }: { ws: s
         <TabsList variant="quiet"><TabsTrigger value="work">Signals</TabsTrigger><TabsTrigger value="setup">Setup{dirty ? ' · Unsaved' : ''}</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList>
         <TabsContent value="work"><PlaybookParticipants ws={ws} slug={slug} item={item} canEdit={canEdit} /></TabsContent>
         <TabsContent value="setup" forceMount hidden={tab !== 'setup'}>
-          <PlaybookEditor ws={ws} item={item} canAdmin={canAdmin} onDirty={setDirty} onReload={onReload} onPreview={() => setPreview('draft')} step={setupStep} onStepChange={setSetupStep} renderReview={(editing) => <>
+          <PlaybookEditor saveActionContainer={saveActionContainer} ws={ws} item={item} canAdmin={canAdmin} onDirty={setDirty} onReload={onReload} onPreview={() => setPreview('draft')} step={setupStep} onStepChange={setSetupStep} renderReview={(editing) => <>
             {canAdmin && unpublished && <div className="border-b border-quiet-divider-strong py-4"><QuietPrimaryAction disabled={editing || write.isPending} onClick={() => openConfirmation('publish')}>Review & publish</QuietPrimaryAction></div>}
             {item.published_version && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-quiet-divider-strong py-4 text-sm"><div><p>New enrollment is {item.playbook.accepting_customers ? 'allowed' : 'stopped'}</p><p className="mt-1 text-xs text-quiet-text-tertiary">Existing work is controlled separately. Signals are added with confirmation.</p></div>{canAdmin && <QuietTextAction disabled={write.isPending || editing} onClick={() => openConfirmation(item.playbook.accepting_customers ? 'stop' : 'start')}>{item.playbook.accepting_customers ? 'Stop new enrollment' : 'Allow new enrollment'}</QuietTextAction>}</div>}
             <PlaybookAutomation ws={ws} slug={slug} item={item} dirty={editing} />

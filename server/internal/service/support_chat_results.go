@@ -304,6 +304,11 @@ func (s *SupportChatService) StartSupportChatSweep(ctx context.Context, interval
 			return nil
 		case <-ticker.C:
 		}
+		if s.followUpService != nil {
+			if err := s.followUpService.Tick(ctx); err != nil {
+				slog.ErrorContext(ctx, "support follow-up sweep failed", "error", err)
+			}
+		}
 		if err := s.SweepSupportChat(ctx, staleAfter, limit); err != nil {
 			slog.ErrorContext(ctx, "support chat sweep failed", "error", err)
 		}

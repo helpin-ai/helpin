@@ -84,6 +84,7 @@ export interface LinkPreview {
 }
 
 export interface PendingAttachment {
+  error?: string;
   id: string;
   fileName: string;
   fileType: string;

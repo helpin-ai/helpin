@@ -64,6 +64,11 @@ export interface SupportConversation {
   ai_state?: 'pending' | 'resolved' | 'escalated' | null;
   ai_resolved_at?: string;
   ai_escalated_at?: string;
+  ai_follow_up?: {
+    id: string; run_id: string; status: 'scheduled' | 'assessing' | 'waiting' | 'resolved' | 'skipped' | 'cancelled' | 'failed' | 'handoff';
+    sequence_version?: number; second_sent_at?: string; second_message_id?: string;
+    reason?: string; due_at: string; sent_at?: string; sent_message_id?: string; close_at?: string; created_at: string; updated_at: string;
+  };
   ai_resolution_type?: 'confirmed' | 'assumed' | null;
   ai_turn_count?: number;
   customer_requested_human_at?: string;
@@ -1110,6 +1115,11 @@ export interface SupportInboxSettings {
   ai_confidence_threshold: number;
   ai_response_mode: string;
   ai_max_followups: number;
+  ai_follow_up_enabled: boolean;
+  ai_follow_up_delay_hours: number;
+  ai_follow_up_second_delay_hours: number;
+  ai_follow_up_close_hours: number;
+  ai_follow_up_max_per_conversation: number;
   ai_auto_resolve_timeout: number;
   show_talk_to_human: boolean;
   escalation_message: string;

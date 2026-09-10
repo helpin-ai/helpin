@@ -69,7 +69,7 @@ function SignalsList({ ws, slug, canEdit, search, onChange }: Props & { ws: stri
       <QuietFilterDropdown label="Assignment" value={scope} onChange={(value) => change({ scope: value })} options={inboxNavigation.scope} />
       <QuietFilterDropdown label="Signal status" value={state} onChange={(value) => change({ state: value })} options={inboxNavigation.state} />
       {visibleKeys.size === 0 && !!search.q?.trim() && <QuietTextAction onClick={() => clear('needs_attention')}>Clear filters</QuietTextAction>}
-      <span className="inline-flex items-center sm:ml-auto"><span className="text-xs text-quiet-text-tertiary">Sort</span><QuietFilterDropdown label="Sort signals" value={filters.sort || 'priority'} onChange={(value) => change({ sort: value })} options={inboxNavigation.sort} /><PlaybookHelp label="About Auto sorting">Signals ranked automatically by importance, recency, and evidence strength.</PlaybookHelp></span>
+      <span className="inline-flex items-center sm:ml-auto"><span className="text-xs text-quiet-text-tertiary">Sort</span><QuietFilterDropdown label="Sort signals" value={filters.sort || 'priority'} onChange={(value) => change({ sort: value })} options={inboxNavigation.sort} /></span>
     </div>
     <div className="shrink-0">
       <PMFilterBar definitions={inboxFilterDefinitions} values={filterValues} visibleKeys={visibleKeys}

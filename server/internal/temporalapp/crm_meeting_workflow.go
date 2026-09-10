@@ -39,6 +39,7 @@ type meetingProcessor interface {
 type CRMMeetingActivities struct {
 	processor       meetingProcessor
 	captureLauncher scheduledMeetingCaptureLauncher
+	followUpRouter  meetingFollowUpRouter
 }
 
 // NewCRMMeetingActivities creates meeting processing activities.

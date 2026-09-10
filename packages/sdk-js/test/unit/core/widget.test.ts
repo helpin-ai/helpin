@@ -169,7 +169,7 @@ describe('WidgetManager', () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(MockWebSocket.instances).toHaveLength(1);
-      expect(MockWebSocket.instances[0].url).toBe('wss://client.prod.helpin.ai/widget/ws?key=test-key');
+      expect(MockWebSocket.instances[0].url).toBe('wss://client.helpin.ai/widget/ws?key=test-key');
       expect(MockWebSocket.instances[0].sent.map((frame) => JSON.parse(frame))).toContainEqual({
         type: 'session:restore',
         data: { session_token: 'persisted-token' },
@@ -415,7 +415,7 @@ describe('WidgetManager', () => {
 
     it('falls back to HTTP revoke when websocket is unavailable', async () => {
       (widget as any).widgetKey = 'test-key';
-      (widget as any).host = 'client.prod.helpin.ai';
+      (widget as any).host = 'client.helpin.ai';
       (widget as any).sessionToken = 'session-123';
       (widget as any).wsConnection = { readyState: 3, close: vi.fn(), onclose: null };
 
@@ -423,7 +423,7 @@ describe('WidgetManager', () => {
       await flushAsync();
 
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://client.prod.helpin.ai/widget/session/revoke',
+        'https://client.helpin.ai/widget/session/revoke',
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ session_token: 'session-123' }),
@@ -1058,7 +1058,7 @@ describe('WidgetManager', () => {
       );
       vi.stubGlobal('fetch', fetchMock);
 
-      (widget as any).host = 'client.prod.helpin.ai';
+      (widget as any).host = 'client.helpin.ai';
       (widget as any).sessionToken = 'session-123';
       (widget as any).wsConnection = { readyState: 3, close: vi.fn(), onclose: null };
 
@@ -1066,7 +1066,7 @@ describe('WidgetManager', () => {
       await Promise.resolve();
 
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://client.prod.helpin.ai/widget/typing',
+        'https://client.helpin.ai/widget/typing',
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ session_token: 'session-123', is_typing: true }),
@@ -1076,7 +1076,7 @@ describe('WidgetManager', () => {
       await vi.advanceTimersByTimeAsync(5000);
 
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://client.prod.helpin.ai/widget/typing',
+        'https://client.helpin.ai/widget/typing',
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ session_token: 'session-123', is_typing: false }),
@@ -1426,6 +1426,26 @@ describe('WidgetManager', () => {
   });
 
   describe('uploads and transcripts', () => {
+    let uploadXHR: any;
+    beforeEach(() => {
+      uploadXHR = {
+        status: 200, upload: {}, open: vi.fn(), setRequestHeader: vi.fn(), abort: vi.fn(),
+        send: vi.fn(() => queueMicrotask(() => uploadXHR.onload?.())),
+      };
+      vi.stubGlobal('XMLHttpRequest', vi.fn(() => uploadXHR));
+    });
+
+    it('passes upload cancellation and progress options through the mounted callback', async () => {
+      (widget as any).widgetConfig = { workspaceId: 'ws_test', branding: {}, features: {} };
+      (widget as any).mountContainer = document.createElement('div');
+      const upload = vi.spyOn(widget as any, 'handleUploadAttachment').mockResolvedValue(null);
+      (widget as any).render();
+      const mounted = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      const file = new File(['hello'], 'note.txt');
+      const options = { signal: new AbortController().signal, onProgress: vi.fn() };
+      await mounted.onUploadAttachment(file, 'local', options);
+      expect(upload).toHaveBeenCalledWith(file, 'local', options);
+    });
     it('uploads attachments through init, put, and confirm requests', async () => {
       fetchMock
         .mockResolvedValueOnce({
@@ -1436,10 +1456,9 @@ describe('WidgetManager', () => {
             public_url: 'https://cdn.example.com/att-1.png',
           }),
         })
-        .mockResolvedValueOnce({ ok: true })
         .mockResolvedValueOnce({ ok: true });
 
-      (widget as any).host = 'client.prod.helpin.ai';
+      (widget as any).host = 'client.helpin.ai';
       (widget as any).sessionToken = 'session-123';
 
       const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
@@ -1451,25 +1470,22 @@ describe('WidgetManager', () => {
       });
       expect(fetchMock).toHaveBeenNthCalledWith(
         1,
-        'https://client.prod.helpin.ai/widget/support/attachments',
+        'https://client.helpin.ai/widget/support/attachments',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({ 'X-Session-Token': 'session-123' }),
         }),
       );
+      expect(uploadXHR.open).toHaveBeenCalledWith('PUT', 'https://upload.example.com/att-1', true);
+      expect(uploadXHR.send).toHaveBeenCalledWith(file);
       expect(fetchMock).toHaveBeenNthCalledWith(
         2,
-        'https://upload.example.com/att-1',
-        expect.objectContaining({ method: 'PUT', body: file }),
-      );
-      expect(fetchMock).toHaveBeenNthCalledWith(
-        3,
-        'https://client.prod.helpin.ai/widget/support/attachments/att-1/confirm',
+        'https://client.helpin.ai/widget/support/attachments/att-1/confirm',
         expect.objectContaining({ method: 'PATCH' }),
       );
     });
 
-    it('returns null when attachment confirm fails', async () => {
+    it('throws a helpful error when attachment confirmation fails', async () => {
       fetchMock
         .mockResolvedValueOnce({
           ok: true,
@@ -1479,14 +1495,13 @@ describe('WidgetManager', () => {
             public_url: 'https://cdn.example.com/att-2.png',
           }),
         })
-        .mockResolvedValueOnce({ ok: true })
         .mockResolvedValueOnce({ ok: false, status: 500 });
 
-      (widget as any).host = 'client.prod.helpin.ai';
+      (widget as any).host = 'client.helpin.ai';
       (widget as any).sessionToken = 'session-123';
 
       const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
-      await expect((widget as any).handleUploadAttachment(file, 'local-2')).resolves.toBeNull();
+      await expect((widget as any).handleUploadAttachment(file, 'local-2')).rejects.toThrow('Unable to confirm the file upload (HTTP 500)');
     });
 
     it('requests a transcript and stores the supplied email after success', async () => {
@@ -1498,7 +1513,7 @@ describe('WidgetManager', () => {
         }),
       });
 
-      (widget as any).host = 'client.prod.helpin.ai';
+      (widget as any).host = 'client.helpin.ai';
       (widget as any).sessionToken = 'session-123';
       (widget as any).activeConversationId = 'conv-1';
 
@@ -1508,7 +1523,7 @@ describe('WidgetManager', () => {
       });
       expect((widget as any).currentEmail).toBe('person@example.com');
       expect(fetchMock).toHaveBeenCalledWith(
-        'https://client.prod.helpin.ai/widget/conversations/conv-1/transcript',
+        'https://client.helpin.ai/widget/conversations/conv-1/transcript',
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({

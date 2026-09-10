@@ -1,4 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Button } from '@/components/ui/button';
 import { useBlocker } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { QuietSelect, QuietPrimaryAction, QuietSection, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
@@ -27,8 +29,9 @@ const stops: { value: CRMPlaybookDefinition['policy']['stop_conditions'][number]
   { value: 'no_longer_eligible', label: 'The signal no longer matches' }, { value: 'contact_restricted', label: 'Contact is restricted' },
 ];
 
-export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPreview, step, onStepChange, renderReview }: {
+export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPreview, step, onStepChange, renderReview, saveActionContainer }: {
   ws: string; item: CRMPlaybookItem; canAdmin: boolean; onDirty: (dirty: boolean) => void; onReload: () => void; onPreview: () => void;
+  saveActionContainer: HTMLDivElement | null;
   step: PlaybookSetupStep; onStepChange: (step: PlaybookSetupStep) => void; renderReview: (dirty: boolean) => ReactNode;
 }) {
   const formId = useId();
@@ -113,7 +116,7 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
     <div className="max-w-6xl">
       <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-quiet-divider-strong bg-quiet-surface py-4">
         <p className="text-xs text-quiet-text-tertiary">{canAdmin ? dirty ? 'Unsaved changes' : 'Saved draft' : 'Read-only configuration'}{item.published_version && ' · Existing signals keep their published version'}</p>
-        {canAdmin && <QuietPrimaryAction type="submit" form={formId} disabled={!dirty || disabled || stale}>{write.isPending ? 'Saving…' : 'Save draft'}</QuietPrimaryAction>}
+        {canAdmin && saveActionContainer && createPortal(<Button type="submit" variant="outline" size="sm" form={formId} disabled={!dirty || disabled || stale}>{write.isPending ? 'Saving…' : 'Save draft'}</Button>, saveActionContainer)}
       </div>
       {stale && dirty && <div role="alert" className="border-b border-quiet-divider-strong py-3 text-sm text-quiet-accent">This playbook changed while you were editing. Your draft is still here.<QuietTextAction type="button" onClick={() => setDiscard(true)}>Review saved version</QuietTextAction></div>}
       {write.isError && <PlaybookError error={write.error} retry={onReload} />}
@@ -153,20 +156,22 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
         </QuietSection>
         </div>
         <div id="playbook-step-team" data-setup-step="team" hidden={step !== 'team'}>
-        <QuietSection title="Responsibilities"><div className="space-y-5">
+        <QuietSection title="Responsibilities"><div className="grid gap-x-6 gap-y-5 sm:grid-cols-3 [&>div>div:first-child]:min-h-7">
           <PlaybookField label="Responsible owner" help="A role in the playbook, not a reassignment of existing work. Applying a playbook preserves each signal’s current owner.">{(id) => <QuietSelect id={id} label="Responsible owner" value={definition.responsibilities.owner_role} options={ownerRoles} disabled={disabled} onChange={(value) => update({ responsibilities: { ...definition.responsibilities, owner_role: value as CRMPlaybookDefinition['responsibilities']['owner_role'] } })} />}</PlaybookField>
           <PlaybookField label="Approvals go to">{(id) => <QuietSelect id={id} label="Approvals go to" value={definition.responsibilities.approver_role} options={[{ value: 'next_action_owner', label: 'Next action owner' }, { value: 'signal_owner', label: 'Signal owner' }]} disabled={disabled} onChange={(value) => update({ responsibilities: { ...definition.responsibilities, approver_role: value as 'signal_owner' | 'next_action_owner' } })} />}</PlaybookField>
-          <PlaybookField label="Escalation owner" help="The person responsible when work needs help. An active workspace member is required to publish.">{() => <MemberPickerPopover members={members.data ?? []} value={definition.responsibilities.escalation_member_id || ''} disabled={disabled || members.isPending || members.isError} triggerLabel="Choose escalation owner" noneLabel="Not assigned" onChange={(value) => update({ responsibilities: { ...definition.responsibilities, escalation_member_id: value === '__none__' ? null : value } })} renderTrigger={() => <span>{members.isPending ? 'Loading members…' : escalationMember ? escalationMember.display_name || escalationMember.email : definition.responsibilities.escalation_member_id ? 'Member unavailable — choose another' : 'Choose a person'}</span>} />}</PlaybookField>
+          <PlaybookField label="Escalation owner" help="The person responsible when work needs help. An active workspace member is required to publish.">{() => <MemberPickerPopover members={members.data ?? []} value={definition.responsibilities.escalation_member_id || ''} disabled={disabled || members.isPending || members.isError} triggerClassName="h-8" triggerLabel="Choose escalation owner" noneLabel="Not assigned" onChange={(value) => update({ responsibilities: { ...definition.responsibilities, escalation_member_id: value === '__none__' ? null : value } })} renderTrigger={() => <span>{members.isPending ? 'Loading members…' : escalationMember ? escalationMember.display_name || escalationMember.email : definition.responsibilities.escalation_member_id ? 'Member unavailable — choose another' : 'Choose a person'}</span>} />}</PlaybookField>
         </div></QuietSection>
         <QuietSection title="Action permissions"><div className="space-y-4">
           <p className="text-sm leading-6 text-quiet-text-tertiary">These are the playbook’s rules. Saving or publishing them does not start automation.</p>
-          {([{ key: 'outbound_messages', label: 'Customer messages' }, { key: 'crm_changes', label: 'CRM changes' }, { key: 'pm_tasks', label: 'Tasks', help: 'Allow a task only when someone needs to do concrete work. This does not create a task for every signal.' }] as const).map((field) => <PlaybookField key={field.key} label={field.label} help={'help' in field ? field.help : undefined}>{(id) => <QuietSelect id={id} label={field.label} value={definition.policy[field.key]} disabled={disabled} options={approvalOptions} onChange={(value) => update({ policy: { ...definition.policy, [field.key]: value } })} />}</PlaybookField>)}
+          <div className="grid gap-x-6 gap-y-5 sm:grid-cols-3 [&>div>div:first-child]:min-h-7">{([{ key: 'outbound_messages', label: 'Customer messages' }, { key: 'crm_changes', label: 'CRM changes' }, { key: 'pm_tasks', label: 'Tasks', help: 'Allow a task only when someone needs to do concrete work. This does not create a task for every signal.' }] as const).map((field) => <PlaybookField key={field.key} label={field.label} help={'help' in field ? field.help : undefined}>{(id) => <QuietSelect id={id} label={field.label} value={definition.policy[field.key]} disabled={disabled} options={approvalOptions} onChange={(value) => update({ policy: { ...definition.policy, [field.key]: value } })} />}</PlaybookField>)}</div>
         </div></QuietSection>
         </div>
         <div id="playbook-step-follow_up" data-setup-step="follow_up" hidden={step !== 'follow_up'}>
         <QuietSection title="Follow-up and stopping"><div className="space-y-5">
+          <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
           <PlaybookField label="Check after (hours)" help="The intended review interval. Playbook settings do not schedule checks until execution is connected.">{(id) => <QuietUnderlineInput id={id} type="number" min={1} max={8760} required value={definition.policy.check_after_hours || ''} onChange={(event) => update({ policy: { ...definition.policy, check_after_hours: Number(event.target.value) } })} />}</PlaybookField>
-          <PlaybookField label="Escalate after (hours)">{(id) => <QuietUnderlineInput id={id} type="number" min={definition.policy.check_after_hours || 1} max={8760} required value={definition.policy.escalate_after_hours || ''} onChange={(event) => update({ policy: { ...definition.policy, escalate_after_hours: Number(event.target.value) } })} />}</PlaybookField>
+          <PlaybookField label="Escalate after (hours)" help="When automation is enabled, a signal with no detected progress for this long is flagged for review in the escalation owner’s attention queue.">{(id) => <QuietUnderlineInput id={id} type="number" min={definition.policy.check_after_hours || 1} max={8760} required value={definition.policy.escalate_after_hours || ''} onChange={(event) => update({ policy: { ...definition.policy, escalate_after_hours: Number(event.target.value) } })} />}</PlaybookField>
+          </div>
           <fieldset className="space-y-3"><legend className="mb-3 text-sm font-medium text-quiet-text-secondary">Stop when</legend>{stops.map((stop) => <label key={stop.value} className="flex items-center gap-2 text-sm"><Checkbox checked={definition.policy.stop_conditions.includes(stop.value)} onCheckedChange={(checked) => update({ policy: { ...definition.policy, stop_conditions: checked ? [...definition.policy.stop_conditions, stop.value] : definition.policy.stop_conditions.filter((value) => value !== stop.value) } })} />{stop.label}</label>)}</fieldset>
           {!definition.policy.stop_conditions.length && <p role="alert" className="text-xs text-quiet-accent">Choose at least one stop condition before saving.</p>}
         </div></QuietSection>
@@ -183,7 +188,7 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
       </QuietSection>
       {renderReview(dirty || write.isPending)}
     </div>
-    <div className="flex items-center justify-between gap-3 border-t border-quiet-divider-strong py-4"><QuietTextAction type="button" disabled={index === 0} onClick={() => go(playbookSetupSteps[index - 1].id)}>Back</QuietTextAction>{index < playbookSetupSteps.length - 1 && <QuietTextAction type="button" onClick={() => go(playbookSetupSteps[index + 1].id)}>Continue</QuietTextAction>}</div>
+    <div className="flex items-center justify-between gap-3 border-t border-quiet-divider-strong py-4"><QuietTextAction type="button" disabled={index === 0} onClick={() => go(playbookSetupSteps[index - 1].id)}>Back</QuietTextAction>{index < playbookSetupSteps.length - 1 && <Button type="button" variant="outline" size="sm" onClick={() => go(playbookSetupSteps[index + 1].id)}>Continue</Button>}</div>
     </div></div></div>
     <Dialog open={discard || blocker.status === 'blocked'} onOpenChange={(open) => { if (!open) { setDiscard(false); blocker.reset?.(); } }}><DialogContent><DialogHeader><DialogTitle>Discard unsaved changes?</DialogTitle><DialogDescription>Your saved playbook is safe. The edits on this page will be lost.</DialogDescription></DialogHeader><DialogFooter><QuietTextAction onClick={() => { setDiscard(false); blocker.reset?.(); }}>Keep editing</QuietTextAction><QuietPrimaryAction onClick={() => { if (blocker.status === 'blocked') blocker.proceed(); else { setDefinition(item.playbook.draft); setBaseline(item.playbook); setDiscard(false); write.reset(); } }}>Discard changes</QuietPrimaryAction></DialogFooter></DialogContent></Dialog>
   </>;
