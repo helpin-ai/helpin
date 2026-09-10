@@ -9,7 +9,7 @@ export const defaultConfig: Partial<Config> = {
   logLevel: LogLevel.ERROR,
   useBeaconApi: false,
   forceUseFetch: false,
-  host: 'https://client.prod.helpin.ai',
+  host: 'https://client.helpin.ai',
   autoBoot: true,
   autoPageview: true,
   disableEventPersistence: false,

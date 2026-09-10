@@ -25,7 +25,7 @@
   const widgetKey = currentScript.getAttribute('data-widget-key') || currentScript.getAttribute('data-key');
   if (!widgetKey) return;
 
-  const host = currentScript.getAttribute('data-host') || currentScript.getAttribute('data-tracking-host') || 'https://client.prod.helpin.ai';
+  const host = currentScript.getAttribute('data-host') || currentScript.getAttribute('data-tracking-host') || 'https://client.helpin.ai';
   const namespace = currentScript.getAttribute('data-namespace') || 'helpin';
   const noAutoInit = currentScript.getAttribute('data-no-auto-init') === 'true';
 
