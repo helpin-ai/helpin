@@ -88,8 +88,8 @@ func TestMeetingIntelligenceFallsBackAfterReasoningOnlyResponse(t *testing.T) {
 		}
 	}
 	if len(provider.metering) != 2 ||
-		!strings.HasSuffix(provider.metering[0].IdempotencyKey, ":v4:route:0") ||
-		!strings.HasSuffix(provider.metering[1].IdempotencyKey, ":v4:route:1") {
+		provider.metering[0].IdempotencyKey != "workspace-1:meeting-1:checksum-1:"+meetingIntelligenceGenerationVersion+":route:0" ||
+		provider.metering[1].IdempotencyKey != "workspace-1:meeting-1:checksum-1:"+meetingIntelligenceGenerationVersion+":route:1" {
 		t.Fatalf("metering = %#v", provider.metering)
 	}
 }
