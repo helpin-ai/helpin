@@ -55,6 +55,53 @@ func decodeDocumentField[T any](t *testing.T, result map[string]json.RawMessage,
 	return value
 }
 
+func TestDocumentWorkflowRepairsMissingTextEditFields(t *testing.T) {
+	svc, meta := documentWorkflowFixture(t, "Mermaid renders diagrams.\n\nKeep this paragraph.")
+	read := executeDocumentWorkflow(t, svc, meta, "read_document", map[string]any{"document_id": meta.TargetID})
+	version := decodeDocumentField[string](t, read, "version")
+	blocks := decodeDocumentField[[]map[string]any](t, read, "blocks")
+	blockID, _ := blocks[0]["id"].(string)
+	if blockID == "" {
+		t.Fatalf("read omitted block ID: %s", read["blocks"])
+	}
+	valid := map[string]any{"type": "replace_text", "block_id": blockID, "old_text": "Mermaid", "new_text": "Excalidraw"}
+	for _, field := range []string{"block_id", "old_text", "new_text"} {
+		t.Run(field, func(t *testing.T) {
+			op := map[string]any{}
+			for k, v := range valid {
+				if k != field {
+					op[k] = v
+				}
+			}
+			raw, _ := json.Marshal(map[string]any{"document_id": meta.TargetID, "expected_version": version, "operations": []any{op}})
+			_, err := svc.Execute(context.Background(), meta, "docs.edit_document", raw)
+			if err == nil || !strings.Contains(err.Error(), "operation 1: replace_text: "+field) {
+				t.Fatalf("missing precise repair error: %v", err)
+			}
+			current, err := svc.docsContentService.Get(context.Background(), meta.TargetID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tiptap.DocumentVersion(current.Content) != version {
+				t.Fatal("rejected edit mutated document")
+			}
+		})
+	}
+	receipt := executeDocumentWorkflow(t, svc, meta, "edit_document", map[string]any{"document_id": meta.TargetID, "expected_version": version, "operations": []any{valid}})
+	changed := decodeDocumentField[[]map[string]any](t, receipt, "changed_blocks")
+	if len(changed) != 1 || changed[0]["id"] != blockID {
+		t.Fatalf("edit lost block identity: %s", receipt["changed_blocks"])
+	}
+	current, err := svc.docsContentService.Get(context.Background(), meta.TargetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := tiptap.RichTextToMarkdown(string(current.Content))
+	if !strings.Contains(text, "Excalidraw renders diagrams.") || !strings.Contains(text, "Keep this paragraph.") {
+		t.Fatalf("unexpected content: %s", current.Content)
+	}
+}
+
 func TestDocumentWorkflowReadsCompleteContentAndNavigatesSections(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
