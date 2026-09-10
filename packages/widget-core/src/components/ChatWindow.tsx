@@ -1,3 +1,4 @@
+import type { UploadAttachment } from '../hooks/useAttachmentUploads';
 import { FunctionComponent } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { ActiveTeammate, Message, Conversation, WidgetConfig } from '../types';
@@ -35,7 +36,7 @@ interface ChatWindowProps {
   onClose: () => void;
   onSendMessage: (content: string, attachmentIds?: string[]) => void;
   onSendMessageFromHome?: (content: string) => void;
-  onUploadAttachment?: (file: File, localId: string) => Promise<{ attachmentId: string; url: string } | null>;
+  onUploadAttachment?: UploadAttachment;
   onQuickReply: (content: string) => void;
   onTyping?: (content: string) => void;
   showPreChatForm: boolean;

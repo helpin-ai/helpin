@@ -1,3 +1,4 @@
+import type { UploadAttachment } from './hooks/useAttachmentUploads';
 import { h, render } from 'preact';
 import type { ActiveTeammate, Message, Conversation, WidgetConfig } from './types';
 import type { WidgetView } from './components/BottomNav';
@@ -57,7 +58,7 @@ export interface MountWidgetOptions {
   onClose?: () => void;
   onSendMessage?: (content: string, attachmentIds?: string[]) => void;
   onSendMessageFromHome?: (content: string) => void;
-  onUploadAttachment?: (file: File, localId: string) => Promise<{ attachmentId: string; url: string } | null>;
+  onUploadAttachment?: UploadAttachment;
   onQuickReply?: (content: string) => void;
   onTyping?: (content: string) => void;
   showPreChatForm?: boolean;

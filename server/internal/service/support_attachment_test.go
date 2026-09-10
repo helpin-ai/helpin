@@ -91,3 +91,47 @@ func TestSupportAttachmentConfirmUploadRequiresOwningWidgetSession(t *testing.T)
 		t.Fatalf("ConfirmUpload as owner: %v", err)
 	}
 }
+
+func TestSupportAttachmentCreateSizeAndTypeValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name            string
+		size            int64
+		mime, wantError string
+	}{
+		{"exactly100MiB video", 100 * 1024 * 1024, "video/mp4", ""},
+		{"over100MiB", 100*1024*1024 + 1, "video/mp4", "file exceeds maximum size of 100MB"},
+		{"empty", 0, "video/mp4", "file_size must be positive"},
+		{"negative", -1, "video/mp4", "file_size must be positive"},
+		{"missing content type", 512, "", "content_type is required"},
+		{"unsupported type", 512, "application/x-executable", "file type application/x-executable is not allowed"},
+		{"quicktime video", 512, "video/quicktime", ""},
+		{"webm video", 512, "video/webm", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			createSupportAttachmentTestTable(t, db)
+			svc := NewSupportAttachmentService(repository.NewSupportAttachmentRepository(db), storage.NewS3Client("key", "secret", "bucket", "us-east-1", "http://storage.test", ""))
+			sessionID := "owner-session"
+			response, err := svc.Create(context.Background(), model.CreateSupportAttachmentRequest{FileName: "recording", FileSize: tt.size, ContentType: tt.mime}, "workspace", "", "customer", nil, &sessionID)
+			if tt.wantError != "" {
+				if err == nil || err.Error() != tt.wantError {
+					t.Fatalf("error = %v, want %q", err, tt.wantError)
+				}
+				var count int64
+				if err := db.Model(&model.SupportAttachment{}).Count(&count).Error; err != nil {
+					t.Fatal(err)
+				}
+				if count != 0 {
+					t.Fatalf("invalid upload created %d records", count)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.UploadURL == "" || response.Attachment.FileSize != tt.size || response.Attachment.ContentType != tt.mime {
+				t.Fatalf("unexpected response: %+v", response)
+			}
+		})
+	}
+}
