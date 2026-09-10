@@ -15,7 +15,7 @@ import type {
  * user/review-decision are surface-scoped extras.
  */
 export type TranscriptSegment =
-  | { kind: 'assistant'; id: string; messageId?: string; content: string; streaming?: boolean }
+  | { kind: 'assistant'; id: string; messageId?: string; content: string; streaming?: boolean; final?: boolean }
   | { kind: 'tool'; id: string; toolCall: CodingSessionLiveToolCall }
   | { kind: 'reasoning'; id: string; reasoning: CodingSessionLiveReasoningMessage }
   | { kind: 'status'; id: string; message: CodingSessionTranscriptMessage }
@@ -123,7 +123,14 @@ function compactAssistantProgress(segments: TranscriptSegment[]): TranscriptSegm
       continue;
     }
     if (segment.kind !== 'assistant') continue;
-    if (latestAssistantIndex !== null) keep[latestAssistantIndex] = false;
+    if (latestAssistantIndex !== null) {
+      const previous = segments[latestAssistantIndex];
+      if (previous.kind === 'assistant' && previous.final && !segment.final) {
+        keep[index] = false;
+        continue;
+      }
+      keep[latestAssistantIndex] = false;
+    }
     latestAssistantIndex = index;
   }
 
@@ -276,6 +283,7 @@ export function collectSegments(
               id: segment.segment_id,
               messageId: segment.assistant_message.message_id || message.message_id,
               content,
+              ...(message.message_type === 'assistant_final' ? { final: true } : {}),
             });
           }
         } else if (segment.kind === 'tool_call' && !isRuntimeControlToolName(segment.tool_call.tool_name)) {
@@ -305,7 +313,7 @@ export function collectSegments(
 
     if (message.content.trim() && include.has('assistant')) {
       const content = message.content.trim();
-      pushPersistedAssistant({ kind: 'assistant', id: message.event_id, messageId: message.message_id, content });
+      pushPersistedAssistant({ kind: 'assistant', id: message.event_id, messageId: message.message_id, content, ...(message.message_type === 'assistant_final' ? { final: true } : {}) });
     }
     if (include.has('tool')) {
       for (const toolCall of message.tool_calls ?? []) {
@@ -380,6 +388,7 @@ export function collectSegments(
           messageId: segment.assistant_message.message_id,
           content,
           streaming: segment.segment_id === activeStreamingAssistantSegmentId,
+          ...(segment.assistant_message.message_type === 'assistant_final' ? { final: true } : {}),
         });
       } else if (segment.kind === 'tool_call' && !isRuntimeControlToolName(segment.tool_call.tool_name)) {
         if (!include.has('tool')) continue;

@@ -164,3 +164,24 @@ func TestApplyCodingSessionStreamEventStoresCurrentPlan(t *testing.T) {
 		t.Fatalf("unexpected in-progress step %#v", got)
 	}
 }
+
+func TestCodingSessionSnapshotRetainsFinalAnswerTypeAfterLaterProgress(t *testing.T) {
+	at := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	snapshot := ApplyCodingSessionStreamEvent(nil, "assistant.message.completed", map[string]any{"message_id": "answer", "message_type": "assistant_final", "content": "The full answer."}, at)
+	snapshot = ApplyCodingSessionStreamEvent(snapshot, "assistant.message.completed", map[string]any{"message_id": "progress", "content": "Here is the answer:"}, at.Add(time.Second))
+	raw, err := EncodeCodingSessionStreamSnapshot(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := DecodeCodingSessionStreamSnapshot(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored == nil || len(restored.LiveTurnSegments) != 2 {
+		t.Fatalf("missing restored segments: %+v", restored)
+	}
+	answer := restored.LiveTurnSegments[0].AssistantMessage
+	if answer == nil || answer.MessageID != "answer" || answer.MessageType != "assistant_final" || answer.Content != "The full answer." {
+		t.Fatalf("lost final answer metadata: %+v", answer)
+	}
+}
