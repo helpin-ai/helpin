@@ -84,3 +84,22 @@ func TestCompactDockChatMessagePageLeavesDirectAnswerWithoutWorkDisclosure(t *te
 }
 
 func int64Ptr(value int64) *int64 { return &value }
+
+func TestCompactDockChatMessagePagePreservesCanonicalAnswerBeforeLateMetadata(t *testing.T) {
+	for _, lateContent := range []string{"", "Here is the full answer:"} {
+		t.Run(lateContent, func(t *testing.T) {
+			messages := []model.AgentRunMessage{
+				{ID: "user", Role: "user", Content: "Explain the diagrams", DockChatSequence: int64Ptr(1)},
+				{ID: "answer", RuntimeMessageID: "canonical-answer", Role: "assistant", MessageType: "assistant_final", Content: "Mermaid and nwdiag describe diagrams in text; Excalidraw is a drawing canvas.", DockChatSequence: int64Ptr(2)},
+				{ID: "late-tools", RuntimeMessageID: "provider-message", Role: "assistant", MessageType: "assistant_turn", Content: lateContent, ToolInvocations: json.RawMessage(`[{"tool_name":"read_document"}]`), DockChatSequence: int64Ptr(3)},
+			}
+			compact := compactDockChatMessagePage(messages)
+			if len(compact) != 3 || compact[2].ID != "answer" || compact[2].RuntimeMessageID != "canonical-answer" || compact[2].Content != messages[1].Content {
+				t.Fatalf("canonical answer replaced by late metadata: %+v", compact)
+			}
+			if compact[1].DockWorkSummary == nil || compact[1].DockWorkSummary.MessageID != "late-tools" {
+				t.Fatal("work disclosure must still include trailing tool details")
+			}
+		})
+	}
+}

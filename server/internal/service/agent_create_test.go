@@ -892,7 +892,11 @@ func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToCurrentRoutes(t *testi
 	}
 
 	for _, presetKey := range presetKeys {
-		for _, legacyModel := range legacyModels {
+		models := slices.Clone(legacyModels)
+		if presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetCommandAgent {
+			models = append(models, "z-ai/glm-5.3-flash:nitro")
+		}
+		for _, legacyModel := range models {
 			t.Run(presetKey+"/"+legacyModel, func(t *testing.T) {
 				db := newAgentServiceTestDB(t)
 				agentRepo := repository.NewAgentRepository(db)
@@ -932,8 +936,18 @@ func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToCurrentRoutes(t *testi
 					t.Fatalf("parse execution config: %v", err)
 				}
 				if managedAssistant {
-					if config.MaxToolSteps == nil || *config.MaxToolSteps != managedAssistantMaxToolSteps || config.OpenRouter != nil {
-						t.Fatalf("execution config = %s, want only max_tool_steps=%d", reconciled.ExecutionConfig, managedAssistantMaxToolSteps)
+					if reconciled.ModelTier != "medium" {
+						t.Fatalf("model tier = %q, want medium for DeepSeek V4.1 Flash", reconciled.ModelTier)
+					}
+					if config.MaxToolSteps == nil || *config.MaxToolSteps != managedAssistantMaxToolSteps || config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
+						!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
+						t.Fatalf("execution config = %s, want FP8-or-higher routing and max_tool_steps=%d", reconciled.ExecutionConfig, managedAssistantMaxToolSteps)
+					}
+					runtimeAgent := runtimeAgentFromHelpinAgent(reconciled, "helpin")
+					runtimeConfig, err := model.ParseAgentExecutionConfig(runtimeAgent.ExecutionConfig)
+					if err != nil || runtimeAgent.Model != "deepseek/deepseek-v4.1-flash:nitro" || runtimeConfig.OpenRouter == nil || runtimeConfig.OpenRouter.Provider == nil ||
+						!slices.Equal(runtimeConfig.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
+						t.Fatalf("runtime lost managed routing: model=%s config=%s error=%v", runtimeAgent.Model, runtimeAgent.ExecutionConfig, err)
 					}
 				} else if config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
 					!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
@@ -944,7 +958,7 @@ func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToCurrentRoutes(t *testi
 	}
 }
 
-func TestEnsureBuiltInAgent_UpgradesManagedCommandAgentDefaultToSmall(t *testing.T) {
+func TestEnsureBuiltInAgent_UpgradesManagedCommandAgentDefaultToDeepSeek(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
 	svc := (&AgentService{agentRepo: agentRepo}).SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")

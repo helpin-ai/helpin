@@ -213,8 +213,14 @@ func validateDocumentEditOperation(op documentEditOperation) error {
 	}
 	switch op.Type {
 	case "replace_text":
-		if op.BlockID == "" || op.OldText == "" || op.NewText == nil {
-			return fmt.Errorf("replace_text requires block_id, nonempty old_text, and new_text")
+		if strings.TrimSpace(op.BlockID) == "" {
+			return fmt.Errorf("replace_text: block_id is required; use the block id from read_document or get_document_blocks")
+		}
+		if op.OldText == "" {
+			return fmt.Errorf("replace_text: old_text must be nonempty and match text in the selected block")
+		}
+		if op.NewText == nil {
+			return fmt.Errorf("replace_text: new_text is required; use an empty string to remove the match")
 		}
 		if hasContent || anchor > 0 || op.StartBlockID != "" || op.EndBlockID != "" {
 			return fmt.Errorf("replace_text accepts only block_id, old_text, and new_text")
