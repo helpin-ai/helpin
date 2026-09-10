@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -43,6 +45,18 @@ func validateSupportFollowUpDecision(d supportFollowUpDecision) error {
 	return nil
 }
 
+// Keep timing out of the final notice even if an assessment ignores the prompt.
+var followUpDurationWords = regexp.MustCompile(`(?i)\b(hours?|minutes?|days?|weeks?|tomorrow|tonight|today|noon|midnight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|june|july|august|september|october|november|december|horas?|minutos?|días?|heures?|jours?|stunden?|tage?|ore|giorni|uur|dagen|horas|dias|час|часа|часов|дня|дней)\b|小時|小时|分鐘|分钟|ساع|گھنٹ|घंट`)
+
+var followUpPrematureClosure = regexp.MustCompile(`(?i)\b(close|closes|closing|closed|closure)\b`)
+
+func validateDeadlineFreeFollowUp(d supportFollowUpDecision) error {
+	if strings.IndexFunc(d.ClosureNotice, unicode.IsDigit) >= 0 || followUpDurationWords.MatchString(d.ClosureNotice) || followUpDurationWords.MatchString(d.Question) || followUpPrematureClosure.MatchString(d.Question) {
+		return fmt.Errorf("final reminder must say closing shortly and reply anytime, without a time, date or duration")
+	}
+	return nil
+}
+
 // Complete applies one Runtime assessment under conversation and episode locks.
 // Duplicate callbacks return the persisted outcome without publishing again.
 func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentRun, id string, d supportFollowUpDecision) (string, error) {
@@ -68,7 +82,7 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 			return finishFollowUpRow(tx, e, "cancelled", "conversation_changed", now)
 		}
 		if now.Before(e.DueAt) || (e.StartedAt != nil && now.Sub(*e.StartedAt) > time.Hour) {
-			return finishFollowUpRow(tx, e, "failed", "assessment_expired", now)
+			return s.failAndHandoff(ctx, tx, conv, e, settings, "assessment_expired", now)
 		}
 		busy, err := repository.SupportConversationBusy(ctx, tx, conv.WorkspaceID, conv.ID, e.RunID)
 		if err != nil {
@@ -88,6 +102,11 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 			}
 			return s.handoff(ctx, tx, conv, settings, now)
 		}
+		if e.SequenceVersion >= 2 {
+			if err := validateDeadlineFreeFollowUp(d); err != nil {
+				return err
+			}
+		}
 		seenSource := false
 		for _, id := range d.SourceMessageIDs {
 			if id == e.SourceMessageID {
@@ -105,12 +124,22 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 			return fmt.Errorf("assessment citations must be public messages in this conversation")
 		}
 		metadata, _ := json.Marshal(map[string]any{"ai_auto_reply": true, "ai_agent_id": run.AgentID, "ai_model": "agent-runtime", "ai_reply_kind": "inactivity_follow_up", "support_follow_up_id": e.ID})
-		content := stripConversationPII(strings.TrimSpace(d.Question)+"\n\n"+strings.TrimSpace(d.ClosureNotice), conv.CustomerEmail, conv.CustomerPhone)
+		content := strings.TrimSpace(d.Question)
+		if e.SequenceVersion < 2 {
+			content += "\n\n" + strings.TrimSpace(d.ClosureNotice)
+		}
+		content = stripConversationPII(content, conv.CustomerEmail, conv.CustomerPhone)
 		messageID := uuid.NewString()
 		closeAt := now.Add(time.Duration(e.CloseHours) * time.Hour)
 		// Persist the sent ID before insertion so the message projection's
 		// cancellation trigger recognizes this episode's own follow-up.
-		if err := tx.Model(e).Updates(map[string]any{"status": "waiting", "reason": d.Reason, "sent_message_id": messageID, "sent_at": now, "close_at": closeAt, "due_at": closeAt, "lease_until": nil, "updated_at": now}).Error; err != nil {
+		fields := map[string]any{"status": "waiting", "reason": d.Reason, "sent_message_id": messageID, "sent_at": now, "close_at": closeAt, "due_at": closeAt, "lease_until": nil, "updated_at": now}
+		if e.SequenceVersion >= 2 {
+			fields["close_at"] = nil
+			fields["due_at"] = now.Add(time.Duration(e.SecondDelayHours) * time.Hour)
+			fields["closing_notice"] = stripConversationPII(strings.TrimSpace(d.ClosureNotice), conv.CustomerEmail, conv.CustomerPhone)
+		}
+		if err := tx.Model(e).Updates(fields).Error; err != nil {
 			return err
 		}
 		sent = &model.SupportMessage{ID: messageID, WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderAgentID: &run.AgentID, SenderDisplayName: strPtr(helpinAIDisplayName), Content: content, MessageType: "reply", Metadata: string(metadata), CreatedAt: now}
@@ -199,7 +228,7 @@ func (s *SupportFollowUpService) handoff(ctx context.Context, tx *gorm.DB, conv 
 	if mailboxID == nil {
 		mailboxID = ai.resolveConfiguredHandoffMailbox(ctx, conv.WorkspaceID, settings)
 	}
-	fields := map[string]any{"ai_state": "escalated", "ai_escalated_at": now, "flow_state": escalatedConversationFlowState(settings, now), "assigned_agent_id": nil, "mailbox_id": mailboxID}
+	fields := map[string]any{"status": model.SupportConversationStatusOpen, "resolved_at": nil, "closed_at": nil, "customer_awaiting_response": true, "ai_state": "escalated", "ai_escalated_at": now, "flow_state": escalatedConversationFlowState(settings, now), "assigned_agent_id": nil, "mailbox_id": mailboxID}
 	if settings.HandoffBehavior != "unassigned" && ai.workspaceRepo != nil {
 		selection, err := selectSupportConversationRecipient(ctx, ai.workspaceRepo, ai.mailboxRepo, ai.installationRepo, nil, ai.presence, ai.statusOverrideRepo, supportRecipientSelectorInput{WorkspaceID: conv.WorkspaceID, MailboxID: mailboxID, HandoffBehavior: settings.HandoffBehavior, HandoffTeamID: settings.HandoffTeamID, RequireAvailability: true, Now: now})
 		if err != nil {

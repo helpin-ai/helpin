@@ -70,6 +70,13 @@ func setupFollowUpPostgres(t *testing.T) (*SupportFollowUpService, *gorm.DB, *mo
 			t.Fatalf("migration: %v", err)
 		}
 	}
+	sequenceMigration, err := os.ReadFile("../dbmigrate/sql/202609090003_support_follow_up_sequences.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(sequenceMigration)).Error; err != nil {
+		t.Fatal(err)
+	}
 	// Public-message projection participates in the same parent lock as the
 	// production projection. Other projections are tested in inbox integration tests.
 	mustExec(t, db, `CREATE FUNCTION test_project_public_message() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
@@ -322,5 +329,96 @@ func TestSupportFollowUpPostgresDailyLimit(t *testing.T) {
 	}
 	if count != 25 {
 		t.Fatalf("daily limit produced %d assessments", count)
+	}
+}
+
+func TestSupportFollowUpPostgresSecondMessageAndSettingsSnapshot(t *testing.T) {
+	svc, db, run, e, d := setupFollowUpPostgres(t)
+	mustExec(t, db, `UPDATE support_ai_follow_ups SET sequence_version=2,second_delay_hours=24,close_hours=1 WHERE id=?`, e.ID)
+	d.ClosureNotice = "We'll close this conversation shortly. Reply anytime to reopen it."
+	if _, err := svc.Complete(context.Background(), run, e.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	row, _ := svc.repo.Latest(context.Background(), run.WorkspaceID, run.TargetID)
+	due := row.DueAt
+	mustExec(t, db, `UPDATE support_widget_installations SET settings=settings || '{"ai_follow_up_delay_hours":12,"ai_follow_up_second_delay_hours":12,"ai_follow_up_close_hours":12}'::jsonb WHERE workspace_id=?`, run.WorkspaceID)
+	row, _ = svc.repo.Latest(context.Background(), run.WorkspaceID, run.TargetID)
+	if row.Status != "waiting" || !row.DueAt.Equal(due) || row.CloseHours != 1 {
+		t.Fatal("timing change altered active sequence")
+	}
+	if err := svc.process(context.Background(), *row, due); err != nil {
+		t.Fatal(err)
+	}
+	row, _ = svc.repo.Latest(context.Background(), run.WorkspaceID, run.TargetID)
+	if row.Status != "waiting" || row.SecondMessageID == nil {
+		t.Fatalf("second reminder self-cancelled: %+v", row)
+	}
+	var conv model.SupportConversation
+	if err := db.First(&conv, "id=?", run.TargetID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if derefString(conv.LastPublicMessageID) != *row.SecondMessageID {
+		t.Fatal("second message projection missing")
+	}
+	reply := model.SupportMessage{ID: uuid.NewString(), WorkspaceID: run.WorkspaceID, ConversationID: run.TargetID, SenderType: "customer", MessageType: "reply", Content: "Still not working", CreatedAt: due.Add(time.Minute)}
+	if err := db.Create(&reply).Error; err != nil {
+		t.Fatal(err)
+	}
+	row, _ = svc.repo.Latest(context.Background(), run.WorkspaceID, run.TargetID)
+	if row.Status != "cancelled" {
+		t.Fatal("customer reply did not cancel second stage")
+	}
+}
+
+func TestSupportFollowUpPostgresSecondReminderIsIdempotent(t *testing.T) {
+	svc, db, run, e, d := setupFollowUpPostgres(t)
+	mustExec(t, db, `UPDATE support_ai_follow_ups SET sequence_version=2,second_delay_hours=24,close_hours=1 WHERE id=?`, e.ID)
+	d.ClosureNotice = "We'll close this conversation shortly. Reply anytime to reopen it."
+	if _, err := svc.Complete(context.Background(), run, e.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	row, _ := svc.repo.Latest(context.Background(), run.WorkspaceID, run.TargetID)
+	var wg sync.WaitGroup
+	errs := make(chan error, 6)
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); errs <- svc.process(context.Background(), *row, row.DueAt) }()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int64
+	db.Model(&model.SupportMessage{}).Where("conversation_id=? AND sender_type='ai'", run.TargetID).Count(&count)
+	if count != 3 {
+		t.Fatalf("expected original answer + two reminders, got %d", count)
+	}
+}
+
+func TestSupportFollowUpPostgresRolloutKeepsLegacyWaitingDeadline(t *testing.T) {
+	svc, db, run, e, d := setupFollowUpPostgres(t)
+	if _, err := svc.Complete(context.Background(), run, e.ID, d); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := svc.repo.Latest(context.Background(), run.WorkspaceID, run.TargetID)
+	migration, err := os.ReadFile("../dbmigrate/sql/202609090003_support_follow_up_sequences.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(migration)).Error; err != nil {
+		t.Fatal(err)
+	}
+	after, _ := svc.repo.Latest(context.Background(), run.WorkspaceID, run.TargetID)
+	if after.Status != "waiting" || !after.CloseAt.Equal(*before.CloseAt) || after.CloseHours != 48 {
+		t.Fatal("rollout changed legacy deadline")
+	}
+	var inst model.SupportWidgetInstallation
+	db.First(&inst, "workspace_id=?", run.WorkspaceID)
+	settings := parseSettings(inst.Settings)
+	if !settings.AIFollowUpEnabled || settings.AIFollowUpCloseHours != 1 || settings.AIFollowUpSecondDelayHours != 24 {
+		t.Fatal("rollout defaults not applied")
 	}
 }

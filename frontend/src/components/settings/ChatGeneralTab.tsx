@@ -99,10 +99,10 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
   const [aiAgentId, setAiAgentId] = useState(NO_AGENT_VALUE);
   const [confidenceThreshold, setConfidenceThreshold] = useState('0.7');
   const [aiResponseMode, setAiResponseMode] = useState(DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE);
-  const [aiFollowUpEnabled, setAiFollowUpEnabled] = useState(false);
+  const [aiFollowUpEnabled, setAiFollowUpEnabled] = useState(true);
   const [aiFollowUpDelay, setAiFollowUpDelay] = useState(24);
-  const [aiFollowUpClose, setAiFollowUpClose] = useState(48);
-  const [aiFollowUpMax, setAiFollowUpMax] = useState(2);
+  const [aiFollowUpClose, setAiFollowUpClose] = useState(1);
+  const [aiFollowUpSecondDelay, setAiFollowUpSecondDelay] = useState(24);
   const [aiMaxFollowups, setAiMaxFollowups] = useState(DEFAULT_AI_HANDOFF_FOLLOWUPS);
   const [showTalkToHuman, setShowTalkToHuman] = useState(true);
   const [escalationMessage, setEscalationMessage] = useState('Let me connect you with a team member who can help further.');
@@ -167,10 +167,10 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
       setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
       setConfidenceThreshold(String(s.ai_confidence_threshold));
       setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
-      setAiFollowUpEnabled(s.ai_follow_up_enabled ?? false);
+      setAiFollowUpEnabled(s.ai_follow_up_enabled ?? true);
       setAiFollowUpDelay(s.ai_follow_up_delay_hours ?? 24);
-      setAiFollowUpClose(s.ai_follow_up_close_hours ?? 48);
-      setAiFollowUpMax(s.ai_follow_up_max_per_conversation ?? 2);
+      setAiFollowUpClose(s.ai_follow_up_close_hours ?? 1);
+      setAiFollowUpSecondDelay(s.ai_follow_up_second_delay_hours ?? 24);
       setAiMaxFollowups(s.ai_max_followups ?? DEFAULT_AI_HANDOFF_FOLLOWUPS);
       setShowTalkToHuman(s.show_talk_to_human);
       setEscalationMessage(s.escalation_message || 'Let me connect you with a team member who can help further.');
@@ -227,8 +227,9 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
     ai_follow_up_enabled: aiFollowUpEnabled,
     ai_follow_up_delay_hours: aiFollowUpDelay,
     ai_follow_up_close_hours: aiFollowUpClose,
-    ai_follow_up_max_per_conversation: aiFollowUpMax,
-    ai_auto_resolve_timeout: aiFollowUpEnabled ? (data?.settings.ai_auto_resolve_timeout || 24) : (data?.settings.ai_auto_resolve_timeout ?? 24),
+    ai_follow_up_second_delay_hours: aiFollowUpSecondDelay,
+    ai_follow_up_max_per_conversation: data?.settings.ai_follow_up_max_per_conversation ?? 2,
+    ai_auto_resolve_timeout: data?.settings.ai_auto_resolve_timeout ?? 24,
     show_talk_to_human: showTalkToHuman,
     escalation_message: escalationMessage,
     escalation_message_busy: escalationMessageBusy || undefined,
@@ -828,7 +829,6 @@ function Dashboard() {
               </div>
             </div>
           </div>
-          <AIFollowUpSettings workspaceId={workspaceId} enabled={aiFollowUpEnabled} delayHours={aiFollowUpDelay} closeHours={aiFollowUpClose} maxPerConversation={aiFollowUpMax} onEnabledChange={setAiFollowUpEnabled} onDelayChange={setAiFollowUpDelay} onCloseChange={setAiFollowUpClose} onMaxChange={setAiFollowUpMax} />
 
           <div className="flex items-center justify-between border-t border-border pt-4">
             <div>
@@ -921,6 +921,8 @@ function Dashboard() {
               </p>
             </Tabs>
           </div>
+
+          <AIFollowUpSettings enabled={aiFollowUpEnabled} delayHours={aiFollowUpDelay} closeHours={aiFollowUpClose} secondDelayHours={aiFollowUpSecondDelay} onEnabledChange={setAiFollowUpEnabled} onDelayChange={setAiFollowUpDelay} onCloseChange={setAiFollowUpClose} onSecondDelayChange={setAiFollowUpSecondDelay} />
 
           <div className="border-t border-border pt-4 space-y-3">
             <div>

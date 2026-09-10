@@ -181,15 +181,17 @@ func TestSupportFollowUpCrossTenantCallbackRejected(t *testing.T) {
 	}
 }
 
-func TestSupportFollowUpDefaultsRemainDisabled(t *testing.T) {
+func TestSupportFollowUpDefaultsEnabledAndExplicitOptOut(t *testing.T) {
 	settings := parseSettings(`{"ai_enabled":true,"ai_response_mode":"ai_first","ai_agent_id":"agent"}`)
-	if supportFollowUpEnabled(settings) {
-		t.Fatal("legacy installation opted in automatically")
+	if !supportFollowUpEnabled(settings) {
+		t.Fatal("new default should enable eligible installations")
 	}
-	settings.AIFollowUpEnabled = true
-	settings.AIAutoResolveTimeout = 0
+	if settings.AIFollowUpDelayHours != 24 || settings.AIFollowUpSecondDelayHours != 24 || settings.AIFollowUpCloseHours != 1 {
+		t.Fatal("wrong default timings")
+	}
+	settings.AIFollowUpEnabled = false
 	if supportFollowUpEnabled(settings) {
-		t.Fatal("legacy disable ignored")
+		t.Fatal("explicit opt out ignored")
 	}
 }
 

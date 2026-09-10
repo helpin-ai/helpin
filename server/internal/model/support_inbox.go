@@ -1281,6 +1281,7 @@ type SupportInboxSettings struct {
 	AIPreRouterMode              string  `json:"ai_pre_router_mode"`      // "off" | "shadow" | "enabled"
 	AIMaxFollowups               int     `json:"ai_max_followups"`        // max stalled same-issue AI attempts before forced handoff (default: 5)
 	AIFollowUpEnabled            bool    `json:"ai_follow_up_enabled"`
+	AIFollowUpSecondDelayHours   int     `json:"ai_follow_up_second_delay_hours"`
 	AIFollowUpDelayHours         int     `json:"ai_follow_up_delay_hours"`
 	AIFollowUpCloseHours         int     `json:"ai_follow_up_close_hours"`
 	AIFollowUpMaxPerConversation int     `json:"ai_follow_up_max_per_conversation"`
@@ -1391,8 +1392,10 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIResponseMode:                 "ai_first",
 		AIPreRouterMode:                SupportAIPreRouterModeEnabled,
 		AIMaxFollowups:                 5,
+		AIFollowUpEnabled:              true,
+		AIFollowUpSecondDelayHours:     24,
 		AIFollowUpDelayHours:           24,
-		AIFollowUpCloseHours:           48,
+		AIFollowUpCloseHours:           1,
 		AIFollowUpMaxPerConversation:   2,
 		AIAutoResolveTimeout:           24,
 		ShowTalkToHuman:                true,
@@ -1473,6 +1476,7 @@ type UpdateInstallationSettingsRequest struct {
 	AIPreRouterMode                 *string                     `json:"ai_pre_router_mode,omitempty"`
 	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`
 	AIFollowUpEnabled               *bool                       `json:"ai_follow_up_enabled,omitempty"`
+	AIFollowUpSecondDelayHours      *int                        `json:"ai_follow_up_second_delay_hours,omitempty"`
 	AIFollowUpDelayHours            *int                        `json:"ai_follow_up_delay_hours,omitempty"`
 	AIFollowUpCloseHours            *int                        `json:"ai_follow_up_close_hours,omitempty"`
 	AIFollowUpMaxPerConversation    *int                        `json:"ai_follow_up_max_per_conversation,omitempty"`

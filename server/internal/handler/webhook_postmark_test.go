@@ -1,6 +1,11 @@
 package handler
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/service"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -222,5 +227,54 @@ func TestPostmarkInbound_AllowsAnyConfiguredSecret(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+type retryingPostmarkProcessor struct {
+	*service.EmailFallbackService
+	nextError error
+	calls     int
+}
+
+func (p *retryingPostmarkProcessor) ProcessInboundEmail(_ context.Context, _ model.PostmarkInboundPayload, _ string) error {
+	p.calls++
+	err := p.nextError
+	p.nextError = nil
+	return err
+}
+
+func TestPostmarkInboundRetryableDispatchHTTPStatus(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"dispatch failure", fmt.Errorf("dispatch failed: %w", service.ErrInboundEmailAIDispatchRetry), http.StatusServiceUnavailable},
+		{"permanent processing failure", errors.New("invalid mailbox hash"), http.StatusOK},
+		{"success", nil, http.StatusOK},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			processor := &retryingPostmarkProcessor{nextError: tt.err}
+			h := NewPostmarkInboundHandler(nil, "secret")
+			h.emailFallbackService = processor
+			request := func() *httptest.ResponseRecorder {
+				req := httptest.NewRequest(http.MethodPost, "/api/webhooks/postmark/inbound", strings.NewReader(`{"MessageID":"saved-customer-message"}`))
+				req.SetBasicAuth("postmark", "secret")
+				rec := httptest.NewRecorder()
+				h.PostmarkInbound(rec, req)
+				return rec
+			}
+			rec := request()
+			if rec.Code != tt.want {
+				t.Fatalf("first status = %d, want %d", rec.Code, tt.want)
+			}
+			rec = request()
+			if rec.Code != http.StatusOK {
+				t.Fatalf("retry status = %d, want 200", rec.Code)
+			}
+			if processor.calls != 2 {
+				t.Fatalf("processing calls = %d", processor.calls)
+			}
+		})
 	}
 }
