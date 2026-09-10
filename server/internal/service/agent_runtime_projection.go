@@ -1426,9 +1426,16 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 	// invocations for the turn, which drive inline transcript rendering.
 	runtimeMessage := s.lookupRuntimeStoreMessage(ctx, run, runtimeMessageID)
 	var storeBlocks, toolInvocations json.RawMessage
+	messageType := "assistant_turn"
+	if eventDataString(event.Data, "message_type") == "assistant_final" {
+		messageType = "assistant_final"
+	}
 	if runtimeMessage != nil {
 		storeBlocks = runtimeMessage.ContentBlocks
 		toolInvocations = runtimeMessage.ToolInvocations
+		if runtimeMessage.MessageType == "assistant_final" {
+			messageType = "assistant_final"
+		}
 	}
 	message := &model.AgentRunMessage{
 		WorkspaceID:      run.WorkspaceID,
@@ -1438,7 +1445,7 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 		RuntimeMessageID: runtimeMessageID,
 		Role:             "assistant",
 		Content:          content,
-		MessageType:      "assistant_turn",
+		MessageType:      messageType,
 		ContentBlocks:    annotateRuntimeMessageBlocks(storeBlocks, runtimeMessageID, content),
 		ToolInvocations:  toolInvocations,
 		TurnSegments:     runtimeMessageTurnSegments(runtimeMessageID, content, toolInvocations),
@@ -2055,6 +2062,12 @@ func agentRunMessageHasRuntimeMessageID(message model.AgentRunMessage, runtimeMe
 func agentRunMessageMatchesRuntimeMessage(message model.AgentRunMessage, runtimeMessage AgentRuntimeMessage, runtimeMessageID string) bool {
 	if strings.TrimSpace(runtimeMessage.ID) != "" && strings.TrimSpace(runtimeMessage.ID) != strings.TrimSpace(runtimeMessageID) && agentRunMessageHasRuntimeMessageID(message, runtimeMessage.ID) {
 		return true
+	}
+	// Different authoritative IDs denote different messages, even when their
+	// text is identical (provider prose and a canonical answer, or later turns).
+	// Text matching below is only a fallback for uncorrelated legacy messages.
+	if strings.TrimSpace(message.RuntimeMessageID) != "" && strings.TrimSpace(runtimeMessage.RuntimeMessageID) != "" {
+		return false
 	}
 	role := strings.TrimSpace(runtimeMessage.Role)
 	if role == "" {

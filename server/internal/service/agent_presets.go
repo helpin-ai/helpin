@@ -25,9 +25,8 @@ const (
 	defaultQuillAgentModel = defaultFastOpenRouterAgentModel
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
-	defaultAskAgentModel = "z-ai/glm-5.3-flash:nitro"
-	// defaultCommandAgentModel keeps delegated sub-agent work on the Small
-	// native model route and its runtime-hosted tool surface.
+	defaultAskAgentModel = "deepseek/deepseek-v4.1-flash:nitro"
+	// defaultCommandAgentModel uses the same native route for delegated work.
 	defaultCommandAgentModel = defaultAskAgentModel
 	// managedAssistantMaxToolSteps gives Ask Agent and Sub-agent enough room
 	// for long, tool-heavy research and execution loops.
@@ -50,6 +49,11 @@ func defaultManagedAssistantExecutionConfig() model.JSONBlob {
 	maxToolSteps := managedAssistantMaxToolSteps
 	return model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
 		MaxToolSteps: &maxToolSteps,
+		OpenRouter: &model.AgentOpenRouterExecutionConfig{
+			Provider: &model.AgentOpenRouterProviderPreferences{
+				Quantizations: slices.Clone(defaultFastOpenRouterQuantizations),
+			},
+		},
 	})
 }
 

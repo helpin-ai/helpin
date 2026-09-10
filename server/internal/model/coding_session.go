@@ -173,6 +173,7 @@ type CodingSessionLiveToolCall struct {
 
 type CodingSessionLiveAssistantMessage struct {
 	MessageID   string                      `json:"message_id"`
+	MessageType string                      `json:"message_type,omitempty"`
 	Content     string                      `json:"content"`
 	StartedAt   *time.Time                  `json:"started_at,omitempty"`
 	CompletedAt *time.Time                  `json:"completed_at,omitempty"`

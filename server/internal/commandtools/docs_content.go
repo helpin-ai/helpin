@@ -38,17 +38,48 @@ var documentReadTools = []RuntimeToolMetadata{
 		InputSchema: documentObjectSchema(map[string]any{
 			"document_id":      documentString("Document ID to edit."),
 			"expected_version": documentString("Exact document version returned by read_document or get_document_blocks."),
-			"operations": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": documentObjectSchema(map[string]any{
-				"type":            map[string]any{"type": "string", "enum": []string{"replace_text", "replace_range", "insert", "delete_range"}},
-				"block_id":        documentString("Required for replace_text."),
-				"old_text":        documentString("Exact text matching once within a paragraph or code block. May span adjacent formatting nodes, never embedded objects or paragraph boundaries."),
-				"new_text":        documentString("Replacement text, including an empty string to remove the match."),
-				"start_block_id":  documentString("First block of the inclusive range, from the same snapshot."),
-				"end_block_id":    documentString("Last block of the inclusive range."),
-				"before_block_id": documentString("Insert immediately before this block; choose exactly one insertion anchor."),
-				"after_block_id":  documentString("Insert immediately after this block."),
-				"position":        map[string]any{"type": "string", "enum": []string{"start", "end"}},
-				"content":         map[string]any{"description": "Required for insert and replace_range: Markdown or an array of complete TipTap blocks. Range replacement creates new block IDs.", "oneOf": []map[string]any{{"type": "string"}, {"type": "array", "items": map[string]any{"type": "object"}}}},
-			}, "type")},
+			"operations":       map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": documentEditOperationSchema()},
 		}, "document_id", "expected_version", "operations")},
+}
+
+// Each alternative is a complete operation contract. A flat object with only
+// type required lets models omit selectors or mix fields from different edits.
+func documentEditOperationSchema() map[string]any {
+	nonempty := func(description string) map[string]any {
+		result := documentString(description)
+		result["minLength"] = 1
+		return result
+	}
+	content := map[string]any{"description": "Markdown or an array of complete TipTap blocks. Range replacement creates new block IDs.", "oneOf": []map[string]any{
+		{"type": "string", "minLength": 1},
+		{"type": "array", "minItems": 1, "items": map[string]any{"type": "object"}},
+	}}
+	operation := func(kind string, properties map[string]any, required ...string) map[string]any {
+		properties["type"] = map[string]any{"type": "string", "enum": []string{kind}}
+		return documentObjectSchema(properties, append([]string{"type"}, required...)...)
+	}
+	variants := []map[string]any{
+		operation("replace_text", map[string]any{
+			"block_id": nonempty("Exact block ID from read_document or get_document_blocks in the expected_version snapshot."),
+			"old_text": nonempty("Exact text matching once within a paragraph or code block. May span adjacent formatting nodes, never embedded objects or paragraph boundaries."),
+			"new_text": documentString("Replacement text; an empty string removes the match."),
+		}, "block_id", "old_text", "new_text"),
+		operation("replace_range", map[string]any{
+			"start_block_id": nonempty("First block of the inclusive range, from the same snapshot."),
+			"end_block_id":   nonempty("Last block of the inclusive range."),
+			"content":        content,
+		}, "start_block_id", "end_block_id", "content"),
+		operation("delete_range", map[string]any{
+			"start_block_id": nonempty("First block of the inclusive range, from the same snapshot."),
+			"end_block_id":   nonempty("Last block of the inclusive range."),
+		}, "start_block_id", "end_block_id"),
+	}
+	for _, anchor := range []string{"before_block_id", "after_block_id", "position"} {
+		selector := nonempty("Exact insertion anchor block ID from the same snapshot.")
+		if anchor == "position" {
+			selector = map[string]any{"type": "string", "enum": []string{"start", "end"}}
+		}
+		variants = append(variants, operation("insert", map[string]any{anchor: selector, "content": content}, anchor, "content"))
+	}
+	return map[string]any{"anyOf": variants}
 }

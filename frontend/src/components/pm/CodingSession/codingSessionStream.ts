@@ -1036,6 +1036,15 @@ export function buildCodingSessionStreamState(
           liveAssistantMessage.content,
           event.timestamp,
         );
+        const messageType = asString(payload.message_type);
+        if (messageType) {
+          liveAssistantMessage.message_type = messageType;
+          for (const segment of liveTurnSegments) {
+            if (segment.kind === 'assistant_message' && segment.assistant_message.message_id === messageID) {
+              segment.assistant_message.message_type = messageType;
+            }
+          }
+        }
         break;
       }
 
