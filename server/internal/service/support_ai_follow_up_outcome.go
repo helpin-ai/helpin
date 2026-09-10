@@ -82,7 +82,10 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 			return finishFollowUpRow(tx, e, "cancelled", "conversation_changed", now)
 		}
 		if now.Before(e.DueAt) || (e.StartedAt != nil && now.Sub(*e.StartedAt) > time.Hour) {
-			return s.failAndHandoff(ctx, tx, conv, e, settings, "assessment_expired", now)
+			var err error
+			sent, err = s.stopWithFailure(ctx, tx, conv, e, "assessment_expired", now)
+			status = "failed"
+			return err
 		}
 		busy, err := repository.SupportConversationBusy(ctx, tx, conv.WorkspaceID, conv.ID, e.RunID)
 		if err != nil {
@@ -100,7 +103,12 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 			if err := finishFollowUpRow(tx, e, status, d.Reason, now); err != nil {
 				return err
 			}
-			return s.handoff(ctx, tx, conv, settings, now)
+			if err := s.handoff(ctx, tx, conv, settings, now); err != nil {
+				return err
+			}
+			metadata, _ := json.Marshal(map[string]any{"reason": d.Reason, "support_follow_up_id": e.ID})
+			sent = &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderDisplayName: strPtr(helpinAIDisplayName), MessageType: "system", SystemEventType: strPtr(model.SystemEventAIEscalated), IsInternal: true, Content: "Follow-up assessment requested a teammate: " + d.Reason, Metadata: string(metadata), CreatedAt: now}
+			return s.chat.messageRepo.WithTx(tx).Create(ctx, sent)
 		}
 		if e.SequenceVersion >= 2 {
 			if err := validateDeadlineFreeFollowUp(d); err != nil {
@@ -156,7 +164,7 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 		return "", err
 	}
 	if sent != nil {
-		publishSupportAIMessageStream(s.chat.supportAIService.wsPublisher, run.WorkspaceID, sent, "ai:"+run.AgentID)
+		s.publishFollowUpMessage(run.WorkspaceID, sent)
 	}
 	if s.chat.supportAIService.wsPublisher != nil {
 		s.chat.supportAIService.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "support_conversation", EntityID: run.TargetID, WorkspaceID: run.WorkspaceID})

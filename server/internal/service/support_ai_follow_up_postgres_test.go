@@ -422,3 +422,28 @@ func TestSupportFollowUpPostgresRolloutKeepsLegacyWaitingDeadline(t *testing.T) 
 		t.Fatal("rollout defaults not applied")
 	}
 }
+
+func TestSupportFollowUpPostgresTechnicalFailurePreservesPublicState(t *testing.T) {
+	svc, db, run, e, _ := setupFollowUpPostgres(t)
+	mustExec(t, db, `UPDATE support_ai_follow_ups SET assessment_attempts=3 WHERE id=?`, e.ID)
+	mustExec(t, db, `INSERT INTO agent_runs(id,workspace_id,target_type,target_id,status,created_at) VALUES (?,?,'support_conversation',?,'completed',now())`, run.ID, e.WorkspaceID, e.ConversationID)
+	for range 2 {
+		if err := svc.process(context.Background(), e, svc.now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var conv model.SupportConversation
+	if err := db.First(&conv, "id=?", e.ConversationID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if derefString(conv.LastPublicMessageID) != e.SourceMessageID || derefString(conv.AIState) != "pending" || conv.AIEscalatedAt != nil {
+		t.Fatal("technical failure altered public state")
+	}
+	var notes int64
+	if err := db.Model(&model.SupportMessage{}).Where("conversation_id=? AND is_internal=true", conv.ID).Count(&notes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if notes != 1 {
+		t.Fatalf("private failure notes=%d", notes)
+	}
+}

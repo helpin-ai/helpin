@@ -7,7 +7,7 @@ import { useCRMPlaybookAutomation, useCRMPlaybookAutomationWrite } from '@/hooks
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { createPlaybookIntentKey } from '@/lib/crmPlaybookPresentation';
 import type { CRMPlaybookAutomationOverview, CRMPlaybookConnectionReview, CRMPlaybookItem } from '@/lib/crmPlaybookTypes';
-import { PlaybookError, PlaybookField, PlaybookHelp } from './PlaybookUI';
+import { PlaybookError, PlaybookField, PlaybookHelp, PlaybookLabel } from './PlaybookUI';
 
 export function PlaybookAutomation({ ws, slug, item, dirty }: { ws: string; slug: string; item: CRMPlaybookItem; dirty: boolean }) {
   const access = useWorkspaceAccess(ws);
@@ -57,18 +57,17 @@ function AutomationSettings({ ws, slug, item, overview, canConfigure, dirty }: {
       setConfirm(undefined); toast.success(body.enabled ? 'Automation settings saved' : 'Automation paused');
     } catch { /* No automatic retry of activation. */ }
   };
-  return <QuietSection className="max-w-3xl" title="Automation" action={<QuietStatusText tone={settings?.enabled ? 'positive' : 'neutral'}>{settings?.enabled ? 'On' : overview.connection ? 'Off' : 'Not connected'}</QuietStatusText>}>
-    <p className="mb-3 text-sm leading-6 text-quiet-text-secondary">Beacon reviews updates and prepares the next action. Your team approves customer-facing changes.</p>
+  return <QuietSection className="max-w-3xl" title={<PlaybookLabel label="Automation" help="Optional: Beacon reviews updates and proposes next actions for your team to approve. Connect it, then turn it on when ready." />} action={<QuietStatusText tone={settings?.enabled ? 'positive' : 'neutral'}>{settings?.enabled ? 'On' : overview.connection ? 'Off' : 'Not connected'}</QuietStatusText>}>
     {setupIssue && <p className="mb-3 text-xs text-quiet-text-secondary">{setupIssue}</p>}
     {!item.published_version ? <p className="text-xs text-quiet-text-tertiary">Publish the playbook to connect automation.</p> : !overview.connection ? <>{canConfigure ? <QuietPrimaryAction disabled={write.isPending || dirty || !!setupIssue} onClick={() => void prepare()}>{write.isPending ? 'Preparing…' : 'Set up automation'}</QuietPrimaryAction> : <p className="text-xs text-quiet-text-tertiary">An admin with Automation access can connect this playbook.</p>}</> : <>
       <QuietPropertyRow label="Agent" value={canConfigure ? <Link to="/w/$slug/automation/agents" params={{ slug }} className="text-quiet-accent hover:underline">{overview.agent_name || 'Beacon'}</Link> : overview.agent_name || 'Beacon'} />
-      <QuietPropertyRow label="Flow" value={<span>{overview.flow_name}<PlaybookHelp label="About the connected flow">The Flow wakes Beacon for new information and scheduled checks. Its configuration is managed here; ordinary Flows and Beacon’s saved settings are unchanged.</PlaybookHelp></span>} />
+      <QuietPropertyRow label="Flow" value={<span>{overview.flow_name}<PlaybookHelp label="About the connected flow">Runs Beacon when new information arrives or a check is due. Managed through this playbook.</PlaybookHelp></span>} />
       {canConfigure && <div className="mt-4 space-y-4">
-        <PlaybookField label="Start automation for" help="Turning automation on never imports or starts existing signals. Existing work is started explicitly from each signal.">{(id) => <QuietSelect id={id} label="Start automation for" value={entry} onChange={(value) => setEntry(value as typeof entry)} disabled={write.isPending} options={[{ value: 'manual', label: 'Signals the team starts' }, { value: 'automatic', label: 'New matching signals automatically' }]} />}</PlaybookField>
+        <PlaybookField label="Start automation for" help="Choose whether new matching signals start automatically or your team starts each one. Existing and paused signals must be started individually.">{(id) => <QuietSelect id={id} label="Start automation for" value={entry} onChange={(value) => setEntry(value as typeof entry)} disabled={write.isPending} options={[{ value: 'manual', label: 'Signals the team starts' }, { value: 'automatic', label: 'New matching signals' }]} />}</PlaybookField>
         {entry === 'automatic' && !item.playbook.accepting_customers && <p className="text-xs text-quiet-accent">Allow new enrollment above before choosing automatic entry.</p>}
         <details className="text-xs text-quiet-text-secondary"><summary className="cursor-pointer">Usage limits</summary><div className="mt-3 grid grid-cols-2 gap-5">
-          <PlaybookField label="Checks per signal / day" help="An upper limit, not a schedule. Waiting for an approval does not need another AI run.">{(id) => <QuietUnderlineInput id={id} type="number" min={1} max={24} value={maxRuns} onChange={(event) => setMaxRuns(Number(event.target.value))} disabled={write.isPending} />}</PlaybookField>
-          <PlaybookField label="Checks without progress" help="Beacon asks for attention after this many reviews without a meaningful change.">{(id) => <QuietUnderlineInput id={id} type="number" min={1} max={10} value={maxNoProgress} onChange={(event) => setMaxNoProgress(Number(event.target.value))} disabled={write.isPending} />}</PlaybookField>
+          <PlaybookField label="Checks per signal / day" help="Maximum daily checks for each signal. Waiting for approval does not require another check.">{(id) => <QuietUnderlineInput id={id} type="number" min={1} max={24} value={maxRuns} onChange={(event) => setMaxRuns(Number(event.target.value))} disabled={write.isPending} />}</PlaybookField>
+          <PlaybookField label="Checks without progress" help="Flag the signal for attention after this many checks without progress.">{(id) => <QuietUnderlineInput id={id} type="number" min={1} max={10} value={maxNoProgress} onChange={(event) => setMaxNoProgress(Number(event.target.value))} disabled={write.isPending} />}</PlaybookField>
         </div></details>
         {!overview.runtime_available && <p role="status" className="text-xs text-quiet-accent">Automation is currently unavailable. You can review setup, but cannot start new work.</p>}
         {!connectionCurrent && <p className="text-xs text-quiet-accent">Automation uses an earlier playbook version. Connect the published version before starting new signals.</p>}

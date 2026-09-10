@@ -88,11 +88,22 @@ var runtimeToolRiskLevels = map[string]string{
 	"enrich_crm_company": RiskLevelRoutine, "draft_support_reply": RiskLevelRoutine,
 	"update_conversation_status":    RiskLevelRoutine,
 	"complete_support_coverage_gap": RiskLevelRoutine,
+	"finish_support_follow_up":      RiskLevelSensitive,
 	"send_support_reply":            RiskLevelSensitive, "escalate_to_human": RiskLevelSensitive,
 	"run_epic_delivery_pipeline": RiskLevelDestructive,
 }
 
 var sharedRuntimeTools = []RuntimeToolMetadata{
+	{CommandName: "support.finish_follow_up", Alias: "finish_support_follow_up", Category: "Support", Description: "Complete a scheduled inactivity assessment. Only callable from its assigned follow-up run. The server validates current ownership and message history before sending or handing off.", InputSchema: map[string]any{
+		"type": "object", "properties": map[string]any{
+			"action":             map[string]any{"type": "string", "enum": []string{"follow_up", "handoff", "skip"}},
+			"reason":             map[string]any{"type": "string"},
+			"question":           map[string]any{"type": "string"},
+			"closure_notice":     map[string]any{"type": "string", "description": "Separate customer-language SECOND reminder: closing shortly because there was no reply; reply anytime to reopen. Never state a duration, date or deadline. The first question must not mention closing."},
+			"obligations_clear":  map[string]any{"type": "boolean"},
+			"source_message_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		}, "required": []string{"action", "reason", "question", "closure_notice", "obligations_clear", "source_message_ids"}, "additionalProperties": false,
+	}},
 	{
 		CommandName: "workspace.search",
 		Alias:       "search_workspace",

@@ -33,7 +33,7 @@ func (s *SupportFollowUpService) advanceWaiting(ctx context.Context, tx *gorm.DB
 		return nil, err
 	}
 	if failure != "" {
-		return nil, s.failAndHandoff(ctx, tx, conv, e, settings, failure, now)
+		return s.stopWithFailure(ctx, tx, conv, e, failure, now)
 	}
 	deadline := acceptedAt.Add(time.Duration(waitHours) * time.Hour)
 	if now.Before(deadline) {
@@ -50,7 +50,7 @@ func (s *SupportFollowUpService) advanceWaiting(ctx context.Context, tx *gorm.DB
 		return nil, resolveSupportAIConversation(ctx, tx, conv, "assumed", now)
 	}
 	if e.ClosingNotice == "" {
-		return nil, s.failAndHandoff(ctx, tx, conv, e, settings, "closing_notice_missing", now)
+		return s.stopWithFailure(ctx, tx, conv, e, "closing_notice_missing", now)
 	}
 	id := uuid.NewString()
 	closeAt := now.Add(time.Duration(e.CloseHours) * time.Hour)
@@ -99,15 +99,34 @@ func supportFollowUpDeliveryTime(ctx context.Context, tx *gorm.DB, conv *model.S
 }
 
 // Failed assessments retry with a new run ID; stale callbacks cannot send.
-func (s *SupportFollowUpService) retryOrHandoff(ctx context.Context, tx *gorm.DB, conv *model.SupportConversation, e *model.SupportAIFollowUp, settings model.SupportInboxSettings, reason string, now time.Time) error {
+func (s *SupportFollowUpService) retryOrStop(ctx context.Context, tx *gorm.DB, conv *model.SupportConversation, e *model.SupportAIFollowUp, reason string, now time.Time) (*model.SupportMessage, error) {
 	if e.AssessmentAttempts >= 3 {
-		return s.failAndHandoff(ctx, tx, conv, e, settings, reason, now)
+		return s.stopWithFailure(ctx, tx, conv, e, reason, now)
 	}
-	return tx.Model(e).Updates(map[string]any{"run_id": uuid.NewString(), "assessment_attempts": e.AssessmentAttempts + 1, "status": "scheduled", "started_at": nil, "due_at": now.Add(5 * time.Minute), "lease_until": nil, "reason": reason, "updated_at": now}).Error
+	return nil, tx.Model(e).Updates(map[string]any{"run_id": uuid.NewString(), "assessment_attempts": e.AssessmentAttempts + 1, "status": "scheduled", "started_at": nil, "due_at": now.Add(5 * time.Minute), "lease_until": nil, "reason": reason, "updated_at": now}).Error
 }
-func (s *SupportFollowUpService) failAndHandoff(ctx context.Context, tx *gorm.DB, conv *model.SupportConversation, e *model.SupportAIFollowUp, settings model.SupportInboxSettings, reason string, now time.Time) error {
+
+// A technical failure is not an assessment decision to escalate. Preserve
+// ownership and public-response state; only this automation is stopped.
+func (s *SupportFollowUpService) stopWithFailure(ctx context.Context, tx *gorm.DB, conv *model.SupportConversation, e *model.SupportAIFollowUp, reason string, now time.Time) (*model.SupportMessage, error) {
 	if err := finishFollowUpRow(tx, e, "failed", reason, now); err != nil {
-		return err
+		return nil, err
 	}
-	return s.handoff(ctx, tx, conv, settings, now)
+	explanation := "The automated assessment could not finish."
+	switch reason {
+	case "assessment_launch_timeout":
+		explanation = "The automated assessment could not start."
+	case "assessment_timeout", "assessment_expired":
+		explanation = "The automated assessment timed out."
+	case "follow_up_delivery_failed", "follow_up_delivery_unconfirmed":
+		explanation = "The follow-up message could not be confirmed as delivered."
+	case "closing_notice_missing":
+		explanation = "The final follow-up message was unavailable."
+	}
+	metadata, _ := json.Marshal(map[string]any{"support_follow_up_id": e.ID, "follow_up_failure_reason": reason})
+	note := &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderDisplayName: strPtr(helpinAIDisplayName), MessageType: "reply", IsInternal: true, Content: "Automatic follow-up stopped. " + explanation + " No further follow-ups or automatic closure will occur for this sequence. Conversation ownership is unchanged. The customer was not notified about this failure.", Metadata: string(metadata), CreatedAt: now}
+	if err := s.chat.messageRepo.WithTx(tx).Create(ctx, note); err != nil {
+		return nil, err
+	}
+	return note, nil
 }

@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { QuietEmptyState, QuietIconAction, QuietTextAction, quietUnderlineControlClassName } from '@/components/design-system/quiet';
-import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Textarea } from '@/components/ui/textarea';
 import { InformationCircleIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
@@ -8,7 +8,20 @@ import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialo
 import { getUpgradeRequiredReason } from '@/lib/upgradeRequired';
 
 export function PlaybookHelp({ label, children }: { label: string; children: string }) {
-  return <QuickTooltip label={children}><QuietIconAction type="button" aria-label={label}><InformationCircleIcon className="size-3.5" /></QuietIconAction></QuickTooltip>;
+  const [open, setOpen] = useState(false);
+  // A non-form trigger keeps help available inside read-only fieldsets.
+  return <Tooltip open={open} onOpenChange={setOpen}>
+    <TooltipTrigger asChild><QuietIconAction asChild><span tabIndex={0} role="button" aria-label={label} aria-expanded={open}
+      onPointerDown={(event) => event.preventDefault()}
+      onClick={(event) => { event.preventDefault(); setOpen((current) => !current); }}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setOpen((current) => !current); } }}
+    ><InformationCircleIcon className="size-3.5" /></span></QuietIconAction></TooltipTrigger>
+    <TooltipContent>{children}</TooltipContent>
+  </Tooltip>;
+}
+
+export function PlaybookLabel({ label, help }: { label: string; help: string }) {
+  return <span className="inline-flex items-center gap-1">{label}<PlaybookHelp label={`About ${label.toLowerCase()}`}>{help}</PlaybookHelp></span>;
 }
 
 export function PlaybookField({ label, help, children }: { label: string; help?: string; children: (id: string) => ReactNode }) {
