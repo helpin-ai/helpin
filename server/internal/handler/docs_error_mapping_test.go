@@ -23,6 +23,12 @@ func TestWriteDocsError(t *testing.T) {
 		wantBody   string // substring assertion; empty means "don't check"
 	}{
 		{
+			name:       "document conflict -> 409",
+			err:        fmt.Errorf("save: %w", service.ErrDocsContentConflict),
+			wantStatus: http.StatusConflict,
+			wantBody:   "document changed",
+		},
+		{
 			name:       "collection not found -> 404",
 			err:        service.ErrDocsCollectionNotFound,
 			wantStatus: http.StatusNotFound,
@@ -108,6 +114,13 @@ func TestWriteDocsError(t *testing.T) {
 			}
 		})
 	}
+	t.Run("block snapshot conflict -> 409", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		writeDocsBlockMutationError(rec, fmt.Errorf("save: %w", service.ErrDocsContentConflict))
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want 409", rec.Code)
+		}
+	})
 }
 
 func contains(s, substr string) bool {

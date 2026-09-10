@@ -49,18 +49,17 @@ func paginateDocumentItems(response map[string]any, items []any, req documentRea
 			response["next_cursor"] = documentCursor(req, version, tool, i, offset)
 			return marshalBoundedDocument(response)
 		}
-		raw, err := json.Marshal(items[i])
+		template, runes, err := documentFragmentContent(items[i])
 		if err != nil {
 			return nil, err
 		}
-		runes := []rune(string(raw))
 		if offset >= len(runes) {
 			return nil, fmt.Errorf("invalid cursor character offset")
 		}
 		low, high := 0, len(runes)-offset
 		for low < high {
 			size := (low + high + 1) / 2
-			setDocumentFragment(response, key, req, version, tool, i, offset, size, runes, len(items))
+			setDocumentFragment(response, key, req, version, tool, i, offset, size, runes, len(items), template)
 			if documentOutputFits(response) {
 				low = size
 			} else {
@@ -70,7 +69,7 @@ func paginateDocumentItems(response map[string]any, items []any, req documentRea
 		if low == 0 {
 			return nil, fmt.Errorf("document metadata exceeds response budget; request fewer block_ids")
 		}
-		setDocumentFragment(response, key, req, version, tool, i, offset, low, runes, len(items))
+		setDocumentFragment(response, key, req, version, tool, i, offset, low, runes, len(items), template)
 		return marshalBoundedDocument(response)
 	}
 	response[key] = page
@@ -80,12 +79,17 @@ func paginateDocumentItems(response map[string]any, items []any, req documentRea
 	return marshalBoundedDocument(response)
 }
 
-func setDocumentFragment(response map[string]any, key string, req documentReadRequest, version, tool string, index, offset, size int, runes []rune, total int) {
+func setDocumentFragment(response map[string]any, key string, req documentReadRequest, version, tool string, index, offset, size int, runes []rune, total int, template map[string]any) {
 	finished := offset+size == len(runes)
-	response[key] = []any{map[string]any{
-		"fragment_format": "item_json", "item_index": index, "fragment_offset": offset,
-		"fragment_complete": finished, "content_fragment": string(runes[offset : offset+size]),
-	}}
+	fragment := make(map[string]any, len(template)+4)
+	for field, value := range template {
+		fragment[field] = value
+	}
+	fragment["item_index"] = index
+	fragment["fragment_offset"] = offset
+	fragment["fragment_complete"] = finished
+	fragment["content_fragment"] = string(runes[offset : offset+size])
+	response[key] = []any{fragment}
 	response["complete"] = finished && index+1 == total
 	response["content_complete"] = false
 	response["next_cursor"] = nil
@@ -104,4 +108,31 @@ func marshalBoundedDocument(response map[string]any) (json.RawMessage, error) {
 		return nil, fmt.Errorf("document metadata exceeds response budget; narrow the selection")
 	}
 	return json.Marshal(response)
+}
+
+// Readable blocks continue as text, with stable identity on every slice.
+// Structured JSON and oversized non-text metadata retain lossless item_json fragments.
+func documentFragmentContent(item any) (map[string]any, []rune, error) {
+	if block, ok := item.(documentReadBlock); ok && block.Markdown != "" {
+		markdown := block.Markdown
+		block.Markdown = ""
+		raw, err := json.Marshal(block)
+		if err != nil {
+			return nil, nil, err
+		}
+		var template map[string]any
+		if err := json.Unmarshal(raw, &template); err != nil {
+			return nil, nil, err
+		}
+		template["fragment_format"] = "markdown"
+		// Reserve space for document metadata and the continuation cursor.
+		if len([]rune(string(raw))) < documentOutputBudget/2 {
+			return template, []rune(markdown), nil
+		}
+	}
+	raw, err := json.Marshal(item)
+	if err != nil {
+		return nil, nil, err
+	}
+	return map[string]any{"fragment_format": "item_json"}, []rune(string(raw)), nil
 }

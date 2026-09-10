@@ -322,6 +322,20 @@ func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef 
 	refs := runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind)
 	preset, ok := agentPresetVersionDefinition(agent.EffectivePresetKey(), agent.EffectivePresetVersionKey())
 	if !ok {
+		// Workspace-pinned versions do not use the built-in skill fallback.
+		// Materialize the managed workflow at launch, preserving their other refs.
+		key := normalizePresetKey(agent.EffectivePresetKey())
+		if agent.IsSystem && (key == model.AgentPresetAskAgent || key == model.AgentPresetDocumentationAgent) &&
+			len(filterAvailableSkillsForAllowedTools([]string{"document_editing"}, parseJSONStringSlice(agent.AllowedTools), nil)) > 0 &&
+			helpinSkillRefSupportsRuntime(model.AgentSkillRef{Key: "document_editing"}, agent.RuntimeKind) {
+			for i := range refs {
+				if refs[i].Key == "document_editing" && refs[i].SkillID == "" {
+					refs[i].Config = withRuntimeSkillRole(refs[i].Config, "available")
+					return refs
+				}
+			}
+			refs = append(refs, AgentRuntimeSkillRef{Key: "document_editing", Config: withRuntimeSkillRole(nil, "available")})
+		}
 		return refs
 	}
 	availableKeys := make(map[string]bool, len(preset.AvailableSkills))

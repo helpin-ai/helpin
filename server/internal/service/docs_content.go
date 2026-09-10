@@ -18,6 +18,9 @@ import (
 // the document editor.
 var ErrDocsInvalidContent = errors.New("invalid document content")
 
+// ErrDocsContentConflict identifies a save based on an outdated document snapshot.
+var ErrDocsContentConflict = repository.ErrDocsContentConflict
+
 // DocsContentService handles business logic for document content.
 type DocsContentService struct {
 	contentRepo         *repository.DocsContentRepository

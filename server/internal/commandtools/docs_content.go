@@ -16,7 +16,7 @@ var documentReadTools = []RuntimeToolMetadata{
 		InputSchema: documentObjectSchema(map[string]any{
 			"document_id": documentString("Document ID; defaults to the current document target."),
 			"mode":        map[string]any{"type": "string", "enum": []string{"auto", "full", "outline"}},
-			"cursor":      documentString("Exact next_cursor from this tool. Supply only document_id and cursor when continuing. Oversized items use item_json fragments: concatenate content_fragment by fragment_offset before decoding."),
+			"cursor":      documentString("Exact next_cursor from this tool. Supply only document_id and cursor when continuing. Oversized readable blocks return Markdown text slices in content_fragment with block id and character offset; read slices directly. Structured item_json fragments require concatenation before decoding."),
 		})},
 	{CommandName: "docs.get_document_blocks", Alias: "get_document_blocks", Category: "Docs",
 		Description: "Read a section, selected blocks, or search inside one document with neighboring context. Select exactly one of section_id, block_ids, anchor_block_id, query, or offset. Selected content defaults to readable Markdown; request format=json only for structured edits. Includes the snapshot version and precise continuation. Search matches all case-insensitive query terms and merges neighbor windows.",
@@ -31,7 +31,7 @@ var documentReadTools = []RuntimeToolMetadata{
 			"limit":           map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "description": "Sequential page size, default 40. Follow next_offset for the next page, or next_cursor to finish a budget-limited page."},
 			"format":          map[string]any{"type": "string", "enum": []string{"markdown", "json", "summary"}},
 			"include_content": map[string]any{"type": "boolean", "description": "Compatibility option: true returns full node JSON; false returns compact previews. Prefer format."},
-			"cursor":          documentString("Exact next_cursor. Continue using document_id and cursor only. Concatenate item_json fragments before decoding oversized blocks."),
+			"cursor":          documentString("Exact next_cursor. Continue using document_id and cursor only. Markdown fragments are readable text slices with block id and character offset. Concatenate only item_json fragments before decoding."),
 		})},
 	{CommandName: "docs.edit_document", Alias: "edit_document", Category: "Docs",
 		Description: "Atomically apply up to 20 targeted document edits against expected_version from a read. Prefer this for wording changes, section replacements, and inserting multiple blocks. Targets refer to the same original snapshot. Preserve surrounding rich content; do not rewrite the full document for a local edit. On conflict nothing is applied: reread affected content. Returns committed version and changed block revisions; never repeat a successful edit merely to retrieve its result.",

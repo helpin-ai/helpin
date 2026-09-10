@@ -915,6 +915,9 @@ func enforceManagedAskAgentCapabilities(preset model.AgentPresetDefinition) mode
 		return preset
 	}
 	preset.AllowedTools = appendPresetTools(preset.AllowedTools, askAgentPresetTools())
+	if !slices.Contains(preset.AvailableSkills, "document_editing") {
+		preset.AvailableSkills = append(preset.AvailableSkills, "document_editing")
+	}
 	preset.ApprovalMode = "risk_based"
 	preset.ExecutionConfig = withoutRepositoryWorkspaceExecutionMode(preset.ExecutionConfig)
 	if !slices.Contains(preset.AllowedTargetTypes, "workspace") {
@@ -930,7 +933,11 @@ func enforceManagedDocumentationAgentCapabilities(preset model.AgentPresetDefini
 	if normalizePresetKey(preset.Key) != model.AgentPresetDocumentationAgent {
 		return preset
 	}
+	if !slices.Contains(preset.AvailableSkills, "document_editing") {
+		preset.AvailableSkills = append(preset.AvailableSkills, "document_editing")
+	}
 	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{
+		"read_document", "get_document_blocks", "find_skills", "read_skill",
 		"edit_document",
 		"insert_document_artifact",
 		"list_task_checklist",

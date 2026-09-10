@@ -81,6 +81,13 @@ func TestDocumentWorkflowReadsCompleteContentAndNavigatesSections(t *testing.T) 
 					t.Fatal("medium document was clipped")
 				}
 			}
+			for _, options := range []map[string]any{{"format": "summary"}, {"include_content": false}} {
+				options["document_id"] = meta.TargetID
+				summary := executeDocumentWorkflow(t, svc, meta, "get_document_blocks", options)
+				if decodeDocumentField[bool](t, summary, "content_complete") || !decodeDocumentField[bool](t, summary, "complete") {
+					t.Fatal("complete summary selection must not claim full document content")
+				}
+			}
 			outline := executeDocumentWorkflow(t, svc, meta, "read_document", map[string]any{"document_id": meta.TargetID, "mode": "outline"})
 			sections := decodeDocumentField[[]documentSection](t, outline, "sections")
 			section := sections[1]
@@ -99,52 +106,80 @@ func TestDocumentWorkflowReadsCompleteContentAndNavigatesSections(t *testing.T) 
 }
 
 func TestDocumentWorkflowContinuesOversizedBlocksWithoutLoss(t *testing.T) {
-	body := strings.Repeat("Unicode π and quoted \"text\" with <tags>. ", 1700)
-	svc, meta := documentWorkflowFixture(t, "```text\n"+body+"\n```\n\nFinal paragraph.")
-	var reconstructed strings.Builder
-	request := map[string]any{"document_id": meta.TargetID, "mode": "full"}
-	var firstCursor string
-	sawEnd := false
-	for calls := 0; calls < 30; calls++ {
-		result := executeDocumentWorkflow(t, svc, meta, "read_document", request)
-		var items []map[string]json.RawMessage
-		if err := json.Unmarshal(result["blocks"], &items); err != nil {
-			t.Fatal(err)
-		}
-		for _, item := range items {
-			if _, ok := item["content_fragment"]; ok {
-				fragment := decodeDocumentField[string](t, item, "content_fragment")
-				offset := decodeDocumentField[int](t, item, "fragment_offset")
-				if offset != len([]rune(reconstructed.String())) {
-					t.Fatal("fragment gap or overlap")
-				}
-				reconstructed.WriteString(fragment)
-			} else if strings.Contains(string(item["markdown"]), "Final paragraph.") {
-				sawEnd = true
+	for _, format := range []string{"markdown", "json"} {
+		t.Run(format, func(t *testing.T) {
+			body := strings.Repeat("Unicode π and quoted \"text\" with <tags>. ", 1700)
+			svc, meta := documentWorkflowFixture(t, "```text\n"+body+"\n```\n\nFinal paragraph.")
+			var reconstructed strings.Builder
+			request := map[string]any{"document_id": meta.TargetID, "mode": "full"}
+			tool := "read_document"
+			if format == "json" {
+				tool = "get_document_blocks"
+				request = map[string]any{"document_id": meta.TargetID, "format": "json"}
 			}
-		}
-		cursor := decodeDocumentField[*string](t, result, "next_cursor")
-		if cursor == nil {
-			break
-		}
-		if firstCursor == "" {
-			firstCursor = *cursor
-		}
-		request = map[string]any{"document_id": meta.TargetID, "cursor": *cursor}
-	}
-	var block documentReadBlock
-	if err := json.Unmarshal([]byte(reconstructed.String()), &block); err != nil {
-		t.Fatalf("fragment reconstruction failed: %v", err)
-	}
-	if !strings.Contains(block.Markdown, body) || !sawEnd {
-		t.Fatal("full read lost content")
-	}
-	if _, err := svc.docsContentService.Save(context.Background(), meta.TargetID, tiptap.MarkdownToJSON("Changed"), meta.ActorID); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := json.Marshal(map[string]any{"document_id": meta.TargetID, "cursor": firstCursor})
-	if _, err := svc.Execute(context.Background(), meta, "docs.read_document", raw); err == nil || !strings.Contains(err.Error(), "document changed") {
-		t.Fatalf("stale cursor accepted: %v", err)
+			var fragmentID string
+			var firstCursor string
+			sawEnd := false
+			for calls := 0; calls < 30; calls++ {
+				result := executeDocumentWorkflow(t, svc, meta, tool, request)
+				var items []map[string]json.RawMessage
+				if err := json.Unmarshal(result["blocks"], &items); err != nil {
+					t.Fatal(err)
+				}
+				for _, item := range items {
+					if _, ok := item["content_fragment"]; ok {
+						gotFormat := decodeDocumentField[string](t, item, "fragment_format")
+						if format == "markdown" {
+							id := decodeDocumentField[string](t, item, "id")
+							if gotFormat != "markdown" || id == "" || (fragmentID != "" && fragmentID != id) {
+								t.Fatal("readable slice lost its format or stable block ID")
+							}
+							fragmentID = id
+						} else if gotFormat != "item_json" {
+							t.Fatal("structured reads must keep lossless JSON fragments")
+						}
+						fragment := decodeDocumentField[string](t, item, "content_fragment")
+						offset := decodeDocumentField[int](t, item, "fragment_offset")
+						if offset != len([]rune(reconstructed.String())) {
+							t.Fatal("fragment gap or overlap")
+						}
+						reconstructed.WriteString(fragment)
+					} else {
+						text := string(item["markdown"])
+						if content, ok := item["content"]; ok {
+							text = tiptap.RichTextToMarkdown(`{"type":"doc","content":[` + string(content) + `]}`)
+						}
+						sawEnd = sawEnd || strings.Contains(text, "Final paragraph.")
+					}
+				}
+				cursor := decodeDocumentField[*string](t, result, "next_cursor")
+				if cursor == nil {
+					break
+				}
+				if firstCursor == "" {
+					firstCursor = *cursor
+				}
+				request = map[string]any{"document_id": meta.TargetID, "cursor": *cursor}
+			}
+			text := reconstructed.String()
+			if format == "json" {
+				var block documentReadBlock
+				if err := json.Unmarshal([]byte(text), &block); err != nil {
+					t.Fatalf("fragment reconstruction failed: %v", err)
+				}
+				text = tiptap.RichTextToMarkdown(`{"type":"doc","content":[` + string(block.Content) + `]}`)
+			}
+			if !strings.Contains(text, body) || !sawEnd {
+				t.Fatalf("full read lost content: contains_body=%v saw_end=%v text_length=%d prefix=%.100s", strings.Contains(text, body), sawEnd, len(text), text)
+			}
+			if _, err := svc.docsContentService.Save(context.Background(), meta.TargetID, tiptap.MarkdownToJSON("Changed"), meta.ActorID); err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := json.Marshal(map[string]any{"document_id": meta.TargetID, "cursor": firstCursor})
+			if _, err := svc.Execute(context.Background(), meta, "docs."+tool, raw); err == nil || !strings.Contains(err.Error(), "document changed") {
+				t.Fatalf("stale cursor accepted: %v", err)
+			}
+		})
 	}
 }
 

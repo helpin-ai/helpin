@@ -201,7 +201,7 @@ func (s *InternalCommandService) executeDocumentRead(ctx context.Context, meta m
 		items = append(items, b)
 	}
 	response["selected_total"] = len(indices)
-	response["content_complete"] = len(indices) == len(blocks)
+	response["content_complete"] = format != "summary" && len(indices) == len(blocks)
 	response["offset"] = req.Offset
 	response["limit"] = len(indices)
 	if tool == "get_document_blocks" && len(req.BlockIDs) == 0 && req.AnchorBlockID == "" && req.SectionID == "" && req.Query == "" {

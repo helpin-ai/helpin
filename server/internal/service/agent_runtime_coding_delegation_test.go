@@ -957,3 +957,41 @@ func TestBuildDelegatedTaskLaunchContextBestEffort(t *testing.T) {
 		}
 	})
 }
+
+func TestPinnedDocumentWorkflowSkillReachesRuntime(t *testing.T) {
+	for _, key := range []string{model.AgentPresetDocumentationAgent, model.AgentPresetAskAgent} {
+		t.Run(key, func(t *testing.T) {
+			preset := model.AgentPresetDefinition{Key: key, AvailableSkills: []string{"mermaid"}}
+			preset = enforceManagedDocumentationAgentCapabilities(enforceManagedAskAgentCapabilities(preset))
+			if !slices.Contains(preset.AvailableSkills, "document_editing") || !slices.Contains(preset.AvailableSkills, "mermaid") {
+				t.Fatal("managed skill missing or existing skills lost")
+			}
+			agent := &model.Agent{IsSystem: true, PresetKey: key, PresetVersionKey: "workspace-pinned-before-doc-editing", RuntimeKind: "native_sdk",
+				AllowedTools: mustJSONStringSlice(preset.AllowedTools), Skills: model.AgentSkillRefs{{Key: "mermaid"}}}
+			for _, existing := range []bool{false, true} {
+				if existing {
+					agent.Skills = append(agent.Skills, model.AgentSkillRef{Key: "document_editing"})
+				}
+				refs := runtimeAgentFromHelpinAgent(agent, "helpin").Skills
+				count := 0
+				for _, ref := range refs {
+					if ref.Key == "document_editing" {
+						count++
+						var config map[string]any
+						if json.Unmarshal(ref.Config, &config) != nil || config[runtimeSkillRoleConfigKey] != "available" {
+							t.Fatal("workflow not available on demand")
+						}
+					}
+				}
+				if count != 1 || len(refs) != 2 {
+					t.Fatalf("missing, duplicate, or lost skills: %+v", refs)
+				}
+			}
+			agent.Skills = model.AgentSkillRefs{{Key: "mermaid"}}
+			agent.AllowedTools = mustJSONStringSlice([]string{"read_document"})
+			if refs := runtimeAgentFromHelpinAgent(agent, "helpin").Skills; len(refs) != 1 {
+				t.Fatal("injected workflow without its required tools")
+			}
+		})
+	}
+}

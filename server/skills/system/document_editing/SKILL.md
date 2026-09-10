@@ -20,9 +20,9 @@ Use `read_document` with its default adaptive mode. A fitting document returns f
 - For a known passage, call `get_document_blocks` with `query`. It searches inside this document, matching all query terms case-insensitively, and includes neighboring blocks. Use short, distinctive terms.
 - For a focused block, call it with `anchor_block_id` and `around`, or fetch several known `block_ids` together.
 - Use `search_documents` to find documents, then follow the matching block reference. Do not search the workspace again to read more of a known document.
-- Use `read_document` with `mode: full` when the entire long document is needed. Follow `next_cursor` using only `document_id` and `cursor`. Oversized items have `fragment_format: item_json`: concatenate `content_fragment` by `fragment_offset` before decoding. These fragments are not replacement content.
+- Use `read_document` with `mode: full` when the entire long document is needed. Follow `next_cursor` using only `document_id` and `cursor`. Oversized readable blocks return `fragment_format: markdown`: read `content_fragment` directly as the next text slice, with the same block ID and a character `fragment_offset`. Slices may split Markdown fences or formatting; do not treat them as standalone replacement content. Only structured `item_json` fragments require concatenating `content_fragment` by `fragment_offset` before decoding.
 - `content_text` is the legacy plain-text preview; its `content_text_truncated` flag does not describe the returned full blocks. Read `blocks`, `complete`, and `content_complete` instead.
-- `complete` describes the requested selection/page, not proof you read the whole document. An outline describes structure only. Sequential block pages also carry `next_offset` when more blocks exist.
+- `complete` describes the requested selection/page, not proof you read the whole document. An outline describes structure only. Summary reads always have `content_complete: false`, even when every block is listed. Sequential block pages also carry `next_offset` when more blocks exist.
 - Ask for `format: json` only when the exact rich block structure is needed. Markdown and embed descriptions are reading representations, not lossless backups.
 
 # Targeted editing
