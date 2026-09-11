@@ -29,7 +29,7 @@ spec:
         - name: ghcr-helpin-json-key
       containers:
         - name: migrate
-          image: ghcr.io/helpin-ai/helpin/server-migrate:server-v0.95.385-rc.1
+          image: ghcr.io/helpin-ai/helpin/server-migrate:server-v0.95.386-rc.1
           command: ["./migrate", "up"]
           envFrom:
             - secretRef:
