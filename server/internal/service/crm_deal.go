@@ -599,7 +599,7 @@ func (s *CRMDealService) afterDealUpdate(ctx context.Context, updated *model.CRM
 
 func validCRMDealCommercialMotion(value string) bool {
 	switch value {
-	case model.CRMDealMotionNewBusiness, model.CRMDealMotionExpansion, model.CRMDealMotionRenewal:
+	case model.CRMDealMotionNewBusiness, model.CRMDealMotionExistingBusiness, model.CRMDealMotionExpansion, model.CRMDealMotionRenewal:
 		return true
 	default:
 		return false

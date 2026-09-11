@@ -8,6 +8,7 @@ async function installMocks(
     conflictOnce?: boolean;
     failRefreshAfterSave?: boolean;
     multiplePipelines?: boolean;
+    motion?: string;
   } = {},
 ) {
   const stages = [
@@ -36,7 +37,7 @@ async function installMocks(
     workspace_id: "ws-pipelines",
     name: "Outbound sales pipeline",
     is_default: true,
-    default_commercial_motion: "new_business",
+    default_commercial_motion: options.motion ?? "new_business",
     deal_count: 12,
     stages,
     updated_at: "2026-09-01T10:00:00Z",
@@ -102,6 +103,8 @@ async function installMocks(
         }));
       }
       if (body.name) pipeline.name = body.name;
+      if (body.default_commercial_motion)
+        pipeline.default_commercial_motion = body.default_commercial_motion;
       return route.fulfill({ json: pipeline });
     }
     return route.fulfill({ json: {} });
@@ -464,6 +467,7 @@ test("creates a pipeline by copying stages without copying stage IDs or deals", 
     .click();
   await expect(dialog).not.toBeVisible();
   expect(writes[0].name).toBe("Partner sales");
+  expect(writes[0].default_commercial_motion).toBe("new_business");
   expect(writes[0].stages).toHaveLength(9);
   expect(writes[0].stages[0]).toEqual({
     name: "Lead found",
@@ -610,3 +614,99 @@ test("pointer dragging moves a stage directly to a distant position", async ({
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0].stages[4].id).toBe("stage-0");
 });
+
+test("pipeline deal type is optional and offers new or existing business", async ({
+  page,
+}) => {
+  const { writes } = await installMocks(page);
+  await page.goto(url);
+  await page
+    .getByRole("button", { name: "Create pipeline", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Create pipeline",
+    exact: true,
+  });
+  await page
+    .getByLabel("Pipeline name", { exact: true })
+    .fill("Customer growth");
+  await expect(
+    page.getByRole("combobox", { name: "Default deal type" }),
+  ).not.toBeVisible();
+  await dialog.getByText("Optional settings", { exact: true }).click();
+  const type = page.getByRole("combobox", { name: "Default deal type" });
+  await expect(type).toHaveText("New business");
+  await type.click();
+  await expect(page.getByRole("option")).toHaveText([
+    "New business",
+    "Existing business",
+  ]);
+  await page
+    .getByRole("option", { name: "Existing business", exact: true })
+    .click();
+  await expect(dialog).toContainText(
+    "Renewals, upgrades, and additional purchases from existing customers.",
+  );
+  await page.screenshot({ path: "/tmp/helpin-pipeline-options-desktop.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await expect(
+    dialog.getByRole("button", { name: "Create pipeline", exact: true }),
+  ).toBeInViewport();
+  await page.screenshot({ path: "/tmp/helpin-pipeline-options-mobile.png" });
+  await dialog
+    .getByRole("button", { name: "Create pipeline", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  expect(writes[0].default_commercial_motion).toBe("existing_business");
+  await expect(
+    page.getByRole("button", { name: "Customer growth", exact: true }),
+  ).toBeVisible();
+});
+
+for (const motion of ["expansion", "renewal"]) {
+  test(`editing pipeline details preserves its saved ${motion} classification`, async ({
+    page,
+  }) => {
+    const { writes } = await installMocks(page, { motion });
+    await page.goto(url);
+    await page
+      .getByRole("button", { name: "Edit pipeline", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "Pipeline details",
+      exact: true,
+    });
+    await dialog.getByText("Optional settings", { exact: true }).click();
+    await expect(
+      page.getByRole("combobox", { name: "Default deal type" }),
+    ).toHaveText("Existing business");
+    await page
+      .getByLabel("Pipeline name", { exact: true })
+      .fill("Customer renewals");
+    await dialog
+      .getByRole("button", { name: "Save pipeline", exact: true })
+      .click();
+    await expect(dialog).not.toBeVisible();
+    expect(writes[0].default_commercial_motion).toBe(motion);
+
+    await page
+      .getByRole("button", { name: "Edit pipeline", exact: true })
+      .click();
+    await dialog.getByText("Optional settings", { exact: true }).click();
+    await page.getByRole("combobox", { name: "Default deal type" }).click();
+    await page
+      .getByRole("option", { name: "Existing business, selected", exact: true })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Pipeline details", exact: true })
+      .getByRole("button", { name: "Save pipeline", exact: true })
+      .click();
+    await expect(dialog).not.toBeVisible();
+    expect(writes[1].default_commercial_motion).toBe("existing_business");
+  });
+}

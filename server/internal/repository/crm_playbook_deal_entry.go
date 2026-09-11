@@ -8,6 +8,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// A won deal only supplies automatic handoff evidence for newly sold business
+// or explicit expansion scope. Renewals and generic customer work need their
+// own onboarding evidence rather than a fabricated new-customer handoff.
+const wonDealHandoffEligibilitySQL = `EXISTS (
+ SELECT 1 FROM crm_deals handoff_deal
+ JOIN crm_pipeline_stages handoff_stage ON handoff_stage.id = handoff_deal.stage_id AND handoff_stage.pipeline_id = handoff_deal.pipeline_id
+ LEFT JOIN crm_pipelines handoff_pipeline ON handoff_pipeline.id = handoff_deal.pipeline_id AND handoff_pipeline.workspace_id = handoff_deal.workspace_id
+ WHERE handoff_deal.workspace_id = s.workspace_id AND handoff_deal.id = s.deal_id AND handoff_stage.stage_type = 'won'
+ AND COALESCE(NULLIF(handoff_deal.commercial_motion,''), handoff_pipeline.default_commercial_motion, 'new_business') IN ('new_business','expansion')
+)`
+
 // enterWonDeal records the actual transition and its wake-up in the deal's
 // transaction. A restart cannot lose the handoff; enabling never scans old wins.
 func enterWonDeal(tx *gorm.DB, deal model.CRMDeal, previousStage string, now time.Time) error {
@@ -17,6 +28,15 @@ func enterWonDeal(tx *gorm.DB, deal model.CRMDeal, previousStage string, now tim
 	var won int64
 	if err := tx.Table("crm_pipeline_stages").Where("id = ? AND pipeline_id = ? AND stage_type = 'won'", deal.StageID, deal.PipelineID).Count(&won).Error; err != nil || won == 0 {
 		return err
+	}
+	var classification struct{ Motion string }
+	if err := tx.Table("crm_deals d").Select("COALESCE(NULLIF(d.commercial_motion,''), p.default_commercial_motion, 'new_business') AS motion").
+		Joins("LEFT JOIN crm_pipelines p ON p.id = d.pipeline_id AND p.workspace_id = d.workspace_id").
+		Where("d.workspace_id = ? AND d.id = ?", deal.WorkspaceID, deal.ID).Take(&classification).Error; err != nil {
+		return err
+	}
+	if classification.Motion != model.CRMDealMotionNewBusiness && classification.Motion != model.CRMDealMotionExpansion {
+		return nil
 	}
 	var settings []model.CRMPlaybookAutomationSettings
 	if err := tx.Where("workspace_id = ? AND enabled = true AND entry_mode = 'automatic' AND automatic_since <= ?", deal.WorkspaceID, now).Find(&settings).Error; err != nil {

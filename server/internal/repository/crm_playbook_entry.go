@@ -84,7 +84,7 @@ func automaticPlaybookCandidates(tx *gorm.DB, ws, id string) ([]AutomaticPlayboo
 			if version.Definition.Journey != "sales_handoff" {
 				continue
 			}
-			query = query.Where("EXISTS (SELECT 1 FROM crm_deals d JOIN crm_pipeline_stages stage ON stage.id = d.stage_id AND stage.pipeline_id = d.pipeline_id WHERE d.workspace_id = s.workspace_id AND d.id = s.deal_id AND stage.stage_type = 'won')")
+			query = query.Where(wonDealHandoffEligibilitySQL)
 		} else {
 			query = query.Where("EXISTS (SELECT 1 FROM crm_situation_source_links source JOIN crm_signals evidence ON evidence.workspace_id = source.workspace_id AND evidence.id = source.source_id WHERE source.workspace_id = s.workspace_id AND source.situation_id = s.id AND source.kind = 'signal' AND evidence.created_at >= ? AND evidence.detected_at >= ? AND evidence.dismissed_at IS NULL AND evidence.superseded_at IS NULL)", setting.AutomaticSince, setting.AutomaticSince)
 		}

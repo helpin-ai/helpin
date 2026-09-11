@@ -19,7 +19,7 @@ func playbookStopReason(tx *gorm.DB, source model.CRMPlaybookExecutionSource) (s
 			return "", err
 		}
 		if work.OriginKind == "deal_won" {
-			q = q.Where("EXISTS (SELECT 1 FROM crm_deals d JOIN crm_pipeline_stages stage ON stage.id = d.stage_id AND stage.pipeline_id = d.pipeline_id WHERE d.workspace_id = s.workspace_id AND d.id = s.deal_id AND stage.stage_type = 'won')")
+			q = q.Where(wonDealHandoffEligibilitySQL)
 		}
 		var count int64
 		if err := q.Where("s.id = ?", work.ID).Select("COUNT(*)").Scan(&count).Error; err != nil {

@@ -33,7 +33,8 @@ import type {
 import {
   DEFAULT_STAGES,
   deletionBlock,
-  MOTION_LABELS,
+  DEAL_TYPE_OPTIONS,
+  pipelineDealType,
   MOTION_DESCRIPTIONS,
   sortStages,
   stagePayload,
@@ -93,6 +94,7 @@ export function PipelineDetailsDialog({
   const [motion, setMotion] = useState<CRMDealCommercialMotion>(
     pipeline?.default_commercial_motion ?? "new_business",
   );
+  const dealType = pipelineDealType(motion);
   const [template, setTemplate] = useState("standard");
   const sourceStages =
     template === "standard"
@@ -115,7 +117,7 @@ export function PipelineDetailsDialog({
           </DialogTitle>
           <DialogDescription>
             {pipeline
-              ? "Set the name and defaults for new deals."
+              ? "Set the name and defaults for this pipeline."
               : "Start with a sales process, then tailor its stages to your team."}
           </DialogDescription>
         </DialogHeader>
@@ -192,55 +194,70 @@ export function PipelineDetailsDialog({
                 </p>
               </div>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="pipeline-motion">Default deal type</Label>
-              <Select
-                disabled={pending}
-                value={motion}
-                onValueChange={(value) =>
-                  setMotion(value as CRMDealCommercialMotion)
-                }
-              >
-                <SelectTrigger
-                  variant="underline"
-                  className="w-full px-0.5"
-                  id="pipeline-motion"
-                  aria-describedby="pipeline-motion-help"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(MOTION_LABELS).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p
-                id="pipeline-motion-help"
-                className="text-xs text-muted-foreground"
-              >
-                {MOTION_DESCRIPTIONS[motion]} Deals in this pipeline use this
-                type unless you choose another on an individual deal.
-              </p>
-            </div>
-            <div className="flex items-start justify-between gap-4 border-y border-quiet-divider-strong py-3">
-              <div>
-                <Label htmlFor="pipeline-default">Default pipeline</Label>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {pipeline?.is_default
-                    ? "To change the default, choose another pipeline and make it the default."
-                    : "Preselected when your team creates a deal."}
-                </p>
+            <details className="group border-t border-quiet-divider-strong pt-3">
+              <summary className="cursor-pointer text-sm text-quiet-text-secondary focus-visible:outline-2 focus-visible:outline-ring">
+                Optional settings
+              </summary>
+              <div className="mt-4 space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="pipeline-motion">Default deal type</Label>
+                  <Select
+                    disabled={pending}
+                    value={dealType}
+                    onValueChange={(value) =>
+                      setMotion(value as CRMDealCommercialMotion)
+                    }
+                  >
+                    <SelectTrigger
+                      variant="underline"
+                      className="w-full px-0.5"
+                      id="pipeline-motion"
+                      aria-describedby="pipeline-motion-help"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DEAL_TYPE_OPTIONS.map(({ value, label }) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p
+                    id="pipeline-motion-help"
+                    className="text-xs text-muted-foreground"
+                  >
+                    {MOTION_DESCRIPTIONS[dealType]} Deals inherit this type
+                    unless they have their own. Changing the default also
+                    affects existing deals that inherit it.
+                  </p>
+                </div>
+                {(motion === "renewal" || motion === "expansion") && (
+                  <p className="text-xs text-muted-foreground">
+                    This pipeline’s saved{" "}
+                    {motion === "renewal" ? "Renewal" : "Expansion"} type is
+                    preserved unless you change this setting.
+                  </p>
+                )}
+                <div className="flex items-start justify-between gap-4 border-t border-quiet-divider-strong py-3">
+                  <div>
+                    <Label htmlFor="pipeline-default">Default pipeline</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {pipeline?.is_default
+                        ? "To change the default, choose another pipeline and make it the default."
+                        : "Preselected when your team creates a deal."}
+                    </p>
+                  </div>
+                  <Switch
+                    id="pipeline-default"
+                    checked={isDefault}
+                    onCheckedChange={setIsDefault}
+                    disabled={!!pipeline?.is_default || pipelines.length === 0}
+                  />
+                </div>
               </div>
-              <Switch
-                id="pipeline-default"
-                checked={isDefault}
-                onCheckedChange={setIsDefault}
-                disabled={!!pipeline?.is_default || pipelines.length === 0}
-              />
-            </div>
+            </details>
           </fieldset>
           <DialogFooter>
             <QuietTextAction type="button" disabled={pending} onClick={onClose}>
