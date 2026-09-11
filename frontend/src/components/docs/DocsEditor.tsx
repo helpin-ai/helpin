@@ -101,6 +101,7 @@ import { SlugDisplay } from './SlugDisplay'
 import { toast } from 'sonner'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
 import { repairTiptapDocument } from '@/lib/tiptapContentRepair'
+import type { DocsExportFormat } from '@/lib/docsExport'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 
@@ -719,7 +720,8 @@ function FormatMenuItem({ label, icon, active, onClick }: { label: string; icon?
 function ImportExportMenu({
   getMarkdown,
   onDownloadMarkdown,
-  onDownloadDocx,
+  onDownloadWithImages,
+  exporting,
   onImportMarkdown,
   onUploadMarkdownFile,
   onUploadDocxFile,
@@ -728,7 +730,8 @@ function ImportExportMenu({
 }: {
   getMarkdown: () => string
   onDownloadMarkdown: () => void
-  onDownloadDocx: () => void
+  onDownloadWithImages: (format: DocsExportFormat) => void
+  exporting: boolean
   onImportMarkdown: () => void
   onUploadMarkdownFile: () => void
   onUploadDocxFile: () => void
@@ -764,11 +767,11 @@ function ImportExportMenu({
           type="button"
           className="inline-flex items-center gap-1 rounded-md bg-background/80 backdrop-blur-sm px-2 py-1 text-[11px] text-muted-foreground shadow-sm border border-border/40 transition-colors hover:bg-muted hover:text-foreground"
         >
-          Import / Export
+          {exporting ? 'Exporting…' : 'Import / Export'}
           <ArrowDown01Icon className="h-3 w-3" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
+      <DropdownMenuContent align="start" className="w-72 max-w-[calc(100vw-1rem)]">
         <DropdownMenuItem onSelect={handleCopyMarkdown}>
           <Copy01Icon className="h-3.5 w-3.5 mr-2" />
           Copy as Markdown
@@ -777,10 +780,15 @@ function ImportExportMenu({
           <FileDownIcon className="h-3.5 w-3.5 mr-2" />
           Download as .md
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onDownloadDocx}>
-          <FileDownIcon className="h-3.5 w-3.5 mr-2" />
-          Download as .doc
-        </DropdownMenuItem>
+        {(['doc', 'html', 'mdx'] as const).map((format) => (
+          <DropdownMenuItem key={format} disabled={exporting || sourceView} onSelect={() => onDownloadWithImages(format)}>
+            <FileDownIcon className="h-3.5 w-3.5 mr-2" />
+            Download as .{format} with images
+          </DropdownMenuItem>
+        ))}
+        {sourceView && (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">Return to the rich editor to export with images.</p>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onImportMarkdown}>
           <FileUpIcon className="h-3.5 w-3.5 mr-2" />
@@ -928,6 +936,8 @@ export function DocsEditor({
 
   // Markdown feature state
   const [sourceView, setSourceView] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const exportingRef = useRef(false)
   const [sourceMarkdown, setSourceMarkdown] = useState('')
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [importText, setImportText] = useState('')
@@ -1802,36 +1812,36 @@ export function DocsEditor({
     input.click()
   }, [editor, persistImportedImages, scheduleSave])
 
-  // ── .docx export ──────────────────────────────────────────────────────────
+  // ── Exports with embedded images ───────────────────────────────────────────
 
-  const downloadAsDocx = useCallback(() => {
-    if (!editor) return
-    const html = editor.getHTML()
-    const docHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><style>
-body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.6; color: #1a1a1a; }
-h1 { font-size: 20pt; font-weight: bold; margin: 16pt 0 8pt; }
-h2 { font-size: 16pt; font-weight: bold; margin: 14pt 0 6pt; }
-h3 { font-size: 13pt; font-weight: bold; margin: 12pt 0 4pt; }
-p { margin: 0 0 8pt; }
-ul, ol { margin: 4pt 0 8pt 20pt; }
-li { margin: 2pt 0; }
-blockquote { border-left: 3pt solid #ccc; padding-left: 10pt; margin: 8pt 0; color: #555; }
-code { font-family: Consolas, monospace; font-size: 10pt; background: #f4f4f4; padding: 1pt 3pt; }
-pre { font-family: Consolas, monospace; font-size: 10pt; background: #f4f4f4; padding: 8pt; margin: 8pt 0; }
-a { color: #1a73e8; }
-img { max-width: 100%; }
-</style></head>
-<body>${html}</body></html>`
-    const blob = new Blob([docHtml], { type: 'application/msword' })
-    const filename = `${(title || 'document').replace(/[^a-z0-9_-]/gi, '_').toLowerCase()}.doc`
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [editor, title])
+  const downloadWithImages = useCallback(async (format: DocsExportFormat) => {
+    if (!editor || exportingRef.current || sourceView) return
+    exportingRef.current = true
+    setExporting(true)
+    const content = editor.getJSON()
+    const schema = editor.schema
+    const exportTitle = title || 'Document'
+    const notification = toast.loading('Preparing document and images…')
+    try {
+      const { prepareDocsExportHtml, createDocsExport } = await import('@/lib/docsExport')
+      const html = await prepareDocsExportHtml(content, schema, workspaceId)
+      const blob = createDocsExport(html, exportTitle, format)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(exportTitle || 'document').replace(/[^a-z0-9_-]/gi, '_').toLowerCase()}.${format}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      toast.success('Document exported with images', { id: notification })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not export the document. Please try again.', { id: notification })
+    } finally {
+      exportingRef.current = false
+      setExporting(false)
+    }
+  }, [editor, sourceView, title, workspaceId])
 
   // ── .docx import ──────────────────────────────────────────────────────────
 
@@ -1946,7 +1956,8 @@ img { max-width: 100%; }
               <ImportExportMenu
                 getMarkdown={getMarkdown}
                 onDownloadMarkdown={downloadAsMarkdown}
-                onDownloadDocx={downloadAsDocx}
+                onDownloadWithImages={(format) => { void downloadWithImages(format) }}
+                exporting={exporting}
                 onImportMarkdown={() => setImportDialogOpen(true)}
                 onUploadMarkdownFile={uploadMarkdownFile}
                 onUploadDocxFile={uploadDocxFile}

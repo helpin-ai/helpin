@@ -4,6 +4,8 @@ let renderQueue: Promise<void> = Promise.resolve();
 export type MermaidExportTheme = 'light' | 'dark';
 export type MermaidRenderOptions = {
   brandColor?: string;
+  /** Use SVG text instead of foreignObject labels when rasterizing exports. */
+  htmlLabels?: boolean;
 };
 
 function normalizeHexColor(value: string | undefined): string | null {
@@ -73,6 +75,7 @@ async function getMermaid(theme: MermaidExportTheme, options?: MermaidRenderOpti
     securityLevel: 'strict',
     theme: 'base',
     fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+    ...(options?.htmlLabels === false ? { htmlLabels: false, flowchart: { htmlLabels: false } } : {}),
     themeVariables: themeVariables(theme, options),
   });
   return mermaid;
