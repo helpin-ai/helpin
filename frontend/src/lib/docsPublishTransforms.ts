@@ -4,6 +4,7 @@ import { parseAnnotationState } from '@/components/docs/annotator/core/annotatio
 import { parseHelpinReference } from '@/lib/helpinReferences';
 import { automationService } from '@/lib/services/automationService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { renderNwdiagSvg } from './nwdiagRenderer';
 import { mermaidSvgFile, renderMermaidSvg } from './mermaidRenderer';
 import { excalidrawPngFile, normalizeExcalidrawScene } from './excalidrawRenderer';
 
@@ -77,6 +78,45 @@ export const mermaidCodeBlockToImage: PublishContentTransform = {
         publishedFrom: {
           type: 'codeBlock',
           attrs: { language: 'mermaid' },
+          content: source ? [{ type: 'text', text: source }] : undefined,
+        },
+      },
+    };
+  },
+};
+
+export const nwdiagCodeBlockToImage: PublishContentTransform = {
+  name: 'nwdiag-code-block-to-image',
+  appliesTo: (node) => node.type === 'codeBlock' && String(node.attrs?.language ?? '').toLowerCase() === 'nwdiag',
+  async transform(node, ctx) {
+    const source = nodeText(node).trim();
+    const timestamp = Date.now();
+    const lightSvg = await renderNwdiagSvg(source, 'light', { brandColor: ctx.diagramTheme?.brandColor });
+    const darkSvg = await renderNwdiagSvg(source, 'dark', { brandColor: ctx.diagramTheme?.brandColor });
+    const lightUpload = await uploadEditorImage(
+      new File([lightSvg], `nwdiag-${timestamp}-light.svg`, { type: 'image/svg+xml' }),
+      ctx.uploadConfig,
+    );
+    const darkUpload = await uploadEditorImage(
+      new File([darkSvg], `nwdiag-${timestamp}-dark.svg`, { type: 'image/svg+xml' }),
+      ctx.uploadConfig,
+    );
+
+    return {
+      type: 'resizableImage',
+      attrs: {
+        src: lightUpload.publicUrl,
+        darkSrc: darkUpload.publicUrl,
+        alt: 'nwdiag diagram',
+        title: 'nwdiag diagram',
+        width: '100%',
+        height: 'auto',
+        alignment: 'center',
+        attachmentId: lightUpload.attachmentId,
+        darkAttachmentId: darkUpload.attachmentId,
+        publishedFrom: {
+          type: 'codeBlock',
+          attrs: { language: 'nwdiag' },
           content: source ? [{ type: 'text', text: source }] : undefined,
         },
       },
@@ -214,6 +254,7 @@ export async function prepareDocsContentForPublish(
   ctx: PublishTransformContext,
   transforms: PublishContentTransform[] = [
     mermaidCodeBlockToImage,
+    nwdiagCodeBlockToImage,
     excalidrawBlockToImage,
     stripImageAnnotationState,
   ],

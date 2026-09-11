@@ -228,6 +228,9 @@ func (DocsDocument) TableName() string { return "docs_documents" }
 
 // DocsContent stores document content separately from metadata.
 type DocsContent struct {
+	// BlockRevisions is populated for versioned mutation receipts within the save transaction.
+	BlockRevisions map[string]int `json:"-" gorm:"-"`
+
 	ID          string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	DocumentID  string          `json:"document_id" gorm:"type:uuid;not null;uniqueIndex"`
 	Content     json.RawMessage `json:"content" gorm:"type:jsonb"`

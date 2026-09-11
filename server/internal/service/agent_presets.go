@@ -25,9 +25,8 @@ const (
 	defaultQuillAgentModel = defaultFastOpenRouterAgentModel
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
-	defaultAskAgentModel = "z-ai/glm-5.3-flash:nitro"
-	// defaultCommandAgentModel keeps delegated sub-agent work on the Small
-	// native model route and its runtime-hosted tool surface.
+	defaultAskAgentModel = "deepseek/deepseek-v4.1-flash:nitro"
+	// defaultCommandAgentModel uses the same native route for delegated work.
 	defaultCommandAgentModel = defaultAskAgentModel
 	// managedAssistantMaxToolSteps gives Ask Agent and Sub-agent enough room
 	// for long, tool-heavy research and execution loops.
@@ -50,6 +49,11 @@ func defaultManagedAssistantExecutionConfig() model.JSONBlob {
 	maxToolSteps := managedAssistantMaxToolSteps
 	return model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
 		MaxToolSteps: &maxToolSteps,
+		OpenRouter: &model.AgentOpenRouterExecutionConfig{
+			Provider: &model.AgentOpenRouterProviderPreferences{
+				Quantizations: slices.Clone(defaultFastOpenRouterQuantizations),
+			},
+		},
 	})
 }
 
@@ -787,7 +791,7 @@ func commandAgentPresetTools() []string {
 		"list_spaces", "search_workspace", "list_documents", "list_collections", "read_document",
 		"get_document_blocks", "search_documents", "create_space", "create_collection", "create_document",
 		"update_space", "update_collection", "move_document", "update_document_metadata",
-		"write_document_content", "update_document_block", "insert_document_block",
+		"write_document_content", "update_document_block", "edit_document", "insert_document_block",
 		"insert_document_artifact", "link_document_to_object", "publish_document_change_proposal",
 		"publish_ai_section_candidate", "preview_md", "preview_json",
 		// Project-management reads and approval-gated writes.
@@ -838,7 +842,7 @@ func askAgentPresetTools() []string {
 		"read_document", "get_document_blocks", "search_documents",
 		"create_space", "create_collection", "create_document", "update_space",
 		"update_collection", "move_document", "write_document_content",
-		"update_document_block", "insert_document_block", "insert_document_artifact",
+		"update_document_block", "edit_document", "insert_document_block", "insert_document_artifact",
 		"link_document_to_object", "preview_md", "preview_json",
 		"publish_document_change_proposal", "publish_ai_section_candidate",
 		// CRM reads and approval-gated writes.
@@ -869,6 +873,9 @@ func askAgentPresetTools() []string {
 // require tools outside the Dock's managed surface.
 func askAgentAvailableSkills() []string {
 	return []string{
+		"simplediag",
+		"mermaid",
+		"document_editing",
 		"docs_architecture_review",
 		"public_help_doc_writing",
 		"api_reference_doc_writing",
@@ -912,6 +919,9 @@ func enforceManagedAskAgentCapabilities(preset model.AgentPresetDefinition) mode
 		return preset
 	}
 	preset.AllowedTools = appendPresetTools(preset.AllowedTools, askAgentPresetTools())
+	if !slices.Contains(preset.AvailableSkills, "document_editing") {
+		preset.AvailableSkills = append(preset.AvailableSkills, "document_editing")
+	}
 	preset.ApprovalMode = "risk_based"
 	preset.ExecutionConfig = withoutRepositoryWorkspaceExecutionMode(preset.ExecutionConfig)
 	if !slices.Contains(preset.AllowedTargetTypes, "workspace") {
@@ -927,7 +937,12 @@ func enforceManagedDocumentationAgentCapabilities(preset model.AgentPresetDefini
 	if normalizePresetKey(preset.Key) != model.AgentPresetDocumentationAgent {
 		return preset
 	}
+	if !slices.Contains(preset.AvailableSkills, "document_editing") {
+		preset.AvailableSkills = append(preset.AvailableSkills, "document_editing")
+	}
 	preset.AllowedTools = appendPresetTools(preset.AllowedTools, []string{
+		"read_document", "get_document_blocks", "find_skills", "read_skill",
+		"edit_document",
 		"insert_document_artifact",
 		"list_task_checklist",
 		"list_epic_tasks",
@@ -972,6 +987,7 @@ func askAgentSystemPrompt() string {
 - Page context does not retarget this long-lived workspace run. For tools that accept an explicit entity ID, pass the selected page context ID in that field (for example document_id) instead of claiming the tool requires a different run target or switching to a proposal solely because the run target is workspace.
 
 ## Workspace execution
+- For existing documents, use the document_editing skill. read_document returns full blocks when they fit, otherwise an outline; fetch a relevant section or search with neighbors rather than scanning block by block. Prefer one edit_document batch with the returned version for targeted changes.
 - Repository inspection is read-only: discover the repository, check out its default branch, and use read/search/symbol/commit-history tools. Never attempt file edits, shell commands, branches, commits, pushes, merges, or pull requests from the Dock.
 - Before creating a CRM deal, call list_crm_pipelines to resolve user-facing pipeline and stage names to IDs. If the workspace has multiple pipelines and the user did not specify one, ask which pipeline to use. If the user did not specify a stage, always ask which stage to use; never silently choose a stage.
 - Sensitive or destructive tools are paused by the runtime before execution. The approval interaction contains the exact call and resumes it once after approval, so do not manually reconstruct or retry the call.

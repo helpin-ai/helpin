@@ -322,6 +322,20 @@ func runtimeSkillRefsFromHelpinAgent(agent *model.Agent) []AgentRuntimeSkillRef 
 	refs := runtimeSkillRefsFromHelpin(agentskills.EffectiveRuntimeRefs(agent), agent.RuntimeKind)
 	preset, ok := agentPresetVersionDefinition(agent.EffectivePresetKey(), agent.EffectivePresetVersionKey())
 	if !ok {
+		// Workspace-pinned versions do not use the built-in skill fallback.
+		// Materialize the managed workflow at launch, preserving their other refs.
+		key := normalizePresetKey(agent.EffectivePresetKey())
+		if agent.IsSystem && (key == model.AgentPresetAskAgent || key == model.AgentPresetDocumentationAgent) &&
+			len(filterAvailableSkillsForAllowedTools([]string{"document_editing"}, parseJSONStringSlice(agent.AllowedTools), nil)) > 0 &&
+			helpinSkillRefSupportsRuntime(model.AgentSkillRef{Key: "document_editing"}, agent.RuntimeKind) {
+			for i := range refs {
+				if refs[i].Key == "document_editing" && refs[i].SkillID == "" {
+					refs[i].Config = withRuntimeSkillRole(refs[i].Config, "available")
+					return refs
+				}
+			}
+			refs = append(refs, AgentRuntimeSkillRef{Key: "document_editing", Config: withRuntimeSkillRole(nil, "available")})
+		}
 		return refs
 	}
 	availableKeys := make(map[string]bool, len(preset.AvailableSkills))
@@ -1211,7 +1225,7 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			changed = true
 		}
 		// The product-managed Sub-agent default moved from GPT-5.6 Terra to the
-		// Small GLM route. Preserve explicit routing on workspace preset versions
+		// DeepSeek Flash route. Preserve explicit routing on workspace preset versions
 		// and migrate only the untouched product default.
 		if presetKey == model.AgentPresetCommandAgent &&
 			presetVersionKey == productDefaultVersionKey &&
@@ -1237,12 +1251,13 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 			existing.Model = trimPtr(preset.Model)
 			changed = true
 		}
-		// Ask Agent and Sub-agent moved from the managed DeepSeek Nitro route
-		// to GLM Nitro. Preserve explicit workspace routing choices.
+		// Ask Agent and Sub-agent use DeepSeek V4.1 Flash Nitro. Upgrade the previous
+		// managed Nitro defaults while preserving explicit workspace routing.
 		if (presetKey == model.AgentPresetAskAgent || presetKey == model.AgentPresetCommandAgent) &&
 			presetVersionKey == productDefaultVersionKey &&
 			strings.TrimSpace(derefString(existing.Provider)) == model.AgentModelProviderOpenRouter &&
-			strings.TrimSpace(derefString(existing.Model)) == defaultFastOpenRouterAgentModel {
+			(strings.TrimSpace(derefString(existing.Model)) == defaultFastOpenRouterAgentModel ||
+				strings.TrimSpace(derefString(existing.Model)) == "z-ai/glm-5.3-flash:nitro") {
 			existing.Provider = trimPtr(preset.Provider)
 			existing.Model = trimPtr(preset.Model)
 			changed = true

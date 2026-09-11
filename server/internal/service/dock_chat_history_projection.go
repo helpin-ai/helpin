@@ -19,12 +19,12 @@ func compactDockChatMessagePage(messages []model.AgentRunMessage) []model.AgentR
 		if len(assistantGroup) == 0 {
 			return
 		}
-		final := assistantGroup[len(assistantGroup)-1]
-		final.Content = finalDockAssistantContent(assistantGroup)
+		workTarget := assistantGroup[len(assistantGroup)-1]
+		final := finalDockAssistantMessage(assistantGroup)
 		activityCount := dockAssistantActivityCount(assistantGroup)
 		hasWork := len(assistantGroup) > 1 || activityCount > 0
 		if hasWork {
-			duration := final.CreatedAt.Sub(intervalStartedAt)
+			duration := workTarget.CreatedAt.Sub(intervalStartedAt)
 			if intervalStartedAt.IsZero() || duration < 0 {
 				duration = 0
 			}
@@ -38,7 +38,7 @@ func compactDockChatMessagePage(messages []model.AgentRunMessage) []model.AgentR
 				MessageType:      dockChatWorkSummaryMessageType,
 				CreatedAt:        final.CreatedAt,
 				DockWorkSummary: &model.DockChatWorkSummary{
-					MessageID:     final.ID,
+					MessageID:     workTarget.ID,
 					DurationMs:    duration.Milliseconds(),
 					ActivityCount: activityCount,
 				},
@@ -68,7 +68,13 @@ func compactDockChatMessagePage(messages []model.AgentRunMessage) []model.AgentR
 	return compact
 }
 
-func finalDockAssistantContent(messages []model.AgentRunMessage) string {
+func finalDockAssistantMessage(messages []model.AgentRunMessage) model.AgentRunMessage {
+	// Explicit final answers outrank later-arriving progress/tool metadata.
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].MessageType == "assistant_final" && strings.TrimSpace(messages[i].Content) != "" {
+			return messages[i]
+		}
+	}
 	for messageIndex := len(messages) - 1; messageIndex >= 0; messageIndex-- {
 		message := messages[messageIndex]
 		var segments []model.CodingSessionLiveTurnSegment
@@ -76,15 +82,17 @@ func finalDockAssistantContent(messages []model.AgentRunMessage) string {
 			for segmentIndex := len(segments) - 1; segmentIndex >= 0; segmentIndex-- {
 				assistant := segments[segmentIndex].AssistantMessage
 				if segments[segmentIndex].Kind == "assistant_message" && assistant != nil && strings.TrimSpace(assistant.Content) != "" {
-					return strings.TrimSpace(assistant.Content)
+					message.Content = strings.TrimSpace(assistant.Content)
+					return message
 				}
 			}
 		}
 		if strings.TrimSpace(message.Content) != "" {
-			return strings.TrimSpace(message.Content)
+			message.Content = strings.TrimSpace(message.Content)
+			return message
 		}
 	}
-	return ""
+	return messages[len(messages)-1]
 }
 
 func dockAssistantActivityCount(messages []model.AgentRunMessage) int {

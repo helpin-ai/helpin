@@ -8,6 +8,7 @@ import {
   Tick01Icon,
 } from '@/lib/icons'
 import { Button } from '@/components/ui/button'
+import { NwdiagBlock } from '@/components/editor/NwdiagBlock'
 import { MermaidBlock } from '@/components/editor/MermaidBlock'
 import { cn, timeAgo } from '@/lib/utils'
 import { buildMarkdownDiff } from '@/lib/markdownDiff'
@@ -114,9 +115,11 @@ function SideBySide({
             {pane.label}
           </div>
           <div className="overflow-x-auto p-3">
-            {kind === 'mermaid' ? (
+            {kind === 'mermaid' || kind === 'nwdiag' ? (
               proposalNodeText(pane.node).trim()
-                ? <MermaidBlock source={proposalNodeText(pane.node)} />
+                ? kind === 'nwdiag'
+                  ? <NwdiagBlock source={proposalNodeText(pane.node)} />
+                  : <MermaidBlock source={proposalNodeText(pane.node)} />
                 : <p className="text-xs text-muted-foreground">Empty diagram</p>
             ) : (
               <ImagePane node={pane.node} workspaceId={workspaceId} />

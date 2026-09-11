@@ -32,6 +32,8 @@ func TestListBuiltInSkillsContainsExpectedKeys(t *testing.T) {
 		"public_help_docs_maintenance",
 		"api_docs_maintenance",
 		"docs_architecture_review",
+		"simplediag",
+		"mermaid",
 		"post_release_docs_update",
 		"support_gap_docs_update",
 		"release_notes_writing",

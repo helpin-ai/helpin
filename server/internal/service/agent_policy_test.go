@@ -308,8 +308,9 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			config, err := model.ParseAgentExecutionConfig(preset.ExecutionConfig)
 			if err != nil {
 				t.Errorf("preset %q execution config: %v", preset.Key, err)
-			} else if config.MaxToolSteps == nil || *config.MaxToolSteps != managedAssistantMaxToolSteps || config.OpenRouter != nil {
-				t.Errorf("preset %q execution config = %s, want only max_tool_steps=%d", preset.Key, preset.ExecutionConfig, managedAssistantMaxToolSteps)
+			} else if config.MaxToolSteps == nil || *config.MaxToolSteps != managedAssistantMaxToolSteps || config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
+				!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {
+				t.Errorf("preset %q execution config = %s, want FP8-or-higher routing and max_tool_steps=%d", preset.Key, preset.ExecutionConfig, managedAssistantMaxToolSteps)
 			}
 			continue
 		}
@@ -367,7 +368,7 @@ func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
 		}
 		for _, toolName := range []string{
 			"list_repositories", "checkout_repositories", "read_files", "list_documents",
-			"create_document", "write_document_content", "insert_document_artifact",
+			"create_document", "write_document_content", "edit_document", "insert_document_artifact",
 			"browser_open", "browser_screenshot", "browser_record",
 			"publish_document_change_proposal", "list_conversation_messages",
 			"get_release_context", "list_task_checklist", "list_epic_tasks",
@@ -429,7 +430,7 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 		"create_task", "list_task_checklist", "list_epic_tasks", "ensure_task_label",
 		"assign_task_agent", "set_task_dependencies", "update_task_state",
 		"update_task_delivery_target", "update_epic_delivery_target",
-		"create_document", "write_document_content", "insert_document_block",
+		"create_document", "write_document_content", "edit_document", "insert_document_block",
 		"insert_document_artifact", "preview_md", "preview_json",
 		"browser_open", "browser_snapshot", "browser_act", "browser_screenshot", "browser_record",
 		"list_conversation_messages",
@@ -444,10 +445,10 @@ func TestAskAgentCanInspectItsCapabilitiesSkillsAndRepositories(t *testing.T) {
 			t.Errorf("Ask Agent is missing required self-execution tool %q", toolName)
 		}
 	}
-	if len(preset.AvailableSkills) != 29 {
-		t.Fatalf("Ask Agent default must expose 29 curated optional skills, got %d: %v", len(preset.AvailableSkills), preset.AvailableSkills)
+	if len(preset.AvailableSkills) != 32 {
+		t.Fatalf("Ask Agent default must expose 32 curated optional skills, got %d: %v", len(preset.AvailableSkills), preset.AvailableSkills)
 	}
-	for _, skillKey := range []string{"internal_docs_maintenance", "marketing_plan", "crm_record_operations", "competitors_changelog_tracking_report"} {
+	for _, skillKey := range []string{"internal_docs_maintenance", "marketing_plan", "crm_record_operations", "competitors_changelog_tracking_report", "simplediag", "mermaid", "document_editing"} {
 		if !slices.Contains(preset.AvailableSkills, skillKey) {
 			t.Errorf("Ask Agent is missing available skill %q", skillKey)
 		}
@@ -550,7 +551,7 @@ func TestManagedDocumentationAgentCapabilitiesUpgradePinnedSnapshots(t *testing.
 		AllowedTools: []string{"read_document", "write_document_content"},
 	})
 	for _, toolName := range []string{
-		"insert_document_artifact", "list_task_checklist", "list_epic_tasks",
+		"insert_document_artifact", "edit_document", "list_task_checklist", "list_epic_tasks",
 		"get_pull_request_diff", "search_knowledge",
 	} {
 		if !slices.Contains(preset.AllowedTools, toolName) {

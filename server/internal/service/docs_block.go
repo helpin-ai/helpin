@@ -95,6 +95,13 @@ func (s *DocsBlockService) Patch(ctx context.Context, documentID, blockID string
 	replaced := false
 	for i, child := range aggregate.Content {
 		if aggregateBlockID(child) == blockID {
+			current, err := json.Marshal(child)
+			if err != nil {
+				return nil, err
+			}
+			if tiptap.DocumentVersion(current) != tiptap.DocumentVersion(block.Content) {
+				return nil, ErrDocsStaleBlockRevision
+			}
 			aggregate.Content[i] = node
 			replaced = true
 			break
@@ -104,7 +111,7 @@ func (s *DocsBlockService) Patch(ctx context.Context, documentID, blockID string
 		return nil, fmt.Errorf("block not found in document")
 	}
 	raw, _ := json.Marshal(aggregate)
-	saved, err := s.contentSvc.Save(ctx, documentID, raw, actorID)
+	saved, err := s.contentSvc.SaveVersioned(ctx, documentID, raw, actorID, aggregate.snapshotVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +177,7 @@ func (s *DocsBlockService) CreateBlocks(ctx context.Context, documentID string, 
 	next = append(next, aggregate.Content[insertAt:]...)
 	aggregate.Content = next
 	raw, _ := json.Marshal(aggregate)
-	saved, err := s.contentSvc.Save(ctx, documentID, raw, actorID)
+	saved, err := s.contentSvc.SaveVersioned(ctx, documentID, raw, actorID, aggregate.snapshotVersion)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -228,7 +235,7 @@ func (s *DocsBlockService) Reorder(ctx context.Context, documentID string, block
 	}
 	aggregate.Content = next
 	raw, _ := json.Marshal(aggregate)
-	saved, err := s.contentSvc.Save(ctx, documentID, raw, actorID)
+	saved, err := s.contentSvc.SaveVersioned(ctx, documentID, raw, actorID, aggregate.snapshotVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +270,7 @@ func (s *DocsBlockService) Delete(ctx context.Context, documentID, blockID, acto
 	}
 	aggregate.Content = next
 	raw, _ := json.Marshal(aggregate)
-	saved, err := s.contentSvc.Save(ctx, documentID, raw, actorID)
+	saved, err := s.contentSvc.SaveVersioned(ctx, documentID, raw, actorID, aggregate.snapshotVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +327,7 @@ func (s *DocsBlockService) MarkStaleFromSupport(ctx context.Context, workspaceID
 	attrs["staleMarkedAt"] = markedAt
 
 	raw, _ := json.Marshal(aggregate)
-	if _, err := s.contentSvc.Save(ctx, documentID, raw, ""); err != nil {
+	if _, err := s.contentSvc.SaveVersioned(ctx, documentID, raw, "", aggregate.snapshotVersion); err != nil {
 		return err
 	}
 	s.logBlockActivity(ctx, doc, "", "block_marked_stale", map[string]interface{}{
@@ -360,7 +367,11 @@ func (s *DocsBlockService) currentAggregate(ctx context.Context, documentID stri
 		return nil, err
 	}
 	if content == nil || len(content.Content) == 0 {
-		return &aggregateDoc{Type: "doc", Content: []map[string]any{}}, nil
+		var raw json.RawMessage
+		if content != nil {
+			raw = content.Content
+		}
+		return &aggregateDoc{Type: "doc", Content: []map[string]any{}, snapshotVersion: tiptap.DocumentVersion(raw)}, nil
 	}
 	var aggregate aggregateDoc
 	if err := json.Unmarshal(content.Content, &aggregate); err != nil || aggregate.Type != "doc" {
@@ -369,12 +380,14 @@ func (s *DocsBlockService) currentAggregate(ctx context.Context, documentID stri
 	if aggregate.Content == nil {
 		aggregate.Content = []map[string]any{}
 	}
+	aggregate.snapshotVersion = tiptap.DocumentVersion(content.Content)
 	return &aggregate, nil
 }
 
 type aggregateDoc struct {
-	Type    string           `json:"type"`
-	Content []map[string]any `json:"content,omitempty"`
+	snapshotVersion string
+	Type            string           `json:"type"`
+	Content         []map[string]any `json:"content,omitempty"`
 }
 
 func decodeBlockNode(raw json.RawMessage) (map[string]any, error) {

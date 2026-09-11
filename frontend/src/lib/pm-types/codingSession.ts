@@ -217,6 +217,7 @@ export interface CodingSessionLiveToolCall {
 
 export interface CodingSessionLiveAssistantMessage {
   message_id: string;
+  message_type?: string;
   content: string;
   started_at?: string;
   completed_at?: string;

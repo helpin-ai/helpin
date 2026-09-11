@@ -77,6 +77,7 @@ func setupDocsChangeProposalServiceTestDB(t *testing.T) *gorm.DB {
 	}
 	stmts := []string{
 		`CREATE TABLE docs_documents (
+			is_locked BOOLEAN NOT NULL DEFAULT FALSE,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			space_id TEXT NOT NULL,

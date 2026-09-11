@@ -100,6 +100,14 @@ func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventT
 		assistant.CompletedAt = timePtr(timestamp.UTC())
 		snapshot.LiveAssistantMessage = assistant
 		appendOrMarkCompletedCodingSessionAssistantSegment(snapshot, messageID, previousContent, assistant.Content, timestamp.UTC())
+		if messageType := trimmedSnapshotString(payload["message_type"]); messageType != "" {
+			assistant.MessageType = messageType
+			for _, segment := range snapshot.LiveTurnSegments {
+				if segment.AssistantMessage != nil && segment.AssistantMessage.MessageID == messageID {
+					segment.AssistantMessage.MessageType = messageType
+				}
+			}
+		}
 
 	case "reasoning.message.started":
 		messageID := firstNonEmptySnapshotValue(trimmedSnapshotString(payload["message_id"]), "reasoning:"+timestamp.UTC().Format(time.RFC3339Nano))
