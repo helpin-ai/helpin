@@ -1400,7 +1400,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIAutoResolveTimeout:           24,
 		ShowTalkToHuman:                true,
 		DelayedTeamReplyMinutes:        5,
-		DelayedTeamReplyMessage:        "Our team hasn’t been able to reply yet. You don’t need to keep this chat open. We’ll email you when someone responds.",
+		DelayedTeamReplyMessage:        "Looks like our team needs a little more time. We’ll reply in this chat and email you if you miss it. Thanks for your patience.",
 		DelayedTeamReplyMessageNoEmail: "Our team hasn’t been able to reply yet. Leave your email and we’ll notify you when someone responds, so you don’t have to wait here.",
 		EscalationMessage:              "Let me connect you with a team member — they typically reply in {reply_time}.",
 		EscalationMessageBusy:          "I've notified the team. Everyone's helping other customers right now — expect a reply within {reply_time}.",
