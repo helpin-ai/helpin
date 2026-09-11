@@ -101,7 +101,7 @@ import { SlugDisplay } from './SlugDisplay'
 import { toast } from 'sonner'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
 import { repairTiptapDocument } from '@/lib/tiptapContentRepair'
-import type { DocsExportFormat } from '@/lib/docsExport'
+import type { DocsExportFormat, DocsExportImageWarning } from '@/lib/docsExport'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 
@@ -1824,7 +1824,8 @@ export function DocsEditor({
     const notification = toast.loading('Preparing document and images…')
     try {
       const { prepareDocsExportHtml, createDocsExport } = await import('@/lib/docsExport')
-      const html = await prepareDocsExportHtml(content, schema, workspaceId)
+      const warnings: DocsExportImageWarning[] = []
+      const html = await prepareDocsExportHtml(content, schema, workspaceId, (warning) => warnings.push(warning))
       const blob = createDocsExport(html, exportTitle, format)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -1834,7 +1835,15 @@ export function DocsEditor({
       a.click()
       a.remove()
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-      toast.success('Document exported with images', { id: notification })
+      if (warnings.length) {
+        toast.warning(`Document exported with ${warnings.length} unavailable image${warnings.length === 1 ? '' : 's'}`, {
+          id: notification,
+          description: 'Missing images are marked in the file. Upload the originals to include them.',
+          duration: 8000,
+        })
+      } else {
+        toast.success('Document exported with images', { id: notification })
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not export the document. Please try again.', { id: notification })
     } finally {

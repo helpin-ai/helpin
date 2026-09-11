@@ -97,9 +97,44 @@ describe('document image exports', () => {
     expect(html).not.toMatch(/data-secret|script|onerror|evil\.example/);
   });
 
-  it('rejects unavailable images', async () => {
+  it('marks unavailable images and reports them without blocking the export', async () => {
     vi.mocked(fetch).mockResolvedValueOnce({ ok: false } as Response);
-    await expect(prepareDocsExportHtml({ type: 'doc', content: [{ type: 'resizableImage', attrs: { src: 'https://cdn.example.com/gone.png' } }] }, schema, 'ws')).rejects.toThrow('Could not download an image');
+    const warn = vi.fn();
+    const html = await prepareDocsExportHtml({ type: 'doc', content: [{ type: 'resizableImage', attrs: { src: 'https://cdn.example.com/gone.png?token=private' } }] }, schema, 'ws', warn);
+    expect(html).toContain('Image unavailable: gone.png');
+    expect(html).not.toContain('private');
+    expect(warn).toHaveBeenCalledWith({ name: 'gone.png', reason: 'Could not download an image. Check that it is still accessible.' });
+  });
+
+  it('exports documents whose relative image links return the app HTML shell', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: true, blob: async () => new Blob(['<!doctype html><div id="root"></div>'], { type: 'text/html' }) } as Response);
+    const content = { type: 'doc', content: [
+      { type: 'resizableImage', attrs: { src: 'technical-design-boilerplate-assets/smsfw-processing-flow.png', alt: 'Smsfw processing flow' } },
+      { type: 'paragraph', content: [{ type: 'text', text: 'Keep the rest of the document.' }] },
+      { type: 'resizableImage', attrs: { src: 'https://cdn.example.com/working.png' } },
+    ] };
+    const before = JSON.stringify(content);
+    const warn = vi.fn();
+    const html = await prepareDocsExportHtml(content, schema, 'ws', warn);
+    expect(html).toContain('Image unavailable: Smsfw processing flow');
+    expect(html).toContain('The image link returned a web page.');
+    expect(html).toContain('Keep the rest of the document.');
+    expect(html.match(/<img /g)).toHaveLength(1);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(JSON.stringify(content)).toBe(before);
+    for (const format of ['html', 'mdx', 'doc'] as const) {
+      expect(createDocsExport(html, 'Document', format).size).toBeGreaterThan(0);
+    }
+  });
+
+  it('marks broken HTML-block images without including signed URLs or network errors', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('Failed at https://cdn.example.com/missing.png?token=secret'));
+    const warn = vi.fn();
+    const html = await prepareDocsExportHtml({ type: 'doc', content: [{ type: 'htmlBlock', attrs: { html: '<p>Before<img alt="Missing picture" src="https://cdn.example.com/missing.png?token=secret">After</p>' } }] }, schema, 'ws', warn);
+    expect(html).toContain('Before<span>[Image unavailable: Missing picture.');
+    expect(html).toContain('</span>After');
+    expect(html).not.toMatch(/token|secret|<img/);
+    expect(warn).toHaveBeenCalledWith({ name: 'Missing picture', reason: 'The image could not be loaded. Check its source and try again.' });
   });
 
   it('converts WebP images to PNG for Word compatibility', async () => {

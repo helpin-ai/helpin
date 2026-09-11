@@ -10,6 +10,20 @@ import { renderNwdiagSvg } from './nwdiagRenderer';
 import { exportExcalidrawPngBlob } from './excalidrawRenderer';
 
 export type DocsExportFormat = 'doc' | 'html' | 'mdx';
+export type DocsExportImageWarning = { name: string; reason: string };
+
+class ExportImageError extends Error {}
+
+function imageName(src: string, alt?: string): string {
+  if (alt?.trim()) return alt.trim();
+  try {
+    const url = new URL(src, window.location.href);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return decodeURIComponent(url.pathname.split('/').pop() || 'Image');
+    }
+  } catch { /* A malformed URL still gets a readable placeholder. */ }
+  return 'Image';
+}
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -63,7 +77,7 @@ async function imageToPngDataUrl(src: string, width?: number, height?: number): 
 async function embedImage(src: string): Promise<string> {
   const url = new URL(src, window.location.href);
   if (!['http:', 'https:', 'data:', 'blob:'].includes(url.protocol)) {
-    throw new Error('An image has an unsupported address.');
+    throw new ExportImageError('An image has an unsupported address.');
   }
   const apiBase = new URL(API_BASE, window.location.href);
   // Only send session credentials to our own API, never to an external image host.
@@ -74,24 +88,41 @@ async function embedImage(src: string): Promise<string> {
   const response = isApi
     ? await fetchWithSessionAuth(API_BASE, `${url.pathname.slice(apiPath.length)}${url.search}`, init)
     : await fetch(url.href, { ...init, credentials: 'omit' });
-  if (!response.ok) throw new Error('Could not download an image. Check that it is still accessible.');
+  if (!response.ok) throw new ExportImageError('Could not download an image. Check that it is still accessible.');
   const blob = await response.blob();
+  if (/^text\/html(?:;|$)/i.test(blob.type)) {
+    throw new ExportImageError('The image link returned a web page. Upload the original image to this document.');
+  }
   if (blob.type.split(';')[0] === 'image/svg+xml') return svgToPngDataUrl(await blob.text());
   if (/^image\/(webp|avif|bmp)(;|$)/i.test(blob.type)) return imageToPngDataUrl(await blobDataUrl(blob));
   if (!/^image\/(png|jpe?g|gif|webp)(;|$)/i.test(blob.type)) {
-    throw new Error('An image returned an unsupported file type.');
+    throw new ExportImageError('An image returned an unsupported file type.');
   }
   return blobDataUrl(blob);
 }
 
 /** Prepare a detached snapshot; exporting never edits the document or uploads assets. */
-export async function prepareDocsExportHtml(content: JSONContent, schema: Schema, workspaceId?: string): Promise<string> {
+export async function prepareDocsExportHtml(
+  content: JSONContent,
+  schema: Schema,
+  workspaceId?: string,
+  onImageWarning?: (warning: DocsExportImageWarning) => void,
+): Promise<string> {
   const cache = new Map<string, Promise<string>>();
   const cachedImage = (src: string) => {
     let result = cache.get(src);
     if (!result) { result = embedImage(src); cache.set(src, result); }
     return result;
   };
+  function unavailableImage(src: string, alt: string | undefined, error: unknown): string {
+    const name = imageName(src, alt);
+    // Fetch errors vary by browser and can include signed URLs. Keep only our own
+    // actionable messages, never the underlying network error or source credentials.
+    const reason = error instanceof ExportImageError
+      ? error.message : 'The image could not be loaded. Check its source and try again.';
+    onImageWarning?.({ name, reason });
+    return `[Image unavailable: ${name}. ${reason}]`;
+  }
   async function transform(node: JSONContent): Promise<JSONContent> {
     const language = String(node.attrs?.language ?? '').toLowerCase();
     let diagram: string | undefined;
@@ -118,22 +149,26 @@ export async function prepareDocsExportHtml(content: JSONContent, schema: Schema
     if (node.type === 'resizableImage' || node.type === 'image') {
       const attrs = node.attrs ?? {};
       let src = String(attrs.src ?? '');
-      const reference = parseHelpinReference(src);
-      // The attachment/src is the flattened preview for annotated images. Never export
-      // sourceAttachmentId or substitute an unannotated artifact for that preview.
-      if (attrs.attachmentId) src = pmAttachmentService.proxiedContentUrl(String(attrs.attachmentId));
-      else if (reference?.type === 'artifacts' || (attrs.artifactId && !attrs.annotationState)) {
-        if (attrs.annotationState) throw new Error('Save the annotated image before exporting.');
-        if (!workspaceId) throw new Error('Open this document in its workspace to export artifact images.');
-        const result = await automationService.getArtifactContentURL(workspaceId, reference?.id ?? String(attrs.artifactId));
-        if (result.error || !result.data?.url) throw new Error('Could not load an image artifact for export.');
-        src = result.data.url;
+      try {
+        const reference = parseHelpinReference(src);
+        // The attachment/src is the flattened preview for annotated images. Never export
+        // sourceAttachmentId or substitute an unannotated artifact for that preview.
+        if (attrs.attachmentId) src = pmAttachmentService.proxiedContentUrl(String(attrs.attachmentId));
+        else if (reference?.type === 'artifacts' || (attrs.artifactId && !attrs.annotationState)) {
+          if (attrs.annotationState) throw new ExportImageError('Save the annotated image before exporting.');
+          if (!workspaceId) throw new ExportImageError('Open this document in its workspace to export artifact images.');
+          const result = await automationService.getArtifactContentURL(workspaceId, reference?.id ?? String(attrs.artifactId));
+          if (result.error || !result.data?.url) throw new ExportImageError('Could not load an image artifact for export.');
+          src = result.data.url;
+        }
+        if (!src) throw new ExportImageError('An image is missing its source.');
+        return { type: node.type, attrs: {
+          src: await cachedImage(src), alt: attrs.alt ?? '', title: attrs.title ?? '',
+          width: attrs.width, height: attrs.height,
+        } };
+      } catch (error) {
+        return { type: 'paragraph', content: [{ type: 'text', text: unavailableImage(String(attrs.src ?? ''), String(attrs.alt ?? ''), error) }] };
       }
-      if (!src) throw new Error('An image is missing its source.');
-      return { type: node.type, attrs: {
-        src: await cachedImage(src), alt: attrs.alt ?? '', title: attrs.title ?? '',
-        width: attrs.width, height: attrs.height,
-      } };
     }
     const transformed = { ...node };
     if (node.type === 'htmlBlock') transformed.attrs = { ...node.attrs, renderMode: 'inline' };
@@ -148,9 +183,15 @@ export async function prepareDocsExportHtml(content: JSONContent, schema: Schema
   container.appendChild(DOMSerializer.fromSchema(schema).serializeFragment(schema.nodeFromJSON(snapshot).content));
   // Include images inside HTML blocks, and remove all editor-only provenance attributes.
   for (const img of container.querySelectorAll('img')) {
-    const src = img.getAttribute('src');
-    if (!src) throw new Error('An image is missing its source.');
-    if (!/^data:image\/(png|jpeg|gif);base64,/i.test(src)) img.src = await cachedImage(src);
+    const src = img.getAttribute('src') ?? '';
+    try {
+      if (!src) throw new ExportImageError('An image is missing its source.');
+      if (!/^data:image\/(png|jpeg|gif);base64,/i.test(src)) img.src = await cachedImage(src);
+    } catch (error) {
+      const placeholder = document.createElement('span');
+      placeholder.textContent = unavailableImage(src, img.alt, error);
+      img.replaceWith(placeholder);
+    }
   }
   for (const checkbox of container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
     const marker = document.createElement('span');
