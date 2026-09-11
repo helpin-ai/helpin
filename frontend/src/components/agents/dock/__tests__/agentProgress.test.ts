@@ -97,14 +97,14 @@ describe('resolveAgentLiveProgress', () => {
     })?.label).toBe('Preparing a response…');
   });
 
-  it('suppresses finishing after the final answer is already visible', () => {
+  it('keeps working after an ordinary provider message finishes', () => {
     expect(resolveAgentLiveProgress({
       run: run(), currentPlan: null, sending: false,
       stream: stream({ live_turn_segments: [{
         segment_id: 'answer-1', kind: 'assistant_message',
         assistant_message: { message_id: 'answer-1', content: 'Here is the plan', status: 'completed', tool_calls: [] },
       }] }),
-    })).toBeNull();
+    })?.label).toBe('Working…');
   });
 
   it('does not reuse the previous answer finishing state after a follow-up user message', () => {
@@ -120,7 +120,7 @@ describe('resolveAgentLiveProgress', () => {
           assistant_message: { message_id: 'previous-answer', content: 'Previous answer', status: 'completed', tool_calls: [] },
         }],
       }),
-    })?.label).toBe('Starting…');
+    })?.label).toBe('Working…');
   });
 
   it('keeps a completed run status available for the worked-duration label', () => {

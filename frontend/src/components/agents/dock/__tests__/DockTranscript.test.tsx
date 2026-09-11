@@ -9,6 +9,10 @@ import type {
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
 import { useAuthStore } from '@/stores/authStore';
+import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
+import type { CodingSessionEvent } from '@/lib/pmTypes';
+import { resolveAgentLiveProgress } from '../agentProgress';
+import { AgentLiveStatus } from '../AgentLiveStatus';
 import { DockTranscript } from '../DockTranscript';
 
 const mocks = vi.hoisted(() => ({
@@ -875,5 +879,58 @@ describe('follow-up after timestamp-less live completion', () => {
     expect(text.indexOf('First question')).toBeLessThan(text.indexOf('Earlier answer'));
     expect(text.indexOf('Earlier answer')).toBeLessThan(text.indexOf('Follow-up question'));
     expect(text.indexOf('Follow-up question')).toBeLessThan(text.indexOf('New answer'));
+  });
+});
+
+
+describe('explicit turn delivery in the rendered dock', () => {
+  const start = '2026-09-11T12:00:00Z';
+  const preamble = "Done — verified both pages. Here's what changed.";
+  const answer = Array.from({ length: 6 }, (_, i) => `### ${i + 1}. Document ${i + 1}\n\nMermaid, nwdiag, and Excalidraw details for document ${i + 1}.`).join('\n\n');
+  const event = (sequence: number, type: string, payload: Record<string, unknown> = {}): CodingSessionEvent => ({
+    id: `event-${sequence}`, session_id: 'session', run_id: 'run', sequence_no: sequence,
+    type, runtime_kind: 'native_sdk', timestamp: new Date(Date.parse(start) + sequence * 1000).toISOString(),
+    payload: { completion_mode: 'explicit', turn_id: 'turn-1', turn_started_at: start, ...payload },
+  });
+  const progress = event(1, 'assistant.message.completed', { message_id: 'preamble', message_type: 'assistant_progress', content: preamble });
+  const final = event(20, 'assistant.message.completed', { message_id: 'answer', message_type: 'assistant_final', content: answer });
+  const render = (events: CodingSessionEvent[], active = true) => {
+    const stream = buildCodingSessionStreamState(events);
+    const status = resolveAgentLiveProgress({ run: { status: active ? 'running' : 'paused', pause_reason: 'awaiting_user_message', started_at: '2026-09-11T10:40:00Z', created_at: start }, stream, currentPlan: null, sending: false });
+    act(() => root.render(<><DockTranscript stream={stream} active={active} useRuntimeTimeline compactAssistantProgress />{status && <AgentLiveStatus progress={status} />}</>));
+    return { stream, status };
+  };
+
+  it('keeps the preamble as progress, displays all six sections immediately, and freezes work before cleanup', () => {
+    const first = render([progress]);
+    expect(first.status?.label).toBe('Working…');
+    expect(first.status?.startedAt).toBe(start);
+    expect(container.querySelector('[data-assistant-presentation="final"]')).toBeNull();
+    expect(container.querySelector('[data-assistant-presentation="progress"]')?.textContent).toContain(preamble);
+    const accepted = render([progress, final]);
+    expect(accepted.status).toBeNull();
+    const finalRow = container.querySelector('[data-assistant-presentation="final"]');
+    expect(finalRow?.textContent).toContain('6. Document 6');
+    expect(container.querySelectorAll('[data-assistant-presentation="final"]')).toHaveLength(1);
+    const worked = container.querySelector('[data-working-group-label]')?.textContent;
+    expect(worked).toContain('Worked');
+    const paused = render([progress, final, event(40, 'run.paused', { pause_reason: 'awaiting_user_message' })], false);
+    expect(paused.status).toBeNull();
+    expect(container.querySelector('[data-working-group-label]')?.textContent).toBe(worked);
+    expect(container.querySelector('[data-assistant-presentation="final"]')?.textContent).toBe(finalRow?.textContent);
+  });
+
+  it('never presents a settled explicit preamble as a successful answer', () => {
+    const { status } = render([progress, event(40, 'run.paused', { pause_reason: 'awaiting_user_message' })], false);
+    expect(status?.label).toBe('Run ended without a final answer');
+    expect(container.querySelector('[data-assistant-presentation="final"]')).toBeNull();
+  });
+
+  it('does not let a duplicate old final stop a resumed turn', () => {
+    const resumed = event(50, 'run.resumed', { turn_id: 'turn-2', turn_started_at: '2026-09-11T12:00:50Z' });
+    const { stream, status } = render([progress, final, resumed, { ...final, id: 'late', sequence_no: 51 }]);
+    expect(stream.turn_state).toMatchObject({ turn_id: 'turn-2', phase: 'working' });
+    expect(status?.label).toBe('Working…');
+    expect(status?.startedAt).toBe('2026-09-11T12:00:50Z');
   });
 });

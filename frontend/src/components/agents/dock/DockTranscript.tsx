@@ -14,6 +14,7 @@ import type { AgentRunMessage, CodingSessionActor, CodingSessionTranscriptMessag
 import { dockChatService } from '@/lib/services/dockChatService';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
 import { groupAdjacentDockTools } from './dockTranscriptGrouping';
+import { finalAssistantIndex } from './agentTurnState';
 import { buildDockWorkingTimeline } from './dockWorkingGroups';
 import { DockWorkingGroup } from './DockWorkingGroup';
 import { mergePersistedChatMessages } from './dockChatTimeline';
@@ -256,10 +257,11 @@ export function DockTranscript({
       segments.splice(boundaryIndex, segments.length - boundaryIndex, ...priorLive, ...tail);
     }
   }
-  const latestAssistantSegmentId = [...segments].reverse().find((segment) => segment.kind === 'assistant')?.id;
+  const latestAssistantSegmentId = segments[finalAssistantIndex(segments, !active)]?.id;
   const workingTimeline = compactAssistantProgress
     ? buildDockWorkingTimeline(segments, active, {
-        collapseCompletedWork: completedRun,
+        collapseCompletedWork: completedRun || segments.some((segment) => segment.kind === 'assistant' && segment.final),
+        turnState: stream.turn_state,
         timestampForSegment: (segment) => segmentTimestamp(segment, times),
       })
     : null;
@@ -275,11 +277,9 @@ export function DockTranscript({
     for (const index of intervalAssistantIndexes) {
       assistantPresentations.set(index, { presentation: 'progress', separator: false });
     }
-    if (!allowFinal) return;
-    const finalIndex = [...intervalAssistantIndexes].reverse().find((index) => {
-      const segment = entries[index]?.segment;
-      return segment?.kind === 'assistant' && !segment.streaming;
-    });
+    const finalOffset = finalAssistantIndex(intervalAssistantIndexes.map((index) => entries[index].segment),
+      allowFinal && !(end === entries.length && stream.turn_state));
+    const finalIndex = finalOffset >= 0 ? intervalAssistantIndexes[finalOffset] : undefined;
     if (finalIndex === undefined) return;
     const separator = entries.slice(intervalStart, finalIndex).some((candidate) => (
       'workingGroup' in candidate

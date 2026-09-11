@@ -208,9 +208,20 @@ type CodingSessionRunPlan struct {
 }
 
 type CodingSessionStreamSnapshot struct {
+	TurnState            *CodingSessionTurnState            `json:"turn_state,omitempty"`
 	ThroughSequence      int64                              `json:"through_sequence,omitempty"`
 	LiveAssistantMessage *CodingSessionLiveAssistantMessage `json:"live_assistant_message,omitempty"`
 	LiveReasoningMessage *CodingSessionLiveReasoningMessage `json:"live_reasoning_message,omitempty"`
 	LiveTurnSegments     []CodingSessionLiveTurnSegment     `json:"live_turn_segments,omitempty"`
 	CurrentPlan          *CodingSessionRunPlan              `json:"current_plan,omitempty"`
+}
+
+// CodingSessionTurnState describes answer delivery independently of run cleanup.
+// It lives in the existing JSON snapshot, so older hosts can ignore it.
+type CodingSessionTurnState struct {
+	TurnID          string     `json:"turn_id"`
+	Phase           string     `json:"phase"`
+	StartedAt       time.Time  `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	AnswerMessageID string     `json:"answer_message_id,omitempty"`
 }
