@@ -7,6 +7,7 @@ async function installMocks(
     readOnly?: boolean;
     conflictOnce?: boolean;
     failRefreshAfterSave?: boolean;
+    multiplePipelines?: boolean;
   } = {},
 ) {
   const stages = [
@@ -42,6 +43,13 @@ async function installMocks(
   };
   const writes: Record<string, any>[] = [];
   const list = [pipeline];
+  if (options.multiplePipelines)
+    list.push({
+      ...pipeline,
+      id: "renewals",
+      name: "Renewals pipeline",
+      is_default: false,
+    });
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -102,6 +110,206 @@ async function installMocks(
 }
 
 const url = "/e2e/crm/harness/pipelines.html";
+
+test("pipeline names toggle stages with only one pipeline expanded", async ({
+  page,
+}) => {
+  await installMocks(page, { multiplePipelines: true });
+  await page.goto(url);
+  const sales = page.getByRole("button", {
+    name: "Outbound sales pipeline",
+    exact: true,
+  });
+  const renewals = page.getByRole("button", {
+    name: "Renewals pipeline",
+    exact: true,
+  });
+  await expect(sales).toHaveAttribute("aria-expanded", "true");
+  await renewals.click();
+  await expect(sales).toHaveAttribute("aria-expanded", "false");
+  await expect(renewals).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.getByRole("region", { name: "Open stages", exact: true }),
+  ).toHaveCount(1);
+  await renewals.press("Enter");
+  await expect(renewals).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    page.getByRole("region", { name: "Open stages", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator("#pipeline-selector")).toHaveCount(0);
+  await expect(
+    page.getByText("Changes save automatically", { exact: true }),
+  ).toHaveCount(0);
+});
+
+test("inline stage fields save on blur or Enter and cancel with Escape", async ({
+  page,
+}) => {
+  const { writes } = await installMocks(page);
+  await page.goto(url);
+  const name = page.getByRole("textbox", {
+    name: "Stage name: Contacted",
+    exact: true,
+  });
+  await name.fill("Contact made");
+  await name.press("Enter");
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0].stages[1]).toMatchObject({
+    id: "stage-1",
+    name: "Contact made",
+    probability: 10,
+  });
+  const probability = page.getByRole("spinbutton", {
+    name: "Win probability: Contact made",
+    exact: true,
+  });
+  await probability.fill("101");
+  await probability.press("Tab");
+  await expect(probability).toHaveAttribute("aria-invalid", "true");
+  expect(writes).toHaveLength(1);
+  await probability.fill("35");
+  await probability.press("Tab");
+  await expect.poll(() => writes.length).toBe(2);
+  expect(writes[1].stages[1].probability).toBe(35);
+  const renamed = page.getByRole("textbox", {
+    name: "Stage name: Contact made",
+    exact: true,
+  });
+  await renamed.fill("Discard this");
+  await renamed.press("Escape");
+  await expect(renamed).toHaveValue("Contact made");
+  expect(writes).toHaveLength(2);
+  await expect(
+    page.getByRole("button", { name: "Edit Contact made", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("spinbutton", {
+      name: "Win probability: Closed won",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+});
+
+test("failed inline saves retain the draft and allow retry after a conflict", async ({
+  page,
+}) => {
+  const { writes } = await installMocks(page, { conflictOnce: true });
+  await page.goto(url);
+  const name = page.getByRole("textbox", {
+    name: "Stage name: Contacted",
+    exact: true,
+  });
+  await name.fill("Contact made");
+  await name.press("Enter");
+  await expect(
+    page.getByText("Pipeline changed. Refresh and try again."),
+  ).toBeVisible();
+  const refreshed = page.getByRole("textbox", {
+    name: "Stage name: Reached out",
+    exact: true,
+  });
+  await expect(refreshed).toHaveValue("Contact made");
+  await refreshed.focus();
+  await refreshed.press("Enter");
+  await expect.poll(() => writes.length).toBe(2);
+  expect(writes[1].expected_updated_at).toBe("2026-09-02T10:00:00Z");
+  await expect(
+    page.getByRole("textbox", {
+      name: "Stage name: Contact made",
+      exact: true,
+    }),
+  ).toHaveValue("Contact made");
+});
+
+test("saving through Edit replaces an invalid inline draft", async ({
+  page,
+}) => {
+  await installMocks(page);
+  await page.goto(url);
+  const probability = page.getByRole("spinbutton", {
+    name: "Win probability: Contacted",
+    exact: true,
+  });
+  await probability.fill("101");
+  await probability.press("Tab");
+  await expect(probability).toHaveAttribute("aria-invalid", "true");
+  await page
+    .getByRole("button", { name: "Edit Contacted", exact: true })
+    .click();
+  await page.getByLabel("Win probability (%)", { exact: true }).fill("35");
+  await page.getByRole("button", { name: "Save stage", exact: true }).click();
+  await expect(page.locator('[data-slot="dialog-content"]')).not.toBeVisible();
+  await expect(probability).toHaveValue("35");
+  await expect(probability).toHaveAttribute("aria-invalid", "false");
+});
+
+test("touch users can access stage guidance and removal", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  await installMocks(page);
+  await page.goto(`http://127.0.0.1:5193${url}?dark`);
+  await expect(
+    page
+      .getByRole("button", { name: "Delete Contacted", exact: true })
+      .locator(".."),
+  ).toHaveCSS("opacity", "1");
+  await page
+    .getByRole("button", {
+      name: "About win probability for contacted",
+      exact: true,
+    })
+    .tap();
+  await expect(
+    page.getByRole("tooltip", { name: /Win probability estimates/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("heading", { name: "Deal pipelines", exact: true })
+    .tap();
+  await page
+    .getByRole("button", { name: "About won outcomes", exact: true })
+    .tap();
+  await expect(
+    page.getByRole("tooltip", { name: /Drag a handle/ }),
+  ).toContainText("Won and lost outcomes stay at the end.");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await context.close();
+});
+
+test("stage removal appears on hover or keyboard focus and guidance lives in tooltips", async ({
+  page,
+}) => {
+  await installMocks(page);
+  await page.goto(url);
+  const remove = page.getByRole("button", {
+    name: "Delete Contacted",
+    exact: true,
+  });
+  const wrapper = remove.locator("..");
+  await expect(wrapper).toHaveCSS("opacity", "0");
+  await page
+    .getByRole("textbox", { name: "Stage name: Contacted", exact: true })
+    .hover();
+  await expect(wrapper).toHaveCSS("opacity", "1");
+  await page.mouse.move(0, 0);
+  await remove.focus();
+  await expect(wrapper).toHaveCSS("opacity", "1");
+  await page
+    .getByRole("button", { name: "About win probability", exact: true })
+    .hover();
+  await expect(
+    page.getByRole("tooltip", { name: /Win probability estimates/ }),
+  ).toContainText("A deal’s own probability takes priority.");
+});
 
 test("moves a stage several positions in one action and preserves stage identities", async ({
   page,
