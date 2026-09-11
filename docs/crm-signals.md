@@ -232,6 +232,18 @@ explicit renewal/expansion name match; ambiguous pipeline names remain
 per-deal backfill and makes renewal and expansion usable before customer-state
 instrumentation exists.
 
+Pipeline settings offer **New business** (`new_business`) and **Existing
+business** (`existing_business`) as an optional default deal type. Existing
+renewal/expansion defaults and per-deal overrides remain supported and are not
+rewritten by an unrelated settings edit. `existing_business` establishes customer
+context; it is not a signal motion. It supports adoption/retention interpretation
+without assuming a renewal or expansion event. Specific commercial events still
+require evidence, and an ambiguous deal recommendation stays `needs_context`.
+Playbooks continue to match signal motions, not this broad pipeline choice.
+Winning a generic existing-business or renewal deal does not automatically enter
+the sales-to-success handoff; new-business and explicit expansion wins retain
+that behavior.
+
 Supersession ownership follows the most specific entity. Contact lifecycle
 refreshes only contact-scoped signals; signals carrying a deal ID remain active
 until that deal's pipeline, override, or stage reconciliation exits its motion.

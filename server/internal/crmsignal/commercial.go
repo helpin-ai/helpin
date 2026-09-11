@@ -18,6 +18,11 @@ type CommercialMeaning struct {
 
 // CustomerRelationship derives the relationship from CRM facts rather than model claims.
 func CustomerRelationship(c model.SignalCommercialContext) string {
+	// A customer may be trialing another product; the explicit deal
+	// classification still identifies this as existing-customer business.
+	if c.DealMotion == model.CRMDealMotionExistingBusiness {
+		return "customer"
+	}
 	switch c.SubscriptionStatus {
 	case "active", "past_due", "cancel_scheduled", "canceled":
 		return "customer"

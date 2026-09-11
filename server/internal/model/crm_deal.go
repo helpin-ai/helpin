@@ -8,9 +8,10 @@ const (
 	CRMStageTypeWon  = "won"
 	CRMStageTypeLost = "lost"
 
-	CRMDealMotionNewBusiness = "new_business"
-	CRMDealMotionExpansion   = "expansion"
-	CRMDealMotionRenewal     = "renewal"
+	CRMDealMotionNewBusiness      = "new_business"
+	CRMDealMotionExistingBusiness = "existing_business"
+	CRMDealMotionExpansion        = "expansion"
+	CRMDealMotionRenewal          = "renewal"
 )
 
 // CRMPipeline represents a sales pipeline.

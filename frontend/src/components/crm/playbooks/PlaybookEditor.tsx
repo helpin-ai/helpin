@@ -37,7 +37,6 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
 }) {
   const formId = useId();
   const form = useRef<HTMLFormElement>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
   const saving = useRef(false);
   const [validationError, setValidationError] = useState('');
   const [baseline, setBaseline] = useState(item.playbook);
@@ -62,7 +61,7 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
   const update = (patch: Partial<CRMPlaybookDefinition>) => { setValidationError(''); setDefinition((current) => ({ ...current, ...patch })); };
   const go = (next: PlaybookSetupStep) => {
     onStepChange(next);
-    requestAnimationFrame(() => heading.current?.focus({ preventScroll: false }));
+    requestAnimationFrame(() => form.current?.focus({ preventScroll: false }));
   };
   const issues = playbookSetupIssues(definition, members.isPending ? 'loading' : members.isError ? 'error' : !!members.data?.find((member) => member.id === definition.responsibilities.escalation_member_id && member.status === 'active'));
   const ready = Object.values(issues).every((entries) => entries.length === 0);
@@ -122,21 +121,18 @@ export function PlaybookEditor({ ws, item, canAdmin, onDirty, onReload, onPrevie
   };
   return <>
     <div className="max-w-6xl">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-quiet-divider-strong bg-quiet-surface py-4">
-        <p className="text-xs text-quiet-text-tertiary">{canAdmin ? dirty ? 'Unsaved changes' : 'Saved draft' : 'Read-only configuration'}</p>
-        {canAdmin && saveActionContainer && createPortal(<div className="flex items-center gap-2">
+      {!canAdmin && <p className="py-4 text-xs text-quiet-text-tertiary">Read-only configuration</p>}
+      {canAdmin && saveActionContainer && createPortal(<div className="flex items-center gap-2">
           <Button type="submit" variant="outline" size="sm" form={formId} disabled={!dirty || disabled || stale}>{write.isPending ? 'Saving…' : 'Save draft'}</Button>
           {showPublish && <PlaybookPublishAction issues={issues} reason={stale ? 'This playbook changed. Review the saved version before publishing.' : undefined} busy={write.isPending || publishing} onPublish={() => void requestPublish()} />}
-        </div>, saveActionContainer)}
-      </div>
+      </div>, saveActionContainer)}
       {stale && dirty && <div role="alert" className="border-b border-quiet-divider-strong py-3 text-sm text-quiet-accent">This playbook changed while you were editing. Your draft is still here.<QuietTextAction type="button" onClick={() => setDiscard(true)}>Review saved version</QuietTextAction></div>}
       {write.isError && <PlaybookError error={write.error} retry={onReload} />}
       {validationError && <p role="alert" className="py-3 text-sm text-quiet-accent">{validationError}</p>}
       <div className="grid min-w-0 gap-6 py-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-11">
       <PlaybookSetupNav current={step} complete={complete} onChange={go} />
       <div className="min-w-0 max-w-3xl">
-      <div className="border-b border-quiet-divider-strong pb-5"><p className="mb-2 text-xs text-quiet-text-tertiary">Step {index + 1} of {playbookSetupSteps.length}</p><h2 ref={heading} tabIndex={-1} className="text-xl font-semibold tracking-tight text-quiet-text-primary focus-visible:outline-2 focus-visible:outline-quiet-field">{playbookSetupSteps[index].label}{step === 'milestones' && <PlaybookHelp label="About milestones">The checkpoints that show progress toward the desired outcome. Each needs a clear sign of completion.</PlaybookHelp>}{step === 'follow_up' && <PlaybookHelp label="About monitoring">Set when to check progress, escalate stalled signals, and stop automated work.</PlaybookHelp>}</h2></div>
-      <form ref={form} id={formId} noValidate onSubmit={(event) => { event.preventDefault(); submit(); }}>
+      <form ref={form} id={formId} tabIndex={-1} aria-label={playbookSetupSteps[index].label} className="focus-visible:outline-2 focus-visible:outline-quiet-field" noValidate onSubmit={(event) => { event.preventDefault(); submit(); }}>
       <fieldset className="min-w-0 [&_input:disabled]:opacity-100 [&_textarea:disabled]:opacity-100 [&_button:disabled]:opacity-100">
         <div id="playbook-step-purpose" data-setup-step="purpose" hidden={step !== 'purpose'}>
         <QuietSection><div className="space-y-5">

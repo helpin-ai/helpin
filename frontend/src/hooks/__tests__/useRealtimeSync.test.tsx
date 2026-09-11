@@ -884,6 +884,23 @@ describe('useRealtimeSync task ordering events', () => {
     container.remove()
   })
 
+  it('invalidates filtered Waiting lists so new teammate replies can enter an empty view', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const waitingKey = ['support', 'ws-1', 'conversations', 'infinite', { filter: 'waiting' }]
+    client.setQueryData(waitingKey, { pages: [{ data: [], total: 0 }], pageParams: [1] })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    await act(async () => {
+      captured.onEvent?.({ action: 'created', entity: 'support_conversation_message', entity_id: 'reply', workspace_id: 'ws-1', actor_id: 'user-1', parent_id: 'thread', data: { content: 'Team reply', sender_type: 'user', message_type: 'reply', created_at: '2026-09-11T09:00:00Z' } })
+      await Promise.resolve()
+    })
+    expect(client.getQueryState(waitingKey)?.isInvalidated).toBe(true)
+    act(() => root.unmount())
+    container.remove()
+  })
+
   it('refreshes workspace unread after a customer message', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidateQueries = vi.spyOn(client, 'invalidateQueries')

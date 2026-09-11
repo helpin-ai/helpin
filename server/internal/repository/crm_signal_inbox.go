@@ -173,9 +173,9 @@ func inboxStandalone(db *gorm.DB, ws, member string, nav model.CRMSituationListF
 	// motion, the target deal's motion, unambiguous evidence, then action type.
 	validMotions := "('prospecting','conversion','onboarding','adoption','expansion','renewal','retention')"
 	motion := `COALESCE(CASE WHEN a.context->>'commercial_motion' IN ` + validMotions + ` THEN a.context->>'commercial_motion' END,
-		CASE WHEN a.object_type = 'deal' AND d.id IS NOT NULL THEN CASE COALESCE(NULLIF(d.commercial_motion,''), p.default_commercial_motion, 'new_business') WHEN 'expansion' THEN 'expansion' WHEN 'renewal' THEN 'renewal' ELSE 'conversion' END END,
-		(SELECT CASE WHEN COUNT(DISTINCT COALESCE(e.commercial_motion,'')) = 1 AND MIN(e.commercial_motion) IN ` + validMotions + ` THEN MIN(e.commercial_motion) END FROM (` + evidence + `) e),
-		CASE WHEN a.suggestion_type IN ('deal_create','deal_advance') THEN 'conversion' WHEN a.suggestion_type = 'risk_alert' THEN 'retention' ELSE 'needs_context' END)`
+		CASE WHEN a.object_type = 'deal' AND d.id IS NOT NULL THEN CASE COALESCE(NULLIF(d.commercial_motion,''), p.default_commercial_motion, 'new_business') WHEN 'expansion' THEN 'expansion' WHEN 'renewal' THEN 'renewal' WHEN 'existing_business' THEN NULL ELSE 'conversion' END END,
+		(SELECT CASE WHEN COUNT(DISTINCT COALESCE(e.commercial_motion,'')) = 1 AND MIN(e.commercial_motion) IN ` + validMotions + ` THEN MIN(e.commercial_motion) END FROM (` + evidence + `) e WHERE e.superseded_at IS NULL AND e.dismissed_at IS NULL),
+		CASE WHEN a.object_type = 'deal' AND d.id IS NOT NULL AND COALESCE(NULLIF(d.commercial_motion,''), p.default_commercial_motion, 'new_business') = 'existing_business' THEN 'needs_context' WHEN a.suggestion_type IN ('deal_create','deal_advance') THEN 'conversion' WHEN a.suggestion_type = 'risk_alert' THEN 'retention' ELSE 'needs_context' END)`
 	category := strings.ReplaceAll(situationCategorySQL(), "s.commercial_motion", "("+motion+")")
 	return query.Select(`CAST(a.id AS TEXT) AS id, CAST(a.workspace_id AS TEXT) AS workspace_id, 'recommendation' AS kind, COALESCE(NULLIF(TRIM(a.title),''),'Review recommendation') AS title,
 		COALESCE(a.description,'') AS next_step, ` + category + ` AS category,

@@ -306,7 +306,14 @@ func (r *CRMSignalRepository) ReconcileDealMotionSignals(ctx context.Context, wo
 	query := r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND deal_id = ? AND superseded_at IS NULL", workspaceID, dealID)
 	if deal.StageType == model.CRMStageTypeOpen {
-		query = excludeQualifiedCommercialEvents(query.Where("commercial_motion <> ?", activeMotion))
+		if dealMotion == model.CRMDealMotionExistingBusiness {
+			// A broader customer classification does not invalidate specific evidence
+			// already captured for expansion, renewal, onboarding, or retention.
+			query = query.Where("commercial_motion IN ?", []string{model.CRMCommercialMotionProspecting, model.CRMCommercialMotionConversion})
+		} else {
+			query = query.Where("commercial_motion <> ?", activeMotion)
+		}
+		query = excludeQualifiedCommercialEvents(query)
 	}
 	now := time.Now().UTC()
 	if err := query.Updates(map[string]interface{}{
@@ -324,7 +331,7 @@ func (r *CRMSignalRepository) ReconcilePipelineMotionSignals(ctx context.Context
 	}
 	var dealIDs []string
 	if err := r.db.WithContext(ctx).Model(&model.CRMDeal{}).
-		Where("workspace_id = ? AND pipeline_id = ? AND commercial_motion IS NULL", workspaceID, pipelineID).
+		Where("workspace_id = ? AND pipeline_id = ? AND (commercial_motion IS NULL OR commercial_motion = ?)", workspaceID, pipelineID, "").
 		Pluck("id", &dealIDs).Error; err != nil {
 		return fmt.Errorf("list pipeline deals for motion reconciliation: %w", err)
 	}
@@ -382,6 +389,11 @@ func (r *CRMSignalRepository) RefreshEntityMotionSignals(
 	query := entityScope(r.db.WithContext(ctx).Model(&model.CRMSignal{}).
 		Where("workspace_id = ? AND dismissed_at IS NULL AND superseded_at IS NULL", workspaceID)).
 		Where("commercial_motion NOT IN ?", motions)
+	if hasExistingBusinessContext(snapshot) {
+		// Generic customer context broadens applicability. It is not evidence
+		// that an already-observed renewal, expansion, or onboarding has ended.
+		query = query.Where("commercial_motion IN ?", []string{model.CRMCommercialMotionProspecting, model.CRMCommercialMotionConversion})
+	}
 	query = excludeQualifiedCommercialEvents(query)
 	var stale []model.CRMSignal
 	if err := query.Find(&stale).Error; err != nil {
@@ -476,8 +488,7 @@ func (r *CRMSignalRepository) resolveSignalMotions(
 		if deal.CommercialMotion != nil && strings.TrimSpace(*deal.CommercialMotion) != "" {
 			dealMotion = strings.TrimSpace(*deal.CommercialMotion)
 		}
-		motion := commercialMotionForDealMotion(dealMotion)
-		motions[motion] = struct{}{}
+		addDealMotions(motions, dealMotion)
 		snapshot["deal_commercial_motion"] = dealMotion
 		snapshot["deal_stage_type"] = deal.StageType
 	}
@@ -525,6 +536,12 @@ func (r *CRMSignalRepository) resolveSignalMotions(
 		}
 	}
 
+	if snapshot["deal_commercial_motion"] == model.CRMDealMotionExistingBusiness {
+		// Deal-specific customer classification takes precedence over a stale lead
+		// lifecycle or other new-business opportunities on the same account.
+		delete(motions, model.CRMCommercialMotionProspecting)
+		delete(motions, model.CRMCommercialMotionConversion)
+	}
 	if len(motions) == 0 {
 		motions[model.CRMCommercialMotionProspecting] = struct{}{}
 	}
@@ -591,7 +608,7 @@ func (r *CRMSignalRepository) addCompanyRelationshipMotions(
 		if deal.CommercialMotion != nil && strings.TrimSpace(*deal.CommercialMotion) != "" {
 			dealMotion = strings.TrimSpace(*deal.CommercialMotion)
 		}
-		motions[commercialMotionForDealMotion(dealMotion)] = struct{}{}
+		addDealMotions(motions, dealMotion)
 		dealMotions = append(dealMotions, dealMotion)
 	}
 	if len(dealMotions) > 0 {
@@ -650,8 +667,32 @@ func addLifecycleMotions(motions map[string]struct{}, lifecycle string) {
 	}
 }
 
+func hasExistingBusinessContext(snapshot model.JSONB) bool {
+	if snapshot["deal_commercial_motion"] == model.CRMDealMotionExistingBusiness {
+		return true
+	}
+	motions, _ := snapshot["open_deal_motions"].([]string)
+	for _, motion := range motions {
+		if motion == model.CRMDealMotionExistingBusiness {
+			return true
+		}
+	}
+	return false
+}
+
+func addDealMotions(motions map[string]struct{}, dealMotion string) {
+	if dealMotion == model.CRMDealMotionExistingBusiness {
+		// A customer relationship is applicability, not evidence of an upsell or renewal.
+		addLifecycleMotions(motions, model.CRMLifecycleCustomer)
+		return
+	}
+	motions[commercialMotionForDealMotion(dealMotion)] = struct{}{}
+}
+
 func commercialMotionForDealMotion(dealMotion string) string {
 	switch dealMotion {
+	case model.CRMDealMotionExistingBusiness:
+		return model.CRMCommercialMotionNeedsContext
 	case model.CRMDealMotionExpansion:
 		return model.CRMCommercialMotionExpansion
 	case model.CRMDealMotionRenewal:

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
   closestCenter,
   DndContext,
@@ -18,6 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   QuietTextAction,
+  QuietUnderlineInput,
   QuietIconAction as Button,
 } from "@/components/design-system/quiet";
 import {
@@ -53,11 +54,21 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   x: 0,
 });
 
+const PROBABILITY_HELP =
+  "Win probability estimates the chance of closing a deal. A deal’s own probability takes priority.";
+const POSITION_HELP =
+  "Drag a handle or choose a position to reorder stages within their outcome. Won and lost outcomes stay at the end.";
+
 type Props = {
   stages: CRMPipelineStage[];
   editable: boolean;
   pending: boolean;
+  editVersions: Record<string, number>;
   onReorder: (stages: CRMPipelineStage[]) => Promise<void>;
+  onUpdate: (
+    stage: CRMPipelineStage,
+    changes: Partial<Pick<CRMPipelineStage, "name" | "probability">>,
+  ) => Promise<boolean>;
   onEdit: (stage: CRMPipelineStage) => void;
   onDelete: (stage: CRMPipelineStage) => void;
   onAdd: (type: PipelineStageType) => void;
@@ -96,9 +107,9 @@ export function PipelineStageTable(props: Props) {
   return (
     <div className="border-t border-quiet-divider-strong">
       <div className="hidden grid-cols-[76px_minmax(0,1fr)_112px_72px_76px] items-center gap-3 border-b border-quiet-divider-strong px-4 py-3 text-xs font-medium text-quiet-text-tertiary sm:grid">
-        <span>Position</span>
+        <StageHelp label="Position" description={POSITION_HELP} />
         <span>Stage name</span>
-        <span>Win probability</span>
+        <StageHelp label="Win probability" description={PROBABILITY_HELP} />
         <span className="text-right">Deals</span>
         <span className="sr-only">Actions</span>
       </div>
@@ -109,9 +120,14 @@ export function PipelineStageTable(props: Props) {
             <div className="flex items-center justify-between gap-2 border-b border-quiet-divider-strong px-4 py-2">
               <div className="flex items-center gap-2 text-xs font-medium">
                 <StageTypeIcon stageType={type} className="h-4 w-4" />
-                {type === "open"
-                  ? "Active stages"
-                  : `${STAGE_LABELS[type]} outcomes`}
+                <StageHelp
+                  label={
+                    type === "open"
+                      ? "Active stages"
+                      : `${STAGE_LABELS[type]} outcomes`
+                  }
+                  description={POSITION_HELP}
+                />
                 <span className="text-quiet-text-tertiary">{group.length}</span>
               </div>
               {props.editable && (
@@ -154,7 +170,7 @@ export function PipelineStageTable(props: Props) {
               >
                 {group.map((stage, index) => (
                   <StageRow
-                    key={stage.id}
+                    key={`${stage.id}-${props.editVersions[stage.id] ?? 0}`}
                     stage={stage}
                     group={group}
                     index={index}
@@ -163,6 +179,7 @@ export function PipelineStageTable(props: Props) {
                     blockReason={deletionBlock(stages, stage)}
                     onMove={(targetId) => void move(stage.id, targetId)}
                     onEdit={() => props.onEdit(stage)}
+                    onUpdate={(changes) => props.onUpdate(stage, changes)}
                     onDelete={() => props.onDelete(stage)}
                   />
                 ))}
@@ -176,10 +193,6 @@ export function PipelineStageTable(props: Props) {
           </section>
         );
       })}
-      <p className="px-4 py-3 text-xs leading-relaxed text-quiet-text-tertiary">
-        Win probability estimates the chance of closing a deal. A deal’s own
-        probability takes priority. Won and lost outcomes stay at the end.
-      </p>
     </div>
   );
 }
@@ -193,6 +206,7 @@ function StageRow({
   blockReason,
   onMove,
   onEdit,
+  onUpdate,
   onDelete,
 }: {
   stage: CRMPipelineStage;
@@ -203,6 +217,9 @@ function StageRow({
   blockReason: string | null;
   onMove: (id: string) => void;
   onEdit: () => void;
+  onUpdate: (
+    changes: Partial<Pick<CRMPipelineStage, "name" | "probability">>,
+  ) => Promise<boolean>;
   onDelete: () => void;
 }) {
   const {
@@ -221,7 +238,7 @@ function StageRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "relative grid grid-cols-[68px_minmax(0,1fr)_64px] items-center gap-x-3 gap-y-2 border-b border-quiet-divider-light bg-quiet-surface hover:bg-quiet-row-hover px-4 py-3 sm:grid-cols-[76px_minmax(0,1fr)_112px_72px_76px]",
+        "group/stage relative grid grid-cols-[68px_minmax(0,1fr)_64px] items-center gap-x-3 gap-y-2 border-b border-quiet-divider-light bg-quiet-surface hover:bg-quiet-row-hover px-4 py-3 sm:grid-cols-[76px_minmax(0,1fr)_112px_72px_76px]",
         !editable && "grid-cols-[24px_minmax(0,1fr)]",
         isDragging && "z-10 bg-quiet-hover outline outline-quiet-field",
       )}
@@ -270,25 +287,54 @@ function StageRow({
         )}
       </div>
       <div className="min-w-0 text-sm font-medium break-words">
-        {stage.name}
+        {editable ? (
+          <InlineStageField
+            label={`Stage name: ${stage.name}`}
+            value={stage.name}
+            disabled={disabled}
+            onSave={(name) => onUpdate({ name })}
+          />
+        ) : (
+          stage.name
+        )}
       </div>
       <div className="col-start-2 row-start-2 flex items-center gap-2 sm:col-start-auto sm:row-start-auto">
-        <div
-          className="h-1 w-10 overflow-hidden rounded-full bg-muted"
-          aria-hidden="true"
+        <StageHelp
+          label={`Win probability for ${stage.name}`}
+          description={PROBABILITY_HELP}
         >
-          <div
-            className={cn(
-              "h-full rounded-full bg-quiet-text-secondary",
-              stage.stage_type === "won" && "bg-quiet-positive",
-              stage.stage_type === "lost" && "bg-muted-foreground",
-            )}
-            style={{ width: `${stage.probability}%` }}
-          />
-        </div>
-        <span className="text-xs tabular-nums text-quiet-text-tertiary">
-          {stage.probability}%
-        </span>
+          <span
+            className="block h-1 w-10 overflow-hidden rounded-full bg-muted"
+            aria-hidden="true"
+          >
+            <span
+              className={cn(
+                "block h-full rounded-full bg-quiet-text-secondary",
+                stage.stage_type === "won" && "bg-quiet-positive",
+                stage.stage_type === "lost" && "bg-muted-foreground",
+              )}
+              style={{ width: `${stage.probability}%` }}
+            />
+          </span>
+        </StageHelp>
+        {editable && stage.stage_type === "open" ? (
+          <div className="flex min-w-0 items-center text-xs text-quiet-text-tertiary">
+            <InlineStageField
+              label={`Win probability: ${stage.name}`}
+              value={String(stage.probability)}
+              numeric
+              disabled={disabled}
+              onSave={(probability) =>
+                onUpdate({ probability: Number(probability) })
+              }
+            />
+            <span>%</span>
+          </div>
+        ) : (
+          <span className="text-xs tabular-nums text-quiet-text-tertiary">
+            {stage.probability}%
+          </span>
+        )}
         <span className="text-xs text-quiet-text-tertiary sm:hidden">
           · {stage.deal_count ?? 0} deals
         </span>
@@ -312,6 +358,7 @@ function StageRow({
             <Tooltip>
               <TooltipTrigger asChild>
                 <span
+                  className="opacity-0 transition-opacity group-hover/stage:opacity-100 group-focus-within/stage:opacity-100 [@media(hover:none)]:opacity-100"
                   tabIndex={blockReason ? 0 : undefined}
                   aria-label={blockReason ?? undefined}
                 >
@@ -333,5 +380,126 @@ function StageRow({
         )}
       </div>
     </div>
+  );
+}
+
+function StageHelp({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description: string;
+  children?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`About ${label.toLowerCase()}`}
+          onClick={() => setOpen(!open)}
+          className={cn(
+            "w-fit shrink-0 text-left focus-visible:outline-2 focus-visible:outline-ring",
+            !children && "border-b border-dotted border-quiet-field",
+            children && "flex min-h-6 items-center",
+          )}
+        >
+          {children ?? label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{description}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function InlineStageField({
+  label,
+  value,
+  numeric,
+  disabled,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  numeric?: boolean;
+  disabled: boolean;
+  onSave: (value: string) => Promise<boolean>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [invalid, setInvalid] = useState(false);
+  const saving = useRef(false);
+  const cancelled = useRef(false);
+  const commit = async () => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
+    if (disabled || saving.current || draft === null) return;
+    const next = draft.trim();
+    if (
+      !next ||
+      (numeric &&
+        (!Number.isInteger(Number(next)) ||
+          Number(next) < 0 ||
+          Number(next) > 100))
+    ) {
+      setInvalid(true);
+      return;
+    }
+    if (next === value) {
+      setDraft(null);
+      return;
+    }
+    saving.current = true;
+    try {
+      if (await onSave(next)) setDraft(null);
+    } finally {
+      saving.current = false;
+    }
+  };
+  return (
+    <QuietUnderlineInput
+      aria-label={label}
+      aria-invalid={invalid}
+      title={
+        invalid
+          ? numeric
+            ? "Enter a whole number from 0 to 100."
+            : "Enter a stage name."
+          : undefined
+      }
+      type={numeric ? "number" : "text"}
+      min={numeric ? 0 : undefined}
+      max={numeric ? 100 : undefined}
+      step={numeric ? 1 : undefined}
+      maxLength={numeric ? undefined : 200}
+      value={draft ?? value}
+      disabled={disabled}
+      className={cn(
+        "min-w-0 border-b-transparent py-0.5",
+        numeric &&
+          "w-8 text-right text-xs tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+      )}
+      onChange={(event) => {
+        setDraft(event.target.value);
+        setInvalid(false);
+      }}
+      onBlur={() => void commit()}
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          cancelled.current = true;
+          setDraft(null);
+          setInvalid(false);
+          event.currentTarget.blur();
+        }
+      }}
+    />
   );
 }
