@@ -43,6 +43,18 @@ describe('support optimistic messages', () => {
     expect(message.email_notified_at).toBeUndefined()
   })
 
+  it.each(['chat_only', 'chat_and_email', 'email_only'] as const)('preserves %s intent before the server responds', (mode) => {
+    const message = buildOptimisticSupportMessage({
+      workspaceId: 'ws-1', conversationId: 'conv-1',
+      payload: { content: 'Checking.', delivery_mode: mode },
+      user: { id: 'user-1', full_name: 'Agent', email: 'agent@example.com' },
+      now: '2026-06-04T08:30:00.000Z', optimisticId: 'optimistic-1',
+    })
+    expect(JSON.parse(message.metadata!)).toEqual({ delivery_mode: mode })
+    expect(message.via_channel).toBe(mode === 'email_only' ? 'email' : 'widget')
+    expect(message.email_notified_at).toBeUndefined()
+  })
+
   it('replaces the optimistic bubble with the persisted message', () => {
     const optimistic: SupportMessage = buildOptimisticSupportMessage({
       workspaceId: 'ws-1',

@@ -41,7 +41,7 @@ func supportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID,
 		ParentType:  "support_conversation",
 		ParentID:    msg.ConversationID,
 	}
-	if msg.IsInternal {
+	if !msg.WidgetVisible() {
 		return event
 	}
 
@@ -126,7 +126,7 @@ func SupportAIProgressEvent(workspaceID, conversationID, actorID, stage, label s
 // SupportAIResponseStartEvents builds ordered start and content-delta events
 // from an already validated, persisted customer-facing support message.
 func SupportAIResponseStartEvents(workspaceID string, msg *model.SupportMessage, actorID string) []Event {
-	if msg == nil || msg.IsInternal || msg.ID == "" || msg.ConversationID == "" || msg.Content == "" {
+	if msg == nil || !msg.WidgetVisible() || msg.ID == "" || msg.ConversationID == "" || msg.Content == "" {
 		return nil
 	}
 
@@ -175,7 +175,7 @@ func SupportAIResponseStartEvents(workspaceID string, msg *model.SupportMessage,
 // SupportAIResponseCompleteEvent marks the persisted message as the canonical
 // end of a transient response stream.
 func SupportAIResponseCompleteEvent(workspaceID string, msg *model.SupportMessage, actorID string) Event {
-	if msg == nil || msg.IsInternal || msg.ID == "" || msg.ConversationID == "" {
+	if msg == nil || !msg.WidgetVisible() || msg.ID == "" || msg.ConversationID == "" {
 		return Event{}
 	}
 	payload, _ := json.Marshal(map[string]string{

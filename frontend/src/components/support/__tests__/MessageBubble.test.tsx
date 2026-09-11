@@ -744,6 +744,88 @@ Can I export my data?`,
     active.cleanup()
   })
 
+  const explicitReply: SupportMessage = {
+    id: 'explicit-reply', workspace_id: 'ws-1', conversation_id: 'conv-1',
+    sender_type: 'user', sender_user_id: 'another-teammate', content: 'Your update.',
+    message_type: 'reply', is_internal: false, via_channel: 'email',
+    metadata: JSON.stringify({ delivery_mode: 'email_only' }),
+    created_at: '2026-09-03T07:35:00.000Z', updated_at: '2026-09-03T07:35:00.000Z',
+  }
+
+  it('keeps email-only intent and queued status visible to another teammate on older replies', () => {
+    const rendered = renderBubble({ ...explicitReply, email_delivery_status: 'queued', cancellable_until: '2099-04-24T12:20:00.000Z' })
+    expect(rendered.container.textContent).toContain('Email only · Queued')
+    expect(rendered.container.textContent).not.toContain('Sent via email')
+    expect(rendered.container.textContent).not.toContain('Undo')
+    rendered.cleanup()
+  })
+
+  it.each([
+    [{}, 'Pending'],
+    [{ email_notified_at: '2026-09-03T07:36:00.000Z' }, 'Sent'],
+    [{ email_delivery_status: 'delivered' }, 'Delivered'],
+    [{ email_delivery_status: 'opened' }, 'Opened'],
+    [{ email_delivery_status: 'failed', email_delivery_error: 'Provider unavailable' }, 'Failed'],
+  ])('shows truthful email-only delivery state and ignores chat receipts (%j)', (fields, label) => {
+    const rendered = renderBubble({ ...explicitReply, ...fields }, 'read', { source: 'widget' })
+    expect(rendered.container.textContent).toContain(`Email only · ${label}`)
+    expect(rendered.container.textContent).not.toContain('Read in chat')
+    expect(rendered.container.textContent).not.toContain('Sent via email')
+    rendered.cleanup()
+  })
+
+  it('shows chat delivery alongside email failure instead of hiding the successful channel', () => {
+    const rendered = renderBubble({
+      ...explicitReply, metadata: JSON.stringify({ delivery_mode: 'chat_and_email' }),
+      email_delivery_status: 'bounced', email_delivery_error: 'Mailbox unavailable',
+    }, 'read', { source: 'widget' })
+    expect(rendered.container.textContent).toContain('Chat · Seen')
+    expect(rendered.container.textContent).toContain('Email · Failed')
+    expect(rendered.container.textContent).toContain('Mailbox unavailable')
+    rendered.cleanup()
+  })
+
+  it('keeps chat-only labels on replies without a latest-message receipt', () => {
+    const rendered = renderBubble({ ...explicitReply, via_channel: 'widget', metadata: JSON.stringify({ delivery_mode: 'chat_only' }) })
+    expect(rendered.container.textContent).toContain('Chat only · Sent')
+    expect(rendered.container.textContent).not.toContain('Email only')
+    rendered.cleanup()
+  })
+
+  it('keeps chat seen status separate from email tracking on older replies', () => {
+    const rendered = renderBubble({
+      ...explicitReply, metadata: JSON.stringify({ delivery_mode: 'chat_and_email' }),
+      email_delivery_status: 'sent',
+    }, undefined, { source: 'widget', contactLastSeenAt: '2026-09-03T07:36:00.000Z' })
+    expect(rendered.container.textContent).toContain('Chat · Seen')
+    expect(rendered.container.textContent).toContain('Email · Sent')
+    rendered.cleanup()
+  })
+
+  it.each([
+    ['queued', 'Queued'], ['failed', 'Failed'], ['blocked', 'Not sent'],
+  ])('shows persisted email %s outcomes to teammates after the Undo deadline', (status, label) => {
+    const rendered = renderBubble({
+      ...explicitReply,
+      cancellable_until: '2026-04-24T12:20:00.000Z',
+      metadata: JSON.stringify({ delivery_mode: 'email_only', email_delivery_status: status, email_delivery_error: status === 'blocked' ? 'Customer unsubscribed' : undefined }),
+    })
+    expect(rendered.container.textContent).toContain(`Email only · ${label}`)
+    if (status === 'blocked') expect(rendered.container.textContent).toContain('Customer unsubscribed')
+    expect(rendered.container.textContent).not.toContain('Undo')
+    rendered.cleanup()
+  })
+
+  it('uses provider delivery tracking over earlier queued metadata', () => {
+    const rendered = renderBubble({
+      ...explicitReply, email_delivery_status: 'delivered',
+      metadata: JSON.stringify({ delivery_mode: 'email_only', email_delivery_status: 'queued' }),
+    })
+    expect(rendered.container.textContent).toContain('Email only · Delivered')
+    expect(rendered.container.textContent).not.toContain('Queued')
+    rendered.cleanup()
+  })
+
   it('anchors message actions to the text bubble instead of image attachments', () => {
     const message: SupportMessage = {
       id: 'msg-with-image-attachment',

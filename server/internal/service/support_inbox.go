@@ -1911,6 +1911,16 @@ func buildSupportConversationStatusEvent(conversation *model.SupportConversation
 
 // ListConversationMessages returns messages for a conversation.
 func (s *SupportInboxService) ListConversationMessages(ctx context.Context, workspaceID, ticketID string, includeInternal bool) ([]model.SupportMessage, error) {
+	return s.listConversationMessages(ctx, workspaceID, ticketID, includeInternal, false)
+}
+
+// ListWidgetConversationMessages returns only replies delivered to the widget.
+// Staff and assistant context retain the complete public email/chat history.
+func (s *SupportInboxService) ListWidgetConversationMessages(ctx context.Context, workspaceID, ticketID string) ([]model.SupportMessage, error) {
+	return s.listConversationMessages(ctx, workspaceID, ticketID, false, true)
+}
+
+func (s *SupportInboxService) listConversationMessages(ctx context.Context, workspaceID, ticketID string, includeInternal, widgetOnly bool) ([]model.SupportMessage, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -1924,6 +1934,10 @@ func (s *SupportInboxService) ListConversationMessages(ctx context.Context, work
 	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, ticketID, includeInternal)
 	if err != nil {
 		return nil, err
+	}
+
+	if widgetOnly {
+		messages = widgetVisibleSupportMessages(messages)
 	}
 
 	// Hydrate file attachments onto messages.
@@ -2049,6 +2063,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0 {
 		return nil, fmt.Errorf("content is required")
 	}
+	if err := validateSupportDeliveryMode(&req, senderType); err != nil {
+		return nil, err
+	}
 	clientMessageID := strings.TrimSpace(req.ClientMessageID)
 	if len(clientMessageID) > 128 {
 		return nil, fmt.Errorf("client_message_id is too long")
@@ -2068,6 +2085,20 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if !req.IsInternal && messageType == "reply" && supportChannelsIncludeEmail(req.Channels) &&
 		strings.TrimSpace(conv.PrimaryRecipientState) == model.SupportPrimaryRecipientStateUnconfirmed {
 		return nil, fmt.Errorf("confirm the primary recipient before sending an email reply")
+	}
+
+	if (req.DeliveryMode == model.SupportDeliveryChatOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail) &&
+		strings.TrimSpace(derefString(conv.AnonymousID)) == "" && conv.Source != "widget" {
+		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
+	}
+
+	explicitEmail := req.DeliveryMode == model.SupportDeliveryEmailOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail
+	explicitDelay := 0
+	if explicitEmail {
+		explicitDelay, err = s.emailFallbackService.validateExplicitEmail(ctx, workspaceID, conv)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Auto-resolve sender display name and avatar from user record.
@@ -2138,15 +2169,23 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		msg.Metadata = string(metaJSON)
 	}
 	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
+	msg.Metadata = withSupportDeliveryMode(msg.Metadata, req.DeliveryMode)
 	// Before persisting a teammate's first public reply, emit a widget-visible
 	// "{name} joined the conversation" system message so the customer sees a
 	// centered pill immediately ahead of the reply — Intercom's pattern.
-	if senderType == "user" && !req.IsInternal && messageType == "reply" && senderUserID != nil {
+	if senderType == "user" && msg.WidgetVisible() && !explicitEmail && messageType == "reply" && senderUserID != nil {
 		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL, clientMessageID)
 	}
 
-	if err := s.messageRepo.Create(ctx, msg); err != nil {
+	if explicitEmail {
+		if err := s.createExplicitEmailMessage(ctx, msg, conv, explicitDelay); err != nil {
+			return nil, err
+		}
+	} else if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err
+	}
+	if explicitEmail && msg.WidgetVisible() && senderType == "user" && senderUserID != nil {
+		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL, clientMessageID, msg)
 	}
 
 	// Link pre-uploaded attachments to this message.
@@ -2285,10 +2324,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	// Push visitor-scoped list refresh for widget unread when an agent/user/AI reply is sent.
 	if !msg.IsInternal && msg.SenderType != "customer" && msg.MessageType == "reply" && conv != nil {
-		if conv.AnonymousID != nil && *conv.AnonymousID != "" {
+		if msg.WidgetVisible() && conv.AnonymousID != nil && *conv.AnonymousID != "" {
 			s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
 		}
-		if s.emailFallbackService != nil && supportChannelsIncludeEmail(req.Channels) {
+		if !explicitEmail && req.DeliveryMode != model.SupportDeliveryChatOnly && s.emailFallbackService != nil && supportChannelsIncludeEmail(req.Channels) {
 			go func(convSnapshot *model.SupportConversation) {
 				if err := s.emailFallbackService.OnAgentReply(context.WithoutCancel(ctx), workspaceID, msg, convSnapshot); err != nil {
 					slog.ErrorContext(ctx, "enqueue email fallback failed", "conversation_id", ticketID, "message_id", msg.ID, "error", err)
@@ -4708,7 +4747,7 @@ func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targe
 // system message on the widget-visible side the first time a given teammate
 // sends a non-internal reply on the conversation. Matches Intercom's behavior
 // of surfacing a "joined" pill on first engagement rather than on assignment.
-func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string, replyClientMessageID string) {
+func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string, replyClientMessageID string, savedReply ...*model.SupportMessage) {
 	if s.messageRepo == nil || senderUserID == "" {
 		return
 	}
@@ -4719,7 +4758,10 @@ func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context
 		return
 	}
 	for _, prior := range priorMessages {
-		if prior.SenderType != "user" || prior.IsInternal {
+		if len(savedReply) > 0 && prior.ID == savedReply[0].ID {
+			continue
+		}
+		if prior.SenderType != "user" || !prior.WidgetVisible() {
 			continue
 		}
 		if prior.MessageType == "system" {
@@ -4755,6 +4797,9 @@ func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context
 		IsInternal:        false,
 		MessageType:       "system",
 		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventTeammateJoined),
+	}
+	if len(savedReply) > 0 {
+		msg.CreatedAt = savedReply[0].CreatedAt.Add(-time.Microsecond)
 	}
 	// Correlate the status with its reply without sharing the reply's own
 	// deduplication ID. The inbox can place this ahead of an immediate preview.
