@@ -3,6 +3,7 @@ import { createElement, useCallback, useMemo, useRef } from 'react'
 import { LoadingImage } from '@/components/ui/loading-image'
 import { NwdiagBlock } from '@/components/editor/NwdiagBlock'
 import { MermaidBlock } from '@/components/editor/MermaidBlock'
+import { SvgBlock } from '@/components/editor/SvgBlock'
 import { MentionText } from '@/components/pm/MentionText'
 import { normalizeInlineAttachmentImageSrcs } from '@/components/pm/editorImageAttachments'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
@@ -83,11 +84,12 @@ function renderNode(
       .some((className) => className.toLowerCase() === 'language-mermaid')
     const isNwdiag = code && Array.from(code.classList)
       .some((className) => className.toLowerCase() === 'language-nwdiag')
-    if (code && (isMermaid || isNwdiag)) {
+    const isSvg = code && Array.from(code.classList).some((className) => className.toLowerCase() === 'language-svg')
+    if (code && (isMermaid || isNwdiag || isSvg)) {
       const source = code.textContent ?? ''
       return (
         <div key={key} className="my-3 overflow-hidden rounded-md border border-border bg-muted/20">
-          {isNwdiag ? <NwdiagBlock source={source} /> : <MermaidBlock source={source} />}
+          {isSvg ? <SvgBlock source={source} /> : isNwdiag ? <NwdiagBlock source={source} /> : <MermaidBlock source={source} />}
         </div>
       )
     }

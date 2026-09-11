@@ -47,6 +47,8 @@ Both endpoints are inclusive. Include the heading when replacing its whole secti
 
 Diagram plus explanation in one insertion:
 
+Use Mermaid or nwdiag for diagrams they can express. For custom layouts, use a fenced `svg` code block (the editor's `/svg` command creates the same block). Supply a complete, static `<svg xmlns="http://www.w3.org/2000/svg" viewBox="…">` with shapes, paths and text, explicit colors and an accessible `<title>`. Use system fonts and keep it self-contained: no scripts, animation, external assets or `foreignObject`. Do not build new diagrams using JavaScript-generated HTML. SVG stays editable as source, exports as an SVG image in HTML/MDX, and becomes PNG in DOC. Existing complex HTML blocks remain sandboxed in HTML/MDX and need an SVG or PNG replacement for Word export.
+
 ```json
 {"document_id":"doc-id","expected_version":"read-version","operations":[{"type":"insert","after_block_id":"section-last-block-id","content":"```mermaid\nflowchart LR\n  Request --> Queue\n  Queue --> Worker\n```\n\nThe worker consumes queued requests."}]}
 ```

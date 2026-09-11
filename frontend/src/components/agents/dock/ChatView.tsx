@@ -22,6 +22,7 @@ import { deriveAskAgentAvatarState } from '@/components/agents/askAgentPresence'
 import { ScrollToLatestButton } from '@/components/agents/transcript';
 import { AgentLiveStatus } from './AgentLiveStatus';
 import { resolveAgentLiveProgress } from './agentProgress';
+import { resolveVisibleTurn } from './agentTurnState';
 import { parseFollowUpSuggestions } from './followUpSuggestions';
 import { starterSuggestionsForContext } from './starterSuggestions';
 import { focusComposerAtEnd } from './composerFocus';
@@ -251,16 +252,16 @@ export function ChatView({
   }, [chatId, detailReader, refreshDetail, refreshMessages]);
 
   useEffect(() => {
-	if (!chatId) {
-	  setDetail(null);
-	  setPersistedMessages([]);
-	  setNextMessagesBefore(null);
-	  setDetailLoading(false);
-	  return;
-	}
-    if (!networkAvailable) return;
+    if (chatId && !networkAvailable) return;
     autoFollowRef.current = true;
     const timer = window.setTimeout(() => {
+      if (!chatId) {
+        setDetail(null);
+        setPersistedMessages([]);
+        setNextMessagesBefore(null);
+        setDetailLoading(false);
+        return;
+      }
       if (isDockNetworkAvailable()) void refreshConversation(true);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -356,6 +357,22 @@ export function ChatView({
     () => (mergedStream ? transformDockStream(mergedStream, 'sequence') : null),
     [mergedStream],
   );
+  const visibleTurn = resolveVisibleTurn(transformed?.stream ?? null, launchStartedAt);
+  const answerRecoveryKey = visibleTurn.answerPending || visibleTurn.missingAnswer
+    ? `${run?.id}:${transformed?.stream.turn_state?.turn_id}` : null;
+  const [recoveredAnswerKey, setRecoveredAnswerKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!answerRecoveryKey || answerRecoveryKey === recoveredAnswerKey || !networkAvailable) return;
+    let cancelled = false;
+    // Read durable messages immediately when the terminal event or snapshot
+    // arrives without its answer; do not wait for the paused-run poll interval.
+    const timer = window.setTimeout(() => {
+      void Promise.allSettled([refreshConversation(true), refetch()]).then(() => {
+        if (!cancelled) setRecoveredAnswerKey(answerRecoveryKey);
+      });
+    }, 0);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [answerRecoveryKey, recoveredAnswerKey, networkAvailable, refreshConversation, refetch]);
   const visiblePlanIDsKey = useMemo(() => {
     const ids = new Set(detail?.plan_ids ?? []);
     for (const childResult of transformed?.childResults ?? []) {
@@ -590,7 +607,7 @@ export function ChatView({
         setSending(false);
       }
     },
-    [chatId, currentUserId, detail?.chat.title, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run?.id, sending, workspaceId],
+    [chatId, currentUserId, detail?.chat.title, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
   );
 
   const submit = async () => {
@@ -646,7 +663,7 @@ export function ChatView({
         toast.error(error instanceof Error ? error.message : 'Failed to upload file');
       }
     }
-  }, [mediaAttachments.length, workspaceId]);
+  }, [workspaceId]);
 
   const removeMediaAttachment = useCallback((attachment: DockChatMediaAttachment) => {
     setMediaAttachments((current) => current.filter((candidate) => candidate.local_id !== attachment.local_id));
@@ -714,7 +731,9 @@ export function ChatView({
     tone: 'working' as const,
     startedAt: launchStartedAt ?? new Date().toISOString(),
     completed: false,
-  } : liveProgress;
+  } : answerRecoveryKey && recoveredAnswerKey === answerRecoveryKey && visibleTurn.answerPending
+    ? { label: 'Could not load the final answer. Reload to retry.', tone: 'waiting' as const }
+    : liveProgress;
 
   const followUpSuggestions = useMemo(() => {
     if (run?.status !== 'completed' || sending || pendingEcho) return [];

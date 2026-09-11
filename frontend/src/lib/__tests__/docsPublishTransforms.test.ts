@@ -47,6 +47,19 @@ describe('prepareDocsContentForPublish', () => {
     entityId: 'doc-1',
   };
 
+  it('publishes SVG as a sanitized image and retains the editable source', async () => {
+    const source = { type: 'codeBlock', attrs: { language: 'svg' }, content: [{ type: 'text', text: '<svg viewBox="0 0 40 40"><rect width="40" height="40"/></svg>' }] };
+    const result = await prepareDocsContentForPublish({ type: 'doc', content: [source] }, { uploadConfig });
+    expect(result?.content?.[0].type).toBe('resizableImage');
+    expect(result?.content?.[0].attrs?.src).toMatch(/svg-.*\.svg$/);
+    expect(result?.content?.[0].attrs?.publishedFrom).toEqual(source);
+    expect(result?.content?.[0].attrs?.darkSrc).toBeUndefined();
+  });
+
+  it('rejects executable SVG before publishing', async () => {
+    await expect(prepareDocsContentForPublish({ type: 'codeBlock', attrs: { language: 'svg' }, content: [{ type: 'text', text: '<svg><script>alert(1)</script></svg>' }] }, { uploadConfig })).rejects.toThrow('static SVG');
+  });
+
   it('replaces Mermaid code blocks with image snapshots', async () => {
     const result = await prepareDocsContentForPublish(
       {

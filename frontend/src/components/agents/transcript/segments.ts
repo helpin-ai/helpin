@@ -15,7 +15,7 @@ import type {
  * user/review-decision are surface-scoped extras.
  */
 export type TranscriptSegment =
-  | { kind: 'assistant'; id: string; messageId?: string; content: string; streaming?: boolean; final?: boolean }
+  | { kind: 'assistant'; id: string; messageId?: string; content: string; streaming?: boolean; final?: boolean; progress?: boolean }
   | { kind: 'tool'; id: string; toolCall: CodingSessionLiveToolCall }
   | { kind: 'reasoning'; id: string; reasoning: CodingSessionLiveReasoningMessage }
   | { kind: 'status'; id: string; message: CodingSessionTranscriptMessage }
@@ -283,7 +283,7 @@ export function collectSegments(
               id: segment.segment_id,
               messageId: segment.assistant_message.message_id || message.message_id,
               content,
-              ...(message.message_type === 'assistant_final' ? { final: true } : {}),
+              ...(message.message_type === 'assistant_final' ? { final: true } : {}), ...(message.message_type === 'assistant_progress' ? { progress: true } : {}),
             });
           }
         } else if (segment.kind === 'tool_call' && !isRuntimeControlToolName(segment.tool_call.tool_name)) {
@@ -313,7 +313,7 @@ export function collectSegments(
 
     if (message.content.trim() && include.has('assistant')) {
       const content = message.content.trim();
-      pushPersistedAssistant({ kind: 'assistant', id: message.event_id, messageId: message.message_id, content, ...(message.message_type === 'assistant_final' ? { final: true } : {}) });
+      pushPersistedAssistant({ kind: 'assistant', id: message.event_id, messageId: message.message_id, content, ...(message.message_type === 'assistant_final' ? { final: true } : {}), ...(message.message_type === 'assistant_progress' ? { progress: true } : {}) });
     }
     if (include.has('tool')) {
       for (const toolCall of message.tool_calls ?? []) {
@@ -389,6 +389,7 @@ export function collectSegments(
           content,
           streaming: segment.segment_id === activeStreamingAssistantSegmentId,
           ...(segment.assistant_message.message_type === 'assistant_final' ? { final: true } : {}),
+          ...(segment.assistant_message.message_type === 'assistant_progress' ? { progress: true } : {}),
         });
       } else if (segment.kind === 'tool_call' && !isRuntimeControlToolName(segment.tool_call.tool_name)) {
         if (!include.has('tool')) continue;
