@@ -5,7 +5,7 @@ import { SettingsPageFrame, type SettingsPageContext } from './SettingsPageFrame
 
 export function MembersSettingsPage() {
   return (
-    <SettingsPageFrame section="members">
+    <SettingsPageFrame section="members" hideHeader>
       {(context) => <MembersSettingsContent {...context} />}
     </SettingsPageFrame>
   );
