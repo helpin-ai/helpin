@@ -22,6 +22,17 @@ const externalMessage: SupportMessage = {
 }
 
 describe('getSupportReceiptStatus', () => {
+  it('never infers chat delivery or a widget read for an email-only reply', () => {
+    expect(getSupportReceiptStatus({
+      ...externalMessage,
+      metadata: JSON.stringify({ delivery_mode: 'email_only' }),
+      email_delivery_status: undefined,
+      email_read_at: undefined,
+    }, {
+      source: 'widget', contact_last_seen_at: '2026-09-03T07:37:00.000Z',
+    })).toBeNull()
+  })
+
   it('never claims Helpin delivery or read tracking for copied teammate email', () => {
     expect(getSupportReceiptStatus(externalMessage, {
       source: 'email',

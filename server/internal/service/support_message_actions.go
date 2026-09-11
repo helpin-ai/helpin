@@ -124,7 +124,11 @@ func (s *SupportMessageActionsService) Delete(ctx context.Context, workspaceID, 
 		return nil, err
 	}
 	if s.wsPublisher != nil {
-		s.wsPublisher.Publish(websocket.SupportMessageDeletedEvent(workspaceID, conversationID, messageID, actorID))
+		event := websocket.SupportMessageDeletedEvent(workspaceID, conversationID, messageID, actorID)
+		if !msg.WidgetVisible() {
+			event.Data = nil
+		}
+		s.wsPublisher.Publish(event)
 	}
 
 	result := &SupportMessageDeleteResult{
@@ -197,6 +201,11 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 	}
 	if info.EmailDeliveryStatus == "" {
 		info.EmailDeliveryStatus, info.EmailDeliveryStatusLabel = supportMessageInfoEmailStatus(msg, nil, s.now())
+	}
+	if msg.ExplicitEmailDelivery() && info.NotDeliveredReason == nil {
+		if reason := explicitDeliveryMetadata(*msg).Error; reason != "" {
+			info.NotDeliveredReason = &reason
+		}
 	}
 	return info, nil
 }
@@ -283,6 +292,16 @@ func supportMessageInfoEmailStatus(msg *model.SupportMessage, logRow *model.Supp
 	}
 	if msg.EmailNotifiedAt != nil {
 		return "sent", "Sent via email"
+	}
+	if msg.ExplicitEmailDelivery() {
+		switch explicitDeliveryMetadata(*msg).Status {
+		case "blocked":
+			return "blocked", "Email delivery blocked"
+		case "failed":
+			return "failed", "Email delivery failed; retrying"
+		default:
+			return "queued", "Queued for email"
+		}
 	}
 	if msg.CancellableUntil != nil && now.Before(msg.CancellableUntil.UTC()) {
 		return "queued", "Queued for email"

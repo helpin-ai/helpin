@@ -44,6 +44,7 @@ import type {
   ConversationListResponse,
   SupportConversation,
   SupportMessagePage,
+  SupportReplyDeliveryMode,
   VisitorContextResponse,
   SupportAIRewriteDraftRequest,
   CreateSupportMailboxRequest,
@@ -102,6 +103,7 @@ type SendMessagePayload = {
   client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
+  delivery_mode?: SupportReplyDeliveryMode;
   channels?: Array<'chat' | 'email'>;
   attachment_ids?: string[];
   cc_emails?: string[];
@@ -142,7 +144,8 @@ export function buildOptimisticSupportMessage({
     content: payload.content.trim() || ' ',
     message_type: 'reply',
     is_internal: Boolean(payload.is_internal),
-    via_channel: payload.channels?.includes('email') ? 'email' : 'widget',
+    via_channel: payload.delivery_mode ? (payload.delivery_mode === 'email_only' ? 'email' : 'widget') : payload.channels?.includes('email') ? 'email' : 'widget',
+    ...(payload.delivery_mode && !payload.is_internal ? { metadata: JSON.stringify({ delivery_mode: payload.delivery_mode }) } : {}),
     created_at: now,
     updated_at: now,
   };

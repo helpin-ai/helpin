@@ -968,6 +968,7 @@ type CreateMessageRequest struct {
 	MessageType     string   `json:"message_type"` // reply, csat_survey, system
 	AttachmentIDs   []string `json:"attachment_ids,omitempty"`
 	Channels        []string `json:"channels,omitempty"`
+	DeliveryMode    string   `json:"delivery_mode,omitempty"`
 	CCEmails        []string `json:"cc_emails,omitempty"`
 	BCCEmails       []string `json:"bcc_emails,omitempty"`
 }

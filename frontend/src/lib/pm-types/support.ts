@@ -1001,11 +1001,14 @@ export interface CreateConversationRequest {
   source?: TicketSource;
 }
 
+export type SupportReplyDeliveryMode = 'chat_only' | 'chat_and_email' | 'email_only';
+
 export interface CreateMessageRequest {
   content: string;
   client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
+  delivery_mode?: SupportReplyDeliveryMode;
   channels?: ('chat' | 'email')[];
   cc_emails?: string[];
   bcc_emails?: string[];

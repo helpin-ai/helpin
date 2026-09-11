@@ -204,7 +204,7 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	messages, err := h.supportService.ListConversationMessages(r.Context(), session.WorkspaceID, *conversationID, false)
+	messages, err := h.supportService.ListWidgetConversationMessages(r.Context(), session.WorkspaceID, *conversationID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -211,3 +211,15 @@ func TestSupportAIProgressEventContainsOnlyCustomerSafeProgress(t *testing.T) {
 func stringPtr(value string) *string {
 	return &value
 }
+
+func TestSupportExplicitEmailOnlyEventsNeverExposeWidgetPayload(t *testing.T) {
+	msg := &model.SupportMessage{ID: "email", ConversationID: "conv", Content: "private email", SenderType: "user", Metadata: `{"delivery_mode":"email_only"}`}
+	for _, event := range []Event{SupportMessageEvent("workspace", msg, "owner"), SupportMessageUpdatedEvent("workspace", msg, "owner"), SupportAIResponseCompleteEvent("workspace", msg, "owner")} {
+		if len(event.Data) != 0 {
+			t.Fatalf("exposed widget payload: %s", event.Data)
+		}
+	}
+	if events := SupportAIResponseStartEvents("workspace", msg, "owner"); len(events) != 0 {
+		t.Fatalf("stream events=%v", events)
+	}
+}

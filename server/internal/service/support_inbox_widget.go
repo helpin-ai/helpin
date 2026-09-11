@@ -533,7 +533,7 @@ func (s *SupportInboxService) SendSupportConversationTranscript(ctx context.Cont
 }
 
 func (s *SupportInboxService) sendConversationTranscript(ctx context.Context, workspaceID string, conversation *model.SupportConversation, recipientEmail string, updateCustomerEmail bool) error {
-	messages, err := s.ListConversationMessages(ctx, workspaceID, conversation.ID, false)
+	messages, err := s.ListWidgetConversationMessages(ctx, workspaceID, conversation.ID)
 	if err != nil {
 		return err
 	}

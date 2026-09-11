@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon, BubbleChatIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
 import { MessageDeleteDialog } from './MessageDeleteDialog';
@@ -14,7 +14,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportLinkSecurity, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
-import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, isExternalSupportEmailReply, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
+import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, getExplicitEmailDeliveryState, HELPIN_AI_DISPLAY_NAME, isExternalSupportEmailReply, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
+import { getReplyDeliveryMode, REPLY_DELIVERY_LABELS } from './replyDelivery';
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -293,6 +294,7 @@ interface MessageBubbleProps {
   isLastInGroup?: boolean;
   source?: TicketSource;
   receiptStatus?: SupportReceiptStatus;
+  contactLastSeenAt?: string;
   fallbackAvatarUrl?: string;
   customerDisplayName?: string;
   customerEmail?: string | null;
@@ -306,6 +308,7 @@ export const MessageBubble = memo(function MessageBubble({
   isLastInGroup = true,
   source,
   receiptStatus,
+  contactLastSeenAt,
   fallbackAvatarUrl,
   customerDisplayName,
   customerEmail,
@@ -337,12 +340,16 @@ export const MessageBubble = memo(function MessageBubble({
   const isAI = effectiveSenderType === 'ai';
   const isAgent = effectiveSenderType === 'agent';
   const isInternal = message.is_internal;
+  const deliveryMode = !isCustomer && !isInternal ? getReplyDeliveryMode(message.metadata) : undefined;
+  const explicitEmailState = deliveryMode && deliveryMode !== 'chat_only' ? getExplicitEmailDeliveryState(message) : undefined;
+  const chatSeen = receiptStatus === 'read' || (source === 'widget' && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
+  const chatDeliveryLabel = message.id.startsWith('optimistic-') ? 'Sending' : chatSeen ? 'Seen' : 'Sent';
   const senderName = message.sender_display_name
     ?? (isCustomer ? (customerDisplayName || 'Customer') : isAI ? HELPIN_AI_DISPLAY_NAME : isAgent ? 'Agent' : currentUser?.full_name ?? 'You');
   const resolvedSenderName = isAI ? HELPIN_AI_DISPLAY_NAME : senderName;
   const showAvatar = isLastInGroup;
   const fullTimestamp = formatTimestamp(message.created_at);
-  const sourceLabel = source ? SOURCE_LABELS[source] ?? source : null;
+  const sourceLabel = deliveryMode ? REPLY_DELIVERY_LABELS[deliveryMode] : source ? SOURCE_LABELS[source] ?? source : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
   // Only strip if the JSON parses as an AI contract (has can_answer + content keys)
@@ -427,9 +434,9 @@ export const MessageBubble = memo(function MessageBubble({
 
   const restoreComposerDraft = useCallback((markdown: string) => {
     window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-      detail: { conversationId: message.conversation_id, markdown, attachments: message.attachments ?? [] },
+      detail: { conversationId: message.conversation_id, markdown, attachments: message.attachments ?? [], deliveryMode },
     }));
-  }, [message.attachments, message.conversation_id]);
+  }, [message.attachments, message.conversation_id, deliveryMode]);
 
   const handleUndoOrEdit = useCallback(async () => {
     const result = await deleteMutation.mutateAsync({ messageId: message.id, undo: true });
@@ -736,8 +743,8 @@ export const MessageBubble = memo(function MessageBubble({
       : `Received by email from ${inboundFromEmail}`
     : 'Received via email';
   const hasEmailReceiptStatus = displayedReceiptStatus === 'sending_email' || displayedReceiptStatus === 'sent_email' || displayedReceiptStatus === 'delivered_email' || displayedReceiptStatus === 'read_email' || displayedReceiptStatus === 'sent_outside_helpin';
-  const showStandaloneEmailBadge = hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
-  const hasStatusBelow = !!displayedReceiptStatus || !!aiMeta || hasEmailBadge;
+  const showStandaloneEmailBadge = !deliveryMode && hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
+  const hasStatusBelow = !!deliveryMode || !!displayedReceiptStatus || !!aiMeta || hasEmailBadge;
   const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
     : hasTableContent
@@ -892,7 +899,39 @@ export const MessageBubble = memo(function MessageBubble({
           )}
 
           {/* Delivery failure indicator — supersedes the read receipt when the outbound email bounced or was marked spam. */}
-          {(message.email_delivery_status === 'bounced' || message.email_delivery_status === 'spam_complaint') ? (
+          {deliveryMode ? (
+            <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              {deliveryMode !== 'email_only' && (
+                <span className="inline-flex items-center gap-1">
+                  <BubbleChatIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {deliveryMode === 'chat_only' ? 'Chat only' : 'Chat'} · {chatDeliveryLabel}
+                </span>
+              )}
+              {explicitEmailState && (
+                <button
+                  type="button"
+                  onClick={() => setInfoOpen(true)}
+                  className={`inline-flex items-center gap-1 text-left transition-colors hover:underline ${explicitEmailState.failed ? 'text-quiet-accent' : 'hover:text-foreground'}`}
+                >
+                  <Mail01Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    {deliveryMode === 'email_only' ? 'Email only' : 'Email'} · {explicitEmailState.label}
+                    {explicitEmailState.error ? ` · ${explicitEmailState.error}` : ''}
+                  </span>
+                </button>
+              )}
+              {cancellableActive && (
+                <button
+                  type="button"
+                  className="font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                  onClick={handleUndoOrEdit}
+                  disabled={deleteMutation.isPending}
+                >
+                  Undo
+                </button>
+              )}
+            </div>
+          ) : (message.email_delivery_status === 'bounced' || message.email_delivery_status === 'spam_complaint') ? (
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
               <AlertCircleIcon className="h-3.5 w-3.5 text-red-500" />
               <span className="text-[11px] text-red-600 dark:text-red-400">
