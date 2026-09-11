@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { blankPlaybook } from '../crmPlaybookPresentation';
-import { playbookSetupIssues } from '../crmPlaybookSetup';
+import { playbookSetupIssues, playbookSetupSteps } from '../crmPlaybookSetup';
 
 describe('Playbook setup readiness', () => {
+  it('ends setup at monitoring and names the exact missing milestone field', () => {
+    expect(playbookSetupSteps.map((step) => step.label)).toEqual(['Purpose & scope', 'Milestones', 'Team & permissions', 'Monitoring']);
+    const d = blankPlaybook();
+    d.milestones = [{ key: 'first', name: 'First', success_criteria: 'Done' }, { key: 'second', name: 'Second', success_criteria: '' }];
+    expect(playbookSetupIssues(d, true).milestones).toEqual(['Milestone 2: Add success criteria.']);
+  });
+
   it('does not mark untouched defaults as complete', () => {
     const issues = playbookSetupIssues(blankPlaybook(), false);
     expect(issues.purpose).not.toHaveLength(0);

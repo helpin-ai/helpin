@@ -175,6 +175,7 @@ export interface UpdateCRMCompanyRequest {
 }
 
 export interface CRMPipelineStage {
+  deal_count?: number;
   id: string;
   pipeline_id: string;
   name: string;
@@ -212,6 +213,8 @@ export interface CreateCRMPipelineRequest {
 }
 
 export interface UpdateCRMPipelineRequest {
+  expected_updated_at?: string;
+  stage_migrations?: Record<string, string>;
   name?: string;
   is_default?: boolean;
   default_commercial_motion?: CRMDealCommercialMotion;

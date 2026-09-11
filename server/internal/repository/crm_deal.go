@@ -21,85 +21,6 @@ func NewCRMDealRepository(db *gorm.DB) *CRMDealRepository {
 	return &CRMDealRepository{db: db}
 }
 
-// ── Pipeline operations ──
-
-// ListPipelines returns all pipelines in a workspace.
-func (r *CRMDealRepository) ListPipelines(ctx context.Context, workspaceID string) ([]model.CRMPipeline, error) {
-	var pipelines []model.CRMPipeline
-	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ?", workspaceID).
-		Preload("Stages", func(db *gorm.DB) *gorm.DB {
-			return db.Order("position ASC")
-		}).
-		Order("position ASC").
-		Find(&pipelines).Error; err != nil {
-		return nil, fmt.Errorf("list pipelines: %w", err)
-	}
-	return pipelines, nil
-}
-
-// GetPipeline returns a pipeline by ID with its stages.
-func (r *CRMDealRepository) GetPipeline(ctx context.Context, id string) (*model.CRMPipeline, error) {
-	var pipeline model.CRMPipeline
-	if err := r.db.WithContext(ctx).
-		Where("id = ?", id).
-		Preload("Stages", func(db *gorm.DB) *gorm.DB {
-			return db.Order("position ASC")
-		}).
-		First(&pipeline).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("get pipeline: %w", err)
-	}
-	return &pipeline, nil
-}
-
-// CreatePipeline inserts a pipeline with its stages.
-func (r *CRMDealRepository) CreatePipeline(ctx context.Context, pipeline *model.CRMPipeline) error {
-	if err := r.db.WithContext(ctx).Create(pipeline).Error; err != nil {
-		return fmt.Errorf("create pipeline: %w", err)
-	}
-	return nil
-}
-
-// UpdatePipeline updates a pipeline.
-func (r *CRMDealRepository) UpdatePipeline(ctx context.Context, pipeline *model.CRMPipeline) error {
-	if err := r.db.WithContext(ctx).Save(pipeline).Error; err != nil {
-		return fmt.Errorf("update pipeline: %w", err)
-	}
-	return nil
-}
-
-// DeletePipeline removes a pipeline and its stages.
-func (r *CRMDealRepository) DeletePipeline(ctx context.Context, id string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("pipeline_id = ?", id).Delete(&model.CRMPipelineStage{}).Error; err != nil {
-			return fmt.Errorf("delete pipeline stages: %w", err)
-		}
-		if err := tx.Where("id = ?", id).Delete(&model.CRMPipeline{}).Error; err != nil {
-			return fmt.Errorf("delete pipeline: %w", err)
-		}
-		return nil
-	})
-}
-
-// ReplaceStages replaces all stages in a pipeline.
-func (r *CRMDealRepository) ReplaceStages(ctx context.Context, pipelineID string, stages []model.CRMPipelineStage) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("pipeline_id = ?", pipelineID).Delete(&model.CRMPipelineStage{}).Error; err != nil {
-			return fmt.Errorf("clear pipeline stages: %w", err)
-		}
-		for i := range stages {
-			stages[i].PipelineID = pipelineID
-			if err := tx.Create(&stages[i]).Error; err != nil {
-				return fmt.Errorf("create pipeline stage: %w", err)
-			}
-		}
-		return nil
-	})
-}
-
 // GetStage returns a pipeline stage by ID.
 func (r *CRMDealRepository) GetStage(ctx context.Context, id string) (*model.CRMPipelineStage, error) {
 	var stage model.CRMPipelineStage
@@ -383,32 +304,37 @@ func (r *CRMDealRepository) Delete(ctx context.Context, id string) error {
 // SeedDefaultPipeline creates a default "Sales Pipeline" with HubSpot-standard stages
 // if the workspace has no pipelines yet.
 func (r *CRMDealRepository) SeedDefaultPipeline(ctx context.Context, workspaceID string) error {
-	var count int64
-	if err := r.db.WithContext(ctx).Model(&model.CRMPipeline{}).Where("workspace_id = ?", workspaceID).Count(&count).Error; err != nil {
-		return fmt.Errorf("count pipelines: %w", err)
-	}
-	if count > 0 {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockPipelineWorkspace(tx, workspaceID); err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&model.CRMPipeline{}).Where("workspace_id = ?", workspaceID).Count(&count).Error; err != nil {
+			return fmt.Errorf("count pipelines: %w", err)
+		}
+		if count > 0 {
+			return nil
+		}
+
+		pipeline := &model.CRMPipeline{
+			WorkspaceID:             workspaceID,
+			Name:                    "Sales Pipeline",
+			IsDefault:               true,
+			DefaultCommercialMotion: model.CRMDealMotionNewBusiness,
+			Stages: []model.CRMPipelineStage{
+				{Name: "Appointment Scheduled", StageType: "open", Position: 0, Probability: 20},
+				{Name: "Qualified to Buy", StageType: "open", Position: 1, Probability: 40},
+				{Name: "Presentation Scheduled", StageType: "open", Position: 2, Probability: 60},
+				{Name: "Decision Maker Bought-In", StageType: "open", Position: 3, Probability: 80},
+				{Name: "Contract Sent", StageType: "open", Position: 4, Probability: 90},
+				{Name: "Closed Won", StageType: "won", Position: 5, Probability: 100},
+				{Name: "Closed Lost", StageType: "lost", Position: 6, Probability: 0},
+			},
+		}
+
+		if err := tx.Create(pipeline).Error; err != nil {
+			return fmt.Errorf("seed default pipeline: %w", err)
+		}
 		return nil
-	}
-
-	pipeline := &model.CRMPipeline{
-		WorkspaceID:             workspaceID,
-		Name:                    "Sales Pipeline",
-		IsDefault:               true,
-		DefaultCommercialMotion: model.CRMDealMotionNewBusiness,
-		Stages: []model.CRMPipelineStage{
-			{Name: "Appointment Scheduled", StageType: "open", Position: 0, Probability: 20},
-			{Name: "Qualified to Buy", StageType: "open", Position: 1, Probability: 40},
-			{Name: "Presentation Scheduled", StageType: "open", Position: 2, Probability: 60},
-			{Name: "Decision Maker Bought-In", StageType: "open", Position: 3, Probability: 80},
-			{Name: "Contract Sent", StageType: "open", Position: 4, Probability: 90},
-			{Name: "Closed Won", StageType: "won", Position: 5, Probability: 100},
-			{Name: "Closed Lost", StageType: "lost", Position: 6, Probability: 0},
-		},
-	}
-
-	if err := r.db.WithContext(ctx).Create(pipeline).Error; err != nil {
-		return fmt.Errorf("seed default pipeline: %w", err)
-	}
-	return nil
+	})
 }

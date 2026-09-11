@@ -105,6 +105,10 @@ func parseSettings(raw string) model.SupportInboxSettings {
 	if err := json.Unmarshal([]byte(raw), &defaults); err != nil {
 		return model.DefaultSupportInboxSettings()
 	}
+	// Refresh saved copies of the original default while preserving custom messages.
+	if defaults.DelayedTeamReplyMessage == "Our team hasn’t been able to reply yet. You don’t need to keep this chat open. We’ll email you when someone responds." {
+		defaults.DelayedTeamReplyMessage = model.DefaultSupportInboxSettings().DelayedTeamReplyMessage
+	}
 	defaults.EmailFallbackEnabled = true
 	if !defaults.ForwardedEmailDetectionEnabled && defaults.ForwardedEmailDetectionMode == "" && defaults.ForwardedEmailMinConfidence == 0 {
 		defaults.ForwardedEmailDetectionEnabled = true
