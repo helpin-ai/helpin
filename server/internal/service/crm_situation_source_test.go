@@ -187,3 +187,28 @@ func sourceJourneySuggestion(motion string) model.CRMSuggestion {
 		ObjectType: f.Ptr("company"), ObjectID: f.Ptr(f.Company), Title: "Agree the next milestone",
 		Context: model.JSONB{"commercial_motion": motion}, SignalIDs: model.StringArray{}, Status: "pending", ExecutionStatus: "pending"}
 }
+
+func TestExistingBusinessSourceDoesNotFallBackToConversion(t *testing.T) {
+	db, sources, _, _, ctx := situationSourceFixture(t)
+	f.InboxTables(t, db)
+	pipeline := uuid.NewString()
+	f.Exec(t, db, "INSERT INTO crm_pipelines VALUES (?,?,'existing_business')", pipeline, f.Workspace)
+	f.Exec(t, db, "UPDATE crm_deals SET pipeline_id=? WHERE id=?", pipeline, f.Deal)
+	suggestion := sourceJourneySuggestion("")
+	suggestion.SuggestionType = "deal_advance"
+	suggestion.ObjectType = f.Ptr("deal")
+	suggestion.ObjectID = f.Ptr(f.Deal)
+	if err := db.Create(&suggestion).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := sources.ImportSuggestion(ctx, suggestion); err != nil {
+		t.Fatal(err)
+	}
+	var work model.CRMSituation
+	if err := db.Take(&work).Error; err != nil {
+		t.Fatal(err)
+	}
+	if work.CommercialMotion != "needs_context" {
+		t.Fatalf("motion=%s", work.CommercialMotion)
+	}
+}

@@ -50,6 +50,7 @@ func setupSupportPersonalStateTestDB(t *testing.T) *gorm.DB {
 			status TEXT NOT NULL DEFAULT 'open', flow_state TEXT, ai_state TEXT,
 			human_takeover BOOLEAN NOT NULL DEFAULT 0, customer_requested_human_at DATETIME,
 			assigned_user_id TEXT, opened_by_user_id TEXT, assigned_agent_id TEXT,
+			last_public_sender_type TEXT, customer_awaiting_response BOOLEAN NOT NULL DEFAULT 0,
 			team_last_seen_at DATETIME, needs_human_reply BOOLEAN NOT NULL DEFAULT 0,
 			support_state_version INTEGER NOT NULL DEFAULT 0
 		)`,

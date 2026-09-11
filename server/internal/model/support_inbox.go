@@ -133,6 +133,7 @@ const (
 )
 
 const (
+	SupportConversationListFilterWaiting  = "waiting"
 	SupportConversationListFilterInbox    = "inbox"
 	SupportConversationListFilterMine     = "mine"
 	SupportConversationListFilterMentions = "mentions"

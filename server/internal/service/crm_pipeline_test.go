@@ -315,3 +315,17 @@ func TestUpdatePipelineSameVersionCanOnlyBeSavedOnce(t *testing.T) {
 		t.Fatal("stale second save succeeded")
 	}
 }
+
+func TestExistingBusinessPipelineValueRoundTrips(t *testing.T) {
+	svc, _, p := setupCRMPipelineTest(t)
+	motion := "existing_business"
+	got, err := svc.UpdatePipeline(context.Background(), p.ID, model.UpdateCRMPipelineRequest{DefaultCommercialMotion: &motion})
+	if err != nil || got.DefaultCommercialMotion != motion {
+		t.Fatalf("pipeline=%+v err=%v", got, err)
+	}
+	for _, value := range []string{"new_business", "existing_business", "expansion", "renewal"} {
+		if !validCRMDealCommercialMotion(value) {
+			t.Errorf("rejected supported deal type %s", value)
+		}
+	}
+}

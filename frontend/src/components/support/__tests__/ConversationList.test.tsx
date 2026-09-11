@@ -546,7 +546,24 @@ describe('ConversationList presence resync', () => {
     act(() => root.unmount())
   })
 
-  it('uses status directly for simple lifecycle sidebar views', () => {
+  it('keeps the selected conversation open when a customer reply removes it from Waiting', () => {
+    useSupportInboxStore.setState({ navFilter: 'waiting', selectedConversationId: 'conv-1', conversationListFilters: { states: ['waiting_on_customer'], assignment: [], mailboxIds: [], tagIds: [], aiStates: [], sort: 'newest' } })
+    const result = mockUseInfiniteConversations()
+    const conversation = { id: 'conv-1', status: 'open', last_public_sender_type: 'user', customer_awaiting_response: false }
+    mockUseInfiniteConversations.mockReturnValue({ ...result, data: { pages: [{ data: [conversation] }] } })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => root.render(<ConversationList workspaceId="ws-1" userId="user-1" autoSelectFirst />))
+    expect(container.querySelector('[data-conversation-id="conv-1"]')).not.toBeNull()
+    mockUseInfiniteConversations.mockReturnValue({ ...result, data: { pages: [{ data: [{ ...conversation, last_public_sender_type: 'customer', customer_awaiting_response: true }] }] } })
+    act(() => root.render(<ConversationList workspaceId="ws-1" userId="user-1" autoSelectFirst />))
+    expect(container.querySelector('[data-conversation-id="conv-1"]')).toBeNull()
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-1')
+    act(() => root.unmount())
+  })
+
+  it('requests the derived Waiting view', () => {
     useSupportInboxStore.setState({
       navFilter: 'waiting',
       conversationListFilters: {
@@ -568,7 +585,7 @@ describe('ConversationList presence resync', () => {
     })
 
     expect(mockUseInfiniteConversations).toHaveBeenCalledWith('ws-1', {
-      status: 'waiting_on_customer',
+      filter: 'waiting',
     })
 
     act(() => root.unmount())

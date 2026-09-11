@@ -340,7 +340,7 @@ func supportInboxViewConversationListParams(workspaceID, userID string, filters 
 		case "mine":
 			params.Filter = model.SupportConversationListFilterMine
 		case "waiting":
-			params.Status = model.SupportConversationStatusWaitingOnCustomer
+			params.Filter = model.SupportConversationListFilterWaiting
 		case "resolved":
 			params.Filter = model.SupportConversationListFilterResolved
 		case "spam":

@@ -687,8 +687,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           predicate: (query) => {
             const key = query.queryKey
             return key[0] === 'support' && key[1] === workspaceId && (
-              // conversations list: ['support', wsId, 'conversations']
-              key.length === 3 ||
+              // Include filtered and infinite lists so newly matching threads can enter a view.
+              isSupportConversationListQueryKey(key, workspaceId) ||
               // conversation detail or messages: ['support', wsId, 'conversations', parentId, ...]
               (key[3] === parentId && !(hasHydratedMessage && key[4] === 'messages'))
             )

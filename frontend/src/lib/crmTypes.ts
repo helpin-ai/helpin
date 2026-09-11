@@ -289,7 +289,11 @@ export interface UpdateCRMDealRequest {
   custom_properties?: Record<string, unknown>;
 }
 
-export type CRMDealCommercialMotion = "new_business" | "expansion" | "renewal";
+export type CRMDealCommercialMotion =
+  | "new_business"
+  | "existing_business"
+  | "expansion"
+  | "renewal";
 
 export interface CRMAssociation {
   id: string;

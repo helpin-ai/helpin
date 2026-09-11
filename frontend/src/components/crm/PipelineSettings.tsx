@@ -14,13 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/design-system/quiet-dropdown-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
@@ -35,7 +28,12 @@ import {
   useUpdatePipeline,
   useWorkspaceAccess,
 } from "@/hooks/queries";
-import { Delete01Icon, PencilEdit01Icon, PlusSignIcon } from "@/lib/icons";
+import {
+  ArrowDown01Icon,
+  Delete01Icon,
+  PencilEdit01Icon,
+  PlusSignIcon,
+} from "@/lib/icons";
 import type {
   CRMPipeline,
   CRMPipelineStage,
@@ -76,21 +74,27 @@ export function PipelineSettings() {
   const createPipeline = useCreatePipeline(wsId);
   const updatePipeline = useUpdatePipeline(wsId);
   const deletePipeline = useDeletePipeline(wsId);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null | undefined>();
   const [editor, setEditor] = useState<Editor | null>(null);
   const [conflict, setConflict] = useState(false);
   const [reloading, setReloading] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
-  const [lastSaved, setLastSaved] = useState(false);
+  const [stageEditVersions, setStageEditVersions] = useState<
+    Record<string, number>
+  >({});
   const pending =
     reloading ||
     createPipeline.isPending ||
     updatePipeline.isPending ||
     deletePipeline.isPending;
-  const pipeline =
-    pipelines.find((item) => item.id === selectedId) ??
-    pipelines.find((item) => item.is_default) ??
-    pipelines[0];
+  const defaultPipeline =
+    pipelines.find((item) => item.is_default) ?? pipelines[0];
+  const expandedPipelineId =
+    expandedId === null
+      ? null
+      : pipelines.some((item) => item.id === expandedId)
+        ? expandedId
+        : defaultPipeline?.id;
 
   const openEditor = (next: Editor) => {
     setConflict(false);
@@ -150,9 +154,8 @@ export function PipelineSettings() {
     target: CRMPipeline,
     data: UpdateCRMPipelineRequest,
     success: string,
-  ) => {
-    if (pending || !editable) return;
-    setLastSaved(false);
+  ): Promise<boolean> => {
+    if (pending || !editable) return false;
     try {
       await updatePipeline.mutateAsync({
         id: target.id,
@@ -160,10 +163,18 @@ export function PipelineSettings() {
         ...data,
       });
       setEditor(null);
-      setLastSaved(true);
+      if (editor?.kind === "stage" && editor.stage) {
+        const stageId = editor.stage.id;
+        setStageEditVersions((versions) => ({
+          ...versions,
+          [stageId]: (versions[stageId] ?? 0) + 1,
+        }));
+      }
       toast.success(success);
+      return true;
     } catch (error) {
       reportError(error);
+      return false;
     }
   };
 
@@ -186,12 +197,6 @@ export function PipelineSettings() {
       </div>
     );
 
-  const deleteBlock = pipeline?.is_default
-    ? "Choose another default pipeline before deleting this one."
-    : (pipeline?.deal_count ?? 0) > 0
-      ? "Move all deals to another pipeline before deleting this one, including won and lost deals."
-      : null;
-
   return (
     <div className="space-y-5">
       {isError && (
@@ -207,41 +212,7 @@ export function PipelineSettings() {
           </QuietTextAction>
         </div>
       )}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-2 sm:max-w-sm">
-          <label
-            htmlFor="pipeline-selector"
-            className="text-xs font-medium text-muted-foreground"
-          >
-            Pipeline{pipelines.length > 0 ? ` · ${pipelines.length}` : ""}
-          </label>
-          {pipeline && (
-            <Select
-              value={pipeline.id}
-              disabled={pending}
-              onValueChange={(id) => {
-                setSelectedId(id);
-                setLastSaved(false);
-              }}
-            >
-              <SelectTrigger
-                variant="underline"
-                id="pipeline-selector"
-                className="w-full px-0.5"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {pipelines.map((item) => (
-                  <SelectItem key={item.id} value={item.id}>
-                    {item.name}
-                    {item.is_default ? " · Default" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+      <div className="flex justify-end">
         {editable && (
           <QuietTextAction
             disabled={pending}
@@ -253,119 +224,156 @@ export function PipelineSettings() {
         )}
       </div>
 
-      {!pipeline ? (
+      {pipelines.length === 0 ? (
         <QuietEmptyState
           title="Build your first sales pipeline"
           description="Start with a few stages that match how your team sells. You can rename, reorder, and add stages as your process evolves."
         />
       ) : (
-        <>
-          <div className="flex flex-wrap items-start justify-between gap-3 border-t pt-5">
-            <div className="min-w-0 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="break-words text-lg font-semibold tracking-tight">
-                  {pipeline.name}
+        pipelines.map((pipeline) => {
+          const expanded = pipeline.id === expandedPipelineId;
+          const deleteBlock = pipeline.is_default
+            ? "Choose another default pipeline before deleting this one."
+            : (pipeline.deal_count ?? 0) > 0
+              ? "Move all deals to another pipeline before deleting this one, including won and lost deals."
+              : null;
+          return (
+            <section
+              key={pipeline.id}
+              className="border-t border-quiet-divider-strong"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 py-4">
+                <h2 className="min-w-0 basis-full sm:flex-1 sm:basis-0">
+                  <button
+                    type="button"
+                    id={`pipeline-${pipeline.id}`}
+                    aria-label={pipeline.name}
+                    aria-expanded={expanded}
+                    aria-controls={`pipeline-stages-${pipeline.id}`}
+                    disabled={pending}
+                    onClick={() => setExpandedId(expanded ? null : pipeline.id)}
+                    className="flex w-full min-w-0 items-start gap-3 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+                  >
+                    <ArrowDown01Icon
+                      className={`mt-0.5 size-4 shrink-0 text-quiet-text-tertiary transition-transform ${expanded ? "" : "-rotate-90"}`}
+                    />
+                    <span className="min-w-0 space-y-2">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="break-words text-base font-semibold tracking-tight">
+                          {pipeline.name}
+                        </span>
+                        {pipeline.is_default && (
+                          <QuietStatusText>Default</QuietStatusText>
+                        )}
+                      </span>
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        {
+                          MOTION_LABELS[
+                            pipeline.default_commercial_motion ?? "new_business"
+                          ]
+                        }
+                        <span className="mx-2">·</span>
+                        {pipeline.stages?.length ?? 0} stages
+                        <span className="mx-2">·</span>
+                        {pipeline.deal_count ?? 0}{" "}
+                        {pipeline.deal_count === 1 ? "deal" : "deals"}
+                      </span>
+                    </span>
+                  </button>
                 </h2>
-                {pipeline.is_default && (
-                  <QuietStatusText>Default</QuietStatusText>
+                {editable && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={pending}
+                      onClick={() => openEditor({ kind: "pipeline", pipeline })}
+                    >
+                      <PencilEdit01Icon className="size-3.5" />
+                      Edit pipeline
+                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          tabIndex={deleteBlock ? 0 : undefined}
+                          aria-label={deleteBlock ?? undefined}
+                        >
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-8 text-muted-foreground hover:text-destructive"
+                            aria-label="Delete pipeline"
+                            disabled={pending || !!deleteBlock}
+                            onClick={() =>
+                              openEditor({ kind: "delete-pipeline", pipeline })
+                            }
+                          >
+                            <Delete01Icon className="size-4" />
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {deleteBlock ?? "Delete pipeline"}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {
-                  MOTION_LABELS[
-                    pipeline.default_commercial_motion ?? "new_business"
-                  ]
-                }
-                <span className="mx-2">·</span>
-                {pipeline.stages?.length ?? 0} stages
-                <span className="mx-2">·</span>
-                {pipeline.deal_count ?? 0}{" "}
-                {pipeline.deal_count === 1 ? "deal" : "deals"}
-              </p>
-            </div>
-            {editable && (
-              <div className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={pending}
-                  onClick={() => openEditor({ kind: "pipeline", pipeline })}
-                >
-                  <PencilEdit01Icon className="size-3.5" />
-                  Edit pipeline
-                </Button>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      tabIndex={deleteBlock ? 0 : undefined}
-                      aria-label={deleteBlock ?? undefined}
-                    >
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-8 text-muted-foreground hover:text-destructive"
-                        aria-label="Delete pipeline"
-                        disabled={pending || !!deleteBlock}
-                        onClick={() =>
-                          openEditor({ kind: "delete-pipeline", pipeline })
-                        }
-                      >
-                        <Delete01Icon className="size-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {deleteBlock ?? "Delete pipeline"}
-                  </TooltipContent>
-                </Tooltip>
+              <div
+                id={`pipeline-stages-${pipeline.id}`}
+                role="region"
+                aria-labelledby={`pipeline-${pipeline.id}`}
+                hidden={!expanded}
+              >
+                {expanded && (
+                  <PipelineStageTable
+                    key={pipeline.id}
+                    stages={pipeline.stages ?? []}
+                    editable={editable}
+                    pending={pending}
+                    editVersions={stageEditVersions}
+                    onReorder={async (stages) => {
+                      await save(
+                        pipeline,
+                        { stages: stagePayload(stages) },
+                        "Stage order updated",
+                      );
+                    }}
+                    onUpdate={(stage, changes) =>
+                      save(
+                        pipeline,
+                        {
+                          stages: stagePayload(
+                            (pipeline.stages ?? []).map((item) =>
+                              item.id === stage.id
+                                ? { ...item, ...changes }
+                                : item,
+                            ),
+                          ),
+                        },
+                        "Stage updated",
+                      )
+                    }
+                    onAdd={(type) =>
+                      openEditor({ kind: "stage", pipeline, type })
+                    }
+                    onEdit={(stage) =>
+                      openEditor({
+                        kind: "stage",
+                        pipeline,
+                        stage,
+                        type: stage.stage_type,
+                      })
+                    }
+                    onDelete={(stage) =>
+                      openEditor({ kind: "delete-stage", pipeline, stage })
+                    }
+                  />
+                )}
               </div>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="text-sm font-medium">Stages</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {editable
-                  ? "Drag a handle or choose a position to reorder stages within their outcome."
-                  : "Stages define how deals progress through this pipeline."}
-              </p>
-            </div>
-            <span className="text-xs text-muted-foreground" role="status">
-              {pending
-                ? "Saving changes…"
-                : lastSaved
-                  ? "All changes saved"
-                  : editable
-                    ? "Changes save automatically"
-                    : "View only"}
-            </span>
-          </div>
-          <PipelineStageTable
-            key={pipeline.id}
-            stages={pipeline.stages ?? []}
-            editable={editable}
-            pending={pending}
-            onReorder={(stages) =>
-              save(
-                pipeline,
-                { stages: stagePayload(stages) },
-                "Stage order updated",
-              )
-            }
-            onAdd={(type) => openEditor({ kind: "stage", pipeline, type })}
-            onEdit={(stage) =>
-              openEditor({
-                kind: "stage",
-                pipeline,
-                stage,
-                type: stage.stage_type,
-              })
-            }
-            onDelete={(stage) =>
-              openEditor({ kind: "delete-stage", pipeline, stage })
-            }
-          />
-        </>
+            </section>
+          );
+        })
       )}
 
       {editor?.kind === "pipeline" && (
@@ -387,9 +395,8 @@ export function PipelineSettings() {
                 ...data,
                 workspace_id: wsId,
               });
-              setSelectedId(created.id);
+              setExpandedId(created.id);
               setEditor(null);
-              setLastSaved(true);
               toast.success("Pipeline created");
             } catch (error) {
               reportError(error);
@@ -406,13 +413,13 @@ export function PipelineSettings() {
           initialType={editor.type}
           pending={pending}
           onClose={() => setEditor(null)}
-          onSave={(data) =>
-            save(
+          onSave={async (data) => {
+            await save(
               editor.pipeline,
               data,
               editor.stage ? "Stage updated" : "Stage added",
-            )
-          }
+            );
+          }}
         />
       )}
       {editor?.kind === "delete-stage" && (
@@ -423,7 +430,9 @@ export function PipelineSettings() {
           stage={editor.stage}
           pending={pending}
           onClose={() => setEditor(null)}
-          onSave={(data) => save(editor.pipeline, data, "Stage deleted")}
+          onSave={async (data) => {
+            await save(editor.pipeline, data, "Stage deleted");
+          }}
         />
       )}
       {editor?.kind === "delete-pipeline" && (
@@ -457,7 +466,7 @@ export function PipelineSettings() {
                   try {
                     await deletePipeline.mutateAsync(editor.pipeline.id);
                     setEditor(null);
-                    setSelectedId(null);
+                    setExpandedId(undefined);
                     toast.success("Pipeline deleted");
                   } catch (error) {
                     reportError(error);

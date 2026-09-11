@@ -9,6 +9,7 @@ import (
 // SourceMotion preserves explicit deal motion or unambiguous supporting evidence
 // before the adapter falls back to the kind of recommendation.
 func (r *CRMSituationRepository) SourceMotion(ctx context.Context, suggestion model.CRMSuggestion) (string, error) {
+	fallback := ""
 	if suggestion.ObjectType != nil && *suggestion.ObjectType == "deal" && suggestion.ObjectID != nil {
 		var row struct{ CommercialMotion string }
 		result := r.db.WithContext(ctx).Table("crm_deals d").
@@ -19,12 +20,16 @@ func (r *CRMSituationRepository) SourceMotion(ctx context.Context, suggestion mo
 			return "", result.Error
 		}
 		if result.RowsAffected == 1 {
-			return commercialMotionForDealMotion(row.CommercialMotion), nil
+			motion := commercialMotionForDealMotion(row.CommercialMotion)
+			if motion != model.CRMCommercialMotionNeedsContext {
+				return motion, nil
+			}
+			fallback = model.CRMCommercialMotionNeedsContext
 		}
 	}
 	if len(suggestion.SignalIDs) != 0 {
 		var motions []string
-		if err := r.db.WithContext(ctx).Model(&model.CRMSignal{}).Where("workspace_id = ? AND id IN ?", suggestion.WorkspaceID, []string(suggestion.SignalIDs)).
+		if err := r.db.WithContext(ctx).Model(&model.CRMSignal{}).Where("workspace_id = ? AND id IN ? AND superseded_at IS NULL AND dismissed_at IS NULL", suggestion.WorkspaceID, []string(suggestion.SignalIDs)).
 			Distinct("commercial_motion").Pluck("commercial_motion", &motions).Error; err != nil {
 			return "", err
 		}
@@ -32,5 +37,5 @@ func (r *CRMSituationRepository) SourceMotion(ctx context.Context, suggestion mo
 			return motions[0], nil
 		}
 	}
-	return "", nil
+	return fallback, nil
 }

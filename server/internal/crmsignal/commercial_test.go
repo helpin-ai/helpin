@@ -58,3 +58,27 @@ func TestCommercialGateRejectsUnqualifiedEvidence(t *testing.T) {
 		})
 	}
 }
+
+func TestExistingBusinessRequiresEvidenceForSpecificMotion(t *testing.T) {
+	c := model.SignalCommercialContext{ProductContext: "Software subscriptions", DealMotion: "existing_business", DealStageType: "open"}
+	if got := CustomerRelationship(c); got != "customer" {
+		t.Fatalf("relationship=%s", got)
+	}
+	for _, tc := range []struct{ event, motion string }{{"expansion", "expansion"}, {"renewal", "renewal"}, {"cancellation", "retention"}, {"purchase", "expansion"}} {
+		t.Run(tc.event, func(t *testing.T) {
+			got, ok := QualifyCommercialSignal(model.SignalCommercialAssessment{Relevance: "relevant", Event: tc.event, OfferingMatch: "Software", Consequence: "Explicit paid account decision"}, c)
+			if !ok || got.Motion != tc.motion || got.NeedsContext {
+				t.Errorf("meaning=%+v qualified=%v", got, ok)
+			}
+		})
+	}
+	if _, ok := QualifyCommercialSignal(model.SignalCommercialAssessment{Relevance: "relevant", Event: "none"}, c); ok {
+		t.Fatal("deal type fabricated commercial intent")
+	}
+}
+
+func TestExistingBusinessRelationshipSurvivesProductTrial(t *testing.T) {
+	if got := CustomerRelationship(model.SignalCommercialContext{DealMotion: "existing_business", SubscriptionStatus: "trialing"}); got != "customer" {
+		t.Fatalf("relationship=%s", got)
+	}
+}

@@ -106,7 +106,7 @@ func (s *CRMSituationSourceService) ImportSuggestion(ctx context.Context, sugges
 		}
 		motion = resolved
 	}
-	if model.CRMSituationCategoryForMotion(motion) == "" {
+	if model.CRMSituationCategoryForMotion(motion) == "" && motion != model.CRMCommercialMotionNeedsContext {
 		switch suggestion.SuggestionType {
 		case model.CRMSuggestionDealCreate, model.CRMSuggestionDealAdvance:
 			motion = "conversion"

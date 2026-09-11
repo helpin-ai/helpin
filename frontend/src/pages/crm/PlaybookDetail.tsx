@@ -64,7 +64,7 @@ function PlaybookDetail({ ws, slug, item, canAdmin, canEdit, onReload }: { ws: s
     } catch { /* Keep the explicit decision visible. */ }
   };
   return <div className="flex h-full min-h-0 flex-col">
-    <QuietDetailHeader breadcrumbs={<Link to="/w/$slug/crm/playbooks" params={{ slug }} className="text-xs text-quiet-text-tertiary hover:text-quiet-text-primary">Playbooks</Link>} title={item.playbook.draft.name} meta={<span className="text-xs text-quiet-text-tertiary">{item.published_version ? `Published version ${item.published_version.version}${unpublished ? ' · Unpublished changes' : ''}` : 'Not published'}</span>} status={<QuietStatusText tone={item.playbook.accepting_customers ? 'positive' : 'neutral'}>{playbookStatus(item)}</QuietStatusText>} actions={<>
+    <QuietDetailHeader breadcrumbs={<Link to="/w/$slug/crm/playbooks" params={{ slug }} className="text-xs text-quiet-text-tertiary hover:text-quiet-text-primary">Playbooks</Link>} title={item.playbook.draft.name} meta={<span className="text-xs text-quiet-text-tertiary">{item.published_version ? `Published version ${item.published_version.version}${unpublished ? ' · Unpublished changes' : ''}` : 'Not published'}</span>} state={canAdmin && dirty ? <span role="status" className="text-xs text-quiet-text-tertiary">Unsaved changes</span> : undefined} status={<QuietStatusText tone={item.playbook.accepting_customers ? 'positive' : 'neutral'}>{playbookStatus(item)}</QuietStatusText>} actions={<>
       {canEdit && item.playbook.accepting_customers && <QuietDetailAction icon={<PlusSignIcon className="size-3.5" />} label="Add signals" tone={(unpublished || dirty) && canAdmin ? 'secondary' : 'primary'} onClick={() => setPreview('published')} />}
       <div ref={setSaveActionContainer} />
     </>} />

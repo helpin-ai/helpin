@@ -78,6 +78,9 @@ export interface SupportConversation {
   list_last_activity_at?: string | null;
   last_message?: string;
   last_message_sender_type?: MessageSenderType | null;
+  last_public_message_id?: string | null;
+  last_public_message_at?: string | null;
+  last_public_sender_type?: MessageSenderType | null;
   last_message_sender_display_name?: string | null;
   unread_count?: number;
   awaiting_reply?: boolean;

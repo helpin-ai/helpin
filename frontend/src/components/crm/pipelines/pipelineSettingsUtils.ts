@@ -11,15 +11,22 @@ export const STAGE_LABELS: Record<PipelineStageType, string> = {
   lost: "Lost",
 };
 export const MOTION_LABELS: Record<CRMDealCommercialMotion, string> = {
-  new_business: "New sales",
-  expansion: "Upsells & expansion",
-  renewal: "Renewals",
+  new_business: "New business",
+  existing_business: "Existing business",
+  expansion: "Existing business",
+  renewal: "Existing business",
 };
-export const MOTION_DESCRIPTIONS: Record<CRMDealCommercialMotion, string> = {
-  new_business: "Win new customers.",
-  expansion:
-    "Grow existing accounts with upgrades, more seats, or additional products.",
-  renewal: "Extend an existing customer’s subscription or contract.",
+export const DEAL_TYPE_OPTIONS = [
+  { value: "new_business", label: "New business" },
+  { value: "existing_business", label: "Existing business" },
+] as const;
+export function pipelineDealType(motion: CRMDealCommercialMotion) {
+  return motion === "new_business" ? "new_business" : "existing_business";
+}
+export const MOTION_DESCRIPTIONS = {
+  new_business: "First purchases from new customers.",
+  existing_business:
+    "Renewals, upgrades, and additional purchases from existing customers.",
 };
 export const DEFAULT_STAGES = [
   {
