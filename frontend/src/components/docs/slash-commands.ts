@@ -1,4 +1,5 @@
 import { NWDIAG_EXAMPLE } from '@/lib/nwdiagRenderer';
+import { SVG_EXAMPLE } from '@/lib/svgRenderer';
 import type { Editor } from '@tiptap/core';
 import {
   Building03Icon,
@@ -122,6 +123,16 @@ export const slashCommands: SlashCommand[] = [
       type: 'codeBlock',
       attrs: { language: 'nwdiag' },
       content: [{ type: 'text', text: NWDIAG_EXAMPLE }],
+    }).run(),
+  },
+  {
+    title: 'SVG',
+    description: 'Vector diagram from SVG source',
+    icon: SourceCodeIcon,
+    action: (editor) => editor.chain().focus().insertContent({
+      type: 'codeBlock',
+      attrs: { language: 'svg' },
+      content: [{ type: 'text', text: SVG_EXAMPLE }],
     }).run(),
   },
   {

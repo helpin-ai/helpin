@@ -1,5 +1,6 @@
 import type { AskAgentAvatarState } from '@/components/agents/AskAgentAvatar';
 import type { CodingSessionStreamState } from '@/lib/pmTypes';
+import { resolveVisibleTurn } from './dock/agentTurnState';
 
 interface AskAgentRunLike {
   status?: string | null;
@@ -7,7 +8,7 @@ interface AskAgentRunLike {
 
 interface AskAgentPresenceInput {
   run?: AskAgentRunLike | null;
-  stream?: Pick<CodingSessionStreamState, 'live_turn_segments'> | null;
+  stream?: Pick<CodingSessionStreamState, 'live_turn_segments'> & Partial<Pick<CodingSessionStreamState, 'transcript_messages' | 'turn_state'>> | null;
   sending?: boolean;
   error?: boolean | string | null;
 }
@@ -30,6 +31,7 @@ export function deriveAskAgentAvatarState({
   error = false,
 }: AskAgentPresenceInput): AskAgentAvatarState {
   if (error || run?.status === 'failed') return 'error';
+  if (!sending && stream && resolveVisibleTurn({ ...stream, transcript_messages: stream.transcript_messages ?? [] }).answered) return 'idle';
   if (isAskAgentSpeaking(stream)) return 'speaking';
   if (sending || run?.status === 'queued' || run?.status === 'running') return 'thinking';
   return 'idle';

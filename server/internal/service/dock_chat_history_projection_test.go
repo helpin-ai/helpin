@@ -103,3 +103,14 @@ func TestCompactDockChatMessagePagePreservesCanonicalAnswerBeforeLateMetadata(t 
 		})
 	}
 }
+
+func TestCompactDockChatMessagePageDoesNotPromoteExplicitProgress(t *testing.T) {
+	messages := []model.AgentRunMessage{
+		{ID: "progress", Role: "assistant", MessageType: "assistant_progress", Content: "Done — here is what changed."},
+		{ID: "metadata", Role: "assistant", MessageType: "assistant_turn", Content: "Trailing metadata"},
+	}
+	result := compactDockChatMessagePage(messages)
+	if len(result) != 2 || result[0].ID != "progress" || result[1].ID != "metadata" {
+		t.Fatalf("progress was collapsed into a successful answer: %+v", result)
+	}
+}

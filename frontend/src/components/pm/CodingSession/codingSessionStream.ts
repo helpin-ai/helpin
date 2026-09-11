@@ -11,6 +11,7 @@ import type {
 } from '@/lib/pmTypes';
 import { canonicalToolName, isToolName } from '@/lib/toolNames';
 import { sortCodingSessionEvents } from './codingSessionUtils';
+import { applyCodingSessionTurnState } from './codingSessionTurnState';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -197,6 +198,7 @@ function cloneLiveTurnSegments(segments?: CodingSessionLiveTurnSegment[] | null)
 function cloneStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null): CodingSessionStreamSnapshot | null {
   if (!snapshot) return null;
   return {
+    ...(snapshot.turn_state ? { turn_state: { ...snapshot.turn_state } } : {}),
     ...(snapshot.through_sequence ? { through_sequence: snapshot.through_sequence } : {}),
     ...(snapshot.live_assistant_message ? { live_assistant_message: cloneAssistantMessage(snapshot.live_assistant_message)! } : {}),
     ...(snapshot.live_reasoning_message ? { live_reasoning_message: cloneReasoningMessage(snapshot.live_reasoning_message)! } : {}),
@@ -210,7 +212,8 @@ function isEmptyStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null) {
     || (!snapshot.live_assistant_message
       && !snapshot.live_reasoning_message
       && (!snapshot.live_turn_segments || snapshot.live_turn_segments.length === 0)
-      && !snapshot.current_plan);
+      && !snapshot.current_plan
+      && !snapshot.turn_state);
 }
 
 export function mergeCodingSessionStreamSnapshotSeed(
@@ -225,10 +228,21 @@ export function mergeCodingSessionStreamSnapshotSeed(
   // An empty response is authoritative too: it is how terminal persistence
   // clears the in-progress stream. Keeping `current` here left the final live
   // transcript mounted forever beside the persisted transcript.
+  if (current?.turn_state && ((incoming?.through_sequence ?? 0) < (current.through_sequence ?? 0) || isEmptyStreamSnapshot(incoming))) return cloneStreamSnapshot(current);
   if (isEmptyStreamSnapshot(incoming)) return null;
 
   const next = cloneStreamSnapshot(incoming);
   if (!next) return null;
+  if (current?.turn_state?.phase === 'answered' && next.turn_state?.turn_id === current.turn_state.turn_id) {
+    next.turn_state = { ...current.turn_state };
+    const answerID = current.turn_state.answer_message_id;
+    const answer = current.live_turn_segments?.find((segment) => segment.kind === 'assistant_message'
+      && segment.assistant_message.message_id === answerID && segment.assistant_message.message_type === 'assistant_final');
+    if (answer && !next.live_turn_segments?.some((segment) => segment.kind === 'assistant_message'
+      && segment.assistant_message.message_id === answerID)) {
+      next.live_turn_segments = [...(next.live_turn_segments ?? []), answer];
+    }
+  }
 
   // Plans are durable run state rather than an append-only turn timeline. Some
   // runtime projectors omit an unchanged plan from a subsequent snapshot, so
@@ -282,6 +296,7 @@ function parseLiveAssistantMessage(value: unknown): CodingSessionLiveAssistantMe
 
   return {
     message_id: messageID,
+    message_type: asString(payload.message_type),
     content: typeof payload.content === 'string' ? payload.content : '',
     started_at: asString(payload.started_at),
     completed_at: asString(payload.completed_at),
@@ -919,6 +934,7 @@ export function buildCodingSessionStreamState(
   )));
   const transcriptMessages: CodingSessionTranscriptMessage[] = [];
   const activityEvents: CodingSessionEvent[] = [];
+  let turnState = snapshot?.turn_state ? { ...snapshot.turn_state } : undefined;
   let liveAssistantMessage = cloneAssistantMessage(snapshot?.live_assistant_message);
   let liveReasoningMessage = cloneReasoningMessage(snapshot?.live_reasoning_message);
   const liveTurnSegments = cloneLiveTurnSegments(snapshot?.live_turn_segments);
@@ -968,6 +984,10 @@ export function buildCodingSessionStreamState(
   }
 
   for (const event of sortedEvents) {
+    const payload = asRecord(event.payload) ?? {};
+    const transition = applyCodingSessionTurnState(turnState, event.type, payload, event.timestamp);
+    turnState = transition.state;
+    if (!transition.accept) continue;
     const transcriptMessage = transcriptMessageFromEvent(event);
     if (transcriptMessage) {
       if (event.type === 'interaction.resolved') {
@@ -988,11 +1008,11 @@ export function buildCodingSessionStreamState(
       continue;
     }
 
-    const payload = asRecord(event.payload) ?? {};
     switch (event.type) {
       case 'assistant.message.started': {
         const messageID = asString(payload.message_id) ?? `assistant:${event.id}`;
         liveAssistantMessage = ensureAssistantMessage(liveAssistantMessage, messageID, event.timestamp);
+        liveAssistantMessage.message_type = asString(payload.message_type);
         break;
       }
 
@@ -1013,8 +1033,10 @@ export function buildCodingSessionStreamState(
         deltaContent = streamDelta(liveAssistantMessage.content, deltaContent);
         liveAssistantMessage.content += deltaContent;
         liveAssistantMessage.status = 'streaming';
+        liveAssistantMessage.message_type = asString(payload.message_type);
         if (deltaContent || previousContent.length === 0) {
-          appendAssistantSegment(liveTurnSegments, messageID, deltaContent, event.timestamp);
+          const segment = appendAssistantSegment(liveTurnSegments, messageID, deltaContent, event.timestamp);
+          if (segment) segment.message_type = liveAssistantMessage.message_type;
         }
         break;
       }
@@ -1225,6 +1247,7 @@ export function buildCodingSessionStreamState(
 
   return {
     transcript_messages: transcriptMessages,
+    ...(turnState ? { turn_state: turnState } : {}),
     live_assistant_message: liveAssistantMessage,
     live_reasoning_message: liveReasoningMessage,
     live_turn_segments: liveTurnSegments.filter((segment) => (
