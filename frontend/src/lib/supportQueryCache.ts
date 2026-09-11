@@ -219,8 +219,13 @@ function patchConversationForMessageActivity(
     (patch.message.message_type === undefined || patch.message.message_type === 'reply') &&
     typeof patch.message.sender_type === 'string' &&
     (!patch.message.is_internal || (typeof patch.message.content === 'string' && patch.message.content.trim() !== ''));
-  const advancesMessage = isListReply && isMessagePatchNewer(conversation, patch);
-  if (!advancesActivity && !advancesMessage) return conversation;
+  const advancesMessage = isListReply && isMessagePatchNewer(conversation.list_last_message_at, conversation.list_last_message_id, patch);
+  const advancesPublicMessage = isPublicReply(patch.message) && isMessagePatchNewer(
+    conversation.last_public_message_at === undefined ? conversation.list_last_message_at : conversation.last_public_message_at,
+    conversation.last_public_message_id === undefined ? conversation.list_last_message_id : conversation.last_public_message_id,
+    patch,
+  );
+  if (!advancesActivity && !advancesMessage && !advancesPublicMessage) return conversation;
 
   const next: SupportConversation = {
     ...conversation,
@@ -231,7 +236,7 @@ function patchConversationForMessageActivity(
     } : {}),
   };
 
-  if (!advancesMessage || !isPublicReply(patch.message)) {
+  if (!advancesPublicMessage) {
     return next;
   }
 
@@ -243,8 +248,11 @@ function patchConversationForMessageActivity(
 
   return {
     ...next,
-    last_message: content || conversation.last_message,
+    last_message: advancesMessage ? content || conversation.last_message : conversation.last_message,
     last_message_sender_type: senderType,
+    last_public_message_id: patch.messageId ?? conversation.last_public_message_id,
+    last_public_message_at: patch.timestamp,
+    last_public_sender_type: senderType,
     last_message_sender_display_name: senderDisplayName,
     awaiting_reply: senderType === 'customer',
     customer_awaiting_response: senderType === 'customer',
@@ -257,17 +265,17 @@ function patchConversationForMessageActivity(
   };
 }
 
-function isMessagePatchNewer(conversation: SupportConversation, patch: SupportMessageActivityPatch): boolean {
-  if (!conversation.list_last_message_at) return true;
-  const currentTime = Date.parse(conversation.list_last_message_at);
+function isMessagePatchNewer(currentAt: string | null | undefined, currentId: string | null | undefined, patch: SupportMessageActivityPatch): boolean {
+  if (!currentAt) return true;
+  const currentTime = Date.parse(currentAt);
   const patchTime = Date.parse(patch.timestamp);
   if (Number.isFinite(currentTime) && Number.isFinite(patchTime)) {
     if (patchTime !== currentTime) return patchTime > currentTime;
-  } else if (patch.timestamp !== conversation.list_last_message_at) {
-    return patch.timestamp > conversation.list_last_message_at;
+  } else if (patch.timestamp !== currentAt) {
+    return patch.timestamp > currentAt;
   }
-  if (!patch.messageId || !conversation.list_last_message_id) return false;
-  return patch.messageId > conversation.list_last_message_id;
+  if (!patch.messageId || !currentId) return false;
+  return patch.messageId > currentId;
 }
 
 function moveConversationInList(

@@ -1122,8 +1122,16 @@ func (r *SupportConversationRepository) applyMineFilter(query *gorm.DB, alias, u
 	)`, conversationHumanInboxCondition(alias), alias, alias, alias, mentionCondition), args...)
 }
 
+// Waiting is a view of public teammate replies, not a status transition.
+// Retain explicitly waiting conversations for compatibility with existing workflows.
+func conversationWaitingOnCustomerCondition(alias string) string {
+	return fmt.Sprintf("(%[1]s.status = 'waiting_on_customer' OR (%[1]s.status = 'open' AND %[1]s.last_public_sender_type = 'user' AND NOT COALESCE(%[1]s.customer_awaiting_response, false)))", alias)
+}
+
 func (r *SupportConversationRepository) applyConversationListFilter(query *gorm.DB, alias, filter, userID string) *gorm.DB {
 	switch strings.TrimSpace(strings.ToLower(filter)) {
+	case model.SupportConversationListFilterWaiting:
+		return query.Where(conversationWaitingOnCustomerCondition(alias))
 	case model.SupportConversationListFilterInbox:
 		return query.Where(conversationHumanInboxCondition(alias))
 	case model.SupportConversationListFilterMine, model.SupportConversationListFilterMentions:
@@ -2363,7 +2371,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 			) AS mine,
 			COUNT(*) FILTER (
 				WHERE %s
-				  AND sc.status = 'waiting_on_customer'
+				  AND `+conversationWaitingOnCustomerCondition("sc")+`
 			) AS waiting,
 			COUNT(*) FILTER (
 				WHERE %s
@@ -2390,7 +2398,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 				WHERE %s
 			) AS mine_total,
 			COUNT(*) FILTER (
-				WHERE sc.status = 'waiting_on_customer'
+				WHERE `+conversationWaitingOnCustomerCondition("sc")+`
 			) AS waiting_total,
 			COUNT(*) FILTER (
 				WHERE %s
@@ -2402,7 +2410,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 				WHERE sc.needs_human_reply AND %s
 			) AS mine_needs_human_reply,
 			COUNT(*) FILTER (
-				WHERE sc.needs_human_reply AND sc.status = 'waiting_on_customer'
+				WHERE sc.needs_human_reply AND `+conversationWaitingOnCustomerCondition("sc")+`
 			) AS waiting_needs_human_reply,
 			COUNT(*) FILTER (
 				WHERE sc.needs_human_reply AND %s
@@ -2467,18 +2475,18 @@ func (r *SupportConversationRepository) getLegacyUnreadStats(ctx context.Context
 		SELECT
 			COUNT(*) FILTER (WHERE %s AND %s) AS inbox,
 			COUNT(*) FILTER (WHERE %s AND %s) AS mine,
-			COUNT(*) FILTER (WHERE %s AND sc.status = 'waiting_on_customer') AS waiting,
+			COUNT(*) FILTER (WHERE %s AND `+conversationWaitingOnCustomerCondition("sc")+`) AS waiting,
 			COUNT(*) FILTER (WHERE %s AND %s) AS ai_active,
 			COUNT(*) FILTER (WHERE %s AND %s) AS total,
 			COUNT(*) FILTER (WHERE %s AND %s) AS my_inbox,
 			COUNT(*) FILTER (WHERE %s AND %s AND sc.assigned_agent_id IS NULL AND sc.assigned_user_id IS NULL) AS unassigned,
 			COUNT(*) FILTER (WHERE %s) AS inbox_total,
 			COUNT(*) FILTER (WHERE %s) AS mine_total,
-			COUNT(*) FILTER (WHERE sc.status = 'waiting_on_customer') AS waiting_total,
+			COUNT(*) FILTER (WHERE `+conversationWaitingOnCustomerCondition("sc")+`) AS waiting_total,
 			COUNT(*) FILTER (WHERE %s) AS ai_active_total,
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS inbox_needs_human_reply,
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS mine_needs_human_reply,
-			COUNT(*) FILTER (WHERE sc.needs_human_reply AND sc.status = 'waiting_on_customer') AS waiting_needs_human_reply,
+			COUNT(*) FILTER (WHERE sc.needs_human_reply AND `+conversationWaitingOnCustomerCondition("sc")+`) AS waiting_needs_human_reply,
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS ai_active_needs_human_reply
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ? AND sc.status NOT IN ('resolved', 'spam')
