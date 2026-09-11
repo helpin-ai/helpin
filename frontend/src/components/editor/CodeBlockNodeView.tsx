@@ -4,8 +4,9 @@ import { Alert01Icon, ArrowDown01Icon, Copy01Icon, SourceCodeIcon, Tick01Icon, V
 import { common } from 'lowlight'
 import { MermaidBlock } from './MermaidBlock'
 import { NwdiagBlock } from './NwdiagBlock'
+import { SvgBlock } from './SvgBlock'
 
-const LANGUAGES = Array.from(new Set([...Object.keys(common), 'mermaid', 'nwdiag'])).sort()
+const LANGUAGES = Array.from(new Set([...Object.keys(common), 'mermaid', 'nwdiag', 'svg'])).sort()
 
 const DISPLAY_NAMES: Record<string, string> = {
   bash: 'Bash',
@@ -27,6 +28,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   markdown: 'Markdown',
   mermaid: 'Mermaid',
   nwdiag: 'nwdiag',
+  svg: 'SVG',
   objectivec: 'Objective-C',
   php: 'PHP',
   plaintext: 'Plain text',
@@ -50,7 +52,8 @@ function displayName(lang: string): string {
 export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeViewProps) {
   const language = (node.attrs.language as string) || extension.options.defaultLanguage || 'plaintext'
   const isNwdiag = language.toLowerCase() === 'nwdiag'
-  const isDiagram = language.toLowerCase() === 'mermaid' || isNwdiag
+  const isSvg = language.toLowerCase() === 'svg'
+  const isDiagram = language.toLowerCase() === 'mermaid' || isNwdiag || isSvg
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [copied, setCopied] = useState(false)
@@ -195,11 +198,11 @@ export function CodeBlockNodeView({ node, updateAttributes, extension }: NodeVie
         {isDiagram && diagramMode === 'diagram' && (
           <div contentEditable={false}>
             {node.textContent.trim() ? (
-              isNwdiag ? <NwdiagBlock source={node.textContent} /> : <MermaidBlock source={node.textContent} />
+              isSvg ? <SvgBlock source={node.textContent} /> : isNwdiag ? <NwdiagBlock source={node.textContent} /> : <MermaidBlock source={node.textContent} />
             ) : (
               <div className="flex min-h-32 items-center gap-3 px-4 py-3 text-sm text-muted-foreground">
                 <Alert01Icon className="h-4 w-4 shrink-0" />
-                Add {isNwdiag ? 'nwdiag' : 'Mermaid'} source to render a diagram.
+                Add {isSvg ? 'SVG' : isNwdiag ? 'nwdiag' : 'Mermaid'} source to render a diagram.
               </div>
             )}
           </div>

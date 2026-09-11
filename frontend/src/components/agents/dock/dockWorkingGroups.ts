@@ -1,5 +1,6 @@
 import type { TranscriptSegment } from '@/components/agents/transcript';
-import { findLastMatchingIndex } from './findLastMatchingIndex';
+import type { CodingSessionTurnState } from '@/lib/pmTypes';
+import { finalAssistantIndex } from './agentTurnState';
 
 export interface DockWorkingGroupEntry {
   kind: 'working_group';
@@ -18,6 +19,7 @@ export interface DockWorkingSegmentEntry {
 export type DockWorkingTimelineEntry = DockWorkingGroupEntry | DockWorkingSegmentEntry;
 
 interface DockWorkingTimelineOptions {
+  turnState?: CodingSessionTurnState;
   collapseCompletedWork?: boolean;
   timestampForSegment?: (segment: TranscriptSegment) => number | null;
 }
@@ -49,26 +51,27 @@ function activityEntries(
 
 function completedRunTimeline(
   segments: TranscriptSegment[],
+  active: boolean,
   timestampForSegment?: (segment: TranscriptSegment) => number | null,
+  turnState?: CodingSessionTurnState,
 ): DockWorkingTimelineEntry[] {
   const entries: DockWorkingTimelineEntry[] = [];
   let interval: TranscriptSegment[] = [];
   let boundaryStartedAt: number | null = null;
 
-  const flush = () => {
+  const flush = (trailing: boolean) => {
     if (interval.length === 0) return;
-    const finalAssistantIndex = findLastMatchingIndex(interval, (segment) => (
-      segment.kind === 'assistant' && !segment.streaming
-    ));
-    const work = finalAssistantIndex > 0 ? interval.slice(0, finalAssistantIndex) : [];
+    const finalIndex = finalAssistantIndex(interval, !trailing || !active);
+    const work = finalIndex > 0 ? interval.slice(0, finalIndex) : [];
     const canCollapse = work.length > 0 && work.every((segment) => (
       segment.kind === 'assistant' || segment.kind === 'tool' || segment.kind === 'reasoning'
     ));
 
     if (canCollapse) {
-      const finalResponse = interval[finalAssistantIndex];
-      const startedAt = boundaryStartedAt ?? timestampForSegment?.(work[0]) ?? null;
-      const completedAt = timestampForSegment?.(finalResponse) ?? null;
+      const finalResponse = interval[finalIndex];
+      const currentAnswer = turnState?.answer_message_id && finalResponse.id.endsWith(turnState.answer_message_id);
+      const startedAt = currentAnswer ? Date.parse(turnState.started_at) : boundaryStartedAt ?? timestampForSegment?.(work[0]) ?? null;
+      const completedAt = currentAnswer && turnState.completed_at ? Date.parse(turnState.completed_at) : timestampForSegment?.(finalResponse) ?? null;
       const durationMs = startedAt !== null && completedAt !== null
         ? Math.max(0, completedAt - startedAt)
         : 0;
@@ -79,25 +82,25 @@ function completedRunTimeline(
         active: false,
         durationMs,
       });
-      for (const segment of interval.slice(finalAssistantIndex)) {
+      for (const segment of interval.slice(finalIndex)) {
         entries.push({ kind: 'segment', key: segment.id, segment });
       }
     } else {
-      entries.push(...buildDockWorkingTimeline(interval, false));
+      entries.push(...buildDockWorkingTimeline(interval, active && trailing, { collapseCompletedWork: false }));
     }
     interval = [];
   };
 
   for (const segment of segments) {
     if (segment.kind === 'user' || segment.kind === 'review_decision') {
-      flush();
+      flush(false);
       entries.push({ kind: 'segment', key: segment.id, segment });
       boundaryStartedAt = timestampForSegment?.(segment) ?? null;
       continue;
     }
     interval.push(segment);
   }
-  flush();
+  flush(true);
   return entries;
 }
 
@@ -110,8 +113,8 @@ export function buildDockWorkingTimeline(
   active: boolean,
   options: DockWorkingTimelineOptions = {},
 ): DockWorkingTimelineEntry[] {
-  if (options.collapseCompletedWork && !active) {
-    return completedRunTimeline(segments, options.timestampForSegment);
+  if ((options.collapseCompletedWork && !active) || (options.collapseCompletedWork !== false && segments.some((s) => s.kind === 'assistant' && s.final))) {
+    return completedRunTimeline(segments, active, options.timestampForSegment, options.turnState);
   }
   const entries: DockWorkingTimelineEntry[] = [];
   let activity: TranscriptSegment[] = [];

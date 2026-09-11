@@ -51,7 +51,7 @@ func EncodeCodingSessionStreamSnapshot(snapshot *CodingSessionStreamSnapshot) (j
 }
 
 func (s *CodingSessionStreamSnapshot) IsEmpty() bool {
-	return s == nil || (s.LiveAssistantMessage == nil && s.LiveReasoningMessage == nil && len(s.LiveTurnSegments) == 0 && s.CurrentPlan == nil)
+	return s == nil || (s.TurnState == nil && s.LiveAssistantMessage == nil && s.LiveReasoningMessage == nil && len(s.LiveTurnSegments) == 0 && s.CurrentPlan == nil)
 }
 
 func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventType string, payload map[string]any, timestamp time.Time) *CodingSessionStreamSnapshot {
@@ -64,11 +64,19 @@ func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventT
 	if timestamp.IsZero() {
 		timestamp = time.Now().UTC()
 	}
+	if !applyCodingSessionTurnState(snapshot, eventType, payload, timestamp) {
+		return snapshot
+	}
+	if snapshot.TurnState != nil && snapshot.TurnState.Phase == "answered" &&
+		strings.HasPrefix(eventType, "assistant.message.") && trimmedSnapshotString(payload["message_type"]) != "assistant_final" {
+		return snapshot
+	}
 
 	switch strings.TrimSpace(eventType) {
 	case "assistant.message.started":
 		messageID := firstNonEmptySnapshotValue(trimmedSnapshotString(payload["message_id"]), "assistant:"+timestamp.UTC().Format(time.RFC3339Nano))
 		snapshot.LiveAssistantMessage = ensureCodingSessionAssistantMessage(snapshot.LiveAssistantMessage, messageID, timestamp.UTC())
+		snapshot.LiveAssistantMessage.MessageType = trimmedSnapshotString(payload["message_type"])
 
 	case "assistant.message.delta":
 		messageID := firstNonEmptySnapshotValue(
@@ -81,8 +89,10 @@ func ApplyCodingSessionStreamEvent(snapshot *CodingSessionStreamSnapshot, eventT
 		deltaText = codingSessionStreamDelta(assistant.Content, deltaText)
 		assistant.Content += deltaText
 		assistant.Status = "streaming"
+		assistant.MessageType = trimmedSnapshotString(payload["message_type"])
 		snapshot.LiveAssistantMessage = assistant
-		appendCodingSessionAssistantSegment(snapshot, messageID, deltaText, timestamp.UTC())
+		segment := appendCodingSessionAssistantSegment(snapshot, messageID, deltaText, timestamp.UTC())
+		segment.MessageType = assistant.MessageType
 
 	case "assistant.message.completed":
 		messageID := firstNonEmptySnapshotValue(

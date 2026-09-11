@@ -75,7 +75,7 @@ export const HtmlBlockExtension = Node.create({
         serialize(state: any, node: any) {
           const raw = node.attrs.html || '';
           if (raw) {
-            if (node.attrs.renderMode === 'sandboxed') {
+            if (shouldRenderHtmlBlockIsolated(raw, node.attrs.renderMode)) {
               state.write(`<div data-html-block data-render-mode="sandboxed">${raw}</div>`);
               state.closeBlock(node);
               return;
