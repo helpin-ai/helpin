@@ -114,35 +114,42 @@ async function installMocks(
 
 const url = "/e2e/crm/harness/pipelines.html";
 
-test("pipeline names toggle stages with only one pipeline expanded", async ({
-  page,
-}) => {
+test("pipelines start collapsed with stage controls on the right and contextual actions", async ({ page }) => {
   await installMocks(page, { multiplePipelines: true });
   await page.goto(url);
-  const sales = page.getByRole("button", {
-    name: "Outbound sales pipeline",
-    exact: true,
-  });
-  const renewals = page.getByRole("button", {
-    name: "Renewals pipeline",
-    exact: true,
-  });
+  const sales = page.locator("#pipeline-toggle-sales");
+  const renewals = page.locator("#pipeline-toggle-renewals");
+  const section = page.locator("section").filter({ has: sales });
+  const actions = section.getByRole("button", { name: "Edit pipeline", exact: true }).locator("..");
+  await expect(sales).toHaveAttribute("aria-expanded", "false");
+  await expect(renewals).toHaveAttribute("aria-expanded", "false");
+  await expect(sales).toHaveText("Show stages");
+  await expect(page.getByRole("region", { name: "Open stages", exact: true })).toHaveCount(0);
+  await expect(actions).toHaveCSS("opacity", "0");
+  await page.screenshot({ path: "/tmp/helpin-pipelines-collapsed.png", fullPage: true });
+  const headingBounds = await page.locator("#pipeline-sales").boundingBox();
+  const toggleBounds = await sales.boundingBox();
+  expect(toggleBounds!.x).toBeGreaterThan(headingBounds!.x + headingBounds!.width);
+  await section.hover();
+  await expect(actions).toHaveCSS("opacity", "1");
+  await page.mouse.move(0, 0);
+  await expect(actions).toHaveCSS("opacity", "0");
+  await sales.focus();
+  await expect(actions).toHaveCSS("opacity", "1");
+  await sales.press("Enter");
   await expect(sales).toHaveAttribute("aria-expanded", "true");
+  await expect(sales).toHaveText("Hide stages");
+  await page.getByRole("button", { name: "Create pipeline", exact: true }).focus();
+  await expect(actions).toHaveCSS("opacity", "1");
   await renewals.click();
   await expect(sales).toHaveAttribute("aria-expanded", "false");
   await expect(renewals).toHaveAttribute("aria-expanded", "true");
-  await expect(
-    page.getByRole("region", { name: "Open stages", exact: true }),
-  ).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Open stages", exact: true })).toHaveCount(1);
   await renewals.press("Enter");
   await expect(renewals).toHaveAttribute("aria-expanded", "false");
-  await expect(
-    page.getByRole("region", { name: "Open stages", exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Open stages", exact: true })).toHaveCount(0);
   await expect(page.locator("#pipeline-selector")).toHaveCount(0);
-  await expect(
-    page.getByText("Changes save automatically", { exact: true }),
-  ).toHaveCount(0);
+  await expect(page.getByText("Changes save automatically", { exact: true })).toHaveCount(0);
 });
 
 test("inline stage fields save on blur or Enter and cancel with Escape", async ({
@@ -150,6 +157,9 @@ test("inline stage fields save on blur or Enter and cancel with Escape", async (
 }) => {
   const { writes } = await installMocks(page);
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   const name = page.getByRole("textbox", {
     name: "Stage name: Contacted",
     exact: true,
@@ -198,6 +208,9 @@ test("failed inline saves retain the draft and allow retry after a conflict", as
 }) => {
   const { writes } = await installMocks(page, { conflictOnce: true });
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   const name = page.getByRole("textbox", {
     name: "Stage name: Contacted",
     exact: true,
@@ -229,6 +242,9 @@ test("saving through Edit replaces an invalid inline draft", async ({
 }) => {
   await installMocks(page);
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   const probability = page.getByRole("spinbutton", {
     name: "Win probability: Contacted",
     exact: true,
@@ -257,6 +273,9 @@ test("touch users can access stage guidance and removal", async ({
   const page = await context.newPage();
   await installMocks(page);
   await page.goto(`http://127.0.0.1:5193${url}?dark`);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   await expect(
     page
       .getByRole("button", { name: "Delete Contacted", exact: true })
@@ -293,6 +312,9 @@ test("stage removal appears on hover or keyboard focus and guidance lives in too
 }) => {
   await installMocks(page);
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   const remove = page.getByRole("button", {
     name: "Delete Contacted",
     exact: true,
@@ -319,6 +341,9 @@ test("moves a stage several positions in one action and preserves stage identiti
 }) => {
   const { writes } = await installMocks(page);
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   await page.getByRole("combobox", { name: "Position of Lead found" }).click();
   await page
     .getByRole("option", { name: "7 · Contract sent", exact: true })
@@ -347,6 +372,9 @@ test("deleting a populated stage requires an explicit same-outcome destination",
   const { writes } = await installMocks(page);
   await page.goto(url);
   await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
+  await page
     .getByRole("button", { name: "Delete Lead found", exact: true })
     .click();
   const dialog = page.locator('[data-slot="dialog-content"]');
@@ -371,6 +399,9 @@ test("failed saves keep the form and never show a success notification", async (
   await installMocks(page, { failSave: true });
   await page.goto(url);
   await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
+  await page
     .getByRole("button", { name: "Edit Contacted", exact: true })
     .click();
   await page.getByLabel("Stage name", { exact: true }).fill("Contact made");
@@ -391,6 +422,9 @@ test("stage editor is usable in a narrow dark view and respects read-only access
   await installMocks(page, { readOnly: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${url}?dark`);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   await expect(page.getByText("Lead found", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Delete Lead found", exact: true }),
@@ -411,6 +445,9 @@ test("keyboard dragging moves across several stages and preserves won/lost outco
 }) => {
   const { writes } = await installMocks(page);
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   const handle = page.getByRole("button", {
     name: "Drag Lead found",
     exact: true,
@@ -454,6 +491,9 @@ test("creates a pipeline by copying stages without copying stage IDs or deals", 
   const { writes } = await installMocks(page);
   await page.goto(url);
   await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
+  await page
     .getByRole("button", { name: "Create pipeline", exact: true })
     .click();
   const dialog = page.locator('[data-slot="dialog-content"]');
@@ -482,6 +522,9 @@ test("adds a stage at a chosen position and validates probability", async ({
 }) => {
   const { writes } = await installMocks(page);
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   await page.getByRole("button", { name: "Add stage", exact: true }).click();
   const dialog = page.locator('[data-slot="dialog-content"]');
   await page.getByLabel("Stage name", { exact: true }).fill("Discovery call");
@@ -508,6 +551,9 @@ test("empty stage deletion and mobile editing keep their controls visible", asyn
   const { writes } = await installMocks(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   await expect(
     page.getByRole("combobox", { name: "Position of Lead found" }),
   ).toBeVisible();
@@ -541,6 +587,9 @@ test("stale editor can explicitly reload and save against the latest version", a
   const { writes } = await installMocks(page, { conflictOnce: true });
   await page.goto(url);
   await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
+  await page
     .getByRole("button", { name: "Edit Contacted", exact: true })
     .click();
   await page.getByLabel("Stage name", { exact: true }).fill("Contact made");
@@ -566,6 +615,9 @@ test("failed background refresh preserves the open editor and its input", async 
   await installMocks(page, { failSave: true, failRefreshAfterSave: true });
   await page.goto(url);
   await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
+  await page
     .getByRole("button", { name: "Edit Contacted", exact: true })
     .click();
   await page.getByLabel("Stage name", { exact: true }).fill("Keep this draft");
@@ -586,6 +638,9 @@ test("pointer dragging moves a stage directly to a distant position", async ({
 }) => {
   const { writes } = await installMocks(page);
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   const start = await page
     .getByRole("button", { name: "Drag Lead found", exact: true })
     .boundingBox();
@@ -620,6 +675,9 @@ test("pipeline deal type is optional and offers new or existing business", async
 }) => {
   const { writes } = await installMocks(page);
   await page.goto(url);
+  await page
+    .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Create pipeline", exact: true })
     .click();
@@ -664,7 +722,7 @@ test("pipeline deal type is optional and offers new or existing business", async
   await expect(dialog).not.toBeVisible();
   expect(writes[0].default_commercial_motion).toBe("existing_business");
   await expect(
-    page.getByRole("button", { name: "Customer growth", exact: true }),
+    page.getByRole("heading", { name: /Customer growth/ }),
   ).toBeVisible();
 });
 
@@ -674,6 +732,9 @@ for (const motion of ["expansion", "renewal"]) {
   }) => {
     const { writes } = await installMocks(page, { motion });
     await page.goto(url);
+    await page
+      .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
+      .click();
     await page
       .getByRole("button", { name: "Edit pipeline", exact: true })
       .click();
