@@ -44,12 +44,14 @@ const ALLOWED_STYLE_PROPS = new Set([
   'row-gap', 'text-align', 'text-decoration', 'text-transform', 'vertical-align', 'white-space', 'width',
 ]);
 
-export function sanitizeHtml(html: string): string {
+export function sanitizeHtml(html: string, options: { allowSvgImages?: boolean } = {}): string {
   const safe = DOMPurify.sanitize(html, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOW_DATA_ATTR: true,
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|data:image\/(?:gif|jpe?g|png|webp);base64,[a-z0-9+/=]+$|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP: options.allowSvgImages
+      ? /^(?:(?:https?|mailto|tel):|data:image\/(?:gif|jpe?g|png|webp|svg\+xml);base64,[a-z0-9+/=]+$|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i
+      : /^(?:(?:https?|mailto|tel):|data:image\/(?:gif|jpe?g|png|webp);base64,[a-z0-9+/=]+$|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
   });
   return sanitizeInlineStyles(safe);
 }

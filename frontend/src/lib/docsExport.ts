@@ -8,9 +8,11 @@ import { pmAttachmentService } from './services/pmAttachmentService';
 import { renderMermaidSvg } from './mermaidRenderer';
 import { renderNwdiagSvg } from './nwdiagRenderer';
 import { exportExcalidrawPngBlob } from './excalidrawRenderer';
+import { sanitizeSvg, svgDataUrl } from './svgRenderer';
+import { shouldRenderHtmlBlockIsolated } from '@/components/docs/htmlBlockRendering';
 
 export type DocsExportFormat = 'doc' | 'html' | 'mdx';
-export type DocsExportImageWarning = { name: string; reason: string };
+export type DocsExportImageWarning = { name: string; reason: string; kind?: 'html' };
 
 class ExportImageError extends Error {}
 
@@ -74,7 +76,7 @@ async function imageToPngDataUrl(src: string, width?: number, height?: number): 
   return canvas.toDataURL('image/png');
 }
 
-async function embedImage(src: string): Promise<string> {
+async function embedImage(src: string, format: DocsExportFormat): Promise<string> {
   const url = new URL(src, window.location.href);
   if (!['http:', 'https:', 'data:', 'blob:'].includes(url.protocol)) {
     throw new ExportImageError('An image has an unsupported address.');
@@ -93,7 +95,10 @@ async function embedImage(src: string): Promise<string> {
   if (/^text\/html(?:;|$)/i.test(blob.type)) {
     throw new ExportImageError('The image link returned a web page. Upload the original image to this document.');
   }
-  if (blob.type.split(';')[0] === 'image/svg+xml') return svgToPngDataUrl(await blob.text());
+  if (blob.type.split(';')[0] === 'image/svg+xml') {
+    const svg = sanitizeSvg(await blob.text());
+    return format === 'doc' ? svgToPngDataUrl(svg) : svgDataUrl(svg);
+  }
   if (/^image\/(webp|avif|bmp)(;|$)/i.test(blob.type)) return imageToPngDataUrl(await blobDataUrl(blob));
   if (!/^image\/(png|jpe?g|gif|webp)(;|$)/i.test(blob.type)) {
     throw new ExportImageError('An image returned an unsupported file type.');
@@ -107,11 +112,18 @@ export async function prepareDocsExportHtml(
   schema: Schema,
   workspaceId?: string,
   onImageWarning?: (warning: DocsExportImageWarning) => void,
+  format: DocsExportFormat = 'html',
 ): Promise<string> {
   const cache = new Map<string, Promise<string>>();
+  const embeddedImages = new Set<string>();
+  const htmlFrames: string[] = [];
+  const frameToken = crypto.randomUUID();
   const cachedImage = (src: string) => {
     let result = cache.get(src);
-    if (!result) { result = embedImage(src); cache.set(src, result); }
+    if (!result) {
+      result = embedImage(src, format).then((image) => { embeddedImages.add(image); return image; });
+      cache.set(src, result);
+    }
     return result;
   };
   function unavailableImage(src: string, alt: string | undefined, error: unknown): string {
@@ -126,13 +138,13 @@ export async function prepareDocsExportHtml(
   async function transform(node: JSONContent): Promise<JSONContent> {
     const language = String(node.attrs?.language ?? '').toLowerCase();
     let diagram: string | undefined;
-    if (node.type === 'codeBlock' && ['mermaid', 'nwdiag'].includes(language)) {
+    if (node.type === 'codeBlock' && ['mermaid', 'nwdiag', 'svg'].includes(language)) {
       const source = (node.content ?? []).map((child) => child.text ?? '').join('');
       try {
-        const svg = language === 'mermaid'
+        const svg = sanitizeSvg(language === 'svg' ? source : language === 'mermaid'
           ? await renderMermaidSvg(source, 'light', { htmlLabels: false })
-          : await renderNwdiagSvg(source, 'light');
-        diagram = await svgToPngDataUrl(svg);
+          : await renderNwdiagSvg(source, 'light'));
+        diagram = format === 'doc' ? await svgToPngDataUrl(svg) : svgDataUrl(svg);
       } catch {
         throw new Error(`Could not export a ${language} diagram. Check its source and try again.`);
       }
@@ -144,6 +156,7 @@ export async function prepareDocsExportHtml(
       }
     }
     if (diagram) {
+      embeddedImages.add(diagram);
       return { type: 'resizableImage', attrs: { src: diagram, alt: node.attrs?.title || `${language || 'Excalidraw'} diagram`, width: '100%', height: 'auto' } };
     }
     if (node.type === 'resizableImage' || node.type === 'image') {
@@ -171,7 +184,20 @@ export async function prepareDocsExportHtml(
       }
     }
     const transformed = { ...node };
-    if (node.type === 'htmlBlock') transformed.attrs = { ...node.attrs, renderMode: 'inline' };
+    if (node.type === 'htmlBlock') {
+      const html = String(node.attrs?.html ?? '');
+      if (shouldRenderHtmlBlockIsolated(html, node.attrs?.renderMode)) {
+        if (format === 'doc') {
+          const name = new DOMParser().parseFromString(html, 'text/html').title || 'HTML block';
+          const reason = 'This HTML block needs an SVG or PNG image for Word export.';
+          onImageWarning?.({ name, reason, kind: 'html' });
+          return { type: 'paragraph', content: [{ type: 'text', text: `[${name}: ${reason}]` }] };
+        }
+        const index = htmlFrames.push(html) - 1;
+        // Restore only frames that we created, after sanitizing the outer document.
+        transformed.attrs = { html: `<div data-export-html-frame="${frameToken}-${index}"></div>`, renderMode: 'inline' };
+      }
+    }
     if (node.content) {
       transformed.content = [];
       for (const child of node.content) transformed.content.push(await transform(child));
@@ -186,7 +212,7 @@ export async function prepareDocsExportHtml(
     const src = img.getAttribute('src') ?? '';
     try {
       if (!src) throw new ExportImageError('An image is missing its source.');
-      if (!/^data:image\/(png|jpeg|gif);base64,/i.test(src)) img.src = await cachedImage(src);
+      if (!embeddedImages.has(src) && !/^data:image\/(png|jpeg|gif);base64,/i.test(src)) img.src = await cachedImage(src);
     } catch (error) {
       const placeholder = document.createElement('span');
       placeholder.textContent = unavailableImage(src, img.alt, error);
@@ -198,7 +224,20 @@ export async function prepareDocsExportHtml(
     marker.textContent = checkbox.checked || checkbox.hasAttribute('checked') ? '☑ ' : '☐ ';
     checkbox.replaceWith(marker);
   }
-  container.innerHTML = sanitizeHtml(container.innerHTML);
+  container.innerHTML = sanitizeHtml(container.innerHTML, { allowSvgImages: format !== 'doc' });
+  for (const placeholder of container.querySelectorAll('[data-export-html-frame]')) {
+    const marker = placeholder.getAttribute('data-export-html-frame') ?? '';
+    if (!marker.startsWith(`${frameToken}-`)) continue;
+    const html = htmlFrames[Number(marker.slice(frameToken.length + 1))];
+    if (html === undefined) continue;
+    const frame = document.createElement('iframe');
+    frame.title = new DOMParser().parseFromString(html, 'text/html').title || 'HTML block';
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.setAttribute('referrerpolicy', 'no-referrer');
+    frame.setAttribute('srcdoc', html);
+    frame.setAttribute('style', 'width:100%;height:720px;border:0;background:#fff;');
+    placeholder.replaceWith(frame);
+  }
   for (const element of container.querySelectorAll('*')) {
     for (const attr of Array.from(element.attributes)) {
       if (attr.name.startsWith('data-')) element.removeAttribute(attr.name);
@@ -229,7 +268,7 @@ export function docsExportMdx(body: string): string {
   const container = document.createElement('div');
   container.innerHTML = body;
   const voidTags = new Set(['br', 'hr', 'img', 'wbr', 'col']);
-  const names: Record<string, string> = { class: 'className', colspan: 'colSpan', rowspan: 'rowSpan' };
+  const names: Record<string, string> = { class: 'className', colspan: 'colSpan', rowspan: 'rowSpan', srcdoc: 'srcDoc', referrerpolicy: 'referrerPolicy' };
   function jsx(node: Node): string {
     if (node.nodeType === Node.TEXT_NODE) {
       // Text expressions preserve whitespace in code and cannot execute document text.

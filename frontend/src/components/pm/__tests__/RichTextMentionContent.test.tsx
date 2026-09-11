@@ -19,6 +19,13 @@ vi.mock('@/components/editor/NwdiagBlock', () => ({
   }),
 }));
 
+vi.mock('@/components/editor/SvgBlock', () => ({
+  SvgBlock: ({ source }: { source: string }) => createElement('div', {
+    'data-testid': 'saved-svg-diagram',
+    'data-source': source,
+  }),
+}));
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('RichTextMentionContent', () => {
@@ -48,7 +55,7 @@ describe('RichTextMentionContent', () => {
     container.remove()
   })
 
-  it.each([['mermaid', 'graph TD\nA-->B'], ['nwdiag', 'nwdiag { network dmz { web01; } }']])('renders a saved %s code block as a diagram', (language, source) => {
+  it.each([['mermaid', 'graph TD\nA-->B'], ['nwdiag', 'nwdiag { network dmz { web01; } }'], ['svg', '<svg><text>Qatar</text></svg>']])('renders a saved %s code block as a diagram', (language, source) => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -56,7 +63,7 @@ describe('RichTextMentionContent', () => {
     act(() => {
       root.render(
         <RichTextMentionContent
-          html={'<pre><code class="language-' + language + '">' + source + '</code></pre>'}
+          html={'<pre><code class="language-' + language + '">' + source.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code></pre>'}
         />,
       )
     })

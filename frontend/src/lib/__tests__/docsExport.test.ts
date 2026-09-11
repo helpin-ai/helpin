@@ -6,6 +6,8 @@ import { createDocsExport, docsExportDoc, docsExportHtml, docsExportMdx, prepare
 import { renderMermaidSvg } from '../mermaidRenderer';
 import { fetchWithSessionAuth } from '../api';
 import { automationService } from '../services/automationService';
+import { HtmlBlockExtension } from '@/components/docs/HtmlBlockExtension';
+import { SVG_EXAMPLE } from '../svgRenderer';
 
 vi.mock('../mermaidRenderer', () => ({ renderMermaidSvg: vi.fn(async () => '<svg viewBox="0 0 200 100"/>') }));
 vi.mock('../nwdiagRenderer', () => ({ renderNwdiagSvg: vi.fn(async () => '<svg viewBox="0 0 100 200"/>') }));
@@ -91,10 +93,58 @@ describe('document image exports', () => {
     expect(automationService.getArtifactContentURL).toHaveBeenCalledWith('ws', 'a');
   });
 
-  it('embeds HTML-block images and strips executable HTML and editor metadata', async () => {
-    const html = await prepareDocsExportHtml({ type: 'doc', content: [{ type: 'htmlBlock', attrs: { html: '<p data-secret="hidden" style="background: url(https://evil.example/x)">Hello</p><img src="https://cdn.example.com/a.png" onerror="alert(1)"><script>alert(1)</script>' } }] }, schema, 'ws');
+  it('embeds simple HTML-block images and strips editor metadata', async () => {
+    const html = await prepareDocsExportHtml({ type: 'doc', content: [{ type: 'htmlBlock', attrs: { html: '<p data-secret="hidden" style="background: url(https://evil.example/x)">Hello</p><img src="https://cdn.example.com/a.png">' } }] }, schema, 'ws');
     expect(html).toContain('data:image/png;base64,');
     expect(html).not.toMatch(/data-secret|script|onerror|evil\.example/);
+  });
+
+  it.each(['html', 'mdx', 'doc'] as const)('exports SVG diagrams as the correct image type for %s', async (format) => {
+    const content = { type: 'doc', content: [{ type: 'codeBlock', attrs: { language: 'svg' }, content: [{ type: 'text', text: SVG_EXAMPLE }] }] };
+    const html = await prepareDocsExportHtml(content, schema, 'ws', undefined, format);
+    expect(html).toContain(format === 'doc' ? png : 'data:image/svg+xml;base64,');
+    expect(html).not.toContain('<svg');
+    expect(fetch).not.toHaveBeenCalled();
+    if (format === 'doc') expect(docsExportDoc(html, 'Diagram')).toContain('Content-Type: image/png');
+    if (format === 'mdx') expect(docsExportMdx(html)).toContain('data:image/svg+xml;base64,');
+  });
+
+  it.each(['html', 'doc'] as const)('handles uploaded SVG images in %s exports', async (format) => {
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: true, blob: async () => ({ type: 'image/svg+xml', text: async () => SVG_EXAMPLE }) } as Response);
+    const html = await prepareDocsExportHtml({ type: 'doc', content: [{ type: 'resizableImage', attrs: { src: 'https://cdn.example.com/diagram.svg' } }] }, schema, 'ws', undefined, format);
+    expect(html).toContain(format === 'doc' ? png : 'data:image/svg+xml;base64,');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['html', 'mdx'] as const)('preserves full HTML source in an isolated frame for %s', async (format) => {
+    const realSchema = getSchema([StarterKit, image, HtmlBlockExtension]);
+    const source = '<!doctype html><html><head><title>Architecture</title><style>body{color:red}</style></head><body><div id="sites"></div><script>document.getElementById("sites").textContent="Site 1"</script></body></html>';
+    const warn = vi.fn();
+    const html = await prepareDocsExportHtml({ type: 'doc', content: [{ type: 'htmlBlock', attrs: { html: source } }] }, realSchema, 'ws', warn, format);
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const frame = doc.querySelector('iframe');
+    expect(frame?.getAttribute('srcdoc')).toBe(source);
+    expect(frame?.getAttribute('sandbox')).toBe('allow-scripts');
+    expect(frame?.title).toBe('Architecture');
+    expect(doc.querySelector('script')).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+    if (format === 'mdx') {
+      expect(docsExportMdx(html)).toContain('srcDoc=');
+      expect(docsExportMdx(html)).toContain('referrerPolicy="no-referrer"');
+    }
+  });
+
+  it('warns about complex HTML in DOC while retaining ordinary HTML text', async () => {
+    const realSchema = getSchema([StarterKit, image, HtmlBlockExtension]);
+    const warn = vi.fn();
+    const html = await prepareDocsExportHtml({ type: 'doc', content: [
+      { type: 'htmlBlock', attrs: { html: '<p>Keep <strong>this text</strong></p>' } },
+      { type: 'htmlBlock', attrs: { html: '<svg><rect width="20" height="20"/></svg>' } },
+    ] }, realSchema, 'ws', warn, 'doc');
+    expect(html).toContain('Keep <strong>this text</strong>');
+    expect(html).toContain('needs an SVG or PNG image for Word export');
+    expect(html).not.toMatch(/<iframe|<svg/);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ kind: 'html' }));
   });
 
   it('marks unavailable images and reports them without blocking the export', async () => {

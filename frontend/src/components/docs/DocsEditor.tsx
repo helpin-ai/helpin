@@ -1825,7 +1825,7 @@ export function DocsEditor({
     try {
       const { prepareDocsExportHtml, createDocsExport } = await import('@/lib/docsExport')
       const warnings: DocsExportImageWarning[] = []
-      const html = await prepareDocsExportHtml(content, schema, workspaceId, (warning) => warnings.push(warning))
+      const html = await prepareDocsExportHtml(content, schema, workspaceId, (warning) => warnings.push(warning), format)
       const blob = createDocsExport(html, exportTitle, format)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -1836,9 +1836,10 @@ export function DocsEditor({
       a.remove()
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
       if (warnings.length) {
-        toast.warning(`Document exported with ${warnings.length} unavailable image${warnings.length === 1 ? '' : 's'}`, {
+        const hasHtmlWarning = warnings.some((warning) => warning.kind === 'html')
+        toast.warning(hasHtmlWarning ? 'Document exported with unsupported HTML blocks' : `Document exported with ${warnings.length} unavailable image${warnings.length === 1 ? '' : 's'}`, {
           id: notification,
-          description: 'Missing images are marked in the file. Upload the originals to include them.',
+          description: hasHtmlWarning ? 'Unsupported content is marked in the file. Use SVG or PNG for HTML diagrams in Word.' : 'Missing images are marked in the file. Upload the originals to include them.',
           duration: 8000,
         })
       } else {

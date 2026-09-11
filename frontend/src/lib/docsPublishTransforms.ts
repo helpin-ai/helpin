@@ -7,6 +7,7 @@ import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { renderNwdiagSvg } from './nwdiagRenderer';
 import { mermaidSvgFile, renderMermaidSvg } from './mermaidRenderer';
 import { excalidrawPngFile, normalizeExcalidrawScene } from './excalidrawRenderer';
+import { sanitizeSvg } from './svgRenderer';
 
 export type PublishTransformContext = {
   uploadConfig: EditorUploadConfig;
@@ -45,6 +46,21 @@ async function transformNode(
     content: await Promise.all(node.content.map((child) => transformNode(child, ctx, transforms))),
   };
 }
+
+export const svgCodeBlockToImage: PublishContentTransform = {
+  name: 'svg-code-block-to-image',
+  appliesTo: (node) => node.type === 'codeBlock' && String(node.attrs?.language ?? '').toLowerCase() === 'svg',
+  async transform(node, ctx) {
+    const source = nodeText(node).trim();
+    const svg = sanitizeSvg(source);
+    const upload = await uploadEditorImage(new File([svg], `svg-${Date.now()}.svg`, { type: 'image/svg+xml' }), ctx.uploadConfig);
+    return { type: 'resizableImage', attrs: {
+      src: upload.publicUrl, alt: 'SVG diagram', title: 'SVG diagram',
+      width: '100%', height: 'auto', alignment: 'center', attachmentId: upload.attachmentId,
+      publishedFrom: node,
+    } };
+  },
+};
 
 export const mermaidCodeBlockToImage: PublishContentTransform = {
   name: 'mermaid-code-block-to-image',
@@ -253,6 +269,7 @@ export async function prepareDocsContentForPublish(
   content: JSONContent | null | undefined,
   ctx: PublishTransformContext,
   transforms: PublishContentTransform[] = [
+    svgCodeBlockToImage,
     mermaidCodeBlockToImage,
     nwdiagCodeBlockToImage,
     excalidrawBlockToImage,
