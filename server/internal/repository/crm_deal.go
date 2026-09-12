@@ -301,7 +301,7 @@ func (r *CRMDealRepository) Delete(ctx context.Context, id string) error {
 	})
 }
 
-// SeedDefaultPipeline creates a default "Sales Pipeline" with HubSpot-standard stages
+// SeedDefaultPipeline creates a default "Sales Pipeline" with simple sales stages
 // if the workspace has no pipelines yet.
 func (r *CRMDealRepository) SeedDefaultPipeline(ctx context.Context, workspaceID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -322,13 +322,11 @@ func (r *CRMDealRepository) SeedDefaultPipeline(ctx context.Context, workspaceID
 			IsDefault:               true,
 			DefaultCommercialMotion: model.CRMDealMotionNewBusiness,
 			Stages: []model.CRMPipelineStage{
-				{Name: "Appointment Scheduled", StageType: "open", Position: 0, Probability: 20},
-				{Name: "Qualified to Buy", StageType: "open", Position: 1, Probability: 40},
-				{Name: "Presentation Scheduled", StageType: "open", Position: 2, Probability: 60},
-				{Name: "Decision Maker Bought-In", StageType: "open", Position: 3, Probability: 80},
-				{Name: "Contract Sent", StageType: "open", Position: 4, Probability: 90},
-				{Name: "Closed Won", StageType: "won", Position: 5, Probability: 100},
-				{Name: "Closed Lost", StageType: "lost", Position: 6, Probability: 0},
+				{Name: "Lead", StageType: "open", Position: 0, Probability: 20},
+				{Name: "In Discussion", StageType: "open", Position: 1, Probability: 50},
+				{Name: "Proposal Sent", StageType: "open", Position: 2, Probability: 80},
+				{Name: "Won", StageType: "won", Position: 3, Probability: 100},
+				{Name: "Lost", StageType: "lost", Position: 4, Probability: 0},
 			},
 		}
 
