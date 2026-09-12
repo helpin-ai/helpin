@@ -60,6 +60,11 @@ type SupportConversation struct {
 	VisitorCountryCode             *string         `json:"visitor_country_code,omitempty"`
 	VisitorCountryName             *string         `json:"visitor_country_name,omitempty"`
 	ViewSearchDocument             *string         `json:"-"`
+	// PortalVisible opts this conversation into the customer portal. Portal
+	// requests remain projections of this record; they never create a ticket
+	// or a second thread.
+	PortalVisible             bool       `json:"portal_visible" gorm:"not null;default:false;index"`
+	PortalVisibilityChangedAt *time.Time `json:"portal_visibility_changed_at,omitempty" gorm:"type:timestamptz"`
 
 	// AI State — separate from human Status. Null when AI is not involved.
 	AIState                  *string    `json:"ai_state" gorm:"index"` // null, "pending", "resolved", "escalated"
@@ -78,6 +83,9 @@ type SupportConversation struct {
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	// DeletedAt keeps removed conversations out of portal projections while
+	// retaining their operational audit trail.
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage                  *string                    `json:"last_message,omitempty" gorm:"->"`
