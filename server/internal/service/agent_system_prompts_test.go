@@ -246,7 +246,8 @@ func TestCodeBuilderSystemPromptIncludesGenericExecutionContextGuidance(t *testi
 	for _, snippet := range []string{
 		"You are Forge, the workspace code builder.",
 		"Implement the requested task directly in the repository",
-		"Finish with a local commit only",
+		"Commit only actual requested file changes locally",
+		"without creating an empty commit",
 	} {
 		if !strings.Contains(*prompt, snippet) {
 			t.Fatalf("expected code builder prompt to contain %q\n%s", snippet, *prompt)
