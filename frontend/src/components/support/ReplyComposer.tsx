@@ -23,7 +23,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
-import { QuietSearchInput, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { QuietSearchInput } from '@/components/design-system/quiet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,7 +64,7 @@ import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './
 import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
-import { clearAutomaticReplyDelivery, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, saveReplySubject, useComposerDelivery, useReplySubject } from './replyDelivery';
+import { clearAutomaticReplyDelivery, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery } from './replyDelivery';
 
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
@@ -808,8 +808,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
     : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
   const sendsEmail = deliveryMode !== 'chat_only';
-  const emailSubject = useReplySubject(workspaceId, conversationId, conversation?.subject?.trim() || 'Support conversation');
-  const invalidSubject = sendsEmail && (!emailSubject.trim() || emailSubject.length > 500 || /\p{Cc}/u.test(emailSubject));
   const ccRecipients = normalizeRecipientEmails(conversation?.email_cc ?? [], [primaryRecipientEmail]);
 
 
@@ -1446,7 +1444,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
         markdown?: string;
         attachments?: SupportAttachmentPayload[];
         deliveryMode?: SupportReplyDeliveryMode;
-        emailSubject?: string;
       }>).detail;
       if (detail?.conversationId !== conversationId) return;
       const markdown = detail.markdown ?? '';
@@ -1457,7 +1454,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       sendTyping(false);
       setReplyMode('reply');
       restoreReplyDelivery(workspaceId, conversationId, isReplyDeliveryMode(detail.deliveryMode) ? detail.deliveryMode : undefined);
-      saveReplySubject(workspaceId, conversationId, detail.emailSubject);
       setDraft(conversationId, markdown);
       setPendingAttachments((current) => {
         current.forEach((attachment) => {
@@ -1500,14 +1496,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     // either mounted composer cannot change the destination of a failed retry.
     if (!isInternal) {
       restoreReplyDelivery(workspaceId, conversationId, deliveryMode);
-      if (sendsEmail) saveReplySubject(workspaceId, conversationId, emailSubject);
     }
     await sendMutation.mutateAsync({
       content: markdown || ' ',
       is_internal: isInternal,
       ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
       ...(!isInternal ? { delivery_mode: deliveryMode, channels: replyDeliveryChannels(deliveryMode) } : {}),
-      ...(!isInternal && sendsEmail ? { email_subject: emailSubject.trim() } : {}),
       ...(!isInternal && deliveryMode !== 'chat_only' && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
       ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
     });
@@ -1521,10 +1515,9 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     clearDraft(conversationId);
     if (!isInternal) {
       clearAutomaticReplyDelivery(workspaceId, conversationId);
-      saveReplySubject(workspaceId, conversationId);
     }
     editor.commands.focus();
-  }, [attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendsEmail, emailSubject, sendMutation, sendTyping]);
+  }, [attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async () => {
     if (!editor || !editor.isEditable || attachmentsPending) return;
@@ -1542,13 +1535,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       return;
     }
 
-    if (!isNote && invalidSubject) {
-      toast.error('Enter a subject of 1–500 characters without line breaks');
-      return;
-    }
-
     await sendReply();
-  }, [attachmentsPending, deliveryUnavailableReason, editor, invalidSubject, isNote, pendingAttachments, primaryRecipientUnconfirmed, sendMutation.isPending, sendReply]);
+  }, [attachmentsPending, deliveryUnavailableReason, editor, isNote, pendingAttachments, primaryRecipientUnconfirmed, sendMutation.isPending, sendReply]);
 
   const handleRewrite = useCallback(async (operation: SupportAIRewriteOperation) => {
     if (!editor || sendMutation.isPending) return;
@@ -1719,17 +1707,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
             {ccRecipients.length > 0 && <> Cc: <span className="font-medium text-foreground">{ccRecipients.join(', ')}</span>.</>}
           </p>
           {deliveryUnavailableReason && <p role="status" className="text-quiet-accent">{deliveryUnavailableReason}</p>}
-          <label className="flex min-w-0 items-center gap-3">
-            <span className="shrink-0">Subject</span>
-            <QuietUnderlineInput
-              value={emailSubject}
-              onChange={(event) => saveReplySubject(workspaceId, conversationId, event.target.value)}
-              disabled={sendMutation.isPending}
-              maxLength={500}
-              aria-invalid={invalidSubject || undefined}
-              className="h-7 min-w-0 flex-1 text-xs"
-            />
-          </label>
         </div>
       )}
 
@@ -2227,7 +2204,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
             />}
             <Button
               size="sm"
-              disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason || invalidSubject)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
+              disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
               onClick={handleSend}
               className={cn(
                 'h-7 gap-1.5 rounded-full px-3 text-xs',
