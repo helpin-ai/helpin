@@ -189,15 +189,18 @@ test("email options explain missing address and notes hide the channel control",
   ).not.toContainText("No email address");
   const unavailableEmail = page.getByRole("option", { name: /^Email only/ });
   await unavailableEmail.hover();
-  await expect(page.getByRole("tooltip")).toContainText("No email address");
+  await expect(page.getByRole("tooltip", { name: "No email address", exact: true })).toBeVisible();
   const unavailableBounds = await unavailableEmail.boundingBox();
   await page.mouse.click(unavailableBounds!.x + unavailableBounds!.width / 2, unavailableBounds!.y + unavailableBounds!.height / 2);
   await expect(page.getByRole("option")).toHaveCount(3);
   await expect(composer.getByRole("button", { name: "Sending options: Chat only", exact: true })).toBeVisible();
   await page.mouse.move(0, 0);
+  // Start keyboard coverage from a fresh menu, without the pointer-dismissed tooltip state.
+  await page.keyboard.press("Escape");
+  await composer.getByRole("button", { name: /^Sending options:/ }).press("Enter");
   await unavailableEmail.locator('[tabindex="0"]').focus();
-  await expect(page.getByRole("tooltip")).toContainText("No email address");
-  await page.keyboard.press("Enter");
+  await expect(page.getByRole("tooltip", { name: "No email address", exact: true })).toBeVisible();
+  await unavailableEmail.locator('[tabindex="0"]').press("Enter");
   await expect(page.getByRole("option")).toHaveCount(3);
   await page.keyboard.press("Escape");
   await composer.getByRole("button", { name: "Note", exact: true }).click();
