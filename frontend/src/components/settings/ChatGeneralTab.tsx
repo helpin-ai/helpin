@@ -1,3 +1,4 @@
+import { AIReplyChannelsSelect, getAIReplyChannels, type AIReplyChannels } from './chat-widget/AIReplyChannelsSelect';
 import { AIFollowUpSettings } from './chat-widget/AIFollowUpSettings';
 import { useEffect, useRef, useState } from 'react';
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
@@ -98,6 +99,7 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
   const [aiEnableAttempted, setAiEnableAttempted] = useState(false);
   const [aiAgentId, setAiAgentId] = useState(NO_AGENT_VALUE);
   const [confidenceThreshold, setConfidenceThreshold] = useState('0.7');
+  const [aiReplyChannels, setAiReplyChannels] = useState<AIReplyChannels>('chat');
   const [aiResponseMode, setAiResponseMode] = useState(DEFAULT_CHAT_WIDGET_AI_RESPONSE_MODE);
   const [aiFollowUpEnabled, setAiFollowUpEnabled] = useState(true);
   const [aiFollowUpDelay, setAiFollowUpDelay] = useState(24);
@@ -167,6 +169,7 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
       setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
       setConfidenceThreshold(String(s.ai_confidence_threshold));
       setAiResponseMode(getChatWidgetAIResponseModeForUI(s.ai_response_mode));
+      setAiReplyChannels(getAIReplyChannels(s.ai_reply_channels));
       setAiFollowUpEnabled(s.ai_follow_up_enabled ?? true);
       setAiFollowUpDelay(s.ai_follow_up_delay_hours ?? 24);
       setAiFollowUpClose(s.ai_follow_up_close_hours ?? 1);
@@ -223,6 +226,7 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
     ai_agent_id: aiAgentId === NO_AGENT_VALUE ? '' : aiAgentId,
     ai_confidence_threshold: parseFloat(confidenceThreshold),
     ai_response_mode: aiResponseMode,
+    ai_reply_channels: aiReplyChannels,
     ai_max_followups: aiMaxFollowups,
     ai_follow_up_enabled: aiFollowUpEnabled,
     ai_follow_up_delay_hours: aiFollowUpDelay,
@@ -737,7 +741,7 @@ function Dashboard() {
             </Alert>
           ) : null}
           <div className="space-y-4">
-            <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.9fr)]">
+            <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,0.8fr)_minmax(0,0.9fr)]">
               <div className="min-w-0 space-y-1.5">
                 <Label className="text-sm">Support agent</Label>
                 <Select value={aiAgentId} onValueChange={handleAIAgentChange}>
@@ -766,6 +770,11 @@ function Dashboard() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="min-w-0 space-y-1.5">
+                <ConfigurationLabel label="Reply channels" help="Choose where AI can reply or add internal notes: chat messages, email messages, or both." />
+                <AIReplyChannelsSelect value={aiReplyChannels} onChange={setAiReplyChannels} />
               </div>
 
               <div className="space-y-1.5">

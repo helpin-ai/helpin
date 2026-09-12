@@ -124,6 +124,15 @@ func TestFollowUpEmailUsesActualWorkspaceDisplayName(t *testing.T) {
 				if err := json.NewDecoder(req.Body).Decode(&captured); err != nil {
 					t.Fatal(err)
 				}
+				automatic := false
+				for _, header := range captured.Headers {
+					if header.Name == "Auto-Submitted" && header.Value == "auto-replied" {
+						automatic = true
+					}
+				}
+				if !automatic {
+					t.Fatal("AI email missing Auto-Submitted header")
+				}
 				attempts++
 				if attempts == 1 {
 					if captured.From != tt.want+" <inbox@acme.on.helpin.email>" {

@@ -212,14 +212,18 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 			return mustJSON(map[string]any{"status": "suppressed", "next_action": "A newer run owns this conversation. End your turn."}), nil
 		}
 	}
-	if !supportAIConversationIsChat(conv) {
+	settings, err := supportAI.loadSettings(ctx, meta.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if !supportAIConversationSupported(conv) {
 		s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
 		s.closeEscalatedSupportCommandRun(ctx, meta)
-		return mustJSON(map[string]any{"status": "suppressed", "next_action": "AI replies are only enabled for chat messages. End your turn."}), nil
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "AI replies are not enabled for this message channel. End your turn."}), nil
 	}
 	// The kill-switch wins even mid-turn: a human took over while the agent
 	// was thinking, so the reply is suppressed, not published.
-	if (conv.HumanTakeover != nil && *conv.HumanTakeover) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" {
+	if model.SupportAIConversationBlocked(conv) {
 		s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
 		s.closeEscalatedSupportCommandRun(ctx, meta)
 		return mustJSON(map[string]any{
@@ -244,18 +248,14 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	if err != nil {
 		return nil, fmt.Errorf("load support source message: %w", err)
 	}
-	if !supportAIMessageIsChat(source) {
+	if source == nil || !model.SupportAIReplyAllowed(*settings, conv, source) || !shouldAutomaticallyProcessSupportAI(*settings) {
 		if err := s.supportProcessingRepo.MarkCompleted(ctx, turn.ID, nil, 0); err != nil {
 			return nil, err
 		}
 		s.closeEscalatedSupportCommandRun(ctx, meta)
-		return mustJSON(map[string]any{"status": "suppressed", "next_action": "AI replies are only enabled for chat messages. End your turn."}), nil
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "AI replies are not enabled for this message channel. End your turn."}), nil
 	}
 
-	settings, err := supportAI.loadSettings(ctx, meta.WorkspaceID)
-	if err != nil {
-		return nil, err
-	}
 	agentID := strings.TrimSpace(derefString(settings.AIAgentID))
 	if agentID == "" {
 		return nil, fmt.Errorf("no support AI agent is configured")

@@ -83,7 +83,7 @@ func NewSupportChatService(
 // chat run. Errors bubble to the NATS consumer for retry; exhausted retries
 // escalate to a human (the caller's responsibility).
 func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspaceID, conversationID string, msg *model.SupportMessage) error {
-	if !supportAIMessageIsChat(msg) {
+	if !supportAIMessageEligible(msg) {
 		return nil
 	}
 	supportAI := s.supportAIService
@@ -103,12 +103,12 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 	if err != nil {
 		return fmt.Errorf("get conversation: %w", err)
 	}
-	if !supportAIConversationIsChat(conv) {
+	if !supportAIConversationSupported(conv) || !model.SupportAIReplyAllowed(*settings, conv, msg) {
 		return nil
 	}
 
 	// State machine gates (straight port of the pipeline's checks).
-	if conv.CustomerRequestedHumanAt != nil || (conv.HumanTakeover != nil && *conv.HumanTakeover) || conv.OpenedByUserID != nil {
+	if model.SupportAIConversationBlocked(conv) {
 		return nil
 	}
 	switch derefString(conv.AIState) {
@@ -123,8 +123,10 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 			"ai_state":   &pending,
 			"flow_state": model.SupportConversationFlowStateAIHandling,
 		}); err != nil {
-			slog.WarnContext(ctx, "support chat: reopen resolved conversation failed", "error", err, "conversation_id", conversationID)
+			return fmt.Errorf("reopen resolved conversation: %w", err)
 		}
+		conv.Status = model.SupportConversationStatusOpen
+		conv.AIState = &pending
 	}
 
 	// Idempotency: one turn per source message, ever.
@@ -236,7 +238,18 @@ func (s *SupportChatService) startOrResumeChatRun(ctx context.Context, conv *mod
 // startSupportChatRun creates a (possibly successor) chat run for the
 // conversation with transcript carry-forward and repoints ai_active_run_id.
 func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *model.SupportConversation, agent *model.Agent, composed string, previousRun *model.AgentRun, pendingEvidence *model.SupportRunEvidence) error {
-	if !supportAIConversationIsChat(conv) {
+	if !supportAIConversationSupported(conv) {
+		return nil
+	}
+	settings, err := s.supportAIService.loadSettings(ctx, conv.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	allowed, err := s.channelAllowsPendingTurn(ctx, *settings, conv)
+	if err != nil {
+		return err
+	}
+	if !allowed {
 		return nil
 	}
 	workspaceID := conv.WorkspaceID
@@ -326,18 +339,40 @@ func (s *SupportChatService) buildCarryForward(ctx context.Context, workspaceID,
 }
 
 // Email delivery of a widget reply does not authorize AI to answer inbound email.
-func supportAIMessageIsChat(message *model.SupportMessage) bool {
+func supportAIMessageEligible(message *model.SupportMessage) bool {
 	if message == nil || message.SenderType != "customer" || message.IsInternal {
 		return false
 	}
 	channel := strings.ToLower(strings.TrimSpace(derefString(message.ViaChannel)))
-	return channel == "" || channel == "widget" || channel == "chat"
+	return (channel == "" || channel == "widget" || channel == "chat" || channel == "email") && (channel != "email" || !model.SupportEmailSuppressesAI(message))
 }
 
-func supportAIConversationIsChat(conversation *model.SupportConversation) bool {
-	if conversation == nil || strings.EqualFold(strings.TrimSpace(conversation.Source), "email") {
+func supportAIConversationSupported(conversation *model.SupportConversation) bool {
+	if conversation == nil {
 		return false
 	}
 	channel := strings.ToLower(strings.TrimSpace(conversation.Channel))
-	return channel == "" || channel == "widget" || channel == "chat"
+	return channel == "" || channel == "widget" || channel == "chat" || channel == "email"
+}
+
+// Recheck the saved choice when queued or child work is resumed. The pending
+// source preserves email continuations of widget conversations.
+func (s *SupportChatService) channelAllowsPendingTurn(ctx context.Context, settings model.SupportInboxSettings, conv *model.SupportConversation) (bool, error) {
+	if !shouldAutomaticallyProcessSupportAI(settings) || model.SupportAIConversationBlocked(conv) {
+		return false, nil
+	}
+	var source *model.SupportMessage
+	if s.processingRepo != nil {
+		row, err := s.processingRepo.LatestProcessingForConversation(ctx, conv.WorkspaceID, conv.ID)
+		if err != nil {
+			return false, err
+		}
+		if row != nil {
+			source, err = s.messageRepo.GetByID(ctx, row.SourceMessageID)
+			if err != nil {
+				return false, err
+			}
+		}
+	}
+	return model.SupportAIReplyAllowed(settings, conv, source), nil
 }

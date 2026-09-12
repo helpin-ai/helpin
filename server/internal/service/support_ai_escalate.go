@@ -208,14 +208,16 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			}
 		}
 
-		sendPublicHandoff := supportAIConversationIsChat(conv)
+		sendPublicHandoff := model.SupportAIReplyAllowed(settings, conv, nil)
+		replyChannel := model.SupportAIReplyChannel(conv, nil)
 		if messageID != "" {
 			source, err := s.messageRepo.GetByID(ctx, messageID)
 			if err != nil {
 				return fmt.Errorf("load escalation source: %w", err)
 			}
-			if source != nil && strings.EqualFold(strings.TrimSpace(derefString(source.ViaChannel)), "email") {
-				sendPublicHandoff = false
+			if source != nil && source.SenderType == "customer" {
+				sendPublicHandoff = model.SupportAIReplyAllowed(settings, conv, source)
+				replyChannel = model.SupportAIReplyChannel(conv, source)
 			}
 		}
 		if sendPublicHandoff {
@@ -226,6 +228,10 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 				MessageType:       "reply",
 				SenderDisplayName: strPtr(helpinAIDisplayName),
 				Content:           escalationContent,
+			}
+			if replyChannel == "email" {
+				replyMsg.Metadata = `{"delivery_mode":"email_only"}`
+				replyMsg.ViaChannel = strPtr("email")
 			}
 			if err := s.messageRepo.Create(ctx, replyMsg); err != nil {
 				return fmt.Errorf("create escalation reply: %w", err)

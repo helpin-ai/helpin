@@ -1121,6 +1121,7 @@ export interface SupportInboxSettings {
   ai_agent_id: string | null;
   ai_confidence_threshold: number;
   ai_response_mode: string;
+  ai_reply_channels?: 'chat' | 'email' | 'both';
   ai_max_followups: number;
   ai_follow_up_enabled: boolean;
   ai_follow_up_delay_hours: number;

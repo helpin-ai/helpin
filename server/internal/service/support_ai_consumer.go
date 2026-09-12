@@ -118,7 +118,7 @@ func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg
 		return
 	}
 
-	if !supportAIMessageIsChat(supportMsg) {
+	if !supportAIMessageEligible(supportMsg) {
 		_ = msg.Ack()
 		return
 	}

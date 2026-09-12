@@ -57,8 +57,16 @@ func TestSupportChatRunClosureDecision(t *testing.T) {
 }
 
 func TestSupportChatRejectsEmailBeforeStartingTurn(t *testing.T) {
-	svc := &SupportChatService{}
-	if err := svc.HandleVisitorMessage(context.Background(), "ws", "conv", &model.SupportMessage{SenderType: "customer", ViaChannel: strPtr("email")}); err != nil {
+	settings := model.DefaultSupportInboxSettings()
+	settings.AIEnabled = true
+	settings.AIAgentID = strPtr("agent")
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+	conv := &model.SupportConversation{ID: "conv", WorkspaceID: "11111111-1111-1111-1111-111111111111", Channel: "email", Status: "open"}
+	if err := env.convRepo.Create(context.Background(), conv); err != nil {
+		t.Fatal(err)
+	}
+	svc := &SupportChatService{supportAIService: &SupportAIService{installationRepo: env.installRepo}, conversationRepo: env.convRepo}
+	if err := svc.HandleVisitorMessage(context.Background(), conv.WorkspaceID, conv.ID, &model.SupportMessage{SenderType: "customer", ViaChannel: strPtr("email")}); err != nil {
 		t.Fatal(err)
 	}
 }

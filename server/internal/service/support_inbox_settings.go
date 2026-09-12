@@ -149,6 +149,9 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.AIConfidenceThreshold != nil {
 		current.AIConfidenceThreshold = *patch.AIConfidenceThreshold
 	}
+	if patch.AIReplyChannels != nil {
+		current.AIReplyChannels = *patch.AIReplyChannels
+	}
 	if patch.AIResponseMode != nil {
 		current.AIResponseMode = *patch.AIResponseMode
 	}
@@ -395,6 +398,9 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	validIcon := map[string]bool{"chat_bubble": true, "question_mark": true, "help": true}
 	if !validIcon[settings.LauncherIcon] {
 		return fmt.Errorf("launcher_icon must be chat_bubble, question_mark, or help")
+	}
+	if settings.AIReplyChannels != "" && settings.AIReplyChannels != "chat" && settings.AIReplyChannels != "email" && settings.AIReplyChannels != "both" {
+		return fmt.Errorf("ai_reply_channels must be chat, email, or both")
 	}
 	validResponseMode := map[string]bool{"ai_first": true, "internal_note": true, "off": true}
 	if settings.AIResponseMode != "" && !validResponseMode[settings.AIResponseMode] {

@@ -36,14 +36,18 @@ func supportFollowUpEnabled(settings model.SupportInboxSettings) bool {
 	return settings.AIFollowUpEnabled && shouldAutomaticallyProcessSupportAI(settings) && shouldCreatePublicSupportAIReply(settings) && strings.TrimSpace(derefString(settings.AIAgentID)) != ""
 }
 
-func supportFollowUpEligible(conv *model.SupportConversation, episode *model.SupportAIFollowUp, settings model.SupportInboxSettings) bool {
+func supportFollowUpEligible(conv *model.SupportConversation, episode *model.SupportAIFollowUp, settings model.SupportInboxSettings, replyChannels ...string) bool {
 	if !supportFollowUpEnabled(settings) || conv.FlowState == nil || *conv.FlowState != model.SupportConversationFlowStateAIHandling || derefString(conv.AIState) != "pending" || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || conv.LinkedTaskID != nil || conv.CustomerAwaitingResponse {
 		return false
 	}
 	if conv.Status != model.SupportConversationStatusOpen && conv.Status != model.SupportConversationStatusWaitingOnCustomer {
 		return false
 	}
-	if !supportAIConversationIsChat(conv) {
+	channel := model.SupportAIReplyChannel(conv, nil)
+	if len(replyChannels) > 0 {
+		channel = replyChannels[0]
+	}
+	if !model.SupportAIChannelEnabled(settings, channel) {
 		return false
 	}
 	if conv.EmailUnsubscribed || derefString(conv.AssignedAgentID) != derefString(settings.AIAgentID) {
@@ -111,7 +115,11 @@ func (s *SupportFollowUpService) process(ctx context.Context, row model.SupportA
 			return nil
 		}
 		settings = parseSettings(inst.Settings)
-		if !inst.Active || !supportFollowUpEligible(c, e, settings) {
+		channel, err := supportFollowUpReplyChannel(ctx, tx, c)
+		if err != nil {
+			return err
+		}
+		if !inst.Active || !supportFollowUpEligible(c, e, settings, channel) {
 			return finishFollowUpRow(tx, e, "cancelled", "conversation_changed", now)
 		}
 		if e.Status == "waiting" {
@@ -226,4 +234,27 @@ func (s *SupportFollowUpService) publishFollowUpMessage(workspaceID string, mess
 		return
 	}
 	publishSupportAIMessageStream(s.chat.supportAIService.wsPublisher, workspaceID, message, "ai:"+derefString(message.SenderAgentID))
+}
+
+func supportFollowUpReplyChannel(ctx context.Context, tx *gorm.DB, conv *model.SupportConversation) (string, error) {
+	source, err := repository.NewSupportMessageRepository(tx).GetByID(ctx, derefString(conv.LastPublicMessageID))
+	if err != nil {
+		return "", err
+	}
+	return model.SupportAIReplyChannel(conv, source), nil
+}
+
+func setSupportFollowUpEmailDelivery(message *model.SupportMessage, channel string) {
+	if channel != "email" {
+		return
+	}
+	metadata := map[string]any{}
+	_ = json.Unmarshal([]byte(message.Metadata), &metadata)
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["delivery_mode"] = "email_only"
+	encoded, _ := json.Marshal(metadata)
+	message.Metadata = string(encoded)
+	message.ViaChannel = strPtr("email")
 }

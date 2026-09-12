@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"gorm.io/gorm"
@@ -183,7 +184,31 @@ func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, process
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", message.ConversationID, message.WorkspaceID).First(&conversation).Error; err != nil {
 			return err
 		}
-		if conversation.Channel == "email" || conversation.Source == "email" || (conversation.HumanTakeover != nil && *conversation.HumanTakeover) || conversation.CustomerRequestedHumanAt != nil || (conversation.AIState != nil && *conversation.AIState == "escalated") {
+		if model.SupportAIConversationBlocked(&conversation) {
+			return nil
+		}
+		settings := model.DefaultSupportInboxSettings()
+		installation, err := NewSupportInboxInstallationRepository(tx).GetByWorkspace(ctx, message.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if installation != nil {
+			if err := json.Unmarshal([]byte(installation.Settings), &settings); err != nil {
+				return err
+			}
+			if !settings.AIEnabled || (settings.AIResponseMode != "ai_first" && settings.AIResponseMode != "internal_note") {
+				return nil
+			}
+		}
+		var turn model.AIMessageProcessing
+		if err := tx.Where("id = ? AND workspace_id = ? AND conversation_id = ?", processingID, message.WorkspaceID, message.ConversationID).First(&turn).Error; err != nil {
+			return err
+		}
+		source, err := NewSupportMessageRepository(tx).GetByID(ctx, turn.SourceMessageID)
+		if err != nil {
+			return err
+		}
+		if !model.SupportAIReplyAllowed(settings, &conversation, source) {
 			return nil
 		}
 		result := tx.Model(&model.AIMessageProcessing{}).
@@ -195,6 +220,20 @@ func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, process
 		if result.RowsAffected == 0 {
 			return nil
 		}
+		if !message.IsInternal && model.SupportAIReplyChannel(&conversation, source) == "email" {
+			metadata := map[string]any{}
+			if err := json.Unmarshal([]byte(message.Metadata), &metadata); err != nil && message.Metadata != "" {
+				return err
+			}
+			metadata["delivery_mode"] = model.SupportDeliveryEmailOnly
+			raw, err := json.Marshal(metadata)
+			if err != nil {
+				return err
+			}
+			message.Metadata = string(raw)
+			emailChannel := "email"
+			message.ViaChannel = &emailChannel
+		}
 		if err := NewSupportMessageRepository(tx).Create(ctx, message); err != nil {
 			return err
 		}
@@ -202,6 +241,15 @@ func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, process
 			return err
 		}
 		if !message.IsInternal {
+			// A fresh customer turn may have been parked while the preceding AI
+			// turn resolved the conversation. Reopen it with its saved answer.
+			if conversation.Status == "resolved" {
+				if err := tx.Model(&model.SupportConversation{}).Where("id = ? AND workspace_id = ?", message.ConversationID, message.WorkspaceID).Updates(map[string]any{
+					"status": "open", "resolved_at": nil, "ai_resolved_at": nil, "ai_resolution_type": nil,
+				}).Error; err != nil {
+					return err
+				}
+			}
 			if err := tx.Model(&model.SupportConversation{}).Where("id = ? AND workspace_id = ?", message.ConversationID, message.WorkspaceID).Updates(map[string]any{
 				"ai_state": "pending", "assigned_agent_id": message.SenderAgentID, "ai_turn_count": gorm.Expr("ai_turn_count + 1"), "flow_state": model.SupportConversationFlowStateAIHandling,
 			}).Error; err != nil {

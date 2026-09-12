@@ -60,7 +60,21 @@ func (s *SupportChatService) closeSupportChatRunIfTerminal(ctx context.Context, 
 		slog.WarnContext(ctx, "support chat: load conversation for run closure failed", "error", err, "conversation_id", conversationID, "run_id", run.ID)
 		return false
 	}
-	closeRun, reason := supportChatRunClosureDecision(run, conversation, now)
+	settings, err := s.supportAIService.loadSettings(ctx, run.WorkspaceID)
+	if err != nil {
+		return true
+	}
+	closeRun, reason := supportChatRunClosureDecision(run, conversation, now, *settings)
+	if !closeRun && conversation != nil {
+		allowed, err := s.channelAllowsPendingTurn(ctx, *settings, conversation)
+		if err != nil {
+			return true
+		}
+		if !allowed {
+			closeRun = true
+			reason = "unsupported_channel"
+		}
+	}
 	if !closeRun {
 		return false
 	}
@@ -78,15 +92,18 @@ func (s *SupportChatService) closeSupportChatRunIfTerminal(ctx context.Context, 
 	return true
 }
 
-func supportChatRunClosureDecision(run *model.AgentRun, conversation *model.SupportConversation, now time.Time) (bool, string) {
+func supportChatRunClosureDecision(run *model.AgentRun, conversation *model.SupportConversation, now time.Time, channelSettings ...model.SupportInboxSettings) (bool, string) {
+	settings := model.DefaultSupportInboxSettings()
+	if len(channelSettings) > 0 {
+		settings = channelSettings[0]
+	}
 	if run == nil || strings.TrimSpace(run.TargetType) != "support_conversation" || runInputTriggerType(run) != supportChatTriggerType {
 		return false, ""
 	}
-	if conversation != nil && !supportAIConversationIsChat(conversation) {
+	if conversation != nil && (!supportAIConversationSupported(conversation) || ((conversation.Channel == "email" || conversation.Source == "email") && !model.SupportAIReplyAllowed(settings, conversation, nil))) {
 		return true, "unsupported_channel"
 	}
-	if conversation != nil && ((conversation.HumanTakeover != nil && *conversation.HumanTakeover) ||
-		conversation.CustomerRequestedHumanAt != nil || strings.TrimSpace(derefString(conversation.AIState)) == "escalated") {
+	if conversation != nil && model.SupportAIConversationBlocked(conversation) {
 		return true, "human_handoff"
 	}
 	if run.Status == model.AgentRunStatusPaused && run.PauseReason == model.AgentRunPauseReasonUserMessage &&
@@ -242,7 +259,7 @@ func (s *SupportChatService) sweepClosableSupportChatRuns(ctx context.Context, s
 // reviveDeferredConversation starts a successor run for parked messages whose
 // run ended before they could be delivered.
 func (s *SupportChatService) reviveDeferredConversation(ctx context.Context, conv *model.SupportConversation, previousRun *model.AgentRun) {
-	if !supportAIConversationIsChat(conv) {
+	if !supportAIConversationSupported(conv) {
 		return
 	}
 	rows, err := s.processingRepo.ListDeferredForConversation(ctx, conv.WorkspaceID, conv.ID)
@@ -342,7 +359,11 @@ func (s *SupportChatService) filterChatDeferredMessages(ctx context.Context, row
 		if err != nil {
 			continue
 		}
-		if !supportAIMessageIsChat(message) {
+		settings, err := s.supportAIService.loadSettings(ctx, row.WorkspaceID)
+		if err != nil {
+			continue
+		}
+		if !model.SupportAIReplyAllowed(*settings, nil, message) {
 			_ = s.processingRepo.MarkCompleted(ctx, row.ID, nil, 0)
 			continue
 		}
