@@ -1,3 +1,4 @@
+import { getAIReplyChannels } from './responseModes';
 import type { BusinessHoursDay, SupportInboxSettings } from '@/lib/pmTypes';
 import type { WidgetConfig } from '@helpin-ai/widget-core';
 import { formatReplyTimeCopy } from '@helpin-ai/shared';
@@ -200,6 +201,7 @@ export function buildSettingsDraftFromServer(settings: SupportInboxSettings): Ch
     delayed_team_reply_message_no_email: rest.delayed_team_reply_message_no_email ?? DEFAULT_DELAYED_TEAM_REPLY_MESSAGE_NO_EMAIL,
     ai_enabled: rest.ai_enabled && isChatWidgetAIResponseModeActive(rest.ai_response_mode),
     ai_response_mode: getChatWidgetAIResponseModeForUI(rest.ai_response_mode),
+    ai_reply_channels: getAIReplyChannels(rest.ai_reply_channels),
     ai_agent_id: ai_agent_id ?? '',
     business_hours_schedule: normalizeBusinessHoursSchedule(rest.business_hours_schedule),
     widget_help_space_ids: sortHelpSpaceIds(rest.widget_help_space_ids),

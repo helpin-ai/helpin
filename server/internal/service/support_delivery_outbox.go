@@ -92,9 +92,10 @@ return 1`
 }
 
 type supportExplicitDeliveryMetadata struct {
-	Status string `json:"email_delivery_status"`
-	Error  string `json:"email_delivery_error"`
-	To     string `json:"delivery_to_email"`
+	Status  string `json:"email_delivery_status"`
+	Error   string `json:"email_delivery_error"`
+	To      string `json:"delivery_to_email"`
+	Subject string `json:"email_subject"`
 }
 
 func explicitDeliveryMetadata(msg model.SupportMessage) supportExplicitDeliveryMetadata {

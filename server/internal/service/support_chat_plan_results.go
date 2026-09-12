@@ -91,6 +91,17 @@ func (s *SupportChatService) notifySupportPlanSettled(ctx context.Context, plan 
 		return s.planRepo.MarkParentNotified(ctx, plan.WorkspaceID, plan.ID)
 	}
 
+	settings, err := s.supportAIService.loadSettings(ctx, conv.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	allowed, err := s.channelAllowsPendingTurn(ctx, *settings, conv)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return s.planRepo.MarkParentNotified(ctx, plan.WorkspaceID, plan.ID)
+	}
 	var chatRun *model.AgentRun
 	if conv.AIActiveRunID != nil && strings.TrimSpace(*conv.AIActiveRunID) != "" {
 		chatRun, err = s.runRepo.GetByID(ctx, plan.WorkspaceID, *conv.AIActiveRunID)
@@ -348,7 +359,7 @@ func normalizedSupportWebsiteHost(raw string) string {
 // supportPlanDeliveryBlocked reports whether the conversation has left AI
 // handling, making child-result delivery to the agent moot.
 func supportPlanDeliveryBlocked(conv *model.SupportConversation) bool {
-	if conv.CustomerRequestedHumanAt != nil || (conv.HumanTakeover != nil && *conv.HumanTakeover) {
+	if !supportAIConversationSupported(conv) || conv.CustomerRequestedHumanAt != nil || (conv.HumanTakeover != nil && *conv.HumanTakeover) {
 		return true
 	}
 	return derefString(conv.AIState) == "escalated"

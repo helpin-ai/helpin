@@ -143,7 +143,7 @@ func TestSupportFollowUpUnconfirmedEmailDoesNotAdvance(t *testing.T) {
 	row, _ = svc.repo.Latest(context.Background(), "ws", "conv")
 	var conv model.SupportConversation
 	db.First(&conv, "id = 'conv'")
-	if row.SecondSentAt != nil || row.Status != "failed" || conv.Status != "open" || conv.AIEscalatedAt != nil || derefString(conv.AIState) != "pending" {
+	if row.SecondSentAt != nil || row.Status != "cancelled" || conv.Status != "open" || conv.AIEscalatedAt != nil || derefString(conv.AIState) != "pending" {
 		t.Fatal("unconfirmed email did not stop safely without escalation")
 	}
 }
@@ -218,5 +218,33 @@ func TestSupportFollowUpIntentionalHandoffRecordsVisibleEventOnce(t *testing.T) 
 	}
 	if len(events) != 1 || !events[0].IsInternal || !strings.Contains(events[0].Content, decision.Reason) {
 		t.Fatalf("missing handoff evidence: %+v", events)
+	}
+}
+
+func TestSupportFollowUpEmailContinuationRequiresDeliveryConfirmation(t *testing.T) {
+	svc, db, _, episode, _ := setupFollowUpTest(t)
+	mustExec(t, db, `UPDATE support_messages SET via_channel='email',metadata='{"delivery_mode":"email_only"}' WHERE id=?`, episode.SourceMessageID)
+	var conv model.SupportConversation
+	if err := db.First(&conv, "id = ?", "conv").Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	_, failure, err := supportFollowUpDeliveryTime(context.Background(), db, &conv, episode.SourceMessageID, now)
+	if err != nil || failure != "follow_up_delivery_unconfirmed" {
+		t.Fatalf("failure=%q err=%v", failure, err)
+	}
+	past := now.Add(-time.Hour)
+	episode.SentMessageID = &episode.SourceMessageID
+	episode.SentAt = &past
+	episode.CloseAt = &past
+	if err := svc.closeIfDue(context.Background(), db, &conv, &episode, now); err != nil {
+		t.Fatal(err)
+	}
+	var saved model.SupportAIFollowUp
+	if err := db.First(&saved, "id = ?", episode.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.Status != "failed" || saved.Reason != "follow_up_delivery_unconfirmed" {
+		t.Fatalf("status=%q reason=%q", saved.Status, saved.Reason)
 	}
 }

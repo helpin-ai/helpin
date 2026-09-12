@@ -12,11 +12,15 @@ const supportHooks = vi.hoisted(() => ({
   useConversation: vi.fn(),
   useConversationMessages: vi.fn(),
   markConversationRead: vi.fn(),
+  deleteMessage: vi.fn(),
+  currentUser: null as { id: string } | null,
 }))
 
 function createTestQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } })
 }
+
+vi.mock('@/stores/authStore', () => ({ useAuthStore: (selector: (state: { user: { id: string } | null }) => unknown) => selector({ user: supportHooks.currentUser }) }))
 
 vi.mock('@tanstack/react-router', () => ({
   useLocation: () => ({ pathname: '/w/acme/support/conv-1' }),
@@ -34,7 +38,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useSendConversationTranscript: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDismissConversationTriage: () => ({ mutate: vi.fn(), isPending: false }),
-  useDeleteSupportMessage: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteSupportMessage: () => ({ mutateAsync: supportHooks.deleteMessage, isPending: false }),
   useMarkConversationRead: () => ({ mutate: supportHooks.markConversationRead, isPending: false }),
   useMarkConversationUnread: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateConversationSubject: () => ({ mutate: vi.fn(), isPending: false }),
@@ -100,6 +104,32 @@ describe('MessageThread', () => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
   })
+
+  it('handles keyboard Undo once with two mounted threads and restores original email details', async () => {
+    const attachment = { id: 'attachment-1', file_name: 'receipt.pdf' };
+    const message = { id: 'reply-undo', conversation_id: 'conv-1', sender_type: 'user', sender_user_id: 'user-1', is_internal: false,
+      content: 'Original email', created_at: new Date().toISOString(), cancellable_until: new Date(Date.now() + 60000).toISOString(),
+      metadata: JSON.stringify({ delivery_mode: 'email_only', email_subject: 'Original subject' }), attachments: [attachment] };
+    supportHooks.currentUser = { id: 'user-1' };
+    supportHooks.useConversation.mockReturnValue({ data: { id: 'conv-1', workspace_id: 'ws-1', subject: 'Thread', status: 'open' }, isFetched: true });
+    supportHooks.useConversationMessages.mockReturnValue({ data: seedSupportMessagePages([message] as never), isLoading: false, hasNextPage: false, fetchNextPage: vi.fn() });
+    supportHooks.deleteMessage.mockResolvedValue({ markdown: 'Original email' });
+    const restored = vi.fn();
+    window.addEventListener('support:restore-draft', restored);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const client = createTestQueryClient();
+    await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>));
+    await act(async () => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true })));
+    expect(supportHooks.deleteMessage).toHaveBeenCalledTimes(1);
+    expect(restored).toHaveBeenCalledTimes(1);
+    expect(restored.mock.calls[0][0].detail).toMatchObject({ deliveryMode: 'email_only', emailSubject: 'Original subject', attachments: [attachment], markdown: 'Original email' });
+    window.removeEventListener('support:restore-draft', restored);
+    act(() => root.unmount());
+    client.clear();
+    supportHooks.currentUser = null;
+  });
 
   it.each([
     { label: 'AI handling without legacy state', flow_state: 'ai_handling', ai_state: null, human_takeover: false, enabled: true },

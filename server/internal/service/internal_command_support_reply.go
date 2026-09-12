@@ -10,6 +10,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -202,9 +203,27 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	if conv == nil {
 		return nil, fmt.Errorf("conversation not found")
 	}
+	if meta.RunID != "" && derefString(conv.AIActiveRunID) != "" {
+		run, err := s.resolveCommandRun(ctx, meta)
+		if err != nil {
+			return nil, err
+		}
+		if run == nil || run.ID != *conv.AIActiveRunID {
+			return mustJSON(map[string]any{"status": "suppressed", "next_action": "A newer run owns this conversation. End your turn."}), nil
+		}
+	}
+	settings, err := supportAI.loadSettings(ctx, meta.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if !supportAIConversationSupported(conv) {
+		s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
+		s.closeEscalatedSupportCommandRun(ctx, meta)
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "AI replies are not enabled for this message channel. End your turn."}), nil
+	}
 	// The kill-switch wins even mid-turn: a human took over while the agent
 	// was thinking, so the reply is suppressed, not published.
-	if (conv.HumanTakeover != nil && *conv.HumanTakeover) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" {
+	if model.SupportAIConversationBlocked(conv) {
 		s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, nil)
 		s.closeEscalatedSupportCommandRun(ctx, meta)
 		return mustJSON(map[string]any{
@@ -213,10 +232,30 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}), nil
 	}
 
-	settings, err := supportAI.loadSettings(ctx, meta.WorkspaceID)
-	if err != nil {
-		return nil, err
+	if s.supportProcessingRepo == nil {
+		return nil, fmt.Errorf("support processing repository is not configured")
 	}
+	turn, err := s.supportProcessingRepo.LatestProcessingForConversation(ctx, meta.WorkspaceID, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("load support turn: %w", err)
+	}
+	if turn == nil {
+		s.closeEscalatedSupportCommandRun(ctx, meta)
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "This customer turn already has an outcome. Stop; wait for a new customer message."}), nil
+	}
+
+	source, err := supportAI.messageRepo.GetByID(ctx, turn.SourceMessageID)
+	if err != nil {
+		return nil, fmt.Errorf("load support source message: %w", err)
+	}
+	if source == nil || !model.SupportAIReplyAllowed(*settings, conv, source) || !shouldAutomaticallyProcessSupportAI(*settings) {
+		if err := s.supportProcessingRepo.MarkCompleted(ctx, turn.ID, nil, 0); err != nil {
+			return nil, err
+		}
+		s.closeEscalatedSupportCommandRun(ctx, meta)
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "AI replies are not enabled for this message channel. End your turn."}), nil
+	}
+
 	agentID := strings.TrimSpace(derefString(settings.AIAgentID))
 	if agentID == "" {
 		return nil, fmt.Errorf("no support AI agent is configured")
@@ -307,9 +346,12 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	sources := buildAISources(sourceRefIDs, evidence)
 	var message *model.SupportMessage
 	if shouldCreatePublicSupportAIReply(*settings) {
-		message, err = supportAI.publishAIReply(ctx, meta.WorkspaceID, conversationID, agentID, content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", "", conv.CustomerEmail, conv.CustomerPhone)
+		message, err = supportAI.publishAIReply(ctx, meta.WorkspaceID, conversationID, agentID, content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", "", conv.CustomerEmail, conv.CustomerPhone, turn.ID)
 	} else {
-		message, err = supportAI.publishAIInternalNote(ctx, meta.WorkspaceID, conversationID, agentID, "Suggested reply:\n\n"+content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", "", conv.CustomerEmail, conv.CustomerPhone)
+		message, err = supportAI.publishAIInternalNote(ctx, meta.WorkspaceID, conversationID, agentID, "Suggested reply:\n\n"+content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", "", conv.CustomerEmail, conv.CustomerPhone, turn.ID)
+	}
+	if errors.Is(err, errSupportTurnSettled) {
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "This customer turn already has an outcome. End your turn."}), nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("publish reply: %w", err)
@@ -321,8 +363,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		}
 	}
 
-	triggerMessageID := s.supportTurnSourceMessageID(ctx, meta.WorkspaceID, conversationID, history)
-	s.settleSupportTurn(ctx, meta.WorkspaceID, conversationID, &message.ID)
+	triggerMessageID := turn.SourceMessageID
 	s.consumeSupportReplyBilling(ctx, meta.WorkspaceID, conversationID, message.ID)
 	// Answer trace feeds coverage analytics (the retrieval trace was emitted
 	// by search_knowledge; this one records the delivered outcome).

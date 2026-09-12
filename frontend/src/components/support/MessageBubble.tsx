@@ -15,7 +15,7 @@ import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportLinkSecurity, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, getExplicitEmailDeliveryState, HELPIN_AI_DISPLAY_NAME, isExternalSupportEmailReply, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
-import { getReplyDeliveryMode, REPLY_DELIVERY_LABELS } from './replyDelivery';
+import { getReplyEmailSubject, getReplyDeliveryMode, REPLY_DELIVERY_LABELS } from './replyDelivery';
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -434,9 +434,9 @@ export const MessageBubble = memo(function MessageBubble({
 
   const restoreComposerDraft = useCallback((markdown: string) => {
     window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-      detail: { conversationId: message.conversation_id, markdown, attachments: message.attachments ?? [], deliveryMode },
+      detail: { conversationId: message.conversation_id, markdown, attachments: message.attachments ?? [], deliveryMode, emailSubject: getReplyEmailSubject(message.metadata) },
     }));
-  }, [message.attachments, message.conversation_id, deliveryMode]);
+  }, [message.attachments, message.conversation_id, message.metadata, deliveryMode]);
 
   const handleUndoOrEdit = useCallback(async () => {
     const result = await deleteMutation.mutateAsync({ messageId: message.id, undo: true });

@@ -74,7 +74,7 @@ export function PipelineSettings() {
   const createPipeline = useCreatePipeline(wsId);
   const updatePipeline = useUpdatePipeline(wsId);
   const deletePipeline = useDeletePipeline(wsId);
-  const [expandedId, setExpandedId] = useState<string | null | undefined>();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [conflict, setConflict] = useState(false);
   const [reloading, setReloading] = useState(false);
@@ -87,14 +87,6 @@ export function PipelineSettings() {
     createPipeline.isPending ||
     updatePipeline.isPending ||
     deletePipeline.isPending;
-  const defaultPipeline =
-    pipelines.find((item) => item.is_default) ?? pipelines[0];
-  const expandedPipelineId =
-    expandedId === null
-      ? null
-      : pipelines.some((item) => item.id === expandedId)
-        ? expandedId
-        : defaultPipeline?.id;
 
   const openEditor = (next: Editor) => {
     setConflict(false);
@@ -231,7 +223,7 @@ export function PipelineSettings() {
         />
       ) : (
         pipelines.map((pipeline) => {
-          const expanded = pipeline.id === expandedPipelineId;
+          const expanded = pipeline.id === expandedId;
           const deleteBlock = pipeline.is_default
             ? "Choose another default pipeline before deleting this one."
             : (pipeline.deal_count ?? 0) > 0
@@ -240,49 +232,40 @@ export function PipelineSettings() {
           return (
             <section
               key={pipeline.id}
-              className="border-t border-quiet-divider-strong"
+              className="group/pipeline border-t border-quiet-divider-strong"
             >
               <div className="flex flex-wrap items-center justify-between gap-3 py-4">
-                <h2 className="min-w-0 basis-full sm:flex-1 sm:basis-0">
-                  <button
-                    type="button"
-                    id={`pipeline-${pipeline.id}`}
-                    aria-label={pipeline.name}
-                    aria-expanded={expanded}
-                    aria-controls={`pipeline-stages-${pipeline.id}`}
-                    disabled={pending}
-                    onClick={() => setExpandedId(expanded ? null : pipeline.id)}
-                    className="flex w-full min-w-0 items-start gap-3 rounded-sm text-left focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
-                  >
-                    <ArrowDown01Icon
-                      className={`mt-0.5 size-4 shrink-0 text-quiet-text-tertiary transition-transform ${expanded ? "" : "-rotate-90"}`}
-                    />
-                    <span className="min-w-0 space-y-2">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className="break-words text-base font-semibold tracking-tight">
-                          {pipeline.name}
-                        </span>
-                        {pipeline.is_default && (
-                          <QuietStatusText>Default</QuietStatusText>
-                        )}
+                <h2
+                  id={`pipeline-${pipeline.id}`}
+                  className="min-w-0 basis-full sm:flex-1 sm:basis-0"
+                >
+                  <span className="min-w-0 space-y-2">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="break-words text-base font-semibold tracking-tight">
+                        {pipeline.name}
                       </span>
-                      <span className="block text-xs font-normal text-muted-foreground">
-                        {
-                          MOTION_LABELS[
-                            pipeline.default_commercial_motion ?? "new_business"
-                          ]
-                        }
-                        <span className="mx-2">·</span>
-                        {pipeline.stages?.length ?? 0} stages
-                        <span className="mx-2">·</span>
-                        {pipeline.deal_count ?? 0}{" "}
-                        {pipeline.deal_count === 1 ? "deal" : "deals"}
-                      </span>
+                      {pipeline.is_default && (
+                        <QuietStatusText>Default</QuietStatusText>
+                      )}
                     </span>
-                  </button>
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      {
+                        MOTION_LABELS[
+                          pipeline.default_commercial_motion ?? "new_business"
+                        ]
+                      }
+                      <span className="mx-2">·</span>
+                      {pipeline.stages?.length ?? 0} stages
+                      <span className="mx-2">·</span>
+                      {pipeline.deal_count ?? 0}{" "}
+                      {pipeline.deal_count === 1 ? "deal" : "deals"}
+                    </span>
+                  </span>
                 </h2>
                 {editable && (
-                  <div className="flex items-center gap-1">
+                  <div
+                    className={`ml-auto flex items-center gap-1 transition-opacity ${expanded ? "" : "pointer-events-none opacity-0 group-hover/pipeline:pointer-events-auto group-hover/pipeline:opacity-100 group-focus-within/pipeline:pointer-events-auto group-focus-within/pipeline:opacity-100"}`}
+                  >
                     <Button
                       size="sm"
                       variant="ghost"
@@ -318,6 +301,20 @@ export function PipelineSettings() {
                     </Tooltip>
                   </div>
                 )}
+                <QuietTextAction
+                  id={`pipeline-toggle-${pipeline.id}`}
+                  aria-label={`${expanded ? "Hide" : "Show"} stages for ${pipeline.name}`}
+                  aria-expanded={expanded}
+                  aria-controls={`pipeline-stages-${pipeline.id}`}
+                  disabled={pending}
+                  onClick={() => setExpandedId(expanded ? null : pipeline.id)}
+                  className="ml-auto shrink-0 sm:ml-0"
+                >
+                  {expanded ? "Hide stages" : "Show stages"}
+                  <ArrowDown01Icon
+                    className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+                  />
+                </QuietTextAction>
               </div>
               <div
                 id={`pipeline-stages-${pipeline.id}`}
@@ -466,7 +463,9 @@ export function PipelineSettings() {
                   try {
                     await deletePipeline.mutateAsync(editor.pipeline.id);
                     setEditor(null);
-                    setExpandedId(undefined);
+                    setExpandedId((current) =>
+                      current === editor.pipeline.id ? null : current,
+                    );
                     toast.success("Pipeline deleted");
                   } catch (error) {
                     reportError(error);

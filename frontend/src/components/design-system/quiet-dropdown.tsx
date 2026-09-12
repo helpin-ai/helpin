@@ -281,6 +281,7 @@ export function QuietDropdown({
                       aria-label={`${option.label}${checked ? ', selected' : option.partial ? ', partially selected' : ''}`}
                       className={cn(
                         option.partial && 'italic text-muted-foreground',
+                        option.disabled && option.tooltip && 'data-[disabled=true]:pointer-events-auto data-[disabled=true]:cursor-not-allowed',
                         option.className,
                       )}
                       onSelect={() => {
@@ -298,7 +299,18 @@ export function QuietDropdown({
                       )}
                       {option.tooltip ? (
                         <QuickTooltip label={option.tooltip} side="right">
-                          <span className="min-w-0 flex-1 truncate">{option.content ?? option.label}</span>
+                          <span
+                            className="min-w-0 flex-1 truncate rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+                            tabIndex={option.disabled ? 0 : undefined}
+                            onKeyDown={option.disabled ? (event) => {
+                              // Focusing a disabled explanation must not activate
+                              // another option via the command list's Enter handler.
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                event.stopPropagation();
+                              }
+                            } : undefined}
+                          >{option.content ?? option.label}</span>
                         </QuickTooltip>
                       ) : option.content ?? (
                         <span className="min-w-0 flex-1 truncate">

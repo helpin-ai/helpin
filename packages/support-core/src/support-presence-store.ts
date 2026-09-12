@@ -13,6 +13,7 @@ interface SupportPresenceState {
   agentTyping: Record<string, Record<string, AgentTypingState>>
   viewingAgents: Record<string, string[]>
   onlineVisitors: Record<string, true>
+  hasOnlineVisitorsSnapshot: boolean
   wsSend: WSSendFn | null
   wsConnected: boolean
   setTyping: (conversationId: string, isTyping: boolean, content?: string) => void
@@ -38,10 +39,11 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
   agentTyping: {},
   viewingAgents: {},
   onlineVisitors: {},
+  hasOnlineVisitorsSnapshot: false,
   wsSend: null,
   wsConnected: false,
   setWsSend: (fn) => set({ wsSend: fn }),
-  setWsConnected: (connected) => set({ wsConnected: connected }),
+  setWsConnected: (connected) => set({ wsConnected: connected, ...(!connected ? { hasOnlineVisitorsSnapshot: false } : {}) }),
   setVisitorOnline: (anonymousId) =>
     set((state) => ({
       onlineVisitors: { ...state.onlineVisitors, [anonymousId]: true as const },
@@ -55,6 +57,7 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
     }),
   setOnlineVisitors: (visitors) =>
     set({
+      hasOnlineVisitorsSnapshot: true,
       onlineVisitors: Object.fromEntries(visitors.map((id) => [id, true as const])),
     }),
   setTyping: (conversationId, isTyping, content) =>

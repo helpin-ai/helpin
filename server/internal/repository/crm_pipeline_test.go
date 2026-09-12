@@ -78,7 +78,33 @@ func TestSeedDefaultPipelineIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || !got[0].IsDefault || len(got[0].Stages) != 7 {
-		t.Errorf("seeded pipelines = %+v", got)
+	if len(got) != 1 || !got[0].IsDefault || len(got[0].Stages) != 5 {
+		t.Fatalf("seeded pipelines = %+v", got)
+	}
+	wantNames := []string{"Lead", "In Discussion", "Proposal Sent", "Won", "Lost"}
+	wantTypes := []string{"open", "open", "open", "won", "lost"}
+	wantProbabilities := []int{20, 50, 80, 100, 0}
+	for i, stage := range got[0].Stages {
+		if stage.Name != wantNames[i] || stage.StageType != wantTypes[i] || stage.Position != i || stage.Probability != wantProbabilities[i] {
+			t.Errorf("stage %d = %+v", i, stage)
+		}
+	}
+}
+
+func TestSeedDefaultPipelinePreservesCustomPipeline(t *testing.T) {
+	repo, _ := setupCRMPipelineRepositoryTest(t)
+	pipeline := &model.CRMPipeline{ID: "custom", WorkspaceID: "ws", Name: "Custom", IsDefault: true, Stages: []model.CRMPipelineStage{{ID: "custom-stage", Name: "Consultation", StageType: "open", Probability: 35}}}
+	if err := repo.CreatePipeline(context.Background(), pipeline); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SeedDefaultPipeline(context.Background(), "ws"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.ListPipelines(context.Background(), "ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != "custom" || len(got[0].Stages) != 1 || got[0].Stages[0].Name != "Consultation" {
+		t.Fatalf("custom pipeline changed: %+v", got)
 	}
 }

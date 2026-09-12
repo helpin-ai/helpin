@@ -78,7 +78,11 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 			return fmt.Errorf("assessment run is no longer active")
 		}
 		settings := parseSettings(inst.Settings)
-		if !inst.Active || run.AgentID != derefString(settings.AIAgentID) || !supportFollowUpEligible(conv, e, settings) {
+		channel, err := supportFollowUpReplyChannel(ctx, tx, conv)
+		if err != nil {
+			return err
+		}
+		if !inst.Active || run.AgentID != derefString(settings.AIAgentID) || !supportFollowUpEligible(conv, e, settings, channel) {
 			return finishFollowUpRow(tx, e, "cancelled", "conversation_changed", now)
 		}
 		if now.Before(e.DueAt) || (e.StartedAt != nil && now.Sub(*e.StartedAt) > time.Hour) {
@@ -151,6 +155,7 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 			return err
 		}
 		sent = &model.SupportMessage{ID: messageID, WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderAgentID: &run.AgentID, SenderDisplayName: strPtr(helpinAIDisplayName), Content: content, MessageType: "reply", Metadata: string(metadata), CreatedAt: now}
+		setSupportFollowUpEmailDelivery(sent, channel)
 		if err := s.chat.messageRepo.WithTx(tx).Create(ctx, sent); err != nil {
 			return err
 		}
@@ -192,7 +197,12 @@ func (s *SupportFollowUpService) closeIfDue(ctx context.Context, tx *gorm.DB, co
 			return err
 		}
 	}
-	delivered := conv.Channel == "widget"
+	message, err := repository.NewSupportMessageRepository(tx).GetByID(ctx, *e.SentMessageID)
+	if err != nil {
+		return err
+	}
+	emailDelivery := model.SupportAIReplyChannel(conv, message) == "email" || (message != nil && message.DeliveryMode() == model.SupportDeliveryEmailOnly)
+	delivered := message != nil && !emailDelivery
 	acceptedAt := *e.SentAt
 	for _, log := range logs {
 		if log.Status == "failed" || log.Status == "spam_complaint" || log.Status == "bounced" || log.BouncedAt != nil {
@@ -211,7 +221,7 @@ func (s *SupportFollowUpService) closeIfDue(ctx context.Context, tx *gorm.DB, co
 	if !delivered {
 		return finishFollowUpRow(tx, e, "failed", "follow_up_delivery_unconfirmed", now)
 	}
-	if conv.Channel == "email" {
+	if emailDelivery {
 		deadline := acceptedAt.Add(time.Duration(e.CloseHours) * time.Hour)
 		if now.Before(deadline) {
 			return tx.Model(e).Updates(map[string]any{"close_at": deadline, "due_at": deadline, "lease_until": nil}).Error

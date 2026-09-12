@@ -208,16 +208,34 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			}
 		}
 
-		replyMsg = &model.SupportMessage{
-			WorkspaceID:       workspaceID,
-			ConversationID:    conversationID,
-			SenderType:        "ai",
-			MessageType:       "reply",
-			SenderDisplayName: strPtr(helpinAIDisplayName),
-			Content:           escalationContent,
+		sendPublicHandoff := model.SupportAIReplyAllowed(settings, conv, nil)
+		replyChannel := model.SupportAIReplyChannel(conv, nil)
+		if messageID != "" {
+			source, err := s.messageRepo.GetByID(ctx, messageID)
+			if err != nil {
+				return fmt.Errorf("load escalation source: %w", err)
+			}
+			if source != nil && source.SenderType == "customer" {
+				sendPublicHandoff = model.SupportAIReplyAllowed(settings, conv, source)
+				replyChannel = model.SupportAIReplyChannel(conv, source)
+			}
 		}
-		if err := s.messageRepo.Create(ctx, replyMsg); err != nil {
-			return fmt.Errorf("create escalation reply: %w", err)
+		if sendPublicHandoff {
+			replyMsg = &model.SupportMessage{
+				WorkspaceID:       workspaceID,
+				ConversationID:    conversationID,
+				SenderType:        "ai",
+				MessageType:       "reply",
+				SenderDisplayName: strPtr(helpinAIDisplayName),
+				Content:           escalationContent,
+			}
+			if replyChannel == "email" {
+				replyMsg.Metadata = `{"delivery_mode":"email_only"}`
+				replyMsg.ViaChannel = strPtr("email")
+			}
+			if err := s.messageRepo.Create(ctx, replyMsg); err != nil {
+				return fmt.Errorf("create escalation reply: %w", err)
+			}
 		}
 
 		if !createSystemEventFirst {

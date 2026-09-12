@@ -2178,7 +2178,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 
 	if explicitEmail {
-		if err := s.createExplicitEmailMessage(ctx, msg, conv, explicitDelay); err != nil {
+		if err := s.createExplicitEmailMessage(ctx, msg, conv, explicitDelay, req.EmailSubject); err != nil {
 			return nil, err
 		}
 	} else if err := s.messageRepo.Create(ctx, msg); err != nil {

@@ -3,9 +3,7 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   Activity01Icon,
   ChartIncreaseIcon,
-  Clock03Icon,
   DollarCircleIcon,
-  FavouriteIcon,
   LayoutTwoColumnIcon,
   LayoutTable01Icon,
   PlusSignIcon,
@@ -29,71 +27,7 @@ import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { useTitle } from '@/hooks/useTitle';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 
-function DealPipelinePreview({ stages }: { stages: Array<{ id: string; name: string }> }) {
-  const previewStages = stages.length > 0
-    ? stages.slice(0, 4)
-    : [
-        { id: 'lead', name: 'New' },
-        { id: 'qualified', name: 'Qualified' },
-        { id: 'proposal', name: 'Proposal' },
-        { id: 'won', name: 'Won' },
-      ];
-  const previewDeals = [
-    { title: 'Acme expansion', amount: '$18.4k', stageIndex: 0, icon: DollarCircleIcon },
-    { title: 'Northstar pilot', amount: '$7.2k', stageIndex: 1, icon: FavouriteIcon },
-    { title: 'Renewal risk', amount: '$24k', stageIndex: 2, icon: Clock03Icon },
-  ];
-
-  return (
-    <div className="rounded-lg border bg-muted/20 p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium">Pipeline preview</p>
-          <p className="text-xs text-muted-foreground">Example layout, not workspace data</p>
-        </div>
-        <div className="text-xs text-muted-foreground">Board</div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {previewStages.map((stage, index) => {
-          const deal = previewDeals.find((item) => item.stageIndex === index);
-          const DealIcon = deal?.icon ?? DollarCircleIcon;
-          return (
-            <div key={stage.id} className="min-h-40 rounded-lg border bg-background p-3">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="truncate text-xs font-semibold">{stage.name}</p>
-                <span className="text-[11px] text-muted-foreground">{deal ? '1' : '0'}</span>
-              </div>
-              {deal ? (
-                <div className="rounded-md border bg-card p-3 shadow-sm">
-                  <div className="flex items-start gap-2">
-                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-muted/40">
-                      <DealIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    </div>
-                    <p className="min-w-0 truncate text-xs font-medium">{deal.title}</p>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold">{deal.amount}</span>
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  </div>
-                  <div className="mt-3 h-1.5 rounded-full bg-muted">
-                    <div className="h-full w-2/3 rounded-full bg-foreground/30" />
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed border-border/80 px-2 py-9 text-center text-[11px] text-muted-foreground">
-                  Empty stage
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function DealsEmptyState({
-  stages,
   hasPipeline,
   search,
   onCreateClick,
@@ -101,7 +35,6 @@ function DealsEmptyState({
   onImportClick,
   onPipelineSettingsClick,
 }: {
-  stages: Array<{ id: string; name: string }>;
   hasPipeline: boolean;
   search: string;
   onCreateClick: () => void;
@@ -138,7 +71,6 @@ function DealsEmptyState({
           <h2 className="mt-4 text-lg font-semibold">{hasPipeline ? 'No deals in this pipeline yet' : 'Set up your sales pipeline'}</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
             Deals give sales work a home: stage, owner, amount, close date, linked contacts, CRM signals, and AI review suggestions.
-            The preview shows how the board starts to look once opportunities are flowing.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             {hasPipeline ? (
@@ -158,8 +90,6 @@ function DealsEmptyState({
           </div>
         </div>
       </div>
-
-      <DealPipelinePreview stages={stages} />
 
       <div className="grid gap-3 md:grid-cols-3">
         <div className="rounded-lg border bg-card p-4">
@@ -227,10 +157,6 @@ export function DealsPage() {
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | undefined>();
   const activePipelineId = selectedPipelineId ?? pipelines?.[0]?.id;
   const activePipeline = pipelines?.find((p) => p.id === activePipelineId);
-  const activeStages = useMemo(
-    () => [...(activePipeline?.stages ?? [])].sort((a, b) => a.position - b.position).map((stage) => ({ id: stage.id, name: stage.name })),
-    [activePipeline?.stages],
-  );
 
   // Deals
   const { data, isLoading, refetch } = useDeals(wsId, {
@@ -331,8 +257,7 @@ export function DealsPage() {
       <div className="min-h-0 flex-1 overflow-auto">
         {showEmptyState ? (
           <DealsEmptyState
-            stages={activeStages}
-            hasPipeline={!!activePipeline && activeStages.length > 0}
+            hasPipeline={!!activePipeline?.stages?.length}
             search={search}
             onCreateClick={() => setShowCreate(true)}
             onClearSearch={() => setSearch('')}

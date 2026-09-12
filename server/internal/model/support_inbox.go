@@ -969,6 +969,7 @@ type CreateMessageRequest struct {
 	AttachmentIDs   []string `json:"attachment_ids,omitempty"`
 	Channels        []string `json:"channels,omitempty"`
 	DeliveryMode    string   `json:"delivery_mode,omitempty"`
+	EmailSubject    *string  `json:"email_subject,omitempty"`
 	CCEmails        []string `json:"cc_emails,omitempty"`
 	BCCEmails       []string `json:"bcc_emails,omitempty"`
 }
@@ -1276,6 +1277,7 @@ type SupportInboxSettings struct {
 	AutoPromoteToLead     bool   `json:"auto_promote_to_lead"`
 
 	// AI Auto-Reply
+	AIReplyChannels              string  `json:"ai_reply_channels"` // chat, email, both
 	AIEnabled                    bool    `json:"ai_enabled"`
 	AIAgentID                    *string `json:"ai_agent_id"`
 	AIConfidenceThreshold        float64 `json:"ai_confidence_threshold"` // 0.0–1.0
@@ -1391,6 +1393,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		AIEnabled:                      false,
 		AIAgentID:                      nil,
 		AIConfidenceThreshold:          0.7,
+		AIReplyChannels:                "chat",
 		AIResponseMode:                 "ai_first",
 		AIPreRouterMode:                SupportAIPreRouterModeEnabled,
 		AIMaxFollowups:                 5,
@@ -1474,6 +1477,7 @@ type UpdateInstallationSettingsRequest struct {
 	AIEnabled                       *bool                       `json:"ai_enabled,omitempty"`
 	AIAgentID                       *string                     `json:"ai_agent_id,omitempty"`
 	AIConfidenceThreshold           *float64                    `json:"ai_confidence_threshold,omitempty"`
+	AIReplyChannels                 *string                     `json:"ai_reply_channels,omitempty"`
 	AIResponseMode                  *string                     `json:"ai_response_mode,omitempty"`
 	AIPreRouterMode                 *string                     `json:"ai_pre_router_mode,omitempty"`
 	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`

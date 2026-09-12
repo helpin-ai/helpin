@@ -155,7 +155,7 @@ const WORKSPACE_SETTINGS = {
   team_repo_defaults: [],
 }
 
-const SUPPORT_INSTALLATION = {
+export const SUPPORT_INSTALLATION = {
   id: 'install-1',
   workspace_id: WORKSPACE_ID,
   widget_key: 'widget-key',
