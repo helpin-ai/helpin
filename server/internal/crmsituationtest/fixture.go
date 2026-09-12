@@ -85,7 +85,7 @@ func initialize(t testing.TB, db *gorm.DB) {
 		`CREATE TABLE team_workspace_memberships (id uuid PRIMARY KEY, team_id uuid, workspace_member_id uuid, role text)`,
 		`CREATE TABLE crm_companies (id uuid PRIMARY KEY, workspace_id uuid, name text, domain text, owner_member_id uuid, customer_success_owner_member_id uuid)`,
 		`CREATE TABLE crm_contacts (id uuid PRIMARY KEY, workspace_id uuid, first_name text, last_name text)`,
-		`CREATE TABLE crm_deals (id uuid PRIMARY KEY, workspace_id uuid, name text, display_id text, amount real, probability integer, owner_member_id uuid,
+		`CREATE TABLE crm_deals (revenue_type TEXT NOT NULL DEFAULT 'one_time', id uuid PRIMARY KEY, workspace_id uuid, name text, display_id text, amount real, probability integer, owner_member_id uuid,
 			pipeline_id uuid, stage_id uuid, currency text, close_date date, commercial_motion text, custom_properties jsonb, created_at datetime, updated_at datetime)`,
 		`CREATE TABLE crm_signals (id uuid PRIMARY KEY, workspace_id uuid, reviewed_at datetime, commercial_motion text,
 			company_id uuid, contact_id uuid, deal_id uuid, summary text, dismissed_at datetime, superseded_at datetime, acted_at datetime,

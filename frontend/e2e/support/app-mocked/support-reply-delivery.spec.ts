@@ -93,6 +93,7 @@ for (const width of [1440, 390]) {
       delivery_mode: "email_only",
       channels: ["email"],
     });
+    expect(writes[0]).not.toHaveProperty('email_subject');
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
     await selector.click();
     await page.getByRole("option", { name: /^Chat only/ }).click();
@@ -133,18 +134,19 @@ test("presence adds email once and sends the displayed promise without confirmat
   await presence(page, []);
   await expect(selector).toHaveAttribute('aria-label', 'Sending options: Chat + email');
   await expect(composer).toContainText('Reply will also be emailed to visitor@example.com');
-  await expect(composer.getByRole('textbox', { name: 'Subject', exact: true })).toHaveValue('Support thread');
+  await expect(composer.getByRole('textbox', { name: 'Subject', exact: true })).toHaveCount(0);
   await presence(page, ['anon-1']);
   await expect(selector).toHaveAttribute('aria-label', 'Sending options: Chat + email');
   await expect(composer).toContainText('Reply will also be emailed to visitor@example.com');
   await composer.getByRole('button', { name: 'Send', exact: true }).click();
   await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0]).toMatchObject({ delivery_mode: 'chat_and_email', channels: ['chat', 'email'], email_subject: 'Support thread' });
+  expect(writes[0]).toMatchObject({ delivery_mode: 'chat_and_email', channels: ['chat', 'email'] });
+  expect(writes[0]).not.toHaveProperty('email_subject');
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(selector).toHaveAttribute('aria-label', 'Sending options: Chat only');
 });
 
-test("manual choice and subject survive sends, notes, and reload", async ({ page }) => {
+test("manual delivery choice survives sends, notes, and reload without a subject editor", async ({ page }) => {
   test.setTimeout(90000);
   const { composer, writes } = await setup(page);
   const selector = composer.getByRole('button', { name: /^Sending options:/ });
@@ -152,22 +154,23 @@ test("manual choice and subject survive sends, notes, and reload", async ({ page
   await page.getByRole('option', { name: /^Email only/ }).click();
   await expect(composer).toContainText('Reply will only be emailed to visitor@example.com');
   const subject = composer.getByRole('textbox', { name: 'Subject', exact: true });
-  await subject.fill('Your updated quote');
   await composer.getByRole('button', { name: 'Note', exact: true }).click();
   await expect(subject).toHaveCount(0);
   await composer.getByRole('button', { name: 'Reply', exact: true }).click();
-  await expect(subject).toHaveValue('Your updated quote');
+  await expect(subject).toHaveCount(0);
   await page.reload();
-  await expect(subject).toHaveValue('Your updated quote', { timeout: 45000 });
+  await expect(selector).toBeVisible({ timeout: 45000 });
+  await expect(subject).toHaveCount(0);
   await presence(page, []);
   await presence(page, ['anon-1']);
   await expect(selector).toHaveAttribute('aria-label', 'Sending options: Email only');
   await composer.locator('[contenteditable="true"]').fill('Updated details');
   await composer.getByRole('button', { name: 'Send', exact: true }).click();
   await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0]).toMatchObject({ delivery_mode: 'email_only', email_subject: 'Your updated quote' });
+  expect(writes[0]).toMatchObject({ delivery_mode: 'email_only' });
+  expect(writes[0]).not.toHaveProperty('email_subject');
   await expect(selector).toHaveAttribute('aria-label', 'Sending options: Email only');
-  await expect(subject).toHaveValue('Support thread');
+  await expect(subject).toHaveCount(0);
   await selector.click();
   await page.getByRole('option', { name: /^Chat only/ }).click();
   await presence(page, []);
@@ -258,6 +261,7 @@ test("email-only selection survives a draft reload and keyboard send uses it", a
     delivery_mode: "email_only",
     channels: ["email"],
   });
+  expect(writes[0]).not.toHaveProperty('email_subject');
 });
 
 test("failed send retains the email-only draft and delivery choice", async ({
@@ -277,7 +281,6 @@ test("failed send retains the email-only draft and delivery choice", async ({
   );
   await composer.getByRole("button", { name: /^Sending options:/ }).click();
   await page.getByRole("option", { name: /^Email only/ }).click();
-  await composer.getByRole("textbox", { name: "Subject", exact: true }).fill("Keep the edited subject");
   await composer
     .locator('[contenteditable="true"]')
     .fill("Retry this same email");
@@ -294,7 +297,7 @@ test("failed send retains the email-only draft and delivery choice", async ({
       exact: true,
     }),
   ).toBeVisible();
-  await expect(composer.getByRole("textbox", { name: "Subject", exact: true })).toHaveValue("Keep the edited subject");
+  await expect(composer.getByRole("textbox", { name: "Subject", exact: true })).toHaveCount(0);
   expect(writes).toHaveLength(0);
 });
 
@@ -323,7 +326,7 @@ test("failed in-flight send retains its original chat-only intent after the visi
 });
 
 
-test("email-origin replies show Cc and keep the subject separate from the conversation", async ({ page }) => {
+test("email-origin replies show Cc and let the server choose the subject", async ({ page }) => {
   test.setTimeout(90000);
   const { composer, writes } = await setup(page, 'visitor@example.com', { source: 'email', anonymous_id: '', email_cc: ['copy@example.com'] });
   await expect(composer).toContainText('Reply will only be emailed to visitor@example.com. Cc: copy@example.com.');
@@ -332,17 +335,16 @@ test("email-origin replies show Cc and keep the subject separate from the conver
   await expect(page.getByRole('option', { name: /^Chat only/ })).toHaveAttribute('aria-disabled', 'true');
   await page.keyboard.press('Escape');
   const subject = composer.getByRole('textbox', { name: 'Subject', exact: true });
-  await subject.fill('');
   await composer.locator('[contenteditable="true"]').fill('Details for all recipients');
-  await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
-  await subject.fill('Updated invoice');
+  await expect(composer.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
   await composer.getByRole('button', { name: 'Send', exact: true }).click();
   await expect.poll(() => writes.length).toBe(1);
-  expect(writes[0]).toMatchObject({ delivery_mode: 'email_only', email_subject: 'Updated invoice', cc_emails: ['copy@example.com'] });
-  await expect(subject).toHaveValue('Support thread');
+  expect(writes[0]).toMatchObject({ delivery_mode: 'email_only', cc_emails: ['copy@example.com'] });
+  expect(writes[0]).not.toHaveProperty('email_subject');
+  await expect(subject).toHaveCount(0);
 });
 
-test("Undo restores the email subject, attachment, and delivery mode", async ({ page }) => {
+test("Undo restores the attachment and delivery mode without a subject editor", async ({ page }) => {
   test.setTimeout(90000);
   const { composer } = await setup(page);
   const original = { id: 'undo-message', workspace_id: 'ws-1', conversation_id: CONVERSATION_ID, sender_type: 'user', sender_user_id: 'user-b',
@@ -369,7 +371,7 @@ test("Undo restores the email subject, attachment, and delivery mode", async ({ 
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(composer.locator('[contenteditable="true"]')).toContainText(original.content);
   await expect(selector).toHaveAttribute('aria-label', 'Sending options: Email only');
-  await expect(composer.getByRole('textbox', { name: 'Subject', exact: true })).toHaveValue('Original subject');
+  await expect(composer.getByRole('textbox', { name: 'Subject', exact: true })).toHaveCount(0);
   await expect(composer.getByRole('button', { name: 'Remove receipt.pdf', exact: true })).toBeVisible();
   const typing = await page.evaluate(() => window.__supportE2E?.getSentMessages().filter((event) => event.type === 'support:typing:start' || event.type === 'support:typing:update'));
   expect(typing).toEqual([]);

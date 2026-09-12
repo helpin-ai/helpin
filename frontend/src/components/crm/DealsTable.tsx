@@ -1,3 +1,4 @@
+import { comparableDealTotal, revenueSuffix } from './dealCreationDefaults';
 import { useTableSurface } from '@/hooks/useTableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -522,7 +523,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 }) {
   const subRows = row.subRows;
   const dealCount = subRows.length;
-  const totalAmount = subRows.reduce((sum, r) => sum + (r.original.amount ?? 0), 0);
+  const totalAmount = comparableDealTotal(subRows.map(r => r.original));
   const groupValue = row.groupingValue as string;
 
   let icon = null;
@@ -549,7 +550,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
         <span>{groupValue}</span>
         <span className="ml-2 text-xs font-normal text-muted-foreground">
           {dealCount} {dealCount === 1 ? 'deal' : 'deals'}
-          {totalAmount > 0 && ` \u00B7 $${new Intl.NumberFormat().format(totalAmount)}`}
+          {totalAmount && ` \u00B7 ${totalAmount}`}
         </span>
       </span>
     </div>
@@ -672,7 +673,7 @@ function InlineAmountCell({
         className="w-full text-left text-xs hover:text-primary"
         onClick={(e) => { e.stopPropagation(); setEditing(true); }}
       >
-        {deal.amount != null ? `${deal.currency} ${new Intl.NumberFormat().format(deal.amount)}` : '-'}
+        {deal.amount != null ? `${deal.currency} ${new Intl.NumberFormat().format(deal.amount)}${revenueSuffix(deal.revenue_type)}` : '-'}
       </button>
     );
   }

@@ -133,6 +133,8 @@ export function DealsPage() {
   const location = useLocation();
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [createStageId, setCreateStageId] = useState<string | undefined>();
+  const openCreate = (stageId?: string) => { setCreateStageId(stageId); setShowCreate(true); };
 
   // Display store init
   const initDisplay = useDealDisplayStore((s) => s.init);
@@ -155,7 +157,7 @@ export function DealsPage() {
   // Pipeline selector
   const { data: pipelines } = usePipelines(wsId);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | undefined>();
-  const activePipelineId = selectedPipelineId ?? pipelines?.[0]?.id;
+  const activePipelineId = selectedPipelineId ?? pipelines?.find(p => p.is_default)?.id ?? pipelines?.[0]?.id;
   const activePipeline = pipelines?.find((p) => p.id === activePipelineId);
 
   // Deals
@@ -163,6 +165,10 @@ export function DealsPage() {
     search: search || undefined,
     pipeline_id: activePipelineId,
   });
+
+  // Unfiltered existence check keeps controls available for empty search/pipeline results.
+  const { data: workspaceDeals } = useDeals(wsId, { per_page: 1 });
+  const hasWorkspaceDeals = (workspaceDeals?.total ?? workspaceDeals?.data.length ?? 0) > 0;
 
   // Assignable members
   const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
@@ -193,7 +199,7 @@ export function DealsPage() {
         variant="shell"
         title="Deals"
         actions={(
-          <QuietPrimaryAction className="gap-1.5" onClick={() => setShowCreate(true)}>
+          <QuietPrimaryAction className="gap-1.5" onClick={() => openCreate()}>
             <PlusSignIcon className="h-4 w-4" />
             Add deal
           </QuietPrimaryAction>
@@ -201,7 +207,7 @@ export function DealsPage() {
       />
 
       {/* View controls */}
-      <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
+      {hasWorkspaceDeals && <header aria-label="Deal view controls" className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
         {/* Pipeline selector */}
         {pipelines && pipelines.length > 1 && (
           <Select
@@ -251,7 +257,7 @@ export function DealsPage() {
             </Button>
           </QuickTooltip>
         </div>
-      </header>
+      </header>}
 
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-auto">
@@ -259,7 +265,7 @@ export function DealsPage() {
           <DealsEmptyState
             hasPipeline={!!activePipeline?.stages?.length}
             search={search}
-            onCreateClick={() => setShowCreate(true)}
+            onCreateClick={openCreate}
             onClearSearch={() => setSearch('')}
             onImportClick={handleImportClick}
             onPipelineSettingsClick={handlePipelineSettingsClick}
@@ -272,7 +278,7 @@ export function DealsPage() {
             assignableMembers={assignableMembers}
             ownerNameMap={ownerNameMap}
             onDealClick={handleDealClick}
-            onCreateClick={() => setShowCreate(true)}
+            onCreateClick={openCreate}
             onDealUpdated={() => refetch()}
             showEmptyStages={showEmptyStages}
           />
@@ -285,14 +291,14 @@ export function DealsPage() {
             ownerNameMap={ownerNameMap}
             isLoading={isLoading}
             onDealClick={handleDealClick}
-            onCreateClick={() => setShowCreate(true)}
+            onCreateClick={openCreate}
             onDealUpdated={() => refetch()}
             onDealDeleted={() => refetch()}
           />
         )}
       </div>
 
-      <CreateDealDialog open={showCreate} onOpenChange={setShowCreate} />
+      <CreateDealDialog open={showCreate} onOpenChange={setShowCreate} initialPipelineId={activePipelineId} initialStageId={createStageId} />
     </div>
   );
 }

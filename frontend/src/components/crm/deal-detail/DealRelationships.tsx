@@ -132,6 +132,10 @@ export function DealRelationships({
 				<span className="block truncate text-sm font-medium text-foreground/90">{person.linked_object_name || 'Contact'}</span>
 				<span className="text-[10px] text-muted-foreground">{person.association_label === 'deal_primary_contact' ? 'Primary contact' : person.association_label === 'deal_customer' ? 'Customer' : 'Participant'}</span>
             </button>
+            {customer?.linkedType === 'company' && person.association_label !== 'deal_primary_contact' && <QuietTextAction type="button" className="text-xs" disabled={setCustomer.isPending} onClick={async () => {
+              try { await setCustomer.mutateAsync({ id: dealId, workspace_id: workspaceId, company_id: customer.linkedId, contact_id: person.linkedId }); onChanged(); }
+              catch (error) { toast.error(error instanceof Error ? error.message : 'Could not change primary contact'); }
+            }}>Make primary</QuietTextAction>}
 			{person.association_label !== 'deal_customer' ? <QuietTextAction className="text-xs opacity-0 group-hover:opacity-100 focus-visible:opacity-100" onClick={() => void remove(person)}>Remove</QuietTextAction> : null}
           </div>
 		)) : <p className="px-1.5 py-1.5 text-xs leading-5 text-muted-foreground">No people linked. A company-backed deal does not require a contact.</p>}

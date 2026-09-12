@@ -1,4 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 import { getAIReplyChannels, type AIReplyChannels } from './responseModes';
 export { getAIReplyChannels, type AIReplyChannels } from './responseModes';

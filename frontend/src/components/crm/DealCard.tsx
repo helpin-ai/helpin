@@ -1,3 +1,4 @@
+import { revenueSuffix } from './dealCreationDefaults';
 import { useCallback, useMemo } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -124,7 +125,7 @@ export function DealCard({
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {displayProps.amount && deal.amount != null && (
           <span className={cn(pillBase, 'border-green-300 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/50 dark:text-green-400')}>
-            {deal.currency} {new Intl.NumberFormat().format(deal.amount)}
+            {deal.currency} {new Intl.NumberFormat().format(deal.amount)}{revenueSuffix(deal.revenue_type)}
           </span>
         )}
 
