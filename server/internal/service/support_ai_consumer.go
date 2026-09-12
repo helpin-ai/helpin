@@ -95,8 +95,34 @@ func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg
 		return
 	}
 
-	// Poison-message handling: retries exhausted → a human takes over.
 	meta, _ := msg.Metadata()
+	supportMsg, loadErr := s.loadIncomingSupportMessage(ctx, event)
+	if loadErr != nil {
+		if meta != nil && meta.NumDelivered >= 3 {
+			if err := s.EscalateToHumanForMessage(ctx, event.WorkspaceID, event.ConversationID, event.MessageID, "ai_pipeline_error"); err != nil {
+				slog.ErrorContext(ctx, "support AI consumer: load failure escalation failed", "error", err)
+			}
+			if s.processingRepo != nil {
+				_ = s.processingRepo.MarkFailedBySourceMessageID(ctx, event.MessageID)
+			}
+			_ = msg.Ack()
+			return
+		}
+		slog.ErrorContext(ctx, "support AI consumer: load incoming support message failed",
+			"workspace_id", event.WorkspaceID,
+			"conversation_id", event.ConversationID,
+			"message_id", event.MessageID,
+			"error", loadErr,
+		)
+		_ = msg.NakWithDelay(5 * time.Second)
+		return
+	}
+
+	if !supportAIMessageIsChat(supportMsg) {
+		_ = msg.Ack()
+		return
+	}
+	// Poison-message handling: retries exhausted → a human takes over.
 	if meta != nil && meta.NumDelivered >= 3 {
 		slog.Error("support AI consumer: max deliveries reached, escalating to human",
 			"workspace_id", event.WorkspaceID,
@@ -112,18 +138,6 @@ func (s *SupportAIService) processNATSMessage(ctx context.Context, msg *nats.Msg
 			}
 		}
 		_ = msg.Ack()
-		return
-	}
-
-	supportMsg, loadErr := s.loadIncomingSupportMessage(ctx, event)
-	if loadErr != nil {
-		slog.ErrorContext(ctx, "support AI consumer: load incoming support message failed",
-			"workspace_id", event.WorkspaceID,
-			"conversation_id", event.ConversationID,
-			"message_id", event.MessageID,
-			"error", loadErr,
-		)
-		_ = msg.NakWithDelay(5 * time.Second)
 		return
 	}
 

@@ -143,7 +143,7 @@ func TestSupportFollowUpUnconfirmedEmailDoesNotAdvance(t *testing.T) {
 	row, _ = svc.repo.Latest(context.Background(), "ws", "conv")
 	var conv model.SupportConversation
 	db.First(&conv, "id = 'conv'")
-	if row.SecondSentAt != nil || row.Status != "failed" || conv.Status != "open" || conv.AIEscalatedAt != nil || derefString(conv.AIState) != "pending" {
+	if row.SecondSentAt != nil || row.Status != "cancelled" || conv.Status != "open" || conv.AIEscalatedAt != nil || derefString(conv.AIState) != "pending" {
 		t.Fatal("unconfirmed email did not stop safely without escalation")
 	}
 }

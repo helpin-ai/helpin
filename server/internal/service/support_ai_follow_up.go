@@ -43,7 +43,7 @@ func supportFollowUpEligible(conv *model.SupportConversation, episode *model.Sup
 	if conv.Status != model.SupportConversationStatusOpen && conv.Status != model.SupportConversationStatusWaitingOnCustomer {
 		return false
 	}
-	if conv.Channel != "widget" && conv.Channel != "email" {
+	if !supportAIConversationIsChat(conv) {
 		return false
 	}
 	if conv.EmailUnsubscribed || derefString(conv.AssignedAgentID) != derefString(settings.AIAgentID) {

@@ -83,6 +83,9 @@ func NewSupportChatService(
 // chat run. Errors bubble to the NATS consumer for retry; exhausted retries
 // escalate to a human (the caller's responsibility).
 func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspaceID, conversationID string, msg *model.SupportMessage) error {
+	if !supportAIMessageIsChat(msg) {
+		return nil
+	}
 	supportAI := s.supportAIService
 	settings, err := supportAI.loadSettings(ctx, workspaceID)
 	if err != nil {
@@ -100,7 +103,7 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 	if err != nil {
 		return fmt.Errorf("get conversation: %w", err)
 	}
-	if conv == nil {
+	if !supportAIConversationIsChat(conv) {
 		return nil
 	}
 
@@ -233,6 +236,9 @@ func (s *SupportChatService) startOrResumeChatRun(ctx context.Context, conv *mod
 // startSupportChatRun creates a (possibly successor) chat run for the
 // conversation with transcript carry-forward and repoints ai_active_run_id.
 func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *model.SupportConversation, agent *model.Agent, composed string, previousRun *model.AgentRun, pendingEvidence *model.SupportRunEvidence) error {
+	if !supportAIConversationIsChat(conv) {
+		return nil
+	}
 	workspaceID := conv.WorkspaceID
 	additional := composed
 	var parentRunID *string
@@ -317,4 +323,21 @@ func (s *SupportChatService) buildCarryForward(ctx context.Context, workspaceID,
 	}
 	b.WriteString("</previous_conversation>")
 	return b.String()
+}
+
+// Email delivery of a widget reply does not authorize AI to answer inbound email.
+func supportAIMessageIsChat(message *model.SupportMessage) bool {
+	if message == nil || message.SenderType != "customer" || message.IsInternal {
+		return false
+	}
+	channel := strings.ToLower(strings.TrimSpace(derefString(message.ViaChannel)))
+	return channel == "" || channel == "widget" || channel == "chat"
+}
+
+func supportAIConversationIsChat(conversation *model.SupportConversation) bool {
+	if conversation == nil || strings.EqualFold(strings.TrimSpace(conversation.Source), "email") {
+		return false
+	}
+	channel := strings.ToLower(strings.TrimSpace(conversation.Channel))
+	return channel == "" || channel == "widget" || channel == "chat"
 }

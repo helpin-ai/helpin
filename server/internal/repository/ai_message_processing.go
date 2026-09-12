@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -38,15 +39,15 @@ func (r *AIMessageProcessingRepository) BeginAttempt(ctx context.Context, worksp
 			// Stale lock — reclaim.
 			existing.Attempts++
 			existing.UpdatedAt = time.Now()
-			r.db.WithContext(ctx).Save(&existing)
-			return &existing, true
+			result := r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).Where("id = ? AND status = ? AND reply_message_id IS NULL", existing.ID, "processing").Updates(map[string]any{"attempts": existing.Attempts, "updated_at": existing.UpdatedAt})
+			return &existing, result.Error == nil && result.RowsAffected == 1
 		case "failed":
 			// Retry.
 			existing.Status = "processing"
 			existing.Attempts++
 			existing.UpdatedAt = time.Now()
-			r.db.WithContext(ctx).Save(&existing)
-			return &existing, true
+			result := r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).Where("id = ? AND status = ? AND reply_message_id IS NULL", existing.ID, "failed").Updates(map[string]any{"status": "processing", "attempts": existing.Attempts, "updated_at": time.Now()})
+			return &existing, result.Error == nil && result.RowsAffected == 1
 		}
 		return &existing, false
 	}
@@ -69,7 +70,7 @@ func (r *AIMessageProcessingRepository) BeginAttempt(ctx context.Context, worksp
 func (r *AIMessageProcessingRepository) MarkCompleted(ctx context.Context, id string, replyMessageID *string, tokensUsed int) error {
 	return r.db.WithContext(ctx).
 		Model(&model.AIMessageProcessing{}).
-		Where("id = ?", id).
+		Where("id = ? AND status <> ?", id, "completed").
 		Updates(map[string]any{
 			"status":           "completed",
 			"reply_message_id": replyMessageID,
@@ -82,7 +83,7 @@ func (r *AIMessageProcessingRepository) MarkCompleted(ctx context.Context, id st
 func (r *AIMessageProcessingRepository) MarkFailed(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).
 		Model(&model.AIMessageProcessing{}).
-		Where("id = ?", id).
+		Where("id = ? AND status <> ?", id, "completed").
 		Updates(map[string]any{
 			"status":     "failed",
 			"updated_at": time.Now(),
@@ -93,7 +94,7 @@ func (r *AIMessageProcessingRepository) MarkFailed(ctx context.Context, id strin
 func (r *AIMessageProcessingRepository) MarkFailedBySourceMessageID(ctx context.Context, sourceMessageID string) error {
 	return r.db.WithContext(ctx).
 		Model(&model.AIMessageProcessing{}).
-		Where("source_message_id = ?", sourceMessageID).
+		Where("source_message_id = ? AND status <> ?", sourceMessageID, "completed").
 		Updates(map[string]any{
 			"status":     "failed",
 			"updated_at": time.Now(),
@@ -118,12 +119,11 @@ func (r *AIMessageProcessingRepository) LatestProcessingForConversation(ctx cont
 	return &row, nil
 }
 
-
 // MarkDeferred parks a visitor message that arrived while a chat turn was
 // executing; the pause hook drains deferred rows into one coalesced resume.
 func (r *AIMessageProcessingRepository) MarkDeferred(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
-		Where("id = ?", id).
+		Where("id = ? AND status <> ?", id, "completed").
 		Update("status", "deferred").Error
 }
 
@@ -144,7 +144,7 @@ func (r *AIMessageProcessingRepository) ListDeferredForConversation(ctx context.
 // batch is drained: the newest row becomes the turn being settled).
 func (r *AIMessageProcessingRepository) MarkProcessing(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
-		Where("id = ?", id).
+		Where("id = ? AND status <> ?", id, "completed").
 		Update("status", "processing").Error
 }
 
@@ -170,6 +170,46 @@ func (r *AIMessageProcessingRepository) ListDeferredOlderThan(ctx context.Contex
 // nudge marker for unsettled chat turns).
 func (r *AIMessageProcessingRepository) IncrementAttempts(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
-		Where("id = ?", id).
+		Where("id = ? AND status <> ?", id, "completed").
 		Update("attempts", gorm.Expr("attempts + 1")).Error
+}
+
+// CreateReply atomically saves the one reply belonging to an in-flight customer
+// turn. Concurrent tool calls and retries cannot publish a second reply.
+func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, processingID string, message *model.SupportMessage) (bool, error) {
+	created := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var conversation model.SupportConversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", message.ConversationID, message.WorkspaceID).First(&conversation).Error; err != nil {
+			return err
+		}
+		if conversation.Channel == "email" || conversation.Source == "email" || (conversation.HumanTakeover != nil && *conversation.HumanTakeover) || conversation.CustomerRequestedHumanAt != nil || (conversation.AIState != nil && *conversation.AIState == "escalated") {
+			return nil
+		}
+		result := tx.Model(&model.AIMessageProcessing{}).
+			Where("id = ? AND workspace_id = ? AND conversation_id = ? AND status = ? AND reply_message_id IS NULL", processingID, message.WorkspaceID, message.ConversationID, "processing").
+			Updates(map[string]any{"status": "completed", "updated_at": time.Now()})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		if err := NewSupportMessageRepository(tx).Create(ctx, message); err != nil {
+			return err
+		}
+		if err := tx.Model(&model.AIMessageProcessing{}).Where("id = ?", processingID).Update("reply_message_id", message.ID).Error; err != nil {
+			return err
+		}
+		if !message.IsInternal {
+			if err := tx.Model(&model.SupportConversation{}).Where("id = ? AND workspace_id = ?", message.ConversationID, message.WorkspaceID).Updates(map[string]any{
+				"ai_state": "pending", "assigned_agent_id": message.SenderAgentID, "ai_turn_count": gorm.Expr("ai_turn_count + 1"), "flow_state": model.SupportConversationFlowStateAIHandling,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		created = true
+		return nil
+	})
+	return created && err == nil, err
 }

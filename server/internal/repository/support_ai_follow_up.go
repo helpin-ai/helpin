@@ -131,7 +131,7 @@ func (r *SupportFollowUpRepository) CancelConversation(ctx context.Context, work
 
 func supportFollowUpCandidates(tx *gorm.DB, workspaceID string, settings model.SupportInboxSettings, now time.Time) *gorm.DB {
 	return tx.Model(&model.SupportConversation{}).Where(`workspace_id = ? AND flow_state = 'ai_handling' AND ai_state = 'pending'
-   AND status IN ('open','waiting_on_customer') AND channel IN ('widget','email')
+   AND status IN ('open','waiting_on_customer') AND channel = 'widget' AND COALESCE(source,'') <> 'email'
    AND NOT coalesce(human_takeover,false) AND assigned_user_id IS NULL AND opened_by_user_id IS NULL
    AND customer_requested_human_at IS NULL AND linked_task_id IS NULL
    AND last_public_message_id IS NOT NULL AND NOT email_unsubscribed

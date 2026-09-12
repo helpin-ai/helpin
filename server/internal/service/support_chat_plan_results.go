@@ -348,7 +348,7 @@ func normalizedSupportWebsiteHost(raw string) string {
 // supportPlanDeliveryBlocked reports whether the conversation has left AI
 // handling, making child-result delivery to the agent moot.
 func supportPlanDeliveryBlocked(conv *model.SupportConversation) bool {
-	if conv.CustomerRequestedHumanAt != nil || (conv.HumanTakeover != nil && *conv.HumanTakeover) {
+	if !supportAIConversationIsChat(conv) || conv.CustomerRequestedHumanAt != nil || (conv.HumanTakeover != nil && *conv.HumanTakeover) {
 		return true
 	}
 	return derefString(conv.AIState) == "escalated"

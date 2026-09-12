@@ -1107,19 +1107,6 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	}
 	if isTeammateReply {
 		messageMetadata = mergeExternalEmailReplyMetadata(messageMetadata)
-	} else if !isProviderForwardingConfirmation(payload) {
-		metadata := map[string]any{}
-		if err := json.Unmarshal([]byte(messageMetadata), &metadata); err != nil && messageMetadata != "" {
-			return fmt.Errorf("decode inbound email metadata: %w", err)
-		}
-		// Persist dispatch intent so webhook retries can recover a failed publish
-		// without recreating the customer message or rerouting the conversation.
-		metadata["email_ai_request"] = true
-		encoded, err := json.Marshal(metadata)
-		if err != nil {
-			return fmt.Errorf("encode inbound email metadata: %w", err)
-		}
-		messageMetadata = string(encoded)
 	}
 	senderType := "customer"
 	var senderUserID *string
@@ -1220,6 +1207,21 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		}
 		if err := emailLogRepoTx.Create(ctx, logRow); err != nil {
 			return err
+		}
+
+		// Email replies belong to the human inbox. Cancel AI ownership silently:
+		// sending a handoff email here can itself feed an autoresponder loop.
+		if !isTeammateReply && (derefString(conv.AssignedAgentID) != "" || derefString(conv.AIState) == "pending" || derefString(conv.AIActiveRunID) != "") {
+			flow := supportEmailReopenFlowState(conv)
+			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
+				"assigned_agent_id": nil, "human_takeover": true, "ai_state": "escalated", "flow_state": flow,
+			}); err != nil {
+				return err
+			}
+			conv.AssignedAgentID = nil
+			conv.HumanTakeover = boolPtr(true)
+			conv.AIState = strPtr("escalated")
+			conv.FlowState = &flow
 		}
 
 		if shouldReopenCustomerReply {
@@ -1359,7 +1361,7 @@ func (s *EmailFallbackService) publishInboundCustomerAIRequest(ctx context.Conte
 	var metadata struct {
 		AIRequest bool `json:"email_ai_request"`
 	}
-	if msg == nil || msg.SenderType != "customer" || msg.IsInternal || json.Unmarshal([]byte(msg.Metadata), &metadata) != nil || !metadata.AIRequest {
+	if !supportAIMessageIsChat(msg) || json.Unmarshal([]byte(msg.Metadata), &metadata) != nil || !metadata.AIRequest {
 		return nil
 	}
 	if s.supportInboxService == nil || s.supportInboxService.supportAIService == nil || s.installRepo == nil {
@@ -4136,16 +4138,10 @@ func supportEmailReopenFlowState(conv *model.SupportConversation) string {
 	if conv == nil {
 		return model.SupportConversationFlowStateWaitingForHuman
 	}
-	if supportConversationHumanOwned(conv) || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman {
+	if conv.AssignedUserID != nil || conv.OpenedByUserID != nil || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman {
 		return model.SupportConversationFlowStateAssignedToHuman
 	}
-	if conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" {
-		return model.SupportConversationFlowStateWaitingForHuman
-	}
-	if strings.TrimSpace(derefString(conv.AssignedAgentID)) != "" || derefString(conv.FlowState) == model.SupportConversationFlowStateAIHandling {
-		return model.SupportConversationFlowStateAIHandling
-	}
-	return defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID)
+	return model.SupportConversationFlowStateWaitingForHuman
 }
 
 // createEmailReopenedSystemMessage records an internal system event marking

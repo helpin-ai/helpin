@@ -82,6 +82,9 @@ func supportChatRunClosureDecision(run *model.AgentRun, conversation *model.Supp
 	if run == nil || strings.TrimSpace(run.TargetType) != "support_conversation" || runInputTriggerType(run) != supportChatTriggerType {
 		return false, ""
 	}
+	if conversation != nil && !supportAIConversationIsChat(conversation) {
+		return true, "unsupported_channel"
+	}
 	if conversation != nil && ((conversation.HumanTakeover != nil && *conversation.HumanTakeover) ||
 		conversation.CustomerRequestedHumanAt != nil || strings.TrimSpace(derefString(conversation.AIState)) == "escalated") {
 		return true, "human_handoff"
@@ -124,8 +127,15 @@ func (s *SupportChatService) enforceTurnSettlement(ctx context.Context, run *mod
 
 // drainDeferredMessages coalesces messages parked mid-turn into one resume.
 func (s *SupportChatService) drainDeferredMessages(ctx context.Context, run *model.AgentRun, conversationID string) {
+	if s.closeSupportChatRunIfTerminal(ctx, run, conversationID, time.Now().UTC()) {
+		return
+	}
 	rows, err := s.processingRepo.ListDeferredForConversation(ctx, run.WorkspaceID, conversationID)
 	if err != nil || len(rows) == 0 {
+		return
+	}
+	rows = s.filterChatDeferredMessages(ctx, rows)
+	if len(rows) == 0 {
 		return
 	}
 	contents := make([]string, 0, len(rows))
@@ -232,8 +242,15 @@ func (s *SupportChatService) sweepClosableSupportChatRuns(ctx context.Context, s
 // reviveDeferredConversation starts a successor run for parked messages whose
 // run ended before they could be delivered.
 func (s *SupportChatService) reviveDeferredConversation(ctx context.Context, conv *model.SupportConversation, previousRun *model.AgentRun) {
+	if !supportAIConversationIsChat(conv) {
+		return
+	}
 	rows, err := s.processingRepo.ListDeferredForConversation(ctx, conv.WorkspaceID, conv.ID)
 	if err != nil || len(rows) == 0 {
+		return
+	}
+	rows = s.filterChatDeferredMessages(ctx, rows)
+	if len(rows) == 0 {
 		return
 	}
 	contents := make([]string, 0, len(rows))
@@ -316,4 +333,20 @@ func (s *SupportChatService) StartSupportChatSweep(ctx context.Context, interval
 			slog.ErrorContext(ctx, "support chat result sweep failed", "error", err)
 		}
 	}
+}
+
+func (s *SupportChatService) filterChatDeferredMessages(ctx context.Context, rows []model.AIMessageProcessing) []model.AIMessageProcessing {
+	var eligible []model.AIMessageProcessing
+	for _, row := range rows {
+		message, err := s.messageRepo.GetByID(ctx, row.SourceMessageID)
+		if err != nil {
+			continue
+		}
+		if !supportAIMessageIsChat(message) {
+			_ = s.processingRepo.MarkCompleted(ctx, row.ID, nil, 0)
+			continue
+		}
+		eligible = append(eligible, row)
+	}
+	return eligible
 }
