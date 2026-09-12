@@ -448,12 +448,7 @@ func main() {
 	).SetWorkspaceSkillStore(workspaceSkillRepo, nil).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
-		cfg.OpenRouterAPIKey,
-		cfg.CodexOpenAIAuthMode,
-		cfg.CodexEnableChatGPTOAuth,
-		cfg.CodexChatGPTAccessToken,
-		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetModelTierResolver(agentTierResolver).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetModelTierResolver(agentTierResolver).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}

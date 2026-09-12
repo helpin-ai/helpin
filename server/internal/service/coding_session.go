@@ -241,6 +241,9 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 	if err != nil {
 		return nil, err
 	}
+	if run.RuntimeKind == "codex" || run.RuntimeKind == "opencode" {
+		return nil, fmt.Errorf("this run used a retired coding engine and cannot continue; start a new native run and review existing changes and completed actions before retrying")
+	}
 	interaction, err := s.interactionRepo.GetByID(ctx, workspaceID, sessionID, interactionID)
 	if err != nil {
 		return nil, err
@@ -307,11 +310,6 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		title = "Coding Session"
 	}
 
-	artifacts, err := s.ListRunArtifacts(ctx, run.WorkspaceID, run.ID)
-	if err != nil {
-		return nil, err
-	}
-
 	streamSnapshot := s.codingSessionStreamSnapshot(ctx, run)
 
 	var triggeredBy *model.CodingSessionActor
@@ -359,7 +357,6 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		InputTokens:         run.InputTokens,
 		OutputTokens:        run.OutputTokens,
 		TokensUsed:          run.TokensUsed,
-		AuthState:           latestCodexAuthArtifact(artifacts),
 		StreamStateSnapshot: streamSnapshot,
 		TriggeredByUser:     triggeredBy,
 		CreatedAt:           run.CreatedAt,
@@ -678,7 +675,7 @@ func requestUserInputResumeContent(interaction *model.AgentRunInteraction, respo
 			}
 		}
 	}
-	if content := codexUserInputResumeContent(interaction.RequestPayload, responsePayload); content != "" {
+	if content := questionAnswersResumeContent(interaction.RequestPayload, responsePayload); content != "" {
 		return content
 	}
 	return strings.TrimSpace(string(responsePayload))
@@ -791,78 +788,6 @@ func approvalRequestResumeContent(requestPayload, responsePayload json.RawMessag
 	return response.Message
 }
 
-func codexUserInputResumeContent(requestPayload, responsePayload json.RawMessage) string {
-	var request struct {
-		Questions []struct {
-			ID       string `json:"id"`
-			Header   string `json:"header"`
-			Question string `json:"question"`
-		} `json:"questions"`
-	}
-	var response struct {
-		Answers map[string]struct {
-			Answers []string `json:"answers"`
-		} `json:"answers"`
-	}
-	if err := json.Unmarshal(requestPayload, &request); err != nil {
-		return ""
-	}
-	if err := json.Unmarshal(responsePayload, &response); err != nil {
-		return ""
-	}
-	if len(response.Answers) == 0 {
-		return ""
-	}
-
-	lines := make([]string, 0, len(response.Answers))
-	seen := make(map[string]struct{}, len(response.Answers))
-	for _, question := range request.Questions {
-		questionID := strings.TrimSpace(question.ID)
-		answer, ok := response.Answers[questionID]
-		if !ok || len(answer.Answers) == 0 {
-			continue
-		}
-		value := strings.TrimSpace(answer.Answers[0])
-		if value == "" {
-			continue
-		}
-		prompt := strings.TrimSpace(question.Question)
-		header := strings.TrimSpace(question.Header)
-		switch {
-		case header != "" && prompt != "" && !strings.EqualFold(header, prompt):
-			prompt = header + ": " + prompt
-		case prompt == "":
-			prompt = firstNonEmptyString(header, questionID, "Question")
-		}
-		lines = append(lines, fmt.Sprintf("- %s -> %s", prompt, value))
-		seen[questionID] = struct{}{}
-	}
-
-	if len(lines) < len(response.Answers) {
-		keys := make([]string, 0, len(response.Answers))
-		for key := range response.Answers {
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			answer := response.Answers[key]
-			if len(answer.Answers) == 0 {
-				continue
-			}
-			value := strings.TrimSpace(answer.Answers[0])
-			if value == "" {
-				continue
-			}
-			lines = append(lines, fmt.Sprintf("- %s -> %s", strings.TrimSpace(key), value))
-		}
-	}
-
-	return strings.TrimSpace(strings.Join(lines, "\n"))
-}
-
 func selectReviewFindings(findings []model.ReviewFinding, selectionMode string, selectedIDs []string) []model.ReviewFinding {
 	if len(findings) == 0 {
 		return nil
@@ -943,10 +868,6 @@ func codingSessionCapabilitiesForRun(run *model.AgentRun) model.CodingSessionCap
 		Checkpoints:       true,
 	}
 	switch strings.TrimSpace(run.RuntimeKind) {
-	case "codex":
-		capabilities.Authentication = true
-	case "opencode":
-		capabilities.Authentication = false
 	case "native_sdk":
 		capabilities.Authentication = false
 		capabilities.RepoDiffStreaming = strings.TrimSpace(run.InvocationMode) == model.InvocationModeInteractive
@@ -957,21 +878,6 @@ func codingSessionCapabilitiesForRun(run *model.AgentRun) model.CodingSessionCap
 		capabilities.Authentication = false
 	}
 	return capabilities
-}
-
-func latestCodexAuthArtifact(artifacts []model.AgentRunArtifact) *model.CodexAuthState {
-	for index := len(artifacts) - 1; index >= 0; index-- {
-		artifact := artifacts[index]
-		if strings.TrimSpace(artifact.ArtifactType) != model.AgentRunArtifactTypeCodexAuthState || artifact.InlineContent == nil {
-			continue
-		}
-		var state model.CodexAuthState
-		if err := json.Unmarshal([]byte(*artifact.InlineContent), &state); err != nil {
-			continue
-		}
-		return &state
-	}
-	return nil
 }
 
 func codingSessionEventFromArtifact(artifact model.AgentRunArtifact) (string, map[string]any) {
@@ -996,8 +902,6 @@ func codingSessionEventFromArtifact(artifact model.AgentRunArtifact) (string, ma
 		return "review.findings.updated", payload
 	case model.AgentRunArtifactTypeReviewDecision:
 		return "review.decision.recorded", payload
-	case model.AgentRunArtifactTypeCodexAuthState:
-		return "auth.updated", payload
 	case "codex_diff", "diff":
 		return "repo.diff.updated", payload
 	case model.AgentRunArtifactTypeRunPlan:
@@ -1374,4 +1278,76 @@ func (s *AgentService) ListRunInteractions(ctx context.Context, workspaceID, run
 		return nil, fmt.Errorf("interaction repository is not configured")
 	}
 	return s.interactionRepo.ListByRun(ctx, workspaceID, runID)
+}
+
+func questionAnswersResumeContent(requestPayload, responsePayload json.RawMessage) string {
+	var request struct {
+		Questions []struct {
+			ID       string `json:"id"`
+			Header   string `json:"header"`
+			Question string `json:"question"`
+		} `json:"questions"`
+	}
+	var response struct {
+		Answers map[string]struct {
+			Answers []string `json:"answers"`
+		} `json:"answers"`
+	}
+	if err := json.Unmarshal(requestPayload, &request); err != nil {
+		return ""
+	}
+	if err := json.Unmarshal(responsePayload, &response); err != nil {
+		return ""
+	}
+	if len(response.Answers) == 0 {
+		return ""
+	}
+
+	lines := make([]string, 0, len(response.Answers))
+	seen := make(map[string]struct{}, len(response.Answers))
+	for _, question := range request.Questions {
+		questionID := strings.TrimSpace(question.ID)
+		answer, ok := response.Answers[questionID]
+		if !ok || len(answer.Answers) == 0 {
+			continue
+		}
+		value := strings.TrimSpace(answer.Answers[0])
+		if value == "" {
+			continue
+		}
+		prompt := strings.TrimSpace(question.Question)
+		header := strings.TrimSpace(question.Header)
+		switch {
+		case header != "" && prompt != "" && !strings.EqualFold(header, prompt):
+			prompt = header + ": " + prompt
+		case prompt == "":
+			prompt = firstNonEmptyString(header, questionID, "Question")
+		}
+		lines = append(lines, fmt.Sprintf("- %s -> %s", prompt, value))
+		seen[questionID] = struct{}{}
+	}
+
+	if len(lines) < len(response.Answers) {
+		keys := make([]string, 0, len(response.Answers))
+		for key := range response.Answers {
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			answer := response.Answers[key]
+			if len(answer.Answers) == 0 {
+				continue
+			}
+			value := strings.TrimSpace(answer.Answers[0])
+			if value == "" {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("- %s -> %s", strings.TrimSpace(key), value))
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }

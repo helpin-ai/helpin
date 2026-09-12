@@ -440,34 +440,6 @@ func (h *AgentHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
-// StartCodexDeviceCodeAuth handles POST /api/pm/agent-runs/{id}/codex-auth/device-code/start.
-func (h *AgentHandler) StartCodexDeviceCodeAuth(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	runID := chi.URLParam(r, "id")
-	actorID := middleware.GetUserID(r.Context())
-
-	authState, err := h.agentService.StartCodexDeviceCodeAuth(r.Context(), workspaceID, runID, actorID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, authState)
-}
-
-// CancelCodexDeviceCodeAuth handles POST /api/pm/agent-runs/{id}/codex-auth/device-code/cancel.
-func (h *AgentHandler) CancelCodexDeviceCodeAuth(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	runID := chi.URLParam(r, "id")
-	actorID := middleware.GetUserID(r.Context())
-
-	authState, err := h.agentService.CancelCodexDeviceCodeAuth(r.Context(), workspaceID, runID, actorID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, authState)
-}
-
 // GetCodingSession handles GET /api/pm/coding-sessions/{id}.
 func (h *AgentHandler) GetCodingSession(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -655,34 +627,6 @@ func (h *AgentHandler) CancelCodingSession(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, run)
-}
-
-// StartCodingSessionDeviceCodeAuth handles POST /api/pm/coding-sessions/{id}/auth/device-code/start.
-func (h *AgentHandler) StartCodingSessionDeviceCodeAuth(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	sessionID := chi.URLParam(r, "id")
-	actorID := middleware.GetUserID(r.Context())
-
-	authState, err := h.agentService.StartCodexDeviceCodeAuth(r.Context(), workspaceID, sessionID, actorID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, authState)
-}
-
-// CancelCodingSessionDeviceCodeAuth handles POST /api/pm/coding-sessions/{id}/auth/device-code/cancel.
-func (h *AgentHandler) CancelCodingSessionDeviceCodeAuth(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	sessionID := chi.URLParam(r, "id")
-	actorID := middleware.GetUserID(r.Context())
-
-	authState, err := h.agentService.CancelCodexDeviceCodeAuth(r.Context(), workspaceID, sessionID, actorID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, authState)
 }
 
 // ResumeRun handles POST /api/pm/agent-runs/{id}/resume.

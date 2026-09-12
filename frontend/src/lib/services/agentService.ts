@@ -11,7 +11,6 @@ import type {
   AgentPresetDefinition,
   UpdateAgentRequest,
   AgentModelProviderOption,
-  CodexAuthState,
   ContinueAgentRunRequest,
   CreateWorkspaceAgentPresetVersionRequest,
   UpdateWorkspaceAgentPresetVersionRequest,
@@ -101,10 +100,6 @@ export const agentService = {
     ),
   cancelRun: (workspaceId: string, runId: string) =>
     automationService.cancelRun(workspaceId, runId) as ReturnType<typeof automationService.cancelRun>,
-  startCodexDeviceCodeAuth: (workspaceId: string, runId: string) =>
-    api.post<CodexAuthState>(`/pm/agent-runs/${runId}/codex-auth/device-code/start${qs(workspaceId)}`, {}),
-  cancelCodexDeviceCodeAuth: (workspaceId: string, runId: string) =>
-    api.post<CodexAuthState>(`/pm/agent-runs/${runId}/codex-auth/device-code/cancel${qs(workspaceId)}`, {}),
   approveRun: (workspaceId: string, runId: string, payload?: ApproveAgentRunRequest) =>
     automationService.approveRun(workspaceId, runId, payload) as ReturnType<typeof automationService.approveRun>,
   requestRunChanges: (workspaceId: string, runId: string, payload: SendAgentRunRequestChangesRequest) =>

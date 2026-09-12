@@ -113,7 +113,7 @@ func runtimeSupportedBySkill(supported []string, runtimeKind string) bool {
 	// Migration compatibility: existing workspace skills were authored for the
 	// in-process native runtime, but Codex now stages and uses the same skill
 	// contract for default agent execution.
-	return runtimeKind == "codex" && contains(supported, "native_sdk")
+	return false
 }
 
 func resolveOne(ctx context.Context, workspaceID string, ref model.AgentSkillRef, lookup WorkspaceSkillLookup) (model.AgentSkillRef, agentcontract.SkillDefinition, string, error) {

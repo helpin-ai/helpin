@@ -5,7 +5,6 @@ metadata:
   title: Public Help Doc Writing
   supported_runtimes:
     - native_sdk
-    - codex
 ---
 
 Use this skill when creating a new public help center article.

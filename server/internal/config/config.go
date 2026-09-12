@@ -67,10 +67,6 @@ type Config struct {
 	DocsImportAIConversionProvider     string
 	DocsImportAIConversionModel        string
 	DocsImportAIConversionArticleLimit int
-	CodexOpenAIAuthMode                string
-	CodexEnableChatGPTOAuth            bool
-	CodexChatGPTAccessToken            string
-	CodexChatGPTAccountID              string
 	CloudflareAccountID                string
 	CloudflareAPIToken                 string
 	CloudflareAPIBaseURL               string
@@ -346,10 +342,6 @@ func Load() (*Config, error) {
 		DocsImportAIConversionProvider:         strings.TrimSpace(firstNonEmpty(os.Getenv("DOCS_IMPORT_AI_CONVERSION_PROVIDER"), "openrouter")),
 		DocsImportAIConversionModel:            strings.TrimSpace(firstNonEmpty(os.Getenv("DOCS_IMPORT_AI_CONVERSION_MODEL"), "openai/gpt-5.6-luna")),
 		DocsImportAIConversionArticleLimit:     parsePositiveIntEnv(os.Getenv("DOCS_IMPORT_AI_CONVERSION_ARTICLE_LIMIT"), 0),
-		CodexOpenAIAuthMode:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
-		CodexEnableChatGPTOAuth:                parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
-		CodexChatGPTAccessToken:                strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),
-		CodexChatGPTAccountID:                  strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCOUNT_ID")),
 		CloudflareAccountID:                    strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:                     strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
 		CloudflareAPIBaseURL:                   strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),

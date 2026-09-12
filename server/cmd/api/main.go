@@ -269,7 +269,6 @@ func main() {
 			&model.SupportRunEvidence{},
 			&model.HelpcenterAnswer{},
 			&model.CodingSessionStateSnapshot{},
-			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
 			&model.SupportConversation{},
 			&model.SupportConversationTriage{},
@@ -1137,12 +1136,7 @@ func main() {
 	).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
-		cfg.OpenRouterAPIKey,
-		cfg.CodexOpenAIAuthMode,
-		cfg.CodexEnableChatGPTOAuth,
-		cfg.CodexChatGPTAccessToken,
-		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	agentService.SetProductAnalyticsService(productAnalytics)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)

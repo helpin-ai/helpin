@@ -188,7 +188,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Epic Planner',
     default_role: 'Epic Planner',
     description: 'Interactive product planning for epics, PRDs, docs, and tasks.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -197,7 +197,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Coding Task Planner',
     default_role: 'Coding Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -206,7 +206,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Beacon',
     default_role: 'CRM Operator',
     description: 'Cross-app CRM execution across deals, contacts, docs, and support context.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -215,7 +215,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Support Agent',
     default_role: 'Support Agent',
     description: 'Handles support conversations and drafts replies with review controls.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -224,7 +224,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Quill',
     default_role: 'Documentation Agent',
     description: 'Keeps internal docs, public help docs, and API docs accurate and organized.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -242,7 +242,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Code Builder',
     default_role: 'Code Builder',
     description: 'Writes code, implements features, and fixes bugs in the repo.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -251,7 +251,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'QA & Code Reviewer',
     default_role: 'QA & Code Reviewer',
     description: 'Reviews work, runs tests, and checks quality without repo mutation.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -260,7 +260,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     label: 'Sub-agent',
     default_role: 'Sub-agent',
     description: 'Runs one delegated task with a limited tool set.',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
@@ -271,7 +271,7 @@ const PRESET_FALLBACK_DEFAULT: (typeof PRESET_FALLBACKS)[AgentPresetKey] = {
   label: 'Agent',
   default_role: 'Automation Agent',
   description: '',
-  runtime_kind: 'codex',
+  runtime_kind: 'native_sdk',
   default_invocation_mode: 'autonomous',
   supported_modes: ['autonomous', 'interactive'],
 };
@@ -511,26 +511,20 @@ const RUN_NOW_SUPPORTED_TARGETS = new Set<AgentTargetType>([
 ]);
 
 function normalizeProviderForRuntime(
-  runtimeKind: AgentRuntimeKind,
+  _runtimeKind: AgentRuntimeKind,
   provider: AgentModelProvider,
 ): AgentModelProvider {
-  if (runtimeKind === 'codex' && provider === 'anthropic') {
-    return 'openai';
-  }
   return provider;
 }
 
 function availableProvidersForRuntime(
-  runtimeKind: AgentRuntimeKind,
+  _runtimeKind: AgentRuntimeKind,
   providerOptions: AgentModelProviderOption[],
 ): AgentModelProviderOption[] {
-  if (runtimeKind !== 'codex') {
-    return providerOptions;
-  }
-  return providerOptions.filter((provider) => provider.value === 'openai' || provider.value === 'openrouter');
+  return providerOptions;
 }
 
-const CODEX_PROVIDER_MISSING_MESSAGE = 'Add OpenAI, OpenRouter, or enable Codex ChatGPT auth.';
+const PROVIDER_MISSING_MESSAGE = 'Configure an OpenAI, OpenRouter, or Anthropic API key.';
 const PROVIDER_REQUIRED_MODEL_MESSAGE = 'Select a compatible AI provider first.';
 
 export function getAgentProviderConfigState(
@@ -548,8 +542,8 @@ export function getAgentProviderConfigState(
     hasCompatibleProvider,
     providerDisabled: !hasCompatibleProvider,
     modelDisabled,
-    providerMessage: !hasCompatibleProvider && runtimeKind === 'codex'
-      ? CODEX_PROVIDER_MISSING_MESSAGE
+    providerMessage: !hasCompatibleProvider
+      ? PROVIDER_MISSING_MESSAGE
       : '',
     modelMessage: modelDisabled ? PROVIDER_REQUIRED_MODEL_MESSAGE : '',
   };
@@ -715,8 +709,8 @@ function deriveExecutionConfigFields(
   executionConfig?: AgentExecutionConfig,
 ): Pick<AgentFormData, 'reasoning_effort' | 'service_tier' | 'max_tool_steps'> {
   const normalizedProvider = normalizeProviderForRuntime(runtimeKind, provider);
-  const reasoningEffort = runtimeKind === 'codex' ? (executionConfig?.reasoning_effort ?? '') : '';
-  const serviceTier = runtimeKind === 'codex' && normalizedProvider === 'openai'
+  const reasoningEffort = runtimeKind === 'native_sdk' && normalizedProvider !== 'anthropic' ? (executionConfig?.reasoning_effort ?? '') : '';
+  const serviceTier = runtimeKind === 'native_sdk' && normalizedProvider === 'openai'
     ? (executionConfig?.service_tier ?? '')
     : '';
   const maxToolSteps = runtimeKind === 'native_sdk' && executionConfig?.max_tool_steps
@@ -731,8 +725,8 @@ function deriveExecutionConfigFields(
 
 function buildExecutionConfigPayload(form: AgentFormData): AgentExecutionConfig | undefined {
   const config: AgentExecutionConfig = {};
-  if (form.runtime_kind === 'codex') {
-    if (form.reasoning_effort) {
+  if (form.runtime_kind === 'native_sdk') {
+    if (form.provider !== 'anthropic' && form.reasoning_effort) {
       config.reasoning_effort = form.reasoning_effort;
     }
     if (form.provider === 'openai' && form.service_tier) {
@@ -749,7 +743,7 @@ function buildExecutionConfigPayload(form: AgentFormData): AgentExecutionConfig 
 }
 
 function supportedModesForForm(runtimeKind: AgentRuntimeKind): AgentInvocationMode[] {
-  if (runtimeKind === 'native_sdk' || runtimeKind === 'codex') {
+  if (runtimeKind === 'native_sdk') {
     return ['autonomous', 'interactive'];
   }
   return ['autonomous'];
@@ -802,7 +796,7 @@ function buildUpdatePayload(
   const preset = agent?.is_system ? presetMetaForSelection(form.preset_key, form.preset_version_key, presets) : null;
   const defaultRuntimeKind = agent?.is_system
     ? (preset?.runtime_kind ?? presetFallback(form.preset_key).runtime_kind)
-    : 'codex';
+    : 'native_sdk';
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
   const teamIds = form.teamAccessMode === 'specific_teams' ? normalizeTeamIdList(form.team_ids) : [];
   const advancedPayload: UpdateAgentRequest = advancedOpen
@@ -1002,8 +996,8 @@ function comparableCustomAgentForm(form: AgentFormData) {
     runtime_kind: form.runtime_kind,
     provider,
     model: form.model.trim(),
-    reasoning_effort: form.runtime_kind === 'codex' ? form.reasoning_effort : '',
-    service_tier: form.runtime_kind === 'codex' && provider === 'openai' ? form.service_tier : '',
+    reasoning_effort: form.runtime_kind === 'native_sdk' ? form.reasoning_effort : '',
+    service_tier: form.runtime_kind === 'native_sdk' && provider === 'openai' ? form.service_tier : '',
     max_tool_steps: form.runtime_kind === 'native_sdk' ? parseNativeToolStepLimit(form.max_tool_steps) ?? 0 : 0,
     system_prompt: form.system_prompt.trim(),
     monthly_token_budget: normalizeTokenBudgetFormValue(form.monthly_token_budget),

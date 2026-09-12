@@ -839,8 +839,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/messages", h.DockChat.SendRunMessage)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/continue", h.DockChat.ContinueRun)
 				r.With(requireCommandBarEdit()).Post("/runs/{runID}/cancel", h.DockChat.CancelRun)
-				r.With(requireCommandBarEdit()).Post("/runs/{runID}/auth/device-code/start", h.DockChat.StartRunAuth)
-				r.With(requireCommandBarEdit()).Post("/runs/{runID}/auth/device-code/cancel", h.DockChat.CancelRunAuth)
 			})
 
 			// Support module
@@ -1267,8 +1265,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/messages", h.Agent.SendRunMessage)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/codex-auth/device-code/start", h.Agent.StartCodexDeviceCodeAuth)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/codex-auth/device-code/cancel", h.Agent.CancelCodexDeviceCodeAuth)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/resume", h.Agent.ResumeRun)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/continue", h.Agent.ContinueRun)
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
@@ -1292,8 +1288,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/approve", h.Agent.ApproveCodingSession)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/request-changes", h.Agent.RequestCodingSessionChanges)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/cancel", h.Agent.CancelCodingSession)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/auth/device-code/start", h.Agent.StartCodingSessionDeviceCodeAuth)
-					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/auth/device-code/cancel", h.Agent.CancelCodingSessionDeviceCodeAuth)
 				})
 			})
 

@@ -5,8 +5,6 @@ metadata:
   title: Code Implementation
   supported_runtimes:
     - native_sdk
-    - codex
-    - opencode
 ---
 
 - Implement the requested task directly in the repository.

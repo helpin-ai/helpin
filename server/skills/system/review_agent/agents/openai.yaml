@@ -9,19 +9,9 @@ policy:
         native_sdk:
           type: tool_call
           tool_name: request_review_checkpoint
-        codex:
-          type: tool_call
-          tool_name: request_review_checkpoint
-        opencode:
-          type: fenced_json
-          block_label: helpin-review
     - kind: request_user_input
       schema: request_user_input_v1
       transports:
         native_sdk:
           type: tool_call
           tool_name: request_user_input
-        codex:
-          type: runtime_bridge
-        opencode:
-          type: runtime_bridge

@@ -597,8 +597,6 @@ export function CodingSessionSurface({
           availablePreviewPanelKey={approvalPreviewPanelKey}
           attachedPreview={approvalPreview}
           onViewPreview={handleViewPreview}
-          onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
-          onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, activeSessionId))}
           onApproveRun={() => void approveRunGate()}
           onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
         />

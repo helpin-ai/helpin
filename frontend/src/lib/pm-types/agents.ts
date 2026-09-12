@@ -35,7 +35,6 @@ export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
 export type AgentModelTier = 'small' | 'medium' | 'large' | 'flagship';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
 export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message';
-export type CodexAuthStateStatus = 'required' | 'pending' | 'connected' | 'failed' | 'cancelled';
 export type AgentReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 export type AgentServiceTier = 'standard' | 'fast' | 'flex';
 
@@ -442,18 +441,6 @@ export interface ResumeAgentRunRequest {
   send_message?: boolean;
 }
 
-export interface CodexAuthState {
-  provider?: string;
-  auth_mode?: string;
-  state: CodexAuthStateStatus;
-  login_id?: string;
-  auth_url?: string;
-  verification_url?: string;
-  user_code?: string;
-  plan_type?: string;
-  error?: string;
-  updated_at: string;
-}
 
 export interface TaskImplementationBrief {
   approach: string;

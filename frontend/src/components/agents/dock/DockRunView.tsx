@@ -42,13 +42,6 @@ export function DockRunView({
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authState, setAuthState] = useState<{
-    verification_url?: string;
-    auth_url?: string;
-    user_code?: string;
-    error?: string;
-  } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -195,24 +188,6 @@ export function DockRunView({
     setStopping(false);
   };
 
-  const startAuth = async () => {
-    if (authBusy) return;
-    setAuthBusy(true);
-    const result = await dockChatService.startRunAuth(workspaceId, run.id);
-    if (result.error) toast.error(result.error);
-    else setAuthState(result.data);
-    setAuthBusy(false);
-  };
-
-  const cancelAuth = async () => {
-    if (authBusy) return;
-    setAuthBusy(true);
-    const result = await dockChatService.cancelRunAuth(workspaceId, run.id);
-    if (result.error) toast.error(result.error);
-    else setAuthState(null);
-    setAuthBusy(false);
-  };
-
   const composerEnabled = effectiveRun.status === 'failed'
     || effectiveRun.status === 'cancelled'
     || (effectiveRun.status === 'paused' && (effectiveRun.pause_reason === 'human_input' || effectiveRun.pause_reason === 'awaiting_user_message') && !interaction);
@@ -251,21 +226,7 @@ export function DockRunView({
             </div>
           ) : null}
           {effectiveRun.status === 'paused' && effectiveRun.pause_reason === 'authentication' ? (
-            <div className="mt-3 rounded-xl border border-[#f0c98a] bg-[#fffaf1] p-3 text-[13px] text-[#1c1b19] dark:border-amber-900/70 dark:bg-amber-950/20 dark:text-amber-100">
-              <p className="text-[10.5px] font-bold uppercase tracking-[.1em] text-[#b45309]">Sign-in required</p>
-              <p className="mt-1.5 leading-5">Connect the agent runtime to continue this run.</p>
-              {authState?.user_code ? <code className="mt-2 block select-all rounded-md bg-white px-2 py-1.5 font-mono text-sm dark:bg-[#242320]">{authState.user_code}</code> : null}
-              {authState?.verification_url || authState?.auth_url ? (
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <a href={authState.verification_url || authState.auth_url} target="_blank" rel="noreferrer" className="font-semibold text-[#9a4c05] underline-offset-2 hover:underline">Open sign-in page</a>
-                  <button type="button" onClick={() => void cancelAuth()} disabled={authBusy} className="text-[#8a8781] underline-offset-2 hover:underline disabled:opacity-50">Cancel sign-in</button>
-                </div>
-              ) : (
-                <button type="button" onClick={() => void startAuth()} disabled={authBusy} className="mt-2 rounded-[9px] border border-[#d9b36e] bg-white px-3 py-1.5 font-semibold text-[#8a4608] hover:bg-[#fffdf8] disabled:opacity-50 dark:bg-[#292420]">
-                  {authBusy ? 'Starting…' : 'Start sign-in'}
-                </button>
-              )}
-            </div>
+            <p className="mt-3 text-sm text-muted-foreground">Reconnect the required provider or start a new run with a configured API key.</p>
           ) : null}
           {interaction ? (
             <div className="mt-3">

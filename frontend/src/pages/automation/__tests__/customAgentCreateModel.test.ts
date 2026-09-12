@@ -26,7 +26,7 @@ describe('custom agent create model', () => {
 
     expect(form.name).toBe('');
     expect(form.icon_key).toBe('violet_star');
-    expect(form.runtime_kind).toBe('codex');
+    expect(form.runtime_kind).toBe('native_sdk');
     expect(form.default_invocation_mode).toBe('interactive');
     expect(form.supported_modes).toEqual(['autonomous', 'interactive']);
     expect(form.allowed_targets).toEqual(['task']);

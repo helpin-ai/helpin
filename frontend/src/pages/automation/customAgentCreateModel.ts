@@ -64,7 +64,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     icon_key: 'violet_star',
     preset_key: 'code_builder',
     preset_version_key: 'code_builder_default',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     model_tier: 'large',
     supported_modes: ['autonomous', 'interactive'],
     provider: 'openai',

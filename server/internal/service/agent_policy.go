@@ -178,13 +178,13 @@ func normalizeAgentRecord(agent *model.Agent) {
 		if hasPreset && preset.RuntimeKind != "" {
 			agent.RuntimeKind = preset.RuntimeKind
 		} else {
-			agent.RuntimeKind = "codex"
+			agent.RuntimeKind = "native_sdk"
 		}
 	} else if hasPreset && !runtimeAllowedForPreset(presetKey, agent.RuntimeKind) {
 		if hasPreset && preset.RuntimeKind != "" {
 			agent.RuntimeKind = preset.RuntimeKind
 		} else {
-			agent.RuntimeKind = "codex"
+			agent.RuntimeKind = "native_sdk"
 		}
 	}
 	if agent.Skills == nil {
@@ -264,8 +264,8 @@ func parseAndValidateExecutionConfig(agent *model.Agent) (model.AgentExecutionCo
 		}
 	}
 
-	if (config.ReasoningEffort != nil || config.ServiceTier != nil) && runtimeKind != "codex" {
-		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config model controls are only supported for runtime_kind codex")
+	if (config.ReasoningEffort != nil || config.ServiceTier != nil) && runtimeKind != "native_sdk" {
+		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config model controls are only supported for runtime_kind native_sdk")
 	}
 
 	if config.ReasoningEffort != nil && !slices.Contains(supportedAgentReasoningEfforts, strings.ToLower(strings.TrimSpace(*config.ReasoningEffort))) {
@@ -273,6 +273,10 @@ func parseAndValidateExecutionConfig(agent *model.Agent) (model.AgentExecutionCo
 			"execution_config.reasoning_effort must be one of %s",
 			strings.Join(supportedAgentReasoningEfforts, ", "),
 		)
+	}
+
+	if config.ReasoningEffort != nil && agent.Provider != nil && normalizeModelProvider(*agent.Provider) == model.AgentModelProviderAnthropic {
+		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.reasoning_effort requires an OpenAI Responses provider")
 	}
 
 	if config.ServiceTier != nil {
@@ -483,10 +487,6 @@ func agentSupportsInteractive(agent *model.Agent) bool {
 		return false
 	}
 	switch strings.TrimSpace(agent.RuntimeKind) {
-	case "opencode":
-		return false
-	case "codex":
-		return true
 	case "native_sdk":
 		return true
 	}
@@ -507,38 +507,12 @@ func validateRuntimeForAgentWithPreset(agent *model.Agent, presetOverride *model
 	if agent == nil {
 		return nil
 	}
+	if agent.RuntimeKind != "native_sdk" {
+		return fmt.Errorf("only native_sdk is available for new runs; select a native agent version")
+	}
 	presetKey := normalizePresetKey(agent.EffectivePresetKey())
 	if presetKey != "" && !runtimeAllowedForPreset(presetKey, agent.RuntimeKind) {
 		return fmt.Errorf("runtime_kind %q is not allowed for preset %q", strings.TrimSpace(agent.RuntimeKind), presetKey)
-	}
-	return nil
-}
-
-func validateCodexAgentPolicy(agent *model.Agent, presetOverride *model.AgentPresetDefinition) error {
-	if agent == nil {
-		return nil
-	}
-	var (
-		preset model.AgentPresetDefinition
-		ok     bool
-	)
-	if presetOverride != nil {
-		preset = *presetOverride
-		ok = true
-	} else {
-		preset, ok = presetDefinitionForAgent(agent)
-	}
-	if !ok {
-		return fmt.Errorf("runtime_kind codex requires a supported preset")
-	}
-	if !stringSliceSetEqual(parseJSONStringSlice(agent.AllowedTools), preset.AllowedTools) {
-		return fmt.Errorf("runtime_kind codex does not support custom allowed_tools; use the preset defaults")
-	}
-	if !stringSliceSetEqual(parseJSONStringSlice(agent.AllowedCommands), preset.AllowedCommands) {
-		return fmt.Errorf("runtime_kind codex does not support custom allowed_commands; use the preset defaults")
-	}
-	if !stringSliceSetEqual(parseJSONStringSlice(agent.AllowedTargets), preset.AllowedTargetTypes) {
-		return fmt.Errorf("runtime_kind codex does not support custom allowed_targets; use the preset defaults")
 	}
 	return nil
 }

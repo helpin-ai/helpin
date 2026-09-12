@@ -62,7 +62,7 @@ type Agent struct {
 	ActiveVersionID            *string         `json:"active_version_id,omitempty" gorm:"type:uuid;index"`
 	Role                       string          `json:"role"`
 	Status                     string          `json:"status" gorm:"not null;default:'idle'"`
-	RuntimeKind                string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
+	RuntimeKind                string          `json:"runtime_kind" gorm:"not null;default:'native_sdk'"`
 	ModelTier                  string          `json:"model_tier" gorm:"not null;default:''"`
 	Skills                     AgentSkillRefs  `json:"skills" gorm:"type:jsonb;not null;default:'[]'"`
 	TriggerMode                string          `json:"trigger_mode" gorm:"not null;default:'manual'"`
@@ -183,7 +183,7 @@ type AgentRun struct {
 	ConversationID    *string                 `json:"conversation_id" gorm:"type:uuid"`
 	TargetType        string                  `json:"target_type" gorm:"not null;default:'task';index"`
 	TargetID          string                  `json:"target_id" gorm:"type:uuid;not null;index"`
-	RuntimeKind       string                  `json:"runtime_kind" gorm:"not null;default:'opencode'"`
+	RuntimeKind       string                  `json:"runtime_kind" gorm:"not null;default:'native_sdk'"`
 	ModelTier         string                  `json:"model_tier" gorm:"not null;default:''"`
 	InvocationMode    string                  `json:"invocation_mode" gorm:"not null;default:'autonomous'"`
 	ParentRunID       *string                 `json:"parent_run_id" gorm:"type:uuid;index"`

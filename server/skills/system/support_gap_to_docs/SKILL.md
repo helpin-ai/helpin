@@ -5,7 +5,6 @@ metadata:
   title: Support Gap Docs Update
   supported_runtimes:
     - native_sdk
-    - codex
 ---
 
 Use this skill when working from a support coverage gap, repeated customer question, weak article signal, missing article signal, or stale article signal.

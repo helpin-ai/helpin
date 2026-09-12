@@ -5,7 +5,6 @@ metadata:
   title: API Docs Maintenance
   supported_runtimes:
     - native_sdk
-    - codex
 ---
 
 Use this skill when updating existing API documentation.

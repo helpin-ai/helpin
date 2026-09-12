@@ -198,7 +198,7 @@ jobs:
     # action once the runner story is sorted.
     env:
       # mattn/go-sqlite3 (used by gorm.io/driver/sqlite) requires CGO.
-      # Without this, codex/auth/tool tests fail with "Binary was compiled
+      # Without this, database/tool tests fail with "Binary was compiled
       # with 'CGO_ENABLED=0'". The runner image must have gcc installed.
       CGO_ENABLED: '1'
     steps:

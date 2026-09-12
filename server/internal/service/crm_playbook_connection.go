@@ -232,7 +232,7 @@ func compileCRMPlaybookConnectionCopy(source model.CRMPlaybookConnectionSource) 
 	runtime := runtimeAgentFromHelpinAgent(&agent, "")
 	// Optional skill references are mutable dependencies until their exact package
 	// transport is connected. Do not falsely call an unresolved reference frozen.
-	if len(runtime.Skills) != 0 || (runtime.RuntimeKind != "native_sdk" && runtime.RuntimeKind != "codex") {
+	if len(runtime.Skills) != 0 || runtime.RuntimeKind != "native_sdk" {
 		return snapshot, "", ErrCRMPlaybookConnectionUnsupported
 	}
 	specialization, err := agentcontract.CaptureCRMPlaybookSpecializationForPrompt(source.Policy.Definition.Journey, runtime.SystemPrompt)

@@ -411,36 +411,8 @@ func (h *DockChatHandler) CancelRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // StartRunAuth handles POST /api/dock/runs/{runID}/auth/device-code/start.
-func (h *DockChatHandler) StartRunAuth(w http.ResponseWriter, r *http.Request) {
-	run, ok := h.resolveDockRun(w, r)
-	if !ok {
-		return
-	}
-	state, err := h.agentService.StartCodexDeviceCodeAuth(
-		r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()),
-	)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to start agent sign-in")
-		return
-	}
-	writeJSON(w, http.StatusOK, state)
-}
 
 // CancelRunAuth handles POST /api/dock/runs/{runID}/auth/device-code/cancel.
-func (h *DockChatHandler) CancelRunAuth(w http.ResponseWriter, r *http.Request) {
-	run, ok := h.resolveDockRun(w, r)
-	if !ok {
-		return
-	}
-	state, err := h.agentService.CancelCodexDeviceCodeAuth(
-		r.Context(), getWorkspaceID(r), run.ID, middleware.GetUserID(r.Context()),
-	)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to cancel agent sign-in")
-		return
-	}
-	writeJSON(w, http.StatusOK, state)
-}
 
 func (h *DockChatHandler) resolveChatRun(w http.ResponseWriter, r *http.Request) (*model.AgentRun, bool) {
 	workspaceID := getWorkspaceID(r)
