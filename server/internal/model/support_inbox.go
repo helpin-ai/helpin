@@ -969,6 +969,7 @@ type CreateMessageRequest struct {
 	AttachmentIDs   []string `json:"attachment_ids,omitempty"`
 	Channels        []string `json:"channels,omitempty"`
 	DeliveryMode    string   `json:"delivery_mode,omitempty"`
+	EmailSubject    *string  `json:"email_subject,omitempty"`
 	CCEmails        []string `json:"cc_emails,omitempty"`
 	BCCEmails       []string `json:"bcc_emails,omitempty"`
 }

@@ -1,3 +1,4 @@
+import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -440,22 +441,6 @@ export function MessageThread({
     };
   }, [workspaceId, conversationId, assignedAgentId]);
 
-  const isVisitorOnline = useSupportPresenceStore((s) =>
-    conversation?.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false
-  );
-
-  const emailFallbackHint = useMemo(() => {
-    const settings = installation?.settings;
-    const email = conversation?.customer_email?.trim();
-    if (!conversation || !settings?.email_fallback_enabled || !email) return null;
-    if (conversation.email_unsubscribed) return null;
-    if (conversation.status === 'resolved' || conversation.status === 'spam') return null;
-    if (conversation.anonymous_id && isVisitorOnline) return null;
-
-    return {
-      email,
-    };
-  }, [conversation, installation, isVisitorOnline]);
 
   useEffect(() => {
     const handleAgentRunEvent = (event: Event) => {
@@ -493,6 +478,8 @@ export function MessageThread({
 
   useEffect(() => {
     const handleKeyDown = async (event: KeyboardEvent) => {
+      // Desktop and mobile threads can both be mounted; only one owns Undo.
+      if (event.defaultPrevented) return;
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || event.shiftKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, [contenteditable="true"]')) return;
@@ -510,7 +497,7 @@ export function MessageThread({
       const result = await deleteMessage.mutateAsync({ messageId: latest.id, undo: true });
       if (result.markdown) {
         window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [] },
+          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [], deliveryMode: getReplyDeliveryMode(latest.metadata), emailSubject: getReplyEmailSubject(latest.metadata) },
         }));
       }
     };
@@ -1215,7 +1202,6 @@ export function MessageThread({
             key={`${workspaceId}:${conversationId}`}
             workspaceId={workspaceId}
             conversationId={conversationId}
-            emailFallbackHint={emailFallbackHint}
             emailDeliveryEnabled={installation?.settings.email_fallback_enabled}
             onUpgradeRequired={setUpgradeDialogReason}
           />

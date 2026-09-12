@@ -14,17 +14,6 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
   Command,
   CommandEmpty,
   CommandGroup,
@@ -34,7 +23,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
-import { QuietSearchInput } from '@/components/design-system/quiet';
+import { QuietSearchInput, QuietUnderlineInput } from '@/components/design-system/quiet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -75,37 +64,15 @@ import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './
 import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
-import { isReplyDeliveryMode, replyDeliveryChannels, saveReplyDelivery, useReplyDelivery } from './replyDelivery';
+import { clearAutomaticReplyDelivery, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, saveReplySubject, useComposerDelivery, useReplySubject } from './replyDelivery';
 
-const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 interface ReplyComposerProps {
   workspaceId: string;
   conversationId: string;
-  emailFallbackHint?: {
-    email: string;
-  } | null;
   emailDeliveryEnabled?: boolean;
   onUpgradeRequired?: (reason: UpgradeRequiredReason) => void;
-}
-
-function loadSkipOfflineEmailConfirm(storageKey: string): boolean {
-  try {
-    return localStorage.getItem(storageKey) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function saveSkipOfflineEmailConfirm(storageKey: string, skip: boolean) {
-  try {
-    if (skip) {
-      localStorage.setItem(storageKey, '1');
-    } else {
-      localStorage.removeItem(storageKey);
-    }
-  } catch {}
 }
 
 function getEditorMarkdown(editorInstance: ReturnType<typeof useEditor> | null | undefined): string {
@@ -806,35 +773,44 @@ function ShortcutFormPanel({
   );
 }
 
-export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, emailDeliveryEnabled, onUpgradeRequired }: ReplyComposerProps) {
+export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnabled, onUpgradeRequired }: ReplyComposerProps) {
   const { replyMode, setReplyMode, setDraft, clearDraft, detailSidebarMode, setDetailSidebarMode } = useSupportInboxStore();
   const askChat = useDockStore((state) => state.chats.find((chat) => chat.support_conversation_id === conversationId) ?? null);
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
   const user = useAuthStore((s) => s.user);
-  const userId = user?.id ?? null;
   const workspaceName = useWorkspaceStore((s) => s.currentWorkspace?.name ?? null);
   const { data: conversation } = useConversation(workspaceId, conversationId);
-  const explicitDeliveryMode = useReplyDelivery(workspaceId, conversationId);
-  const selectDeliveryMode = useCallback((mode: SupportReplyDeliveryMode | undefined) => {
+  const selectDeliveryMode = useCallback((mode: SupportReplyDeliveryMode) => {
     saveReplyDelivery(workspaceId, conversationId, mode);
   }, [workspaceId, conversationId]);
-  const primaryRecipientEmail = conversation?.customer_email?.trim() || emailFallbackHint?.email?.trim() || '';
-  const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && explicitDeliveryMode !== 'chat_only';
+  const primaryRecipientEmail = conversation?.customer_email?.trim() || '';
   const emailUnavailableReason = !primaryRecipientEmail ? 'No email address'
+    : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primaryRecipientEmail) ? 'Invalid email address'
     : conversation?.primary_recipient_state === 'unconfirmed' ? 'Confirm the primary recipient first'
     : conversation?.email_unsubscribed ? 'Customer unsubscribed from email'
-    : emailDeliveryEnabled === false ? 'Email delivery is disabled for this inbox'
+    : emailDeliveryEnabled === undefined ? 'Checking email delivery settings'
+    : !emailDeliveryEnabled ? 'Email delivery is disabled for this inbox'
     : conversation?.status === 'spam' ? 'Move this conversation out of spam first'
     : undefined;
-  const automaticEmailFallback = !emailUnavailableReason && conversation?.status !== 'resolved';
-  const deliveryMode = explicitDeliveryMode ?? (conversation?.source === 'email' ? 'email_only' : automaticEmailFallback ? 'chat_and_email' : 'chat_only');
+  const presence = useSupportPresenceStore((state) => !state.wsConnected || !state.hasOnlineVisitorsSnapshot || !conversation?.anonymous_id
+    ? 'unknown' : state.onlineVisitors[conversation.anonymous_id] ? 'online' : 'offline');
+  const deliveryMode = useComposerDelivery(workspaceId, conversationId, {
+    source: conversation?.source,
+    presence,
+    emailEligible: !emailUnavailableReason,
+    active: replyMode !== 'note',
+  });
+  const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
   const chatUnavailableReason = conversation && !conversation.anonymous_id && conversation.source !== 'widget'
     ? 'No chat session available' : undefined;
-  const deliveryUnavailableReason = explicitDeliveryMode
-    ? (deliveryMode === 'chat_only' ? chatUnavailableReason : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason)
-    : conversation?.source === 'email' ? emailUnavailableReason : undefined;
+  const deliveryUnavailableReason = deliveryMode === 'chat_only' ? chatUnavailableReason
+    : deliveryMode === 'email_only' ? emailUnavailableReason : emailUnavailableReason || chatUnavailableReason;
+  const sendsEmail = deliveryMode !== 'chat_only';
+  const emailSubject = useReplySubject(workspaceId, conversationId, conversation?.subject?.trim() || 'Support conversation');
+  const invalidSubject = sendsEmail && (!emailSubject.trim() || emailSubject.length > 500 || /\p{Cc}/u.test(emailSubject));
+  const ccRecipients = normalizeRecipientEmails(conversation?.email_cc ?? [], [primaryRecipientEmail]);
 
 
   const { data: members = [] } = useQuery({
@@ -859,16 +835,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   const lastTypingSentRef = useRef(0);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
-  const offlineEmailConfirmStorageKey = useMemo(
-    () => `${OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX}:${workspaceId}:${userId ?? 'anonymous'}`,
-    [workspaceId, userId],
-  );
-  const [skipOfflineEmailConfirm, setSkipOfflineEmailConfirm] = useState(() =>
-    loadSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey),
-  );
-  const [offlineEmailConfirmOpen, setOfflineEmailConfirmOpen] = useState(false);
-  const [doNotAskAgain, setDoNotAskAgain] = useState(false);
-
   // Link insertion modal
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [linkInitial, setLinkInitial] = useState<{ label: string; url: string }>({ label: '', url: '' });
@@ -878,10 +844,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   const [editorFocused, setEditorFocused] = useState(false);
   const toolbarHasPointerRef = useRef(false);
   // toolbarHasPointerRef still used by the merged bottom bar to keep editor focus state
-
-  useEffect(() => {
-    setSkipOfflineEmailConfirm(loadSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey));
-  }, [offlineEmailConfirmStorageKey]);
 
   // File attachments
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -983,7 +945,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
   const shortcutVariableContext = useMemo(() => ({
     customer: {
       fullName: conversation?.customer_name,
-      email: conversation?.customer_email ?? emailFallbackHint?.email,
+      email: conversation?.customer_email,
     },
     agent: {
       fullName: user?.full_name,
@@ -991,7 +953,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
     },
     workspaceName,
     conversationSubject: conversation?.subject,
-  }), [conversation?.customer_email, conversation?.customer_name, conversation?.subject, emailFallbackHint?.email, user?.email, user?.full_name, workspaceName]);
+  }), [conversation?.customer_email, conversation?.customer_name, conversation?.subject, user?.email, user?.full_name, workspaceName]);
 
   const resolveShortcutContent = useCallback(
     (content: string) => resolveShortcutVariables(content, shortcutVariableContext),
@@ -1084,7 +1046,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
   // Typing indicator
   const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
-    if (isNoteRef.current || (typing && explicitDeliveryMode === 'email_only') || !wsSend || !wsConnected) return;
+    if (isNoteRef.current || (typing && deliveryMode === 'email_only') || !wsSend || !wsConnected) return;
     if (!typing && typingTimerRef.current) {
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = null;
@@ -1103,11 +1065,11 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       conversation_id: conversationId,
       content: typingContent ?? '',
     });
-  }, [conversationId, explicitDeliveryMode, wsSend, wsConnected]);
+  }, [conversationId, deliveryMode, wsSend, wsConnected]);
 
   useEffect(() => {
-    if (explicitDeliveryMode === 'email_only') sendTyping(false);
-  }, [explicitDeliveryMode, sendTyping]);
+    if (deliveryMode === 'email_only') sendTyping(false);
+  }, [deliveryMode, sendTyping]);
 
   const handleTyping = useCallback((typingContent: string) => {
     sendTyping(true, typingContent);
@@ -1484,11 +1446,18 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
         markdown?: string;
         attachments?: SupportAttachmentPayload[];
         deliveryMode?: SupportReplyDeliveryMode;
+        emailSubject?: string;
       }>).detail;
       if (detail?.conversationId !== conversationId) return;
       const markdown = detail.markdown ?? '';
+      if (draftTimerRef.current) {
+        clearTimeout(draftTimerRef.current);
+        draftTimerRef.current = null;
+      }
+      sendTyping(false);
       setReplyMode('reply');
-      selectDeliveryMode(isReplyDeliveryMode(detail.deliveryMode) ? detail.deliveryMode : undefined);
+      restoreReplyDelivery(workspaceId, conversationId, isReplyDeliveryMode(detail.deliveryMode) ? detail.deliveryMode : undefined);
+      saveReplySubject(workspaceId, conversationId, detail.emailSubject);
       setDraft(conversationId, markdown);
       setPendingAttachments((current) => {
         current.forEach((attachment) => {
@@ -1496,12 +1465,14 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
         });
         return restoreAttachmentsFromMessage(detail.attachments);
       });
-      editor.commands.setContent(markdown);
+      // Restoring an email-only draft must not broadcast its body through the
+      // previous chat-mode typing handler before React updates the callbacks.
+      editor.commands.setContent(markdown, { emitUpdate: false });
       editor.commands.focus('end');
     };
     window.addEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
     return () => window.removeEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
-  }, [conversationId, editor, selectDeliveryMode, setDraft, setReplyMode]);
+  }, [workspaceId, conversationId, editor, sendTyping, setDraft, setReplyMode]);
 
   // Force placeholder redecoration when mode changes
   useEffect(() => {
@@ -1522,15 +1493,22 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 
     const attachmentIds = doneAttachments.map((a) => a.attachmentId!);
     const isInternal = useSupportInboxStore.getState().replyMode === 'note';
-    const primaryEmail = conversation?.customer_email?.trim() || emailFallbackHint?.email?.trim() || '';
+    const primaryEmail = conversation?.customer_email?.trim() || '';
     const normalizedCC = normalizeRecipientEmails(conversation?.email_cc ?? [], [primaryEmail]);
 
+    // Freeze the submitted intent in the shared draft so a presence update in
+    // either mounted composer cannot change the destination of a failed retry.
+    if (!isInternal) {
+      restoreReplyDelivery(workspaceId, conversationId, deliveryMode);
+      if (sendsEmail) saveReplySubject(workspaceId, conversationId, emailSubject);
+    }
     await sendMutation.mutateAsync({
       content: markdown || ' ',
       is_internal: isInternal,
       ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
-      ...(!isInternal && explicitDeliveryMode ? { delivery_mode: explicitDeliveryMode, channels: replyDeliveryChannels(explicitDeliveryMode) } : !isInternal && primaryEmail ? { channels: ['email' as const] } : {}),
-      ...(!isInternal && explicitDeliveryMode !== 'chat_only' && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
+      ...(!isInternal ? { delivery_mode: deliveryMode, channels: replyDeliveryChannels(deliveryMode) } : {}),
+      ...(!isInternal && sendsEmail ? { email_subject: emailSubject.trim() } : {}),
+      ...(!isInternal && deliveryMode !== 'chat_only' && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
       ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
     });
 
@@ -1541,9 +1519,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
 		aiAssistedRef.current = false;
     editor.commands.clearContent();
     clearDraft(conversationId);
-    if (!isInternal) selectDeliveryMode(undefined);
+    if (!isInternal) {
+      clearAutomaticReplyDelivery(workspaceId, conversationId);
+      saveReplySubject(workspaceId, conversationId);
+    }
     editor.commands.focus();
-  }, [attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, emailFallbackHint?.email, explicitDeliveryMode, pendingAttachments, selectDeliveryMode, sendMutation, sendTyping]);
+  }, [attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendsEmail, emailSubject, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async () => {
     if (!editor || !editor.isEditable || attachmentsPending) return;
@@ -1561,14 +1542,13 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       return;
     }
 
-    if (!isNote && !explicitDeliveryMode && emailFallbackHint && !skipOfflineEmailConfirm) {
-      setDoNotAskAgain(false);
-      setOfflineEmailConfirmOpen(true);
+    if (!isNote && invalidSubject) {
+      toast.error('Enter a subject of 1–500 characters without line breaks');
       return;
     }
 
     await sendReply();
-  }, [attachmentsPending, deliveryUnavailableReason, editor, emailFallbackHint, explicitDeliveryMode, isNote, pendingAttachments, primaryRecipientUnconfirmed, sendMutation.isPending, sendReply, skipOfflineEmailConfirm]);
+  }, [attachmentsPending, deliveryUnavailableReason, editor, invalidSubject, isNote, pendingAttachments, primaryRecipientUnconfirmed, sendMutation.isPending, sendReply]);
 
   const handleRewrite = useCallback(async (operation: SupportAIRewriteOperation) => {
     if (!editor || sendMutation.isPending) return;
@@ -1592,15 +1572,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
       if (reason) onUpgradeRequired?.(reason);
     }
   }, [closeShortcutsPanel, editor, onUpgradeRequired, rewriteMutation, runRewrite, sendMutation.isPending, sendTyping]);
-
-  const handleConfirmOfflineEmailSend = useCallback(async () => {
-    if (doNotAskAgain) {
-      saveSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey, true);
-      setSkipOfflineEmailConfirm(true);
-    }
-    setOfflineEmailConfirmOpen(false);
-    await sendReply();
-  }, [doNotAskAgain, offlineEmailConfirmStorageKey, sendReply]);
 
   const confirmCurrentPrimary = useCallback(async () => {
     if (!conversation) return;
@@ -1740,13 +1711,25 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
         </div>
       )}
 
-      {emailFallbackHint && (!explicitDeliveryMode || explicitDeliveryMode === 'chat_and_email') && !isNote && !primaryRecipientUnconfirmed && editor && !editor.isEmpty && (
-        <div className="flex items-start gap-2 border-b border-border/20 bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground rounded-t-xl">
-          <Mail01Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
-          <p>
-            User is offline. Replies sent here will also be queued as an email to{' '}
-            <span className="font-medium text-foreground">{emailFallbackHint.email}</span>.
+      {sendsEmail && !isNote && (
+        <div className="space-y-2 border-b border-border/20 px-4 py-2.5 text-xs text-muted-foreground">
+          <p className="break-words" aria-live="polite">
+            Reply will {deliveryMode === 'email_only' ? 'only' : 'also'} be emailed to{' '}
+            <span className="font-medium text-foreground">{primaryRecipientEmail || 'the customer'}</span>.
+            {ccRecipients.length > 0 && <> Cc: <span className="font-medium text-foreground">{ccRecipients.join(', ')}</span>.</>}
           </p>
+          {deliveryUnavailableReason && <p role="status" className="text-quiet-accent">{deliveryUnavailableReason}</p>}
+          <label className="flex min-w-0 items-center gap-3">
+            <span className="shrink-0">Subject</span>
+            <QuietUnderlineInput
+              value={emailSubject}
+              onChange={(event) => saveReplySubject(workspaceId, conversationId, event.target.value)}
+              disabled={sendMutation.isPending}
+              maxLength={500}
+              aria-invalid={invalidSubject || undefined}
+              className="h-7 min-w-0 flex-1 text-xs"
+            />
+          </label>
         </div>
       )}
 
@@ -2241,11 +2224,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
               email={primaryRecipientEmail}
               emailUnavailableReason={emailUnavailableReason}
               chatUnavailableReason={chatUnavailableReason}
-              automaticFallback={!explicitDeliveryMode && (automaticEmailFallback || conversation?.source === 'email')}
             />}
             <Button
               size="sm"
-              disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
+              disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason || invalidSubject)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
               onClick={handleSend}
               className={cn(
                 'h-7 gap-1.5 rounded-full px-3 text-xs',
@@ -2258,51 +2240,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint, 
           </div>
         </div>
       </div>
-
-      <AlertDialog open={offlineEmailConfirmOpen} onOpenChange={setOfflineEmailConfirmOpen}>
-        <AlertDialogContent
-          onOpenAutoFocus={(event) => {
-            event.preventDefault();
-            window.requestAnimationFrame(() => {
-              document.getElementById('offline-email-confirm-send')?.focus();
-            });
-          }}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle>Send this reply by email too?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This visitor is currently offline. If you send this reply, Helpin will queue an email to{' '}
-              <span className="font-medium text-foreground">{emailFallbackHint?.email}</span> and skip the email if the visitor comes back online before it sends.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="offline-email-dont-ask"
-              checked={doNotAskAgain}
-              onCheckedChange={(checked) => setDoNotAskAgain(!!checked)}
-            />
-            <Label htmlFor="offline-email-dont-ask" className="text-sm font-normal">
-              Do not ask me again
-            </Label>
-          </div>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={sendMutation.isPending}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              id="offline-email-confirm-send"
-              variant="default"
-              disabled={sendMutation.isPending}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleConfirmOfflineEmailSend();
-              }}
-            >
-              {sendMutation.isPending ? 'Sending...' : 'Send Reply'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       </div>
     </div>
   );

@@ -1009,6 +1009,7 @@ export interface CreateMessageRequest {
   is_internal?: boolean;
   ai_assisted?: boolean;
   delivery_mode?: SupportReplyDeliveryMode;
+  email_subject?: string;
   channels?: ('chat' | 'email')[];
   cc_emails?: string[];
   bcc_emails?: string[];

@@ -2688,6 +2688,11 @@ func (s *EmailFallbackService) buildThreadHeaders(ctx context.Context, workspace
 }
 
 func (s *EmailFallbackService) buildSubject(ctx context.Context, conv *model.SupportConversation, pending []model.SupportMessage) (string, error) {
+	if len(pending) > 0 && pending[0].ExplicitEmailDelivery() {
+		if subject := explicitDeliveryMetadata(pending[0]).Subject; subject != "" {
+			return subject, nil
+		}
+	}
 	base := strings.TrimSpace(conv.Subject)
 	if base == "" {
 		if len(pending) > 0 {
