@@ -288,6 +288,22 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
+	revenueType := req.RevenueType
+	if revenueType == "" {
+		revenueType = "one_time"
+	}
+	if !validCRMRevenueType(revenueType) {
+		return nil, fmt.Errorf("invalid revenue_type")
+	}
+	for _, id := range req.ContactIDs {
+		exists, err := s.dealRepo.ObjectExists(ctx, req.WorkspaceID, model.CRMObjectContact, id)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, fmt.Errorf("participant not found in workspace")
+		}
+	}
 	customer, err := s.resolveCustomer(ctx, req.WorkspaceID, req.ContactID, req.CompanyID)
 	if err != nil {
 		return nil, err
@@ -333,6 +349,7 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		commercialMotion = &motion
 	}
 	deal := &model.CRMDeal{
+		RevenueType:      revenueType,
 		WorkspaceID:      req.WorkspaceID,
 		DisplayID:        displayID,
 		Name:             strings.TrimSpace(req.Name),
@@ -346,7 +363,7 @@ func (s *CRMDealService) create(ctx context.Context, req model.CreateCRMDealRequ
 		Probability:      req.Probability,
 		CustomProperties: model.JSONB(req.CustomProperties),
 	}
-	if err := s.dealRepo.CreateWithCustomer(ctx, deal, customer); err != nil {
+	if err := s.dealRepo.CreateWithCustomer(ctx, deal, customer, req.ContactIDs...); err != nil {
 		return nil, err
 	}
 
@@ -476,6 +493,12 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 		return nil, fmt.Errorf("deal not found")
 	}
 
+	if req.RevenueType != nil {
+		if !validCRMRevenueType(*req.RevenueType) {
+			return nil, fmt.Errorf("invalid revenue_type")
+		}
+		deal.RevenueType = *req.RevenueType
+	}
 	previousStageID := deal.StageID
 	previousStageName := previousStageID
 	if deal.Stage != nil {
@@ -626,4 +649,8 @@ func (s *CRMDealService) requestCompanySummaryRefresh(ctx context.Context, works
 	if err := s.summaryRefresh.RequestCompanyRefreshForObject(ctx, workspaceID, model.CRMObjectDeal, dealID); err != nil {
 		slog.ErrorContext(ctx, "failed to request company summary refresh from deal", "error", err, "workspace_id", workspaceID, "deal_id", dealID)
 	}
+}
+
+func validCRMRevenueType(value string) bool {
+	return value == "one_time" || value == "monthly" || value == "annual"
 }

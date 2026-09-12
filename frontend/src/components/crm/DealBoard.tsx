@@ -1,3 +1,4 @@
+import { comparableDealTotal } from './dealCreationDefaults';
 import { useCallback, useMemo, useState } from 'react';
 import {
   DndContext,
@@ -27,7 +28,7 @@ interface DealBoardProps {
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
   onDealClick: (id: string) => void;
-  onCreateClick?: () => void;
+  onCreateClick?: (stageId?: string) => void;
   onDealUpdated?: (deal: CRMDeal) => void;
   showEmptyStages: boolean;
 }
@@ -58,7 +59,7 @@ function Column({
   onDealUpdated,
 }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
-  const stageTotal = deals.reduce((sum, d) => sum + (d.amount ?? 0), 0);
+  const stageTotal = comparableDealTotal(deals);
 
   if (collapsed) {
     return (
@@ -93,8 +94,8 @@ function Column({
           </p>
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <span>{deals.length} deals</span>
-            {stageTotal > 0 && (
-              <span>${new Intl.NumberFormat().format(stageTotal)}</span>
+            {stageTotal && (
+              <span>{stageTotal}</span>
             )}
           </p>
         </div>
@@ -290,7 +291,7 @@ export function DealBoard({
               deals={dealsByStage.get(stage.id) ?? []}
               collapsed={collapsedColumns.has(stage.id)}
               onToggleCollapse={toggleCollapse}
-              onCreateClick={onCreateClick}
+              onCreateClick={() => onCreateClick?.(stage.id)}
               onDealClick={onDealClick}
               workspaceId={workspaceId}
               assignableMembers={assignableMembers}

@@ -228,6 +228,7 @@ export interface UpdateCRMPipelineRequest {
 }
 
 export interface CRMDeal {
+  revenue_type?: 'one_time' | 'monthly' | 'annual';
   id: string;
   workspace_id: string;
   display_id: string;
@@ -248,6 +249,8 @@ export interface CRMDeal {
 }
 
 export interface CreateCRMDealRequest {
+  contact_ids?: string[];
+  revenue_type?: 'one_time' | 'monthly' | 'annual';
   workspace_id: string;
   name: string;
   contact_id?: string;
@@ -276,6 +279,8 @@ export interface CRMDealCustomer {
 }
 
 export interface UpdateCRMDealRequest {
+  clear_probability?: boolean;
+  revenue_type?: 'one_time' | 'monthly' | 'annual';
   name?: string;
   pipeline_id?: string;
   stage_id?: string;

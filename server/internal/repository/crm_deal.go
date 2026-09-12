@@ -179,7 +179,7 @@ func (r *CRMDealRepository) GetPrimaryCompanyIDForContact(ctx context.Context, w
 }
 
 // CreateWithCustomer creates a deal and its canonical customer relationships atomically.
-func (r *CRMDealRepository) CreateWithCustomer(ctx context.Context, deal *model.CRMDeal, customer model.CRMDealCustomer) error {
+func (r *CRMDealRepository) CreateWithCustomer(ctx context.Context, deal *model.CRMDeal, customer model.CRMDealCustomer, participantIDs ...string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(deal).Error; err != nil {
 			return fmt.Errorf("create deal: %w", err)
@@ -189,6 +189,21 @@ func (r *CRMDealRepository) CreateWithCustomer(ctx context.Context, deal *model.
 		}
 		if customer.CustomerType == model.CRMObjectCompany && customer.PrimaryContactID != "" {
 			if err := ensureDealAssociation(tx, deal.WorkspaceID, deal.ID, model.CRMObjectContact, customer.PrimaryContactID, model.CRMAssociationLabelDealPrimaryContact); err != nil {
+				return err
+			}
+		}
+		for _, id := range participantIDs {
+			if id == customer.PrimaryContactID || (customer.CustomerType == model.CRMObjectContact && id == customer.CustomerID) {
+				continue
+			}
+			var count int64
+			if err := tx.Table("crm_contacts").Where("id = ? AND workspace_id = ?", id, deal.WorkspaceID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 1 {
+				return fmt.Errorf("participant not found in workspace")
+			}
+			if err := ensureDealAssociation(tx, deal.WorkspaceID, deal.ID, model.CRMObjectContact, id, ""); err != nil {
 				return err
 			}
 		}
