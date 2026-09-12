@@ -101,6 +101,13 @@ func TestSupportPortalDeniesHiddenInternalSpamAndDeletedConversations(t *testing
 		if err := db.Delete(conversation).Error; err != nil {
 			t.Fatal(err)
 		}
+		var deletedCount int64
+		if err := db.Raw("SELECT COUNT(*) FROM support_conversations WHERE id = ?", conversation.ID).Scan(&deletedCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if deletedCount != 0 {
+			t.Fatalf("conversation delete left a soft-deleted row")
+		}
 		identity, err := svc.FindOrCreateIdentity(context.Background(), "ws-1", "customer@example.com", nil)
 		if err != nil {
 			t.Fatal(err)
@@ -109,6 +116,22 @@ func TestSupportPortalDeniesHiddenInternalSpamAndDeletedConversations(t *testing
 			t.Fatalf("error = %v, want visibility denial", err)
 		}
 	})
+}
+
+func TestSupportPortalIdentityAuthSubjectIsScopedToWorkspace(t *testing.T) {
+	_, db := setupSupportPortalService(t)
+	subject := "customer-subject"
+	for _, workspaceID := range []string{"ws-1", "ws-2"} {
+		identity := &model.SupportPortalIdentity{
+			ID:          "identity-" + workspaceID,
+			WorkspaceID: workspaceID,
+			Email:       "customer-" + workspaceID + "@example.com",
+			AuthSubject: &subject,
+		}
+		if err := db.Create(identity).Error; err != nil {
+			t.Fatalf("create identity in %s: %v", workspaceID, err)
+		}
+	}
 }
 
 func TestSupportPortalReferenceAuthorizationAndAuditAttribution(t *testing.T) {

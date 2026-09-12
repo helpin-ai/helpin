@@ -19,10 +19,10 @@ const (
 // subject to AuthSubject without changing a request's conversation ownership.
 type SupportPortalIdentity struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_support_portal_identity_email,priority:1"`
+	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex:idx_support_portal_identity_email,priority:1;uniqueIndex:idx_support_portal_identity_subject,priority:1"`
 	Email       string    `json:"email" gorm:"not null;uniqueIndex:idx_support_portal_identity_email,priority:2"`
 	DisplayName *string   `json:"display_name,omitempty"`
-	AuthSubject *string   `json:"-" gorm:"uniqueIndex:idx_support_portal_identity_subject,priority:1,where:auth_subject IS NOT NULL"`
+	AuthSubject *string   `json:"-" gorm:"uniqueIndex:idx_support_portal_identity_subject,priority:2,where:auth_subject IS NOT NULL"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }

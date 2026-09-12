@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS support_portal_identities (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (workspace_id, email)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_support_portal_identity_subject ON support_portal_identities (auth_subject) WHERE auth_subject IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_portal_identity_subject ON support_portal_identities (workspace_id, auth_subject) WHERE auth_subject IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS support_portal_request_references (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

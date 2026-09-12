@@ -83,9 +83,9 @@ type SupportConversation struct {
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
-	// DeletedAt keeps removed conversations out of portal projections while
-	// retaining their operational audit trail.
-	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
+	// DeletedAt supports explicit portal-ineligibility checks without changing
+	// the existing permanent-delete behavior of support conversations.
+	DeletedAt *time.Time `json:"-" gorm:"index"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage                  *string                    `json:"last_message,omitempty" gorm:"->"`
