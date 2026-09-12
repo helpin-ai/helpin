@@ -1,4 +1,5 @@
 import { AgentRunDeliveryModePicker } from '@/components/pm/AgentRunDeliveryMode';
+import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import type { AgentRunDeliveryMode, Agent, AgentTargetType, GitRepository } from '@/lib/pmTypes';
 import { Loading01Icon, ZapIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
@@ -98,6 +99,7 @@ export function AgentRunNowDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <CodingCapacityNotice agent={agent} />
           {['task', 'epic', 'repository'].includes(targetType) ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={onDeliveryModeChange} /> : null}
           {targets.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">

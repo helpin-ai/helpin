@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import { useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
@@ -1976,6 +1977,7 @@ function AgentCard({
             </div>
             <p className="text-xs text-muted-foreground">{role}</p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
+            <CodingCapacityNotice agent={agent} />
           </div>
           {canEdit ? (
             <DropdownMenu>
@@ -2304,6 +2306,7 @@ export function AgentRow({
               <span className="truncate text-xs text-muted-foreground">{role}</span>
               {agent.is_system ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">System</Badge> : null}
             </div>
+            <CodingCapacityNotice agent={agent} className="mt-1" />
           </div>
         </div>
       </div>

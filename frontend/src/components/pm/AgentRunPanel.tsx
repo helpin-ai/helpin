@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
+import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { AgentRunDeliveryModePicker } from './AgentRunDeliveryMode';
 import { TaskDeliveryTimeline } from '@/components/pm/TaskDeliveryTimeline';
@@ -593,6 +594,7 @@ export function AgentRunPanel({
               </TooltipTrigger>
               {actionDisabledReason ? <TooltipContent side="top">{actionDisabledReason}</TooltipContent> : null}
             </Tooltip>
+            <CodingCapacityNotice agent={selectedAgent} className="w-full" />
           </div>
         )}
 
