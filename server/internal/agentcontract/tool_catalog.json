@@ -3888,6 +3888,10 @@
             "description": "Deprecated compatibility field. Plain commands only; shell operators are rejected.",
             "type": "string"
           },
+          "working_directory": {
+            "type": "string",
+            "description": "Existing directory relative to the workspace root; defaults to the root. Absolute paths, traversal, and symlinks are rejected."
+          },
           "timeout_seconds": {
             "type": "integer",
             "minimum": 1,

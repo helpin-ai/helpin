@@ -2493,6 +2493,7 @@ export function AgentsPage() {
   const [runNowTargetType, setRunNowTargetType] = useState<AgentTargetType | ''>('');
   const [runNowTargetId, setRunNowTargetId] = useState('');
   const [runNowAdditionalContext, setRunNowAdditionalContext] = useState('');
+  const [runNowDeliveryMode, setRunNowDeliveryMode] = useState<'publish' | 'preview'>('publish');
   const [runNowBaseBranch, setRunNowBaseBranch] = useState('');
   const [runNowRepositoriesLoading, setRunNowRepositoriesLoading] = useState(false);
   const [runNowSubmitting, setRunNowSubmitting] = useState(false);
@@ -2667,6 +2668,7 @@ export function AgentsPage() {
           : '',
     );
     setRunNowAdditionalContext('');
+    setRunNowDeliveryMode('publish');
     setRunNowBaseBranch(defaultTarget === 'repository' ? (firstRunnableRepo?.default_branch ?? '') : '');
     setRunNowOpen(true);
     if (defaultTarget === 'repository' && !firstRunnableRepo) {
@@ -2705,6 +2707,7 @@ export function AgentsPage() {
       target_type: runNowTargetType,
       target_id: targetId,
       additional_context: runNowAdditionalContext.trim() || undefined,
+      delivery_mode: runNowDeliveryMode,
       base_branch: runNowBaseBranch.trim() || undefined,
     });
     setRunNowSubmitting(false);
@@ -2724,6 +2727,7 @@ export function AgentsPage() {
   }, [
     navigate,
     runNowAdditionalContext,
+    runNowDeliveryMode,
     runNowAgent,
     runNowBaseBranch,
     runNowTargetId,
@@ -6529,6 +6533,8 @@ export function AgentsPage() {
       {runNowOpen ? (
         <Suspense fallback={null}>
           <AgentRunNowDialog
+            deliveryMode={runNowDeliveryMode}
+            onDeliveryModeChange={setRunNowDeliveryMode}
             open
             onOpenChange={(open) => {
               setRunNowOpen(open);

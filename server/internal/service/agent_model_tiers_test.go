@@ -21,7 +21,7 @@ func TestAgentModelTierResolverResolvesSelectableTiers(t *testing.T) {
 		aiusage.TierFlagship: "anthropic/claude-sonnet-5",
 	}
 	for tier, model := range want {
-		snapshot, err := resolver.ResolveCustom(tier, nil, nil, "")
+		snapshot, err := resolver.ResolveCustom(tier)
 		if err != nil {
 			t.Fatalf("ResolveCustom(%q): %v", tier, err)
 		}
@@ -74,7 +74,7 @@ func TestAgentModelTierResolverRejectsUnavailableTierWithoutLeakingRoute(t *test
 		t.Fatal(err)
 	}
 	resolver := NewAgentModelTierResolver(catalog, func(string) bool { return false })
-	_, err = resolver.ResolveCustom(aiusage.TierSmall, nil, nil, "")
+	_, err = resolver.ResolveCustom(aiusage.TierSmall)
 	if err == nil || err.Error() != "model size temporarily unavailable" {
 		t.Fatalf("error = %v", err)
 	}
@@ -117,4 +117,20 @@ func tierTestStringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func TestCustomCodingModelTiersUseNativeIncludingRetiredPins(t *testing.T) {
+	catalog, err := aiusage.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := NewAgentModelTierResolver(catalog, nil)
+	for _, previous := range []string{"", "codex", "opencode", "native_sdk"} {
+		snapshot, err := resolver.ResolveCustom(aiusage.TierLarge)
+		agent := &model.Agent{RuntimeKind: previous, AllowedTargets: []byte(`["repository"]`), AllowedTools: []byte(`["write_file","apply_patch"]`)}
+		applyModelTierSnapshotToAgent(agent, snapshot)
+		if err != nil || agent.RuntimeKind != "native_sdk" {
+			t.Fatalf("previous=%q: runtime=%q err=%v", previous, snapshot.RuntimeKind, err)
+		}
+	}
 }

@@ -1,4 +1,4 @@
-import type { AgentApprovalState, AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind } from './agents';
+import type { AgentRunDeliveryMode, AgentApprovalState, AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind } from './agents';
 
 export type CodingSessionInteractionKind =
   | 'request_user_input'
@@ -109,6 +109,7 @@ export interface CodingSessionDiff {
 }
 
 export interface CodingSession {
+  delivery_mode?: AgentRunDeliveryMode;
   id: string;
   run_id: string;
   parent_run_id?: string;

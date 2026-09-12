@@ -545,6 +545,22 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 	if err != nil {
 		return AgentRuntimeStartRunRequest{}, err
 	}
+
+	instructions := strings.TrimSpace(input.AdditionalContext)
+	if agentRunIsPreview(run) {
+		metadata["delivery_mode"] = "preview"
+		instructions += "\nDelivery mode: preview. Keep requested changes local for review. Do not commit, push branches, or open pull requests. Automatic repository delivery is disabled for this run, including after resume."
+		if len(allowedTools) == 0 {
+			allowedTools = append([]string(nil), runtimeAgent.AllowedTools...)
+		}
+		filtered := make([]string, 0, len(allowedTools))
+		for _, name := range allowedTools {
+			if name != "commit_and_push" && name != "open_pr" {
+				filtered = append(filtered, name)
+			}
+		}
+		allowedTools = filtered
+	}
 	if err := validateScheduledSupportFollowUpTools(run, allowedTools); err != nil {
 		return AgentRuntimeStartRunRequest{}, err
 	}
@@ -552,7 +568,7 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 		HostRunID:       strings.TrimSpace(run.ID),
 		AgentID:         strings.TrimSpace(run.AgentID),
 		Target:          AgentRuntimeTargetRef{Type: strings.TrimSpace(run.TargetType), ID: strings.TrimSpace(run.TargetID), Metadata: metadata},
-		Instructions:    strings.TrimSpace(input.AdditionalContext),
+		Instructions:    instructions,
 		AllowedTools:    allowedTools,
 		ExternalActorID: strings.TrimSpace(derefString(run.TriggeredByUserID)),
 		Mode:            mode,
@@ -1675,10 +1691,15 @@ func (s *AgentService) RequireActorCanUseAgent(ctx context.Context, workspaceID,
 	if agentID == "" {
 		return fmt.Errorf("agent_id is required")
 	}
-	agent, err := s.GetAgent(ctx, workspaceID, agentID)
+	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil {
 		return err
 	}
+	if agent == nil {
+		return fmt.Errorf("agent not found")
+	}
+	// Access checks must allow repairing an invalid execution configuration.
+	// Launch and update paths validate skills after applying the requested configuration.
 	if actor != nil && (actor.Role == "admin" || actor.Role == "owner") {
 		return nil
 	}
@@ -2562,9 +2583,6 @@ func (s *AgentService) CreateAgentVersion(ctx context.Context, workspaceID, agen
 		}
 		snapshot, resolveErr := resolver.ResolveCustom(
 			aiusage.Tier(strings.ToLower(strings.TrimSpace(*req.ModelTier))),
-			parseJSONStringSlice(version.AllowedTargets),
-			parseJSONStringSlice(version.AllowedTools),
-			version.RuntimeKind,
 		)
 		if resolveErr != nil {
 			return nil, resolveErr
@@ -2607,9 +2625,6 @@ func (s *AgentService) UpdateAgentVersion(ctx context.Context, workspaceID, agen
 		}
 		snapshot, resolveErr := resolver.ResolveCustom(
 			aiusage.Tier(strings.ToLower(strings.TrimSpace(*req.ModelTier))),
-			parseJSONStringSlice(version.AllowedTargets),
-			parseJSONStringSlice(version.AllowedTools),
-			version.RuntimeKind,
 		)
 		if resolveErr != nil {
 			return nil, resolveErr
@@ -3370,9 +3385,6 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 		}
 		snapshot, err := resolver.ResolveCustom(
 			aiusage.Tier(strings.ToLower(strings.TrimSpace(*req.ModelTier))),
-			parseJSONStringSlice(agent.AllowedTargets),
-			parseJSONStringSlice(agent.AllowedTools),
-			"",
 		)
 		if err != nil {
 			return nil, err
@@ -3652,9 +3664,6 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			}
 			snapshot, resolveErr := resolver.ResolveCustom(
 				aiusage.Tier(strings.ToLower(strings.TrimSpace(*req.ModelTier))),
-				parseJSONStringSlice(agent.AllowedTargets),
-				parseJSONStringSlice(agent.AllowedTools),
-				agent.RuntimeKind,
 			)
 			if resolveErr != nil {
 				return nil, resolveErr
@@ -4464,6 +4473,9 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 }
 
 func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string, opts startTargetRunOptions) (*model.AgentRun, error) {
+	if err := validateAgentRunDeliveryMode(req.DeliveryMode); err != nil {
+		return nil, err
+	}
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
 		return nil, fmt.Errorf("agent_id is required")
@@ -4525,6 +4537,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:         req.DeliveryMode,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "task",
@@ -4585,6 +4598,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:         req.DeliveryMode,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "epic",
@@ -4633,6 +4647,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:         req.DeliveryMode,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "sprint",
@@ -4679,7 +4694,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build objective run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
-			workspaceID: workspaceID, agent: agent, targetType: "objective", targetID: objective.Objective.ID,
+			deliveryMode: req.DeliveryMode,
+			workspaceID:  workspaceID, agent: agent, targetType: "objective", targetID: objective.Objective.ID,
 			parentRunID: parentRunID, allowActiveParentRun: opts.allowActiveParentRun, actorID: actorID,
 			input: payload, trigger: trigger, invocationMode: resolveInvocationMode(agent),
 		})
@@ -4733,6 +4749,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		workingBranch := strings.TrimSpace(derefString(req.WorkingBranch))
 
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:         req.DeliveryMode,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "repository",
@@ -4780,6 +4797,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:   req.DeliveryMode,
 			workspaceID:    workspaceID,
 			agent:          agent,
 			targetType:     "support_conversation",
@@ -4832,6 +4850,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:   req.DeliveryMode,
 			workspaceID:    workspaceID,
 			agent:          agent,
 			targetType:     "support_coverage_gap",
@@ -4875,6 +4894,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build document run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:         req.DeliveryMode,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "document",
@@ -4915,6 +4935,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build crm contact run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:         req.DeliveryMode,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "crm_contact",
@@ -4955,6 +4976,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build crm company run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:         req.DeliveryMode,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "crm_company",
@@ -4995,6 +5017,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build crm deal run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:         req.DeliveryMode,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "crm_deal",
@@ -5030,6 +5053,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			deliveryMode:         req.DeliveryMode,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "workspace",
@@ -5245,6 +5269,7 @@ func (s *AgentService) ContinueTerminalRun(ctx context.Context, workspaceID, run
 		BaseBranch:        run.BaseBranch,
 		WorkingBranch:     run.WorkingBranch,
 		Output:            previousInput.Output,
+		DeliveryMode:      previousInput.DeliveryMode,
 	}
 	return s.startTargetRun(
 		ctx,
@@ -6089,6 +6114,7 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 }
 
 type createRunParams struct {
+	deliveryMode         string
 	runID                string // Reserved by durable product work before launching.
 	workspaceID          string
 	agent                *model.Agent
@@ -6112,6 +6138,34 @@ type createRunParams struct {
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
+	if err := validateAgentRunDeliveryMode(params.deliveryMode); err != nil {
+		return nil, err
+	}
+	if params.parentRunID != nil {
+		parent, err := s.runRepo.GetByID(ctx, params.workspaceID, *params.parentRunID)
+		if err != nil {
+			return nil, err
+		}
+		if agentRunIsPreview(parent) {
+			params.deliveryMode = "preview"
+		}
+	}
+	if params.deliveryMode != "" {
+		var input map[string]interface{}
+		if err := json.Unmarshal(params.input, &input); err != nil {
+			return nil, fmt.Errorf("read run input: %w", err)
+		}
+		if input == nil {
+			input = map[string]interface{}{}
+		}
+		input["delivery_mode"] = params.deliveryMode
+		var err error
+		params.input, err = json.Marshal(input)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if err := rejectUnclaimedCRMPlaybookRun(params.input); err != nil {
 		return nil, err
 	}
@@ -6171,6 +6225,10 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
 		if activeRun.AgentID == params.agent.ID {
+			if agentRunIsPreview(activeRun) != (params.deliveryMode == "preview") {
+				return nil, fmt.Errorf("an active run has a different delivery mode; finish or cancel it before starting another run")
+			}
+
 			model.NormalizeAgentRunPauseState(activeRun)
 			s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, activeRun, nil)
 			return activeRun, nil

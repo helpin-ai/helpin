@@ -7,6 +7,7 @@ import (
 )
 
 type CodingSession struct {
+	DeliveryMode        string                       `json:"delivery_mode"`
 	ID                  string                       `json:"id"`
 	RunID               string                       `json:"run_id"`
 	ParentRunID         *string                      `json:"parent_run_id,omitempty"`

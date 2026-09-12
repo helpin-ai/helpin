@@ -72,7 +72,7 @@ func (r *AgentModelTierResolver) ValidateSelectable() []error {
 }
 
 // ResolveCustom validates a selectable tier and returns its immutable execution snapshot.
-func (r *AgentModelTierResolver) ResolveCustom(tier aiusage.Tier, allowedTargets, allowedTools []string, preserveRuntime string) (AgentModelTierSnapshot, error) {
+func (r *AgentModelTierResolver) ResolveCustom(tier aiusage.Tier) (AgentModelTierSnapshot, error) {
 	route, ok := selectableAgentTierRoutes[tier]
 	if !ok || r == nil || r.catalog == nil {
 		return AgentModelTierSnapshot{}, fmt.Errorf("model size temporarily unavailable")
@@ -84,13 +84,9 @@ func (r *AgentModelTierResolver) ResolveCustom(tier aiusage.Tier, allowedTargets
 	if err != nil || resolved.Tier != tier {
 		return AgentModelTierSnapshot{}, fmt.Errorf("model size temporarily unavailable")
 	}
-	runtimeKind := strings.TrimSpace(preserveRuntime)
-	if runtimeKind == "" {
-		runtimeKind = runtimeForCustomAgentCapabilities(allowedTargets, allowedTools)
-	}
 	return AgentModelTierSnapshot{
 		ModelTier: string(tier), Provider: route.Provider, Model: route.Model,
-		ServiceTier: route.ServiceTier, RuntimeKind: runtimeKind,
+		ServiceTier: route.ServiceTier, RuntimeKind: "native_sdk",
 		ProviderQuantizations: providerQuantizationsForAgentRoute(route),
 	}, nil
 }
@@ -116,22 +112,6 @@ func (r *AgentModelTierResolver) Derive(provider, model, serviceTier string) (ai
 		return "", err
 	}
 	return resolved.Tier, nil
-}
-
-func runtimeForCustomAgentCapabilities(targets, tools []string) string {
-	for _, target := range targets {
-		switch strings.ToLower(strings.TrimSpace(target)) {
-		case "repository", "pull_request", "git_repository", "github_pull_request":
-			return "codex"
-		}
-	}
-	for _, tool := range tools {
-		switch strings.ToLower(strings.TrimSpace(tool)) {
-		case "shell", "bash", "apply_patch", "git", "write_file", "edit_file":
-			return "codex"
-		}
-	}
-	return "native_sdk"
 }
 
 var (

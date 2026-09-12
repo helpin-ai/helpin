@@ -414,6 +414,7 @@ func (h *AgentHandler) StartTargetRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	run, err := h.agentService.StartTargetRun(r.Context(), workspaceID, req.TargetType, req.TargetID, model.StartAgentRunRequest{
+		DeliveryMode:      req.DeliveryMode,
 		AgentID:           req.AgentID,
 		AdditionalContext: req.AdditionalContext,
 		BaseBranch:        req.BaseBranch,

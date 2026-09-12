@@ -1,4 +1,5 @@
-import type { Agent, AgentTargetType, GitRepository } from '@/lib/pmTypes';
+import { AgentRunDeliveryModePicker } from '@/components/pm/AgentRunDeliveryMode';
+import type { AgentRunDeliveryMode, Agent, AgentTargetType, GitRepository } from '@/lib/pmTypes';
 import { Loading01Icon, ZapIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import {
@@ -33,6 +34,8 @@ const TARGET_ID_PLACEHOLDERS: Partial<Record<AgentTargetType, string>> = {
 };
 
 interface AgentRunNowDialogProps {
+  deliveryMode: AgentRunDeliveryMode;
+  onDeliveryModeChange: (value: AgentRunDeliveryMode) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   agent: Agent | null;
@@ -59,6 +62,7 @@ interface AgentRunNowDialogProps {
 }
 
 export function AgentRunNowDialog({
+  deliveryMode, onDeliveryModeChange,
   open,
   onOpenChange,
   agent,
@@ -94,6 +98,7 @@ export function AgentRunNowDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {['task', 'epic', 'repository'].includes(targetType) ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={onDeliveryModeChange} /> : null}
           {targets.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
               This agent does not have a manually runnable target enabled.

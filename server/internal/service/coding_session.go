@@ -332,7 +332,12 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		}
 	}
 
+	deliveryMode := "publish"
+	if agentRunIsPreview(run) {
+		deliveryMode = "preview"
+	}
 	session := &model.CodingSession{
+		DeliveryMode:        deliveryMode,
 		ID:                  run.ID,
 		RunID:               run.ID,
 		ParentRunID:         run.ParentRunID,

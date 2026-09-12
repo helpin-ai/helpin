@@ -8,6 +8,7 @@ import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/com
 import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
+import { AgentRunDeliveryModePicker } from './AgentRunDeliveryMode';
 import { TaskDeliveryTimeline } from '@/components/pm/TaskDeliveryTimeline';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,7 +23,7 @@ import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
 import { gitService } from '@/lib/services/gitService';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
-import type { Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
+import type { AgentRunDeliveryMode, Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from './agentRunConstants';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
@@ -199,7 +200,7 @@ export function getTaskAgentRunSuggestedAgent<TAgent extends Pick<Agent, 'id' | 
   activeRun,
 }: {
   agents: TAgent[];
-  runs: Pick<AgentRun, 'agent_id' | 'status'>[];
+  runs: Pick<AgentRun, 'agent_id' | 'status' | 'input'>[];
   activeRun: Pick<AgentRun, 'agent_id'> | null | undefined;
 }) {
   if (activeRun) {
@@ -208,7 +209,7 @@ export function getTaskAgentRunSuggestedAgent<TAgent extends Pick<Agent, 'id' | 
 
   const completedPresetKeys = new Set(
     runs
-      .filter((run) => run.status === 'completed')
+      .filter((run) => run.status === 'completed' && run.input?.delivery_mode !== 'preview')
       .map((run) => agents.find((agent) => agent.id === run.agent_id)?.preset_key)
       .filter(Boolean),
   );
@@ -291,6 +292,7 @@ export function AgentRunPanel({
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [drawerOpen, setDrawerOpen] = useState<boolean>(Boolean(urlRunId));
   const [triggering, setTriggering] = useState(false);
+  const [deliveryMode, setDeliveryMode] = useState<AgentRunDeliveryMode>('publish');
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [loading, setLoading] = useState(true);
   const [upgradeDialogReason, setUpgradeDialogReason] = useState<UpgradeRequiredReason | null>(null);
@@ -386,7 +388,7 @@ export function AgentRunPanel({
   }, [fetchRuns, taskId]);
 
   const startRun = useCallback(async (agentId: string) => {
-    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId });
+    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId, delivery_mode: deliveryMode });
     if (res.error) {
       const reason = getUpgradeRequiredReason(res.error);
       if (reason) {
@@ -400,7 +402,7 @@ export function AgentRunPanel({
     if (res.data?.id) {
       setRunInUrl(res.data.id);
     }
-  }, [fetchRuns, setRunInUrl, taskId, workspaceId]);
+  }, [deliveryMode, fetchRuns, setRunInUrl, taskId, workspaceId]);
 
   const agentNameById = useMemo(
     () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
@@ -468,7 +470,7 @@ export function AgentRunPanel({
   };
 
   const latestCompletedAgent = useMemo(() => {
-    if (!latestRun || latestRun.status !== 'completed') return null;
+    if (!latestRun || latestRun.status !== 'completed' || latestRun.input?.delivery_mode === 'preview') return null;
     return agents.find((agent) => agent.id === latestRun.agent_id) ?? null;
   }, [agents, latestRun]);
   const completedPersonaKeys = useMemo(() => {
@@ -573,6 +575,7 @@ export function AgentRunPanel({
                 </SelectContent>
               </Select>
             </div>
+            {delivery?.selectedRepository ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={setDeliveryMode} /> : null}
             {actionDisabledReason ? <p className="min-w-0 text-xs text-muted-foreground">{actionDisabledReason}</p> : null}
             <Tooltip>
               <TooltipTrigger asChild>

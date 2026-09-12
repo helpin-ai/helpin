@@ -272,7 +272,10 @@ export interface AgentRunStreamEvent {
   error?: string;
 }
 
+export type AgentRunDeliveryMode = 'publish' | 'preview';
+
 export interface StartAgentRunRequest {
+  delivery_mode?: AgentRunDeliveryMode;
   agent_id?: string;
   additional_context?: string;
   allowed_tools?: string[];
