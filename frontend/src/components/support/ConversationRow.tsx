@@ -15,6 +15,7 @@ import {
   isNotePreview,
   stripNotePrefix,
 } from './conversationRowVisual';
+import { SupportAskAgentActivity } from './SupportAskAgentActivity';
 import { ConversationActionsMenu, type ConversationActionMoveOption } from './ConversationActionsMenu';
 
 // Re-exported from the pure helper module so existing importers (tests, other
@@ -518,6 +519,7 @@ export const ConversationRow = memo(function ConversationRow({
 
             {/* Activity indicators or status icon */}
             <div className="flex shrink-0 items-center gap-1">
+              <SupportAskAgentActivity workspaceId={workspaceId} conversationId={conversation.id} />
               {hasAIHandoff && <AIHandoffIndicator />}
               {isCustomerTyping ? (
                 <TypingDotsPill />
