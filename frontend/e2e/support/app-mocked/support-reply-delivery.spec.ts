@@ -90,10 +90,10 @@ for (const width of [1440, 390]) {
     await composer.getByRole("button", { name: "Send", exact: true }).click();
     await expect.poll(() => writes.length).toBe(1);
     expect(writes[0]).toMatchObject({
-  expect(writes[0]).not.toHaveProperty('email_subject');
       delivery_mode: "email_only",
       channels: ["email"],
     });
+    expect(writes[0]).not.toHaveProperty('email_subject');
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
     await selector.click();
     await page.getByRole("option", { name: /^Chat only/ }).click();
@@ -258,10 +258,10 @@ test("email-only selection survives a draft reload and keyboard send uses it", a
   await editor.press("Control+Enter");
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toMatchObject({
-  expect(writes[0]).not.toHaveProperty('email_subject');
     delivery_mode: "email_only",
     channels: ["email"],
   });
+  expect(writes[0]).not.toHaveProperty('email_subject');
 });
 
 test("failed send retains the email-only draft and delivery choice", async ({
