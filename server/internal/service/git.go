@@ -2010,7 +2010,10 @@ func (s *GitService) ResolveTaskRunBranchValues(ctx context.Context, workspaceID
 	return baseBranch, model.BuildTaskWorkingBranch(task, teamDefault, workspace.WorkspaceKey), nil
 }
 
-func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, workspaceID string, target agentruntime.TargetRef, runID string) (*agentruntime.RepositoryWorkspaceSpec, error) {
+// ResolveAgentRuntimeRepositorySpec uses runtimeRunID for checkout naming and
+// helpinRunID for delivery attribution. The Helpin mapping may not exist yet
+// during startup; an empty helpinRunID preserves the previous delivery run.
+func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, workspaceID string, target agentruntime.TargetRef, runtimeRunID, helpinRunID string) (*agentruntime.RepositoryWorkspaceSpec, error) {
 	if s == nil {
 		return nil, fmt.Errorf("git service is not configured")
 	}
@@ -2091,7 +2094,7 @@ func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, work
 			if epicID == "" {
 				return nil, fmt.Errorf("epic-derived task delivery target has no source epic")
 			}
-			if _, err := s.EnsureEpicBranch(ctx, workspaceID, epicID, "", runID); err != nil {
+			if _, err := s.EnsureEpicBranch(ctx, workspaceID, epicID, "", helpinRunID); err != nil {
 				return nil, fmt.Errorf("ensure epic base branch for task checkout: %w", err)
 			}
 		}
@@ -2145,7 +2148,7 @@ func (s *GitService) ResolveAgentRuntimeRepositorySpec(ctx context.Context, work
 		workingBranch = strings.TrimSpace(firstStringValue(target.Metadata, "work_branch", "working_branch"))
 	}
 	if strings.TrimSpace(workingBranch) == "" {
-		workingBranch = fmt.Sprintf("agent-runtime/%s", strings.TrimSpace(runID))
+		workingBranch = fmt.Sprintf("agent-runtime/%s", strings.TrimSpace(runtimeRunID))
 	}
 
 	integration, err := s.integrationRepo.GetByID(ctx, repo.WorkspaceID, repo.IntegrationID)
