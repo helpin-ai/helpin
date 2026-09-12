@@ -25,19 +25,20 @@ func TestAgentRuntimeProjectionCanonicalAnswerSurvivesPauseAndReplay(t *testing.
 				ExternalRuntime: stringPointer(agentRuntimeName), ExternalRuntimeID: stringPointer("runtime-answer"),
 			}
 			repo := &fakeAgentRuntimeProjectionMessageRepo{}
+			snapshots := &fakeAgentRuntimeProjectionSessionSnapshotRepo{}
 			blocks, err := json.Marshal([]map[string]string{{"type": "text", "text": answer}})
 			if err != nil {
 				t.Fatal(err)
 			}
 			client := &fakeAgentRuntimeSignalClient{messages: map[string][]AgentRuntimeMessage{
 				"runtime-answer": {
-					{ID: "store-preamble", RuntimeMessageID: "preamble", Role: "assistant", Content: preambleText, MessageType: "assistant_turn", CreatedAt: at},
+					{ID: "store-preamble", RuntimeMessageID: "preamble", Role: "assistant", Content: preambleText, MessageType: "assistant_progress", CreatedAt: at},
 					{ID: "store-answer", RuntimeMessageID: "canonical-answer", Role: "assistant", Content: answer, ContentBlocks: blocks, MessageType: "assistant_final", CreatedAt: at.Add(time.Second)},
 				},
 			}}
 			svc := &AgentRuntimeProjectionService{
-				runRepo:        &fakeAgentRuntimeProjectionRunRepo{byExternal: map[string]*model.AgentRun{agentRuntimeName + "|runtime-answer": run}},
-				runMessageRepo: repo, agentRuntimeClient: client, now: func() time.Time { return at.Add(2 * time.Second) },
+				runRepo:             &fakeAgentRuntimeProjectionRunRepo{byExternal: map[string]*model.AgentRun{agentRuntimeName + "|runtime-answer": run}},
+				sessionSnapshotRepo: snapshots, eventProtocol: "v2", runMessageRepo: repo, agentRuntimeClient: client, now: func() time.Time { return at.Add(2 * time.Second) },
 			}
 			apply := func(event AgentRuntimeEventEnvelope) {
 				t.Helper()
@@ -48,6 +49,13 @@ func TestAgentRuntimeProjectionCanonicalAnswerSurvivesPauseAndReplay(t *testing.
 			preamble := AgentRuntimeEventEnvelope{RunID: "runtime-answer", Type: "assistant_message_completed", SentAt: at, Data: map[string]any{"message_id": "preamble", "content": preambleText}}
 			final := AgentRuntimeEventEnvelope{RunID: "runtime-answer", Type: "assistant_message_completed", SentAt: at.Add(time.Second), Data: map[string]any{"message_id": "canonical-answer", "content": answer, "message_type": "assistant_final"}}
 			pause := AgentRuntimeEventEnvelope{RunID: "runtime-answer", Type: "run.paused", SentAt: at.Add(2 * time.Second), Data: map[string]any{"pause_reason": model.AgentRunPauseReasonUserMessage}}
+			preamble.SequenceNo, final.SequenceNo, pause.SequenceNo = 1, 2, 3
+			preamble.Data["message_type"] = "assistant_progress"
+			for _, ev := range []*AgentRuntimeEventEnvelope{&preamble, &final, &pause} {
+				ev.Data["turn_id"] = "one"
+				ev.Data["turn_started_at"] = at.Format(time.RFC3339Nano)
+				ev.Data["completion_mode"] = "explicit"
+			}
 			apply(preamble)
 			if delivery == "live" {
 				apply(final)
@@ -75,6 +83,25 @@ func TestAgentRuntimeProjectionCanonicalAnswerSurvivesPauseAndReplay(t *testing.
 			if run.Status != model.AgentRunStatusPaused || run.PauseReason != model.AgentRunPauseReasonUserMessage {
 				t.Fatalf("unexpected pause: %+v", run)
 			}
+			snapshot, err := model.DecodeCodingSessionStreamSnapshot(snapshots.record.SnapshotPayload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expectedPhase := "missing_answer"
+			if delivery == "live" {
+				expectedPhase = "answered"
+			}
+			if snapshot.TurnState.Phase != expectedPhase {
+				t.Fatalf("unexpected phase %s", snapshot.TurnState.Phase)
+			}
+			resumed := AgentRuntimeEventEnvelope{RunID: "runtime-answer", Type: "run.resumed", SequenceNo: 4, SentAt: at.Add(time.Minute), Data: map[string]any{"turn_id": "two", "turn_started_at": at.Add(time.Minute).Format(time.RFC3339Nano), "completion_mode": "explicit"}}
+			apply(resumed)
+			pause.SequenceNo = 5 // Even a later delivery sequence cannot settle a different turn.
+			apply(pause)
+			if run.Status != model.AgentRunStatusRunning {
+				t.Fatal("old pause stopped resumed run")
+			}
+
 		})
 	}
 }

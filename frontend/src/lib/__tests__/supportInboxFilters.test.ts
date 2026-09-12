@@ -80,6 +80,28 @@ describe('filterSupportConversations', () => {
     expect(result.map((conversation) => conversation.id)).toEqual(['assigned-human', 'opened-waiting']);
   });
 
+  it('derives Waiting from the last public teammate reply while keeping active work in Inbox and Mine', () => {
+    const replied = buildConversation({ id: 'replied', assigned_user_id: 'user-1', last_public_sender_type: 'user', customer_awaiting_response: false });
+    const conversations = [
+      replied,
+      buildConversation({ ...replied, id: 'internal-note', last_message_sender_type: 'user' }),
+      buildConversation({ ...replied, id: 'customer', last_public_sender_type: 'customer', customer_awaiting_response: true }),
+      buildConversation({ ...replied, id: 'stale-projection', customer_awaiting_response: true }),
+      buildConversation({ ...replied, id: 'ai', last_public_sender_type: 'ai' }),
+      buildConversation({ ...replied, id: 'agent', last_public_sender_type: 'agent' }),
+      buildConversation({ id: 'empty' }),
+      buildConversation({ ...replied, id: 'resolved', status: 'resolved' }),
+      buildConversation({ ...replied, id: 'spam', status: 'spam' }),
+      buildConversation({ id: 'legacy', status: 'waiting_on_customer' }),
+    ];
+    const options = { mailboxScope: 'all', userId: 'user-1', searchQuery: '' };
+    expect(filterSupportConversations(conversations, { ...options, navFilter: 'waiting' }).map(c => c.id))
+      .toEqual(['replied', 'internal-note', 'legacy']);
+    for (const navFilter of ['inbox', 'mine'] as const) {
+      expect(filterSupportConversations([replied], { ...options, navFilter })).toEqual([replied]);
+    }
+  });
+
   it('shows status views without mixing them into Inbox', () => {
     const conversations = [
       buildConversation({ id: 'open' }),
@@ -329,7 +351,7 @@ describe('buildConversationListRequestFilters', () => {
       selectedMailboxId: 'all',
       searchQuery: '',
       listFilters: defaultConversationListFiltersForNav('waiting'),
-    })).toEqual({ status: 'waiting_on_customer' });
+    })).toEqual({ filter: 'waiting' });
 
     expect(buildConversationListRequestFilters({
       navFilter: 'ai_active',

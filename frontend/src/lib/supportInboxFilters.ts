@@ -367,7 +367,8 @@ export function buildConversationListRequestFilters({
         f.filter = 'mine';
         break;
       case 'waiting':
-        f.status = 'waiting_on_customer';
+        // Preserve the saved Waiting default while deriving membership from public replies.
+        f.filter = 'waiting';
         break;
       case 'resolved':
         f.filter = 'resolved';
@@ -484,7 +485,10 @@ export function filterSupportConversations(
     } else if (navFilter === 'mine') {
       result = result.filter((conversation) => isMineActionableConversation(conversation, userId));
     } else if (navFilter === 'waiting') {
-      result = result.filter((conversation) => conversation.status === 'waiting_on_customer');
+      result = result.filter((conversation) => conversation.status === 'waiting_on_customer' || (
+        conversation.status === 'open' && conversation.last_public_sender_type === 'user' &&
+        !conversation.customer_awaiting_response
+      ));
     } else if (navFilter === 'resolved') {
       result = result.filter((conversation) => conversation.status === 'resolved');
     } else if (navFilter === 'spam') {

@@ -1,4 +1,5 @@
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
+import { resolveVisibleTurn } from './agentTurnState';
 import { isRuntimeControlToolName } from '@/lib/toolNames';
 import type { AgentRun, CodingSessionStreamState, RunPlanArtifact } from '@/lib/pmTypes';
 
@@ -11,7 +12,7 @@ export interface AgentLiveProgress {
 
 interface ResolveAgentLiveProgressInput {
   run: Pick<AgentRun, 'status' | 'pause_reason' | 'started_at' | 'created_at'> | null;
-  stream: Pick<CodingSessionStreamState, 'transcript_messages' | 'live_turn_segments' | 'live_reasoning_message' | 'activity_events'> | null;
+  stream: Pick<CodingSessionStreamState, 'transcript_messages' | 'live_turn_segments' | 'live_reasoning_message' | 'activity_events' | 'turn_state'> | null;
   currentPlan: RunPlanArtifact | null;
   activeSubAgentName?: string | null;
   sending: boolean;
@@ -38,12 +39,16 @@ export function resolveAgentLiveProgress({
   // A follow-up message can reuse the same backing run. Prefer the local
   // submission timestamp so each user turn gets an independent timer instead
   // of inheriting the run's original start time.
-  const startedAt = localStartedAt || run?.started_at || run?.created_at;
+  const turn = resolveVisibleTurn(stream, localStartedAt);
+  const startedAt = turn.startedAt || run?.started_at || run?.created_at;
 
   if (sending) {
     return { label: 'Starting…', startedAt, tone: 'working' };
   }
   if (!run) return null;
+  if (turn.answered) return null;
+  if (turn.answerPending) return { label: 'Loading answer…', startedAt, tone: 'waiting' };
+  if (turn.missingAnswer) return { label: 'Run ended without a final answer', startedAt, tone: 'waiting' };
 
   if (run.status === 'paused') {
     switch (run.pause_reason) {
@@ -83,22 +88,6 @@ export function resolveAgentLiveProgress({
   }
 
   const lastSegment = segments[segments.length - 1];
-  const latestTranscriptMessage = stream?.transcript_messages.at(-1);
-  if (
-    lastSegment?.kind === 'assistant_message'
-    && lastSegment.assistant_message.status === 'completed'
-    && lastSegment.assistant_message.content.trim()
-  ) {
-    // Once a follow-up user message has been accepted, the stream can still
-    // contain the previous turn's completed assistant segment for one render.
-    // Keep the new turn's starting state, but never show a post-answer
-    // "Finishing…" line after the final response is already visible.
-    if (latestTranscriptMessage?.role === 'user') {
-      return { label: 'Starting…', startedAt, tone: 'working' };
-    }
-    return null;
-  }
-
   const step = activePlanStep(currentPlan);
   if (step) return { label: step, startedAt, tone: 'working' };
 

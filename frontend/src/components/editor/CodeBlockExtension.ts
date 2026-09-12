@@ -5,6 +5,7 @@ import { CodeBlockNodeView } from './CodeBlockNodeView'
 import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
 const lowlight = createLowlight(common)
+lowlight.registerAlias({ xml: ['svg'] })
 
 export const CodeBlockExtension = CodeBlockLowlight.extend({
   addNodeView() {

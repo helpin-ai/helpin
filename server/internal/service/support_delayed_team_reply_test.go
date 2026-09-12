@@ -161,3 +161,18 @@ func TestDelayedTeamReplyResolutionCancelsAfterReopen(t *testing.T) {
 		t.Fatalf("revived timer: %d messages", count)
 	}
 }
+
+func TestDelayedTeamReplySavedDefault(t *testing.T) {
+	const updated = "Looks like our team needs a little more time. We’ll reply in this chat and email you if you miss it. Thanks for your patience."
+	for _, tc := range []struct{ name, raw, want string }{
+		{"new settings", `{}`, updated},
+		{"saved original default", `{"delayed_team_reply_message":"Our team hasn’t been able to reply yet. You don’t need to keep this chat open. We’ll email you when someone responds."}`, updated},
+		{"custom message", `{"delayed_team_reply_message":"Thanks, we will be in touch."}`, "Thanks, we will be in touch."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseSettings(tc.raw).DelayedTeamReplyMessage; got != tc.want {
+				t.Fatalf("message = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

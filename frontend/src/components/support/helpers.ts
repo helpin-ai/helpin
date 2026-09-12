@@ -1,4 +1,5 @@
 import type { AIMessageMetadata, SupportConversation, SupportLinkPreview, SupportLinkSecurity, SupportMessage } from '@/lib/pmTypes';
+import { getReplyDeliveryMode } from './replyDelivery';
 export { AVATAR_COLORS, getAvatarColor } from '@/lib/avatarColor';
 
 export const HELPIN_AI_DISPLAY_NAME = 'Helpin AI';
@@ -94,11 +95,35 @@ export function getSupportReceiptStatus(
   if (message.email_delivery_status === 'opened') return 'read_email';
   if (message.email_delivery_status === 'delivered') return 'delivered_email';
   if (message.id.startsWith('optimistic-') && message.via_channel === 'email') return 'sending_email';
+  if (getReplyDeliveryMode(message.metadata) === 'email_only') {
+    return message.email_notified_at || message.email_delivery_status === 'sent' ? 'sent_email' : null;
+  }
   const seen = conversation.contact_last_seen_at;
   if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(message.created_at)) return 'read';
   if (message.email_notified_at) return 'sent_email';
   if (conversation.source === 'widget') return 'delivered';
   return null;
+}
+
+/** Explicit replies keep channel intent separate from actual email delivery. */
+export function getExplicitEmailDeliveryState(message: SupportMessage): { label: string; failed: boolean; error?: string } {
+  let metadata: { email_delivery_status?: string; email_delivery_error?: string } = {};
+  try {
+    metadata = JSON.parse(message.metadata ?? '{}') ?? {};
+  } catch { /* Legacy or malformed metadata carries no delivery outcome. */ }
+  const status = message.email_delivery_status || metadata.email_delivery_status;
+  const error = message.email_delivery_error || metadata.email_delivery_error;
+  if (status === 'spam_complaint') return { label: 'Marked as spam', failed: true, error };
+  if (status === 'failed' || status === 'bounced') return { label: 'Failed', failed: true, error };
+  if (status === 'blocked') return { label: 'Not sent', failed: true, error };
+  if (message.email_read_at || status === 'opened') return { label: 'Opened', failed: false };
+  if (status === 'delivered') return { label: 'Delivered', failed: false };
+  if (message.email_notified_at || status === 'sent') return { label: 'Sent', failed: false };
+  if (message.id.startsWith('optimistic-') || status === 'sending') return { label: 'Sending', failed: false };
+  if (status === 'queued' || (message.cancellable_until && Date.parse(message.cancellable_until) > Date.now())) {
+    return { label: 'Queued', failed: false };
+  }
+  return { label: 'Pending', failed: false };
 }
 
 export function getEffectiveSenderType(message: Pick<SupportMessage, 'sender_type' | 'metadata'>): SupportMessage['sender_type'] {

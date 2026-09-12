@@ -1182,6 +1182,7 @@ export function MessageThread({
                   isConsecutive={item.isConsecutive}
                   isLastInGroup={item.isLastInGroup}
                   source={conversation?.source}
+                  contactLastSeenAt={conversation?.contact_last_seen_at}
                   receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
                   customerDisplayName={conversation?.customer_name || conversation?.customer_email}
                   customerEmail={conversation?.customer_email}
@@ -1215,6 +1216,7 @@ export function MessageThread({
             workspaceId={workspaceId}
             conversationId={conversationId}
             emailFallbackHint={emailFallbackHint}
+            emailDeliveryEnabled={installation?.settings.email_fallback_enabled}
             onUpgradeRequired={setUpgradeDialogReason}
           />
         </Suspense>

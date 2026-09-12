@@ -698,9 +698,14 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 		contextTargetMetadata = req.TargetContext.Target.Metadata
 	}
 	workspaceID := runtimeWorkspaceID(req.Metadata, req.Target.Metadata, contextData, contextTargetMetadata)
-	mappedWorkspaceID, err := s.workspaceIDForRuntimeRun(ctx, req.RunID)
+	run, err := s.helpinRunForRuntimeRun(ctx, req.RunID)
 	if err != nil {
 		return nil, err
+	}
+	var mappedWorkspaceID, helpinRunID string
+	if run != nil {
+		mappedWorkspaceID = strings.TrimSpace(run.WorkspaceID)
+		helpinRunID = run.ID
 	}
 	if workspaceID == "" {
 		workspaceID = mappedWorkspaceID
@@ -708,7 +713,7 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 		return nil, err
 	}
 	target := runtimeRepositorySpecTarget(req, contextData, contextTargetMetadata)
-	return s.gitService.ResolveAgentRuntimeRepositorySpec(ctx, workspaceID, target, req.RunID)
+	return s.gitService.ResolveAgentRuntimeRepositorySpec(ctx, workspaceID, target, req.RunID, helpinRunID)
 }
 
 // runtimeRepositorySpecTarget restores the concrete repository target for a
@@ -1141,11 +1146,7 @@ func (s *AgentRuntimeHostService) validateAppID(appID string) error {
 }
 
 func (s *AgentRuntimeHostService) workspaceIDForRuntimeRun(ctx context.Context, runtimeRunID string) (string, error) {
-	runtimeRunID = strings.TrimSpace(runtimeRunID)
-	if s == nil || s.runRepo == nil || runtimeRunID == "" {
-		return "", nil
-	}
-	run, err := s.runRepo.GetByExternalRuntimeID(ctx, agentRuntimeName, runtimeRunID)
+	run, err := s.helpinRunForRuntimeRun(ctx, runtimeRunID)
 	if err != nil {
 		return "", err
 	}
@@ -1153,6 +1154,14 @@ func (s *AgentRuntimeHostService) workspaceIDForRuntimeRun(ctx context.Context, 
 		return "", nil
 	}
 	return strings.TrimSpace(run.WorkspaceID), nil
+}
+
+func (s *AgentRuntimeHostService) helpinRunForRuntimeRun(ctx context.Context, runtimeRunID string) (*model.AgentRun, error) {
+	runtimeRunID = strings.TrimSpace(runtimeRunID)
+	if s == nil || s.runRepo == nil || runtimeRunID == "" {
+		return nil, nil
+	}
+	return s.runRepo.GetByExternalRuntimeID(ctx, agentRuntimeName, runtimeRunID)
 }
 
 func ensureRuntimeWorkspaceMatch(requestedWorkspaceID, actualWorkspaceID string) error {

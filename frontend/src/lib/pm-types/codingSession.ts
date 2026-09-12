@@ -251,11 +251,20 @@ export type CodingSessionLiveTurnSegment =
   | CodingSessionLiveToolCallSegment;
 
 export interface CodingSessionStreamSnapshot {
+	turn_state?: CodingSessionTurnState;
   through_sequence?: number;
   live_assistant_message?: CodingSessionLiveAssistantMessage;
   live_reasoning_message?: CodingSessionLiveReasoningMessage;
   live_turn_segments?: CodingSessionLiveTurnSegment[];
   current_plan?: RunPlanArtifact;
+}
+
+export interface CodingSessionTurnState {
+  turn_id: string;
+  phase: 'working' | 'answered' | 'waiting' | 'failed' | 'cancelled' | 'missing_answer';
+  started_at: string;
+  completed_at?: string;
+  answer_message_id?: string;
 }
 
 export interface RunPlanStep {
@@ -269,6 +278,7 @@ export interface RunPlanArtifact {
 }
 
 export interface CodingSessionStreamState {
+  turn_state?: CodingSessionTurnState;
   transcript_messages: CodingSessionTranscriptMessage[];
   live_assistant_message: CodingSessionLiveAssistantMessage | null;
   live_reasoning_message: CodingSessionLiveReasoningMessage | null;

@@ -137,13 +137,6 @@ func (s *CRMDealService) ListPipelines(ctx context.Context, workspaceID string) 
 	if err != nil {
 		return nil, err
 	}
-	for i := range pipelines {
-		count, err := s.dealRepo.CountDealsByPipeline(ctx, pipelines[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		pipelines[i].DealCount = count
-	}
 	return pipelines, nil
 }
 
@@ -154,7 +147,7 @@ func (s *CRMDealService) GetPipeline(ctx context.Context, id string) (*model.CRM
 		return nil, err
 	}
 	if pipeline == nil {
-		return nil, fmt.Errorf("pipeline not found")
+		return nil, model.ErrCRMPipelineNotFound
 	}
 	return pipeline, nil
 }
@@ -162,7 +155,7 @@ func (s *CRMDealService) GetPipeline(ctx context.Context, id string) (*model.CRM
 // CreatePipeline creates a pipeline with stages.
 func (s *CRMDealService) CreatePipeline(ctx context.Context, req model.CreateCRMPipelineRequest) (*model.CRMPipeline, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
-		return nil, fmt.Errorf("workspace_id and name are required")
+		return nil, &model.CRMPipelineValidationError{Message: "workspace_id and name are required"}
 	}
 
 	isDefault := false
@@ -174,7 +167,7 @@ func (s *CRMDealService) CreatePipeline(ctx context.Context, req model.CreateCRM
 		defaultMotion = strings.TrimSpace(*req.DefaultCommercialMotion)
 	}
 	if !validCRMDealCommercialMotion(defaultMotion) {
-		return nil, fmt.Errorf("invalid default_commercial_motion")
+		return nil, &model.CRMPipelineValidationError{Message: "invalid default_commercial_motion"}
 	}
 
 	pipeline := &model.CRMPipeline{
@@ -200,20 +193,16 @@ func (s *CRMDealService) CreatePipeline(ctx context.Context, req model.CreateCRM
 	return s.dealRepo.GetPipeline(ctx, pipeline.ID)
 }
 
-// UpdatePipeline updates a pipeline and optionally replaces its stages.
+// UpdatePipeline updates metadata and stages atomically while preserving deal references.
 func (s *CRMDealService) UpdatePipeline(ctx context.Context, id string, req model.UpdateCRMPipelineRequest) (*model.CRMPipeline, error) {
-	pipeline, err := s.dealRepo.GetPipeline(ctx, id)
+	pipeline, err := s.GetPipeline(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if pipeline == nil {
-		return nil, fmt.Errorf("pipeline not found")
-	}
-
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, fmt.Errorf("name cannot be empty")
+			return nil, &model.CRMPipelineValidationError{Message: "name cannot be empty"}
 		}
 		pipeline.Name = name
 	}
@@ -223,57 +212,42 @@ func (s *CRMDealService) UpdatePipeline(ctx context.Context, id string, req mode
 	if req.DefaultCommercialMotion != nil {
 		motion := strings.TrimSpace(*req.DefaultCommercialMotion)
 		if !validCRMDealCommercialMotion(motion) {
-			return nil, fmt.Errorf("invalid default_commercial_motion")
+			return nil, &model.CRMPipelineValidationError{Message: "invalid default_commercial_motion"}
 		}
 		pipeline.DefaultCommercialMotion = motion
 	}
-
-	if err := s.dealRepo.UpdatePipeline(ctx, pipeline); err != nil {
-		return nil, err
-	}
-
+	opts := repository.CRMPipelineUpdateOptions{StageMigrations: req.StageMigrations, ExpectedUpdatedAt: req.ExpectedUpdatedAt}
 	if req.Stages != nil {
-		var stages []model.CRMPipelineStage
-		for _, st := range req.Stages {
-			stage := model.CRMPipelineStage{
-				Name:        st.Name,
-				StageType:   st.StageType,
-				Position:    st.Position,
-				Probability: st.Probability,
+		opts.Stages = make([]model.CRMPipelineStage, 0, len(req.Stages))
+		for _, item := range req.Stages {
+			stage := model.CRMPipelineStage{Name: item.Name, StageType: item.StageType, Position: item.Position, Probability: item.Probability}
+			if item.ID != nil {
+				if strings.TrimSpace(*item.ID) == "" {
+					return nil, &model.CRMPipelineValidationError{Message: "stage ID cannot be empty; omit it for a new stage"}
+				}
+				stage.ID = *item.ID
 			}
-			if st.ID != nil {
-				stage.ID = *st.ID
-			}
-			stages = append(stages, stage)
+			opts.Stages = append(opts.Stages, stage)
 		}
-		if err := s.dealRepo.ReplaceStages(ctx, id, stages); err != nil {
+		if err := model.ValidateCRMPipelineStages(opts.Stages); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.dealRepo.UpdatePipeline(ctx, pipeline, opts); err != nil {
+		return nil, err
 	}
 	if s.motionSignals != nil {
 		if err := s.motionSignals.ReconcilePipelineMotionSignals(ctx, pipeline.WorkspaceID, pipeline.ID); err != nil {
 			slog.ErrorContext(ctx, "reconcile pipeline commercial-motion signals", "error", err, "pipeline_id", pipeline.ID)
 		}
 	}
-
 	return s.dealRepo.GetPipeline(ctx, id)
 }
 
-// DeletePipeline removes a pipeline if it has no active deals.
+// DeletePipeline removes an empty pipeline, protecting its default status transactionally.
 func (s *CRMDealService) DeletePipeline(ctx context.Context, id string) error {
-	pipeline, err := s.dealRepo.GetPipeline(ctx, id)
-	if err != nil {
+	if _, err := s.GetPipeline(ctx, id); err != nil {
 		return err
-	}
-	if pipeline == nil {
-		return fmt.Errorf("pipeline not found")
-	}
-	count, err := s.dealRepo.CountDealsByPipeline(ctx, id)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return fmt.Errorf("cannot delete pipeline with active deals")
 	}
 	return s.dealRepo.DeletePipeline(ctx, id)
 }
@@ -625,7 +599,7 @@ func (s *CRMDealService) afterDealUpdate(ctx context.Context, updated *model.CRM
 
 func validCRMDealCommercialMotion(value string) bool {
 	switch value {
-	case model.CRMDealMotionNewBusiness, model.CRMDealMotionExpansion, model.CRMDealMotionRenewal:
+	case model.CRMDealMotionNewBusiness, model.CRMDealMotionExistingBusiness, model.CRMDealMotionExpansion, model.CRMDealMotionRenewal:
 		return true
 	default:
 		return false

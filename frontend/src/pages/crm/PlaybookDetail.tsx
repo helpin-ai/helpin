@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietPageViewport, QuietPrimaryAction, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
-import { PlusSignIcon, Tick01Icon } from '@/lib/icons';
+import { PlusSignIcon } from '@/lib/icons';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCRMPlaybook, useCRMPlaybookHistory, useCRMPlaybookWrite } from '@/hooks/queries/useCRMPlaybooks';
@@ -10,14 +10,14 @@ import { useAssignableMembers } from '@/hooks/queries/useWorkspaces';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useTitle } from '@/hooks/useTitle';
-import { createPlaybookIntentKey, definitionFingerprint, playbookStatus, publishIssues } from '@/lib/crmPlaybookPresentation';
+import { createPlaybookIntentKey, definitionFingerprint, playbookStatus } from '@/lib/crmPlaybookPresentation';
 import type { CRMPlaybookItem } from '@/lib/crmPlaybookTypes';
 import { playbookSetupIssues, type PlaybookSetupStep } from '@/lib/crmPlaybookSetup';
 import { PlaybookEditor } from '@/components/crm/playbooks/PlaybookEditor';
 import { PlaybookAutomation } from '@/components/crm/playbooks/PlaybookAutomation';
 import { PlaybookExecutionActivity } from '@/components/crm/playbooks/PlaybookExecutionActivity';
 import { PlaybookParticipants, PlaybookPreview } from '@/components/crm/playbooks/PlaybookSignals';
-import { PlaybookError, PlaybookHelp, PlaybookLabel, PlaybookLoading, PlaybookNoAccess } from '@/components/crm/playbooks/PlaybookUI';
+import { PlaybookError, PlaybookLabel, PlaybookLoading, PlaybookNoAccess } from '@/components/crm/playbooks/PlaybookUI';
 
 export function PlaybookDetailPage({ playbookId }: { playbookId: string }) {
   useTitle('Playbook');
@@ -48,14 +48,14 @@ function PlaybookDetail({ ws, slug, item, canAdmin, canEdit, onReload }: { ws: s
   const write = useCRMPlaybookWrite(ws);
   const members = useAssignableMembers(ws);
   const unpublished = !item.published_version || definitionFingerprint(item.playbook.draft) !== definitionFingerprint(item.published_version.definition);
-  const issues = publishIssues(item.playbook.draft);
-  if (item.playbook.draft.responsibilities.escalation_member_id && members.isSuccess && !members.data.some((member) => member.id === item.playbook.draft.responsibilities.escalation_member_id && member.status === 'active')) issues.push('Choose an active escalation owner.');
+  const issues = playbookSetupIssues(item.playbook.draft, members.isPending ? 'loading' : members.isError ? 'error' : !!members.data?.some((member) => member.id === item.playbook.draft.responsibilities.escalation_member_id && member.status === 'active'));
+  const ready = Object.values(issues).every((entries) => entries.length === 0);
   const openConfirmation = (operation: 'publish' | 'start' | 'stop') => {
     setConfirmationRevision(item.playbook.revision);
     setConfirm(operation);
   };
   const applyCommand = async () => {
-    if (!confirm) return;
+    if (!confirm || write.isPending || dirty || confirmationRevision !== item.playbook.revision || (confirm === 'publish' && !ready)) return;
     const intent = confirm === 'publish' ? { expected_revision: confirmationRevision, operation: 'publish' as const } : { expected_revision: confirmationRevision, operation: 'set_enrollment' as const, accepting_customers: confirm === 'start' };
     try {
       await write.mutateAsync({ kind: 'command', id: item.playbook.id, body: { ...intent, command_key: intentKey(intent) } });
@@ -64,33 +64,36 @@ function PlaybookDetail({ ws, slug, item, canAdmin, canEdit, onReload }: { ws: s
     } catch { /* Keep the explicit decision visible. */ }
   };
   return <div className="flex h-full min-h-0 flex-col">
-    <QuietDetailHeader breadcrumbs={<Link to="/w/$slug/crm/playbooks" params={{ slug }} className="text-xs text-quiet-text-tertiary hover:text-quiet-text-primary">Playbooks</Link>} title={item.playbook.draft.name} meta={<span className="text-xs text-quiet-text-tertiary">{item.published_version ? `Published version ${item.published_version.version}${unpublished ? ' · Unpublished changes' : ''}` : 'Not published'}</span>} status={<QuietStatusText tone={item.playbook.accepting_customers ? 'positive' : 'neutral'}>{playbookStatus(item)}</QuietStatusText>} actions={<>
-      {canEdit && item.playbook.accepting_customers && <QuietDetailAction icon={<PlusSignIcon className="size-3.5" />} label="Add signals" tone={unpublished && canAdmin ? 'secondary' : 'primary'} onClick={() => setPreview('published')} />}
-      <div ref={setSaveActionContainer} hidden={tab !== 'setup'} />
-      {canAdmin && unpublished && <QuietDetailAction icon={<Tick01Icon className="size-3.5" />} label="Publish" tone="primary" disabled={dirty || write.isPending} onClick={() => openConfirmation('publish')} />}
+    <QuietDetailHeader breadcrumbs={<Link to="/w/$slug/crm/playbooks" params={{ slug }} className="text-xs text-quiet-text-tertiary hover:text-quiet-text-primary">Playbooks</Link>} title={item.playbook.draft.name} meta={<span className="text-xs text-quiet-text-tertiary">{item.published_version ? `Published version ${item.published_version.version}${unpublished ? ' · Unpublished changes' : ''}` : 'Not published'}</span>} state={canAdmin && dirty ? <span role="status" className="text-xs text-quiet-text-tertiary">Unsaved changes</span> : undefined} status={<QuietStatusText tone={item.playbook.accepting_customers ? 'positive' : 'neutral'}>{playbookStatus(item)}</QuietStatusText>} actions={<>
+      {canEdit && item.playbook.accepting_customers && <QuietDetailAction icon={<PlusSignIcon className="size-3.5" />} label="Add signals" tone={(unpublished || dirty) && canAdmin ? 'secondary' : 'primary'} onClick={() => setPreview('published')} />}
+      <div ref={setSaveActionContainer} />
     </>} />
     <div className="min-h-0 flex-1 overflow-auto px-4 pb-12 sm:px-6 lg:px-8">
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList variant="quiet"><TabsTrigger value="work">Signals</TabsTrigger><TabsTrigger value="setup">Setup{dirty ? ' · Unsaved' : ''}</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList>
+        <TabsList variant="quiet"><TabsTrigger value="work">Signals</TabsTrigger><TabsTrigger value="setup">Setup{dirty ? ' · Unsaved' : ''}</TabsTrigger><TabsTrigger value="automation">Automation</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList>
         <TabsContent value="work"><PlaybookParticipants ws={ws} slug={slug} item={item} canEdit={canEdit} /></TabsContent>
         <TabsContent value="setup" forceMount hidden={tab !== 'setup'}>
-          <PlaybookEditor saveActionContainer={saveActionContainer} ws={ws} item={item} canAdmin={canAdmin} onDirty={setDirty} onReload={onReload} onPreview={() => setPreview('draft')} step={setupStep} onStepChange={setSetupStep} renderReview={(editing) => <>
-            {canAdmin && unpublished && <div className="border-b border-quiet-divider-strong py-4"><QuietPrimaryAction disabled={editing || write.isPending} onClick={() => openConfirmation('publish')}>Review & publish</QuietPrimaryAction><PlaybookHelp label="About publishing">Publish the saved draft for new signals. Existing signals keep their version. Publishing does not start automation.</PlaybookHelp></div>}
-            {item.published_version && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-quiet-divider-strong py-4 text-sm"><p className="flex flex-wrap items-center gap-2"><PlaybookLabel label="New enrollment" help="Allow new signals to enter this playbook, manually or through automation. Stopping enrollment leaves existing work unchanged." /><span className="text-quiet-text-secondary">{item.playbook.accepting_customers ? 'Allowed' : 'Stopped'}</span></p>{canAdmin && <QuietTextAction disabled={write.isPending || editing} onClick={() => openConfirmation(item.playbook.accepting_customers ? 'stop' : 'start')}>{item.playbook.accepting_customers ? 'Stop new enrollment' : 'Allow new enrollment'}</QuietTextAction>}</div>}
-            <PlaybookAutomation ws={ws} slug={slug} item={item} dirty={editing} />
-          </>} />
+          <PlaybookEditor saveActionContainer={saveActionContainer} ws={ws} item={item} canAdmin={canAdmin} onDirty={setDirty} onReload={onReload} onPreview={() => setPreview('draft')} step={setupStep} onStepChange={(step) => { setSetupStep(step); setTab('setup'); }}
+            publishing={write.isPending || !!confirm}
+            onSaveError={() => setTab('setup')}
+            onPublish={(revision) => { setConfirmationRevision(revision); setConfirm('publish'); }} />
+        </TabsContent>
+        <TabsContent value="automation" forceMount hidden={tab !== 'automation'}>
+          <div className="max-w-3xl">
+            {item.published_version && <div className="flex flex-wrap items-center justify-between gap-3 border-b border-quiet-divider-strong py-4 text-sm"><p className="flex flex-wrap items-center gap-2"><PlaybookLabel label="New enrollment" help="Allow new signals to enter this playbook, manually or through automation. Stopping enrollment leaves existing work unchanged." /><span className="text-quiet-text-secondary">{item.playbook.accepting_customers ? 'Allowed' : 'Stopped'}</span></p>{canAdmin && <QuietTextAction disabled={write.isPending || dirty} onClick={() => openConfirmation(item.playbook.accepting_customers ? 'stop' : 'start')}>{item.playbook.accepting_customers ? 'Stop new enrollment' : 'Allow new enrollment'}</QuietTextAction>}</div>}
+            <PlaybookAutomation ws={ws} slug={slug} item={item} dirty={dirty || write.isPending} />
+          </div>
         </TabsContent>
         <TabsContent value="activity"><PlaybookExecutionActivity ws={ws} slug={slug} id={item.playbook.id} /><PlaybookActivity ws={ws} id={item.playbook.id} /></TabsContent>
       </Tabs>
     </div>
     {preview && <PlaybookPreview key={`${preview}:${item.playbook.revision}`} ws={ws} item={item} mode={preview} canEdit={canEdit} onClose={() => setPreview(undefined)} onReload={onReload} />}
     <Dialog open={!!confirm} onOpenChange={(open) => { if (!open && !write.isPending) { setConfirm(undefined); write.reset(); } }}><DialogContent><DialogHeader><DialogTitle>{confirm === 'publish' ? 'Publish playbook?' : confirm === 'start' ? 'Allow new enrollment?' : 'Stop new enrollment?'}</DialogTitle><DialogDescription>{confirm === 'publish' ? 'Publish the saved draft for new signals. Existing signals keep their current version. Publishing does not change enrollment or start automation.' : confirm === 'start' ? 'Your team can apply the published playbook to matching signals after confirming each one. Nothing is enrolled automatically.' : 'No new signals can enter this playbook. Existing signals will not be paused or closed.'}</DialogDescription></DialogHeader>
-      {confirm === 'publish' && issues.length > 0 && <div className="text-sm"><p className="font-medium">Complete setup before publishing:</p><ul className="mt-2 list-inside list-disc space-y-1 text-quiet-text-secondary">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
+      {confirm === 'publish' && !ready && <div role="alert" className="text-sm"><p className="font-medium">Setup needs attention:</p><ul className="mt-2 list-inside list-disc space-y-1 text-quiet-text-secondary">{Object.values(issues).flat().map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
       {write.isError && <PlaybookError error={write.error} retry={onReload} />}
       {confirm && confirmationRevision !== item.playbook.revision && <p role="alert" className="text-sm text-quiet-accent">The playbook changed. Cancel and review the saved settings before confirming again.</p>}
-      <DialogFooter><QuietTextAction disabled={write.isPending} onClick={() => { setConfirm(undefined); write.reset(); }}>Cancel</QuietTextAction>{confirm === 'publish' && issues.length ? <QuietPrimaryAction onClick={() => {
-        const missing = playbookSetupIssues(item.playbook.draft, members.isSuccess && !!members.data.find((member) => member.id === item.playbook.draft.responsibilities.escalation_member_id && member.status === 'active'));
-        setSetupStep((Object.keys(missing) as (keyof typeof missing)[]).find((key) => missing[key].length) || 'review');
+      <DialogFooter><QuietTextAction disabled={write.isPending} onClick={() => { setConfirm(undefined); write.reset(); }}>Cancel</QuietTextAction>{confirm === 'publish' && !ready ? <QuietPrimaryAction onClick={() => {
+        setSetupStep((Object.keys(issues) as PlaybookSetupStep[]).find((key) => issues[key].length) || 'purpose');
         setConfirm(undefined); setTab('setup');
       }}>Continue setup</QuietPrimaryAction> : <QuietPrimaryAction disabled={write.isPending || dirty || !canAdmin || confirmationRevision !== item.playbook.revision} onClick={() => void applyCommand()}>{write.isPending ? 'Saving…' : confirm === 'publish' ? 'Publish playbook' : confirm === 'start' ? 'Allow enrollment' : 'Stop enrollment'}</QuietPrimaryAction>}</DialogFooter>
     </DialogContent></Dialog>

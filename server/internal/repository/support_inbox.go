@@ -174,21 +174,24 @@ func (r *SupportMessageRepository) ListEmailFallbackReconciliationCandidates(ctx
 	if limit < 1 || limit > 1000 {
 		limit = 25
 	}
+	explicitEmail := supportDeliveryModeSQL(r.db, "support_messages") + " IN ('email_only','chat_and_email')"
 	var messages []model.SupportMessage
 	if err := r.db.WithContext(ctx).
 		Model(&model.SupportMessage{}).
 		Joins("JOIN support_conversations sc ON sc.id = support_messages.conversation_id AND sc.workspace_id = support_messages.workspace_id").
 		Where("support_messages.email_notified_at IS NULL").
+		Where(supportDeliveryModeSQL(r.db, "support_messages")+" <> ?", model.SupportDeliveryChatOnly).
+		Where("(NOT ("+explicitEmail+") OR "+supportMetadataStringSQL(r.db, "support_messages", "email_delivery_status")+" <> ?)", "blocked").
 		Where("support_messages.is_internal = ?", false).
 		Where("COALESCE(NULLIF(support_messages.message_type, ''), 'reply') = ?", "reply").
 		Where("support_messages.sender_type <> ?", "customer").
 		Where("support_messages.created_at <= ?", before).
-		Where("support_messages.created_at >= ?", after).
+		Where("(support_messages.created_at >= ? OR ("+explicitEmail+"))", after).
 		Where("(support_messages.cancellable_until IS NULL OR support_messages.cancellable_until <= ?)", before).
-		Where("sc.customer_email IS NOT NULL AND TRIM(sc.customer_email) <> ''").
-		Where("sc.email_unsubscribed = ?", false).
-		Where("LOWER(sc.status) NOT IN ?", []string{"closed", "resolved", "spam"}).
-		Where("(sc.contact_last_seen_at IS NULL OR support_messages.created_at > sc.contact_last_seen_at)").
+		Where("((sc.customer_email IS NOT NULL AND TRIM(sc.customer_email) <> '') OR ("+explicitEmail+"))").
+		Where("(sc.email_unsubscribed = ? OR ("+explicitEmail+"))", false).
+		Where("(LOWER(sc.status) NOT IN ? OR ("+explicitEmail+"))", []string{"closed", "resolved", "spam"}).
+		Where("(sc.contact_last_seen_at IS NULL OR support_messages.created_at > sc.contact_last_seen_at OR (" + explicitEmail + "))").
 		Order("support_messages.created_at ASC").
 		Limit(limit).
 		Find(&messages).Error; err != nil {
@@ -1122,8 +1125,16 @@ func (r *SupportConversationRepository) applyMineFilter(query *gorm.DB, alias, u
 	)`, conversationHumanInboxCondition(alias), alias, alias, alias, mentionCondition), args...)
 }
 
+// Waiting is a view of public teammate replies, not a status transition.
+// Retain explicitly waiting conversations for compatibility with existing workflows.
+func conversationWaitingOnCustomerCondition(alias string) string {
+	return fmt.Sprintf("(%[1]s.status = 'waiting_on_customer' OR (%[1]s.status = 'open' AND %[1]s.last_public_sender_type = 'user' AND NOT COALESCE(%[1]s.customer_awaiting_response, false)))", alias)
+}
+
 func (r *SupportConversationRepository) applyConversationListFilter(query *gorm.DB, alias, filter, userID string) *gorm.DB {
 	switch strings.TrimSpace(strings.ToLower(filter)) {
+	case model.SupportConversationListFilterWaiting:
+		return query.Where(conversationWaitingOnCustomerCondition(alias))
 	case model.SupportConversationListFilterInbox:
 		return query.Where(conversationHumanInboxCondition(alias))
 	case model.SupportConversationListFilterMine, model.SupportConversationListFilterMentions:
@@ -2224,12 +2235,12 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 	var conversations []model.SupportConversation
 	if err := r.db.WithContext(ctx).
 		Select(fmt.Sprintf(`support_conversations.*,
-		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.deleted_at IS NULL AND support_messages.is_internal = false AND support_messages.message_type = 'reply' AND support_messages.system_event_type IS NULL ORDER BY created_at DESC LIMIT 1) AS last_message,
+		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.deleted_at IS NULL AND support_messages.is_internal = false AND support_messages.message_type = 'reply' AND support_messages.system_event_type IS NULL AND `+supportDeliveryModeSQL(r.db, "support_messages")+` <> 'email_only' ORDER BY created_at DESC LIMIT 1) AS last_message,
 		(SELECT COUNT(*)
 			FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
 			  AND sm.deleted_at IS NULL
-			  AND sm.is_internal = false
+			  AND sm.is_internal = false AND `+supportDeliveryModeSQL(r.db, "sm")+` <> 'email_only'
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
 			  AND sm.message_type = 'reply'
 			  AND sm.system_event_type IS NULL
@@ -2241,6 +2252,16 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 		return nil, fmt.Errorf("list conversations by anonymous_id: %w", err)
 	}
 	for i := range conversations {
+		// Staff list projections may include email-only replies or internal notes.
+		// The widget's safe public preview is computed independently above.
+		conversations[i].ListLastMessagePreview = conversations[i].LastMessage
+		conversations[i].ListLastMessageID = nil
+		conversations[i].ListLastMessageAt = nil
+		conversations[i].ListLastMessageIsInternal = false
+		conversations[i].LastPublicMessageID = nil
+		conversations[i].LastPublicMessageAt = nil
+		conversations[i].LastPublicSenderType = nil
+		conversations[i].LastPublicSenderDisplayName = nil
 		if conversations[i].LastMessage == nil {
 			continue
 		}
@@ -2321,7 +2342,7 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 			SELECT 1 FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
 			  AND sm.deleted_at IS NULL
-			  AND sm.is_internal = false
+			  AND sm.is_internal = false AND `+supportDeliveryModeSQL(r.db, "sm")+` <> 'email_only'
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
 			  AND sm.message_type = 'reply'
 			  AND sm.created_at > COALESCE(support_conversations.contact_last_seen_at, %s)
@@ -2363,7 +2384,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 			) AS mine,
 			COUNT(*) FILTER (
 				WHERE %s
-				  AND sc.status = 'waiting_on_customer'
+				  AND `+conversationWaitingOnCustomerCondition("sc")+`
 			) AS waiting,
 			COUNT(*) FILTER (
 				WHERE %s
@@ -2390,7 +2411,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 				WHERE %s
 			) AS mine_total,
 			COUNT(*) FILTER (
-				WHERE sc.status = 'waiting_on_customer'
+				WHERE `+conversationWaitingOnCustomerCondition("sc")+`
 			) AS waiting_total,
 			COUNT(*) FILTER (
 				WHERE %s
@@ -2402,7 +2423,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 				WHERE sc.needs_human_reply AND %s
 			) AS mine_needs_human_reply,
 			COUNT(*) FILTER (
-				WHERE sc.needs_human_reply AND sc.status = 'waiting_on_customer'
+				WHERE sc.needs_human_reply AND `+conversationWaitingOnCustomerCondition("sc")+`
 			) AS waiting_needs_human_reply,
 			COUNT(*) FILTER (
 				WHERE sc.needs_human_reply AND %s
@@ -2467,18 +2488,18 @@ func (r *SupportConversationRepository) getLegacyUnreadStats(ctx context.Context
 		SELECT
 			COUNT(*) FILTER (WHERE %s AND %s) AS inbox,
 			COUNT(*) FILTER (WHERE %s AND %s) AS mine,
-			COUNT(*) FILTER (WHERE %s AND sc.status = 'waiting_on_customer') AS waiting,
+			COUNT(*) FILTER (WHERE %s AND `+conversationWaitingOnCustomerCondition("sc")+`) AS waiting,
 			COUNT(*) FILTER (WHERE %s AND %s) AS ai_active,
 			COUNT(*) FILTER (WHERE %s AND %s) AS total,
 			COUNT(*) FILTER (WHERE %s AND %s) AS my_inbox,
 			COUNT(*) FILTER (WHERE %s AND %s AND sc.assigned_agent_id IS NULL AND sc.assigned_user_id IS NULL) AS unassigned,
 			COUNT(*) FILTER (WHERE %s) AS inbox_total,
 			COUNT(*) FILTER (WHERE %s) AS mine_total,
-			COUNT(*) FILTER (WHERE sc.status = 'waiting_on_customer') AS waiting_total,
+			COUNT(*) FILTER (WHERE `+conversationWaitingOnCustomerCondition("sc")+`) AS waiting_total,
 			COUNT(*) FILTER (WHERE %s) AS ai_active_total,
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS inbox_needs_human_reply,
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS mine_needs_human_reply,
-			COUNT(*) FILTER (WHERE sc.needs_human_reply AND sc.status = 'waiting_on_customer') AS waiting_needs_human_reply,
+			COUNT(*) FILTER (WHERE sc.needs_human_reply AND `+conversationWaitingOnCustomerCondition("sc")+`) AS waiting_needs_human_reply,
 			COUNT(*) FILTER (WHERE sc.needs_human_reply AND %s) AS ai_active_needs_human_reply
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ? AND sc.status NOT IN ('resolved', 'spam')

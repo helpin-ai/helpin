@@ -8,9 +8,35 @@ import {
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
 } from '@/lib/supportQueryCache';
+import { filterSupportConversations } from '@/lib/supportInboxFilters';
 import type { ConversationListResponse, SupportConversation } from '@/lib/pmTypes';
 
 describe('supportQueryCache', () => {
+  it('moves an Open thread in and out of Waiting for public replies, ignoring notes and activity', () => {
+    let current = { data: [{ id: 'thread', workspace_id: 'ws-1', display_id: 1, subject: 'Thread', status: 'open', priority: 'medium', source: 'widget', created_at: '2026-09-11T09:00:00Z', updated_at: '2026-09-11T09:00:00Z' }], total: 1, page: 1, per_page: 50, total_pages: 1 } as ConversationListResponse;
+    const waiting = () => filterSupportConversations(current.data, { navFilter: 'waiting', mailboxScope: 'all', searchQuery: '' }).length;
+    for (const [index, [sender, internal, expected]] of ([
+      ['customer', false, 0], ['user', false, 1], ['user', true, 1],
+      ['customer', false, 0], ['user', true, 0], ['ai', false, 0], ['user', false, 1],
+    ] as const).entries()) {
+      current = moveConversationToTopForMessageActivity(current, {
+        conversationId: 'thread', messageId: `message-${index}`, timestamp: `2026-09-11T09:0${index + 1}:00Z`,
+        message: { sender_type: sender, message_type: 'reply', content: 'Message', is_internal: internal },
+      }) as ConversationListResponse;
+      expect(waiting()).toBe(expected);
+      expect(current.data[0].status).toBe('open');
+    }
+    current = moveConversationToTopForMessageActivity(current, { conversationId: 'thread', timestamp: '2026-09-11T09:08:00Z', message: { sender_type: 'user', message_type: 'activity', system_event_type: 'assignment_changed' } }) as ConversationListResponse;
+    expect(waiting()).toBe(1);
+  });
+
+  it('applies delayed public replies independently of newer internal notes', () => {
+    const current = { data: [{ id: 'thread', status: 'open', last_message: 'Note: Investigating', list_last_message_at: '2026-09-11T09:03:00Z', list_last_activity_at: '2026-09-11T09:03:00Z', last_public_message_at: '2026-09-11T09:01:00Z', last_public_sender_type: 'user', customer_awaiting_response: false }], total: 1 } as ConversationListResponse;
+    const updated = moveConversationToTopForMessageActivity(current, { conversationId: 'thread', messageId: 'customer-reply', timestamp: '2026-09-11T09:02:00Z', message: { sender_type: 'customer', message_type: 'reply', content: 'More details' } }) as ConversationListResponse;
+    expect(updated.data[0]).toEqual(expect.objectContaining({ last_public_sender_type: 'customer', customer_awaiting_response: true, last_message: 'Note: Investigating', list_last_message_at: '2026-09-11T09:03:00Z' }));
+    expect(filterSupportConversations(updated.data, { navFilter: 'waiting', mailboxScope: 'all', searchQuery: '' })).toEqual([]);
+  });
+
   it('matches support conversation list query keys but not detail or message keys', () => {
     expect(
       isSupportConversationListQueryKey(

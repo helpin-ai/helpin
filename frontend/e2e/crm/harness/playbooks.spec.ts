@@ -61,15 +61,18 @@ test('saved draft, explicit publishing, preserved edits across tabs and safe nav
   await page.screenshot({ path: '/tmp/helpin-playbooks-setup.png', animations: 'disabled' });
 });
 
-test('publish validation names missing essentials without an API write', async ({ page }) => {
+test('publish validation names missing essentials in the tooltip without an API write', async ({ page }) => {
   const { item, writes } = await installPlaybookMocks(page, { draft: true });
   item.playbook.draft.objective = '';
   item.playbook.draft.responsibilities.escalation_member_id = null;
   await page.goto(`${harness}?detail`);
-  await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('dialog')).toContainText('Describe the customer outcome.');
-  await expect(page.getByRole('dialog')).toContainText('Choose who handles escalations.');
-  await expect(page.getByRole('button', { name: 'Continue setup' })).toBeVisible();
+  const publish = page.getByRole('button', { name: 'Publish', exact: true });
+  await expect(publish).toBeDisabled();
+  await publish.focus();
+  await expect(page.getByRole('tooltip')).toContainText(/desired outcome/i);
+  await expect(page.getByRole('tooltip')).toContainText(/escalation owner/i);
+  await publish.click({ force: true });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(writes).toHaveLength(0);
 });
 
@@ -100,13 +103,13 @@ test('preview is read-only; enrollment requires confirmation and exact published
   const { writes, reads } = await installPlaybookMocks(page);
   await page.goto(`${harness}?detail`);
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
-  await page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button', { name: /Review & automation/ }).click();
   await page.getByRole('button', { name: 'Preview matches', exact: true }).click();
   await page.getByRole('button', { name: 'Northstar', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Apply playbook', exact: true })).toHaveCount(0);
   expect(writes).toHaveLength(0);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'Automation', exact: true }).click();
   await page.getByRole('button', { name: 'Add signals', exact: true }).click();
   await page.getByRole('button', { name: 'Northstar', exact: true }).click();
   await expect(page.getByRole('dialog').last()).toContainText('No messages, tasks, Flows, or Agents will start.');
@@ -141,8 +144,7 @@ test('milestones use the pinned version, including pagination, and do not close 
 test('stopping enrollment leaves active work untouched', async ({ page }) => {
   const { writes } = await installPlaybookMocks(page);
   await page.goto(`${harness}?detail`);
-  await page.getByRole('tab', { name: 'Setup', exact: true }).click();
-  await page.getByRole('navigation', { name: 'Playbook setup steps' }).getByRole('button', { name: /Review & automation/ }).click();
+  await page.getByRole('tab', { name: 'Automation', exact: true }).click();
   await page.getByRole('button', { name: 'Stop new enrollment', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('Existing signals will not be paused or closed');
   expect(writes).toHaveLength(0);

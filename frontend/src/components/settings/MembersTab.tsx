@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { PencilEdit01Icon, Delete01Icon, Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
-import { QuietSearchInput } from '@/components/design-system/quiet';
+import { QuietPageHeader, QuietSearchInput } from '@/components/design-system/quiet';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -265,28 +265,26 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
     return true;
   };
 
-  if (loading) return <Skeleton className="h-96" />;
+  if (loading) return <div className="space-y-4"><QuietPageHeader title="Members" /><Skeleton className="h-96" /></div>;
 
   return (
     <>
+      <QuietPageHeader title="Members" context={String(members.length)} />
       <div className="space-y-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <span className="text-sm text-muted-foreground">{members.length} {members.length === 1 ? 'member' : 'members'} in this workspace</span>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            {members.length > 0 && (
-              <QuietSearchInput
-                containerClassName="w-full sm:w-60"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search members..."
-              />
-            )}
-            {editable && (
-              <Button size="sm" onClick={openInviteDialog}>
-                <PlusSignIcon className="h-4 w-4 mr-1" /> Invite Member
-              </Button>
-            )}
-          </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {members.length > 0 && (
+            <QuietSearchInput
+              containerClassName="w-full sm:w-60"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search members..."
+            />
+          )}
+          {editable && (
+            <Button size="sm" className="sm:ml-auto" onClick={openInviteDialog}>
+              <PlusSignIcon className="h-4 w-4 mr-1" /> Invite Member
+            </Button>
+          )}
         </div>
 
         {editable && pendingInvitations.length > 0 && (

@@ -78,6 +78,9 @@ export interface SupportConversation {
   list_last_activity_at?: string | null;
   last_message?: string;
   last_message_sender_type?: MessageSenderType | null;
+  last_public_message_id?: string | null;
+  last_public_message_at?: string | null;
+  last_public_sender_type?: MessageSenderType | null;
   last_message_sender_display_name?: string | null;
   unread_count?: number;
   awaiting_reply?: boolean;
@@ -998,11 +1001,14 @@ export interface CreateConversationRequest {
   source?: TicketSource;
 }
 
+export type SupportReplyDeliveryMode = 'chat_only' | 'chat_and_email' | 'email_only';
+
 export interface CreateMessageRequest {
   content: string;
   client_message_id?: string;
   is_internal?: boolean;
   ai_assisted?: boolean;
+  delivery_mode?: SupportReplyDeliveryMode;
   channels?: ('chat' | 'email')[];
   cc_emails?: string[];
   bcc_emails?: string[];

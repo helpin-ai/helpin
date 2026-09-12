@@ -22,7 +22,7 @@ type WidgetService interface {
 	GetWidgetSession(ctx context.Context, token string) (*model.SupportWidgetSession, error)
 	TouchWidgetSessionActivity(ctx context.Context, sessionToken string) error
 	GetVisitorConversations(ctx context.Context, workspaceID, anonymousID string) ([]model.SupportConversation, error)
-	ListConversationMessages(ctx context.Context, workspaceID, conversationID string, includeInternal bool) ([]model.SupportMessage, error)
+	ListWidgetConversationMessages(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error)
 	WidgetCreateMessage(ctx context.Context, sessionToken, content string, attachmentIDs []string) (*model.SupportMessage, error)
 	UpgradeWidgetSession(ctx context.Context, sessionToken string, identity model.WidgetIdentityPayload) error
 	RevokeWidgetSession(ctx context.Context, sessionToken string) error
@@ -324,7 +324,7 @@ func (h *WidgetHandler) sendSessionJoined(ctx context.Context, conn *websocket.C
 	// Get messages for active conversation
 	var messages []model.SupportMessage
 	if session.ConversationID != nil {
-		msgs, err := h.service.ListConversationMessages(ctx, session.WorkspaceID, *session.ConversationID, false)
+		msgs, err := h.service.ListWidgetConversationMessages(ctx, session.WorkspaceID, *session.ConversationID)
 		if err == nil {
 			messages = msgs
 		}
@@ -641,7 +641,7 @@ func (h *WidgetHandler) handleConnection(ctx context.Context, conn *websocket.Co
 			}
 
 			// Load and send messages for the selected conversation
-			msgs, err := h.service.ListConversationMessages(ctx, session.WorkspaceID, convID, false)
+			msgs, err := h.service.ListWidgetConversationMessages(ctx, session.WorkspaceID, convID)
 			if err != nil {
 				SendToClient(conn, "connection:error", map[string]string{"code": "load_failed", "message": err.Error()})
 				continue

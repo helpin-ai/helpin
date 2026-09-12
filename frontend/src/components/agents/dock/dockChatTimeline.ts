@@ -180,6 +180,8 @@ export function mergePersistedChatMessages(
   // represented by the durable page for tool/text interleaving, plus active or
   // provably newer tail segments; discard unmatched historical leftovers.
   const liveTurnSegments = (stream?.live_turn_segments ?? []).filter((segment) => {
+    if (segment.kind === 'assistant_message' && segment.assistant_message.message_type === 'assistant_final'
+      && segment.assistant_message.message_id === stream?.turn_state?.answer_message_id) return true;
     if (segmentIdentityKeys(segment).some((key) => persistedSegmentKeys.has(key) || persistedMessageKeys.has(key))) return true;
     if (persisted.length === 0 || segmentIsActive(segment)) return true;
     if (segment.segment_id === timestampLessCompletionFallbackID) return true;
@@ -208,6 +210,7 @@ export function mergePersistedChatMessages(
 
   return {
     transcript_messages: transcriptMessages,
+    ...(stream?.turn_state ? { turn_state: stream.turn_state } : {}),
     live_assistant_message: stream?.live_assistant_message ?? null,
     live_reasoning_message: stream?.live_reasoning_message ?? null,
     live_turn_segments: liveTurnSegments,

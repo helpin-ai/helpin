@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -679,6 +680,11 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	if err != nil {
 		return err
 	}
+	if ignore, err := s.ignoreStaleTurnLifecycle(ctx, run, event); err != nil {
+		return err
+	} else if ignore {
+		return nil
+	}
 	// Prior persisted status, captured before the event is applied: product
 	// finalizers fire only on the transition into a terminal status, so
 	// redelivered or reconciled terminal events on an already-terminal run
@@ -700,6 +706,11 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	}
 
 	now := s.eventTime(event)
+	if strings.HasPrefix(event.Type, "run.") && eventDataString(event.Data, "completion_mode") == "explicit" {
+		if s.persistRuntimeCodingSessionStreamSnapshot(ctx, run, event) {
+			s.publishRuntimeCodingSessionEvent(run, event)
+		}
+	}
 	var settlementErr error
 	suppressLifecycle := isTerminalAgentRunStatus(run.Status) && isPreTerminalRuntimeEvent(event.Type)
 	if !suppressLifecycle && isRuntimeWorkProgressEvent(event.Type) {
@@ -837,7 +848,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		// timeline for multi-message Codex turns and preserves tool placement while
 		// persisted messages are reconciled by stable IDs. Preserve the legacy v1
 		// cleanup behavior because those snapshots have no replay watermark.
-		if s.eventProtocol != "v2" && s.sessionSnapshotRepo != nil &&
+		if s.eventProtocol != "v2" && eventDataString(event.Data, "completion_mode") != "explicit" && s.sessionSnapshotRepo != nil &&
 			(event.Type == agentruntime.EventRunCompleted || event.Type == agentruntime.EventRunCancelled) {
 			if err := s.sessionSnapshotRepo.DeleteByRun(ctx, run.WorkspaceID, run.ID); err != nil {
 				return err
@@ -1427,14 +1438,14 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 	runtimeMessage := s.lookupRuntimeStoreMessage(ctx, run, runtimeMessageID)
 	var storeBlocks, toolInvocations json.RawMessage
 	messageType := "assistant_turn"
-	if eventDataString(event.Data, "message_type") == "assistant_final" {
-		messageType = "assistant_final"
+	if kind := eventDataString(event.Data, "message_type"); kind == "assistant_final" || kind == "assistant_progress" {
+		messageType = kind
 	}
 	if runtimeMessage != nil {
 		storeBlocks = runtimeMessage.ContentBlocks
 		toolInvocations = runtimeMessage.ToolInvocations
-		if runtimeMessage.MessageType == "assistant_final" {
-			messageType = "assistant_final"
+		if runtimeMessage.MessageType == "assistant_final" || runtimeMessage.MessageType == "assistant_progress" {
+			messageType = runtimeMessage.MessageType
 		}
 	}
 	message := &model.AgentRunMessage{
@@ -1457,6 +1468,12 @@ func (s *AgentRuntimeProjectionService) mirrorAssistantMessageCompleted(ctx cont
 	}
 	if err := s.runMessageRepo.Create(ctx, message); err != nil {
 		return err
+	}
+	if messageType == "assistant_final" {
+		slog.InfoContext(ctx, "turn answer projected", "run_id", run.ID, "runtime_run_id", event.RunID,
+			"turn_id", eventDataString(event.Data, "turn_id"), "message_id", runtimeMessageID,
+			"answer_bytes", len(content), "answer_sha256", fmt.Sprintf("%x", sha256.Sum256([]byte(content))),
+			"runtime_revision", eventDataString(event.Data, "runtime_revision"), "event_sequence", event.SequenceNo)
 	}
 	s.notifyRunChange(ctx, run, model.AgentRunChangeMessage)
 	return nil
@@ -2544,6 +2561,11 @@ func eventDataJSON(data map[string]any) string {
 
 func codingSessionEventTypeFromAgentRuntimeEvent(event AgentRuntimeEventEnvelope) string {
 	switch strings.TrimSpace(event.Type) {
+	case "run.started", "run.resumed", "run.paused", "run.completed", "run.failed", "run.cancelled":
+		if eventDataString(event.Data, "completion_mode") == "explicit" {
+			return event.Type
+		}
+		return ""
 	case agentruntime.EventAssistantMessageStarted:
 		return "assistant.message.started"
 	case agentruntime.EventAssistantMessageDelta:

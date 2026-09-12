@@ -21,10 +21,20 @@ func compactDockChatMessagePage(messages []model.AgentRunMessage) []model.AgentR
 		}
 		workTarget := assistantGroup[len(assistantGroup)-1]
 		final := finalDockAssistantMessage(assistantGroup)
+		// In-flight explicit progress is not a completed conversation answer.
+		explicitProgress := false
+		for _, message := range assistantGroup {
+			explicitProgress = explicitProgress || message.MessageType == "assistant_progress"
+		}
+		if explicitProgress && final.MessageType != "assistant_final" {
+			compact = append(compact, assistantGroup...)
+			assistantGroup = assistantGroup[:0]
+			return
+		}
 		activityCount := dockAssistantActivityCount(assistantGroup)
 		hasWork := len(assistantGroup) > 1 || activityCount > 0
 		if hasWork {
-			duration := workTarget.CreatedAt.Sub(intervalStartedAt)
+			duration := final.CreatedAt.Sub(intervalStartedAt)
 			if intervalStartedAt.IsZero() || duration < 0 {
 				duration = 0
 			}

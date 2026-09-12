@@ -32,7 +32,7 @@ func (h *CRMDealHandler) ListPipelines(w http.ResponseWriter, r *http.Request) {
 	}
 	pipelines, err := h.dealService.ListPipelines(r.Context(), workspaceID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeCRMPipelineError(w, r, err)
 		return
 	}
 	if pipelines == nil {
@@ -51,7 +51,7 @@ func (h *CRMDealHandler) CreatePipeline(w http.ResponseWriter, r *http.Request) 
 	req.WorkspaceID = getWorkspaceID(r)
 	pipeline, err := h.dealService.CreatePipeline(r.Context(), req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeCRMPipelineError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, pipeline)
@@ -83,10 +83,8 @@ func (h *CRMDealHandler) SetCustomer(w http.ResponseWriter, r *http.Request) {
 
 // GetPipeline handles GET /api/crm/pipelines/{id}.
 func (h *CRMDealHandler) GetPipeline(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	pipeline, err := h.dealService.GetPipeline(r.Context(), id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+	pipeline, ok := h.pipelineForWorkspace(w, r, chi.URLParam(r, "id"))
+	if !ok {
 		return
 	}
 	writeJSON(w, http.StatusOK, pipeline)
@@ -95,14 +93,17 @@ func (h *CRMDealHandler) GetPipeline(w http.ResponseWriter, r *http.Request) {
 // UpdatePipeline handles PUT /api/crm/pipelines/{id}.
 func (h *CRMDealHandler) UpdatePipeline(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if _, ok := h.pipelineForWorkspace(w, r, id); !ok {
+		return
+	}
 	var req model.UpdateCRMPipelineRequest
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeError(w, http.StatusBadRequest, "invalid request body; probabilities must be whole numbers between 0 and 100")
 		return
 	}
 	pipeline, err := h.dealService.UpdatePipeline(r.Context(), id, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeCRMPipelineError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, pipeline)
@@ -111,8 +112,11 @@ func (h *CRMDealHandler) UpdatePipeline(w http.ResponseWriter, r *http.Request) 
 // DeletePipeline handles DELETE /api/crm/pipelines/{id}.
 func (h *CRMDealHandler) DeletePipeline(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if _, ok := h.pipelineForWorkspace(w, r, id); !ok {
+		return
+	}
 	if err := h.dealService.DeletePipeline(r.Context(), id); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeCRMPipelineError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "pipeline deleted"})

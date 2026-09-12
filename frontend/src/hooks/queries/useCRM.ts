@@ -1,3 +1,4 @@
+import type { CRMPipeline } from '@/lib/crmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   crmContactService,
@@ -403,8 +404,12 @@ export function useCreatePipeline(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (data: CreateCRMPipelineRequest) => unwrap(await crmPipelineService.create(data)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.crm.pipelines(wsId) })
+    onSuccess: async (pipeline) => {
+      qc.setQueryData<CRMPipeline[]>(queryKeys.crm.pipelines(wsId), (current) => [
+        ...(current ?? []).map((item) => pipeline.is_default ? { ...item, is_default: false } : item),
+        pipeline,
+      ])
+      await qc.invalidateQueries({ queryKey: queryKeys.crm.pipelines(wsId) })
     },
   })
 }
@@ -412,11 +417,19 @@ export function useCreatePipeline(wsId: string) {
 export function useUpdatePipeline(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...data }: UpdateCRMPipelineRequest & { id: string }) =>
-      unwrap(await crmPipelineService.update(wsId, id, data)),
-    onSuccess: (_, { id }) => {
-      qc.invalidateQueries({ queryKey: queryKeys.crm.pipelines(wsId) })
-      qc.invalidateQueries({ queryKey: queryKeys.crm.pipeline(wsId, id) })
+    mutationFn: async ({ id, ...data }: UpdateCRMPipelineRequest & { id: string }) => {
+      const response = await crmPipelineService.update(wsId, id, data)
+      if (response.error) throw Object.assign(new Error(response.error), { status: response.status })
+      return unwrap(response)
+    },
+    onSuccess: async (pipeline, { id }) => {
+      qc.setQueryData<CRMPipeline[]>(queryKeys.crm.pipelines(wsId), (current) => current?.map((item) => item.id === id ? pipeline : pipeline.is_default ? { ...item, is_default: false } : item))
+      qc.setQueryData(queryKeys.crm.pipeline(wsId, id), pipeline)
+      // Stage names, probabilities and migrated deals also appear outside settings.
+      await qc.invalidateQueries({ queryKey: ['crm', wsId] })
+    },
+    onError: async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.crm.pipelines(wsId) })
     },
   })
 }
@@ -425,8 +438,10 @@ export function useDeletePipeline(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => unwrap(await crmPipelineService.remove(wsId, id)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.crm.pipelines(wsId) })
+    onSuccess: async (_, id) => {
+      qc.setQueryData<CRMPipeline[]>(queryKeys.crm.pipelines(wsId), (current) => current?.filter((item) => item.id !== id))
+      qc.removeQueries({ queryKey: queryKeys.crm.pipeline(wsId, id), exact: true })
+      await qc.invalidateQueries({ queryKey: queryKeys.crm.pipelines(wsId) })
     },
   })
 }

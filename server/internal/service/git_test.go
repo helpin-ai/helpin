@@ -1152,7 +1152,7 @@ func TestResolveAgentRuntimeRepositorySpecForTaskDeliveryTarget(t *testing.T) {
 	spec, err := svc.ResolveAgentRuntimeRepositorySpec(context.Background(), "ws-1", agentruntime.TargetRef{
 		Type: "task",
 		ID:   "task-1",
-	}, "run-runtime-1")
+	}, "run-runtime-1", "")
 	if err != nil {
 		t.Fatalf("ResolveAgentRuntimeRepositorySpec returned error: %v", err)
 	}
@@ -1193,7 +1193,7 @@ func TestResolveAgentRuntimeRepositorySpecEnsuresEpicTaskBaseBranch(t *testing.T
 	spec, err := svc.ResolveAgentRuntimeRepositorySpec(context.Background(), "ws-1", agentruntime.TargetRef{
 		Type: "task",
 		ID:   "task-1",
-	}, "run-scribe-1")
+	}, "run-scribe-1", "3630f8c9-5ea7-47e0-99ba-ea0370679e60")
 	if err != nil {
 		t.Fatalf("ResolveAgentRuntimeRepositorySpec returned error: %v", err)
 	}
@@ -1222,7 +1222,7 @@ func TestResolveAgentRuntimeRepositorySpecForRepositoryFullName(t *testing.T) {
 			"base_branch":    "release",
 			"work_branch":    "agent/runtime-checkout",
 		},
-	}, "run-runtime-1")
+	}, "run-runtime-1", "")
 	if err != nil {
 		t.Fatalf("ResolveAgentRuntimeRepositorySpec returned error: %v", err)
 	}
@@ -1237,6 +1237,24 @@ func TestResolveAgentRuntimeRepositorySpecForRepositoryFullName(t *testing.T) {
 	}
 	if spec.Metadata["repository_id"] != "repo-1" || spec.Metadata["repo_full_name"] != "acme/api" {
 		t.Fatalf("unexpected metadata: %#v", spec.Metadata)
+	}
+}
+
+func TestResolveAgentRuntimeRepositorySpecNamesBranchWithRuntimeRunID(t *testing.T) {
+	for _, helpinRunID := range []string{"", "3630f8c9-5ea7-47e0-99ba-ea0370679e60"} {
+		t.Run("helpin_run_"+helpinRunID, func(t *testing.T) {
+			db := newTestDB(t)
+			seedGitDeliveryStatusFixture(t, db)
+			svc := newGitDeliveryStatusService(db, &fakeGitHubAppClient{})
+			spec, err := svc.ResolveAgentRuntimeRepositorySpec(context.Background(), "ws-1",
+				agentruntime.TargetRef{Type: "repository", ID: "repo-1"}, "run_external", helpinRunID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if spec.WorkBranch != "agent-runtime/run_external" {
+				t.Fatalf("work branch = %q, want runtime ID in fallback branch", spec.WorkBranch)
+			}
+		})
 	}
 }
 
