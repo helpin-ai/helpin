@@ -1,3 +1,4 @@
+import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import { useNavigate } from '@tanstack/react-router';
@@ -2496,6 +2497,7 @@ export function AgentsPage() {
   const [runNowTargetType, setRunNowTargetType] = useState<AgentTargetType | ''>('');
   const [runNowTargetId, setRunNowTargetId] = useState('');
   const [runNowAdditionalContext, setRunNowAdditionalContext] = useState('');
+  const [runNowAIConnection, setRunNowAIConnection] = useState<AIConnectionSelection>({});
   const [runNowDeliveryMode, setRunNowDeliveryMode] = useState<'publish' | 'preview'>('publish');
   const [runNowBaseBranch, setRunNowBaseBranch] = useState('');
   const [runNowRepositoriesLoading, setRunNowRepositoriesLoading] = useState(false);
@@ -2672,6 +2674,7 @@ export function AgentsPage() {
     );
     setRunNowAdditionalContext('');
     setRunNowDeliveryMode('publish');
+    setRunNowAIConnection({});
     setRunNowBaseBranch(defaultTarget === 'repository' ? (firstRunnableRepo?.default_branch ?? '') : '');
     setRunNowOpen(true);
     if (defaultTarget === 'repository' && !firstRunnableRepo) {
@@ -2711,6 +2714,7 @@ export function AgentsPage() {
       target_id: targetId,
       additional_context: runNowAdditionalContext.trim() || undefined,
       delivery_mode: runNowDeliveryMode,
+      ...runNowAIConnection,
       base_branch: runNowBaseBranch.trim() || undefined,
     });
     setRunNowSubmitting(false);
@@ -2731,6 +2735,7 @@ export function AgentsPage() {
     navigate,
     runNowAdditionalContext,
     runNowDeliveryMode,
+    runNowAIConnection,
     runNowAgent,
     runNowBaseBranch,
     runNowTargetId,
@@ -6536,6 +6541,8 @@ export function AgentsPage() {
       {runNowOpen ? (
         <Suspense fallback={null}>
           <AgentRunNowDialog
+            aiConnection={runNowAIConnection}
+            onAIConnectionChange={setRunNowAIConnection}
             deliveryMode={runNowDeliveryMode}
             onDeliveryModeChange={setRunNowDeliveryMode}
             open

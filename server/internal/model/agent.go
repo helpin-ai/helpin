@@ -611,6 +611,8 @@ type HandoffAgentRunRequest struct {
 }
 
 type StartAgentRunRequest struct {
+	ModelConnectionID string                 `json:"model_connection_id,omitempty"`
+	ModelName         string                 `json:"model_name,omitempty"`
 	DeliveryMode      string                 `json:"delivery_mode,omitempty"`
 	AgentID           string                 `json:"agent_id,omitempty"`
 	AdditionalContext *string                `json:"additional_context,omitempty"`
@@ -621,6 +623,8 @@ type StartAgentRunRequest struct {
 }
 
 type StartTargetAgentRunRequest struct {
+	ModelConnectionID string  `json:"model_connection_id,omitempty"`
+	ModelName         string  `json:"model_name,omitempty"`
 	DeliveryMode      string  `json:"delivery_mode,omitempty"`
 	TargetType        string  `json:"target_type"`
 	TargetID          string  `json:"target_id"`
@@ -707,6 +711,10 @@ type AgentRunWorkspaceContext struct {
 
 // AgentRunInputPayload is the shared input contract for all agent runs.
 type AgentRunInputPayload struct {
+	CredentialSource    string                     `json:"credential_source,omitempty"`
+	ModelProvider       string                     `json:"model_provider,omitempty"`
+	ModelConnectionID   string                     `json:"model_connection_id,omitempty"`
+	ModelName           string                     `json:"model_name,omitempty"`
 	DeliveryMode        string                     `json:"delivery_mode,omitempty"`
 	Trigger             *AgentRunTriggerContext    `json:"trigger,omitempty"`
 	CRMPlaybook         *CRMPlaybookRunContext     `json:"crm_playbook,omitempty"`

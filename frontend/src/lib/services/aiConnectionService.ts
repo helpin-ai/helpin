@@ -1,0 +1,53 @@
+import { api } from "@/lib/api";
+
+export interface AIConnection {
+  id: string;
+  name: string;
+  provider: string;
+  status: "pending" | "connected" | "reauthorization_required" | "disconnected";
+  account_id?: string;
+  expires_at?: string;
+}
+export interface AIConnectionModel {
+  provider: string;
+  selection_model: string;
+  label: string;
+  tier: string;
+}
+export interface AIConnectionSelection {
+  model_connection_id?: string;
+  model_name?: string;
+}
+export interface AIConnectionLogin {
+  connection: AIConnection;
+  verification_url?: string;
+  user_code?: string;
+  expires_at?: string;
+  interval_seconds?: number;
+}
+const path = (workspace: string, suffix = "") =>
+  `/ai-connections${suffix}?workspace_id=${encodeURIComponent(workspace)}`;
+export const aiConnectionService = {
+  list: (workspace: string) =>
+    api.get<{
+      enabled: boolean;
+      connections: AIConnection[];
+      models: AIConnectionModel[];
+    }>(path(workspace, "/")),
+  create: (
+    workspace: string,
+    request: { name: string; provider: string; api_key?: string },
+  ) => api.post<AIConnectionLogin>(path(workspace, "/"), request),
+  poll: (workspace: string, id: string) =>
+    api.post<AIConnectionLogin>(
+      path(workspace, `/${encodeURIComponent(id)}/poll`),
+      {},
+    ),
+  reconnect: (workspace: string, id: string, api_key?: string) =>
+    api.post<AIConnectionLogin>(
+      path(workspace, `/${encodeURIComponent(id)}/reconnect`),
+      { api_key },
+    ),
+  disconnect: (workspace: string, id: string) =>
+    api.del<void>(path(workspace, `/${encodeURIComponent(id)}`)),
+};

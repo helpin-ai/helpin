@@ -1,3 +1,4 @@
+import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Loading01Icon } from '@/lib/icons';
@@ -226,7 +227,9 @@ export function DockRunView({
             </div>
           ) : null}
           {effectiveRun.status === 'paused' && effectiveRun.pause_reason === 'authentication' ? (
-            <p className="mt-3 text-sm text-muted-foreground">Reconnect the required provider or start a new run with a configured API key.</p>
+            <div className="mt-3 space-y-2"><p className="text-sm text-muted-foreground">Reconnect the required provider to continue.</p>
+ {typeof run.input?.model_connection_id === 'string' && <AIConnectionPicker workspaceId={workspaceId} locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} />}
+ </div>
           ) : null}
           {interaction ? (
             <div className="mt-3">

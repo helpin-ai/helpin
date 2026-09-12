@@ -385,10 +385,23 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 		}
 	}
 
+	if currentRun != nil {
+		if err := requireAIConnectionRunOwner(currentRun, userID); err != nil {
+			return nil, err
+		}
+		var input model.AgentRunInputPayload
+		if err := decodeAIConnectionRunInput(currentRun.Input, &input); err != nil {
+			return nil, err
+		}
+		if (req.ModelConnectionID != "" && req.ModelConnectionID != input.ModelConnectionID) || (req.ModelName != "" && req.ModelName != input.ModelName) {
+			return nil, fmt.Errorf("start a new chat to change AI connection or model")
+		}
+	}
+
 	switch {
 	case currentRun == nil || !model.IsAgentRunActiveStatus(currentRun.Status):
 		// First message, or the previous backing run ended.
-		if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID); err != nil {
+		if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, req.ModelConnectionID, req.ModelName); err != nil {
 			return nil, err
 		}
 	case model.IsAgentRunPausedStatus(currentRun.Status):
@@ -404,7 +417,7 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 			if _, err := s.agentService.CancelRun(ctx, workspaceID, currentRun.ID, userID); err != nil {
 				return nil, fmt.Errorf("rotate stale chat run: %w", err)
 			}
-			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID); err != nil {
+			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, req.ModelConnectionID, req.ModelName); err != nil {
 				return nil, err
 			}
 		} else if err := s.setRunAttachedContexts(ctx, currentRun, attachedContexts); err != nil {
@@ -416,7 +429,7 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 			// The runtime idle-expired the run; it is completed on its side.
 			// Continue the conversation through a successor run.
 			clientMessageID = uuid.NewString()
-			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID); err != nil {
+			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, req.ModelConnectionID, req.ModelName); err != nil {
 				return nil, err
 			}
 		}
@@ -729,7 +742,7 @@ func validDockChatModule(moduleID model.ModuleID) bool {
 
 // startChatRun starts a (possibly successor) backing run for the chat and
 // repoints the chat at it.
-func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, attachedContexts []model.AgentRunContextReference, previousRun *model.AgentRun, clientMessageID string) error {
+func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, attachedContexts []model.AgentRunContextReference, previousRun *model.AgentRun, clientMessageID string, selection ...string) error {
 	agent, err := s.agentService.ensureBuiltInAgent(ctx, chat.WorkspaceID, userID, model.AgentPresetAskAgent)
 	if err != nil {
 		return fmt.Errorf("ensure ask agent: %w", err)
@@ -772,6 +785,10 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		Context:     triggerContext,
 	}
 
+	connectionID, modelName := "", ""
+	if len(selection) == 2 {
+		connectionID, modelName = selection[0], selection[1]
+	}
 	run, err := s.agentService.startTargetRunWithOptions(
 		ctx,
 		chat.WorkspaceID,
@@ -779,6 +796,7 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		chat.WorkspaceID,
 		model.StartAgentRunRequest{
 			AgentID:           agent.ID,
+			ModelConnectionID: connectionID, ModelName: modelName,
 			AdditionalContext: &additional,
 			AllowedTools:      allowedTools,
 		},

@@ -1,3 +1,5 @@
+import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
+import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ArrowRight01Icon, ArrowUp01Icon, Loading01Icon } from '@/lib/icons';
@@ -109,6 +111,7 @@ export function ChatView({
   const detailRefreshed = useRef(false);
   const cachedTranscript = chatId ? useDockStore.getState().transcripts[chatId] : undefined;
   const cacheTranscript = useDockStore((state) => state.cacheTranscript);
+  const [aiConnection, setAIConnection] = useState<AIConnectionSelection>({});
   const [detail, setDetail] = useState<DockChatDetail | null>(cachedTranscript?.detail ?? null);
   const [detailLoading, setDetailLoading] = useState(!!chatId && !cachedTranscript);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -539,6 +542,7 @@ export function ChatView({
         }
 		const res = await dockChatService.sendMessage(workspaceId, targetChatId, {
           client_message_id: clientMessageId,
+          ...(!run ? aiConnection : {}),
           content,
           page_context: effectivePageContext ?? undefined,
           references: messageReferences.length > 0 ? messageReferences : undefined,
@@ -607,7 +611,7 @@ export function ChatView({
         setSending(false);
       }
     },
-    [chatId, currentUserId, detail?.chat.title, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
+    [aiConnection, chatId, currentUserId, detail?.chat.title, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
   );
 
   const submit = async () => {
@@ -952,6 +956,8 @@ export function ChatView({
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}
+      {run?.status === 'paused' && run.pause_reason === 'authentication' && typeof run.input?.model_connection_id === 'string' && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} /></div>}
+      {!run && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} value={aiConnection} onChange={setAIConnection} disabled={sending} /></div>}
       {composer.visible && (
         <div className="border-t border-border/60">
           {starterSuggestions.length > 0 && composer.enabled && (

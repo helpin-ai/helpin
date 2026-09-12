@@ -125,6 +125,9 @@ func CalculateCharge(input ChargeInput) (Charge, error) {
 	case FundingHelpinHosted:
 		result.HostedMicrousd = published
 		result.FinalMicrousd = published
+	case FundingCustomerPlatform:
+		result.OrchestrationMicrousd = published
+		result.FinalMicrousd = published
 	case FundingCustomer:
 		orchestration, err := roundPositiveRational(big.NewInt(published), big.NewInt(10))
 		if err != nil {

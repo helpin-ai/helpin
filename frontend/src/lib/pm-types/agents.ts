@@ -275,6 +275,8 @@ export interface AgentRunStreamEvent {
 export type AgentRunDeliveryMode = 'publish' | 'preview';
 
 export interface StartAgentRunRequest {
+  model_connection_id?: string;
+  model_name?: string;
   delivery_mode?: AgentRunDeliveryMode;
   agent_id?: string;
   additional_context?: string;

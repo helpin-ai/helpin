@@ -1089,6 +1089,12 @@ func main() {
 			fatalWithSentry("failed to initialize agent runtime client", err)
 		}
 	}
+	aiConnectionService, err := service.NewAIConnectionService(repository.NewAIConnectionRepository(db), pricingCatalog, agentRuntimeClient, service.AIConnectionConfig{
+		EncryptionKey: cfg.AIConnectionEncryptionKey, ChatGPTEnabled: cfg.ChatGPTConnectionsEnabled, ChatGPTClientID: cfg.ChatGPTClientID, AppID: cfg.AgentRuntimeAppID,
+	})
+	if err != nil {
+		fatalWithSentry("failed to initialize AI connections", err)
+	}
 	externalMCPService, err := service.NewExternalMCPService(
 		externalMCPRepo,
 		notificationService,
@@ -1142,6 +1148,7 @@ func main() {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
 	agentService.SetExternalMCPService(externalMCPService)
+	agentService.SetAIConnectionService(aiConnectionService)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarPlanDismissalRepo).
 		SetWebsocketPublisher(wsPublisher)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
@@ -1959,6 +1966,7 @@ func main() {
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
+		AIConnection:        handler.NewAIConnectionHandler(aiConnectionService),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
 		MCP:                 handler.NewMCPHandler(mcpService),
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),

@@ -1,3 +1,5 @@
+import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
+import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
@@ -293,6 +295,7 @@ export function AgentRunPanel({
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [drawerOpen, setDrawerOpen] = useState<boolean>(Boolean(urlRunId));
   const [triggering, setTriggering] = useState(false);
+  const [aiConnection, setAIConnection] = useState<AIConnectionSelection>({});
   const [deliveryMode, setDeliveryMode] = useState<AgentRunDeliveryMode>('publish');
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -389,7 +392,7 @@ export function AgentRunPanel({
   }, [fetchRuns, taskId]);
 
   const startRun = useCallback(async (agentId: string) => {
-    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId, delivery_mode: deliveryMode });
+    const res = await agentService.runTask(workspaceId, taskId, { agent_id: agentId, delivery_mode: deliveryMode, ...aiConnection });
     if (res.error) {
       const reason = getUpgradeRequiredReason(res.error);
       if (reason) {
@@ -403,7 +406,7 @@ export function AgentRunPanel({
     if (res.data?.id) {
       setRunInUrl(res.data.id);
     }
-  }, [deliveryMode, fetchRuns, setRunInUrl, taskId, workspaceId]);
+  }, [aiConnection, deliveryMode, fetchRuns, setRunInUrl, taskId, workspaceId]);
 
   const agentNameById = useMemo(
     () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
@@ -576,6 +579,7 @@ export function AgentRunPanel({
                 </SelectContent>
               </Select>
             </div>
+            <AIConnectionPicker workspaceId={workspaceId} value={aiConnection} onChange={setAIConnection} />
             {delivery?.selectedRepository ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={setDeliveryMode} /> : null}
             {actionDisabledReason ? <p className="min-w-0 text-xs text-muted-foreground">{actionDisabledReason}</p> : null}
             <Tooltip>

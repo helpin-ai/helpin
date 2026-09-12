@@ -1,3 +1,5 @@
+import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
+import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { AgentRunDeliveryModePicker } from '@/components/pm/AgentRunDeliveryMode';
 import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import type { AgentRunDeliveryMode, Agent, AgentTargetType, GitRepository } from '@/lib/pmTypes';
@@ -35,6 +37,8 @@ const TARGET_ID_PLACEHOLDERS: Partial<Record<AgentTargetType, string>> = {
 };
 
 interface AgentRunNowDialogProps {
+  aiConnection: AIConnectionSelection;
+  onAIConnectionChange: (value: AIConnectionSelection) => void;
   deliveryMode: AgentRunDeliveryMode;
   onDeliveryModeChange: (value: AgentRunDeliveryMode) => void;
   open: boolean;
@@ -63,6 +67,7 @@ interface AgentRunNowDialogProps {
 }
 
 export function AgentRunNowDialog({
+  aiConnection, onAIConnectionChange,
   deliveryMode, onDeliveryModeChange,
   open,
   onOpenChange,
@@ -100,6 +105,7 @@ export function AgentRunNowDialog({
 
         <div className="space-y-4">
           <CodingCapacityNotice agent={agent} />
+          <AIConnectionPicker workspaceId={workspaceId} value={aiConnection} onChange={onAIConnectionChange} disabled={submitting} />
           {['task', 'epic', 'repository'].includes(targetType) ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={onDeliveryModeChange} /> : null}
           {targets.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">

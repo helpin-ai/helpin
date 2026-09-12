@@ -42,6 +42,8 @@ export interface DockChatListResponse {
 }
 
 export interface SendDockChatMessageRequest {
+  model_connection_id?: string;
+  model_name?: string;
   client_message_id: string
   content: string
   page_context?: CommandBarPageContext

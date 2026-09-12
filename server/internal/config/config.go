@@ -107,6 +107,9 @@ type Config struct {
 	MCPCRMEnabled                     bool
 	MCPSupportEnabled                 bool
 	MCPPublicBaseURL                  string
+	AIConnectionEncryptionKey         string
+	ChatGPTConnectionsEnabled         bool
+	ChatGPTClientID                   string
 	ExternalMCPEnabled                bool
 	ExternalMCPEncryptionKey          string
 	ExternalMCPAllowedHosts           []string
@@ -373,6 +376,9 @@ func Load() (*Config, error) {
 		MCPCRMEnabled:                          parseBoolEnvDefaultTrue(os.Getenv("MCP_CRM_ENABLED")),
 		MCPSupportEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_SUPPORT_ENABLED")),
 		MCPPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(firstNonEmpty(os.Getenv("MCP_PUBLIC_BASE_URL"), appBaseURL)), "/"),
+		AIConnectionEncryptionKey:              strings.TrimSpace(os.Getenv("AI_CONNECTION_ENCRYPTION_KEY")),
+		ChatGPTConnectionsEnabled:              parseBoolEnv(os.Getenv("CHATGPT_CONNECTIONS_ENABLED")),
+		ChatGPTClientID:                        strings.TrimSpace(os.Getenv("CHATGPT_OAUTH_CLIENT_ID")),
 		ExternalMCPEnabled:                     parseBoolEnv(os.Getenv("EXTERNAL_MCP_ENABLED")),
 		ExternalMCPEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_ENCRYPTION_KEY")),
 		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "*")),

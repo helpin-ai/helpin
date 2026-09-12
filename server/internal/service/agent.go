@@ -810,6 +810,7 @@ type AgentService struct {
 	agentRuntimeLaunchEnabled  bool
 	mcpRepo                    *repository.MCPRepository
 	externalMCPService         *ExternalMCPService
+	aiConnections              *AIConnectionService
 }
 
 func (s *AgentService) SetModelTierResolver(resolver *AgentModelTierResolver) *AgentService {
@@ -4538,6 +4539,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			modelConnectionID:    req.ModelConnectionID,
+			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "task",
@@ -4599,6 +4602,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			modelConnectionID:    req.ModelConnectionID,
+			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "epic",
@@ -4648,6 +4653,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			modelConnectionID:    req.ModelConnectionID,
+			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "sprint",
@@ -4694,8 +4701,10 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build objective run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
-			deliveryMode: req.DeliveryMode,
-			workspaceID:  workspaceID, agent: agent, targetType: "objective", targetID: objective.Objective.ID,
+			deliveryMode:      req.DeliveryMode,
+			modelConnectionID: req.ModelConnectionID,
+			modelName:         req.ModelName,
+			workspaceID:       workspaceID, agent: agent, targetType: "objective", targetID: objective.Objective.ID,
 			parentRunID: parentRunID, allowActiveParentRun: opts.allowActiveParentRun, actorID: actorID,
 			input: payload, trigger: trigger, invocationMode: resolveInvocationMode(agent),
 		})
@@ -4750,6 +4759,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			modelConnectionID:    req.ModelConnectionID,
+			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "repository",
@@ -4797,17 +4808,19 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
-			deliveryMode:   req.DeliveryMode,
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "support_conversation",
-			targetID:       conversation.ID,
-			parentRunID:    parentRunID,
-			conversationID: &conversation.ID,
-			actorID:        actorID,
-			input:          input,
-			trigger:        trigger,
-			invocationMode: resolveInvocationMode(agent),
+			deliveryMode:      req.DeliveryMode,
+			modelConnectionID: req.ModelConnectionID,
+			modelName:         req.ModelName,
+			workspaceID:       workspaceID,
+			agent:             agent,
+			targetType:        "support_conversation",
+			targetID:          conversation.ID,
+			parentRunID:       parentRunID,
+			conversationID:    &conversation.ID,
+			actorID:           actorID,
+			input:             input,
+			trigger:           trigger,
+			invocationMode:    resolveInvocationMode(agent),
 		})
 		if err != nil {
 			return nil, err
@@ -4850,16 +4863,18 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
-			deliveryMode:   req.DeliveryMode,
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "support_coverage_gap",
-			targetID:       detail.ID,
-			parentRunID:    parentRunID,
-			actorID:        actorID,
-			input:          input,
-			trigger:        trigger,
-			invocationMode: resolveInvocationMode(agent),
+			deliveryMode:      req.DeliveryMode,
+			modelConnectionID: req.ModelConnectionID,
+			modelName:         req.ModelName,
+			workspaceID:       workspaceID,
+			agent:             agent,
+			targetType:        "support_coverage_gap",
+			targetID:          detail.ID,
+			parentRunID:       parentRunID,
+			actorID:           actorID,
+			input:             input,
+			trigger:           trigger,
+			invocationMode:    resolveInvocationMode(agent),
 		})
 		if err != nil {
 			return nil, err
@@ -4895,6 +4910,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			modelConnectionID:    req.ModelConnectionID,
+			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "document",
@@ -4936,6 +4953,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			modelConnectionID:    req.ModelConnectionID,
+			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "crm_contact",
@@ -4977,6 +4996,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			modelConnectionID:    req.ModelConnectionID,
+			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "crm_company",
@@ -5018,6 +5039,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			modelConnectionID:    req.ModelConnectionID,
+			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "crm_deal",
@@ -5054,6 +5077,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			modelConnectionID:    req.ModelConnectionID,
+			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
 			agent:                agent,
 			targetType:           "workspace",
@@ -5270,6 +5295,8 @@ func (s *AgentService) ContinueTerminalRun(ctx context.Context, workspaceID, run
 		WorkingBranch:     run.WorkingBranch,
 		Output:            previousInput.Output,
 		DeliveryMode:      previousInput.DeliveryMode,
+		ModelConnectionID: previousInput.ModelConnectionID,
+		ModelName:         previousInput.ModelName,
 	}
 	return s.startTargetRun(
 		ctx,
@@ -5323,6 +5350,9 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 }
 
 func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, workspaceID string, run *model.AgentRun, runtimeRunID, actorID string, req model.ResumeAgentRunRequest, intent string) (*model.AgentRun, *model.AgentRunMessage, error) {
+	if err := requireAIConnectionRunOwner(run, actorID); err != nil {
+		return nil, nil, err
+	}
 	if err := rejectUnclaimedCRMPlaybookRun(run.Input); err != nil {
 		return nil, nil, err
 	}
@@ -6114,6 +6144,8 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 }
 
 type createRunParams struct {
+	modelConnectionID    string
+	modelName            string
 	deliveryMode         string
 	runID                string // Reserved by durable product work before launching.
 	workspaceID          string
@@ -6138,6 +6170,11 @@ type createRunParams struct {
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
+	selectedModel, credential, billingAgent, err := s.prepareAIConnectionRun(ctx, &params)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := validateAgentRunDeliveryMode(params.deliveryMode); err != nil {
 		return nil, err
 	}
@@ -6159,7 +6196,6 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			input = map[string]interface{}{}
 		}
 		input["delivery_mode"] = params.deliveryMode
-		var err error
 		params.input, err = json.Marshal(input)
 		if err != nil {
 			return nil, err
@@ -6170,7 +6206,6 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		return nil, err
 	}
 	var activeRun *model.AgentRun
-	var err error
 	if params.dockChatID == nil {
 		// Dock chat runs are keyed by chat, not target: many chats share the
 		// workspace target and the same ask_agent, so the per-target guard
@@ -6225,6 +6260,16 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
 		if activeRun.AgentID == params.agent.ID {
+			if err := requireAIConnectionRunOwner(activeRun, derefString(params.actorID)); err != nil {
+				return nil, err
+			}
+			var activeInput model.AgentRunInputPayload
+			if err := decodeAIConnectionRunInput(activeRun.Input, &activeInput); err != nil {
+				return nil, err
+			}
+			if activeInput.ModelConnectionID != params.modelConnectionID || (params.modelName != "" && activeInput.ModelName != params.modelName) {
+				return nil, fmt.Errorf("an active run uses a different AI connection or model; finish or cancel it before starting another run")
+			}
 			if agentRunIsPreview(activeRun) != (params.deliveryMode == "preview") {
 				return nil, fmt.Errorf("an active run has a different delivery mode; finish or cancel it before starting another run")
 			}
@@ -6266,7 +6311,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		ParentRunID:       params.parentRunID,
 		DockChatID:        params.dockChatID,
 		RuntimeKind:       params.agent.RuntimeKind,
-		ModelTier:         params.agent.ModelTier,
+		ModelTier:         billingAgent.ModelTier,
 		InvocationMode:    defaultString(params.invocationMode, model.InvocationModeAutonomous),
 		ApprovalState:     approvalState,
 		PauseReason:       model.AgentRunPauseReasonNone,
@@ -6295,7 +6340,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	if params.workingBranch != nil && strings.TrimSpace(*params.workingBranch) != "" {
 		run.WorkingBranch = params.workingBranch
 	}
-	if err := PreflightAgentRunAIUsage(ctx, s.aiUsageMeter, run, params.agent); err != nil {
+	if err := PreflightAgentRunAIUsage(ctx, s.aiUsageMeter, run, billingAgent); err != nil {
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
 		return nil, err
 	}
@@ -6360,6 +6405,8 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
+	startReq.Model = selectedModel
+	startReq.ModelCredential = credential
 	if auditActorID := s.auditActorIDForRun(ctx, run); auditActorID != "" {
 		startReq.Metadata["audit_actor_id"] = auditActorID
 	}
@@ -6416,6 +6463,18 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	run.ExternalRuntimeID = strPtr(strings.TrimSpace(runtimeRun.ID))
 	if err := s.runRepo.Update(ctx, run); err != nil {
 		return nil, err
+	}
+	// Bind first, then recheck: a disconnect racing admission must revoke this run.
+	if credential != nil {
+		if _, _, err := s.aiConnections.Credential(ctx, params.workspaceID, *params.actorID, params.modelConnectionID, false); err != nil {
+			revokeErr := s.aiConnections.runtime.RevokeRunModelCredential(ctx, runtimeRun.ID)
+			_, cancelErr := s.agentRuntimeClient.CancelRun(ctx, runtimeRun.ID)
+			if revokeErr != nil || cancelErr != nil {
+				slog.ErrorContext(ctx, "failed to stop run after AI connection revocation", "run_id", run.ID)
+			}
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, ErrAIConnection)
+			return nil, ErrAIConnection
+		}
 	}
 	source := "automation"
 	if run.TriggeredByUserID != nil {

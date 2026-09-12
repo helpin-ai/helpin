@@ -341,3 +341,23 @@ func TestAIUsageServiceSuspendsAndRestoresInteractiveReservation(t *testing.T) {
 		t.Fatalf("restored reservation target = %d calls %d", store.resizedTo, store.resizeCalls)
 	}
 }
+
+func TestAIUsageServicePersonalConnectionKeepsFullEstimate(t *testing.T) {
+	store := &fakeAIUsageStore{mode: model.AIUsageEnforcementExtra}
+	service := newTestAIUsageService(t, store)
+	result, err := service.Reconcile(context.Background(), CompletionUsage{
+		Context: MeteringContext{
+			Route:         aiusage.ResolvedRoute{Tier: aiusage.TierSmall, Rates: aiusage.TokenRates{}},
+			ReservationID: "reservation", WorkspaceID: "ws", TaskNature: "support", FeatureKey: "support_reply",
+			FundingMode: aiusage.FundingCustomerPlatform, IdempotencyKey: "missing:1", PricingVersion: "2026-08-13",
+			EnforcementMode: model.AIUsageEnforcementExtra,
+		},
+		MeasurementStatus: "estimated",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ChargedMicrousd != 25_000 || store.reconcile.Entry.EntryKind != "estimate" || store.reconcile.Entry.EstimationMethod != "launch_fallback" {
+		t.Fatalf("result/reconcile = %#v/%#v", result, store.reconcile)
+	}
+}

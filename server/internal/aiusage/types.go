@@ -24,6 +24,8 @@ const (
 	FundingHelpinHosted FundingMode = "helpin_hosted"
 	// FundingCustomer means the customer pays the inference provider.
 	FundingCustomer FundingMode = "customer_funded"
+	// FundingCustomerPlatform applies the full Helpin platform charge to personal connections.
+	FundingCustomerPlatform FundingMode = "customer_funded_platform"
 )
 
 // TokenRates holds integer micro-USD prices per one million actual tokens.

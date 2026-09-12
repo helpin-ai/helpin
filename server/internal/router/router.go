@@ -58,6 +58,7 @@ type Handlers struct {
 	PublicShare         *handler.PublicShareHandler
 	Agent               *handler.AgentHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
+	AIConnection        *handler.AIConnectionHandler
 	MCP                 *handler.MCPHandler
 	ExternalMCP         *handler.ExternalMCPHandler
 	SupportInbox        *handler.SupportInboxHandler
@@ -434,6 +435,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Internal service-to-service routes (bearer token auth) ----
 		r.Route("/internal", func(r chi.Router) {
 			r.Use(middleware.RequireInternalAPISecret)
+			if h.AIConnection != nil {
+				r.Post("/agent-runtime/model-credentials/refresh", h.AIConnection.Refresh)
+			}
 			r.Get("/widget-tokens", h.SupportInboxWidget.GetWidgetTokens)
 			if h.AgentRuntimeHost != nil {
 				r.Route("/agent-runtime", func(r chi.Router) {
@@ -465,6 +469,18 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
+			if h.AIConnection != nil {
+				r.Route("/ai-connections", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.Get("/", h.AIConnection.List)
+					r.Post("/", h.AIConnection.Create)
+					r.Post("/{connectionID}/poll", h.AIConnection.Poll)
+					r.Post("/{connectionID}/reconnect", h.AIConnection.Reconnect)
+					r.Delete("/{connectionID}", h.AIConnection.Disconnect)
+				})
+			}
+
 			if h.AgentRuntimeHost != nil {
 				r.With(middleware.RequireWorkspaceID, wsAccess).Get("/agent-artifacts/{id}/content-url", h.AgentRuntimeHost.BrowserArtifactContentURL)
 			}

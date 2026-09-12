@@ -121,3 +121,10 @@ func TestRoundMicrousdToCentsUsesHalfUpRounding(t *testing.T) {
 		})
 	}
 }
+
+func TestPersonalConnectionKeepsFullPlatformCharge(t *testing.T) {
+	charge, err := CalculateCharge(ChargeInput{FundingMode: FundingCustomerPlatform, Tokens: NormalizedTokens{UncachedInputTokens: 1_000_000}, Rates: TokenRates{InputMicrousdPerMillion: 220_000}})
+	if err != nil || charge.FinalMicrousd != 220_000 || charge.OrchestrationMicrousd != 220_000 || charge.HostedMicrousd != 0 {
+		t.Fatalf("personal connection charge: %+v %v", charge, err)
+	}
+}

@@ -644,11 +644,19 @@ func PreflightAgentRunAIUsage(ctx context.Context, meter *AIUsageMeter, run *mod
 	}
 	if meter.usage != nil {
 		provider, modelID, _ := agentPricingIdentity(agent)
+		funding := aiusage.FundingHelpinHosted
+		var runInput model.AgentRunInputPayload
+		if err := decodeAIConnectionRunInput(run.Input, &runInput); err != nil {
+			return err
+		}
+		if runInput.ModelConnectionID != "" {
+			funding = aiusage.FundingCustomerPlatform
+		}
 		featureKey := AgentRunAIUsageFeature(agent)
 		metering, err := meter.usage.Preflight(ctx, PreflightRequest{Metering: MeteringRequest{
 			WorkspaceID: run.WorkspaceID, TaskNature: taskNatureForFeature(featureKey), FeatureKey: featureKey,
 			Provider: provider, Model: modelID, Route: "", ServiceTier: "standard",
-			FundingMode: aiusage.FundingHelpinHosted, InputTokensEstimate: int64((len(run.Input) + 3) / 4),
+			FundingMode: funding, InputTokensEstimate: int64((len(run.Input) + 3) / 4),
 			MaximumOutputTokens: 128000, ExecutionID: run.ID,
 			IdempotencyKey: aiUsageIdempotencyKey(run.WorkspaceID, "agent_run", run.ID),
 		}})
@@ -674,6 +682,9 @@ func agentPricingIdentity(agent *model.Agent) (provider, modelID, route string) 
 	if agent != nil {
 		provider = strings.ToLower(strings.TrimSpace(derefString(agent.Provider)))
 		modelID = strings.TrimSpace(derefString(agent.Model))
+	}
+	if provider == "openai_chatgpt" {
+		provider = "openai"
 	}
 	if provider == "openrouter-responses" {
 		provider = "openrouter"
