@@ -1,7 +1,6 @@
 import { defaultStageColor } from '@/lib/crmStageColors';
 import { useDealEdits } from './useDealEdits';
 import { commitDropBeforeClearingPreview, resolveBoardDropTarget, PM_BOARD_DRAG_ACTIVATION_DISTANCE } from '@/components/pm/KanbanBoard.dnd';
-import { DealStageContent } from './DealStageSelect';
 import { comparableDealTotal } from './dealCreationDefaults';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -67,16 +66,18 @@ function Column({
 }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const stageTotal = comparableDealTotal(deals);
+  const stageColor = stage.color || defaultStageColor(stage.stage_type, stage.position);
 
   if (collapsed) {
     return (
       <QuickTooltip label={`Expand ${stage.name}`}>
-        <section ref={setNodeRef} data-stage-id={stage.id}
-          className="flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-4 transition-colors hover:bg-muted/50"
+        <button type="button" ref={setNodeRef} data-stage-id={stage.id}
+          aria-label={`Expand ${stage.name}`} aria-expanded={false}
+          className="group/collapsed relative flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-4 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-quiet-text-primary"
           onClick={() => onToggleCollapse(stage.id)}
         >
-          <ExpandIcon className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="mb-2 h-3 w-3 shrink-0 rounded-full border border-border/50" style={{backgroundColor:stage.color || defaultStageColor(stage.stage_type,stage.position)}} />
+          <span aria-hidden="true" className="absolute top-0 left-2 right-2 h-[3px] rounded-b-full" style={{ backgroundColor: stageColor }} />
+          <ExpandIcon className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/collapsed:opacity-100 group-focus-visible/collapsed:opacity-100 [@media(hover:none)]:opacity-100" />
           <span className="text-xs font-medium text-muted-foreground">{deals.length}</span>
           <div className="mt-3 flex flex-1 items-start">
             <span
@@ -86,17 +87,18 @@ function Column({
               {stage.name}
             </span>
           </div>
-        </section>
+        </button>
       </QuickTooltip>
     );
   }
 
   return (
     <section data-stage-id={stage.id} className="flex h-full w-[300px] shrink-0 flex-col">
-      <header className="flex items-center justify-between px-3 pt-4 pb-3">
+      <header className="group/header relative flex items-center justify-between px-3 pt-4 pb-3">
+        <span aria-hidden="true" className="absolute top-0 left-3 right-3 h-[3px] rounded-b-full" style={{ backgroundColor: stageColor }} />
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
-            <DealStageContent stage={stage} />
+            {stage.name}
           </p>
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <span>{deals.length} deals</span>
@@ -110,16 +112,19 @@ function Column({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+              className="h-7 w-7 opacity-0 transition-opacity group-hover/header:opacity-100 group-focus-within/header:opacity-100 [@media(hover:none)]:opacity-100"
+              aria-label={`Collapse ${stage.name}`} aria-expanded={true}
               onClick={() => onToggleCollapse(stage.id)}
             >
               <CollapseIcon className="h-3.5 w-3.5" />
             </Button>
           </QuickTooltip>
           {onCreateClick && (
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCreateClick}>
-              <PlusSignIcon className="h-4 w-4" />
-            </Button>
+            <QuickTooltip label="Add deal">
+              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={`Add deal to ${stage.name}`} onClick={onCreateClick}>
+                <PlusSignIcon className="h-4 w-4" />
+              </Button>
+            </QuickTooltip>
           )}
         </div>
       </header>
@@ -145,7 +150,7 @@ function Column({
           {onCreateClick && (
             <Button
               variant="ghost"
-              className="w-full justify-start text-xs text-muted-foreground"
+              className="w-full justify-center text-xs text-muted-foreground"
               onClick={onCreateClick}
             >
               <PlusSignIcon className="h-3.5 w-3.5" />
