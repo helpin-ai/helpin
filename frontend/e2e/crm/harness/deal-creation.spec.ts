@@ -70,6 +70,26 @@ test('suggests company contacts without adding them and asks before replacing co
  await expect(page.getByLabel('Deal name')).toHaveValue('Other Co — New deal');
  await expect(page.getByText('Primary',{exact:true})).toBeVisible();
 });
+for (const reversed of [false, true]) test(`accepts a suggested contact linked to the selected company despite another primary company (${reversed})`, async ({page}) => {
+ const writes = await setup(page);
+ await page.route('**/api/crm/contacts/alex/associations?**', route => route.fulfill({json:[
+  {from_object_type:'contact',from_object_id:'alex',to_object_type:'company',to_object_id:'other',association_label:'primary',linked_object_name:'Other Co'},
+  {...(reversed
+   ? {from_object_type:'company',from_object_id:'acme',to_object_type:'contact',to_object_id:'alex'}
+   : {from_object_type:'contact',from_object_id:'alex',to_object_type:'company',to_object_id:'acme'}),association_label:null,linked_object_name:'Acme'},
+ ]}));
+ await page.goto('/e2e/crm/harness/deal-creation.html?context');
+ await pick(page,'Select company','Acme');
+ await page.getByRole('button',{name:'Add contact',exact:true}).click();
+ await expect(page.getByText('At Acme',{exact:true})).toBeVisible();
+ await page.getByRole('option',{name:'Alex Smith',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Remove Alex Smith',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Switch company',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Create deal',exact:true}).click();
+ await expect.poll(()=>writes.length).toBe(1);
+ expect(writes[0]).toMatchObject({company_id:'acme',contact_id:'alex'});
+});
+
 test('creates an inline company and retains the deal draft',async({page})=>{
  const writes=await setup(page);await page.goto('/e2e/crm/harness/deal-creation.html');
  await page.getByLabel('Deal name').fill('Preserved draft');

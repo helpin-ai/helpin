@@ -76,7 +76,12 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
       if (version !== selectionVersion.current) return;
       const primary = associations.find(a => a.association_label === 'primary' && (a.from_object_type === 'company' || a.to_object_type === 'company'));
       const linkedCompany = primary ? { id: primary.from_object_type === 'company' ? primary.from_object_id : primary.to_object_id, name: primary.linked_object_name } : null;
-      if (linkedCompany && companyRef.current && companyRef.current.id !== linkedCompany.id) { setPendingPerson({ person, company: linkedCompany }); return; }
+      // Company suggestions include every association, not only the primary one.
+      const selectedCompanyId = companyRef.current?.id;
+      const linkedToSelectedCompany = !!selectedCompanyId && associations.some(a =>
+        (a.from_object_type === 'company' && a.from_object_id === selectedCompanyId) ||
+        (a.to_object_type === 'company' && a.to_object_id === selectedCompanyId));
+      if (linkedCompany && selectedCompanyId && !linkedToSelectedCompany) { setPendingPerson({ person, company: linkedCompany }); return; }
       if (linkedCompany && !companyRef.current) selectCompany(linkedCompany);
       addPerson(person);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not load contact company'); }
