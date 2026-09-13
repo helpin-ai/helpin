@@ -8,7 +8,7 @@ interface MessageListProps {
   showDateSeparators?: boolean;
   config?: WidgetConfig;
   onImageClick?: (src: string, alt: string) => void;
-  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => Promise<boolean>;
 }
 
 type MessageListSnapshot = {

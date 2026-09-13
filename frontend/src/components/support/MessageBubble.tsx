@@ -340,6 +340,15 @@ export const MessageBubble = memo(function MessageBubble({
   const isAI = effectiveSenderType === 'ai';
   const isAgent = effectiveSenderType === 'agent';
   const isInternal = message.is_internal;
+  const visitorFeedback = useMemo<boolean | undefined>(() => {
+    if (!isAI || isInternal) return undefined;
+    try {
+      const metadata = JSON.parse(message.metadata || '{}');
+      return typeof metadata.visitor_feedback?.helpful === 'boolean'
+        ? metadata.visitor_feedback.helpful : undefined;
+    } catch { return undefined; }
+  }, [isAI, isInternal, message.metadata]);
+  const feedbackLabel = visitorFeedback ? 'Visitor marked helpful' : 'Visitor marked unhelpful';
   const deliveryMode = !isCustomer && !isInternal ? getReplyDeliveryMode(message.metadata) : undefined;
   const explicitEmailState = deliveryMode && deliveryMode !== 'chat_only' ? getExplicitEmailDeliveryState(message) : undefined;
   const chatSeen = receiptStatus === 'read' || (source === 'widget' && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
@@ -857,12 +866,25 @@ export const MessageBubble = memo(function MessageBubble({
           ) : (
             messageActionsMenu
           )}
+          {visitorFeedback !== undefined && (
+            <div data-slot="support-answer-feedback" className="mt-1 flex h-5 justify-start">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span role="img" tabIndex={0} aria-label={feedbackLabel}
+                    className="inline-flex h-5 min-w-6 items-center justify-center rounded-full border border-border/60 bg-background px-1 text-sm leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    {visitorFeedback ? '👍' : '👎'}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{feedbackLabel}</TooltipContent>
+              </Tooltip>
+            </div>
+          )}
         </div>
         </MessageActionsContextMenu>
 
         {/* Right side: avatar or spacer (agent/user messages) */}
         {!isCustomer && (
-          <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
+          <div className={`ml-2 flex w-7 shrink-0 flex-col justify-end ${visitorFeedback !== undefined ? 'pb-6' : ''}`}>
             {showAvatar && avatarEl}
           </div>
         )}

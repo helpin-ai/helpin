@@ -276,6 +276,8 @@ func (h *Hub) Broadcast(event Event) {
 	case event.Entity == "support_conversation_message" && event.Action == "created" && len(event.Data) > 0:
 		wm := widgetMessage{Type: "message:received", Data: widgetEventData}
 		widgetData, _ = json.Marshal(wm)
+	case event.Entity == "support_conversation_message" && event.Action == "updated" && len(widgetEventData) > 0:
+		widgetData, _ = json.Marshal(widgetMessage{Type: "message:updated", Data: widgetEventData})
 	case event.Entity == "support_conversation" && event.Action == "typing_started":
 		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start", Data: widgetTypingData(event.Data)})
 	case event.Entity == "support_conversation" && event.Action == "typing_stopped":

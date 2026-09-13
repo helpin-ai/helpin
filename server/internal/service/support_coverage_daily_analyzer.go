@@ -45,16 +45,17 @@ const (
 )
 
 type CoverageConversationMessage struct {
-	ID              string    `json:"id"`
-	SenderType      string    `json:"sender_type"`
-	MessageType     string    `json:"message_type"`
-	Content         string    `json:"content"`
-	CreatedAt       time.Time `json:"created_at"`
-	AIConfidence    float64   `json:"ai_confidence,omitempty"`
-	AIReplyKind     string    `json:"ai_reply_kind,omitempty"`
-	AIIssueKey      string    `json:"ai_issue_key,omitempty"`
-	AIIssueSummary  string    `json:"ai_issue_summary,omitempty"`
-	AIProgressState string    `json:"ai_progress_state,omitempty"`
+	VisitorFeedback *model.SupportAnswerFeedback `json:"visitor_feedback,omitempty"`
+	ID              string                       `json:"id"`
+	SenderType      string                       `json:"sender_type"`
+	MessageType     string                       `json:"message_type"`
+	Content         string                       `json:"content"`
+	CreatedAt       time.Time                    `json:"created_at"`
+	AIConfidence    float64                      `json:"ai_confidence,omitempty"`
+	AIReplyKind     string                       `json:"ai_reply_kind,omitempty"`
+	AIIssueKey      string                       `json:"ai_issue_key,omitempty"`
+	AIIssueSummary  string                       `json:"ai_issue_summary,omitempty"`
+	AIProgressState string                       `json:"ai_progress_state,omitempty"`
 }
 
 type CoverageConversationAnalysisInput struct {
@@ -802,11 +803,12 @@ func BuildCoverageConversationAnalysisInputForSegment(conversation model.Support
 			continue
 		}
 		analysisMessage := CoverageConversationMessage{
-			ID:          message.ID,
-			SenderType:  strings.TrimSpace(message.SenderType),
-			MessageType: strings.TrimSpace(message.MessageType),
-			Content:     truncateCoverageAnalysisContent(normalizeCoverageTranscriptContent(message.Content), coverageAnalysisMaxMessageChars),
-			CreatedAt:   message.CreatedAt.UTC(),
+			ID:              message.ID,
+			SenderType:      strings.TrimSpace(message.SenderType),
+			MessageType:     strings.TrimSpace(message.MessageType),
+			Content:         truncateCoverageAnalysisContent(normalizeCoverageTranscriptContent(message.Content), coverageAnalysisMaxMessageChars),
+			CreatedAt:       message.CreatedAt.UTC(),
+			VisitorFeedback: message.VisitorFeedback(),
 		}
 		if strings.TrimSpace(message.SenderType) == "ai" {
 			if metadata, ok := parseCoverageAIMessageMetadata(message.Metadata); ok {
@@ -1795,6 +1797,8 @@ Set is_support_query=false for newsletters, cold outreach, auto-replies, bounces
 If is_support_query=false, set has_gap=false, should_run_retrieval=false, recommended_fixes=[], and leave gap details empty.
 
 If is_support_query=true, proceed with gap analysis:
+
+Visitor feedback is a satisfaction signal attached to a specific AI answer. A thumbs-down alone is not proof of missing or incorrect knowledge: distinguish answer quality, retrieval, account context, unavailable actions, policy, and product limitations using the transcript and traces. A thumbs-up is not proof of factual correctness or resolution. Never create or close a gap solely because of a vote.
 
 Decide from the full conversation outcome, not one message. Treat human replies as the best evidence of what was missing. Use live retrieval traces to diagnose what AI actually searched and saw during the conversation.
 

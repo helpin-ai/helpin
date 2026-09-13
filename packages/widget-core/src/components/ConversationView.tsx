@@ -40,7 +40,7 @@ interface ConversationViewProps {
   onCaptureEmail?: (email: string) => Promise<void>;
   onPreChatSubmit?: (data: { phone: string; email: string }) => void;
   onImageClick?: (src: string, alt: string) => void;
-  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => Promise<boolean>;
   connectionStatus?: 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
   queuedMessageCount?: number;
   csatSubmitted?: boolean;

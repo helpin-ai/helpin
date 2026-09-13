@@ -114,9 +114,10 @@ func PublicWidgetConversations(conversations []SupportConversation) []WidgetConv
 // Unknown keys, AI diagnostics and link-security assessments are private by default.
 func PublicWidgetMetadata(raw string) string {
 	var metadata struct {
-		DelayedTeamReply bool   `json:"delayed_team_reply,omitempty"`
-		CaptureEmail     bool   `json:"capture_email,omitempty"`
-		AIReplyKind      string `json:"ai_reply_kind,omitempty"`
+		VisitorFeedback  *SupportAnswerFeedback `json:"visitor_feedback,omitempty"`
+		DelayedTeamReply bool                   `json:"delayed_team_reply,omitempty"`
+		CaptureEmail     bool                   `json:"capture_email,omitempty"`
+		AIReplyKind      string                 `json:"ai_reply_kind,omitempty"`
 		AISources        []struct {
 			DocID    string `json:"docId,omitempty"`
 			Title    string `json:"title"`
@@ -128,6 +129,7 @@ func PublicWidgetMetadata(raw string) string {
 	if json.Unmarshal([]byte(raw), &metadata) != nil {
 		return "{}"
 	}
+	metadata.VisitorFeedback = (SupportMessage{Metadata: raw}).VisitorFeedback()
 	switch metadata.AIReplyKind {
 	case "answer", "clarify", "conversational", "confirmation", "greeting":
 	default:

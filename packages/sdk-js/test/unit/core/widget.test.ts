@@ -1010,20 +1010,38 @@ describe('WidgetManager', () => {
   });
 
   describe('AI answer feedback', () => {
-    it('tracks useful feedback with message and conversation context', () => {
-      const track = vi.fn();
-      (globalThis as any).helpin = { track };
-      (widget as any).activeConversationId = 'conv-1';
-
-      (widget as any).handleAnswerFeedback('answer-1', false);
-
-      expect(track).toHaveBeenCalledWith('support_ai_answer_feedback', {
-        message_id: 'answer-1',
-        conversation_id: 'conv-1',
-        helpful: false,
-      });
-      delete (globalThis as any).helpin;
+    it('persists feedback through the widget session and restores the saved value', async () => {
+      (widget as any).sessionToken = 'session-token';
+      (widget as any).host = 'api.example.test';
+      (widget as any).render = vi.fn();
+      (widget as any).messages = [{ id: 'answer-1', content: 'Answer' }];
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ feedback: { helpful: false } }), { status: 200 }));
+      await expect((widget as any).handleAnswerFeedback('answer-1', false)).resolves.toBe(false);
+      expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/widget/messages/answer-1/feedback', expect.objectContaining({
+        method: 'POST', body: JSON.stringify({ session_token: 'session-token', helpful: false }),
+      }));
+      expect((widget as any).messages[0].answerFeedback).toBe(false);
+      const restored = (widget as any).mapSupportMessage({ metadata: '{"visitor_feedback":{"helpful":false}}' });
+      expect(restored.answerFeedback).toBe(false);
     });
+
+    it('rejects a failed vote instead of marking it saved', async () => {
+      (widget as any).sessionToken = 'session-token';
+      fetchMock.mockResolvedValueOnce(new Response('{}', { status: 500 }));
+      await expect((widget as any).handleAnswerFeedback('answer-1', true)).rejects.toThrow('Could not save');
+    });
+
+    it('syncs a vote from another tab without duplicating the reply or losing it to stale enrichment', () => {
+      (widget as any).render = vi.fn();
+      (widget as any).messages = [{ id: 'answer-1', content: 'Answer' }];
+      const reply = { id: 'answer-1', sender_type: 'ai', message_type: 'reply', content: 'Answer' };
+      (widget as any).handleWSMessage({ type: 'message:updated', data: { ...reply, metadata: '{"visitor_feedback":{"helpful":false}}' } });
+      expect((widget as any).messages).toHaveLength(1);
+      expect((widget as any).messages[0].answerFeedback).toBe(false);
+      (widget as any).handleWSMessage({ type: 'message:updated', data: { ...reply, metadata: '{}' } });
+      expect((widget as any).messages[0].answerFeedback).toBe(false);
+    });
+
   });
 
   describe('conversation CSAT', () => {

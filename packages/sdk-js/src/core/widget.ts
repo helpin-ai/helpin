@@ -1029,6 +1029,7 @@ export class WidgetManager {
     if (parsedMeta) {
       message.delayedTeamReply = parsedMeta.delayed_team_reply === true;
       message.captureEmail = parsedMeta.capture_email === true;
+      if (typeof parsedMeta.visitor_feedback?.helpful === 'boolean') message.answerFeedback = parsedMeta.visitor_feedback.helpful;
       if (parsedMeta.ai_sources) message.sources = parsedMeta.ai_sources;
       if (parsedMeta.ai_confidence !== undefined) message.aiConfidence = parsedMeta.ai_confidence;
       if (['answer', 'clarify', 'conversational', 'confirmation', 'greeting'].includes(parsedMeta.ai_reply_kind)) {
@@ -1491,15 +1492,20 @@ export class WidgetManager {
     }
   }
 
-  private handleAnswerFeedback(messageId: string, helpful: boolean): void {
-    const track = (globalThis as any).helpin?.track;
-    if (typeof track === 'function') {
-      track('support_ai_answer_feedback', {
-        message_id: messageId,
-        conversation_id: this.activeConversationId || undefined,
-        helpful,
-      });
-    }
+  private async handleAnswerFeedback(messageId: string, helpful: boolean): Promise<boolean> {
+    if (!this.sessionToken) throw new Error('Please reconnect to save feedback.');
+    const response = await fetch(`https://${this.host}/widget/messages/${encodeURIComponent(messageId)}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_token: this.sessionToken, helpful }),
+    });
+    if (!response.ok) throw new Error('Could not save feedback.');
+    const payload = await response.json();
+    if (typeof payload.feedback?.helpful !== 'boolean') throw new Error('Invalid feedback response.');
+    const saved = payload.feedback.helpful as boolean;
+    this.messages = this.messages.map(message => message.id === messageId ? { ...message, answerFeedback: saved } : message);
+    this.render();
+    return saved;
   }
 
   private csatStorageKey(conversationId: string): string | null {
@@ -2007,6 +2013,17 @@ export class WidgetManager {
       case 'session:revoked':
         // Server confirmed revoke — cleanup handled by shutdown()
         break;
+
+      case 'message:updated': {
+        const raw = data.data;
+        if (!this.isPublicMessage(raw)) break;
+        const updated = this.mapSupportMessage(raw);
+        this.messages = this.messages.map(message => message.id === updated.id
+          ? { ...message, ...updated, attachments: updated.attachments ?? message.attachments, answerFeedback: updated.answerFeedback ?? message.answerFeedback }
+          : message);
+        this.render();
+        break;
+      }
 
       case 'message:received': {
         this.handleReceivedMessage(data.data);

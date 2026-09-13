@@ -1,6 +1,7 @@
 import type { SupportCoverageGapDetail, SupportCoverageGapListItem, SupportGapSuggestion } from '@/lib/supportCoverageTypes'
 
 export const EVIDENCE_TYPE_LABELS: Record<string, string> = {
+  ai_answer_feedback: 'Visitor Feedback',
   ai_handoff_triggered: 'AI Handoff',
   article_feedback_submitted: 'Article Feedback',
   widget_search_performed: 'Widget Search',

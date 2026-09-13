@@ -2370,6 +2370,12 @@ func (s *SupportInboxService) enrichSupportMessageLinksAsync(msg *model.SupportM
 			slog.WarnContext(previewCtx, "persist support link preview metadata failed", "message_id", message.ID, "error", err)
 			return
 		}
+		if saved, err := s.messageRepo.GetByID(previewCtx, message.ID); err == nil && saved != nil {
+			message.Metadata = saved.Metadata
+		} else {
+			slog.WarnContext(previewCtx, "reload enriched message metadata failed", "message_id", message.ID, "error", err)
+			return
+		}
 		if s.wsPublisher != nil {
 			s.wsPublisher.Publish(websocket.SupportMessageUpdatedEvent(message.WorkspaceID, &message, actorID))
 		}

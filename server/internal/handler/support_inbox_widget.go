@@ -424,3 +424,23 @@ func writeWidgetError(w http.ResponseWriter, r *http.Request, status int, err er
 	}
 	writeError(w, status, message)
 }
+
+// SubmitAnswerFeedback handles session-authenticated feedback on one public AI reply.
+func (h *SupportInboxWidgetHandler) SubmitAnswerFeedback(w http.ResponseWriter, r *http.Request) {
+	var req model.WidgetAnswerFeedbackRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	messageID := chi.URLParam(r, "messageId")
+	if req.SessionToken == "" || req.Helpful == nil || messageID == "" {
+		writeError(w, http.StatusBadRequest, "session_token, message ID and helpful are required")
+		return
+	}
+	feedback, err := h.supportService.SubmitWidgetAnswerFeedback(widgetRequestContext(r), req.SessionToken, messageID, *req.Helpful)
+	if err != nil {
+		writeWidgetError(w, r, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+}

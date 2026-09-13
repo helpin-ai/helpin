@@ -196,6 +196,9 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 	supportAI.publishTypingIndicator(ctx, workspaceID, conversationID, true)
 
 	composed := strings.TrimSpace(msg.Content)
+	if feedback := supportVisitorFeedbackContext(history, *msg); feedback != "" {
+		composed = feedback + "\n\n" + composed
+	}
 	return s.startOrResumeChatRun(ctx, conv, agent, processing, composed)
 }
 
