@@ -43,7 +43,7 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
   wsSend: null,
   wsConnected: false,
   setWsSend: (fn) => set({ wsSend: fn }),
-  setWsConnected: (connected) => set({ wsConnected: connected, ...(!connected ? { hasOnlineVisitorsSnapshot: false } : {}) }),
+  setWsConnected: (connected) => set({ wsConnected: connected, ...(!connected ? { hasOnlineVisitorsSnapshot: false, onlineVisitors: {} } : {}) }),
   setVisitorOnline: (anonymousId) =>
     set((state) => ({
       onlineVisitors: { ...state.onlineVisitors, [anonymousId]: true as const },

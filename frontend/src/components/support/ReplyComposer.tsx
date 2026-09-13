@@ -64,7 +64,7 @@ import { restoreAttachmentsFromMessage, type PendingSupportAttachment } from './
 import { SupportAskAgentsButton } from './SupportAskAgentsButton';
 import { ReplyComposerLoading } from './ReplyComposerLoading';
 import { ReplyDeliverySelector } from './ReplyDeliverySelector';
-import { clearAutomaticReplyDelivery, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery } from './replyDelivery';
+import { clearReplyDeliveryDraft, isReplyDeliveryMode, replyDeliveryChannels, restoreReplyDelivery, saveReplyDelivery, useComposerDelivery } from './replyDelivery';
 
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
@@ -801,6 +801,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     presence,
     emailEligible: !emailUnavailableReason,
     active: replyMode !== 'note',
+    hasDraft: !!useSupportInboxStore.getState().drafts[conversationId]?.trim(),
   });
   const primaryRecipientUnconfirmed = conversation?.primary_recipient_state === 'unconfirmed' && deliveryMode !== 'chat_only';
   const chatUnavailableReason = conversation && !conversation.anonymous_id && conversation.source !== 'widget'
@@ -1514,7 +1515,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     editor.commands.clearContent();
     clearDraft(conversationId);
     if (!isInternal) {
-      clearAutomaticReplyDelivery(workspaceId, conversationId);
+      clearReplyDeliveryDraft(workspaceId, conversationId);
     }
     editor.commands.focus();
   }, [attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
