@@ -540,6 +540,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 			h.sendPresenceSnapshot(ctx, conn, workspaceID, d.ConversationID)
+			h.sendOnlineVisitors(ctx, conn, workspaceID)
 
 		case "support:viewing:stop":
 			var d agentViewingData
