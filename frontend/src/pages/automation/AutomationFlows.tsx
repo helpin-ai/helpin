@@ -1,3 +1,4 @@
+import { SequenceAutomationConnections } from '@/components/crm/outreach/SequenceAutomationConnections';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -4872,6 +4873,7 @@ export function AutomationFlowsPage({
         ) : undefined}
       >
 
+      {workspaceSlug && permissions.has('crm.read') && <SequenceAutomationConnections workspaceId={workspaceId} slug={workspaceSlug} />}
       {loading ? (
         <div className="space-y-2">
           <Skeleton className="mb-5 h-8 w-full rounded-lg" />

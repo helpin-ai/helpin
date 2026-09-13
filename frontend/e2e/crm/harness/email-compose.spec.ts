@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 test.setTimeout(120_000);
 async function open(page:Page,query='') {
- await page.route('**/api/**', route=>route.fulfill({json:{data:[]}}));
+ await page.route('**/api/**', route=>route.fulfill({json:[]}));
  await page.goto(`/e2e/crm/harness/email-compose.html${query}`);
  await expect(page.locator('.tiptap')).toBeVisible();
 }
@@ -101,4 +101,12 @@ for(const mode of ['light','dark','narrow']) test(`composer visual ${mode}`,asyn
  const bounds=await dialog.boundingBox();expect(bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
  await expect(page.getByRole('button',{name:'Send',exact:true})).toBeInViewport();
  await page.screenshot({path:`/tmp/crm-email-${mode}.png`,fullPage:true});
+});
+test('inserts a personalized template and protects an existing draft',async({page})=>{
+ await page.route('**/api/**',route=>route.fulfill({json:[]}));
+ await page.route('**/api/crm/outreach/templates?*',route=>route.fulfill({json:[{id:'template',name:'After a demo',subject:'Hello {{first_name}}',body_html:'<p>Hello {{first_name}}</p>'}]}));
+ await page.route('**/api/crm/outreach/templates/template/render?*',route=>route.fulfill({json:{subject:'Hello Amna',body_html:'<p>Hello Amna, thanks for your time.</p>'}}));
+ await page.goto('/e2e/crm/harness/email-compose.html');await expect(page.locator('.tiptap')).toBeVisible();
+ await write(page);await page.getByRole('button',{name:'Templates',exact:true}).click();await page.getByRole('button',{name:'After a demo'}).click();await expect(page.getByRole('alertdialog',{name:'Replace this draft?'})).toBeVisible();await page.getByRole('button',{name:'Keep draft',exact:true}).click();await expect(page.getByRole('textbox',{name:'Subject',exact:true})).toHaveValue('Renewal next steps');
+ await page.getByRole('button',{name:'Templates',exact:true}).click();await page.getByRole('button',{name:'After a demo'}).click();await page.getByRole('button',{name:'Use template',exact:true}).click();await expect(page.getByRole('textbox',{name:'Subject',exact:true})).toHaveValue('Hello Amna');await expect(page.locator('.tiptap')).toContainText('Hello Amna');
 });
