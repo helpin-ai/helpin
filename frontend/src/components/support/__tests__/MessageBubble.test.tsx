@@ -50,6 +50,39 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it.each([
+    ['customer', false],
+    ['user', false],
+    ['ai', false],
+    ['agent', false],
+    ['user', true],
+  ] as const)('shows a clock time on grouped %s messages (note: %s)', (senderType, isInternal) => {
+    const createdAt = '2026-09-13T09:04:00.000Z'
+    const message: SupportMessage = {
+      id: 'timed-message', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: senderType, content: 'Yes', message_type: 'reply',
+      is_internal: isInternal, created_at: createdAt, updated_at: createdAt,
+    }
+    const rendered = renderBubble(message, null, { isConsecutive: true, isLastInGroup: false })
+    const time = rendered.container.querySelector('time')
+    expect(time?.getAttribute('datetime')).toBe(createdAt)
+    expect(time?.textContent).toBe(new Date(createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }))
+    expect(time?.getAttribute('title')).toBeTruthy()
+    rendered.cleanup()
+  })
+
+  it('shows one timestamp for an image-only message', () => {
+    const message: SupportMessage = {
+      id: 'timed-image', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: 'customer', content: '', message_type: 'reply', is_internal: false,
+      created_at: '2026-09-13T09:04:00.000Z', updated_at: '2026-09-13T09:04:00.000Z',
+      attachments: [{ id: 'image-1', file_name: 'photo.png', file_type: 'image/png', file_size: 100, file_key: 'photo.png' }],
+    }
+    const rendered = renderBubble(message)
+    expect(rendered.container.querySelectorAll('time')).toHaveLength(1)
+    rendered.cleanup()
+  })
+
   beforeEach(() => {
     if (!globalThis.ResizeObserver) {
       globalThis.ResizeObserver = class ResizeObserver {

@@ -349,6 +349,18 @@ export const MessageBubble = memo(function MessageBubble({
   const resolvedSenderName = isAI ? HELPIN_AI_DISPLAY_NAME : senderName;
   const showAvatar = isLastInGroup;
   const fullTimestamp = formatTimestamp(message.created_at);
+  const bubbleTime = new Date(message.created_at).toLocaleTimeString(undefined, {
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+  const renderBubbleTime = (className = '') => (
+    <time
+      dateTime={message.created_at}
+      title={fullTimestamp}
+      className={`select-none whitespace-nowrap text-[10px] leading-4 tabular-nums ${className}`}
+    >
+      {bubbleTime}
+    </time>
+  );
   const sourceLabel = deliveryMode ? REPLY_DELIVERY_LABELS[deliveryMode] : source ? SOURCE_LABELS[source] ?? source : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
@@ -676,7 +688,7 @@ export const MessageBubble = memo(function MessageBubble({
           <div className="max-w-[85%]">
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
+                <div className="flow-root rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
                   <div className="mb-1.5 flex items-center gap-1.5">
                     <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
                     <span className="text-[11px] text-amber-600 dark:text-amber-400">
@@ -685,7 +697,7 @@ export const MessageBubble = memo(function MessageBubble({
                     </span>
                   </div>
                   {hasDisplayContent && (
-                    <div className="prose-chat text-sm leading-relaxed text-amber-900 dark:text-amber-200">
+                    <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
                       {mentionParts ? (
                         <p className="whitespace-pre-wrap">{mentionParts}</p>
                       ) : (
@@ -695,6 +707,7 @@ export const MessageBubble = memo(function MessageBubble({
                   )}
                   {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
                   {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
+                  {renderBubbleTime('float-right ml-2 mt-1 text-amber-700/70 dark:text-amber-300/70')}
                 </div>
               </TooltipTrigger>
               <TooltipContent side="top">{tooltipContent}</TooltipContent>
@@ -795,7 +808,7 @@ export const MessageBubble = memo(function MessageBubble({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
-                    className={`rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                    className={`flow-root rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                       isCustomer
                         ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                         : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
@@ -808,7 +821,7 @@ export const MessageBubble = memo(function MessageBubble({
                     ) : (
                       visibleContent && (
                         <div
-                          className="prose-chat"
+                          className="prose-chat inline [&>p:last-child]:inline"
                           data-chat-tone={isCustomer ? 'customer' : 'agent'}
                           data-has-table={hasTableContent ? 'true' : 'false'}
                         >
@@ -830,6 +843,7 @@ export const MessageBubble = memo(function MessageBubble({
                         ))}
                       </div>
                     )}
+                    {renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top">
@@ -843,7 +857,10 @@ export const MessageBubble = memo(function MessageBubble({
 
           {/* Image attachments: outside the bubble, clickable for preview */}
           {imageAttachments.length > 0 && (
-            renderImageAttachments(showBubble ? 'mt-1.5' : '')
+            <div className={`relative ${showBubble ? 'mt-1.5' : ''}`}>
+              {renderImageAttachments()}
+              {!showBubble && renderBubbleTime('absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-white')}
+            </div>
           )}
         </div>
         </MessageActionsContextMenu>
