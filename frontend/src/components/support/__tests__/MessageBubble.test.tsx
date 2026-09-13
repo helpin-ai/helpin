@@ -51,6 +51,33 @@ function renderBubble(
 
 describe('MessageBubble', () => {
   it.each([
+    { sender: 'customer', via: 'email', source: 'widget', expected: 'via Email' },
+    { sender: 'customer', via: 'widget', source: 'email', expected: 'via Chat' },
+    { sender: 'user', via: 'email', source: 'widget', expected: 'via Email' },
+    { sender: 'user', via: 'email', source: 'widget', mode: 'chat_and_email', expected: 'via Chat + email' },
+    { sender: 'user', via: 'email', source: 'email', internal: true, expected: null },
+  ] as const)('uses the message channel in the time tooltip: $sender/$via/$source/$expected', async ({ sender, via, source, expected, ...options }) => {
+    const message: SupportMessage = {
+      id: 'channel-message', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: sender, content: 'Message channel', message_type: 'reply',
+      is_internal: 'internal' in options && options.internal,
+      via_channel: via,
+      metadata: 'mode' in options ? JSON.stringify({ delivery_mode: options.mode }) : undefined,
+      created_at: '2026-09-13T09:04:00Z', updated_at: '2026-09-13T09:04:00Z',
+    }
+    const rendered = renderBubble(message, undefined, { source })
+    try {
+      const trigger = rendered.container.querySelector('time')?.closest('[data-slot="tooltip-trigger"]')
+      expect(trigger).toBeTruthy()
+      await act(async () => { trigger!.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+      const tooltip = document.querySelector('[role="tooltip"]')
+      expect(tooltip).toBeTruthy()
+      if (expected) expect(tooltip?.textContent).toContain(expected)
+      else expect(tooltip?.textContent).not.toContain('via ')
+    } finally { rendered.cleanup() }
+  })
+
+  it.each([
     ['customer', false],
     ['user', false],
     ['ai', false],

@@ -361,7 +361,9 @@ export const MessageBubble = memo(function MessageBubble({
       {bubbleTime}
     </time>
   );
-  const sourceLabel = deliveryMode ? REPLY_DELIVERY_LABELS[deliveryMode] : source ? SOURCE_LABELS[source] ?? source : null;
+  const messageSource = message.via_channel ?? source;
+  const sourceLabel = isInternal ? null : deliveryMode ? REPLY_DELIVERY_LABELS[deliveryMode]
+    : messageSource ? SOURCE_LABELS[messageSource] ?? messageSource : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
   // Only strip if the JSON parses as an AI contract (has can_answer + content keys)
