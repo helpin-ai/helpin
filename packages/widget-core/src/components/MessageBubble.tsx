@@ -243,6 +243,10 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   onAnswerFeedback,
 }) => {
   const [answerFeedback, setAnswerFeedback] = useState<'helpful' | 'not-helpful' | null>(null);
+  if (message.isInternal || (message.systemEventType
+    && !['teammate_joined', 'delayed_team_reply'].includes(message.systemEventType))) {
+    return null;
+  }
   const isCustomer = message.role === 'customer';
   const isAI = message.role === 'ai';
   const isAgent = message.role === 'agent';
@@ -287,9 +291,8 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const agentAvatar = message.senderAvatar;
   const isWorkspaceBrandAvatar = message.id === '__intro__' && Boolean(agentAvatar);
   // Flat Intercom-style pill is reserved for teammate_joined — the one and
-  // only widget-visible routing event. Every other system_event_type either
-  // falls through to a normal bubble (when sender context is present — e.g.
-  // ai_escalated renders as a "Helpin AI" bubble) or is filtered upstream.
+  // only widget-visible routing event. Internal routing and escalation
+  // events are filtered; their public handoff replies render normally.
   const showSystemPill = isSystem && message.systemEventType === 'teammate_joined';
   const displayName = isCustomer ? '' : (isAI ? 'Helpin AI' : (agentName || config?.workspaceName || 'Support Agent'));
   const tooltipText = formatRelativeTime(message.createdAt);

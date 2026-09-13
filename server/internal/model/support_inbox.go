@@ -1197,8 +1197,8 @@ type WidgetSessionJoinedPayload struct {
 	ExpiresAt      string                `json:"expires_at"`
 	IsAnonymous    bool                  `json:"is_anonymous"`
 	CustomerEmail  string                `json:"customer_email,omitempty"`
-	Conversations  []SupportConversation `json:"conversations"`
-	Messages       []SupportMessage      `json:"messages"`
+	Conversations  []WidgetConversation  `json:"conversations"`
+	Messages       []WidgetMessage       `json:"messages"`
 	ActiveTeammate *WidgetActiveTeammate `json:"active_teammate,omitempty"`
 }
 

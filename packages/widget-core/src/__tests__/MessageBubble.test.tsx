@@ -45,9 +45,10 @@ describe('MessageBubble', () => {
     expect(container.querySelector('.helpin-message--system')).toBeTruthy();
   });
 
-  it('renders internal note', () => {
+  it('never renders internal notes', () => {
     const { container } = render(<MessageBubble message={createMessage({ isInternal: true })} />);
-    expect(container.querySelector('.helpin-message--internal')).toBeTruthy();
+    expect(container.textContent).toBe('');
+    expect(container.querySelector('.helpin-message--internal')).toBeNull();
   });
 
   it('displays AI source count and reveals titles in popover', () => {

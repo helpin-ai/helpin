@@ -55,6 +55,25 @@ describe('WidgetManager', () => {
     });
   };
 
+  it('rejects private messages on initial history, conversation switching and live updates', () => {
+    const manager = widget as any;
+    manager.render = vi.fn();
+    const messages = [
+      { id: 'public', conversation_id: 'c', content: 'Public answer', sender_type: 'user' },
+      { id: 'note', conversation_id: 'c', content: 'Private note', is_internal: true },
+      { id: 'routing', conversation_id: 'c', content: 'Private assignment', system_event_type: 'assigned' },
+      { id: 'email', conversation_id: 'c', content: 'Email only', metadata: '{"delivery_mode":"email_only"}' },
+    ];
+    manager.handleWSMessage({ type: 'session:joined', data: { messages, conversations: [] } });
+    expect(manager.messages.map((message: any) => message.id)).toEqual(['public']);
+    manager.handleWSMessage({ type: 'conversation:messages', data: { messages } });
+    expect(manager.messages.map((message: any) => message.id)).toEqual(['public']);
+    messages.slice(1).forEach(message => manager.handleWSMessage({ type: 'message:received', data: message }));
+    expect(manager.messages.map((message: any) => message.id)).toEqual(['public']);
+    manager.handleWSMessage({ type: 'session:joined', data: { messages: [], conversations: [] } });
+    expect(manager.messages).toEqual([]);
+  });
+
   beforeEach(() => {
     widget = new WidgetManager();
     document.body.innerHTML = '';

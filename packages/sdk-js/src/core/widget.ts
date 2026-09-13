@@ -1040,8 +1040,17 @@ export class WidgetManager {
     return message;
   }
 
+  private isPublicMessage(msg: any): boolean {
+    if (!msg || msg.is_internal) return false;
+    if (msg.system_event_type && !['teammate_joined', 'delayed_team_reply'].includes(msg.system_event_type)) return false;
+    try {
+      const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+      return metadata?.delivery_mode !== 'email_only';
+    } catch { return true; }
+  }
+
   private handleReceivedMessage(msg: any): void {
-    if (!msg) return;
+    if (!this.isPublicMessage(msg)) return;
 
     const responseId = typeof msg.id === 'string' ? msg.id : '';
     const stream = responseId ? this.aiResponseStreams.get(responseId) : undefined;
@@ -1055,6 +1064,7 @@ export class WidgetManager {
   }
 
   private commitReceivedMessage(msg: any): void {
+    if (!this.isPublicMessage(msg)) return;
     const newMsg = this.mapSupportMessage(msg);
     const existingIdx = this.messages.findIndex((message) => message.id === newMsg.id);
 
@@ -1899,11 +1909,12 @@ export class WidgetManager {
           this.currentView = 'conversation';
         }
 
-        // Load conversation history from server
-        if (payload.messages && payload.messages.length > 0) {
-          this.messages = payload.messages.map((m: any) => this.mapSupportMessage(m));
-        }
-        this.reconcilePendingMessagesWithHistory(payload.messages || []);
+        // Reconnect history is authoritative, including an empty public history.
+        const history = Array.isArray(payload.messages)
+          ? payload.messages.filter((message: any) => this.isPublicMessage(message))
+          : [];
+        this.messages = history.map((message: any) => this.mapSupportMessage(message));
+        this.reconcilePendingMessagesWithHistory(history);
         this.restorePendingMessagesIntoThread();
 
         const hashConversationId = this.getConversationIdFromHash();
@@ -2116,7 +2127,7 @@ export class WidgetManager {
           this.clearAIResponseStreams();
           this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate)
             || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
-          this.messages = msgs.map((m: any) => this.mapSupportMessage(m));
+          this.messages = msgs.filter((m: any) => this.isPublicMessage(m)).map((m: any) => this.mapSupportMessage(m));
           this.isTyping = false;
           this.isAIThinking = false;
           this.render();

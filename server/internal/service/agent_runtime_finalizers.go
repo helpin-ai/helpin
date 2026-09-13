@@ -668,7 +668,7 @@ func (s *AgentRunFinalizerService) pushVisitorConversationRefresh(ctx context.Co
 	if conversations == nil {
 		conversations = []model.SupportConversation{}
 	}
-	listJSON, err := json.Marshal(map[string]any{"conversations": conversations})
+	listJSON, err := json.Marshal(map[string]any{"conversations": model.PublicWidgetConversations(conversations)})
 	if err != nil {
 		return
 	}

@@ -5,8 +5,8 @@ package model
 // message_type='system') must carry one of these values so renderers can
 // branch on intent instead of keyword-matching prose.
 //
-// Visibility is governed by is_internal — SystemEventType only describes
-// what happened, not who sees it.
+// Internal events must set is_internal. WidgetVisible additionally allowlists
+// public event types so missing flags cannot expose staff routing activity.
 type SupportSystemEventType = string
 
 const (

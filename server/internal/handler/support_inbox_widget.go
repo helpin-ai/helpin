@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -115,7 +116,7 @@ func (h *SupportInboxWidgetHandler) CreateSession(w http.ResponseWriter, r *http
 	// Legacy HTTP path — anonymous_id defaults to empty, will be set by WS flow
 	session, err := h.supportService.CreateWidgetSession(widgetRequestContext(r), req.WidgetKey, "", req.CustomerName, req.CustomerEmail, nil, nil, nil, nil)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -138,7 +139,7 @@ func (h *SupportInboxWidgetHandler) RevokeSession(w http.ResponseWriter, r *http
 	}
 
 	if err := h.supportService.RevokeWidgetSession(r.Context(), req.SessionToken); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -159,7 +160,7 @@ func (h *SupportInboxWidgetHandler) SendMessage(w http.ResponseWriter, r *http.R
 
 	msg, err := h.supportService.WidgetCreateMessage(widgetRequestContext(r), req.SessionToken, req.Content, nil)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, widgetSafeSupportMessage(msg))
@@ -178,7 +179,7 @@ func (h *SupportInboxWidgetHandler) TypingIndicator(w http.ResponseWriter, r *ht
 	}
 
 	if err := h.supportService.PublishWidgetTypingIndicator(r.Context(), req.SessionToken, req.IsTyping); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -195,7 +196,7 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 
 	session, err := h.supportService.GetWidgetSession(widgetRequestContext(r), sessionToken)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeWidgetError(w, r, http.StatusUnauthorized, err)
 		return
 	}
 	conversationID := session.ConversationID
@@ -206,7 +207,7 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 
 	messages, err := h.supportService.ListWidgetConversationMessages(r.Context(), session.WorkspaceID, *conversationID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeWidgetError(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	if messages == nil {
@@ -215,22 +216,12 @@ func (h *SupportInboxWidgetHandler) GetMessages(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, widgetSafeSupportMessages(messages))
 }
 
-func widgetSafeSupportMessage(message *model.SupportMessage) *model.SupportMessage {
-	if message == nil {
-		return nil
-	}
-	copy := *message
-	copy.Metadata = model.StripSupportLinkSecurityMetadata(copy.Metadata)
-	return &copy
+func widgetSafeSupportMessage(message *model.SupportMessage) *model.WidgetMessage {
+	return model.PublicWidgetMessage(message)
 }
 
-func widgetSafeSupportMessages(messages []model.SupportMessage) []model.SupportMessage {
-	result := make([]model.SupportMessage, len(messages))
-	copy(result, messages)
-	for index := range result {
-		result[index].Metadata = model.StripSupportLinkSecurityMetadata(result[index].Metadata)
-	}
-	return result
+func widgetSafeSupportMessages(messages []model.SupportMessage) []model.WidgetMessage {
+	return model.PublicWidgetMessages(messages)
 }
 
 // SendTranscript handles POST /api/widget/support/conversations/{id}/transcript.
@@ -253,7 +244,7 @@ func (h *SupportInboxWidgetHandler) SendTranscript(w http.ResponseWriter, r *htt
 
 	resp, err := h.supportService.SendWidgetConversationTranscript(widgetRequestContext(r), req.SessionToken, conversationID, req.Email)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -285,7 +276,7 @@ func (h *SupportInboxWidgetHandler) Identify(w http.ResponseWriter, r *http.Requ
 	if req.Email != "" {
 		req.Source = source
 		if err := h.supportService.IdentifyByAnonymousID(r.Context(), req.APIKey, req.AnonymousID, req.WidgetIdentityPayload); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeWidgetError(w, r, http.StatusBadRequest, err)
 			return
 		}
 	}
@@ -310,10 +301,10 @@ func (h *SupportInboxWidgetHandler) GetHelpCollections(w http.ResponseWriter, r 
 	collections, err := h.supportService.ListWidgetHelpCollections(r.Context(), widgetKey, spaceSlug)
 	if err != nil {
 		if err.Error() == "widget not found" || err.Error() == "space not found" {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeWidgetError(w, r, http.StatusNotFound, err)
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -340,10 +331,10 @@ func (h *SupportInboxWidgetHandler) GetHelpArticles(w http.ResponseWriter, r *ht
 	articles, err := h.supportService.ListWidgetHelpArticles(r.Context(), widgetKey, collectionSlug)
 	if err != nil {
 		if err.Error() == "widget not found" || err.Error() == "collection not found" {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeWidgetError(w, r, http.StatusNotFound, err)
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -380,10 +371,10 @@ func (h *SupportInboxWidgetHandler) SearchHelpArticles(w http.ResponseWriter, r 
 	results, err := h.supportService.SearchWidgetHelpArticles(r.Context(), widgetKey, query, limit, anonymousID, coverageSignal)
 	if err != nil {
 		if err.Error() == "widget not found" {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeWidgetError(w, r, http.StatusNotFound, err)
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
@@ -410,12 +401,26 @@ func (h *SupportInboxWidgetHandler) GetHelpArticle(w http.ResponseWriter, r *htt
 	article, err := h.supportService.GetWidgetHelpArticle(r.Context(), widgetKey, articleKey)
 	if err != nil {
 		if err.Error() == "widget not found" || err.Error() == "article not found" {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeWidgetError(w, r, http.StatusNotFound, err)
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeWidgetError(w, r, http.StatusBadRequest, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, article)
+}
+
+// writeWidgetError keeps unexpected database/provider errors out of visitor responses.
+func writeWidgetError(w http.ResponseWriter, r *http.Request, status int, err error) {
+	slog.WarnContext(r.Context(), "widget request failed", "error", err)
+	message := "Something went wrong. Please try again."
+	switch err.Error() {
+	case "widget not found", "space not found", "collection not found", "article not found", "conversation not found", "attachment not found", "file_name is required", "file_size must be positive", "content_type is required", "invalid email address", "email is required":
+		message = err.Error()
+	}
+	if status == http.StatusUnauthorized {
+		message = "Please reconnect to continue this conversation."
+	}
+	writeError(w, status, message)
 }

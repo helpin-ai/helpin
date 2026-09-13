@@ -711,7 +711,7 @@ describe('ChatWindow', () => {
     expect(container.querySelectorAll('.helpin-waiting-teammate-avatar').length).toBe(2);
   });
 
-  it('hides talk to human once an escalation message is already in the thread', () => {
+  it('keeps internal escalation events out of the transcript while showing queue status', () => {
     const { getByText, queryByText } = render(
       <ChatWindow
         config={{
@@ -750,7 +750,7 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('A teammate will join shortly.')).toBeTruthy();
+    expect(queryByText('A teammate will join shortly.')).toBeNull();
     expect(getByText('You’re in the support queue')).toBeTruthy();
     expect(queryByText('Talk to a person')).toBeNull();
   });
