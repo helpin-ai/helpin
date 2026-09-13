@@ -308,7 +308,12 @@ export function MessageThread({
     isFetchingNextPage,
     isFetchNextPageError,
   } = useConversationMessages(workspaceId, conversationId);
-  const messages = useMemo(() => flattenSupportMessagePages(messagePages), [messagePages]);
+  const messages = useMemo(
+    () => flattenSupportMessagePages(messagePages).filter(
+      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined'),
+    ),
+    [messagePages],
+  );
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);

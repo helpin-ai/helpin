@@ -424,6 +424,24 @@ describe('MessageThread', () => {
     act(() => root.unmount())
   })
 
+  it('keeps assignment messages and notes while hiding routine join events', () => {
+    const base = { workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'user' as const,
+      created_at: '2026-09-13T09:00:00Z', updated_at: '2026-09-13T09:00:00Z', is_internal: true }
+    const joined = { ...base, id: 'joined', message_type: 'system', system_event_type: 'teammate_joined', content: 'Waqar joined the conversation.' }
+    const assigned = { ...base, id: 'assigned', message_type: 'system', system_event_type: 'assigned', content: 'Assigned to Sarah.' }
+    const note = { ...base, id: 'note', message_type: 'reply', content: 'Waqar joined the conversation.' }
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: base.created_at } })
+    supportHooks.useConversationMessages.mockReturnValue({ data: seedSupportMessagePages([joined, assigned, note]), isLoading: false, hasNextPage: false })
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container); const client = createTestQueryClient()
+    act(() => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+    act(() => { vi.runAllTimers() })
+    expect(container.querySelector('[data-support-message-id="joined"]')).toBeNull()
+    expect(container.querySelector('[data-support-message-id="assigned"]')?.textContent).toBe('Assigned to Sarah.')
+    expect(container.querySelector('[data-support-message-id="note"]')?.textContent).toBe(note.content)
+    act(() => root.unmount()); client.clear()
+  })
+
   it.each(['event-first', 'ack-first', 'refetch-only', 'other-teammate'])('keeps the immediate reply stable with joined status arriving %s', (delivery) => {
     const customer = { id: 'customer', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: (delivery === 'other-teammate' ? 'user' : 'customer') as 'user' | 'customer', sender_user_id: delivery === 'other-teammate' ? 'user-2' : undefined,
       content: 'Customer question', is_internal: false, message_type: 'reply', created_at: '2026-09-07T10:00:00Z', updated_at: '2026-09-07T10:00:00Z' }
@@ -461,9 +479,9 @@ describe('MessageThread', () => {
     pages = seedSupportMessagePages([customer, joined, { ...saved, client_message_id: undefined, metadata: JSON.stringify({ client_message_id: optimistic.client_message_id }) }]); render()
     const refreshed = order()
     expect(preview).toEqual(['Customer question', 'Teammate reply'])
-    if (delivery !== 'refetch-only') expect(realtimeJoin).toEqual(['Customer question', 'Waqar joined the conversation.', 'Teammate reply'])
+    if (delivery !== 'refetch-only') expect(realtimeJoin).toEqual(['Customer question', 'Teammate reply'])
     expect(confirmed).toEqual(realtimeJoin)
-    expect(refreshed).toEqual(['Customer question', 'Waqar joined the conversation.', 'Teammate reply'])
+    expect(refreshed).toEqual(['Customer question', 'Teammate reply'])
     expect(previewNode).toBe(savedNode)
     expect(container.querySelector('[data-support-message-id="saved-reply"]')).toBe(previewNode)
     expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
@@ -517,13 +535,10 @@ describe('MessageThread', () => {
       pages = appendMessageToNewestPage(pages, joined)
       if (batchReply) pages = appendMessageToNewestPage(pages, { ...history[0], id: 'new-customer-reply', content: 'New customer reply' })
       render(false)
-      expect(rows().indexOf(reply)).toBe(historyCount + 1)
-      if (historyCount === 1 && !reducedMotion) {
-        expect(animate).toHaveBeenCalledWith([{ transform: 'translateY(-100px)' }, { transform: 'translateY(0)' }], expect.objectContaining({ duration: 160 }))
-      } else {
-        if (historyCount > 1) expect(reply.getBoundingClientRect().top).toBe(top - (batchReply ? 100 : 0))
-        expect(animate).not.toHaveBeenCalled()
-      }
+      expect(rows().indexOf(reply)).toBe(historyCount)
+      if (historyCount > 1) expect(reply.getBoundingClientRect().top).toBe(top - (batchReply ? 100 : 0))
+      expect(animate).not.toHaveBeenCalled()
+      expect(container.querySelector('[data-support-message-id="joined"]')).toBeNull()
     } finally {
       act(() => root.unmount()); client.clear(); rect.mockRestore()
       window.matchMedia = previousMatchMedia
@@ -575,7 +590,7 @@ describe('MessageThread', () => {
       } else pages = appendMessageToNewestPage(pages, joined)
       render()
       expect(anchor.getBoundingClientRect().top).toBe(top)
-      expect(scrollTop).toBe(300)
+      expect(scrollTop).toBe(200)
     } finally { act(() => root.unmount()); client.clear(); rect.mockRestore() }
   })
 
