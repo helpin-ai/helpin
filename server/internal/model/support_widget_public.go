@@ -39,20 +39,21 @@ type WidgetAttachment struct {
 
 // WidgetConversation is the visitor's conversation summary, not the staff record.
 type WidgetConversation struct {
-	ID                  string    `json:"id"`
-	Subject             string    `json:"subject"`
-	Status              string    `json:"status"`
-	FlowState           *string   `json:"flow_state,omitempty"`
-	AIState             *string   `json:"ai_state,omitempty"`
-	HandoffState        *string   `json:"handoff_state,omitempty"`
-	LastMessage         *string   `json:"last_message,omitempty"`
-	UnreadCount         int       `json:"unread_count"`
-	OpenedByUserID      *string   `json:"opened_by_user_id,omitempty"`
-	OpenedByDisplayName *string   `json:"opened_by_display_name,omitempty"`
-	OpenedByAvatarURL   *string   `json:"opened_by_avatar_url,omitempty"`
-	OpenedByStatus      *string   `json:"opened_by_status,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                  string     `json:"id"`
+	Subject             string     `json:"subject"`
+	Status              string     `json:"status"`
+	FlowState           *string    `json:"flow_state,omitempty"`
+	AIState             *string    `json:"ai_state,omitempty"`
+	HandoffState        *string    `json:"handoff_state,omitempty"`
+	HandoffStartedAt    *time.Time `json:"handoff_started_at,omitempty"`
+	LastMessage         *string    `json:"last_message,omitempty"`
+	UnreadCount         int        `json:"unread_count"`
+	OpenedByUserID      *string    `json:"opened_by_user_id,omitempty"`
+	OpenedByDisplayName *string    `json:"opened_by_display_name,omitempty"`
+	OpenedByAvatarURL   *string    `json:"opened_by_avatar_url,omitempty"`
+	OpenedByStatus      *string    `json:"opened_by_status,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 // PublicWidgetMessage converts a public message; nil means it must not be delivered.
@@ -67,7 +68,7 @@ func PublicWidgetMessage(m *SupportMessage) *WidgetMessage {
 		Metadata: PublicWidgetMetadata(m.Metadata), EmailVisibleText: m.EmailVisibleText,
 		EmailQuotedText: m.EmailQuotedText, EmailHasQuotedContent: m.EmailHasQuotedContent,
 		EmailProjectionConfidence: m.EmailProjectionConfidence, EmailProjectionVersion: m.EmailProjectionVersion,
-		CreatedAt: m.CreatedAt.Format(time.RFC3339),
+		CreatedAt: m.CreatedAt.Format(time.RFC3339Nano),
 	}
 	if m.ViaChannel != nil {
 		result.ViaChannel = *m.ViaChannel
@@ -101,7 +102,7 @@ func PublicWidgetConversations(conversations []SupportConversation) []WidgetConv
 	result := make([]WidgetConversation, 0, len(conversations))
 	for _, c := range conversations {
 		result = append(result, WidgetConversation{
-			ID: c.ID, Subject: c.Subject, Status: c.Status, FlowState: c.FlowState, AIState: c.AIState, HandoffState: c.HandoffState,
+			ID: c.ID, Subject: c.Subject, Status: c.Status, FlowState: c.FlowState, AIState: c.AIState, HandoffState: c.HandoffState, HandoffStartedAt: c.AIEscalatedAt,
 			LastMessage: c.LastMessage, UnreadCount: c.UnreadCount, OpenedByUserID: c.OpenedByUserID,
 			OpenedByDisplayName: c.OpenedByDisplayName, OpenedByAvatarURL: c.OpenedByAvatarURL, OpenedByStatus: c.OpenedByStatus,
 			CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,

@@ -963,6 +963,7 @@ export class WidgetManager {
       flowState: raw.flow_state || undefined,
       aiState: raw.ai_state || undefined,
       handoffState: raw.handoff_state || undefined,
+      handoffStartedAt: raw.handoff_started_at || undefined,
       lastMessage: raw.last_message,
       lastMessageAt: raw.updated_at || raw.created_at,
       unreadCount: raw.unread_count ?? 0,
@@ -2166,6 +2167,7 @@ export class WidgetManager {
               aiState: 'escalated',
               flowState: data.data?.flow_state || conversation.flowState,
               handoffState: data.data?.handoff_state || conversation.handoffState,
+              handoffStartedAt: data.data?.handoff_started_at || conversation.handoffStartedAt,
               activeTeammate: this.activeTeammate || conversation.activeTeammate,
             };
           });

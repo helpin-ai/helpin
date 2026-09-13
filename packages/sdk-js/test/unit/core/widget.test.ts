@@ -1009,6 +1009,18 @@ describe('WidgetManager', () => {
     });
   });
 
+  describe('human handoff state', () => {
+    it('restores the handoff timestamp used to distinguish an earlier human reply', () => {
+      const startedAt = '2026-09-13T12:02:00Z';
+      const conversation = (widget as any).mapConversation({ id: 'c', status: 'open', flow_state: 'waiting_for_human', handoff_started_at: startedAt });
+      expect(conversation.handoffStartedAt).toBe(startedAt);
+      (widget as any).conversations = [conversation];
+      (widget as any).render = vi.fn();
+      (widget as any).handleWSMessage({ type: 'conversation:escalated', data: { conversation_id: 'c', handoff_started_at: '2026-09-13T12:05:00Z' } });
+      expect((widget as any).conversations[0].handoffStartedAt).toBe('2026-09-13T12:05:00Z');
+    });
+  });
+
   describe('AI answer feedback', () => {
     it('persists feedback through the widget session and restores the saved value', async () => {
       (widget as any).sessionToken = 'session-token';

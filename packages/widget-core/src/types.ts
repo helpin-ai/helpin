@@ -60,6 +60,7 @@ export interface Conversation {
   flowState?: string;
   aiState?: string;
   handoffState?: 'live' | 'busy' | 'after_hours';
+  handoffStartedAt?: string;
   lastMessage?: string;
   lastMessageAt?: string;
   unreadCount?: number;

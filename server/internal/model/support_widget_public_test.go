@@ -7,6 +7,14 @@ import (
 	"time"
 )
 
+func TestPublicWidgetConversationPreservesHandoffStart(t *testing.T) {
+	startedAt := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
+	conversations := PublicWidgetConversations([]SupportConversation{{ID: "c", AIEscalatedAt: &startedAt}})
+	if len(conversations) != 1 || conversations[0].HandoffStartedAt == nil || !conversations[0].HandoffStartedAt.Equal(startedAt) {
+		t.Fatal("widget lost the current handoff boundary")
+	}
+}
+
 func TestPublicWidgetMessagePreservesVisitorFeaturesOnly(t *testing.T) {
 	name, channel, task := "Alex", "email", "PRIVATE_TASK"
 	quoted := true
