@@ -55,6 +55,25 @@ describe('WidgetManager', () => {
     });
   };
 
+  it('rejects private messages on initial history, conversation switching and live updates', () => {
+    const manager = widget as any;
+    manager.render = vi.fn();
+    const messages = [
+      { id: 'public', conversation_id: 'c', content: 'Public answer', sender_type: 'user' },
+      { id: 'note', conversation_id: 'c', content: 'Private note', is_internal: true },
+      { id: 'routing', conversation_id: 'c', content: 'Private assignment', system_event_type: 'assigned' },
+      { id: 'email', conversation_id: 'c', content: 'Email only', metadata: '{"delivery_mode":"email_only"}' },
+    ];
+    manager.handleWSMessage({ type: 'session:joined', data: { messages, conversations: [] } });
+    expect(manager.messages.map((message: any) => message.id)).toEqual(['public']);
+    manager.handleWSMessage({ type: 'conversation:messages', data: { messages } });
+    expect(manager.messages.map((message: any) => message.id)).toEqual(['public']);
+    messages.slice(1).forEach(message => manager.handleWSMessage({ type: 'message:received', data: message }));
+    expect(manager.messages.map((message: any) => message.id)).toEqual(['public']);
+    manager.handleWSMessage({ type: 'session:joined', data: { messages: [], conversations: [] } });
+    expect(manager.messages).toEqual([]);
+  });
+
   beforeEach(() => {
     widget = new WidgetManager();
     document.body.innerHTML = '';
@@ -990,21 +1009,51 @@ describe('WidgetManager', () => {
     });
   });
 
-  describe('AI answer feedback', () => {
-    it('tracks useful feedback with message and conversation context', () => {
-      const track = vi.fn();
-      (globalThis as any).helpin = { track };
-      (widget as any).activeConversationId = 'conv-1';
-
-      (widget as any).handleAnswerFeedback('answer-1', false);
-
-      expect(track).toHaveBeenCalledWith('support_ai_answer_feedback', {
-        message_id: 'answer-1',
-        conversation_id: 'conv-1',
-        helpful: false,
-      });
-      delete (globalThis as any).helpin;
+  describe('human handoff state', () => {
+    it('restores the handoff timestamp used to distinguish an earlier human reply', () => {
+      const startedAt = '2026-09-13T12:02:00Z';
+      const conversation = (widget as any).mapConversation({ id: 'c', status: 'open', flow_state: 'waiting_for_human', handoff_started_at: startedAt });
+      expect(conversation.handoffStartedAt).toBe(startedAt);
+      (widget as any).conversations = [conversation];
+      (widget as any).render = vi.fn();
+      (widget as any).handleWSMessage({ type: 'conversation:escalated', data: { conversation_id: 'c', handoff_started_at: '2026-09-13T12:05:00Z' } });
+      expect((widget as any).conversations[0].handoffStartedAt).toBe('2026-09-13T12:05:00Z');
     });
+  });
+
+  describe('AI answer feedback', () => {
+    it('persists feedback through the widget session and restores the saved value', async () => {
+      (widget as any).sessionToken = 'session-token';
+      (widget as any).host = 'api.example.test';
+      (widget as any).render = vi.fn();
+      (widget as any).messages = [{ id: 'answer-1', content: 'Answer' }];
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ feedback: { helpful: false } }), { status: 200 }));
+      await expect((widget as any).handleAnswerFeedback('answer-1', false)).resolves.toBe(false);
+      expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/widget/messages/answer-1/feedback', expect.objectContaining({
+        method: 'POST', body: JSON.stringify({ session_token: 'session-token', helpful: false }),
+      }));
+      expect((widget as any).messages[0].answerFeedback).toBe(false);
+      const restored = (widget as any).mapSupportMessage({ metadata: '{"visitor_feedback":{"helpful":false}}' });
+      expect(restored.answerFeedback).toBe(false);
+    });
+
+    it('rejects a failed vote instead of marking it saved', async () => {
+      (widget as any).sessionToken = 'session-token';
+      fetchMock.mockResolvedValueOnce(new Response('{}', { status: 500 }));
+      await expect((widget as any).handleAnswerFeedback('answer-1', true)).rejects.toThrow('Could not save');
+    });
+
+    it('syncs a vote from another tab without duplicating the reply or losing it to stale enrichment', () => {
+      (widget as any).render = vi.fn();
+      (widget as any).messages = [{ id: 'answer-1', content: 'Answer' }];
+      const reply = { id: 'answer-1', sender_type: 'ai', message_type: 'reply', content: 'Answer' };
+      (widget as any).handleWSMessage({ type: 'message:updated', data: { ...reply, metadata: '{"visitor_feedback":{"helpful":false}}' } });
+      expect((widget as any).messages).toHaveLength(1);
+      expect((widget as any).messages[0].answerFeedback).toBe(false);
+      (widget as any).handleWSMessage({ type: 'message:updated', data: { ...reply, metadata: '{}' } });
+      expect((widget as any).messages[0].answerFeedback).toBe(false);
+    });
+
   });
 
   describe('conversation CSAT', () => {

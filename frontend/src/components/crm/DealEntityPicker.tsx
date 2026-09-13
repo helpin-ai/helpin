@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { Command, CommandInput, CommandList } from '@/components/ui/command';
+import { PopoverAnchor } from '@/components/ui/popover';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { QuietDropdownRoot, QuietDropdownTrigger, QuietDropdownContent, QuietDropdownOptions, QuietDropdownGroup, QuietDropdownItem } from '@/components/design-system/quiet-dropdown';
+import { QuietDropdownRoot, QuietDropdownTrigger, QuietDropdownContent, QuietDropdownGroup, QuietDropdownItem } from '@/components/design-system/quiet-dropdown';
 import { QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
 import { useCreateCompany, useCreateContact, useCreateAssociation } from '@/hooks/queries';
 import { crmCompanyService, crmContactService } from '@/lib/services/crmService';
@@ -14,6 +16,10 @@ export function DealEntityPicker({ workspaceId, kind, company, excludedIds = [],
   onDraftChange?: (active: boolean) => void; excludedIds?: string[]; onSelect: (entity: DealEntity) => void; disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState<string | null>(null);
   const [detail, setDetail] = useState('');
@@ -40,7 +46,7 @@ export function DealEntityPicker({ workspaceId, kind, company, excludedIds = [],
       return { suggested: suggestions, results: all.data.filter(c => !suggestions.some(s => s.id === c.id)).map(convert) };
     },
   });
-  const select = (entity: DealEntity) => { onSelect(entity); setOpen(false); setQuery(''); };
+  const select = (entity: DealEntity) => { restoreFocus.current = true; onSelect(entity); setOpen(false); setQuery(''); };
   const startCreate = () => { onDraftChange?.(true); setDraft(query.trim()); setDraftCompany(company ?? null); setDetail(''); setCreated(null); setOpen(false); };
   const save = async () => {
     if (!draft?.trim() || saving) return;
@@ -67,21 +73,32 @@ export function DealEntityPicker({ workspaceId, kind, company, excludedIds = [],
     finally { setSaving(false); }
   };
   if (draft !== null) return <div className="space-y-2 rounded-md border border-quiet-divider-strong p-3">
-    <QuietUnderlineInput aria-label={`New ${kind} name`} value={draft} disabled={saving || !!created} onChange={e => setDraft(e.target.value)} />
+    <QuietUnderlineInput aria-label={`New ${kind} name`} placeholder={kind === 'company' ? 'Company name' : 'Contact name'} autoFocus value={draft} disabled={saving || !!created} onChange={e => setDraft(e.target.value)} />
     <QuietUnderlineInput aria-label={kind === 'contact' ? 'Contact email' : 'Company domain'} placeholder={kind === 'contact' ? 'Email (optional)' : 'Domain (optional)'} value={detail} disabled={saving || !!created} onChange={e => setDetail(e.target.value)} />
     {kind === 'contact' && <div className="flex items-center gap-2 text-sm"><span className="text-quiet-muted">Company</span>{draftCompany ? <><span className="flex-1 truncate">{draftCompany.name}</span><QuietTextAction type="button" disabled={saving} onClick={() => setDraftCompany(null)}>Change</QuietTextAction></> : <DealEntityPicker workspaceId={workspaceId} kind="company" onSelect={setDraftCompany} disabled={saving} />}</div>}
     <div className="flex justify-end gap-3"><QuietTextAction type="button" disabled={saving} onClick={() => { if (created) select(created); setDraft(null); onDraftChange?.(false); }}>{created ? 'Keep contact without company' : 'Cancel'}</QuietTextAction><QuietTextAction type="button" disabled={saving || !draft.trim()} onClick={() => void save()}>{saving ? 'Saving…' : created ? 'Retry linking' : `Add ${kind}`}</QuietTextAction></div>
   </div>;
-  return <QuietDropdownRoot open={open} onOpenChange={setOpen}>
-    <QuietDropdownTrigger asChild><button type="button" disabled={disabled} className="w-full border-b border-quiet-field py-2 text-left text-sm text-quiet-muted hover:text-quiet-text-primary">{kind === 'company' ? 'Select company' : 'Add contact'}</button></QuietDropdownTrigger>
-    <QuietDropdownContent className="w-80">
-      <QuietDropdownOptions searchMode="always" searchLabel={`Search ${kind === 'company' ? 'companies' : 'contacts'}`} searchPlaceholder={`Search ${kind === 'company' ? 'companies' : 'contacts'}…`} query={query} onQueryChange={setQuery} shouldFilter={false}>
+  return <QuietDropdownRoot open={open && !disabled} onOpenChange={next => { if (next) restoreFocus.current = false; setOpen(next); }}>
+    <Command shouldFilter={false} className="overflow-visible rounded-none bg-transparent p-0">
+    <PopoverAnchor asChild><div ref={anchorRef}>
+    <QuietDropdownTrigger asChild><button ref={triggerRef} hidden={open} type="button" disabled={disabled} className="w-full border-b border-quiet-field py-2 text-left text-sm text-quiet-muted hover:text-quiet-text-primary">{kind === 'company' ? 'Select company' : 'Add contact'}</button></QuietDropdownTrigger>
+    {open && <CommandInput ref={inputRef} presentation="quiet" aria-label={`Search ${kind === 'company' ? 'companies' : 'contacts'}`} placeholder={`Search ${kind === 'company' ? 'companies' : 'contacts'}…`} value={query} onValueChange={setQuery} />}
+    </div></PopoverAnchor>
+    <QuietDropdownContent className="w-[var(--radix-popover-trigger-width)] gap-0"
+      onOpenAutoFocus={event => { event.preventDefault(); inputRef.current?.focus(); }}
+      onEscapeKeyDown={() => { restoreFocus.current = true; }}
+      onCloseAutoFocus={event => { event.preventDefault(); if (restoreFocus.current) triggerRef.current?.focus(); }}
+      onInteractOutside={event => { if (anchorRef.current?.contains(event.target as Node)) event.preventDefault(); }}>
+      <CommandList className="min-h-0 p-1">
         {search.isFetching ? <div className="p-3 text-sm text-quiet-muted" role="status">Searching…</div> : search.isError ? <div className="p-3 text-sm" role="alert">Could not load results. <button type="button" onClick={() => void search.refetch()}>Retry</button></div> : <>
           {!!search.data?.suggested.length && <QuietDropdownGroup heading={`At ${company?.name}`}>{search.data.suggested.filter(e => !excludedIds.includes(e.id)).map(e => <QuietDropdownItem key={e.id} value={e.id} onSelect={() => select(e)}><span className="min-w-0"><span className="block truncate">{e.name}</span>{e.detail && <span className="block truncate text-xs text-quiet-muted">{e.detail}</span>}</span></QuietDropdownItem>)}</QuietDropdownGroup>}
           <QuietDropdownGroup>{search.data?.results.filter(e => !excludedIds.includes(e.id)).map(e => <QuietDropdownItem key={e.id} value={e.id} onSelect={() => select(e)}><span className="min-w-0"><span className="block truncate">{e.name}</span>{e.detail && <span className="block truncate text-xs text-quiet-muted">{e.detail}</span>}</span></QuietDropdownItem>)}</QuietDropdownGroup>
-          {query.trim() && ![...(search.data?.suggested ?? []), ...(search.data?.results ?? [])].some(e => e.name.toLocaleLowerCase() === query.trim().toLocaleLowerCase()) && <QuietDropdownGroup><QuietDropdownItem value="__create__" onSelect={startCreate}>Add “{query.trim()}” as new {kind}</QuietDropdownItem></QuietDropdownGroup>}
         </>}
-      </QuietDropdownOptions>
+      </CommandList>
+      <div className="shrink-0 border-t border-quiet-divider-strong p-2">
+        <QuietTextAction type="button" className="w-full justify-start whitespace-normal break-words py-1 text-left" onKeyDown={event => event.stopPropagation()} onClick={startCreate}>{query.trim() ? `Add “${query.trim()}” as new ${kind}` : `Add new ${kind}`}</QuietTextAction>
+      </div>
     </QuietDropdownContent>
+    </Command>
   </QuietDropdownRoot>;
 }

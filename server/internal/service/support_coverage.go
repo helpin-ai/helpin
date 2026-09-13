@@ -143,6 +143,9 @@ func (s *SupportCoverageService) EnsureDailyEnrichment(ctx context.Context) erro
 // ProcessSupportEvent evaluates a persisted event against v1 rules
 // and creates/upserts gaps with evidence.
 func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event *model.SupportEvent) error {
+	if event.EventType == model.SupportEventAIAnswerFeedback {
+		return s.attachVisitorAnswerFeedback(ctx, event)
+	}
 	now := time.Now()
 
 	// For human_reply_after_ai and conversation_resolved_by_human, try to

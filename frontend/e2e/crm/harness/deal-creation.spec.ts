@@ -38,7 +38,7 @@ test('inherits context and owner, generates editable name, saves primary and add
  await page.goto('/e2e/crm/harness/deal-creation.html?context');
  await expect(page.getByLabel('Stage',{exact:true})).toContainText('Proposal Sent');
  await expect(page.getByLabel('Owner',{exact:true})).toContainText('Waqar');
- await expect(page.getByLabel('Probability (%)')).toHaveValue('80');
+ await expect(page.getByLabel('Probability (%)')).toHaveCount(0);
  await pick(page,'Add contact','Alex Smith');
  await expect(page.getByLabel('Deal name')).toHaveValue('Acme — New deal');
  await page.getByLabel('Deal name').fill('Custom opportunity');
@@ -46,16 +46,15 @@ test('inherits context and owner, generates editable name, saves primary and add
  await page.getByRole('button',{name:'Make primary'}).click();
  await expect(page.getByLabel('Deal name')).toHaveValue('Custom opportunity');
  await page.getByLabel('Amount',{exact:true}).fill('1200');
- await page.getByLabel('Revenue type',{exact:true}).click();await page.getByRole('option',{name:'Annual',exact:true}).click();
- await page.getByLabel('Probability (%)').fill('45');
+ await expect(page.getByLabel('Revenue type',{exact:true})).toContainText('Annual');
  await page.getByLabel('Stage',{exact:true}).click();await page.getByRole('option',{name:'Lead',exact:true}).click();
- await expect(page.getByLabel('Probability (%)')).toHaveValue('45');
  await page.getByRole('button',{name:'Create deal',exact:true}).click();
  await expect.poll(()=>writes.length).toBe(1);
  await expect(page.getByText('Deal created',{exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Copy Deal ID',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Open',exact:true})).toBeVisible();
- expect(writes[0]).toMatchObject({company_id:'acme',contact_id:'sam',contact_ids:['alex'],name:'Custom opportunity',revenue_type:'annual',amount:1200,owner_member_id:'member-1',pipeline_id:'sales',stage_id:'lead',probability:45});
+ expect(writes[0]).not.toHaveProperty('probability');
+ expect(writes[0]).toMatchObject({company_id:'acme',contact_id:'sam',contact_ids:['alex'],name:'Custom opportunity',revenue_type:'annual',amount:1200,owner_member_id:'member-1',pipeline_id:'sales',stage_id:'lead'});
  await page.getByRole('button',{name:'Open',exact:true}).click();
  await expect(page.getByText('Opened deal deal-new',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Reopen'}).click();await expect(page.getByLabel('Deal name')).toHaveValue('');
@@ -70,12 +69,32 @@ test('suggests company contacts without adding them and asks before replacing co
  await expect(page.getByLabel('Deal name')).toHaveValue('Other Co — New deal');
  await expect(page.getByText('Primary',{exact:true})).toBeVisible();
 });
+for (const reversed of [false, true]) test(`accepts a suggested contact linked to the selected company despite another primary company (${reversed})`, async ({page}) => {
+ const writes = await setup(page);
+ await page.route('**/api/crm/contacts/alex/associations?**', route => route.fulfill({json:[
+  {from_object_type:'contact',from_object_id:'alex',to_object_type:'company',to_object_id:'other',association_label:'primary',linked_object_name:'Other Co'},
+  {...(reversed
+   ? {from_object_type:'company',from_object_id:'acme',to_object_type:'contact',to_object_id:'alex'}
+   : {from_object_type:'contact',from_object_id:'alex',to_object_type:'company',to_object_id:'acme'}),association_label:null,linked_object_name:'Acme'},
+ ]}));
+ await page.goto('/e2e/crm/harness/deal-creation.html?context');
+ await pick(page,'Select company','Acme');
+ await page.getByRole('button',{name:'Add contact',exact:true}).click();
+ await expect(page.getByText('At Acme',{exact:true})).toBeVisible();
+ await page.getByRole('option',{name:'Alex Smith',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Remove Alex Smith',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Switch company',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Create deal',exact:true}).click();
+ await expect.poll(()=>writes.length).toBe(1);
+ expect(writes[0]).toMatchObject({company_id:'acme',contact_id:'alex'});
+});
+
 test('creates an inline company and retains the deal draft',async({page})=>{
  const writes=await setup(page);await page.goto('/e2e/crm/harness/deal-creation.html');
  await page.getByLabel('Deal name').fill('Preserved draft');
  await page.getByRole('button',{name:'Select company',exact:true}).click();
- await page.getByRole('combobox').last().fill('New venture');
- await page.getByRole('option',{name:'Add “New venture” as new company'}).click();
+ await page.getByRole('combobox',{name:'Search companies'}).fill('New venture');
+ await page.getByRole('button',{name:'Add “New venture” as new company'}).click();
  await expect(page.getByRole('button',{name:'Create deal',exact:true})).toBeDisabled();
  await page.getByRole('button',{name:'Add company',exact:true}).click();
  await expect(page.getByLabel('Deal name')).toHaveValue('Preserved draft');
@@ -93,7 +112,7 @@ test('fits all visible fields on mobile without horizontal scrolling', async ({p
  await page.setViewportSize({width:390,height:844});await setup(page);
  await page.goto('/e2e/crm/harness/deal-creation.html');
  await expect(page.getByRole('heading',{name:'Create deal',exact:true})).toBeVisible();
- await page.getByLabel('Probability (%)').scrollIntoViewIfNeeded();
+ await page.getByLabel('Expected close date').scrollIntoViewIfNeeded();
  expect(await page.getByRole('dialog').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
  await page.screenshot({path:'/tmp/helpin-deal-create-mobile.png'});
 });
@@ -110,8 +129,8 @@ test('new contacts inherit company and retry linking without duplicate creation'
  await page.goto('/e2e/crm/harness/deal-creation.html');
  await pick(page,'Select company','Acme');
  await page.getByRole('button',{name:'Add contact',exact:true}).click();
- await page.getByRole('combobox').last().fill('Robin Jones');
- await page.getByRole('option',{name:'Add “Robin Jones” as new contact'}).click();
+ await page.getByRole('combobox',{name:'Search contacts'}).fill('Robin Jones');
+ await page.getByRole('button',{name:'Add “Robin Jones” as new contact'}).click();
  await page.getByLabel('Contact email').fill('robin@example.com');
  await page.getByRole('button',{name:'Add contact',exact:true}).click();
  await expect(page.getByRole('button',{name:'Retry linking'})).toBeVisible();
@@ -121,4 +140,70 @@ test('new contacts inherit company and retry linking without duplicate creation'
  await page.getByRole('button',{name:'Create deal',exact:true}).click();
  await expect.poll(()=>writes.length).toBe(1);expect(contactCreates).toBe(1);expect(links).toBe(2);
  expect(writes[0]).toMatchObject({company_id:'acme',contact_id:'new-person'});
+});
+
+for (const kind of ['company', 'contact']) test(`search replaces the ${kind} selector and creation stays visible`, async ({page}) => {
+ if (kind === 'contact') await page.setViewportSize({width:390,height:844});
+ await setup(page);
+ await page.goto('/e2e/crm/harness/deal-creation.html');
+ if (kind === 'contact') await page.evaluate(() => document.documentElement.classList.add('dark'));
+ const trigger = page.getByRole('button',{name:kind === 'company' ? 'Select company' : 'Add contact',exact:true});
+ const before = await trigger.boundingBox();
+ await trigger.click();
+ const input = page.getByRole('combobox',{name:kind === 'company' ? 'Search companies' : 'Search contacts'});
+ await expect(input).toBeFocused();
+ await expect(trigger).toBeHidden();
+ const after = await input.boundingBox();
+ expect(Math.abs(after!.y - before!.y)).toBeLessThan(12);
+ await expect(page.getByRole('button',{name:`Add new ${kind}`,exact:true})).toBeVisible();
+ await expect(page.getByRole('option').first()).toBeVisible();
+ await page.screenshot({path:`/tmp/crm-${kind}-inline-search.png`});
+ const existing = kind === 'company' ? 'Acme' : 'Alex Smith';
+ await input.fill(existing);
+ const add = page.getByRole('button',{name:`Add “${existing}” as new ${kind}`,exact:true});
+ await expect(add).toBeVisible();
+ await add.focus();
+ await page.keyboard.press('Enter');
+ await expect(page.getByLabel(`New ${kind} name`,{exact:true})).toHaveValue(existing);
+});
+
+test('company search supports keyboard selection and Escape restores the selector', async ({page}) => {
+ await setup(page);
+ await page.goto('/e2e/crm/harness/deal-creation.html');
+ const trigger = page.getByRole('button',{name:'Select company',exact:true});
+ await trigger.click();
+ const input = page.getByRole('combobox',{name:'Search companies'});
+ await expect(input).toBeFocused();
+ await page.keyboard.press('Escape');
+ await expect(trigger).toBeVisible();
+ await expect(trigger).toBeFocused();
+ await trigger.click();
+ await expect(page.getByRole('option',{name:'Acme',exact:true})).toBeVisible();
+ await input.press('ArrowDown');
+ await input.press('Enter');
+ await expect(input).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Change',exact:true})).toBeVisible();
+});
+
+test('defaults to annual revenue and a close date 30 days ahead, with CRM owner avatars', async ({page}) => {
+ await page.clock.setFixedTime(new Date('2026-09-13T12:00:00Z'));
+ await setup(page);
+ let moduleFilter: string | null = null;
+ await page.route('**/assignable-members?**', route => {
+  moduleFilter = new URL(route.request().url()).searchParams.get('module');
+  return route.fulfill({json:[{id:'member-1',user_id:'user-1',display_name:'Waqar',email:'waqar@example.com',status:'active',avatar_style:'initials',avatar_seed:'Waqar'}]});
+ });
+ await page.goto('/e2e/crm/harness/deal-creation.html');
+ await expect(page.getByLabel('Revenue type',{exact:true})).toContainText('Annual');
+ await expect(page.getByLabel('Expected close date')).toHaveValue('2026-10-13');
+ await expect(page.getByLabel('Probability (%)')).toHaveCount(0);
+ const owner = page.getByRole('button',{name:'Owner',exact:true});
+ await expect(owner).toContainText('Waqar');
+ expect(moduleFilter).toBe('crm');
+ await expect(owner.locator('[data-slot="avatar"]')).toBeVisible();
+ await owner.click();
+ await expect(page.getByRole('option').filter({hasText:'Waqar'}).locator('[data-slot="avatar"]')).toBeVisible();
+ await page.keyboard.press('Escape');
+ await page.getByLabel('Revenue type',{exact:true}).click();
+ await expect(page.getByRole('option')).toHaveText(['Annual','Monthly','One-time']);
 });

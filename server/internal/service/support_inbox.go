@@ -1296,7 +1296,7 @@ func (s *SupportInboxService) pushVisitorConversationsRefresh(ctx context.Contex
 	if conversations == nil {
 		conversations = []model.SupportConversation{}
 	}
-	listJSON, _ := json.Marshal(map[string]any{"conversations": conversations})
+	listJSON, _ := json.Marshal(map[string]any{"conversations": model.PublicWidgetConversations(conversations)})
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
 		Entity:      "support_visitor_conversations",
@@ -2368,6 +2368,12 @@ func (s *SupportInboxService) enrichSupportMessageLinksAsync(msg *model.SupportM
 		}
 		if err := s.messageRepo.UpdateMetadata(previewCtx, message.ID, message.Metadata); err != nil {
 			slog.WarnContext(previewCtx, "persist support link preview metadata failed", "message_id", message.ID, "error", err)
+			return
+		}
+		if saved, err := s.messageRepo.GetByID(previewCtx, message.ID); err == nil && saved != nil {
+			message.Metadata = saved.Metadata
+		} else {
+			slog.WarnContext(previewCtx, "reload enriched message metadata failed", "message_id", message.ID, "error", err)
 			return
 		}
 		if s.wsPublisher != nil {

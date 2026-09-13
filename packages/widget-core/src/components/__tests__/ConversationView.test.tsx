@@ -242,6 +242,35 @@ describe('ConversationView CSAT', () => {
 });
 
 
+describe('current human handoff status', () => {
+  const customer: Message = { id: 'customer', conversationId: 'c', isInternal: false, role: 'customer', content: 'Help', createdAt: '2026-09-13T12:00:00Z' };
+  const human: Message = { id: 'human', conversationId: 'c', isInternal: false, role: 'agent', content: 'Hello', createdAt: '2026-09-13T12:01:00Z' };
+  const props = { config: baseConfig, onSendMessage: () => {}, onBack: () => {} };
+  it.each(['waiting_for_human', 'queued_for_human', 'assigned_to_human'])('uses neutral wording for %s', flowState => {
+    const view = render(<ConversationView {...props} conversation={{ id: 'c', subject: '', status: 'open', flowState }} messages={[customer]} activeTeammate={{ userId: 'u', name: 'Sarah' }} />);
+    expect(view.getByText('Waiting for a teammate')).toBeTruthy();
+    expect(view.queryByText(/is joining|support queue|shortly/)).toBeNull();
+  });
+  it.each(['resolved', 'closed', 'spam'])('hides stale handoff state when %s', status => {
+    const view = render(<ConversationView {...props} conversation={{ id: 'c', subject: '', status, aiState: 'escalated', flowState: 'after_hours_queue' }} messages={[customer]} showHumanAvailability />);
+    expect(view.queryByText(/Waiting for a teammate|currently offline|support queue/)).toBeNull();
+  });
+  it('shows offline only for a current human handoff and gives it priority over old delay notices', () => {
+    const messages: Message[] = [customer, { ...customer, id: 'delay', role: 'ai', delayedTeamReply: true }];
+    const view = render(<ConversationView {...props} conversation={{ id: 'c', subject: '', status: 'open', flowState: 'after_hours_queue' }} messages={messages} />);
+    expect(view.getByText('Our team is currently offline')).toBeTruthy();
+    view.rerender(<ConversationView {...props} conversation={{ id: 'c', subject: '', status: 'open', flowState: 'ai_responding', handoffState: 'after_hours', aiState: 'escalated' }} messages={messages} />);
+    expect(view.queryByText('Our team is currently offline')).toBeNull();
+  });
+  it('clears on a human reply and shows again for a later handoff', () => {
+    const conversation = { id: 'c', subject: '', status: 'open', flowState: 'assigned_to_human', handoffStartedAt: '2026-09-13T12:02:00Z' };
+    const view = render(<ConversationView {...props} conversation={conversation} messages={[customer, human]} />);
+    expect(view.getByText('Waiting for a teammate')).toBeTruthy();
+    view.rerender(<ConversationView {...props} conversation={conversation} messages={[customer, human, { ...human, id: 'new-human', createdAt: '2026-09-13T12:03:00Z' }]} />);
+    expect(view.queryByText('Waiting for a teammate')).toBeNull();
+  });
+});
+
 describe('delayed team reply contact capture', () => {
   const delayed: Message = { id: 'delay', conversationId: 'c1', role: 'ai', content: 'Leave your email for a reply.', delayedTeamReply: true, captureEmail: true, isInternal: false, createdAt: new Date().toISOString() };
   it('reuses one form during a busy handoff and offers it after an earlier skip', () => {

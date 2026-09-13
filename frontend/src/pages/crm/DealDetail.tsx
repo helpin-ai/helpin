@@ -37,7 +37,7 @@ import {
   usePipelines,
   useUpdateDeal,
 } from '@/hooks/queries';
-import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { useCRMOwnerMembers } from '@/hooks/useCRMOwnerMembers';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
 import { DealHealthScore } from '@/components/crm/DealHealthScore';
 import { EntitySignals } from '@/components/crm/EntitySignals';
@@ -92,7 +92,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
   const { data: pipelines } = usePipelines(wsId);
   const updateDeal = useUpdateDeal(wsId);
   const deleteDeal = useDeleteDeal(wsId);
-  const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
+  const { members: assignableMembers } = useCRMOwnerMembers(wsId);
 
   const [form, setForm] = useState<FormState | null>(null);
   const [pendingVersion, setPendingVersion] = useState(0);

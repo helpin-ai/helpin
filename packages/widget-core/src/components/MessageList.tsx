@@ -8,7 +8,7 @@ interface MessageListProps {
   showDateSeparators?: boolean;
   config?: WidgetConfig;
   onImageClick?: (src: string, alt: string) => void;
-  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => Promise<boolean>;
 }
 
 type MessageListSnapshot = {
@@ -19,12 +19,14 @@ type MessageListSnapshot = {
 };
 
 export const MessageList: FunctionComponent<MessageListProps> = ({
-  messages,
+  messages: allMessages,
   showDateSeparators = true,
   config,
   onImageClick,
   onAnswerFeedback,
 }) => {
+  const messages = allMessages.filter(message => !message.isInternal
+    && (!message.systemEventType || ['teammate_joined', 'delayed_team_reply'].includes(message.systemEventType)));
   const listRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
   const isNearBottomRef = useRef(true);

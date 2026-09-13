@@ -50,6 +50,27 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it.each([true, false])('shows saved visitor feedback below the AI bubble (%s)', async (helpful) => {
+    const message: SupportMessage = {
+      id: 'feedback-answer', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: 'ai', content: 'A useful answer', message_type: 'reply', is_internal: false,
+      metadata: JSON.stringify({ visitor_feedback: { helpful, submitted_at: '2026-09-13T12:00:00Z' } }),
+      created_at: '2026-09-13T11:59:00Z', updated_at: '2026-09-13T12:00:00Z',
+    }
+    const rendered = renderBubble(message)
+    try {
+      const row = rendered.container.querySelector('[data-slot="support-answer-feedback"]')
+      const frame = rendered.container.querySelector('[data-slot="support-message-bubble-frame"]')
+      const label = helpful ? 'Visitor marked helpful' : 'Visitor marked unhelpful'
+      const badge = row?.querySelector('[role="img"]')
+      expect(badge?.getAttribute('aria-label')).toBe(label)
+      expect(frame?.contains(row)).toBe(false)
+      expect(row?.className).toContain('justify-start')
+      await act(async () => { badge!.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(label)
+    } finally { rendered.cleanup() }
+  })
+
   it.each([
     { sender: 'customer', via: 'email', source: 'widget', expected: 'via Email' },
     { sender: 'customer', via: 'widget', source: 'email', expected: 'via Chat' },

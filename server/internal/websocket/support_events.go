@@ -75,14 +75,29 @@ func widgetSafeSupportMessageEventData(data json.RawMessage) json.RawMessage {
 	if len(data) == 0 {
 		return data
 	}
-	var payload map[string]any
+	// Accept legacy event payloads, then rebuild the visitor projection.
+	var payload model.SupportMessage
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return nil
 	}
-	if metadata, ok := payload["metadata"].(string); ok {
-		payload["metadata"] = model.StripSupportLinkSecurityMetadata(metadata)
+	var names struct {
+		Name   *string `json:"sender_name"`
+		Avatar *string `json:"sender_avatar"`
 	}
-	encoded, err := json.Marshal(payload)
+	if err := json.Unmarshal(data, &names); err != nil {
+		return nil
+	}
+	if names.Name != nil {
+		payload.SenderDisplayName = names.Name
+	}
+	if names.Avatar != nil {
+		payload.SenderAvatarURL = names.Avatar
+	}
+	public := model.PublicWidgetMessage(&payload)
+	if public == nil {
+		return nil
+	}
+	encoded, err := json.Marshal(public)
 	if err != nil {
 		return nil
 	}

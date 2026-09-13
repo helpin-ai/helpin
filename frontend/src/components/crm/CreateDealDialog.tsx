@@ -1,3 +1,6 @@
+import { addDays, format } from 'date-fns';
+import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { DealStageSelect } from './DealStageSelect';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -5,11 +8,11 @@ import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
-import { QuietPrimaryAction, QuietTextAction, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { QuietPrimaryAction, QuietTextAction, QuietUnderlineInput, quietUnderlineControlClassName } from '@/components/design-system/quiet';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useCreateDeal, usePipelines } from '@/hooks/queries';
-import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { useCRMOwnerMembers } from '@/hooks/useCRMOwnerMembers';
 import { crmContactService } from '@/lib/services/crmService';
 import { unwrapRequired } from '@/lib/queryUtils';
 import { entityCreatedToastIcons, showEntityCreatedToast } from '@/components/ui/entity-created-toast';
@@ -45,7 +48,7 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
   const user = useAuthStore(s => s.user);
   const createDeal = useCreateDeal(wsId);
   const { data: pipelines = [] } = usePipelines(wsId);
-  const { members } = useAssignableWorkspaceMembers(wsId);
+  const { members, loading: ownersLoading, error: ownersError } = useCRMOwnerMembers(wsId);
   const [company, setCompany] = useState<DealEntity | null>(companyContext ?? null);
   const [people, setPeople] = useState<DealEntity[]>(contactContext ? [contactContext] : []);
   const [editedName, setEditedName] = useState<string | null>(null);
@@ -53,10 +56,9 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
   const [stageId, setStageId] = useState(initialStageId);
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(() => { try { return localStorage.getItem(`crm-deal-currency:${wsId}`) || 'USD'; } catch { return 'USD'; } });
-  const [revenueType, setRevenueType] = useState<RevenueType>('one_time');
-  const [closeDate, setCloseDate] = useState('');
+  const [revenueType, setRevenueType] = useState<RevenueType>('annual');
+  const [closeDate, setCloseDate] = useState(() => format(addDays(new Date(), 30), 'yyyy-MM-dd'));
   const [owner, setOwner] = useState<string | null>(null);
-  const [probability, setProbability] = useState<string | null>(null);
   const [pendingPerson, setPendingPerson] = useState<{ person: DealEntity; company: DealEntity } | null>(null);
   const [resolving, setResolving] = useState(!!contactContext);
   const [entityDraft, setEntityDraft] = useState(false);
@@ -66,6 +68,7 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
   const effective = resolveDealStage(pipelines, pipelineId, stageId);
   const stages = [...(pipelines.find(p => p.id === effective.pipelineId)?.stages ?? [])].sort((a,b) => a.position - b.position);
   const ownerId = owner ?? members.find(m => m.user_id === user?.id)?.id ?? '';
+  const selectedOwner = members.find(m => m.id === ownerId);
   const selectCompany = (next: DealEntity | null) => { companyRef.current = next; setCompany(next); };
   const addPerson = (person: DealEntity) => setPeople(current => current.some(p => p.id === person.id) ? current : [...current, person]);
   const selectPerson = async (person: DealEntity) => {
@@ -76,7 +79,12 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
       if (version !== selectionVersion.current) return;
       const primary = associations.find(a => a.association_label === 'primary' && (a.from_object_type === 'company' || a.to_object_type === 'company'));
       const linkedCompany = primary ? { id: primary.from_object_type === 'company' ? primary.from_object_id : primary.to_object_id, name: primary.linked_object_name } : null;
-      if (linkedCompany && companyRef.current && companyRef.current.id !== linkedCompany.id) { setPendingPerson({ person, company: linkedCompany }); return; }
+      // Company suggestions include every association, not only the primary one.
+      const selectedCompanyId = companyRef.current?.id;
+      const linkedToSelectedCompany = !!selectedCompanyId && associations.some(a =>
+        (a.from_object_type === 'company' && a.from_object_id === selectedCompanyId) ||
+        (a.to_object_type === 'company' && a.to_object_id === selectedCompanyId));
+      if (linkedCompany && selectedCompanyId && !linkedToSelectedCompany) { setPendingPerson({ person, company: linkedCompany }); return; }
       if (linkedCompany && !companyRef.current) selectCompany(linkedCompany);
       addPerson(person);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not load contact company'); }
@@ -101,7 +109,6 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
         amount: amount === '' ? undefined : Number(amount), currency, revenue_type: revenueType,
         owner_member_id: ownerId || undefined,
         close_date: closeDate ? `${closeDate}T00:00:00Z` : undefined,
-        probability: probability === null || probability === '' ? undefined : Number(probability),
       });
       try { localStorage.setItem(`crm-deal-currency:${wsId}`, currency); } catch { /* Storage is optional. */ }
       onDealCreated?.(deal);
@@ -126,17 +133,16 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
           <div className="grid grid-cols-[minmax(0,1fr)_80px_minmax(0,1fr)] gap-3">
             <Field label="Amount" id="dealAmount"><QuietUnderlineInput id="dealAmount" type="number" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" /></Field>
             <Field label="Currency"><Choice label="Currency" value={currency} onChange={setCurrency} options={currencies.map(value => ({ value, label: value }))} /></Field>
-            <Field label="Revenue type"><Choice label="Revenue type" value={revenueType} onChange={value => setRevenueType(value as RevenueType)} options={[{value:'one_time',label:'One-time'},{value:'monthly',label:'Monthly'},{value:'annual',label:'Annual'}]} /></Field>
+            <Field label="Revenue type"><Choice label="Revenue type" value={revenueType} onChange={value => setRevenueType(value as RevenueType)} options={[{value:'annual',label:'Annual'},{value:'monthly',label:'Monthly'},{value:'one_time',label:'One-time'}]} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Pipeline"><Choice label="Pipeline" value={effective.pipelineId} onChange={value => { setPipelineId(value); setStageId(undefined); }} options={pipelines.map(p => ({value:p.id,label:p.name}))} /></Field>
             <Field label="Stage"><DealStageSelect value={effective.stageId} onChange={setStageId} stages={stages} underline /></Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Owner"><Choice label="Owner" value={ownerId || '__none__'} onChange={value => setOwner(value === '__none__' ? '' : value)} options={[{value:'__none__',label:'Unassigned'},...members.map(m => ({value:m.id,label:m.display_name || m.email}))]} /></Field>
+            <Field label="Owner"><MemberPickerPopover members={members} value={ownerId || '__none__'} onChange={value => setOwner(value === '__none__' ? '' : value)} noneLabel="Unassigned" triggerLabel="Owner" disabled={ownersLoading || ownersError} triggerClassName={`w-full ${quietUnderlineControlClassName} hover:bg-transparent`} renderTrigger={() => <>{selectedOwner && <UserAvatar name={selectedOwner.display_name || selectedOwner.email} avatarUrl={selectedOwner.avatar_url} avatarStyle={selectedOwner.avatar_style} avatarSeed={selectedOwner.avatar_seed} avatarBackgroundMode={selectedOwner.avatar_background_mode} avatarBackgroundColor={selectedOwner.avatar_background_color} className="h-4 w-4" />}<span>{ownersLoading ? 'Loading owners…' : ownersError ? 'Could not load owners' : selectedOwner?.display_name || selectedOwner?.email || 'Unassigned'}</span></>} /></Field>
             <Field label="Expected close date" id="closeDate"><QuietUnderlineInput id="closeDate" type="date" value={closeDate} onChange={e => setCloseDate(e.target.value)} /></Field>
           </div>
-          <Field label="Probability (%)" id="probability"><QuietUnderlineInput id="probability" type="number" min="0" max="100" step="1" value={probability ?? String(effective.probability)} onChange={e => setProbability(e.target.value === '' ? null : e.target.value)} /></Field>
         </fieldset>
         <DialogFooter className="border-t border-quiet-divider-strong pt-3"><QuietTextAction type="button" disabled={createDeal.isPending} onClick={() => onOpenChange(false)}>Cancel</QuietTextAction><QuietPrimaryAction type="submit" disabled={createDeal.isPending || entityDraft || resolving || !!pendingPerson || !name.trim() || (!company && !people.length) || !effective.pipelineId || !effective.stageId}>{createDeal.isPending ? 'Creating…' : 'Create deal'}</QuietPrimaryAction></DialogFooter>
       </form>

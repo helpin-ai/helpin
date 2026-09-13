@@ -9,7 +9,7 @@ interface MessageBubbleProps {
   config?: WidgetConfig;
   isFirstInGroup?: boolean;
   onImageClick?: (src: string, alt: string) => void;
-  onAnswerFeedback?: (messageId: string, helpful: boolean) => void;
+  onAnswerFeedback?: (messageId: string, helpful: boolean) => Promise<boolean>;
 }
 
 function isImageType(type: string): boolean {
@@ -242,7 +242,14 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   onImageClick,
   onAnswerFeedback,
 }) => {
-  const [answerFeedback, setAnswerFeedback] = useState<'helpful' | 'not-helpful' | null>(null);
+  const [savedFeedback, setSavedFeedback] = useState<boolean | undefined>(undefined);
+  const [feedbackPending, setFeedbackPending] = useState(false);
+  const [feedbackError, setFeedbackError] = useState(false);
+  const answerFeedback = message.answerFeedback ?? savedFeedback;
+  if (message.isInternal || (message.systemEventType
+    && !['teammate_joined', 'delayed_team_reply'].includes(message.systemEventType))) {
+    return null;
+  }
   const isCustomer = message.role === 'customer';
   const isAI = message.role === 'ai';
   const isAgent = message.role === 'agent';
@@ -275,21 +282,29 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
     && message.id !== '__intro__'
     && hasTextContent
     && !message.isStreaming
-    && Boolean(onAnswerFeedback);
+    && (Boolean(onAnswerFeedback) || message.answerFeedback !== undefined);
   const hasMeta = hasSources || showAnswerFeedback;
 
-  const submitAnswerFeedback = (helpful: boolean) => {
-    setAnswerFeedback(helpful ? 'helpful' : 'not-helpful');
-    onAnswerFeedback?.(message.id, helpful);
+  const submitAnswerFeedback = async (helpful: boolean) => {
+    if (feedbackPending || answerFeedback !== undefined || !onAnswerFeedback) return;
+    setFeedbackPending(true);
+    setFeedbackError(false);
+    try {
+      const saved = await onAnswerFeedback(message.id, helpful);
+      setSavedFeedback(saved);
+    } catch {
+      setFeedbackError(true);
+    } finally {
+      setFeedbackPending(false);
+    }
   };
 
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
   const isWorkspaceBrandAvatar = message.id === '__intro__' && Boolean(agentAvatar);
   // Flat Intercom-style pill is reserved for teammate_joined — the one and
-  // only widget-visible routing event. Every other system_event_type either
-  // falls through to a normal bubble (when sender context is present — e.g.
-  // ai_escalated renders as a "Helpin AI" bubble) or is filtered upstream.
+  // only widget-visible routing event. Internal routing and escalation
+  // events are filtered; their public handoff replies render normally.
   const showSystemPill = isSystem && message.systemEventType === 'teammate_joined';
   const displayName = isCustomer ? '' : (isAI ? 'Helpin AI' : (agentName || config?.workspaceName || 'Support Agent'));
   const tooltipText = formatRelativeTime(message.createdAt);
@@ -364,14 +379,15 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                     )}
                     {showAnswerFeedback && (
                       <div className="helpin-answer-feedback" aria-live="polite">
-                        {answerFeedback ? (
-                          <span className="helpin-answer-feedback-thanks">Thanks for the feedback</span>
+                        {answerFeedback !== undefined ? (
+                          <span className="helpin-answer-feedback-thanks" aria-label={answerFeedback ? "You marked this answer helpful" : "You marked this answer unhelpful"}>Thanks for the feedback</span>
                         ) : (
                           <>
-                            <span className="helpin-answer-feedback-label">Helpful?</span>
+                            <span className="helpin-answer-feedback-label">{feedbackPending ? "Saving…" : feedbackError ? "Couldn’t save. Try again?" : "Helpful?"}</span>
                             <button
                               type="button"
                               className="helpin-answer-feedback-btn"
+                              disabled={feedbackPending}
                               aria-label="This answer was helpful"
                               onClick={() => submitAnswerFeedback(true)}
                             >
@@ -380,6 +396,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
                             <button
                               type="button"
                               className="helpin-answer-feedback-btn"
+                              disabled={feedbackPending}
                               aria-label="This answer was not helpful"
                               onClick={() => submitAnswerFeedback(false)}
                             >

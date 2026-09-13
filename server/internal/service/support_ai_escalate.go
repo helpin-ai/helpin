@@ -362,9 +362,10 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, escalationSystemMsg, "ai:escalation"))
 	}
 	escalatedData, _ := json.Marshal(map[string]any{
-		"conversation_id": conversationID,
-		"flow_state":      fields["flow_state"],
-		"handoff_state":   handoffState,
+		"conversation_id":    conversationID,
+		"flow_state":         fields["flow_state"],
+		"handoff_state":      handoffState,
+		"handoff_started_at": now,
 	})
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "escalated",

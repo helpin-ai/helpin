@@ -158,12 +158,7 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 // Link previews are enriched after message creation so a slow external page
 // cannot delay the reply acknowledgement.
 func (r *SupportMessageRepository) UpdateMetadata(ctx context.Context, id, metadata string) error {
-	if err := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
-		Where("id = ?", id).
-		Update("metadata", metadata).Error; err != nil {
-		return fmt.Errorf("update message metadata: %w", err)
-	}
-	return nil
+	return r.updateEnrichedMetadata(ctx, id, metadata)
 }
 
 // ListEmailFallbackReconciliationCandidates returns recent outbound replies
