@@ -296,6 +296,17 @@ func (h *WorkspaceHandler) ListAssignableMembers(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if module := model.ModuleID(r.URL.Query().Get("module")); module != "" {
+		if !model.IsValidWorkspaceModule(module) {
+			writeError(w, http.StatusBadRequest, "unknown module")
+			return
+		}
+		members, err = h.authz.FilterMembersByModuleAccess(r.Context(), id, members, module)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to resolve member module access")
+			return
+		}
+	}
 	if members == nil {
 		members = []model.AssignableMember{}
 	}

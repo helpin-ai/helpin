@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDealDisplayStore } from '@/stores/dealDisplayStore';
 import { useDeals, usePipelines } from '@/hooks/queries';
-import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { useCRMOwnerMembers } from '@/hooks/useCRMOwnerMembers';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { DealsTable } from '@/components/crm/DealsTable';
 import { DealBoard } from '@/components/crm/DealBoard';
@@ -179,7 +179,7 @@ export function DealsPage() {
   const hasWorkspaceDeals = (workspaceDeals?.total ?? workspaceDeals?.data.length ?? 0) > 0;
 
   // Assignable members
-  const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
+  const { members: assignableMembers } = useCRMOwnerMembers(wsId);
   const ownerNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],

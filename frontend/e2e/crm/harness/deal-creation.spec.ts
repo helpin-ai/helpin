@@ -38,7 +38,7 @@ test('inherits context and owner, generates editable name, saves primary and add
  await page.goto('/e2e/crm/harness/deal-creation.html?context');
  await expect(page.getByLabel('Stage',{exact:true})).toContainText('Proposal Sent');
  await expect(page.getByLabel('Owner',{exact:true})).toContainText('Waqar');
- await expect(page.getByLabel('Probability (%)')).toHaveValue('80');
+ await expect(page.getByLabel('Probability (%)')).toHaveCount(0);
  await pick(page,'Add contact','Alex Smith');
  await expect(page.getByLabel('Deal name')).toHaveValue('Acme — New deal');
  await page.getByLabel('Deal name').fill('Custom opportunity');
@@ -46,16 +46,15 @@ test('inherits context and owner, generates editable name, saves primary and add
  await page.getByRole('button',{name:'Make primary'}).click();
  await expect(page.getByLabel('Deal name')).toHaveValue('Custom opportunity');
  await page.getByLabel('Amount',{exact:true}).fill('1200');
- await page.getByLabel('Revenue type',{exact:true}).click();await page.getByRole('option',{name:'Annual',exact:true}).click();
- await page.getByLabel('Probability (%)').fill('45');
+ await expect(page.getByLabel('Revenue type',{exact:true})).toContainText('Annual');
  await page.getByLabel('Stage',{exact:true}).click();await page.getByRole('option',{name:'Lead',exact:true}).click();
- await expect(page.getByLabel('Probability (%)')).toHaveValue('45');
  await page.getByRole('button',{name:'Create deal',exact:true}).click();
  await expect.poll(()=>writes.length).toBe(1);
  await expect(page.getByText('Deal created',{exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Copy Deal ID',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Open',exact:true})).toBeVisible();
- expect(writes[0]).toMatchObject({company_id:'acme',contact_id:'sam',contact_ids:['alex'],name:'Custom opportunity',revenue_type:'annual',amount:1200,owner_member_id:'member-1',pipeline_id:'sales',stage_id:'lead',probability:45});
+ expect(writes[0]).not.toHaveProperty('probability');
+ expect(writes[0]).toMatchObject({company_id:'acme',contact_id:'sam',contact_ids:['alex'],name:'Custom opportunity',revenue_type:'annual',amount:1200,owner_member_id:'member-1',pipeline_id:'sales',stage_id:'lead'});
  await page.getByRole('button',{name:'Open',exact:true}).click();
  await expect(page.getByText('Opened deal deal-new',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Reopen'}).click();await expect(page.getByLabel('Deal name')).toHaveValue('');
@@ -113,7 +112,7 @@ test('fits all visible fields on mobile without horizontal scrolling', async ({p
  await page.setViewportSize({width:390,height:844});await setup(page);
  await page.goto('/e2e/crm/harness/deal-creation.html');
  await expect(page.getByRole('heading',{name:'Create deal',exact:true})).toBeVisible();
- await page.getByLabel('Probability (%)').scrollIntoViewIfNeeded();
+ await page.getByLabel('Expected close date').scrollIntoViewIfNeeded();
  expect(await page.getByRole('dialog').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
  await page.screenshot({path:'/tmp/helpin-deal-create-mobile.png'});
 });
@@ -184,4 +183,27 @@ test('company search supports keyboard selection and Escape restores the selecto
  await input.press('Enter');
  await expect(input).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Change',exact:true})).toBeVisible();
+});
+
+test('defaults to annual revenue and a close date 30 days ahead, with CRM owner avatars', async ({page}) => {
+ await page.clock.setFixedTime(new Date('2026-09-13T12:00:00Z'));
+ await setup(page);
+ let moduleFilter: string | null = null;
+ await page.route('**/assignable-members?**', route => {
+  moduleFilter = new URL(route.request().url()).searchParams.get('module');
+  return route.fulfill({json:[{id:'member-1',user_id:'user-1',display_name:'Waqar',email:'waqar@example.com',status:'active',avatar_style:'initials',avatar_seed:'Waqar'}]});
+ });
+ await page.goto('/e2e/crm/harness/deal-creation.html');
+ await expect(page.getByLabel('Revenue type',{exact:true})).toContainText('Annual');
+ await expect(page.getByLabel('Expected close date')).toHaveValue('2026-10-13');
+ await expect(page.getByLabel('Probability (%)')).toHaveCount(0);
+ const owner = page.getByRole('button',{name:'Owner',exact:true});
+ await expect(owner).toContainText('Waqar');
+ expect(moduleFilter).toBe('crm');
+ await expect(owner.locator('[data-slot="avatar"]')).toBeVisible();
+ await owner.click();
+ await expect(page.getByRole('option').filter({hasText:'Waqar'}).locator('[data-slot="avatar"]')).toBeVisible();
+ await page.keyboard.press('Escape');
+ await page.getByLabel('Revenue type',{exact:true}).click();
+ await expect(page.getByRole('option')).toHaveText(['Annual','Monthly','One-time']);
 });
