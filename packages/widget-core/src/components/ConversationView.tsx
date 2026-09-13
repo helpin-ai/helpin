@@ -659,11 +659,6 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           <span className="helpin-waiting-teammate-copy">
             <span className="helpin-waiting-teammate-label">{handoffProgress.title}</span>
             {handoffProgress.detail && <span className="helpin-waiting-teammate-detail">{handoffProgress.detail}</span>}
-            {transcriptEmail && (
-              <span className="helpin-contact-confirmation">
-                <span aria-hidden="true">✓</span> Replies will also go to {transcriptEmail}
-              </span>
-            )}
           </span>
         </div>
       )}

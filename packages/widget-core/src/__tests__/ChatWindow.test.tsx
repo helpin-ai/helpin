@@ -707,7 +707,7 @@ describe('ChatWindow', () => {
 
     expect(getByText('Let me connect you with a team member who can help further.')).toBeTruthy();
     expect(getByText('You’re in the support queue')).toBeTruthy();
-    expect(getByText('Replies will also go to visitor@example.com')).toBeTruthy();
+    expect(container.textContent).not.toContain('Replies will also go to');
     expect(container.querySelectorAll('.helpin-waiting-teammate-avatar').length).toBe(2);
   });
 
