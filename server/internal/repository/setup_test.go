@@ -305,7 +305,8 @@ var setupTestSchema = []string{
 	`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY, pipeline_id TEXT NOT NULL, stage_type TEXT NOT NULL)`,
 	`CREATE TABLE crm_deals (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, owner_member_id TEXT, amount REAL, close_date DATETIME)`,
 	`CREATE TABLE crm_associations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, from_object_type TEXT NOT NULL, from_object_id TEXT NOT NULL, to_object_type TEXT NOT NULL, to_object_id TEXT NOT NULL)`,
-	`CREATE TABLE crm_email_accounts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT 1, status TEXT NOT NULL)`,
+	`CREATE TABLE crm_email_accounts (signature TEXT NOT NULL DEFAULT '',
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT 1, status TEXT NOT NULL)`,
 	`CREATE TABLE crm_autonomy_settings (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1, auto_create_deals BOOLEAN NOT NULL DEFAULT 1, auto_progress_deals BOOLEAN NOT NULL DEFAULT 1)`,
 	`CREATE TABLE crm_suggestions (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, suggestion_type TEXT NOT NULL, status TEXT NOT NULL, execution_status TEXT, executed_at DATETIME, object_id TEXT)`,
 }

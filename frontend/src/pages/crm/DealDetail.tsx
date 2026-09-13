@@ -1,3 +1,5 @@
+import { CRMEmailComposerDialog } from '@/components/crm/CRMEmailComposerDialog';
+import { useEmailAccounts, useContact } from '@/hooks/queries/useCRM';
 import { recurringRevenue, revenueSuffix, type RevenueType } from '@/components/crm/dealCreationDefaults';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -9,6 +11,7 @@ import {
   Delete01Icon,
   DollarCircleIcon,
   Loading01Icon,
+  Mail01Icon,
   Tag01Icon,
   UserIcon,
 } from '@/lib/icons';
@@ -89,6 +92,11 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 
   const { data: deal, isLoading } = useDeal(wsId, dealId);
   const { data: associations, refetch: refetchAssociations } = useDealAssociations(wsId, dealId);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const emailAccounts = useEmailAccounts(wsId);
+  const contactAssociation = associations?.find((association) => association.from_object_type === 'contact' || association.to_object_type === 'contact');
+  const emailContactId = contactAssociation ? (contactAssociation.from_object_type === 'contact' ? contactAssociation.from_object_id : contactAssociation.to_object_id) : '';
+  const emailContact = useContact(wsId, emailContactId, Boolean(emailContactId));
   const { data: pipelines } = usePipelines(wsId);
   const updateDeal = useUpdateDeal(wsId);
   const deleteDeal = useDeleteDeal(wsId);
@@ -295,6 +303,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 				meta={<QuietMetaLine items={[<span className="font-mono" key="id">{deal.display_id}</span>, currentPipeline?.name, form.amount ? new Intl.NumberFormat('en-US', { style: 'currency', currency: form.currency || 'USD', maximumFractionDigits: 0 }).format(amountValue || 0) + revenueSuffix(form.revenue_type) : null, form.probability ? `${form.probability}% probability` : null]} />}
 				state={<SaveIndicator saving={saving} error={saveError} presentation="quiet" />}
 				actions={<>
+          <QuietDetailAction icon={<Mail01Icon className="h-4 w-4" />} label="Send email" onClick={() => setEmailOpen(true)} />
 					<QuietDetailAction tone="danger" icon={<Delete01Icon className="h-4 w-4" />} label="Delete deal" onClick={() => setDeleteConfirmOpen(true)} />
 					{onRequestClose ? <QuietDetailAction iconOnly icon={<Cancel01Icon className="h-4 w-4" />} label="Close deal" onClick={() => void onRequestClose()} /> : null}
 				</>}
@@ -339,6 +348,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 				</>}
 			/>
 
+      {emailOpen && <CRMEmailComposerDialog workspaceId={wsId} accounts={emailAccounts.data ?? []} open draft={{ dealId, dealName: deal.name, to: emailContact.data?.email ? [emailContact.data.email] : [] }} onOpenChange={setEmailOpen} />}
       <DealEmailThreadPanel open={!!emailThreadId} onOpenChange={(open) => { if (!open) setEmailThreadId(undefined); }} workspaceId={wsId} dealId={dealId} threadId={emailThreadId} />
       <ConfirmDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen} title="Delete deal" description="Are you sure? This action cannot be undone." confirmLabel="Delete" variant="destructive" onConfirm={handleDelete} />
     </div>

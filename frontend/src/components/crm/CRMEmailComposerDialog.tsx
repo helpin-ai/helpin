@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -16,8 +16,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { QuietSelect, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { EmailChipInput, classifyEmailChipInput } from '@/components/ui/email-chip-input';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { emailTextToHTML, withEmailSignature } from './emailComposition';
 import { EmojiPicker } from '@/components/support/EmojiPicker';
 import { LinkInsertModal } from '@/components/support/LinkInsertModal';
 import type { CRMEmailAccount } from '@/lib/crmTypes';
@@ -37,6 +40,8 @@ import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgr
 
 export interface EmailDraft {
   title?: string;
+  dealId?: string;
+  dealName?: string;
   to?: string[];
   cc?: string[];
   subject?: string;
@@ -51,20 +56,6 @@ interface CRMEmailComposerDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-function parseRecipients(value: string) {
-  return value.split(/[;,\n]/).map((item) => item.trim()).filter(Boolean);
-}
-
-function plainTextToHTML(value: string) {
-  const escaped = value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-  return escaped.replace(/\n/g, '<br>');
-}
-
 export function CRMEmailComposerDialog({
   workspaceId,
   accounts,
@@ -74,15 +65,22 @@ export function CRMEmailComposerDialog({
 }: CRMEmailComposerDialogProps) {
   const queryClient = useQueryClient();
   const availableAccounts = useMemo(
-    () => accounts.filter((account) => account.can_send !== false && account.is_active && account.status === 'connected'),
+    () => accounts.filter((account) => account.can_send === true && account.is_active && account.status === 'connected' && account.provider === 'gmail'),
     [accounts],
   );
   const [accountId, setAccountId] = useState(availableAccounts[0]?.id ?? '');
-  const [to, setTo] = useState(draft?.to?.join(', ') ?? '');
-  const [cc, setCC] = useState(draft?.cc?.join(', ') ?? '');
+  const [to, setTo] = useState<string[]>(draft?.to ?? []);
+  const [toInput, setToInput] = useState('');
+  const [cc, setCC] = useState<string[]>(draft?.cc ?? []);
+  const [ccInput, setCCInput] = useState('');
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [includeSignature, setIncludeSignature] = useState(true);
+  const sendLock = useRef(false);
+  const sendButton = useRef<HTMLButtonElement>(null);
+  const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const [showCC, setShowCC] = useState(Boolean(draft?.cc?.length));
   const [subject, setSubject] = useState(draft?.subject ?? '');
-  const [bodyHTML, setBodyHTML] = useState(() => plainTextToHTML(draft?.body ?? ''));
+  const [bodyHTML, setBodyHTML] = useState(() => emailTextToHTML(draft?.body ?? ''));
   const [bodyText, setBodyText] = useState(draft?.body ?? '');
   const [sending, setSending] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -112,7 +110,7 @@ export function CRMEmailComposerDialog({
 
   const editor = useEditor({
     extensions,
-    content: plainTextToHTML(draft?.body ?? ''),
+    content: emailTextToHTML(draft?.body ?? ''),
     editable: !sending,
     immediatelyRender: false,
     editorProps: {
@@ -122,7 +120,7 @@ export function CRMEmailComposerDialog({
       handleKeyDown: (_view, event) => {
         if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
           event.preventDefault();
-          document.getElementById('crm-email-send')?.click();
+          sendButton.current?.click();
           return true;
         }
         return false;
@@ -144,6 +142,14 @@ export function CRMEmailComposerDialog({
     ? accountId
     : availableAccounts[0]?.id ?? '';
 
+  const signature = availableAccounts.find((account) => account.id === effectiveAccountId)?.signature;
+  const dirty = bodyHTML !== emailTextToHTML(draft?.body ?? '') || subject !== (draft?.subject ?? '') || to.join(',') !== (draft?.to ?? []).join(',') || cc.join(',') !== (draft?.cc ?? []).join(',') || Boolean(toInput || ccInput) || emailAttachments.attachments.length > 0;
+  useEffect(() => {
+    if (!dirty && !sending) return;
+    const protect = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', protect);
+    return () => window.removeEventListener('beforeunload', protect);
+  }, [dirty, sending]);
   const openLinkModal = () => {
     if (!editor) return;
     const attrs = editor.getAttributes('link') as { href?: string };
@@ -181,46 +187,60 @@ export function CRMEmailComposerDialog({
   };
 
   const send = async () => {
-    const recipients = parseRecipients(to);
+    if (sendLock.current || emailAttachments.uploading || emailAttachments.hasFailedUploads || rewriting) return;
+    const pendingTo = classifyEmailChipInput(toInput);
+    const pendingCC = classifyEmailChipInput(ccInput);
+    if (pendingTo.invalid.length || pendingCC.invalid.length) { toast.error('Enter valid email addresses'); return; }
+    const recipients = [...new Set([...to, ...pendingTo.valid])];
     const trimmedSubject = subject.trim();
     if (!effectiveAccountId || recipients.length === 0 || !trimmedSubject || !bodyText.trim()) {
       toast.error('Choose a sender and add a recipient, subject, and message');
       return;
     }
 
+    sendLock.current = true;
     setSending(true);
     try {
-      await unwrap(await crmEmailService.sendEmail(workspaceId, {
+      const result = unwrap(await crmEmailService.sendEmail(workspaceId, {
         account_id: effectiveAccountId,
         to: recipients,
-        cc: parseRecipients(cc),
+        cc: [...new Set([...cc, ...pendingCC.valid])],
+        deal_id: draft?.dealId,
         subject: trimmedSubject,
-        body_html: bodyHTML,
+        body_html: withEmailSignature(bodyHTML, includeSignature ? signature : undefined),
         draft_id: emailAttachments.draftId,
         attachment_ids: emailAttachments.attachmentIds,
       }));
       await queryClient.invalidateQueries({ queryKey: ['crm', workspaceId] });
-      toast.success('Email sent');
+      if (result.association_warning) toast.warning(result.association_warning);
+      else toast.success('Email sent');
       emailAttachments.reset();
       onOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Email could not be sent');
     } finally {
+      sendLock.current = false;
       setSending(false);
     }
   };
 
   const canSend = Boolean(
     effectiveAccountId
-    && parseRecipients(to).length > 0
+    && (to.length > 0 || classifyEmailChipInput(toInput).valid.length > 0)
+    && !classifyEmailChipInput(toInput).invalid.length
+    && !classifyEmailChipInput(ccInput).invalid.length
+    && !rewriting
     && subject.trim()
     && bodyText.trim()
     && !emailAttachments.uploading
+    && !emailAttachments.hasFailedUploads
     && !sending,
   );
+  const discard = () => { emailAttachments.reset(); onOpenChange(false); };
   const closeComposer = () => {
-    emailAttachments.reset();
-    onOpenChange(false);
+    if (sendLock.current || rewriting || emailAttachments.uploading) return;
+    if (dirty) setDiscardOpen(true);
+    else discard();
   };
 
   const rewrite = async (operation: ConversationRewriteOperation) => {
@@ -242,47 +262,23 @@ export function CRMEmailComposerDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={(nextOpen) => {
-      if (sending) return;
-      if (!nextOpen) emailAttachments.reset();
-      onOpenChange(nextOpen);
+      if (!nextOpen) closeComposer();
     }}>
-      <DialogContent className="max-h-[92vh] w-[min(760px,calc(100vw-2rem))] max-w-none gap-0 overflow-hidden p-0 sm:max-w-none">
+      <DialogContent className="max-h-[92vh] w-[min(760px,calc(100vw-2rem))] max-w-none gap-0 overflow-y-auto p-0 sm:max-w-none">
         <DialogHeader className="border-b border-border/60 px-5 py-4 text-left">
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Mail01Icon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <DialogTitle>{draft?.title ?? 'New email'}</DialogTitle>
-              <DialogDescription className="mt-1">Send from your connected mailbox and keep the conversation in CRM.</DialogDescription>
-            </div>
-          </div>
+          <DialogTitle className="flex items-center gap-2 text-sm"><Mail01Icon className="h-4 w-4 text-muted-foreground" />{draft?.title ?? 'New email'}</DialogTitle>
+          <DialogDescription className={draft?.dealName ? 'text-xs' : 'sr-only'}>{draft?.dealName ? `Linked to ${draft.dealName}` : 'Compose an email from your connected mailbox.'}</DialogDescription>
         </DialogHeader>
 
-        <div className="divide-y divide-border/60">
+        <div className="min-w-0 divide-y divide-border/60">
           <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2 px-5 py-2.5">
             <span className="text-xs font-medium text-muted-foreground">From</span>
-            <Select value={effectiveAccountId} onValueChange={setAccountId} disabled={sending}>
-              <SelectTrigger className="h-8 border-0 px-0 shadow-none focus:ring-0">
-                <SelectValue placeholder="Choose a connected mailbox" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableAccounts.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>{account.email_address}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <QuietSelect label="From" value={effectiveAccountId} onChange={setAccountId} disabled={sending} options={availableAccounts.map((account) => ({ value: account.id, label: account.email_address }))} />
           </div>
 
           <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 px-5 py-2.5">
             <span className="text-xs font-medium text-muted-foreground">To</span>
-            <Input
-              value={to}
-              onChange={(event) => setTo(event.target.value)}
-              placeholder="name@company.com"
-              className="h-8 border-0 px-0 shadow-none focus-visible:ring-0"
-              disabled={sending}
-            />
+            <EmailChipInput ariaLabel="To" value={to} onValueChange={setTo} inputValue={toInput} onInputValueChange={setToInput} placeholder="name@company.com" className="min-w-0 rounded-none border-0 bg-transparent p-0 shadow-none focus-within:ring-0" disabled={sending} />
             {!showCC && (
               <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={() => setShowCC(true)}>
                 Cc
@@ -293,23 +289,18 @@ export function CRMEmailComposerDialog({
           {showCC && (
             <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2 px-5 py-2.5">
               <span className="text-xs font-medium text-muted-foreground">Cc</span>
-              <Input
-                value={cc}
-                onChange={(event) => setCC(event.target.value)}
-                placeholder="Separate addresses with commas"
-                className="h-8 border-0 px-0 shadow-none focus-visible:ring-0"
-                disabled={sending}
-              />
+              <EmailChipInput ariaLabel="Cc" value={cc} onValueChange={setCC} inputValue={ccInput} onInputValueChange={setCCInput} placeholder="name@company.com" className="min-w-0 rounded-none border-0 bg-transparent p-0 shadow-none focus-within:ring-0" disabled={sending} />
             </div>
           )}
 
           <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2 px-5 py-2.5">
             <span className="text-xs font-medium text-muted-foreground">Subject</span>
-            <Input
+            <QuietUnderlineInput
+              aria-label="Subject"
               value={subject}
               onChange={(event) => setSubject(event.target.value)}
               placeholder="Email subject"
-              className="h-8 border-0 px-0 font-medium shadow-none focus-visible:ring-0"
+              className="h-8 min-w-0 border-b-transparent px-0 font-medium"
               disabled={sending}
             />
           </div>
@@ -317,15 +308,17 @@ export function CRMEmailComposerDialog({
 
         {availableAccounts.length === 0 ? (
           <div className="mx-5 mt-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-muted-foreground">
-            Connect an active Gmail account in CRM email settings before sending.
+            Connect your Gmail account to send emails.
+            {workspace?.slug && <a className="ml-2 underline" href={`/w/${workspace.slug}/settings/crm-email`}>Connect mailbox</a>}
           </div>
         ) : null}
 
-        {editor ? <QuietConversationComposer focused={focused} className="m-5">
+        {editor ? <QuietConversationComposer focused={focused} className="m-5 min-w-0">
           <div className="flex items-center px-3 pt-2">
             <QuietComposerAITools disabled={!bodyText.trim()} pending={rewriting} onSelect={rewrite} />
           </div>
           <QuietComposerEditorSurface><EditorContent editor={editor} /></QuietComposerEditorSurface>
+          {signature && <div className="px-4 pb-3 text-sm"><label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={includeSignature} onChange={(event) => setIncludeSignature(event.target.checked)} disabled={sending} />Include signature</label>{includeSignature && <div className="whitespace-pre-wrap break-words">{signature}</div>}</div>}
           <CRMEmailAttachmentStrip attachments={emailAttachments.attachments} onRemove={(id) => void emailAttachments.remove(id)} />
           <QuietComposerToolbar
             editor={editor}
@@ -335,7 +328,7 @@ export function CRMEmailComposerDialog({
               />}
             onLink={openLinkModal}
             onAttach={emailAttachments.pickFiles}
-            trailing={<Button variant="ghost" size="sm" onClick={closeComposer} disabled={sending}>
+            trailing={<Button className="hidden sm:inline-flex" variant="ghost" size="sm" onClick={closeComposer} disabled={sending}>
                 <ArrowLeft02Icon className="h-3.5 w-3.5" />
                 Cancel
               </Button>}
@@ -344,7 +337,7 @@ export function CRMEmailComposerDialog({
             submitDisabled={!canSend}
             submitting={sending}
           />
-          <button id="crm-email-send" type="button" className="hidden" onClick={() => void send()} />
+          <button ref={sendButton} disabled={!canSend} type="button" className="hidden" onClick={() => void send()} />
         </QuietConversationComposer> : null}
 
         <LinkInsertModal
@@ -358,6 +351,7 @@ export function CRMEmailComposerDialog({
         />
       </DialogContent>
     </Dialog>
+    <ConfirmDialog open={discardOpen} onOpenChange={setDiscardOpen} title="Discard this email?" description="Your message and attachments will be removed." confirmLabel="Discard email" cancelLabel="Keep writing" onConfirm={discard} />
     <UpgradeRequiredDialog open={upgradeReason !== null} onOpenChange={(dialogOpen) => { if (!dialogOpen) setUpgradeReason(null); }} reason={upgradeReason} />
     </>
   );

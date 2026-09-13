@@ -290,6 +290,7 @@ func (h *CRMEmailHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	var req struct {
 		AccountID     string   `json:"account_id"`
+		DealID        string   `json:"deal_id"`
 		To            []string `json:"to"`
 		CC            []string `json:"cc"`
 		Subject       string   `json:"subject"`
@@ -306,7 +307,7 @@ func (h *CRMEmailHandler) SendEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	message, err := h.emailService.SendEmailWithAttachments(r.Context(), workspaceID, req.AccountID, middleware.GetUserID(r.Context()), req.To, req.CC, req.Subject, req.BodyHTML, req.DraftID, req.AttachmentIDs)
+	message, err := h.emailService.SendEmailWithAttachments(r.Context(), workspaceID, req.AccountID, middleware.GetUserID(r.Context()), req.To, req.CC, req.Subject, req.BodyHTML, req.DraftID, req.AttachmentIDs, req.DealID)
 	if err != nil {
 		if err.Error() == "not authorized to send from this email account" {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -612,4 +613,23 @@ func (h *CRMEmailHandler) UpdateEmailSyncSettings(w http.ResponseWriter, r *http
 // GetDefaultBlockedPrefixes handles GET /api/crm/email/sync-settings/default-prefixes.
 func (h *CRMEmailHandler) GetDefaultBlockedPrefixes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.GetDefaultBlockedRecordPrefixes())
+}
+
+func (h *CRMEmailHandler) UpdateSignature(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Signature string `json:"signature"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.emailService.UpdateSignature(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req.Signature); err != nil {
+		if err.Error() == "not authorized to edit this email account" {
+			writeError(w, http.StatusForbidden, err.Error())
+		} else {
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
 }

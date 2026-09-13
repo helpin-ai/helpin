@@ -803,3 +803,8 @@ func (r *CRMEmailRepository) populateMessageContactIDs(ctx context.Context, mess
 	}
 	return nil
 }
+
+// UpdateSignature changes only the sending preference, without overwriting sync tokens/state.
+func (r *CRMEmailRepository) UpdateSignature(ctx context.Context, workspaceID, accountID, userID, signature string) error {
+	return r.db.WithContext(ctx).Model(&model.CRMEmailAccount{}).Where("workspace_id = ? AND id = ? AND member_id = ?", workspaceID, accountID, userID).Update("signature", signature).Error
+}

@@ -59,6 +59,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			PRIMARY KEY (agent_id, team_id)
 		)`,
 		`CREATE TABLE crm_email_accounts (
+			signature TEXT NOT NULL DEFAULT '',
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			member_id TEXT NOT NULL,

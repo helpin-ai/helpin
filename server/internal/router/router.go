@@ -1595,6 +1595,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts", h.CRMEmail.ListAccounts)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts", h.CRMEmail.CreateAccount)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}", h.CRMEmail.GetAccount)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/email/accounts/{id}/signature", h.CRMEmail.UpdateSignature)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/email/accounts/{id}", h.CRMEmail.DeleteAccount)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}/diagnostics", h.CRMEmail.GetAccountDiagnostics)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts/{id}/sync", h.CRMEmail.SyncAccount)
