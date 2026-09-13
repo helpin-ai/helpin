@@ -25,10 +25,11 @@ describe('Contacts toolbar layout', () => {
     const dealMenuSource = readFileSync(resolve(__dirname, './DealDisplayMenu.tsx'), 'utf8');
     const companiesPageSource = readFileSync(resolve(__dirname, '../../pages/crm/Companies.tsx'), 'utf8');
 
-    expect(taskMenuSource).toContain('ColumnsThreeCogIcon');
-    expect(sharedMenuSource).toContain('ColumnsThreeCogIcon');
+    expect(readFileSync(resolve(__dirname, '../design-system/display-settings-menu.tsx'), 'utf8')).toContain('ColumnsThreeCogIcon');
+    expect(taskMenuSource).toContain('DisplaySettingsMenu');
+    expect(sharedMenuSource).toContain('DisplaySettingsMenu');
     expect(sharedMenuSource).not.toContain('ViewIcon');
-    expect(dealMenuSource).toContain('ColumnsThreeCogIcon');
+    expect(dealMenuSource).toContain('DisplaySettingsMenu');
     expect(dealMenuSource).not.toContain('Settings02Icon');
     expect(companiesPageSource).toContain('toolbarContainer={tableToolbarContainer}');
   });

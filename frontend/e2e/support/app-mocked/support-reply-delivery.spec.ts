@@ -146,7 +146,7 @@ test("presence adds email once and sends the displayed promise without confirmat
   await expect(selector).toHaveAttribute('aria-label', 'Sending options: Chat only');
 });
 
-test("manual delivery choice survives sends, notes, and reload without a subject editor", async ({ page }) => {
+test("manual delivery choice survives notes and reload, then resets after sending", async ({ page }) => {
   test.setTimeout(90000);
   const { composer, writes } = await setup(page);
   const selector = composer.getByRole('button', { name: /^Sending options:/ });
@@ -169,7 +169,7 @@ test("manual delivery choice survives sends, notes, and reload without a subject
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0]).toMatchObject({ delivery_mode: 'email_only' });
   expect(writes[0]).not.toHaveProperty('email_subject');
-  await expect(selector).toHaveAttribute('aria-label', 'Sending options: Email only');
+  await expect(selector).toHaveAttribute('aria-label', 'Sending options: Chat only');
   await expect(subject).toHaveCount(0);
   await selector.click();
   await page.getByRole('option', { name: /^Chat only/ }).click();

@@ -208,11 +208,11 @@ func updatePipelineStages(tx *gorm.DB, pipelineID string, stages []model.CRMPipe
 		}
 		retained[stage.ID] = true
 		previous := old[stage.ID]
-		if previous.Name == stage.Name && previous.StageType == stage.StageType && previous.Position == stage.Position && previous.Probability == stage.Probability {
+		if previous.Name == stage.Name && previous.StageType == stage.StageType && previous.Position == stage.Position && previous.Probability == stage.Probability && previous.Color == stage.Color {
 			continue
 		}
 		if err := tx.Model(&model.CRMPipelineStage{}).Where("id = ? AND pipeline_id = ?", stage.ID, pipelineID).Updates(map[string]interface{}{
-			"name": stage.Name, "stage_type": stage.StageType, "position": stage.Position, "probability": stage.Probability,
+			"name": stage.Name, "stage_type": stage.StageType, "position": stage.Position, "probability": stage.Probability, "color": stage.Color,
 		}).Error; err != nil {
 			return fmt.Errorf("update pipeline stage: %w", err)
 		}

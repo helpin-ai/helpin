@@ -45,7 +45,7 @@ import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { DealEmailThreadPanel } from '@/components/crm/deal-detail/DealEmailThreadPanel';
-import { DealStagePath } from '@/components/crm/deal-detail/DealStagePath';
+import { DealStageSelect } from '@/components/crm/DealStageSelect';
 import { DealRelationships } from '@/components/crm/deal-detail/DealRelationships';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
@@ -300,7 +300,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 				</>}
 			/>
 
-			<DealStagePath stages={sortedStages} value={form.stage_id} disabled={saving} onChange={(stageId) => updateField('stage_id', stageId, { stage_id: stageId })} />
+
 
 			<QuietDetailLayout
 				className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden"
@@ -322,7 +322,8 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 					<section className="-mx-4 mt-4 border-t border-border/60 px-4 pt-4">
 						<h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Details</h2>
 						<div className="grid grid-cols-[16px_72px_1fr] items-center gap-x-2 gap-y-2.5">
-							<DealMetadataRow icon={Tag01Icon} label="Pipeline"><SidebarPopoverSelect value={form.pipeline_id} options={(pipelines ?? []).map((pipeline) => ({ value: pipeline.id, label: pipeline.name }))} onChange={(pipelineId) => { const pipeline = pipelines?.find((item) => item.id === pipelineId); const firstStageId = [...(pipeline?.stages ?? [])].sort((a, b) => a.position - b.position)[0]?.id ?? ''; setForm((current) => current ? { ...current, pipeline_id: pipelineId, stage_id: firstStageId } : current); queuePatch({ pipeline_id: pipelineId, ...(firstStageId ? { stage_id: firstStageId } : {}) }); }} renderTrigger={() => <span className="truncate">{currentPipeline?.name ?? 'Select pipeline'}</span>} /></DealMetadataRow>
+							<DealMetadataRow icon={Tag01Icon} label="Stage"><DealStageSelect stages={sortedStages} value={form.stage_id} disabled={saving} onChange={(stageId) => updateField('stage_id', stageId, { stage_id: stageId })} /></DealMetadataRow>
+                            <DealMetadataRow icon={Tag01Icon} label="Pipeline"><SidebarPopoverSelect value={form.pipeline_id} options={(pipelines ?? []).map((pipeline) => ({ value: pipeline.id, label: pipeline.name }))} onChange={(pipelineId) => { const pipeline = pipelines?.find((item) => item.id === pipelineId); const firstStageId = [...(pipeline?.stages ?? [])].sort((a, b) => a.position - b.position)[0]?.id ?? ''; setForm((current) => current ? { ...current, pipeline_id: pipelineId, stage_id: firstStageId } : current); queuePatch({ pipeline_id: pipelineId, ...(firstStageId ? { stage_id: firstStageId } : {}) }); }} renderTrigger={() => <span className="truncate">{currentPipeline?.name ?? 'Select pipeline'}</span>} /></DealMetadataRow>
 							<DealMetadataRow icon={DollarCircleIcon} label="Amount"><div className="flex min-w-0 items-center gap-1.5"><input className="min-w-0 flex-1 bg-transparent px-1.5 py-0.5 text-xs outline-none placeholder:text-muted-foreground" type="number" step="0.01" value={form.amount} onChange={(event) => updateField('amount', event.target.value, { amount: event.target.value ? Number.parseFloat(event.target.value) : undefined })} placeholder="None" /><SidebarPopoverSelect value={form.currency} options={['USD', 'EUR', 'GBP', 'CAD', 'AUD'].map((value) => ({ value, label: value }))} onChange={(value) => updateField('currency', value, { currency: value })} renderTrigger={() => <span className="text-muted-foreground">{form.currency}</span>} triggerClassName="px-1" width="w-28" /></div></DealMetadataRow>
               <DealMetadataRow icon={DollarCircleIcon} label="Revenue type"><SidebarPopoverSelect renderTrigger={() => <span>{form.revenue_type === 'one_time' ? 'One-time' : form.revenue_type === 'monthly' ? 'Monthly' : 'Annual'}</span>} value={form.revenue_type} options={[{value:'one_time',label:'One-time'},{value:'monthly',label:'Monthly'},{value:'annual',label:'Annual'}]} onChange={(value) => updateField('revenue_type', value as RevenueType, { revenue_type: value as RevenueType })} /></DealMetadataRow>
               {recurring && <DealMetadataRow icon={DollarCircleIcon} label={deal.stage?.stage_type === 'open' ? 'Potential MRR / ARR' : 'MRR / ARR'}><span>{form.currency} {new Intl.NumberFormat(undefined, {maximumFractionDigits:2}).format(recurring.mrr)} / {new Intl.NumberFormat(undefined, {maximumFractionDigits:2}).format(recurring.arr)}</span></DealMetadataRow>}

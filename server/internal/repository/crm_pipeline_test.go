@@ -33,7 +33,7 @@ func setupCRMPipelineRepositoryTest(t *testing.T) (*CRMDealRepository, *gorm.DB)
 		`CREATE TABLE workspaces (id TEXT PRIMARY KEY)`,
 		`INSERT INTO workspaces VALUES ('ws')`,
 		`CREATE TABLE crm_pipelines (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),workspace_id TEXT,name TEXT,is_default BOOLEAN,default_commercial_motion TEXT,position INTEGER,created_at DATETIME,updated_at DATETIME)`,
-		`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),pipeline_id TEXT REFERENCES crm_pipelines(id),name TEXT,stage_type TEXT,position INTEGER,probability INTEGER,created_at DATETIME,updated_at DATETIME)`,
+		`CREATE TABLE crm_pipeline_stages (color TEXT NOT NULL DEFAULT '#788596', id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),pipeline_id TEXT REFERENCES crm_pipelines(id),name TEXT,stage_type TEXT,position INTEGER,probability INTEGER,created_at DATETIME,updated_at DATETIME)`,
 		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY,pipeline_id TEXT REFERENCES crm_pipelines(id),stage_id TEXT REFERENCES crm_pipeline_stages(id),updated_at DATETIME)`,
 	} {
 		if err := db.Exec(sql).Error; err != nil {

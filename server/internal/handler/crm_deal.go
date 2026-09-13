@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -131,7 +133,13 @@ func (h *CRMDealHandler) List(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "workspace_id is required")
 		return
 	}
+	queryFilters, err := queryFilterGroup(r, "filters")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid filters query")
+		return
+	}
 	filters := model.CRMDealListFilters{
+		Query:         queryFilters,
 		PipelineID:    queryStringPtr(r, "pipeline_id"),
 		StageID:       queryStringPtr(r, "stage_id"),
 		OwnerMemberID: queryStringPtr(r, "owner_member_id"),
@@ -142,6 +150,11 @@ func (h *CRMDealHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	deals, total, err := h.dealService.List(r.Context(), workspaceID, filters, pagination)
 	if err != nil {
+		var validationErr *querybuilder.ValidationError
+		if errors.As(err, &validationErr) {
+			writeError(w, http.StatusBadRequest, validationErr.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

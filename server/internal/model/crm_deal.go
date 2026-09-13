@@ -32,6 +32,7 @@ func (CRMPipeline) TableName() string { return "crm_pipelines" }
 
 // CRMPipelineStage represents a stage within a pipeline.
 type CRMPipelineStage struct {
+	Color       string    `json:"color" gorm:"not null;default:'#788596'"`
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	PipelineID  string    `json:"pipeline_id" gorm:"type:uuid;not null;index"`
 	Name        string    `json:"name" gorm:"not null"`
@@ -80,6 +81,7 @@ type CreateCRMPipelineRequest struct {
 
 // CreateCRMPipelineStageItem is a stage within a pipeline create request.
 type CreateCRMPipelineStageItem struct {
+	Color       string `json:"color"`
 	Name        string `json:"name"`
 	StageType   string `json:"stage_type"`
 	Position    int    `json:"position"`
@@ -98,6 +100,7 @@ type UpdateCRMPipelineRequest struct {
 
 // UpdateCRMPipelineStageItem is a stage within a pipeline update request.
 type UpdateCRMPipelineStageItem struct {
+	Color       *string `json:"color"`
 	ID          *string `json:"id"`
 	Name        string  `json:"name"`
 	StageType   string  `json:"stage_type"`
@@ -162,6 +165,7 @@ type UpdateCRMDealRequest struct {
 
 // CRMDealListFilters applies filters when listing deals.
 type CRMDealListFilters struct {
+	Query         *QueryFilterGroup
 	PipelineID    *string
 	StageID       *string
 	OwnerMemberID *string

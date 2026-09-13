@@ -38,7 +38,7 @@ func setupPipelineHandlerTest(t *testing.T) *CRMDealHandler {
 		`INSERT INTO workspaces VALUES ('owned')`,
 		`CREATE TABLE crm_pipelines (id TEXT PRIMARY KEY,workspace_id TEXT,name TEXT,is_default BOOLEAN,default_commercial_motion TEXT,position INTEGER,created_at DATETIME,updated_at DATETIME)`,
 		`INSERT INTO crm_pipelines (id,workspace_id,name,is_default,updated_at) VALUES ('p','owned','Sales',false,'2026-01-01 00:00:00+00:00')`,
-		`CREATE TABLE crm_pipeline_stages (id TEXT PRIMARY KEY,pipeline_id TEXT,position INTEGER)`,
+		`CREATE TABLE crm_pipeline_stages (color TEXT NOT NULL DEFAULT '#788596', id TEXT PRIMARY KEY,pipeline_id TEXT,position INTEGER)`,
 		`CREATE TABLE crm_deals (id TEXT PRIMARY KEY,pipeline_id TEXT,stage_id TEXT)`,
 	} {
 		if err := db.Exec(sql).Error; err != nil {

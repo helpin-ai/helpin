@@ -251,6 +251,22 @@ func (h *Handler) sendDocPresenceSnapshot(ctx context.Context, conn *websocket.C
 	}
 }
 
+// sendOnlineVisitors reconciles missed offline events and expired connections.
+func (h *Handler) sendOnlineVisitors(ctx context.Context, conn *websocket.Conn, workspaceID string) {
+	visitors, err := h.hub.Presence.GetOnlineVisitors(ctx, workspaceID)
+	if err != nil {
+		slog.Error("presence GetOnlineVisitors", "error", err, "workspace_id", workspaceID)
+		// A pod-local fallback cannot establish who is offline across replicas.
+		return
+	}
+	if visitors == nil {
+		visitors = []string{}
+	}
+	if err := SendToClient(conn, "support:online_visitors", map[string]any{"visitors": visitors}); err != nil {
+		slog.Error("visitor snapshot send failed", "error", err, "workspace_id", workspaceID)
+	}
+}
+
 // ServeHTTP handles the WebSocket upgrade and connection lifecycle.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Authenticate via query params for legacy clients, or cookie for the app.
@@ -326,17 +342,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Send current online visitors as initial snapshot.
-	// Try PresenceProvider first (shared across pods), fall back to Hub's in-memory map.
-	visitors, err := h.hub.Presence.GetOnlineVisitors(r.Context(), workspaceID)
-	if err != nil {
-		slog.Error("presence GetOnlineVisitors", "error", err)
-		visitors = h.hub.GetOnlineVisitors(workspaceID)
-	}
-	if len(visitors) > 0 {
-		data, _ := json.Marshal(map[string]any{"visitors": visitors})
-		SendToClient(conn, "support:online_visitors", json.RawMessage(data))
-	}
+	// Empty snapshots are required to clear visitors from a previous connection.
+	h.sendOnlineVisitors(r.Context(), conn, workspaceID)
 
 	// Read loop: process client messages for support presence/typing.
 	for {
@@ -658,6 +665,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err := h.hub.Presence.RefreshAllForConn(r.Context(), workspaceID, client.UserID, client.ConnID); err != nil {
 				slog.Error("presence RefreshAllForConn", "error", err)
 			}
+			h.sendOnlineVisitors(r.Context(), conn, workspaceID)
 
 		case "support:presence:sync":
 			var d presenceSyncData

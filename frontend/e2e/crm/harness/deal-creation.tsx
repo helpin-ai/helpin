@@ -14,13 +14,13 @@ import '@/index.css';
 useWorkspaceStore.setState({ currentWorkspace: { id:'ws-deals',slug:'deals-test',name:'Deals test' } as Workspace });
 useAuthStore.setState({ user: {id:'user-1'} as User });
 const params = new URLSearchParams(window.location.search);
-function FormHarness() {
+export function FormHarness() {
  const [open,setOpen] = useState(true);
  const openedDeal = useDealPanelStore(s => s.dealId);
  return <>{openedDeal && <output>Opened deal {openedDeal}</output>}<button onClick={() => setOpen(true)}>Reopen</button><CreateDealDialog open={open} onOpenChange={setOpen} initialPipelineId={params.has('context') ? 'sales' : undefined} initialStageId={params.has('context') ? 'proposal' : undefined} /></>;
 }
 const root = createRootRoute({component: () => <div className="h-screen bg-background text-foreground"><Outlet /></div>});
-const route = createRoute({getParentRoute: () => root,path:'/w/$slug/crm/deals',component: params.has('page') ? DealsPage : FormHarness});
+const route = createRoute({getParentRoute: () => root,path:'/w/$slug/crm/deals',validateSearch:(search:Record<string,unknown>)=>({filters:typeof search.filters==='string'?search.filters:undefined}),component: params.has('page') ? DealsPage : FormHarness});
 const router = createRouter({routeTree:root.addChildren([route]),history:createMemoryHistory({initialEntries:['/w/deals-test/crm/deals']})});
 const client = new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
 createRoot(document.getElementById('root')!).render(<QueryClientProvider client={client}><TooltipProvider><RouterProvider router={router}/><Toaster/></TooltipProvider></QueryClientProvider>);

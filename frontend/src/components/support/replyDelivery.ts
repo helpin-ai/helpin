@@ -63,6 +63,10 @@ function draftKey(workspaceId: string, conversationId: string) {
   return `support_reply_delivery:${workspaceId}:${conversationId}`;
 }
 
+function manualDraftKey(workspaceId: string, conversationId: string) {
+  return `${draftKey(workspaceId, conversationId)}:draft`;
+}
+
 const useDeliveryDrafts = create<
   Record<string, string | undefined>
 >(() => ({}));
@@ -71,7 +75,7 @@ const useDeliveryDrafts = create<
 export function useReplyDelivery(workspaceId: string, conversationId: string) {
   const value = useDeliveryDrafts(
     (state) =>
-      state[draftKey(workspaceId, conversationId)] ??
+      state[manualDraftKey(workspaceId, conversationId)] ??
       loadReplyDelivery(workspaceId, conversationId),
   );
   return isReplyDeliveryMode(value) ? value : undefined;
@@ -100,9 +104,21 @@ function automaticDraftKey(workspaceId: string, conversationId: string) {
 export function useComposerDelivery(
   workspaceId: string,
   conversationId: string,
-  context: { source?: string; presence: ReplyPresence; emailEligible: boolean; active: boolean },
+  context: { source?: string; presence: ReplyPresence; emailEligible: boolean; active: boolean; hasDraft?: boolean },
 ) {
-  const preference = useReplyDelivery(workspaceId, conversationId);
+  const choice = useReplyDelivery(workspaceId, conversationId);
+  const legacyKey = draftKey(workspaceId, conversationId);
+  const legacy = useDraftValue(legacyKey);
+  // Preserve an existing unsent draft's destination, but retire old preferences
+  // that used to apply to every future reply in the conversation.
+  const preference = choice ?? (context.hasDraft && isReplyDeliveryMode(legacy) ? legacy : undefined);
+  useEffect(() => {
+    if (!context.source || legacy === undefined) return;
+    if (!choice && context.hasDraft && isReplyDeliveryMode(legacy)) {
+      saveDraftValue(manualDraftKey(workspaceId, conversationId), legacy);
+    }
+    saveDraftValue(legacyKey);
+  }, [choice, context.source, context.hasDraft, legacy, legacyKey, workspaceId, conversationId]);
   const key = automaticDraftKey(workspaceId, conversationId);
   const stored = useDraftValue(key);
   const restored = useDraftValue(`${key}:restored`);
@@ -124,6 +140,12 @@ export function clearAutomaticReplyDelivery(workspaceId: string, conversationId:
   saveDraftValue(`${automaticDraftKey(workspaceId, conversationId)}:restored`);
 }
 
+// Call only after a successful send. Failed retries and undo keep their destination.
+export function clearReplyDeliveryDraft(workspaceId: string, conversationId: string) {
+  saveDraftValue(manualDraftKey(workspaceId, conversationId));
+  clearAutomaticReplyDelivery(workspaceId, conversationId);
+}
+
 export function useReplySubject(workspaceId: string, conversationId: string, defaultSubject: string) {
   return useDraftValue(`${draftKey(workspaceId, conversationId)}:subject`) ?? defaultSubject;
 }
@@ -137,7 +159,7 @@ export function loadReplyDelivery(
   conversationId: string,
 ): SupportReplyDeliveryMode | undefined {
   try {
-    const value = localStorage.getItem(draftKey(workspaceId, conversationId));
+    const value = localStorage.getItem(manualDraftKey(workspaceId, conversationId));
     return isReplyDeliveryMode(value) ? value : undefined;
   } catch {
     return undefined;
@@ -151,11 +173,11 @@ export function saveReplyDelivery(
 ) {
   saveDraftValue(`${automaticDraftKey(workspaceId, conversationId)}:restored`);
   try {
-    const key = draftKey(workspaceId, conversationId);
+    const key = manualDraftKey(workspaceId, conversationId);
     if (mode) localStorage.setItem(key, mode);
     else localStorage.removeItem(key);
   } catch {
     // Keep the shared draft usable when browser storage is unavailable.
   }
-  useDeliveryDrafts.setState({ [draftKey(workspaceId, conversationId)]: mode });
+  useDeliveryDrafts.setState({ [manualDraftKey(workspaceId, conversationId)]: mode });
 }

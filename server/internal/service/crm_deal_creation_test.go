@@ -87,6 +87,10 @@ func TestDealCreationRevenueAndParticipants(t *testing.T) {
 					t.Fatal("primary contact label overwritten")
 				}
 			}
+			badStage := "missing"
+			if _, err := svc.Update(context.Background(), deal.ID, model.UpdateCRMDealRequest{StageID: &badStage}); err == nil {
+				t.Fatal("accepted stage outside deal pipeline")
+			}
 			period := "monthly"
 			updated, err := svc.Update(context.Background(), deal.ID, model.UpdateCRMDealRequest{RevenueType: &period})
 			if err != nil || updated.RevenueType != period {

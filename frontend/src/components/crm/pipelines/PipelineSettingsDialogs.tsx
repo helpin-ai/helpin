@@ -1,3 +1,5 @@
+import { ColorPicker } from '@/components/pm/ColorPicker';
+import { defaultStageColor } from '@/lib/crmStageColors';
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,7 +98,7 @@ export function PipelineDetailsDialog({
   );
   const dealType = pipelineDealType(motion);
   const [template, setTemplate] = useState("standard");
-  const sourceStages =
+  const sourceStages: NonNullable<CreateCRMPipelineRequest["stages"]> =
     template === "standard"
       ? DEFAULT_STAGES
       : sortStages(
@@ -133,10 +135,11 @@ export function PipelineDetailsDialog({
                 ...(!pipeline
                   ? {
                       stages: sourceStages.map(
-                        ({ name, stage_type, probability }, position) => ({
+                        ({ name, stage_type, probability, color }, position) => ({
                           name,
                           stage_type,
                           probability,
+                          color,
                           position,
                         }),
                       ),
@@ -295,6 +298,7 @@ export function PipelineStageDialog({
   onSave: SavePipeline;
 }) {
   const [name, setName] = useState(stage?.name ?? "");
+  const [color, setColor] = useState(stage?.color || defaultStageColor(stage?.stage_type ?? initialType, stage?.position ?? 0));
   const [type, setType] = useState(stage?.stage_type ?? initialType);
   const [probability, setProbability] = useState(
     String(stage?.probability ?? (initialType === "won" ? 100 : 0)),
@@ -333,6 +337,7 @@ export function PipelineStageDialog({
       name: name.trim(),
       stage_type: type,
       probability: effectiveProbability,
+      color,
       position: 0,
       created_at: stage?.created_at ?? "",
       updated_at: stage?.updated_at ?? "",
@@ -386,6 +391,10 @@ export function PipelineStageDialog({
                 onChange={(event) => setName(event.target.value)}
                 placeholder="e.g. Discovery call"
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Color</Label>
+              <ColorPicker value={color} onChange={setColor} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

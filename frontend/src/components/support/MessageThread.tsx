@@ -181,16 +181,16 @@ function DaySeparator({
 }) {
   return (
     <div ref={separatorRef} className="sticky top-0 z-[1] my-5 flex items-center gap-3">
-      <div className="h-px flex-1 bg-border/60" aria-hidden />
+      <div className="h-px flex-1 bg-border" aria-hidden />
       <span
-        className={`shrink-0 rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
+        className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-foreground/75 ${
           isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
         }`}
         style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
       >
         {label}
       </span>
-      <div className="h-px flex-1 bg-border/60" aria-hidden />
+      <div className="h-px flex-1 bg-border" aria-hidden />
     </div>
   );
 }
@@ -308,7 +308,12 @@ export function MessageThread({
     isFetchingNextPage,
     isFetchNextPageError,
   } = useConversationMessages(workspaceId, conversationId);
-  const messages = useMemo(() => flattenSupportMessagePages(messagePages), [messagePages]);
+  const messages = useMemo(
+    () => flattenSupportMessagePages(messagePages).filter(
+      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined'),
+    ),
+    [messagePages],
+  );
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);

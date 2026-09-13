@@ -15,7 +15,7 @@ describe('CRM deal customer and Quiet detail composition', () => {
     expect(dealSource).toContain('presentation="header"');
     expect(dealSource).toContain('<SaveIndicator saving={saving} error={saveError} presentation="quiet"');
 		expect(dealSource).not.toContain('<QuietStatusText');
-		expect(dealSource).toContain('<DealStagePath');
+		expect(dealSource).toContain('<DealStageSelect');
     expect(dealSource).toContain('<QuietDetailLayout');
   });
 

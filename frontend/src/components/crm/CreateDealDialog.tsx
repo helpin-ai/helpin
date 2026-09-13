@@ -1,3 +1,4 @@
+import { DealStageSelect } from './DealStageSelect';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -129,7 +130,7 @@ function CreateDealForm({ onOpenChange, companyContext, contactContext, initialP
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Pipeline"><Choice label="Pipeline" value={effective.pipelineId} onChange={value => { setPipelineId(value); setStageId(undefined); }} options={pipelines.map(p => ({value:p.id,label:p.name}))} /></Field>
-            <Field label="Stage"><Choice label="Stage" value={effective.stageId} onChange={setStageId} options={stages.map(s => ({value:s.id,label:s.name}))} /></Field>
+            <Field label="Stage"><DealStageSelect value={effective.stageId} onChange={setStageId} stages={stages} underline /></Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Owner"><Choice label="Owner" value={ownerId || '__none__'} onChange={value => setOwner(value === '__none__' ? '' : value)} options={[{value:'__none__',label:'Unassigned'},...members.map(m => ({value:m.id,label:m.display_name || m.email}))]} /></Field>

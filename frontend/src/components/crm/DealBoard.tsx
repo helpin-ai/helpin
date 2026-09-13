@@ -1,13 +1,20 @@
+import { defaultStageColor } from '@/lib/crmStageColors';
+import { useDealEdits } from './useDealEdits';
+import { commitDropBeforeClearingPreview, resolveBoardDropTarget, PM_BOARD_DRAG_ACTIVATION_DISTANCE } from '@/components/pm/KanbanBoard.dnd';
+import { DealStageContent } from './DealStageSelect';
 import { comparableDealTotal } from './dealCreationDefaults';
 import { useCallback, useMemo, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  closestCorners,
+  closestCenter,
+  MeasuringStrategy,
+  KeyboardSensor,
   useSensor,
   useSensors,
   useDroppable,
+  type KeyboardCoordinateGetter,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
@@ -15,8 +22,6 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CollapseIcon, ExpandIcon, PlusSignIcon, KanbanIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { StageTypeIcon } from '@/lib/crmConstants';
-import { crmDealService } from '@/lib/services/crmService';
 import { DealCard } from './DealCard';
 import type { CRMDeal, CRMPipeline, CRMPipelineStage } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
@@ -34,6 +39,7 @@ interface DealBoardProps {
 }
 
 interface ColumnProps {
+  isPending: (id: string) => boolean;
   stage: CRMPipelineStage;
   deals: CRMDeal[];
   collapsed: boolean;
@@ -43,10 +49,11 @@ interface ColumnProps {
   workspaceId: string;
   assignableMembers: AssignableMember[];
   ownerNameMap: Map<string, string>;
-  onDealUpdated?: (deal: CRMDeal) => void;
+  onOwnerChange: (id: string, ownerId: string) => void;
 }
 
 function Column({
+  isPending,
   stage,
   deals,
   collapsed,
@@ -56,7 +63,7 @@ function Column({
   workspaceId,
   assignableMembers,
   ownerNameMap,
-  onDealUpdated,
+  onOwnerChange,
 }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
   const stageTotal = comparableDealTotal(deals);
@@ -64,12 +71,12 @@ function Column({
   if (collapsed) {
     return (
       <QuickTooltip label={`Expand ${stage.name}`}>
-        <section
+        <section ref={setNodeRef} data-stage-id={stage.id}
           className="flex h-full w-[44px] shrink-0 cursor-pointer flex-col items-center rounded-md border border-border/50 bg-muted/30 pt-4 transition-colors hover:bg-muted/50"
           onClick={() => onToggleCollapse(stage.id)}
         >
           <ExpandIcon className="mb-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <StageTypeIcon stageType={stage.stage_type} className="mb-2 h-4 w-4 shrink-0" />
+          <span className="mb-2 h-3 w-3 shrink-0 rounded-full border border-border/50" style={{backgroundColor:stage.color || defaultStageColor(stage.stage_type,stage.position)}} />
           <span className="text-xs font-medium text-muted-foreground">{deals.length}</span>
           <div className="mt-3 flex flex-1 items-start">
             <span
@@ -85,12 +92,11 @@ function Column({
   }
 
   return (
-    <section className="flex h-full w-[300px] shrink-0 flex-col">
+    <section data-stage-id={stage.id} className="flex h-full w-[300px] shrink-0 flex-col">
       <header className="flex items-center justify-between px-3 pt-4 pb-3">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
-            <StageTypeIcon stageType={stage.stage_type} className="h-4 w-4 shrink-0" />
-            {stage.name}
+            <DealStageContent stage={stage} />
           </p>
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <span>{deals.length} deals</span>
@@ -127,11 +133,12 @@ function Column({
             <DealCard
               key={deal.id}
               deal={deal}
+              pending={isPending(deal.id)}
               onOpen={(d) => onDealClick(d.id)}
               workspaceId={workspaceId}
               assignableMembers={assignableMembers}
               ownerNameMap={ownerNameMap}
-              onOwnerChanged={onDealUpdated}
+              onOwnerChange={onOwnerChange}
             />
           ))}
 
@@ -165,11 +172,9 @@ export function DealBoard({
   const stages = useMemo(() => {
     if (!pipeline?.stages) return [];
     return [...pipeline.stages].sort((a, b) => a.position - b.position);
-  }, [pipeline?.stages]);
+  }, [pipeline]);
 
-  const [localDeals, setLocalDeals] = useState<CRMDeal[]>(deals);
-  // Keep local deals in sync with prop changes
-  useMemo(() => { setLocalDeals(deals); }, [deals]);
+  const { localDeals, updateDealField, isPending } = useDealEdits(workspaceId, pipeline?.id, deals, stages, onDealUpdated);
 
   const dealsByStage = useMemo(() => {
     const map = new Map<string, CRMDeal[]>();
@@ -198,25 +203,34 @@ export function DealBoard({
       const next = new Set(prev);
       if (next.has(stageId)) next.delete(stageId);
       else next.add(stageId);
-      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next])); } catch {}
+      try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next])); } catch { /* Keep the in-memory preference when storage is unavailable. */ }
       return next;
     });
   }, [COLLAPSED_KEY]);
 
   // ── Drag and Drop ─────────────────────────────────────────────
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  // Deals move between stages; Left/Right targets the adjacent stage, including empty columns.
+  const keyboardCoordinates = useCallback<KeyboardCoordinateGetter>((event, { context }) => {
+    if (event.code !== 'ArrowLeft' && event.code !== 'ArrowRight') return;
+    event.preventDefault();
+    const { active, over, collisionRect, droppableRects } = context;
+    if (!active || !collisionRect) return;
+    const overId = String(over?.id ?? active.id);
+    const currentStageId = stages.some(stage => stage.id === overId)
+      ? overId
+      : localDeals.find(deal => deal.id === overId)?.stage_id;
+    const currentIndex = stages.findIndex(stage => stage.id === currentStageId);
+    if (currentIndex < 0) return;
+    const target = stages[currentIndex + (event.code === 'ArrowRight' ? 1 : -1)];
+    const rect = target && droppableRects.get(target.id);
+    if (!rect) return;
+    return {
+      x: rect.left + (rect.width - collisionRect.width) / 2,
+      y: rect.top + (rect.height - collisionRect.height) / 2,
+    };
+  }, [localDeals, stages]);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: PM_BOARD_DRAG_ACTIVATION_DISTANCE } }), useSensor(KeyboardSensor, {coordinateGetter:keyboardCoordinates}));
   const [activeDeal, setActiveDeal] = useState<CRMDeal | null>(null);
-
-  const findStageIdByItemId = useCallback(
-    (id: string) => {
-      // Check if id is a stage id directly
-      if (stages.some((s) => s.id === id)) return id;
-      // Otherwise find the deal's stage
-      const deal = localDeals.find((d) => d.id === id);
-      return deal?.stage_id ?? null;
-    },
-    [stages, localDeals],
-  );
 
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -226,39 +240,18 @@ export function DealBoard({
     [localDeals],
   );
 
-  const onDragEnd = useCallback(
-    async (event: DragEndEvent) => {
-      setActiveDeal(null);
-      const { active, over } = event;
-      if (!over) return;
-
-      const activeId = String(active.id);
-      const overId = String(over.id);
-      if (activeId === overId) return;
-
-      const fromStageId = findStageIdByItemId(activeId);
-      const toStageId = findStageIdByItemId(overId);
-      if (!fromStageId || !toStageId) return;
-      if (fromStageId === toStageId) return;
-
-      // Optimistic update
-      const snapshot = localDeals;
-      const targetStage = stages.find((s) => s.id === toStageId);
-      setLocalDeals((current) =>
-        current.map((d) =>
-          d.id === activeId ? { ...d, stage_id: toStageId, stage: targetStage } : d,
-        ),
-      );
-
-      const { error } = await crmDealService.update(workspaceId, activeId, { stage_id: toStageId });
-      if (error) {
-        setLocalDeals(snapshot);
-      } else {
-        onDealUpdated?.({ ...localDeals.find((d) => d.id === activeId)!, stage_id: toStageId, stage: targetStage } as CRMDeal);
-      }
-    },
-    [findStageIdByItemId, stages, localDeals, workspaceId, onDealUpdated],
-  );
+  const onDragEnd = useCallback(async (event: DragEndEvent) => {
+    const clearPreview = () => setActiveDeal(null);
+    const {active,over} = event;
+    const deal = localDeals.find(d => d.id === String(active.id));
+    if (!over || !deal) { clearPreview(); return; }
+    const target = resolveBoardDropTarget({
+      activeId:deal.id, fromColumnId:deal.stage_id, overId:String(over.id), pointerBelowMid:false, previewTarget:null,
+      columns:stages.map(stage => ({id:stage.id,tasks:dealsByStage.get(stage.id) ?? []})),
+    });
+    if (!target || target.toColumnId === deal.stage_id) { clearPreview(); return; }
+    await commitDropBeforeClearingPreview({commit:() => updateDealField(deal.id,{stage_id:target.toColumnId}),clearPreview});
+  },[localDeals,stages,dealsByStage,updateDealField]);
 
   if (!pipeline || stages.length === 0) {
     return (
@@ -277,7 +270,9 @@ export function DealBoard({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={closestCenter}
+      measuring={{droppable:{strategy:MeasuringStrategy.Always}}}
+      onDragCancel={() => setActiveDeal(null)}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
@@ -288,15 +283,16 @@ export function DealBoard({
             <Column
               key={stage.id}
               stage={stage}
+              isPending={isPending}
               deals={dealsByStage.get(stage.id) ?? []}
               collapsed={collapsedColumns.has(stage.id)}
               onToggleCollapse={toggleCollapse}
-              onCreateClick={() => onCreateClick?.(stage.id)}
+              onCreateClick={onCreateClick ? () => onCreateClick(stage.id) : undefined}
               onDealClick={onDealClick}
               workspaceId={workspaceId}
               assignableMembers={assignableMembers}
               ownerNameMap={ownerNameMap}
-              onDealUpdated={onDealUpdated}
+              onOwnerChange={(id, ownerId) => { void updateDealField(id, { owner_member_id: ownerId }); }}
             />
           ))}
       </div>

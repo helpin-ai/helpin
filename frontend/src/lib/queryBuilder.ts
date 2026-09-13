@@ -1,6 +1,7 @@
 export type QueryFilterLogic = 'and' | 'or';
 
 export type QueryFilterOperator =
+  | 'gt' | 'gte' | 'lt' | 'lte'
   | 'is'
   | 'is_not'
   | 'contains'
@@ -16,7 +17,7 @@ export type QueryFilterOperator =
   | 'on_or_after'
   | 'between';
 
-export type QueryFilterFieldType = 'text' | 'enum' | 'member' | 'date';
+export type QueryFilterFieldType = 'text' | 'enum' | 'member' | 'date' | 'number';
 
 export interface QueryFilterRule {
   field: string;
@@ -45,6 +46,7 @@ export interface QueryBuilderFieldDefinition {
 }
 
 export const QUERY_FILTER_OPERATOR_LABELS: Record<QueryFilterOperator, string> = {
+  gt: 'is greater than', gte: 'is at least', lt: 'is less than', lte: 'is at most',
   is: 'is',
   is_not: 'is not',
   contains: 'contains',
@@ -96,6 +98,8 @@ export function getOperatorsForField(field: QueryBuilderFieldDefinition): QueryF
   }
 
   switch (field.type) {
+    case 'number':
+      return ['is', 'is_not', 'gt', 'gte', 'lt', 'lte', 'between', 'is_empty', 'is_not_empty'];
     case 'date':
       return DATE_OPERATORS;
     case 'enum':

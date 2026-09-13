@@ -14,6 +14,7 @@ it('requires a fresh visitor snapshot after disconnecting', () => {
   useSupportPresenceStore.getState().setOnlineVisitors(['visitor-1']);
   useSupportPresenceStore.getState().setWsConnected(false);
   expect(useSupportPresenceStore.getState().hasOnlineVisitorsSnapshot).toBe(false);
+  expect(useSupportPresenceStore.getState().onlineVisitors).toEqual({});
   useSupportPresenceStore.getState().setWsConnected(true);
   expect(useSupportPresenceStore.getState().hasOnlineVisitorsSnapshot).toBe(false);
   useSupportPresenceStore.getState().setOnlineVisitors([]);

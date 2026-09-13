@@ -41,6 +41,7 @@ export interface SidebarPopoverSelectProps<T extends string = string> {
   emptyContent?: React.ReactNode;
   /** Optional trigger button class override */
   triggerClassName?: string;
+  triggerLabel?: string;
   /** Optional visual treatment for the trigger. Omit to preserve the existing compact style. */
   triggerVariant?: PickerTriggerVariant;
   /** Show a chevron icon on the trigger */
@@ -60,6 +61,7 @@ export function SidebarPopoverSelect<T extends string>({
   onOpenChange,
   emptyContent,
   triggerClassName,
+  triggerLabel,
   triggerVariant,
   showChevron = false,
 }: SidebarPopoverSelectProps<T>) {
@@ -92,6 +94,7 @@ export function SidebarPopoverSelect<T extends string>({
       trigger={
         <button
           type="button"
+          aria-label={triggerLabel}
           disabled={disabled}
           onClick={(event) => event.stopPropagation()}
           className={cn(
