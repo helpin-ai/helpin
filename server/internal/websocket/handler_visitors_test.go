@@ -14,11 +14,16 @@ import (
 )
 
 func TestHandlerVisitorSnapshots(t *testing.T) {
-	for _, initialOnline := range []bool{false, true} {
-		name := "empty_initial_snapshot"
-		if initialOnline {
-			name = "heartbeat_reconciles_expired_visitor"
-		}
+	for _, scenario := range []struct {
+		name    string
+		trigger string
+	}{
+		{name: "empty_initial_snapshot"},
+		{name: "heartbeat_reconciles_expired_visitor", trigger: `{"type":"support:ping","data":{}}`},
+		{name: "opening_conversation_reconciles_expired_visitor", trigger: `{"type":"support:viewing:start","data":{"conversation_id":"conv-1"}}`},
+	} {
+		initialOnline := scenario.trigger != ""
+		name := scenario.name
 		t.Run(name, func(t *testing.T) {
 			presence, redis := setupRedisPresence(t)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -85,7 +90,7 @@ func TestHandlerVisitorSnapshots(t *testing.T) {
 				t.Fatalf("unexpected initial visitors: %v", visitors)
 			}
 			redis.FastForward(visitorConnTTL + time.Second)
-			if err := conn.Write(ctx, ws.MessageText, []byte(`{"type":"support:ping","data":{}}`)); err != nil {
+			if err := conn.Write(ctx, ws.MessageText, []byte(scenario.trigger)); err != nil {
 				t.Fatal(err)
 			}
 			if visitors := readVisitors(); len(visitors) != 0 {
