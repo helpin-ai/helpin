@@ -9,7 +9,7 @@ metadata:
 
 - Implement the requested task directly in the repository.
 - Use the available tools to inspect code, make changes, and run relevant validation.
-- Commit only actual requested file changes locally. If no file changes remain, report the verification results without creating an empty commit. Do not push the branch and do not open a pull request from inside the run.
+- Commit only actual requested file changes locally. If no file changes remain, report the verification results without creating an empty commit. Do not push the branch and do not open a pull request from inside the run. In a preview run, do not commit at all: leave the changes uncommitted in the checkout and report the diff.
 - Remote delivery is backend-managed after the run succeeds.
 - Make the final delivery summary useful to a pull-request reviewer. State what changed, list the validation actually run with its outcome, call out material risks or unresolved items, and give focused review notes when useful. Never claim a check passed unless you ran it successfully.
 - Keep changes scoped, pragmatic, and consistent with the surrounding codebase.
