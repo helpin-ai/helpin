@@ -421,7 +421,7 @@ export const MessageBubble = memo(function MessageBubble({
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
   const hasDisplayContent = visibleContent.trim().length > 0;
-  const showBubble = !!visibleContent || fileAttachments.length > 0 || linkPreviews.length > 0;
+  const showBubble = !!visibleContent || fileAttachments.length > 0 || imageAttachments.length > 0 || linkPreviews.length > 0;
   const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
   const renderEmailBodyAsForwardedText = hasEmailBody && !!forwardedDisplayContent;
 
@@ -845,6 +845,7 @@ export const MessageBubble = memo(function MessageBubble({
                         ))}
                       </div>
                     )}
+                    {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 || linkPreviews.length > 0 ? 'mt-2' : '')}
                     {renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
                   </div>
                 </TooltipTrigger>
@@ -855,14 +856,6 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           ) : (
             messageActionsMenu
-          )}
-
-          {/* Image attachments: outside the bubble, clickable for preview */}
-          {imageAttachments.length > 0 && (
-            <div className={`relative ${showBubble ? 'mt-1.5' : ''}`}>
-              {renderImageAttachments()}
-              {!showBubble && renderBubbleTime('absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-white')}
-            </div>
           )}
         </div>
         </MessageActionsContextMenu>

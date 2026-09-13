@@ -886,7 +886,7 @@ Can I export my data?`,
     rendered.cleanup()
   })
 
-  it('anchors message actions to the text bubble instead of image attachments', () => {
+  it('keeps text and image attachments together in the bubble with message actions', () => {
     const message: SupportMessage = {
       id: 'msg-with-image-attachment',
       workspace_id: 'ws-1',
@@ -921,7 +921,7 @@ Can I export my data?`,
     expect(actions).toBeTruthy()
     expect(attachment).toBeTruthy()
     expect(bubbleFrame?.contains(actions)).toBe(true)
-    expect(bubbleFrame?.contains(attachment)).toBe(false)
+    expect(bubbleFrame?.contains(attachment)).toBe(true)
 
     cleanup()
   })
