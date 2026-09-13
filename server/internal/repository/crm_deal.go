@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
 
 // CRMDealRepository handles DB operations for CRM deals and pipelines.
@@ -79,6 +80,13 @@ func (r *CRMDealRepository) List(ctx context.Context, workspaceID string, filter
 		query = query.Where("LOWER(name) LIKE ?", search)
 	}
 
+	if filters.Query != nil {
+		var err error
+		query, err = querybuilder.ApplyGORM(query, filters.Query, crmDealFilterDefinitions)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count deals: %w", err)
@@ -345,6 +353,9 @@ func (r *CRMDealRepository) SeedDefaultPipeline(ctx context.Context, workspaceID
 			},
 		}
 
+		if err := model.ValidateCRMPipelineStages(pipeline.Stages); err != nil {
+			return err
+		}
 		if err := tx.Create(pipeline).Error; err != nil {
 			return fmt.Errorf("seed default pipeline: %w", err)
 		}

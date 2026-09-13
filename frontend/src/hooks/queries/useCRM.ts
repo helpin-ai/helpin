@@ -286,6 +286,7 @@ export function useDeleteCompany(wsId: string) {
 // ── Deals ──
 
 interface DealFilters {
+  filters?: string
   pipeline_id?: string
   stage_id?: string
   owner_member_id?: string

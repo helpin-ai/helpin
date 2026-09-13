@@ -1,31 +1,11 @@
 import type { StateType } from '@/lib/pmTypes';
-
+import { StateSelectContent } from '@/components/design-system/state-select-content';
 interface TaskStateSelectContentProps {
   stateType: StateType;
   label: string;
   color?: string | null;
   autoRunEnabled?: boolean;
 }
-
-export function TaskStateSelectContent({
-  stateType: _stateType,
-  label,
-  color,
-  autoRunEnabled = false,
-}: TaskStateSelectContentProps) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5">
-      <span
-        data-testid="state-color-dot"
-        className="h-3 w-3 shrink-0 rounded-full border border-border/50"
-        style={color ? { backgroundColor: color } : undefined}
-      />
-      <span className="truncate">{label}</span>
-      {autoRunEnabled ? (
-        <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
-          Auto-run
-        </span>
-      ) : null}
-    </span>
-  );
+export function TaskStateSelectContent({ label, color, autoRunEnabled }: TaskStateSelectContentProps) {
+  return <StateSelectContent label={label} color={color} autoRunEnabled={autoRunEnabled} />;
 }

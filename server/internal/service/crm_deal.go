@@ -184,6 +184,7 @@ func (s *CRMDealService) CreatePipeline(ctx context.Context, req model.CreateCRM
 			StageType:   s.StageType,
 			Position:    s.Position,
 			Probability: s.Probability,
+			Color:       s.Color,
 		})
 	}
 
@@ -221,6 +222,16 @@ func (s *CRMDealService) UpdatePipeline(ctx context.Context, id string, req mode
 		opts.Stages = make([]model.CRMPipelineStage, 0, len(req.Stages))
 		for _, item := range req.Stages {
 			stage := model.CRMPipelineStage{Name: item.Name, StageType: item.StageType, Position: item.Position, Probability: item.Probability}
+			if item.Color != nil {
+				stage.Color = *item.Color
+			} else if item.ID != nil {
+				for _, existing := range pipeline.Stages {
+					if existing.ID == *item.ID {
+						stage.Color = existing.Color
+						break
+					}
+				}
+			}
 			if item.ID != nil {
 				if strings.TrimSpace(*item.ID) == "" {
 					return nil, &model.CRMPipelineValidationError{Message: "stage ID cannot be empty; omit it for a new stage"}
@@ -551,6 +562,23 @@ func (s *CRMDealService) update(ctx context.Context, id string, req model.Update
 	}
 	if req.CustomProperties != nil {
 		deal.CustomProperties = model.JSONB(req.CustomProperties)
+	}
+
+	if req.PipelineID != nil || req.StageID != nil {
+		pipeline, err := s.dealRepo.GetPipeline(ctx, deal.PipelineID)
+		if err != nil {
+			return nil, err
+		}
+		if pipeline == nil || pipeline.WorkspaceID != deal.WorkspaceID {
+			return nil, fmt.Errorf("pipeline not found in workspace")
+		}
+		stage, err := s.dealRepo.GetStage(ctx, deal.StageID)
+		if err != nil {
+			return nil, err
+		}
+		if stage == nil || stage.PipelineID != deal.PipelineID {
+			return nil, fmt.Errorf("stage not found in pipeline")
+		}
 	}
 
 	// Clear preloaded associations before save

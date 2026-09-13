@@ -15,11 +15,17 @@ Architecture: reuse CRM associations for the customer, primary person and partic
 Compatibility: preserve custom properties, company-only and independent-person deals, existing creation callbacks, toasts and routes. Existing amounts retain one-time semantics. The app currently has no workspace currency preference: preserve USD fallback and remember the user's last explicit currency per workspace.
 
 
-Follow-up scope approved in the same task: match task state controls and reliable moves, and add editable stage colors.
+Follow-up scope approved in the same task: match task state controls and reliable moves, add editable stage colors, add Deals filters like Contacts, and unify display settings and Board/List controls across the platform.
 
-- [ ] Add persisted stage colors with the task color picker, safe defaults and color validation. Preserve colors through stage edits, reorders and pipeline duplication.
-- [ ] Reuse the task state content and picker for deal stage selection; show stage colors in board/list/detail/create/settings.
-- [ ] Reuse task board drop-target and commit helpers; isolate optimistic rollback per deal and guard in-flight/context changes. Verify successful, failed and concurrent moves.
-- [ ] Verify stage UI and transitions, then commit the follow-up changes.
+- [x] Add persisted stage colors with the task color picker, safe defaults and color validation. Preserve colors through stage edits, reorders and pipeline duplication.
+- [x] Reuse the task state content and picker for deal stage selection; show stage colors in board/list/detail/create/settings.
+- [x] Reuse task board drop-target and commit helpers; isolate optimistic rollback per deal and guard in-flight/context changes. Verify successful, failed and concurrent moves.
+- [x] Add server-backed Deals filters using the shared query builder, including numeric comparisons and removable applied filters.
+- [x] Unify display menus across Deals, Contacts, Companies, Tasks, Epics and embedded task views; match view icons and lighten the inactive icon.
+- [x] Verify stage UI and transitions; deliver the follow-up changes on waqar-fixes.
 
 Verified creation: 18 frontend unit checks, 7 browser cases (including task-style toast/Open and inline contact retry), CRM service tests, repository/dbmigrate tests, TypeScript, new-form lint, and a disposable PostgreSQL migration check. Existing board/card/table lint findings are being assessed in the follow-up stage work. Toolbar from waqar-images/pipeline.png is hidden for workspaces with zero deals.
+
+Follow-up verification (2026-09-13): 69 frontend unit checks; creation, pipeline-settings and deal-stage Chromium cases, including color editing/copying, numeric filtering, independent rollback, failed owner edits, keyboard cancellation and Space/Enter moves, and narrow dark display settings. Targeted Go model/repository/service/handler/dbmigrate checks pass. The stage-color SQL passes backfill, idempotency, custom-color preservation and constraint checks in disposable PostgreSQL. Full frontend TypeScript check passes. No new lint errors; pre-existing findings remain in the task board and pipeline browser fixture.
+
+Deal updates serialize by workspace/record. Board and list apply optimistic patches per record, preserving unrelated successful saves. Keyboard Left/Right targets adjacent stage centers, including empty stages; pointer targeting and drop commit timing use the task board helpers. The visual drag overlay has a separate registration from the source card.

@@ -175,6 +175,7 @@ export interface UpdateCRMCompanyRequest {
 }
 
 export interface CRMPipelineStage {
+  color?: string;
   deal_count?: number;
   id: string;
   pipeline_id: string;
@@ -205,6 +206,7 @@ export interface CreateCRMPipelineRequest {
   is_default?: boolean;
   default_commercial_motion?: CRMDealCommercialMotion;
   stages?: {
+    color?: string;
     name: string;
     stage_type: PipelineStageType;
     position: number;
@@ -219,6 +221,7 @@ export interface UpdateCRMPipelineRequest {
   is_default?: boolean;
   default_commercial_motion?: CRMDealCommercialMotion;
   stages?: {
+    color?: string;
     id?: string;
     name: string;
     stage_type: PipelineStageType;

@@ -9,6 +9,7 @@ async function installMocks(
     failRefreshAfterSave?: boolean;
     multiplePipelines?: boolean;
     motion?: string;
+    color?: string;
   } = {},
 ) {
   const stages = [
@@ -25,6 +26,7 @@ async function installMocks(
     id: `stage-${position}`,
     pipeline_id: "sales",
     name,
+    color: options.color,
     position,
     stage_type: position === 7 ? "won" : position === 8 ? "lost" : "open",
     probability: [0, 10, 50, 40, 60, 80, 90, 100, 0][position],
@@ -488,7 +490,7 @@ test("keyboard dragging moves across several stages and preserves won/lost outco
 test("creates a pipeline by copying stages without copying stage IDs or deals", async ({
   page,
 }) => {
-  const { writes } = await installMocks(page);
+  const { writes } = await installMocks(page, {color: "#b44ec9"});
   await page.goto(url);
   await page
     .getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true })
@@ -514,6 +516,7 @@ test("creates a pipeline by copying stages without copying stage IDs or deals", 
     stage_type: "open",
     probability: 0,
     position: 0,
+    color: "#b44ec9",
   });
 });
 
@@ -542,6 +545,7 @@ test("adds a stage at a chosen position and validates probability", async ({
     stage_type: "open",
     probability: 25,
     position: 2,
+    color: "#788596",
   });
 });
 
@@ -771,3 +775,19 @@ for (const motion of ["expansion", "renewal"]) {
     expect(writes[1].default_commercial_motion).toBe("existing_business");
   });
 }
+
+
+test("stage color persists and is selected when reopening the editor", async ({ page }) => {
+  const { writes } = await installMocks(page);
+  await page.goto(url);
+  await page.getByRole("button", { name: "Show stages for Outbound sales pipeline", exact: true }).click();
+  await page.getByRole("button", { name: "Edit Contacted", exact: true }).click();
+  await page.getByRole("button", { name: "Select color #b44ec9", exact: true }).click();
+  await page.getByRole("button", { name: "Save stage", exact: true }).click();
+  await expect(page.locator('[data-slot="dialog-content"]')).not.toBeVisible();
+  expect(writes[0].stages.find((stage: { id: string }) => stage.id === 'stage-1').color).toBe('#b44ec9');
+  await page.getByRole("button", { name: "Edit Contacted", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Select color #b44ec9", exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.screenshot({ path: '/tmp/crm-stage-color-editor.png' });
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+});

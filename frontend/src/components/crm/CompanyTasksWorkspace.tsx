@@ -1,14 +1,14 @@
+import { BoardListViewToggle } from '@/components/design-system/board-list-view-toggle';
 import { useEffect, useMemo, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, DragOverlay, MeasuringStrategy, PointerSensor, useDroppable, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
 
-import { Cancel01Icon, LayoutTable01Icon, LayoutTwoColumnIcon, Loading01Icon } from '@/lib/icons';
+import { Cancel01Icon, Loading01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { QuietSearchInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { BoardDisplayMenu } from '@/components/pm/BoardDisplayMenu';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import { TaskCard } from '@/components/pm/TaskCard';
@@ -537,34 +537,7 @@ export function CRMTasksWorkspace({ workspaceId, objectType, objectId, onOpenTas
               </Select>
             )}
 
-            <span className="inline-flex h-7 items-center gap-0.5 rounded-md border border-border/70 bg-muted/30 p-0.5">
-              <QuickTooltip label="Table view">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Table view"
-                  aria-pressed={viewMode === 'list'}
-                  className={cn('h-6 w-6 rounded-sm', viewMode === 'list' && 'bg-background text-foreground shadow-sm hover:bg-background')}
-                  onClick={() => setViewMode('list')}
-                >
-                  <LayoutTable01Icon className="h-3.5 w-3.5" />
-                </Button>
-              </QuickTooltip>
-              <QuickTooltip label="Board view">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Board view"
-                  aria-pressed={viewMode === 'board'}
-                  className={cn('h-6 w-6 rounded-sm', viewMode === 'board' && 'bg-background text-foreground shadow-sm hover:bg-background')}
-                  onClick={() => setViewMode('board')}
-                >
-                  <LayoutTwoColumnIcon className="h-3.5 w-3.5" />
-                </Button>
-              </QuickTooltip>
-            </span>
+            <BoardListViewToggle value={viewMode} onChange={setViewMode} />
 
             {viewMode === 'list' ? <ListDisplayMenu disabledKeys={scopedListDisabledKeys} /> : <BoardDisplayMenu />}
           </div>

@@ -1,11 +1,13 @@
+import { DealsFilterBar, DealsActiveFilterBar } from '@/components/crm/DealsFilterBar';
+import { buildCRMDealQueryFields } from '@/lib/crmDealQueryBuilder';
+import { parseQueryFilterGroup, serializeQueryFilterGroup, type QueryFilterGroup } from '@/lib/queryBuilder';
+import { BoardListViewToggle } from '@/components/design-system/board-list-view-toggle';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate, useSearch } from '@tanstack/react-router';
 import {
   Activity01Icon,
   ChartIncreaseIcon,
   DollarCircleIcon,
-  LayoutTwoColumnIcon,
-  LayoutTable01Icon,
   PlusSignIcon,
   Search01Icon,
   Settings02Icon,
@@ -14,7 +16,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { QuietPageHeader, QuietPrimaryAction, QuietSearchInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDealDisplayStore } from '@/stores/dealDisplayStore';
 import { useDeals, usePipelines } from '@/hooks/queries';
@@ -29,6 +30,7 @@ import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation'
 
 function DealsEmptyState({
   hasPipeline,
+  hasFilters,
   search,
   onCreateClick,
   onClearSearch,
@@ -36,13 +38,14 @@ function DealsEmptyState({
   onPipelineSettingsClick,
 }: {
   hasPipeline: boolean;
+  hasFilters?: boolean;
   search: string;
   onCreateClick: () => void;
   onClearSearch: () => void;
   onImportClick: () => void;
   onPipelineSettingsClick: () => void;
 }) {
-  if (search.trim()) {
+  if (search.trim() || hasFilters) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <div className="max-w-md text-center">
@@ -51,10 +54,10 @@ function DealsEmptyState({
           </div>
           <h2 className="mt-4 text-base font-semibold">No matching deals</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            No deals match “{search}”. Clear the search to return to the full pipeline.
+            {hasFilters ? 'No deals match your search and filters.' : `No deals match “${search}”.`}
           </p>
           <Button size="sm" variant="outline" className="mt-4" onClick={onClearSearch}>
-            Clear search
+            {hasFilters ? 'Clear filters' : 'Clear search'}
           </Button>
         </div>
       </div>
@@ -131,6 +134,10 @@ export function DealsPage() {
   const wsSlug = currentWorkspace?.slug ?? '';
   const navigate = useNavigate();
   const location = useLocation();
+  const routeSearch = useSearch({strict:false}) as {filters?:string};
+  const filterGroup = parseQueryFilterGroup(routeSearch.filters);
+  const setFilterGroup = (group?:QueryFilterGroup) => void navigate({search:(previous:Record<string,unknown>)=>({...previous,filters:serializeQueryFilterGroup(group)}),replace:true} as never);
+
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [createStageId, setCreateStageId] = useState<string | undefined>();
@@ -163,6 +170,7 @@ export function DealsPage() {
   // Deals
   const { data, isLoading, refetch } = useDeals(wsId, {
     search: search || undefined,
+    filters: routeSearch.filters || undefined,
     pipeline_id: activePipelineId,
   });
 
@@ -190,6 +198,7 @@ export function DealsPage() {
     void navigate({ to: '/w/$slug/settings/crm-pipelines', params: { slug: wsSlug } });
   }, [navigate, wsSlug]);
 
+  const filterFields = useMemo(() => buildCRMDealQueryFields(assignableMembers, activePipeline?.stages ?? []), [assignableMembers,activePipeline]);
   const deals = data?.data ?? [];
   const showEmptyState = !isLoading && deals.length === 0;
 
@@ -234,39 +243,24 @@ export function DealsPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
 
+        <DealsFilterBar fields={filterFields} value={filterGroup} onChange={setFilterGroup} />
         <div className="ml-auto flex items-center gap-1">
+          <BoardListViewToggle value={view} onChange={setView} />
           <DealDisplayMenu mode={view} />
-          <QuickTooltip label="Board view">
-            <Button
-              variant={view === 'board' ? 'default' : 'ghost'}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setView('board')}
-            >
-              <LayoutTwoColumnIcon className="h-4 w-4" />
-            </Button>
-          </QuickTooltip>
-          <QuickTooltip label="List view">
-            <Button
-              variant={view === 'list' ? 'default' : 'ghost'}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setView('list')}
-            >
-              <LayoutTable01Icon className="h-4 w-4" />
-            </Button>
-          </QuickTooltip>
         </div>
       </header>}
+
+      <DealsActiveFilterBar fields={filterFields} value={filterGroup} onChange={setFilterGroup} />
 
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-auto">
         {showEmptyState ? (
           <DealsEmptyState
             hasPipeline={!!activePipeline?.stages?.length}
+            hasFilters={!!filterGroup?.rules.length}
             search={search}
             onCreateClick={openCreate}
-            onClearSearch={() => setSearch('')}
+            onClearSearch={() => { setSearch(''); setFilterGroup(undefined); }}
             onImportClick={handleImportClick}
             onPipelineSettingsClick={handlePipelineSettingsClick}
           />
