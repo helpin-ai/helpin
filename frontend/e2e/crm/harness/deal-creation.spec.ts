@@ -94,8 +94,8 @@ test('creates an inline company and retains the deal draft',async({page})=>{
  const writes=await setup(page);await page.goto('/e2e/crm/harness/deal-creation.html');
  await page.getByLabel('Deal name').fill('Preserved draft');
  await page.getByRole('button',{name:'Select company',exact:true}).click();
- await page.getByRole('combobox').last().fill('New venture');
- await page.getByRole('option',{name:'Add “New venture” as new company'}).click();
+ await page.getByRole('combobox',{name:'Search companies'}).fill('New venture');
+ await page.getByRole('button',{name:'Add “New venture” as new company'}).click();
  await expect(page.getByRole('button',{name:'Create deal',exact:true})).toBeDisabled();
  await page.getByRole('button',{name:'Add company',exact:true}).click();
  await expect(page.getByLabel('Deal name')).toHaveValue('Preserved draft');
@@ -130,8 +130,8 @@ test('new contacts inherit company and retry linking without duplicate creation'
  await page.goto('/e2e/crm/harness/deal-creation.html');
  await pick(page,'Select company','Acme');
  await page.getByRole('button',{name:'Add contact',exact:true}).click();
- await page.getByRole('combobox').last().fill('Robin Jones');
- await page.getByRole('option',{name:'Add “Robin Jones” as new contact'}).click();
+ await page.getByRole('combobox',{name:'Search contacts'}).fill('Robin Jones');
+ await page.getByRole('button',{name:'Add “Robin Jones” as new contact'}).click();
  await page.getByLabel('Contact email').fill('robin@example.com');
  await page.getByRole('button',{name:'Add contact',exact:true}).click();
  await expect(page.getByRole('button',{name:'Retry linking'})).toBeVisible();
@@ -141,4 +141,47 @@ test('new contacts inherit company and retry linking without duplicate creation'
  await page.getByRole('button',{name:'Create deal',exact:true}).click();
  await expect.poll(()=>writes.length).toBe(1);expect(contactCreates).toBe(1);expect(links).toBe(2);
  expect(writes[0]).toMatchObject({company_id:'acme',contact_id:'new-person'});
+});
+
+for (const kind of ['company', 'contact']) test(`search replaces the ${kind} selector and creation stays visible`, async ({page}) => {
+ if (kind === 'contact') await page.setViewportSize({width:390,height:844});
+ await setup(page);
+ await page.goto('/e2e/crm/harness/deal-creation.html');
+ if (kind === 'contact') await page.evaluate(() => document.documentElement.classList.add('dark'));
+ const trigger = page.getByRole('button',{name:kind === 'company' ? 'Select company' : 'Add contact',exact:true});
+ const before = await trigger.boundingBox();
+ await trigger.click();
+ const input = page.getByRole('combobox',{name:kind === 'company' ? 'Search companies' : 'Search contacts'});
+ await expect(input).toBeFocused();
+ await expect(trigger).toBeHidden();
+ const after = await input.boundingBox();
+ expect(Math.abs(after!.y - before!.y)).toBeLessThan(12);
+ await expect(page.getByRole('button',{name:`Add new ${kind}`,exact:true})).toBeVisible();
+ await expect(page.getByRole('option').first()).toBeVisible();
+ await page.screenshot({path:`/tmp/crm-${kind}-inline-search.png`});
+ const existing = kind === 'company' ? 'Acme' : 'Alex Smith';
+ await input.fill(existing);
+ const add = page.getByRole('button',{name:`Add “${existing}” as new ${kind}`,exact:true});
+ await expect(add).toBeVisible();
+ await add.focus();
+ await page.keyboard.press('Enter');
+ await expect(page.getByLabel(`New ${kind} name`,{exact:true})).toHaveValue(existing);
+});
+
+test('company search supports keyboard selection and Escape restores the selector', async ({page}) => {
+ await setup(page);
+ await page.goto('/e2e/crm/harness/deal-creation.html');
+ const trigger = page.getByRole('button',{name:'Select company',exact:true});
+ await trigger.click();
+ const input = page.getByRole('combobox',{name:'Search companies'});
+ await expect(input).toBeFocused();
+ await page.keyboard.press('Escape');
+ await expect(trigger).toBeVisible();
+ await expect(trigger).toBeFocused();
+ await trigger.click();
+ await expect(page.getByRole('option',{name:'Acme',exact:true})).toBeVisible();
+ await input.press('ArrowDown');
+ await input.press('Enter');
+ await expect(input).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Change',exact:true})).toBeVisible();
 });
