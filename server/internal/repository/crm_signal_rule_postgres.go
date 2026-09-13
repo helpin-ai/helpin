@@ -67,7 +67,7 @@ func (r *CRMSignalRepository) activationStalledCandidates(ctx context.Context, c
 	err := r.db.WithContext(ctx).Raw(`SELECT state.workspace_id, state.company_id,
 		(state.state->>'onboarding_started_at')::timestamptz AS onboarding_started
 		FROM crm_company_commercial_states state
-		WHERE state.state ? 'onboarding_started_at' AND NOT (state.state ? 'first_value_at')
+		WHERE jsonb_exists(state.state, 'onboarding_started_at') AND NOT jsonb_exists(state.state, 'first_value_at')
 		AND (state.state->>'onboarding_started_at')::timestamptz <= ?`, end.AddDate(0, 0, -days)).Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("evaluate activation stalled: %w", err)
