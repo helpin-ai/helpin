@@ -73,6 +73,37 @@ func TestStandardAIProfilesProvisionAndPreserveChoices(t *testing.T) {
 	}
 }
 
+func TestStandardAIProfilesUseDirectProviderCredentials(t *testing.T) {
+	s, connections, db := standardProfilesFixture(t)
+	s.credentials["openai"] = "openai-fixture-key"
+	s.credentials["anthropic"] = "anthropic-fixture-key"
+	ctx := context.Background()
+	if err := s.EnsureWorkspace(ctx, "workspace"); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ tier, provider, model string }{
+		{"large", "openai", "gpt-5.6-terra"},
+		{"flagship", "anthropic", "claude-sonnet-5"},
+	} {
+		var profile model.AIProfile
+		if err := db.First(&profile, "id = ?", model.StandardAIProfileID("workspace", test.tier)).Error; err != nil {
+			t.Fatal(err)
+		}
+		if profile.Primary.Model.Provider != test.provider || profile.Primary.Model.Model != test.model ||
+			profile.Primary.ConnectionID != model.StandardAIConnectionID("workspace", test.provider) {
+			t.Fatalf("%s has the wrong default route", test.tier)
+		}
+		connection, err := connections.repo.Get(ctx, profile.Primary.ConnectionID)
+		if err != nil || connection == nil {
+			t.Fatalf("%s connection unavailable: %v", test.tier, err)
+		}
+		secret, err := connections.open(connection)
+		if err != nil || secret.APIKey != s.credentials[test.provider] || connection.Status != "connected" {
+			t.Fatalf("%s did not receive its own provider credential", test.tier)
+		}
+	}
+}
+
 func TestStandardAIProfilesManagedRotationAndDisconnect(t *testing.T) {
 	s, connections, db := standardProfilesFixture(t)
 	ctx := context.Background()

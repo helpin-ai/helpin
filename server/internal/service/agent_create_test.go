@@ -95,7 +95,7 @@ func TestCustomAgentVersionCanChangeModelTierWithoutMutatingPriorSnapshot(t *tes
 		t.Fatal(err)
 	}
 	svc := &AgentService{agentRepo: repository.NewAgentRepository(db)}
-	svc.SetModelProviderConfig("", "", "test-openrouter-key")
+	svc.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key")
 	small := "small"
 	req := modelCreateAgentRequest(nil)
 	req.ModelTier = &small
@@ -114,7 +114,7 @@ func TestCustomAgentVersionCanChangeModelTierWithoutMutatingPriorSnapshot(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if original.ModelTier != "small" || created.ModelTier != "large" || derefString(created.Model) != "openai/gpt-5.6-terra" {
+	if original.ModelTier != "small" || created.ModelTier != "large" || derefString(created.Provider) != "openai" || derefString(created.Model) != "gpt-5.6-terra" {
 		t.Fatalf("original=%#v created=%#v", original, created)
 	}
 	activated, err := svc.ActivateAgentVersion(context.Background(), agent.WorkspaceID, agent.ID, created.ID, "user-1")
@@ -1457,7 +1457,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	if version.VersionKey == "" || version.VersionKey == defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder) {
 		t.Fatalf("expected a new custom version key, got %q", version.VersionKey)
 	}
-	if version.Model == nil || *version.Model != "openai/gpt-5.6-terra" || version.ModelTier != "large" {
+	if version.Model == nil || *version.Model != "gpt-5.6-terra" || derefString(version.Provider) != "openai" || version.ModelTier != "large" {
 		t.Fatalf("expected copied preset to reset to Large, got %+v", version)
 	}
 	if strings.TrimSpace(string(version.ExecutionConfig)) != `{}` {
@@ -1509,7 +1509,7 @@ func TestCreateWorkspacePresetVersion_BlankModelUsesFamilyDefault(t *testing.T) 
 	if version.Model == nil {
 		t.Fatal("expected the family default model")
 	}
-	if *version.Model != "openai/gpt-5.6-terra" || version.ModelTier != "large" {
+	if *version.Model != "gpt-5.6-terra" || derefString(version.Provider) != "openai" || version.ModelTier != "large" {
 		t.Fatalf("expected Large default, got %+v", version)
 	}
 
@@ -1518,7 +1518,7 @@ func TestCreateWorkspacePresetVersion_BlankModelUsesFamilyDefault(t *testing.T) 
 		if preset.VersionKey != version.VersionKey {
 			continue
 		}
-		if preset.Model == nil || *preset.Model != "openai/gpt-5.6-terra" {
+		if preset.Model == nil || *preset.Model != "gpt-5.6-terra" || derefString(preset.Provider) != "openai" {
 			t.Fatalf("expected listed workspace preset to use family default, got %+v", preset.Model)
 		}
 		return
@@ -1967,8 +1967,8 @@ func TestUpdateWorkspacePresetVersion_RejectsInvalidRouting(t *testing.T) {
 	if stored == nil {
 		t.Fatal("expected stored workspace preset version")
 	}
-	if stored.Provider == nil || *stored.Provider != model.AgentModelProviderOpenRouter {
-		t.Fatalf("expected provider to remain openrouter after failed update, got %+v", stored.Provider)
+	if stored.Provider == nil || *stored.Provider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected provider to remain openai after failed update, got %+v", stored.Provider)
 	}
 }
 

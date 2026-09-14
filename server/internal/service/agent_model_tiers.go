@@ -18,10 +18,10 @@ var selectableAgentTierRoutes = map[aimodel.Tier]AICompletionRoute{
 		Provider: "openrouter", Model: "google/gemini-3.8-flash", ServiceTier: defaultAICompletionServiceTier,
 	},
 	aimodel.TierLarge: {
-		Provider: "openrouter", Model: "openai/gpt-5.6-terra", ServiceTier: defaultAICompletionServiceTier,
+		Provider: "openai", Model: "gpt-5.6-terra", ServiceTier: defaultAICompletionServiceTier,
 	},
 	aimodel.TierFlagship: {
-		Provider: "openrouter", Model: "anthropic/claude-sonnet-5", ServiceTier: defaultAICompletionServiceTier,
+		Provider: "anthropic", Model: "claude-sonnet-5", ServiceTier: defaultAICompletionServiceTier,
 	},
 }
 
