@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	sdk "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/agent-runtime-go/chatgptauth"
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -36,11 +36,11 @@ type AIConnectionService struct {
 	key     []byte
 	cfg     AIConnectionConfig
 	oauth   *chatgptauth.Client
-	catalog *aiusage.Catalog
+	catalog *aimodel.Catalog
 	runtime *AgentRuntimeClient
 }
 
-func NewAIConnectionService(repo *repository.AIConnectionRepository, catalog *aiusage.Catalog, runtime *AgentRuntimeClient, cfg AIConnectionConfig) (*AIConnectionService, error) {
+func NewAIConnectionService(repo *repository.AIConnectionRepository, catalog *aimodel.Catalog, runtime *AgentRuntimeClient, cfg AIConnectionConfig) (*AIConnectionService, error) {
 	key, err := parseExternalMCPEncryptionKey(cfg.EncryptionKey)
 	if err != nil {
 		return nil, errors.New("invalid AI_CONNECTION_ENCRYPTION_KEY")
@@ -52,12 +52,12 @@ func NewAIConnectionService(repo *repository.AIConnectionRepository, catalog *ai
 	return &AIConnectionService{repo: repo, key: key, cfg: cfg, oauth: oauth, catalog: catalog, runtime: runtime}, nil
 }
 func (s *AIConnectionService) Enabled() bool { return s != nil && len(s.key) == 32 && s.runtime != nil }
-func (s *AIConnectionService) Models() []aiusage.PublicModel {
-	out := []aiusage.PublicModel{}
+func (s *AIConnectionService) Models() []aimodel.PublicModel {
+	out := []aimodel.PublicModel{}
 	if s == nil || s.catalog == nil {
 		return out
 	}
-	for _, m := range s.catalog.PublicSnapshot().Models {
+	for _, m := range s.catalog.PublicModels() {
 		if _, err := s.catalog.ResolveDefault(m.Provider, m.SelectionModel, "standard"); err != nil {
 			continue
 		}
@@ -329,7 +329,7 @@ func (s *AIConnectionService) Credential(ctx context.Context, workspace, user, i
 	return connection, credential, nil
 }
 
-func (s *AIConnectionService) ResolveModel(provider, name string) (*sdk.RunModel, aiusage.Tier, error) {
+func (s *AIConnectionService) ResolveModel(provider, name string) (*sdk.RunModel, aimodel.Tier, error) {
 	pricingProvider := provider
 	if provider == "openai_chatgpt" {
 		pricingProvider = "openai"

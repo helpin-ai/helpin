@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 )
 
 var (
@@ -24,6 +26,12 @@ func LoadCatalog() (*Catalog, error) {
 	if err := json.Unmarshal(catalogJSON, &catalog); err != nil {
 		return nil, fmt.Errorf("decode AI pricing catalog: %w", err)
 	}
+	models, err := aimodel.LoadCatalog()
+	if err != nil {
+		return nil, err
+	}
+	catalog.ModelCatalog = models
+	catalog.Models = models.Models
 	if issues := catalog.Validate(); len(issues) != 0 {
 		return nil, fmt.Errorf("%w: %s at %s", ErrPricingConfigurationMissing,
 			issues[0].Message, issues[0].Path)
@@ -72,11 +80,15 @@ func (c *Catalog) Resolve(provider, model, route, serviceTier string) (ResolvedR
 		if !ok {
 			return ResolvedRoute{}, ErrPricingConfigurationMissing
 		}
+		metadata, err := c.ModelCatalog.Resolve(provider, canonicalModel, candidate.Route, serviceTier)
+		if err != nil {
+			return ResolvedRoute{}, ErrModelUnavailable
+		}
 		snapshot, err := json.Marshal(struct {
-			PricingVersion string          `json:"pricing_version"`
-			Route          RouteDefinition `json:"route"`
-			Rates          TokenRates      `json:"rates"`
-		}{PricingVersion: c.PricingVersion, Route: candidate, Rates: tier.CustomerRates})
+			PricingVersion string        `json:"pricing_version"`
+			Route          routeSnapshot `json:"route"`
+			Rates          TokenRates    `json:"rates"`
+		}{PricingVersion: c.PricingVersion, Route: snapshotRoute(candidate, metadata), Rates: tier.CustomerRates})
 		if err != nil {
 			return ResolvedRoute{}, fmt.Errorf("snapshot AI pricing route: %w", err)
 		}
@@ -84,7 +96,7 @@ func (c *Catalog) Resolve(provider, model, route, serviceTier string) (ResolvedR
 			Provider: provider, CanonicalModel: canonicalModel, Route: candidate.Route,
 			ServiceTier: candidate.ServiceTier, Tier: candidate.Tier,
 			Rates: tier.CustomerRates, RateSnapshot: snapshot,
-			ContextWindow: candidate.ContextWindow, MaximumOutput: candidate.MaximumOutput,
+			ContextWindow: metadata.ContextWindow, MaximumOutput: metadata.MaximumOutput,
 		}, nil
 	}
 	return ResolvedRoute{}, ErrModelUnavailable
@@ -190,7 +202,11 @@ func (c *Catalog) Validate() []ValidationIssue {
 		if !ok {
 			continue
 		}
-		issues = append(issues, validateRouteCosts(path, route, tier.CeilingRates)...)
+		metadata, err := c.ModelCatalog.Resolve(route.Provider, route.CanonicalModel, route.Route, route.ServiceTier)
+		if route.Enabled && err != nil {
+			issues = append(issues, ValidationIssue{Code: "missing_model_metadata", Path: path, Message: "priced route requires enabled model metadata"})
+		}
+		issues = append(issues, validateRouteCosts(path, route, metadata, tier.CeilingRates)...)
 	}
 	for index, tool := range c.Tools {
 		if tool.CustomerMicrousd != markup(tool.CeilingMicrousd) {
@@ -263,15 +279,15 @@ func validateMarkup(path string, ceiling, customer TokenRates) []ValidationIssue
 	return issues
 }
 
-func validateRouteCosts(path string, route RouteDefinition, ceiling TokenRates) []ValidationIssue {
+func validateRouteCosts(path string, route RouteDefinition, metadata aimodel.RouteDefinition, ceiling TokenRates) []ValidationIssue {
 	var issues []ValidationIssue
 	if route.MaximumCostRates.InputMicrousdPerMillion <= 0 || route.MaximumCostRates.OutputMicrousdPerMillion <= 0 {
 		issues = append(issues, ValidationIssue{Code: "missing_route_rate", Path: path, Message: "enabled route requires input and output costs"})
 	}
-	if route.CacheReadSupport && route.MaximumCostRates.CacheReadMicrousdPerMillion <= 0 {
+	if metadata.CacheReadSupport && route.MaximumCostRates.CacheReadMicrousdPerMillion <= 0 {
 		issues = append(issues, ValidationIssue{Code: "missing_cache_read_rate", Path: path, Message: "cache-read route requires a cost"})
 	}
-	if route.CacheWriteSupport && route.MaximumCostRates.CacheWriteMicrousdPerMillion <= 0 {
+	if metadata.CacheWriteSupport && route.MaximumCostRates.CacheWriteMicrousdPerMillion <= 0 {
 		issues = append(issues, ValidationIssue{Code: "missing_cache_write_rate", Path: path, Message: "cache-write route requires a cost"})
 	}
 	checks := []struct{ actual, maximum int64 }{

@@ -4,21 +4,21 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 func TestAgentModelTierResolverResolvesSelectableTiers(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
 	resolver := NewAgentModelTierResolver(catalog, func(provider string) bool { return provider == "openrouter" })
-	want := map[aiusage.Tier]string{
-		aiusage.TierSmall:    defaultFastOpenRouterAgentModel,
-		aiusage.TierMedium:   "google/gemini-3.7-flash",
-		aiusage.TierLarge:    "openai/gpt-5.6-terra",
-		aiusage.TierFlagship: "anthropic/claude-sonnet-5",
+	want := map[aimodel.Tier]string{
+		aimodel.TierSmall:    defaultFastOpenRouterAgentModel,
+		aimodel.TierMedium:   "google/gemini-3.7-flash",
+		aimodel.TierLarge:    "openai/gpt-5.6-terra",
+		aimodel.TierFlagship: "anthropic/claude-sonnet-5",
 	}
 	for tier, model := range want {
 		snapshot, err := resolver.ResolveCustom(tier)
@@ -28,7 +28,7 @@ func TestAgentModelTierResolverResolvesSelectableTiers(t *testing.T) {
 		if snapshot.ModelTier != string(tier) || snapshot.Provider != "openrouter" || snapshot.Model != model {
 			t.Errorf("ResolveCustom(%q) = %#v", tier, snapshot)
 		}
-		if tier == aiusage.TierSmall {
+		if tier == aimodel.TierSmall {
 			if got := snapshot.ProviderQuantizations; !slices.Equal(got, defaultFastOpenRouterQuantizations) {
 				t.Errorf("ResolveCustom(%q) quantizations = %v, want %v", tier, got, defaultFastOpenRouterQuantizations)
 			}
@@ -49,7 +49,7 @@ func TestAgentVersionActivationProjectsModelTier(t *testing.T) {
 
 func TestSmallModelTierSnapshotPersistsOpenRouterQuantizations(t *testing.T) {
 	snapshot := AgentModelTierSnapshot{
-		ModelTier:             string(aiusage.TierSmall),
+		ModelTier:             string(aimodel.TierSmall),
 		Provider:              model.AgentModelProviderOpenRouter,
 		Model:                 defaultFastOpenRouterAgentModel,
 		ServiceTier:           defaultAICompletionServiceTier,
@@ -69,19 +69,19 @@ func TestSmallModelTierSnapshotPersistsOpenRouterQuantizations(t *testing.T) {
 }
 
 func TestAgentModelTierResolverRejectsUnavailableTierWithoutLeakingRoute(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
 	resolver := NewAgentModelTierResolver(catalog, func(string) bool { return false })
-	_, err = resolver.ResolveCustom(aiusage.TierSmall)
+	_, err = resolver.ResolveCustom(aimodel.TierSmall)
 	if err == nil || err.Error() != "model size temporarily unavailable" {
 		t.Fatalf("error = %v", err)
 	}
 }
 
 func TestAgentModelTierResolverStartupValidationRejectsMissingProvider(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,13 +93,13 @@ func TestAgentModelTierResolverStartupValidationRejectsMissingProvider(t *testin
 }
 
 func TestAgentModelTierResolverDerivesTierFromStoredRoute(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
 	resolver := NewAgentModelTierResolver(catalog, nil)
 	tier, err := resolver.Derive("openrouter", "openai/gpt-5.6-terra", "standard")
-	if err != nil || tier != aiusage.TierLarge {
+	if err != nil || tier != aimodel.TierLarge {
 		t.Fatalf("Derive() = %q, %v", tier, err)
 	}
 }
@@ -120,13 +120,13 @@ func tierTestStringValue(value *string) string {
 }
 
 func TestCustomCodingModelTiersUseNativeIncludingRetiredPins(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
 	resolver := NewAgentModelTierResolver(catalog, nil)
 	for _, previous := range []string{"", "codex", "opencode", "native_sdk"} {
-		snapshot, err := resolver.ResolveCustom(aiusage.TierLarge)
+		snapshot, err := resolver.ResolveCustom(aimodel.TierLarge)
 		agent := &model.Agent{RuntimeKind: previous, AllowedTargets: []byte(`["repository"]`), AllowedTools: []byte(`["write_file","apply_patch"]`)}
 		applyModelTierSnapshotToAgent(agent, snapshot)
 		if err != nil || agent.RuntimeKind != "native_sdk" {

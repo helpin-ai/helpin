@@ -1,19 +1,18 @@
 package aiusage
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
+)
 
-// Tier is a customer-facing model-size classification.
-type Tier string
+// Tier is the legacy model-size classification.
+type Tier = aimodel.Tier
 
 const (
-	// TierSmall identifies efficient, high-volume models.
-	TierSmall Tier = "small"
-	// TierMedium identifies general-purpose models.
-	TierMedium Tier = "medium"
-	// TierLarge identifies advanced planning, coding, and review models.
-	TierLarge Tier = "large"
-	// TierFlagship identifies the highest-capability supported models.
-	TierFlagship Tier = "flagship"
+	TierSmall    = aimodel.TierSmall
+	TierMedium   = aimodel.TierMedium
+	TierLarge    = aimodel.TierLarge
+	TierFlagship = aimodel.TierFlagship
 )
 
 // FundingMode identifies who pays the inference provider.
@@ -53,29 +52,18 @@ type PlanAllowance struct {
 	Soft              bool   `json:"soft,omitempty"`
 }
 
-// ModelDefinition is one catalog model shown to customers.
-type ModelDefinition struct {
-	Provider       string   `json:"provider"`
-	CanonicalModel string   `json:"canonical_model"`
-	Label          string   `json:"label"`
-	Aliases        []string `json:"aliases,omitempty"`
-	Tier           Tier     `json:"tier"`
-	Enabled        bool     `json:"enabled"`
-}
+// ModelDefinition is the nonfinancial model identity retained in public pricing.
+type ModelDefinition = aimodel.ModelDefinition
 
 // RouteDefinition is one exact provider route eligible for execution.
 type RouteDefinition struct {
-	Provider          string     `json:"provider"`
-	CanonicalModel    string     `json:"canonical_model"`
-	Route             string     `json:"route"`
-	ServiceTier       string     `json:"service_tier"`
-	Tier              Tier       `json:"tier"`
-	MaximumCostRates  TokenRates `json:"maximum_cost_rates"`
-	CacheReadSupport  bool       `json:"cache_read_support"`
-	CacheWriteSupport bool       `json:"cache_write_support"`
-	ContextWindow     int64      `json:"context_window"`
-	MaximumOutput     int64      `json:"maximum_output"`
-	Enabled           bool       `json:"enabled"`
+	Provider         string     `json:"provider"`
+	CanonicalModel   string     `json:"canonical_model"`
+	Route            string     `json:"route"`
+	ServiceTier      string     `json:"service_tier"`
+	Tier             Tier       `json:"tier"`
+	MaximumCostRates TokenRates `json:"maximum_cost_rates"`
+	Enabled          bool       `json:"enabled"`
 }
 
 // ToolRate defines one approved provider-native paid tool.
@@ -96,6 +84,7 @@ type PaidToolUsage struct {
 
 // Catalog is the immutable AI pricing and eligibility catalog.
 type Catalog struct {
+	ModelCatalog   *aimodel.Catalog  `json:"-"`
 	PricingVersion string            `json:"pricing_version"`
 	EffectiveDate  string            `json:"effective_date"`
 	Tiers          []TierDefinition  `json:"tiers"`
@@ -143,15 +132,8 @@ type PublicPlan struct {
 	Soft              bool   `json:"soft"`
 }
 
-// PublicModel is the customer-safe representation of one catalog model.
-type PublicModel struct {
-	Provider       string `json:"provider"`
-	CanonicalModel string `json:"canonical_model"`
-	SelectionModel string `json:"selection_model"`
-	Label          string `json:"label"`
-	Tier           Tier   `json:"tier"`
-	Enabled        bool   `json:"enabled"`
-}
+// PublicModel is a nonfinancial model option.
+type PublicModel = aimodel.PublicModel
 
 // PublicTool is a provider-native paid-tool price safe for customer display.
 type PublicTool struct {

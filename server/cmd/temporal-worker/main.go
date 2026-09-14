@@ -24,6 +24,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
@@ -183,6 +184,10 @@ func main() {
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
 	billingRepo := repository.NewBillingRepository(db)
+	modelCatalog, modelCatalogErr := aimodel.LoadCatalog()
+	if modelCatalogErr != nil {
+		fatalWithSentry("load model catalog", modelCatalogErr)
+	}
 	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
 	if pricingCatalogErr != nil {
 		fatalWithSentry("load AI pricing catalog", pricingCatalogErr)
@@ -278,7 +283,7 @@ func main() {
 	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
 		fatalWithSentry("validate AI completion providers", errors.Join(issues...))
 	}
-	agentTierResolver := service.NewAgentModelTierResolver(pricingCatalog, supportLLMRouter.HasChatProvider)
+	agentTierResolver := service.NewAgentModelTierResolver(modelCatalog, supportLLMRouter.HasChatProvider)
 	if issues := agentTierResolver.ValidateSelectable(); len(issues) != 0 {
 		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
 	}

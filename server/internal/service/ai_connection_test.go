@@ -17,7 +17,7 @@ import (
 
 	sdk "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/agent-runtime-go/chatgptauth"
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -48,7 +48,7 @@ func setupAIConnectionTest(t *testing.T) (*AIConnectionService, *gorm.DB) {
 			t.Fatal(err)
 		}
 	}
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}

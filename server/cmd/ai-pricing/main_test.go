@@ -2,9 +2,24 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
+
+func TestExportMatchesCommittedPublicPricing(t *testing.T) {
+	var output bytes.Buffer
+	if err := run([]string{"export", "--format", "typescript"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("../../../frontend/src/generated/aiPricing.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(output.Bytes(), want) {
+		t.Fatal("public pricing export differs; regenerate the committed artifact")
+	}
+}
 
 func TestRunValidateReportsActivePricingVersion(t *testing.T) {
 	var output bytes.Buffer

@@ -1,4 +1,4 @@
-import { AI_PRICING } from '@/generated/aiPricing';
+import { AI_MODELS } from '@/generated/aiModels';
 import type { AgentModelTier } from '@/lib/pmTypes';
 
 export interface AgentModelTierOption {
@@ -10,9 +10,9 @@ export interface AgentModelTierOption {
 const AGENT_MODEL_TIER_KEYS: AgentModelTier[] = ['small', 'medium', 'large', 'flagship'];
 
 export const AGENT_MODEL_TIER_OPTIONS: AgentModelTierOption[] = AGENT_MODEL_TIER_KEYS.map((key) => {
-  const tier = AI_PRICING.tiers.find((entry) => entry.key === key);
+  const tier = AI_MODELS.tiers.find((entry) => entry.key === key);
   if (!tier) {
-    throw new Error(`AI pricing catalog is missing agent model tier ${key}`);
+    throw new Error(`AI model catalog is missing agent model tier ${key}`);
   }
   return {
     value: key,
