@@ -238,9 +238,13 @@ test("enrollment preview and edited review approval", async ({ page }) => {
   await page
     .getByRole("textbox", { name: "Review subject" })
     .fill("Edited follow-up");
-  await page.getByRole("button",{name:"Close",exact:true}).click();
-  await expect(page.getByRole("alertdialog",{name:"Discard review changes?"})).toBeVisible();
-  await page.getByRole("button",{name:"Keep reviewing",exact:true}).click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(
+    page.getByRole("alertdialog", { name: "Discard review changes?" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Keep reviewing", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Approve email", exact: true })
     .click();
@@ -305,3 +309,103 @@ test("public unsubscribe works without signing in and only submits on confirmati
   ).toBeVisible();
   expect(submitted).toBe(1);
 });
+test("starter sequence requires context and opens as an unpublished editable draft", async ({
+  page,
+}) => {
+  const requests = await setup(page);
+  await page.goto("/e2e/crm/harness/outreach.html?tab=sequences");
+  await page.getByRole("button", { name: "Browse starters" }).click();
+  const use = page.getByRole("button", { name: "Use sequence starter" });
+  await expect(use).toBeDisabled();
+  await page
+    .getByRole("textbox", { name: "Your company", exact: true })
+    .fill("ContentStudio");
+  await page
+    .getByRole("textbox", { name: "Topic", exact: true })
+    .fill("campaign approvals");
+  await page
+    .getByRole("textbox", { name: "How you help", exact: true })
+    .fill("reduce manual coordination");
+  await page
+    .getByRole("textbox", { name: "Useful follow-up insight", exact: true })
+    .fill("Agree on one reviewer before the campaign starts.");
+  await expect(use).toBeEnabled();
+  await expect(
+    page.frameLocator("iframe").first().locator("body"),
+  ).toContainText("ContentStudio");
+  await page.screenshot({
+    path: "/tmp/crm-starters-light.png",
+    fullPage: true,
+  });
+  await use.click();
+  await expect(
+    page.getByRole("textbox", { name: "Sequence name" }),
+  ).toHaveValue("Relevant cold introduction");
+  await expect(
+    page.getByRole("button", { name: "Save draft", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("combobox", { name: "Email delivery mode" }),
+  ).toContainText("Review before sending");
+  expect(requests.filter((r) => r.method === "POST")).toHaveLength(0);
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect
+    .poll(
+      () =>
+        requests.find(
+          (r) => r.method === "POST" && r.path.endsWith("/sequences"),
+        )?.payload.status,
+    )
+    .toBe("draft");
+});
+test("email starters filter by scenario and create a private editable template", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/e2e/crm/harness/outreach.html");
+  await page.getByRole("button", { name: "Browse starters" }).click();
+  await page
+    .getByRole("searchbox", { name: "Search scenarios" })
+    .fill("missed");
+  await expect(
+    page.getByRole("heading", { name: "Reschedule a missed meeting" }),
+  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Topic", exact: true })
+    .fill("onboarding");
+  await page
+    .getByRole("textbox", { name: "How to reschedule", exact: true })
+    .fill("reply with a time that works for you");
+  await page.getByRole("button", { name: "Use email starter" }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Template subject" }),
+  ).toHaveValue("Another time to connect?");
+  await expect(page.getByRole("checkbox")).not.toBeChecked();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(
+    page.getByRole("alertdialog", { name: "Discard template changes?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+});
+for (const mode of ["dark", "narrow"])
+  test(`starter library visual ${mode}`, async ({ page }) => {
+    await setup(page);
+    if (mode === "narrow")
+      await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(
+      `/e2e/crm/harness/outreach.html?${mode === "dark" ? "dark" : ""}`,
+    );
+    await page.getByRole("button", { name: "Browse starters" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Email starters" }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: `/tmp/crm-starters-${mode}.png`,
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBeTruthy();
+  });

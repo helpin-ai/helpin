@@ -31,7 +31,9 @@ export function EmailTemplateEditor({
   });
   const [saving, setSaving] = useState(false);
   const [discard, setDiscard] = useState(false);
-  const [changed, setChanged] = useState(false);
+  const [changed, setChanged] = useState(
+    Boolean(initial?.name && !initial?.id),
+  );
   const refresh = useOutreachRefresh(workspaceId);
   const patch = (changes: Partial<typeof form>) => {
     setForm((current) => ({ ...current, ...changes }));

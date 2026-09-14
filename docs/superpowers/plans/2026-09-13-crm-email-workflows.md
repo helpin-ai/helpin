@@ -21,3 +21,15 @@ Sources: https://attio.com/help/reference/automations/sequences/create-a-sequenc
 - Corrected an existing CRM activity test fixture to include the already-existing revenue_type column so the broader backend tests run cleanly.
 - Operational behavior: existing Temporal tick, weekday/timezone windows, up to 100 sequence emails per mailbox per rolling day and at least one minute between emails. Recipient steps are snapshotted. Unconfirmed provider delivery is held for reconciliation; it is never blindly resent. Automatic enrollment applies to future stage changes and uses the deal's primary contact, once per recipient per sequence.
 - No deployment or real outbound email was performed. Final commit/push is recorded in the session.
+
+## Scenario starters — 14 September follow-up
+
+Add a persistent Browse starters entry in Templates and Sequences. One local curated catalog provides eight scenarios and 24 original email drafts. Choose a scenario, preview messages and relative timing, supply real business context, then open the existing editor. Required setup values must be supplied and HTML escaped; recipient merge fields remain supported. New sequences are unsaved drafts with review-mode steps and no automatic enrollment rule. No database migration, seeded workspace clutter or new sending engine.
+
+Research: Outreach's sales email collection and standard outbound sequence guidance; Salesloft's cadence library and Big Book of Cadences; Apollo's Create a Sequence documentation; HubSpot's sequence template documentation. Vendor materials inform structure, not copied email content. Concise messages, a single low-friction ask, useful follow-ups, truthful context, spaced touches and a clear stopping point. Timing is an editable starting point, not a claimed universal optimum.
+
+Sources: https://www.outreach.ai/resources/blog/sales-email-templates ; https://support.outreach.io/support/solutions/articles/159000426445 ; https://www.salesloft.com/platform/sales-engagement-software ; https://pages.salesloft.com/rs/432-WAJ-793/images/Cadence%20Best%20Practices%20for%20High%20Performing%20Teams%20(Big%20Book%20of%20Cadences).pdf ; https://knowledge.apollo.io/hc/en-us/articles/4409231193101-Create-a-Sequence ; https://knowledge.hubspot.com/sequences/create-and-edit-sequences .
+
+- [x] Verify starter content, required fields, independent drafts, browser adoption flow, responsive preview, TypeScript/lint. Delivery commit is recorded in the session.
+
+Verification: three starter unit tests and all 11 outreach browser tests passed. TypeScript and targeted ESLint passed. Inspected light, dark and 390px layouts. Confirmed adoption makes no API write, sequences begin as review-mode drafts, and unsaved adopted content has discard protection.

@@ -55,7 +55,7 @@ export function SequenceEditor({
     ...initial,
   });
   const [active, setActive] = useState(0);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useState(Boolean(initial.name && !initial.id));
   const [saving, setSaving] = useState(false);
   const [discard, setDiscard] = useState(false);
   const [enroll, setEnroll] = useState(false);

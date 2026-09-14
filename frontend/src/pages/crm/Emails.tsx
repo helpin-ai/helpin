@@ -1,3 +1,4 @@
+import { EmailStarterLibrary } from "@/components/crm/outreach/EmailStarterLibrary";
 import { useWorkspaceAccess, usePermissions } from "@/hooks/queries/useSession";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -51,6 +52,7 @@ export function EmailsPage() {
   const [preview, setPreview] = useState<EmailTemplate>();
   const [sequence, setSequence] = useState<Partial<EmailSequence>>();
   const [remove, setRemove] = useState<EmailTemplate>();
+  const [starters, setStarters] = useState<"templates" | "sequences">();
   const [enroll, setEnroll] = useState(false);
   if (!workspaceId) return null;
   if (sequence)
@@ -82,6 +84,15 @@ export function EmailsPage() {
         title="Emails"
         actions={
           <>
+            {canEdit && tab !== "activity" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStarters(tab)}
+              >
+                Browse starters
+              </Button>
+            )}
             {canEdit && tab === "templates" && (
               <Button size="sm" onClick={() => setTemplate({})}>
                 New template
@@ -261,6 +272,14 @@ export function EmailsPage() {
           )}
         </div>
       </div>
+      {starters && (
+        <EmailStarterLibrary
+          mode={starters}
+          onClose={() => setStarters(undefined)}
+          onTemplate={setTemplate}
+          onSequence={setSequence}
+        />
+      )}
       {template && (
         <EmailTemplateEditor
           workspaceId={workspaceId}
