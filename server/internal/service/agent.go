@@ -803,7 +803,7 @@ type AgentService struct {
 	skillPackageStore          skillPackageStore
 	agentDraftLLM              agentDraftLLM
 	modelTierResolver          *AgentModelTierResolver
-	entitlementSvc             *EntitlementService
+	entitlementSvc             EntitlementPolicy
 	aiUsageMeter               *AIUsageMeter
 	agentRuntimeClient         agentRuntimeSignalClient
 	agentRuntimeProjection     agentRuntimeEventProjector
@@ -998,7 +998,7 @@ func (s *AgentService) SetSupportCoverageService(supportCoverageService *Support
 	return s
 }
 
-func (s *AgentService) SetEntitlementService(entitlementSvc *EntitlementService) *AgentService {
+func (s *AgentService) SetEntitlementService(entitlementSvc EntitlementPolicy) *AgentService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

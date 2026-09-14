@@ -24,7 +24,7 @@ type DocsDocumentService struct {
 	helpcenterSvc  *DocsHelpcenterService
 	ruleEngine     *AutomationRuleEngine
 	wsPublisher    *websocket.Publisher
-	entitlementSvc *EntitlementService
+	entitlementSvc EntitlementPolicy
 	useSortKey     bool
 }
 
@@ -53,7 +53,7 @@ func (s *DocsDocumentService) SetRuleEngine(engine *AutomationRuleEngine) {
 	s.ruleEngine = engine
 }
 
-func (s *DocsDocumentService) SetEntitlementService(entitlementSvc *EntitlementService) *DocsDocumentService {
+func (s *DocsDocumentService) SetEntitlementService(entitlementSvc EntitlementPolicy) *DocsDocumentService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

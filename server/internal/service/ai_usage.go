@@ -14,57 +14,11 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-// MeteringRequest identifies and bounds one priced model execution.
-type MeteringRequest struct {
-	WorkspaceID, TaskNature, FeatureKey, OperationKey, Provider, Model, Route, ServiceTier string
-	FundingMode                                                                            aiusage.FundingMode
-	InputTokensEstimate, MaximumOutputTokens                                               int64
-	AllowedPaidTools                                                                       []string
-	ExecutionID, IdempotencyKey                                                            string
-	Promotional                                                                            bool
-}
-
-// MeteringContext is the immutable pricing identity carried through execution.
-type MeteringContext struct {
-	PolicyMode                                        string
-	Route                                             aiusage.ResolvedRoute
-	ReservationID, PricingVersion                     string
-	MaxBillableMicrousd                               int64
-	Promotional                                       bool
-	WorkspaceID, TaskNature, FeatureKey, OperationKey string
-	FundingMode                                       aiusage.FundingMode
-	IdempotencyKey, EnforcementMode                   string
-}
-
 const (
-	// AIUsageOperationMediaEnrichment identifies bounded multimodal analysis
-	// that runs before an agent's primary model starts. It is deliberately
-	// separate from the agent task nature so a support agent remains a small
-	// primary-model task while its eligible media can use the approved reader.
-	AIUsageOperationMediaEnrichment = "media_enrichment"
-	mediaEnrichmentProvider         = "openrouter"
-	mediaEnrichmentCanonicalModel   = "gemini-3.8-flash"
-	mediaEnrichmentRoute            = "google/gemini-3.8-flash"
+	mediaEnrichmentProvider       = "openrouter"
+	mediaEnrichmentCanonicalModel = "gemini-3.8-flash"
+	mediaEnrichmentRoute          = "google/gemini-3.8-flash"
 )
-
-// PreflightRequest contains one execution's metering request.
-type PreflightRequest struct{ Metering MeteringRequest }
-
-// CompletionUsage contains terminal provider telemetry.
-type CompletionUsage struct {
-	Context           MeteringContext
-	Telemetry         aiusage.TokenTelemetry
-	PaidTools         []aiusage.PaidToolUsage
-	MeasurementStatus string
-	RunID             string
-	RunOutputSummary  model.JSONBlob
-	AllowLateUsage    bool
-}
-
-// UsageResult reports customer-charged and internally absorbed value.
-type UsageResult struct {
-	ChargedMicrousd, AbsorbedMicrousd int64
-}
 
 // AIUsageStore is the transactional persistence needed by direct-call metering.
 type AIUsageStore interface {
@@ -389,3 +343,5 @@ func validateAIUsageOperation(operationKey, taskNature string, resolved aiusage.
 		return fmt.Errorf("%w: unknown AI operation %q", model.ErrPricingConfigurationMissing, operationKey)
 	}
 }
+
+var _ AIUsageLifecycle = (*AIUsageService)(nil)

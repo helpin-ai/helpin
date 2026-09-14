@@ -1573,3 +1573,14 @@ func BillingCreditsForFeature(featureKey string) int {
 	}
 	return 0
 }
+
+// WorkspaceCreated supplies the commercial lifecycle policy to core workspace creation.
+func (s *BillingService) WorkspaceCreated(ctx context.Context, workspaceID string) error {
+	_, err := s.EnsureTrialForWorkspace(ctx, workspaceID)
+	return err
+}
+
+// WorkspaceDeleting cancels a paid subscription before its workspace is removed.
+func (s *BillingService) WorkspaceDeleting(ctx context.Context, workspaceID string) error {
+	return s.CancelWorkspaceSubscriptionImmediately(ctx, workspaceID)
+}

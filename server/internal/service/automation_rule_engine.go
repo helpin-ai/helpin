@@ -59,7 +59,7 @@ type AutomationRuleEngine struct {
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
 	healthObserver  AutomationHealthObserver
-	entitlementSvc  *EntitlementService
+	entitlementSvc  EntitlementPolicy
 	runEngine       interface {
 		StartRuleSchedule(ctx context.Context, ruleID, workspaceID, schedule string) error
 		StopRuleSchedule(ctx context.Context, ruleID string) error
@@ -128,7 +128,7 @@ func (e *AutomationRuleEngine) SetRunEngine(runEngine interface {
 	return e
 }
 
-func (e *AutomationRuleEngine) SetEntitlementService(entitlementSvc *EntitlementService) *AutomationRuleEngine {
+func (e *AutomationRuleEngine) SetEntitlementService(entitlementSvc EntitlementPolicy) *AutomationRuleEngine {
 	e.entitlementSvc = entitlementSvc
 	return e
 }
