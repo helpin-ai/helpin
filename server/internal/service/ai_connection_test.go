@@ -127,7 +127,7 @@ func TestAIConnectionConcurrentRefreshRotatesOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection := &model.AIConnection{ID: "connection", WorkspaceID: "workspace", UserID: "owner", Provider: "openai_chatgpt", Name: "ChatGPT", Status: "connected", AccountID: "account"}
+	connection := &model.AIConnection{ID: "connection", WorkspaceID: "workspace", UserID: strPtr("owner"), Provider: "openai_chatgpt", Name: "ChatGPT", Status: "connected", AccountID: "account"}
 	old := chatgptauth.Token{AccessToken: "old-token", RefreshToken: "old-refresh", AccountID: "account", ExpiresAt: time.Now().Add(time.Hour)}
 	if err = s.seal(connection, aiConnectionSecret{Token: &old}); err != nil {
 		t.Fatal(err)

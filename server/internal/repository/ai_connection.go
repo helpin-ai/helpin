@@ -20,7 +20,7 @@ func (r *AIConnectionRepository) Create(ctx context.Context, c *model.AIConnecti
 }
 func (r *AIConnectionRepository) List(ctx context.Context, workspace, user string) ([]model.AIConnection, error) {
 	out := []model.AIConnection{}
-	err := r.db.WithContext(ctx).Omit("encrypted_secret").Where("workspace_id = ? AND user_id = ?", workspace, user).Order("created_at DESC").Find(&out).Error
+	err := r.db.WithContext(ctx).Omit("encrypted_secret").Where("workspace_id = ? AND (user_id = ? OR scope = ?)", workspace, user, "workspace").Order("created_at DESC").Find(&out).Error
 	return out, err
 }
 func (r *AIConnectionRepository) Get(ctx context.Context, id string) (*model.AIConnection, error) {
@@ -49,7 +49,11 @@ func (r *AIConnectionRepository) WithLocked(ctx context.Context, id string, fn f
 }
 func (r *AIConnectionRepository) BoundRuns(ctx context.Context, workspace, user, id string) ([]model.AgentRun, error) {
 	var runs []model.AgentRun
-	err := r.db.WithContext(ctx).Where("workspace_id = ? AND triggered_by_user_id = ? AND input->>'model_connection_id' = ? AND status IN ?", workspace, user, id, []string{"queued", "running", "paused"}).Find(&runs).Error
+	query := r.db.WithContext(ctx).Where("workspace_id = ? AND input->>'model_connection_id' = ? AND status IN ?", workspace, id, []string{"queued", "running", "paused"})
+	if user != "" {
+		query = query.Where("triggered_by_user_id = ?", user)
+	}
+	err := query.Find(&runs).Error
 	return runs, err
 }
 func (r *AIConnectionRepository) Run(ctx context.Context, workspace, id string) (*model.AgentRun, error) {
@@ -64,5 +68,12 @@ func (r *AIConnectionRepository) Run(ctx context.Context, workspace, id string) 
 func (r *AIConnectionRepository) ActiveMember(ctx context.Context, workspace, user string) (bool, error) {
 	var n int64
 	err := r.db.WithContext(ctx).Model(&model.WorkspaceMember{}).Where("workspace_id = ? AND user_id = ? AND status = ?", workspace, user, model.WorkspaceMemberStatusActive).Count(&n).Error
+	return n > 0, err
+}
+
+// ActiveWorkspace checks operational availability for unattended shared execution.
+func (r *AIConnectionRepository) ActiveWorkspace(ctx context.Context, workspace string) (bool, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.Workspace{}).Where("id = ? AND status = ?", workspace, "active").Count(&n).Error
 	return n > 0, err
 }

@@ -2,12 +2,13 @@ package model
 
 import "time"
 
-// AIConnection is personal to one workspace member. Secret material is never
+// AIConnection belongs to a workspace or one of its members. Secret material is never
 // serialized; device sessions and OAuth refresh tokens remain app-owned.
 type AIConnection struct {
 	ID              string     `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	UserID          string     `json:"user_id" gorm:"type:uuid;not null;index"`
+	UserID          *string    `json:"user_id" gorm:"type:uuid;index"`
+	Scope           string     `json:"scope" gorm:"not null;default:personal"`
 	Name            string     `json:"name" gorm:"not null"`
 	Provider        string     `json:"provider" gorm:"not null"`
 	Status          string     `json:"status" gorm:"not null"`
@@ -19,6 +20,7 @@ type AIConnection struct {
 }
 
 type CreateAIConnectionRequest struct {
+	Scope    string `json:"scope,omitempty"`
 	Name     string `json:"name"`
 	Provider string `json:"provider"`
 	APIKey   string `json:"api_key,omitempty"`

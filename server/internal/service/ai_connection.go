@@ -13,6 +13,7 @@ import (
 	sdk "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/agent-runtime-go/chatgptauth"
 	"github.com/helpin-ai/helpin/server/internal/aimodel"
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -38,6 +39,7 @@ type AIConnectionService struct {
 	oauth   *chatgptauth.Client
 	catalog *aimodel.Catalog
 	runtime *AgentRuntimeClient
+	authz   *authorization.AuthzService
 }
 
 func NewAIConnectionService(repo *repository.AIConnectionRepository, catalog *aimodel.Catalog, runtime *AgentRuntimeClient, cfg AIConnectionConfig) (*AIConnectionService, error) {
@@ -80,10 +82,14 @@ func (s *AIConnectionService) List(ctx context.Context, workspace, user string) 
 	if !s.Enabled() {
 		return []model.AIConnection{}, nil
 	}
+	member, err := s.repo.ActiveMember(ctx, workspace, user)
+	if err != nil || !member {
+		return nil, ErrAIConnection
+	}
 	return s.repo.List(ctx, workspace, user)
 }
 func aiConnectionAAD(c *model.AIConnection) []byte {
-	return []byte("ai-connection|v1|" + c.WorkspaceID + "|" + c.UserID + "|" + c.ID + "|" + c.Provider)
+	return []byte("ai-connection|v1|" + c.WorkspaceID + "|" + derefString(c.UserID) + "|" + c.ID + "|" + c.Provider)
 }
 func (s *AIConnectionService) seal(c *model.AIConnection, secret aiConnectionSecret) error {
 	raw, err := json.Marshal(secret)
@@ -105,7 +111,7 @@ func (s *AIConnectionService) open(c *model.AIConnection) (aiConnectionSecret, e
 	return secret, nil
 }
 func ownAIConnection(c *model.AIConnection, workspace, user string) error {
-	if c == nil || c.WorkspaceID != workspace || c.UserID != user || user == "" {
+	if c == nil || c.WorkspaceID != workspace || derefString(c.UserID) != user || user == "" {
 		return ErrAIConnection
 	}
 	return nil
@@ -114,6 +120,20 @@ func ownAIConnection(c *model.AIConnection, workspace, user string) error {
 func (s *AIConnectionService) Create(ctx context.Context, workspace, user string, req model.CreateAIConnectionRequest) (*model.AIConnectionLogin, error) {
 	if !s.Enabled() || workspace == "" || user == "" {
 		return nil, ErrAIConnection
+	}
+	if req.Scope == "" {
+		req.Scope = "personal"
+	}
+	if req.Scope != "personal" && req.Scope != "workspace" {
+		return nil, errors.New("unsupported connection scope")
+	}
+	if req.Scope == "workspace" {
+		if err := s.requireConnectionManager(ctx, workspace, user); err != nil {
+			return nil, err
+		}
+		if req.Provider == "openai_chatgpt" {
+			return nil, errors.New("ChatGPT connections must be personal")
+		}
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.APIKey = strings.TrimSpace(req.APIKey)
@@ -132,7 +152,10 @@ func (s *AIConnectionService) Create(ctx context.Context, workspace, user string
 	default:
 		return nil, errors.New("unsupported AI provider")
 	}
-	c := &model.AIConnection{ID: uuid.NewString(), WorkspaceID: workspace, UserID: user, Name: req.Name, Provider: req.Provider, Status: "connected"}
+	c := &model.AIConnection{ID: uuid.NewString(), WorkspaceID: workspace, UserID: &user, Scope: req.Scope, Name: req.Name, Provider: req.Provider, Status: "connected"}
+	if req.Scope == "workspace" {
+		c.UserID = nil
+	}
 	secret := aiConnectionSecret{APIKey: req.APIKey}
 	var session *chatgptauth.DeviceSession
 	if req.Provider == "openai_chatgpt" {
@@ -231,9 +254,12 @@ func (s *AIConnectionService) Reconnect(ctx context.Context, workspace, user, id
 	if !s.Enabled() {
 		return nil, ErrAIConnection
 	}
+	if err := s.authorizeConnectionManagement(ctx, workspace, user, id); err != nil {
+		return nil, err
+	}
 	var result *model.AIConnectionLogin
 	err := s.repo.WithLocked(ctx, id, func(c *model.AIConnection) error {
-		if err := ownAIConnection(c, workspace, user); err != nil {
+		if err := accessAIConnection(c, workspace, user); err != nil {
 			return err
 		}
 		secret := aiConnectionSecret{}
@@ -273,11 +299,15 @@ func (s *AIConnectionService) Credential(ctx context.Context, workspace, user, i
 	if err != nil || !member {
 		return nil, nil, ErrAIConnection
 	}
+	return s.loadConnectionCredential(ctx, workspace, user, id, force, rejectedFingerprint...)
+}
+
+func (s *AIConnectionService) loadConnectionCredential(ctx context.Context, workspace, user, id string, force bool, rejectedFingerprint ...string) (*model.AIConnection, *sdk.ModelCredential, error) {
 	var connection *model.AIConnection
 	var credential *sdk.ModelCredential
 	var publicErr error
-	err = s.repo.WithLocked(ctx, id, func(c *model.AIConnection) error {
-		if err := ownAIConnection(c, workspace, user); err != nil {
+	err := s.repo.WithLocked(ctx, id, func(c *model.AIConnection) error {
+		if err := accessAIConnection(c, workspace, user); err != nil {
 			return err
 		}
 		if c.Status != "connected" {
@@ -350,17 +380,22 @@ func (s *AIConnectionService) RefreshRun(ctx context.Context, req sdk.ModelCrede
 		return nil, ErrAIConnection
 	}
 	run, err := s.repo.Run(ctx, c.WorkspaceID, req.HostRunID)
-	if err != nil || run == nil || !model.IsAgentRunActiveStatus(run.Status) || derefString(run.TriggeredByUserID) != c.UserID {
+	if err != nil || run == nil || !model.IsAgentRunActiveStatus(run.Status) || (c.UserID != nil && derefString(run.TriggeredByUserID) != *c.UserID) {
 		return nil, ErrAIConnection
 	}
 	var input model.AgentRunInputPayload
-	if json.Unmarshal(run.Input, &input) != nil || input.ModelConnectionID != c.ID || input.ModelProvider != req.Provider || c.AccountID != req.AccountID {
+	if json.Unmarshal(run.Input, &input) != nil || input.ModelConnectionID != c.ID || input.ModelProvider != req.Provider || c.Provider != req.Provider || c.AccountID != req.AccountID {
 		return nil, ErrAIConnection
 	}
 	if id, mapped := agentRuntimeRunID(run); mapped && id != req.RunID {
 		return nil, ErrAIConnection
 	}
-	_, credential, err := s.Credential(ctx, c.WorkspaceID, c.UserID, c.ID, req.Reason == "unauthorized", req.CredentialFingerprint)
+	var credential *sdk.ModelCredential
+	if c.Scope == "workspace" {
+		_, credential, err = s.sharedCredential(ctx, c.WorkspaceID, c.ID)
+	} else {
+		_, credential, err = s.Credential(ctx, c.WorkspaceID, derefString(c.UserID), c.ID, req.Reason == "unauthorized", req.CredentialFingerprint)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -371,8 +406,11 @@ func (s *AIConnectionService) Disconnect(ctx context.Context, workspace, user, i
 	if !s.Enabled() {
 		return ErrAIConnection
 	}
+	if err := s.authorizeConnectionManagement(ctx, workspace, user, id); err != nil {
+		return err
+	}
 	if err := s.repo.WithLocked(ctx, id, func(c *model.AIConnection) error {
-		if err := ownAIConnection(c, workspace, user); err != nil {
+		if err := accessAIConnection(c, workspace, user); err != nil {
 			return err
 		}
 		c.Status = "disconnected"
@@ -382,7 +420,7 @@ func (s *AIConnectionService) Disconnect(ctx context.Context, workspace, user, i
 	}); err != nil {
 		return err
 	}
-	runs, err := s.repo.BoundRuns(ctx, workspace, user, id)
+	runs, err := s.boundConnectionRuns(ctx, workspace, user, id)
 	if err != nil {
 		return err
 	}
@@ -397,11 +435,14 @@ func (s *AIConnectionService) Disconnect(ctx context.Context, workspace, user, i
 }
 
 func (s *AIConnectionService) ReauthorizeRuns(ctx context.Context, workspace, user, id string) error {
+	if err := s.authorizeConnectionManagement(ctx, workspace, user, id); err != nil {
+		return err
+	}
 	_, credential, err := s.Credential(ctx, workspace, user, id, false)
 	if err != nil {
 		return err
 	}
-	runs, err := s.repo.BoundRuns(ctx, workspace, user, id)
+	runs, err := s.boundConnectionRuns(ctx, workspace, user, id)
 	if err != nil {
 		return err
 	}

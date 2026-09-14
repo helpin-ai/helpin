@@ -1780,6 +1780,7 @@ func main() {
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	aiConnectionService.SetAuthorizationService(authzService)
 	crmSituationService := service.NewCRMSituationService(crmSituationRepo, authzService)
 	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), authzService, crmSituationService)
 	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
