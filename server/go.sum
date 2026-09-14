@@ -215,6 +215,8 @@ github.com/helpin-ai/agent-runtime-go v0.5.0 h1:E4y8Wd6me1a1dKjamwwV4KoBT1E8kyzx
 github.com/helpin-ai/agent-runtime-go v0.5.0/go.mod h1:3XDPyvHh+NCNjlDLyHuemk27ryr7g+xZAmTbeCSOEIk=
 github.com/helpin-ai/agent-runtime-go v0.5.1-0.20260912224056-2e2b4985086b h1:T1LxxEUNjircw9n9Se1OTPpnINM58oueols7ql30G9E=
 github.com/helpin-ai/agent-runtime-go v0.5.1-0.20260912224056-2e2b4985086b/go.mod h1:3XDPyvHh+NCNjlDLyHuemk27ryr7g+xZAmTbeCSOEIk=
+github.com/helpin-ai/agent-runtime-go v0.6.0-alpha.1 h1:S22zedQ77rlpPILcESnlG00f1q0crry0QXHuqp6xzK8=
+github.com/helpin-ai/agent-runtime-go v0.6.0-alpha.1/go.mod h1:3XDPyvHh+NCNjlDLyHuemk27ryr7g+xZAmTbeCSOEIk=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	sdk "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -46,7 +47,7 @@ func normalizeJSONSlice(raw json.RawMessage) json.RawMessage {
 	return raw
 }
 
-var supportedAgentReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
+var supportedAgentReasoningEfforts = sdk.ReasoningEfforts()
 var supportedAgentServiceTiers = []string{"standard", "fast", "flex"}
 
 var supportedAgentIconKeys = []string{
@@ -268,44 +269,19 @@ func parseAndValidateExecutionConfig(agent *model.Agent) (model.AgentExecutionCo
 		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config model controls are only supported for runtime_kind native_sdk")
 	}
 
-	if config.ReasoningEffort != nil && !slices.Contains(supportedAgentReasoningEfforts, strings.ToLower(strings.TrimSpace(*config.ReasoningEffort))) {
-		return model.AgentExecutionConfig{}, fmt.Errorf(
-			"execution_config.reasoning_effort must be one of %s",
-			strings.Join(supportedAgentReasoningEfforts, ", "),
-		)
+	provider := "openai"
+	if agent.Provider != nil && strings.TrimSpace(*agent.Provider) != "" {
+		provider = normalizeModelProvider(*agent.Provider)
 	}
-
-	if config.ReasoningEffort != nil && agent.Provider != nil && normalizeModelProvider(*agent.Provider) == model.AgentModelProviderAnthropic {
-		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.reasoning_effort requires an OpenAI Responses provider")
-	}
-
-	if config.ServiceTier != nil {
-		serviceTier := strings.ToLower(strings.TrimSpace(*config.ServiceTier))
-		if !slices.Contains(supportedAgentServiceTiers, serviceTier) {
-			return model.AgentExecutionConfig{}, fmt.Errorf(
-				"execution_config.service_tier must be one of %s",
-				strings.Join(supportedAgentServiceTiers, ", "),
-			)
-		}
-		provider := ""
-		if agent.Provider != nil {
-			provider = normalizeModelProvider(*agent.Provider)
-		}
-		if provider == "" {
-			provider = model.AgentModelProviderOpenAI
-		}
-		if provider != model.AgentModelProviderOpenAI {
-			return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.service_tier is only supported for provider openai")
-		}
-	}
+	controls := sdk.ModelControls{ReasoningEffort: config.ReasoningEffort, ServiceTier: config.ServiceTier}
 	if config.OpenRouter != nil {
-		provider := ""
-		if agent.Provider != nil {
-			provider = normalizeModelProvider(*agent.Provider)
+		controls.OpenRouter = &sdk.OpenRouterModelControls{}
+		if config.OpenRouter.Provider != nil {
+			controls.OpenRouter.Provider = &sdk.OpenRouterProviderPreferences{Quantizations: config.OpenRouter.Provider.Quantizations}
 		}
-		if provider != model.AgentModelProviderOpenRouter {
-			return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.openrouter is only supported for provider openrouter")
-		}
+	}
+	if err := sdk.ValidateModelControls(provider, controls); err != nil {
+		return model.AgentExecutionConfig{}, fmt.Errorf("execution_config.%w", err)
 	}
 
 	return config, nil

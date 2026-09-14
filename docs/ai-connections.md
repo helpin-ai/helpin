@@ -38,12 +38,18 @@ Validation includes encrypted storage/ownership tests, concurrent refresh,
 revoked membership, manual-only admission, normal and estimated credit charges,
 existing chat/run-view tests, TypeScript checks, the production frontend build, and isolated browser checks with
 mocked connection endpoints. A real OpenAI per-run credential smoke passed with the
-global key unset. The SDK initiated a real device-login request, but consent,
-subscription inference, and live token refresh have not been validated. Automatic
-approval review requires separate approval for that test and SDK branch publication.
+global key unset. The September 13 test-system run
+`run_9b1445790f13e52c710f2c3d` (Helpin run
+`086a992f-a4ca-479b-8923-67923861fa9d`) used `openai_chatgpt` / `gpt-5.6-terra`
+with app-owned OAuth credentials and produced 10 model responses and 37 tool calls
+before a Git tool stalled. This later observation supersedes the September 12
+blocked inference test. Live token refresh, reconnect, and revocation remain
+separate release gates; successful tool continuation does not prove lossless
+ChatGPT response replay.
 
-The server pins SDK commit `2e2b4985086b` using
-`v0.5.1-0.20260912224056-2e2b4985086b`. Publish that SDK feature branch before deploying
-consumers; the committed dependency was validated locally from the exact SDK commit,
-with Go workspace substitution disabled. No production deploy or retirement
-inventory was performed by this feature.
+Helpin and Runtime pin the published SDK release `v0.6.0-alpha.1`; builds and
+integration tests were verified without Go workspace substitution. The SDK adds
+typed run model controls and shared provider/control validation. An explicit empty
+controls object clears inherited model controls while preserving agent execution
+limits. No production deployment or credential-policy activation is implied by
+this dependency update.
