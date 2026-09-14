@@ -32,25 +32,26 @@ type CRMSequenceStep struct {
 
 // CRMEmailSequence stores the editable sequence and optional stage enrollment rule.
 type CRMEmailSequence struct {
-	ID               string            `json:"id" gorm:"type:uuid;primaryKey"`
-	WorkspaceID      string            `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	OwnerID          string            `json:"owner_id" gorm:"type:uuid;not null"`
-	Name             string            `json:"name"`
-	Status           string            `json:"status" gorm:"index"`
-	Version          int               `json:"version"`
-	Steps            []CRMSequenceStep `json:"steps" gorm:"serializer:json;type:jsonb"`
-	Timezone         string            `json:"timezone"`
-	StartHour        int               `json:"start_hour"`
-	EndHour          int               `json:"end_hour"`
-	Weekdays         bool              `json:"weekdays"`
-	IncludeSignature bool              `json:"include_signature"`
-	EntryStageID     string            `json:"entry_stage_id"`
-	EntryAccountID   string            `json:"entry_account_id"`
-	EntryAfter       *time.Time        `json:"entry_after,omitempty"`
-	EntryCursorID    string            `json:"-"`
-	EntryError       string            `json:"entry_error,omitempty"`
-	CreatedAt        time.Time         `json:"created_at"`
-	UpdatedAt        time.Time         `json:"updated_at"`
+	DailyNewRecipients int               `json:"daily_new_recipients" gorm:"default:25"`
+	ID                 string            `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID        string            `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	OwnerID            string            `json:"owner_id" gorm:"type:uuid;not null"`
+	Name               string            `json:"name"`
+	Status             string            `json:"status" gorm:"index"`
+	Version            int               `json:"version"`
+	Steps              []CRMSequenceStep `json:"steps" gorm:"serializer:json;type:jsonb"`
+	Timezone           string            `json:"timezone"`
+	StartHour          int               `json:"start_hour"`
+	EndHour            int               `json:"end_hour"`
+	Weekdays           bool              `json:"weekdays"`
+	IncludeSignature   bool              `json:"include_signature"`
+	EntryStageID       string            `json:"entry_stage_id"`
+	EntryAccountID     string            `json:"entry_account_id"`
+	EntryAfter         *time.Time        `json:"entry_after,omitempty"`
+	EntryCursorID      string            `json:"-"`
+	EntryError         string            `json:"entry_error,omitempty"`
+	CreatedAt          time.Time         `json:"created_at"`
+	UpdatedAt          time.Time         `json:"updated_at"`
 }
 
 // TableName returns the stable persistence table name.

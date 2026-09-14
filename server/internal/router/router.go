@@ -1600,6 +1600,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts", h.CRMEmail.ListAccounts)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts", h.CRMEmail.CreateAccount)
 				if h.CRMOutreach != nil {
+					r.With(requirePerm(authorization.PermCRMEdit)).Get("/outreach/mailbox-capacity", h.CRMOutreach.MailboxCapacity)
+					r.With(requirePerm(authorization.PermCRMEdit)).Put("/outreach/mailbox-capacity/{id}", h.CRMOutreach.MailboxCapacity)
 					r.With(requirePerm(authorization.PermCRMRead)).Get("/outreach/templates", h.CRMOutreach.Templates)
 					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/templates", h.CRMOutreach.Templates)
 					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/templates/{id}/render", h.CRMOutreach.RenderTemplate)

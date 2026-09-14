@@ -1,3 +1,4 @@
+import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { ChevronRightIcon } from "@/lib/pmIcons";
 import { useWorkspaceAccess, usePermissions } from "@/hooks/queries/useSession";
 import { useState } from "react";
@@ -52,6 +53,7 @@ export function SequenceEditor({
     end_hour: 17,
     weekdays: true,
     include_signature: true,
+    daily_new_recipients: 25,
     entry_stage_id: "",
     entry_account_id: "",
     ...initial,
@@ -545,6 +547,29 @@ export function SequenceEditor({
                       )}
                     </div>
                   )}
+                  <label className="block space-y-1 text-xs text-muted-foreground">
+                    <QuickTooltip label="First emails to new recipients per rolling 24 hours, across this sequence’s mailboxes. Follow-ups take priority; extra recipients stay queued.">
+                      <span
+                        tabIndex={0}
+                        className="cursor-help border-b border-dotted border-muted-foreground/40"
+                      >
+                        New recipients per day
+                      </span>
+                    </QuickTooltip>
+                    <QuietUnderlineInput
+                      aria-label="New recipients per day"
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={form.daily_new_recipients ?? 25}
+                      onChange={(event) =>
+                        patch({
+                          daily_new_recipients: Number(event.target.value),
+                        })
+                      }
+                      disabled={!editable || saving}
+                    />
+                  </label>
                   {form.entry_error && (
                     <p className="text-xs text-destructive">
                       {form.entry_error}

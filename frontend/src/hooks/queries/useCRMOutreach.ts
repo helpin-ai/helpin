@@ -56,3 +56,14 @@ export function useOutreachRefresh(ws: string) {
   const client = useQueryClient();
   return () => client.invalidateQueries({ queryKey: ["crm", ws] });
 }
+
+export function useMailboxCapacity(ws: string, enabled = true) {
+  return useQuery({
+    queryKey: ["crm", ws, "mailboxCapacity"],
+    queryFn: async () => unwrap(await crmOutreachService.mailboxCapacity(ws)),
+    enabled: !!ws && enabled,
+    staleTime: 30000,
+    refetchInterval: 30000,
+    retry: false,
+  });
+}

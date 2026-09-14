@@ -722,6 +722,20 @@ func (s *CRMEmailService) sendEmailWithDeal(ctx context.Context, workspaceID, ac
 		return nil, fmt.Errorf("resolve email participants: %w", err)
 	}
 
+	// Validate local capabilities before consuming mailbox capacity.
+	if len(intentIDs) == 1 {
+		if _, ok := s.gmailSync.(gmailIntentClient); !ok || len(attachments) > 0 {
+			return nil, fmt.Errorf("email action reconciliation is not configured")
+		}
+	} else if len(attachments) > 0 {
+		if _, ok := s.gmailSync.(gmailAttachmentClient); !ok {
+			return nil, fmt.Errorf("email attachments are not configured")
+		}
+	}
+	reservationID, err := s.reserveEmail(ctx, account, intentIDs)
+	if err != nil {
+		return nil, err
+	}
 	var sendResult *sync.GmailSendResult
 	if len(intentIDs) == 1 {
 		client, ok := s.gmailSync.(gmailIntentClient)
@@ -738,6 +752,7 @@ func (s *CRMEmailService) sendEmailWithDeal(ctx context.Context, workspaceID, ac
 	} else {
 		sendResult, err = s.gmailSync.SendMessage(ctx, accessToken, account.EmailAddress, to, cc, subject, bodyHTML)
 	}
+	err = s.finishEmailAttempt(ctx, account, reservationID, err, sendResult != nil && sendResult.ID != "" && err == nil)
 	if err != nil {
 		return nil, fmt.Errorf("send email: %w", err)
 	}
@@ -1007,6 +1022,15 @@ func (s *CRMEmailService) replyToThread(ctx context.Context, workspaceID, thread
 	if resolutionErr != nil {
 		return nil, fmt.Errorf("resolve reply participants: %w", resolutionErr)
 	}
+	if len(attachments) > 0 {
+		if _, ok := s.gmailSync.(gmailThreadAttachmentClient); !ok {
+			return nil, fmt.Errorf("email attachments are not configured")
+		}
+	}
+	reservationID, err := s.reserveEmail(ctx, account, nil)
+	if err != nil {
+		return nil, err
+	}
 	var sendResult *sync.GmailSendResult
 	if len(attachments) > 0 {
 		client, ok := s.gmailSync.(gmailThreadAttachmentClient)
@@ -1017,6 +1041,7 @@ func (s *CRMEmailService) replyToThread(ctx context.Context, workspaceID, thread
 	} else {
 		sendResult, err = threadClient.SendThreadMessage(ctx, accessToken, account.EmailAddress, to, cc, thread.Subject, bodyHTML, thread.ThreadExternalID, stringValue(latest.RFCMessageID), references)
 	}
+	err = s.finishEmailAttempt(ctx, account, reservationID, err, sendResult != nil && sendResult.ID != "" && err == nil)
 	if err != nil {
 		return nil, fmt.Errorf("send thread reply: %w", err)
 	}

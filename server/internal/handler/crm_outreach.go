@@ -181,3 +181,25 @@ func (h *CRMOutreachHandler) RenderTemplate(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, 200, row)
 }
+
+// MailboxCapacity reads personal usage or updates an owned mailbox's limits.
+func (h *CRMOutreachHandler) MailboxCapacity(w http.ResponseWriter, r *http.Request) {
+	ws, user := getWorkspaceID(r), middleware.GetUserID(r.Context())
+	if r.Method == http.MethodPut {
+		var req model.CRMMailboxSendingPolicy
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, 400, "invalid sending limits")
+			return
+		}
+		if err := h.service.SaveMailboxCapacity(r.Context(), ws, user, chi.URLParam(r, "id"), req); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+	}
+	rows, err := h.service.MailboxCapacities(r.Context(), ws, user)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, rows)
+}

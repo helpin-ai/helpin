@@ -389,7 +389,7 @@ func main() {
 			&model.CRMMeetingProviderEvent{},
 			// CRM Phase 3: Email & Calendar
 			&model.CRMEmailAccount{},
-			&model.CRMEmailTemplate{}, &model.CRMEmailSequence{}, &model.CRMSequenceEnrollment{}, &model.CRMSequenceDelivery{}, &model.CRMEmailSuppression{},
+			&model.CRMMailboxSendingPolicy{}, &model.CRMEmailSendReservation{}, &model.CRMEmailTemplate{}, &model.CRMEmailSequence{}, &model.CRMSequenceEnrollment{}, &model.CRMSequenceDelivery{}, &model.CRMEmailSuppression{},
 			&model.CRMEmailThread{},
 			&model.CRMEmailMessage{},
 			&model.CRMEmailMessageContact{},

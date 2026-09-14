@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -17,7 +17,7 @@ import (
 // DispatchDue runs on the existing Temporal scheduler; durable claims and delivery
 // records are the authority, so a retry never blindly repeats an external send.
 func (s *CRMOutreachService) DispatchDue(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	entryCtx, entryCancel := context.WithTimeout(ctx, 3*time.Second)
 	entryErr := s.processEntries(entryCtx)
@@ -25,14 +25,16 @@ func (s *CRMOutreachService) DispatchDue(ctx context.Context) error {
 	if errors.Is(entryErr, context.DeadlineExceeded) {
 		entryErr = nil
 	}
-	for range 5 {
-		row, err := s.repo.Claim(ctx, s.now())
+	visited := []string{}
+	for range 100 {
+		row, err := s.repo.Claim(ctx, s.now(), visited...)
 		if err != nil {
 			return err
 		}
 		if row == nil {
 			return entryErr
 		}
+		visited = append(visited, row.AccountID)
 		if err = s.processRecipient(ctx, row); err != nil {
 			// Delivery records survive this failure. The next claim reconciles instead of resending.
 			_ = s.repo.Finish(ctx, row, "failed", err.Error(), s.now().Add(time.Minute), row.StepIndex)
@@ -133,8 +135,32 @@ func (s *CRMOutreachService) processRecipient(ctx context.Context, row *model.CR
 	} else if reason != "" {
 		return s.repo.Finish(ctx, row, reason, "", now, row.StepIndex)
 	}
-	message, err := s.mail.SendActionEmail(ctx, row.WorkspaceID, row.OwnerID, d.ID, s.action(row, d))
+	firstEmail := true
+	for _, prior := range row.Steps[:row.StepIndex] {
+		if prior.Kind == "email" {
+			firstEmail = false
+		}
+	}
+	sendCtx := context.WithValue(ctx, sequenceBudgetKey{}, sequenceBudget{SequenceID: row.SequenceID, FirstEmail: firstEmail, DailyNew: seq.DailyNewRecipients})
+	message, err := s.mail.SendActionEmail(sendCtx, row.WorkspaceID, row.OwnerID, d.ID, s.action(row, d))
 	if err != nil {
+		var capacity *repository.SendCapacityError
+		if errors.As(err, &capacity) {
+			d.Status = "deferred"
+			d.Error = capacity.Error()
+			if saveErr := s.repo.SaveDelivery(ctx, d); saveErr != nil {
+				return saveErr
+			}
+			return s.repo.Finish(ctx, row, "active", capacity.Error(), NextCRMSequenceWindow(capacity.RetryAt, *row), row.StepIndex)
+		}
+		if definitiveRejection(err) {
+			d.Status = "rejected"
+			d.Error = err.Error()
+			if saveErr := s.repo.SaveDelivery(ctx, d); saveErr != nil {
+				return saveErr
+			}
+			return s.repo.Finish(ctx, row, "failed", "The email provider rejected this email. Check the mailbox and recipient before continuing.", now, row.StepIndex)
+		}
 		d.Error = err.Error()
 		_ = s.repo.SaveDelivery(ctx, d)
 		return s.repo.Finish(ctx, row, "uncertain", "Delivery could not be confirmed. Check delivery before continuing.", now, row.StepIndex)
@@ -247,11 +273,25 @@ func (s *CRMOutreachService) processEntries(ctx context.Context) error {
 			contact, err := s.repo.PrimaryDealContact(ctx, seq.WorkspaceID, event.EntityID)
 			issue := ""
 			if err != nil {
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					if err := s.repo.EntryIssue(ctx, seq, "Enrollment temporarily unavailable; retrying automatically"); err != nil {
+						return err
+					}
+					break
+				}
 				issue = "Deal has no primary contact"
 			} else {
 				_, err = s.Enroll(ctx, seq.WorkspaceID, seq.OwnerID, seq.ID, model.CRMSequenceEnrollRequest{AccountID: seq.EntryAccountID, ContactIDs: []string{contact}, DealID: event.EntityID, Version: seq.Version})
-				if err != nil && !strings.Contains(err.Error(), "Already enrolled") {
-					issue = err.Error()
+				if err != nil {
+					var ineligible *outreachIneligibleError
+					if errors.As(err, &ineligible) {
+						issue = ineligible.Error()
+					} else {
+						if saveErr := s.repo.EntryIssue(ctx, seq, "Enrollment temporarily unavailable; retrying automatically"); saveErr != nil {
+							return saveErr
+						}
+						break
+					}
 				}
 			}
 			if err := s.repo.AdvanceEntry(ctx, seq, event, issue); err != nil {

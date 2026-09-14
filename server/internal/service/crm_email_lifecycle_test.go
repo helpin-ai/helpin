@@ -164,6 +164,9 @@ func setupCRMEmailLifecycleTestDB(t *testing.T) *gorm.DB {
 		}
 	}
 
+	if err := db.AutoMigrate(&model.CRMMailboxSendingPolicy{}, &model.CRMEmailSendReservation{}); err != nil {
+		t.Fatal(err)
+	}
 	return db
 }
 

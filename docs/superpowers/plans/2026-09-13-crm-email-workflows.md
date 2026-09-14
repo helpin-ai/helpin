@@ -33,3 +33,18 @@ Sources: https://www.outreach.ai/resources/blog/sales-email-templates ; https://
 - [x] Verify starter content, required fields, independent drafts, browser adoption flow, responsive preview, TypeScript/lint. Delivery commit is recorded in the session.
 
 Verification: three starter unit tests and all 11 outreach browser tests passed. TypeScript and targeted ESLint passed. Inspected light, dark and 390px layouts. Confirmed adoption makes no API write, sequences begin as review-mode drafts, and unsaved adopted content has discard protection.
+
+## Sending capacity and queue reliability — 14 September
+
+Use the existing mailbox settings, Enrollment and Activity surfaces. Follow HubSpot's compact capacity feedback and Outreach's queued-email delay reasons. Daily new-recipient starts are paced independently from follow-ups; all Helpin CRM sends share a physical-mailbox budget. Keep native Gmail transport and preserve uncertainty reconciliation.
+
+- [x] Add explicit production schema and atomic shared-mailbox send reservations; configurable daily limit, automated spacing, manual-email reserve, provider cooldown. Cover manual composition and replies as well as sequence sends; do not claim to count mail sent outside Helpin.
+- [x] Pace first email starts per sequence, prioritize follow-ups, fairly drain a bounded batch across mailboxes, retry transient stage enrollment errors without advancing the cursor, and distinguish confirmed rejection from ambiguous delivery.
+- [x] Expose owner-scoped mailbox capacity/settings and queue summary; add concise settings, enrollment pacing and Activity wait reasons/next checks. Review official screenshots and responsive UI.
+- [x] Verify quota concurrency and boundaries, provider rejection/reconciliation, queue fairness, cursor retry, migrations, permission boundaries, Go checks and browser/type/lint checks. Delivery route: waqar-fixes → develop → main.
+
+References: https://knowledge.hubspot.com/connected-email/sales-email-send-limits ; https://knowledge.hubspot.com/connected-email/set-daily-send-limits-for-connected-email-accounts ; https://support.outreach.io/support/solutions/articles/159000425886-how-outreach-schedules-email-deliveries ; https://www.salesloft.com/platform/governance .
+
+Resume verification (14 September): corrected invalid-recipient cursor stalls, distinguished request timeouts from confirmed provider rejection, retained uncertain reservations when status persistence fails, and refreshed the reservation timestamp when retrying a confirmed-rejected send. Added regression coverage and removed random-ID ordering from the mailbox-priority fixture. The 33 CRM composer/outreach browser checks, nine email/starter unit tests, TypeScript and targeted ESLint passed; light/dark/390px capacity layouts were inspected. A disposable PostgreSQL test applied the migration twice, checked historical backfill deduplication and task-first enrollment detection, and verified concurrent shared-mailbox claims. The migration package tests passed; live database migration validation was not run because this session has no configured DATABASE_URL. No real outbound email was sent.
+
+Final backend verification: service and repository suites passed after the final fixes; handler, router, sync, model, Temporal and migration packages passed. Focused sending/outreach tests passed three repeated runs. The final API/worker build and Go vet passed. Delivery follows the previously authorized waqar-fixes → develop → main flow; deployment completion is tracked separately by CI.

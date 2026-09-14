@@ -82,7 +82,7 @@ func (r *CRMOutreachRepository) SaveSequence(ctx context.Context, row *model.CRM
 	if version == 0 {
 		return r.db.WithContext(ctx).Create(row).Error
 	}
-	result := r.db.WithContext(ctx).Model(row).Where("workspace_id = ? AND owner_id = ? AND version = ?", row.WorkspaceID, row.OwnerID, version).Select("name", "status", "version", "steps", "timezone", "start_hour", "end_hour", "weekdays", "include_signature", "entry_stage_id", "entry_account_id", "entry_after", "entry_cursor_id", "entry_error", "updated_at").Updates(row)
+	result := r.db.WithContext(ctx).Model(row).Where("workspace_id = ? AND owner_id = ? AND version = ?", row.WorkspaceID, row.OwnerID, version).Select("name", "status", "daily_new_recipients", "version", "steps", "timezone", "start_hour", "end_hour", "weekdays", "include_signature", "entry_stage_id", "entry_account_id", "entry_after", "entry_cursor_id", "entry_error", "updated_at").Updates(row)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -209,9 +209,22 @@ func (r *CRMOutreachRepository) Deliveries(ctx context.Context, ws, id string) (
 }
 
 // Claim claims one due recipient using an exclusive lease token.
-func (r *CRMOutreachRepository) Claim(ctx context.Context, now time.Time) (*model.CRMSequenceEnrollment, error) {
+func (r *CRMOutreachRepository) Claim(ctx context.Context, now time.Time, excludedAccounts ...string) (*model.CRMSequenceEnrollment, error) {
 	var row model.CRMSequenceEnrollment
-	err := r.db.WithContext(ctx).Where("status IN ? AND next_at <= ? AND (lease_until IS NULL OR lease_until < ?)", []string{"active", "waiting_task", "sending"}, now, now).Order("next_at").First(&row).Error
+	due := func() *gorm.DB {
+		q := r.db.WithContext(ctx).Where("status IN ? AND next_at <= ? AND (lease_until IS NULL OR lease_until < ?)", []string{"active", "waiting_task", "sending"}, now, now)
+		if len(excludedAccounts) > 0 {
+			q = q.Where("account_id NOT IN ?", excludedAccounts)
+		}
+		return q
+	}
+	// Oldest mailbox first; within it, complete follow-ups before new starts.
+	err := due().Order("next_at, id").First(&row).Error
+	if err == nil {
+		account := row.AccountID
+		row = model.CRMSequenceEnrollment{}
+		err = due().Where("account_id = ?", account).Order("CASE WHEN step_index > 0 THEN 0 ELSE 1 END, next_at, id").First(&row).Error
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -264,6 +277,17 @@ func (r *CRMOutreachRepository) PrepareDelivery(ctx context.Context, row *model.
 		err := tx.Where("enrollment_id = ? AND step_index = ?", row.ID, row.StepIndex).First(&existing).Error
 		if err == nil {
 			*d = existing
+			if existing.Status == "deferred" || existing.Status == "rejected" {
+				var current model.CRMSequenceEnrollment
+				if err := tx.Where("id = ? AND lease_token = ? AND status = 'active'", row.ID, row.LeaseToken).First(&current).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&existing).Update("status", "sending").Error; err != nil {
+					return err
+				}
+				d.Status = "sending"
+				fresh = true
+			}
 			return nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -272,22 +296,6 @@ func (r *CRMOutreachRepository) PrepareDelivery(ctx context.Context, row *model.
 		var current model.CRMSequenceEnrollment
 		if err := tx.Where("id = ? AND lease_token = ? AND status = 'active'", row.ID, row.LeaseToken).First(&current).Error; err != nil {
 			return err
-		}
-		if d.Kind == "email" {
-			var account model.CRMEmailAccount
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", row.AccountID).First(&account).Error; err != nil {
-				return err
-			}
-			var minute, day int64
-			if err := tx.Model(d).Where("account_id = ? AND kind = 'email' AND created_at > ?", row.AccountID, now.Add(-time.Minute)).Count(&minute).Error; err != nil {
-				return err
-			}
-			if err := tx.Model(d).Where("account_id = ? AND kind = 'email' AND created_at > ?", row.AccountID, now.Add(-24*time.Hour)).Count(&day).Error; err != nil {
-				return err
-			}
-			if minute > 0 || day >= 100 {
-				return ErrOutreachRateLimit
-			}
 		}
 		if err := tx.Create(d).Error; err != nil {
 			return err
@@ -471,4 +479,16 @@ func (r *CRMOutreachRepository) ContactByEmail(ctx context.Context, ws, email st
 		return nil, nil
 	}
 	return &row, err
+}
+
+// EntryIssue records a recoverable enrollment failure without consuming its event.
+func (r *CRMOutreachRepository) EntryIssue(ctx context.Context, seq model.CRMEmailSequence, issue string) error {
+	return r.db.WithContext(ctx).Model(&model.CRMEmailSequence{}).Where("id = ? AND version = ?", seq.ID, seq.Version).Update("entry_error", issue).Error
+}
+
+// QueuedForMailbox counts work waiting to send in the owner's current workspace.
+func (r *CRMOutreachRepository) QueuedForMailbox(ctx context.Context, ws, account string) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.CRMSequenceEnrollment{}).Where("workspace_id = ? AND account_id = ? AND status IN ?", ws, account, []string{"active", "sending"}).Count(&n).Error
+	return n, err
 }

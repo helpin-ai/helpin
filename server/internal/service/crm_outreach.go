@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"net/mail"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -202,6 +204,12 @@ func (s *CRMOutreachService) SaveSequence(ctx context.Context, ws, user, id stri
 			return nil, fmt.Errorf("unsupported step type")
 		}
 	}
+	if row.DailyNewRecipients == 0 {
+		row.DailyNewRecipients = 25
+	}
+	if row.DailyNewRecipients < 1 || row.DailyNewRecipients > 1000 {
+		return nil, fmt.Errorf("daily new recipients must be between 1 and 1000")
+	}
 	version := row.Version
 	var previous *model.CRMEmailSequence
 	if id != "" {
@@ -303,6 +311,9 @@ func (s *CRMOutreachService) Preview(ctx context.Context, ws, user, sequence str
 		p := model.CRMSequencePreview{ContactID: id}
 		contact, err := s.repo.Contact(ctx, ws, id)
 		if err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
 			p.Error = "Contact unavailable"
 			rows = append(rows, p)
 			continue
@@ -357,6 +368,10 @@ func (s *CRMOutreachService) Preview(ctx context.Context, ws, user, sequence str
 	return rows, nil
 }
 
+type outreachIneligibleError struct{ message string }
+
+func (e *outreachIneligibleError) Error() string { return e.message }
+
 // Enroll creates recipient snapshots after validating the published version.
 func (s *CRMOutreachService) Enroll(ctx context.Context, ws, user, sequence string, req model.CRMSequenceEnrollRequest) ([]model.CRMSequenceEnrollment, error) {
 	previews, err := s.Preview(ctx, ws, user, sequence, req)
@@ -374,7 +389,7 @@ func (s *CRMOutreachService) Enroll(ctx context.Context, ws, user, sequence stri
 	now := s.now()
 	for _, p := range previews {
 		if p.Error != "" {
-			return nil, fmt.Errorf("%s: %s", p.ContactName, p.Error)
+			return nil, &outreachIneligibleError{message: fmt.Sprintf("%s: %s", p.ContactName, p.Error)}
 		}
 		row := model.CRMSequenceEnrollment{ID: uuid.NewString(), WorkspaceID: ws, SequenceID: sequence, SequenceName: seq.Name, SequenceVersion: seq.Version, ContactID: p.ContactID, ContactName: p.ContactName, Email: p.Email, DealID: req.DealID, AccountID: req.AccountID, OwnerID: user, Status: "active", Steps: p.Steps, Timezone: seq.Timezone, StartHour: seq.StartHour, EndHour: seq.EndHour, Weekdays: seq.Weekdays, UnsubscribeToken: uuid.NewString() + uuid.NewString(), CreatedAt: now, UpdatedAt: now}
 		for i := range row.Steps {
