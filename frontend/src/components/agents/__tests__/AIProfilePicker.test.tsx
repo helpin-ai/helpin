@@ -118,6 +118,21 @@ it("replaces legacy launch fields with one explicit profile selection", async ()
   expect(onChange).toHaveBeenCalledWith({ ai_profile_id: "personal" });
 });
 
+it("keeps the personal profile menu owned by and above the Ask Agent dock", async () => {
+  const onChange = vi.fn();
+  await act(async () => root.render(
+    <QueryClientProvider client={client}>
+      <AIConnectionPicker workspaceId="ws" value={{}} inDock onChange={onChange} />
+    </QueryClientProvider>,
+  ));
+  await openPicker();
+  const menu = document.querySelector('[data-dropdown-content]');
+  expect(menu?.getAttribute("data-helpin-dock-overlay")).toBe("true");
+  expect(menu?.classList.contains("z-[70]")).toBe(true);
+  await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="personal"]')!.click());
+  expect(onChange).toHaveBeenCalledWith({ ai_profile_id: "personal" });
+});
+
 it("disables a policy-rejected primary even when its fallback is allowed", async () => {
   const denied = { ...profiles[0], primary_policy: { allowed: false, message: "BYOK is disabled" },
     fallback: profiles[1].primary, fallback_policy: { allowed: true } };

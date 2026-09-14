@@ -2523,7 +2523,7 @@ describe('inherited AI route disclosure', () => {
   });
   it('passes Ask Agent’s saved profile to the launch picker', async () => {
     await renderDock();
-    expect(mocks.aiPicker).toHaveBeenCalledWith(expect.objectContaining({ defaultProfileId: 'ask-default', workspaceId: 'ws-1' }), undefined);
+    expect(mocks.aiPicker).toHaveBeenCalledWith(expect.objectContaining({ defaultProfileId: 'ask-default', workspaceId: 'ws-1', inDock: true }), undefined);
   });
   it('waits for the agent default instead of presenting a workspace fallback', async () => {
     mocks.useAgents.mockReturnValue({ data: undefined, isPending: true, isError: false });

@@ -963,13 +963,13 @@ export function ChatView({
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}
       {run && <AIExecutionDetails input={run.input} />}
-      {run?.status === 'paused' && run.pause_reason === 'authentication' && typeof run.input?.model_connection_id === 'string' && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} /></div>}
+      {run?.status === 'paused' && run.pause_reason === 'authentication' && typeof run.input?.model_connection_id === 'string' && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} inDock locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} /></div>}
       {!run && <div className="px-3.5 py-2">
         {!aiConnection.ai_profile_id && agentDefaults.isPending
           ? <p role="status" className="text-xs text-quiet-text-secondary">Loading the agent’s AI default…</p>
           : !aiConnection.ai_profile_id && agentDefaults.isError
             ? <button type="button" className="text-xs underline" onClick={() => void agentDefaults.refetch()}>Retry loading the agent’s AI default</button>
-            : <AIConnectionPicker workspaceId={workspaceId} defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} />}
+            : <AIConnectionPicker workspaceId={workspaceId} inDock defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} />}
       </div>}
       {composer.visible && (
         <div className="border-t border-border/60">

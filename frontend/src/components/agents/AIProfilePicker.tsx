@@ -20,6 +20,7 @@ export function AIProfilePicker({
   onChange,
   disabled = false,
   sharedOnly = false,
+  inDock = false,
   defaultProfileId,
 }: {
   workspaceId: string;
@@ -27,6 +28,7 @@ export function AIProfilePicker({
   onChange: (value: string | null) => void;
   disabled?: boolean;
   sharedOnly?: boolean;
+  inDock?: boolean;
   defaultProfileId?: string | null;
 }) {
   const id = useId();
@@ -84,7 +86,10 @@ export function AIProfilePicker({
             placeholder={sharedOnly ? "Workspace default" : "Agent default"}
           />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent
+          data-helpin-dock-overlay={inDock || undefined}
+          className={inDock ? "z-[70]" : undefined}
+        >
           <SelectItem value="default">
             {sharedOnly ? "Workspace default" : "Agent default"}
           </SelectItem>

@@ -10,6 +10,7 @@ export function AIConnectionPicker({
   onChange,
   disabled = false,
   locked = false,
+  inDock = false,
   defaultProfileId,
 }: {
   workspaceId: string;
@@ -17,6 +18,7 @@ export function AIConnectionPicker({
   onChange: (value: AIConnectionSelection) => void;
   disabled?: boolean;
   locked?: boolean;
+  inDock?: boolean;
   defaultProfileId?: string | null;
 }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
@@ -38,6 +40,7 @@ export function AIConnectionPicker({
   return (
     <AIProfilePicker
       workspaceId={workspaceId}
+      inDock={inDock}
       defaultProfileId={defaultProfileId}
       value={value.ai_profile_id}
       onChange={(id) => onChange(id ? { ai_profile_id: id } : {})}
