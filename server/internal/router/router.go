@@ -59,6 +59,7 @@ type Handlers struct {
 	Agent               *handler.AgentHandler
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
 	AIConnection        *handler.AIConnectionHandler
+	AIProfile           *handler.AIProfileHandler
 	MCP                 *handler.MCPHandler
 	ExternalMCP         *handler.ExternalMCPHandler
 	SupportInbox        *handler.SupportInboxHandler
@@ -479,6 +480,19 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Post("/{connectionID}/reconnect", h.AIConnection.Reconnect)
 					r.Delete("/{connectionID}", h.AIConnection.Disconnect)
 				})
+			}
+
+			if h.AIProfile != nil {
+				r.Route("/ai-profiles", func(r chi.Router) {
+					r.Use(middleware.RequireWorkspaceID)
+					r.Use(wsActive)
+					r.Get("/", h.AIProfile.List)
+					r.Post("/", h.AIProfile.Save)
+					r.Put("/{profileID}", h.AIProfile.Save)
+					r.Delete("/{profileID}", h.AIProfile.Delete)
+				})
+				r.With(middleware.RequireWorkspaceID, wsActive).Get("/ai-settings", h.AIProfile.Settings)
+				r.With(middleware.RequireWorkspaceID, wsActive).Put("/ai-settings", h.AIProfile.SetDefault)
 			}
 
 			if h.AgentRuntimeHost != nil {

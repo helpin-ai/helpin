@@ -21,6 +21,10 @@ import (
 
 var ErrAIConnection = errors.New("AI connection is unavailable or requires reconnection")
 
+// ErrAIConnectionUnavailable permits a pre-execution fallback after authorization.
+// Ownership, configuration, database, and encryption errors do not use this error.
+var ErrAIConnectionUnavailable = fmt.Errorf("%w: connection is not ready", ErrAIConnection)
+
 type AIConnectionConfig struct {
 	EncryptionKey   string
 	ChatGPTEnabled  bool
@@ -311,7 +315,7 @@ func (s *AIConnectionService) loadConnectionCredential(ctx context.Context, work
 			return err
 		}
 		if c.Status != "connected" {
-			return ErrAIConnection
+			return ErrAIConnectionUnavailable
 		}
 		secret, err := s.open(c)
 		if err != nil {
@@ -333,7 +337,7 @@ func (s *AIConnectionService) loadConnectionCredential(ctx context.Context, work
 					if errors.As(err, &authErr) && (authErr.Code == "reconnect_required" || authErr.Code == "account_changed") {
 						c.Status = "reauthorization_required"
 					}
-					publicErr = ErrAIConnection
+					publicErr = ErrAIConnectionUnavailable
 					return nil
 				}
 				secret.Token = refreshed

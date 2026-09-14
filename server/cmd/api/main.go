@@ -1100,6 +1100,7 @@ func main() {
 	if err != nil {
 		fatalWithSentry("failed to initialize AI connections", err)
 	}
+	aiProfileService := service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService)
 	externalMCPService, err := service.NewExternalMCPService(
 		externalMCPRepo,
 		notificationService,
@@ -1973,6 +1974,7 @@ func main() {
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
 		AIConnection:        handler.NewAIConnectionHandler(aiConnectionService),
+		AIProfile:           handler.NewAIProfileHandler(aiProfileService),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
 		MCP:                 handler.NewMCPHandler(mcpService),
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
