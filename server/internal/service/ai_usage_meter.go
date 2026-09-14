@@ -101,7 +101,7 @@ type aiUsageCreditConsumer interface {
 // AIUsageMeter is the central adapter from AI token usage to the billing ledger.
 type AIUsageMeter struct {
 	consumer aiUsageCreditConsumer
-	usage    *AIUsageService
+	usage    AIUsageLifecycle
 }
 
 // AIUsageMeterInput describes one completed AI action to charge.
@@ -170,7 +170,7 @@ func NewAIUsageMeter(consumer aiUsageCreditConsumer) *AIUsageMeter {
 }
 
 // NewTokenPricedAIUsageMeter creates the active micro-USD metering adapter.
-func NewTokenPricedAIUsageMeter(usage *AIUsageService) *AIUsageMeter {
+func NewTokenPricedAIUsageMeter(usage AIUsageLifecycle) *AIUsageMeter {
 	return &AIUsageMeter{usage: usage}
 }
 
@@ -742,7 +742,7 @@ func agentRunMeteringContext(run *model.AgentRun) (MeteringContext, bool) {
 		return MeteringContext{}, false
 	}
 	var metering MeteringContext
-	if err := json.Unmarshal(summary[agentRunMeteringSummaryKey], &metering); err != nil || metering.PricingVersion == "" {
+	if err := json.Unmarshal(summary[agentRunMeteringSummaryKey], &metering); err != nil || (metering.PricingVersion == "" && metering.PolicyMode != "community") {
 		return MeteringContext{}, false
 	}
 	return metering, true

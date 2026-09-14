@@ -26,6 +26,7 @@ type MeteringRequest struct {
 
 // MeteringContext is the immutable pricing identity carried through execution.
 type MeteringContext struct {
+	PolicyMode                                        string
 	Route                                             aiusage.ResolvedRoute
 	ReservationID, PricingVersion                     string
 	MaxBillableMicrousd                               int64

@@ -213,3 +213,6 @@ The concrete lifecycle dependency is concentrated in two consumers (`AIUsageMete
 | Construction | `cmd/api/main.go`; `cmd/temporal-worker/main.go` | Select an edition implementation once; wire the same lifecycle into direct completions, agent services, projections, and CRM launchers. |
 
 The consumed lifecycle needs `ResolveMeteringContext`, `Preflight`, `Checkpoint`, `Reconcile`, `Heartbeat`, `SuspendReservation`, `Fail`, and `Release`. The community implementation must retain identity, normalized raw telemetry, and transactional run watermarks without requiring prices, reservations, periods, or credit balances. Existing agent checkpoint/terminal tests and direct completion tests provide regression coverage; add community interruption, resume, missing-price, and idempotency cases before switching wiring.
+
+- `7d9633eee`: tier changes preserve reasoning effort, native context, and execution limits; targeted regression tests passed. A1 inventory is recorded above.
+- A1 lifecycle implementation: introduced the consumed interface and a community recorder with no price/reservation dependency, atomic usage/watermark persistence, stale-event detection, and pause/restart tests. Edition startup selection remains outstanding. Reviewed retries and workspace isolation; focused service/repository tests, vet, and backend build passed.
