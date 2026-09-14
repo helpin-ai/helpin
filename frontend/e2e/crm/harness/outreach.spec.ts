@@ -220,7 +220,7 @@ test("sequence editor adds task and configures stage enrollment", async ({
     .getByRole("combobox", { name: "Enrollment stage", exact: true })
     .click();
   await page.getByRole("option", { name: "Qualified", exact: true }).click();
-  await page.getByRole("combobox", { name: "Automation sender" }).click();
+  await page.getByRole("combobox", { name: "Sending mailbox" }).click();
   await page.getByRole("option", { name: "waqar@contentstudio.io" }).click();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect
@@ -516,7 +516,7 @@ test("automatic enrollment scopes stages to the selected pipeline and clears old
     .click();
   await expect(stage).not.toBeVisible();
   await expect(
-    page.getByRole("combobox", { name: "Automation sender" }),
+    page.getByRole("combobox", { name: "Sending mailbox" }),
   ).not.toBeVisible();
 });
 
@@ -578,4 +578,45 @@ test("sequence steps can collapse and expand with the keyboard", async ({
   await closed.focus();
   await page.keyboard.press("Enter");
   await expect(step).toHaveAttribute("aria-expanded", "true");
+});
+
+test("enrollment sender has a placeholder before choosing a mailbox", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route("**/api/crm/outreach/sequences?**", (route) =>
+    route.fulfill({ json: [{ ...sequence, entry_stage_id: "stage" }] }),
+  );
+  await page.goto("/e2e/crm/harness/outreach.html?tab=sequences");
+  await page.getByRole("button", { name: "Demo follow-up" }).click();
+  await page.getByText("Enrollment", { exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Sending mailbox", exact: true }),
+  ).toContainText("Select a mailbox");
+  await expect(page.getByText(/Saving authorizes this rule/)).not.toBeVisible();
+});
+
+test("enrollment without an eligible mailbox shows a connection prompt instead of an empty dropdown", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route("**/api/crm/outreach/sequences?**", (route) =>
+    route.fulfill({ json: [{ ...sequence, entry_stage_id: "stage" }] }),
+  );
+  await page.route("**/api/crm/email/accounts?**", (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page.goto("/e2e/crm/harness/outreach.html?tab=sequences");
+  await page.getByRole("button", { name: "Demo follow-up" }).click();
+  await page.getByText("Enrollment", { exact: true }).click();
+  await expect(
+    page.getByText("No sending mailbox connected.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: /mailbox|sender/i }),
+  ).not.toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Connect a mailbox" }),
+  ).toHaveAttribute("href", "/w/email-test/settings/crm-email");
+  await expect(page.getByText(/Saving authorizes this rule/)).not.toBeVisible();
 });
