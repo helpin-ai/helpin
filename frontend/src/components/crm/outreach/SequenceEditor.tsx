@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/pm/ConfirmDialog";
 import { useAccessibleTeams } from "@/hooks/useAccessibleTeams";
 import { useEmailAccounts, usePipelines } from "@/hooks/queries/useCRM";
 import { useOutreachRefresh } from "@/hooks/queries/useCRMOutreach";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAuthStore } from "@/stores/authStore";
 import { crmOutreachService } from "@/lib/services/crmOutreachService";
 import { unwrap } from "@/lib/queryUtils";
@@ -67,12 +68,17 @@ export function SequenceEditor({
   const pipelines = usePipelines(workspaceId);
   const [chosenPipeline, setChosenPipeline] = useState<string>();
   const user = useAuthStore((s) => s.user?.id);
+  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug);
   const access = useWorkspaceAccess(workspaceId);
   const canEdit = usePermissions(access.data).has("crm.edit");
   const editable = canEdit && (!initial.owner_id || initial.owner_id === user);
   const steps = form.steps ?? [];
   const mailboxes = (accounts.data ?? []).filter(
-    (a) => a.member_id === user && a.can_send,
+    (a) =>
+      a.member_id === user &&
+      a.can_send &&
+      a.is_active &&
+      a.status === "connected",
   );
   const pipelineId =
     chosenPipeline ??
@@ -482,24 +488,62 @@ export function SequenceEditor({
                     </>
                   )}
                   {form.entry_stage_id && (
-                    <QuietSelect
-                      label="Automation sender"
-                      value={form.entry_account_id || ""}
-                      onChange={(entry_account_id) =>
-                        patch({ entry_account_id })
-                      }
-                      options={mailboxes.map((account) => ({
-                        value: account.id,
-                        label: account.email_address,
-                      }))}
-                      disabled={!editable || saving}
-                    />
-                  )}
-                  {form.entry_stage_id && (
-                    <p className="text-xs text-muted-foreground">
-                      Saving authorizes this rule to send from your selected
-                      mailbox.
-                    </p>
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        Sending mailbox
+                      </p>
+                      {accounts.isLoading ? (
+                        <p className="text-xs text-muted-foreground">
+                          Loading mailboxes…
+                        </p>
+                      ) : accounts.isError ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void accounts.refetch()}
+                        >
+                          Couldn’t load mailboxes. Try again
+                        </Button>
+                      ) : mailboxes.length ? (
+                        <QuietSelect
+                          label="Sending mailbox"
+                          placeholder="Select a mailbox"
+                          value={form.entry_account_id || ""}
+                          onChange={(entry_account_id) =>
+                            patch({ entry_account_id })
+                          }
+                          options={mailboxes.map((account) => ({
+                            value: account.id,
+                            label: account.email_address,
+                          }))}
+                          disabled={!editable || saving}
+                        />
+                      ) : (
+                        <div className="space-y-1 text-xs">
+                          <p className="text-muted-foreground">
+                            No sending mailbox connected.
+                          </p>
+                          {workspaceSlug && (
+                            <a
+                              className="underline underline-offset-4"
+                              href={`/w/${workspaceSlug}/settings/crm-email`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              Connect a mailbox
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      {mailboxes.some(
+                        (account) => account.id === form.entry_account_id,
+                      ) && (
+                        <p className="text-xs text-muted-foreground">
+                          Saving authorizes this rule to send from your selected
+                          mailbox.
+                        </p>
+                      )}
+                    </div>
                   )}
                   {form.entry_error && (
                     <p className="text-xs text-destructive">
