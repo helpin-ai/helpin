@@ -112,3 +112,19 @@ func TestAIProfileReviewDoesNotFreezeBillingBeforeLaunch(t *testing.T) {
 		t.Fatal("launch mutated reviewed route or omitted its policy")
 	}
 }
+
+func TestAIProfileCannotAcceptEmptyEditionPolicy(t *testing.T) {
+	s, primary, fallback := setupAIProfileTest(t)
+	ctx := context.Background()
+	p, err := s.Save(ctx, "workspace", "owner", "", model.SaveAIProfileRequest{Name: "Team", Scope: "workspace", Primary: primary, Fallback: &fallback})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetAdmissionPolicy(connectionPolicyFunc(func(context.Context, string, *model.AIConnection) (*model.AIExecutionPolicySnapshot, error) {
+		return nil, nil
+	}))
+	selection, credential, err := s.Resolve(ctx, "workspace", "owner", AIProfileSelectionRequest{ProfileID: p.ID})
+	if err == nil || selection != nil || credential != nil {
+		t.Fatal("empty edition policy admitted a run")
+	}
+}

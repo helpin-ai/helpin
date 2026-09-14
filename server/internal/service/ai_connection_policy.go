@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -30,7 +31,14 @@ func (s *AIProfileService) selectionPolicy(ctx context.Context, workspace string
 		return nil, ErrAIConnection
 	}
 	if s.admissionPolicy != nil {
-		return s.admissionPolicy.ResolveConnectionPolicy(ctx, workspace, c)
+		policy, err := s.admissionPolicy.ResolveConnectionPolicy(ctx, workspace, c)
+		if err != nil {
+			return nil, err
+		}
+		if policy == nil {
+			return nil, errors.New("AI connection policy is unavailable")
+		}
+		return policy, nil
 	}
 	return &model.AIExecutionPolicySnapshot{Mode: "community", FundingMode: aiusage.FundingCustomerUnbilled}, nil
 }
