@@ -239,3 +239,12 @@ The consumed lifecycle needs `ResolveMeteringContext`, `Preflight`, `Checkpoint`
 - `7fb0db650`: separated commercial integration tests behind `ee`, kept core tests in community, and added the CI source-distribution check. A temporary archive without `server/ee` passed API/worker/migrator/bootstrap builds and every core/command test. The archive includes the existing shared reply-time fixture. Financial regression suites also passed with `ee`; historical migrations were not changed.
 
 - Frontend EE extraction checkpoint: billing pages/components, hooks, prices, upgrade presentation, branding policy, and billing navigation guards now live under `frontend/src/ee`. Core uses build-selected extension points; community has no billing requests or upgrade UI, and billing URLs return not found. The model picker uses the neutral model catalog. Web and desktop type checks and both edition production builds passed. The broad EE suite exposed two outdated profile test fixtures; those were updated and all 26 affected cases passed. The community source archive built with `src/ee` absent and recorded 2,607 passing tests; module-loading/runner timeouts under competing builds were resolved by serial retries in a fresh archive (58 passing tests plus all 7 checklist cases, no errors). The CI check includes shared ordering fixtures and runs separately from EE tests. No live migration, restart command, billing flag change, or repository push occurred.
+
+### SaaS policy operator checkpoint
+
+Added the EE-only `ai-byok-policy` operator command with a rolled-back preview,
+explicit apply, immutable version/rate validation, and workspace serialization.
+It distinguishes explicit zero from an unset rate; disabling affects new
+admissions and preserves the tariff reference. In-memory transaction tests cover
+preview rollback, idempotency, changed-version rejection, new versions, disable,
+and missing workspaces. No live workspace flag or tariff was changed.

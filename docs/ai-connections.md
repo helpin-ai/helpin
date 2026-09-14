@@ -113,3 +113,29 @@ SaaS uses `go run -tags ee ./cmd/api` and `go run -tags ee ./cmd/temporal-worker
 Container builds default to community too. SaaS builds pass `--build-arg GO_BUILD_TAGS=ee`; the staging and production workflows declare that choice explicitly. Both binaries must use the same edition. No live migration or service restart command was run as part of this change.
 
 The frontend also defaults to community: `pnpm --dir frontend dev` and `pnpm --dir frontend build`. SaaS development uses `pnpm --dir frontend dev:ee`; production uses `pnpm --dir frontend build:ee`. The build command fixes the edition for both TypeScript and Vite, so an inherited environment value cannot select mismatched implementations. Staging and production workflows explicitly build EE. Community omits billing navigation, payment requests, upgrade UI, and price assets; old billing URLs return not found. Desktop builds that reuse frontend components default to the same community extension points.
+
+### SaaS BYOK operator policy
+
+The EE-only operator command previews a transactional policy change by default:
+
+```bash
+cd server
+go run -tags ee ./cmd/ai-byok-policy \
+  -workspace "$WORKSPACE_ID" -mode enable \
+  -tariff-version "$TARIFF_VERSION" \
+  -microusd-per-million-tokens "$RATE_MICROUSD"
+```
+
+Supply an explicit nonnegative integer rate: `1000000` represents USD 1 per
+million normalized tokens; `0` explicitly configures no Helpin token fee.
+An omitted rate is invalid. Review the JSON result, then repeat with `-apply`.
+The command loads `DATABASE_URL` from the environment or `server/.env` and
+requires the core and EE migrations to have been applied. It does not restart
+services, test provider credentials, or change accepted executions.
+
+A tariff version can be reused only with identical values. A different rate
+requires a new version. Paid tools retain the separate tool tariffs frozen at
+admission. To block new BYOK executions while preserving existing run snapshots
+and refresh authorization, preview `-workspace "$WORKSPACE_ID" -mode disable`,
+then repeat with `-apply`. Disabling preserves the workspace's tariff reference.
+Use connection/run revocation when accepted executions must also stop.
