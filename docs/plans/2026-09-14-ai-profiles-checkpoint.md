@@ -1,7 +1,6 @@
 # AI profiles implementation checkpoint — September 14, 2026
 
-Paused at the user's request. **The full plan is not implemented yet.** Resume
-from this checkpoint and the implementation plan, without restarting completed work.
+Implementation resumed at the user's request. See [Resumed implementation](#resumed-implementation) for the current state. The original pause snapshot below is retained as history; its outstanding-code list is superseded by that update.
 
 Plan: [AI profiles, community BYOK, and optional SaaS BYOK](2026-09-14-ai-profiles-and-ee-billing-plan.md).
 
@@ -192,3 +191,81 @@ Start by reading this checkpoint, the full plan and current repository status.
 Continue outstanding work in reviewable local commits, reviewing and correcting
 each major step. Do not spawn subagents under the current instructions. The user
 explicitly paused execution; wait for their request to continue.
+
+
+## Resumed implementation
+
+The remaining code is implemented. **Live rollout and acceptance are not complete.**
+Helpin and Runtime commits remain local; no live migration, restart, workspace
+flag/tariff change, login, or authenticated deployment canary was performed.
+
+- SDK `f5b9dae`, released as `v0.6.0-alpha.2`: approved endpoint bindings and
+  protocol/capability metadata. Both consumers pin the fetchable release.
+- Runtime `c374065`: compatible provider, admission/recovery endpoint binding,
+  API-key/no-auth transport, streamed tool IDs, usage and summaries.
+- Runtime `91614d2`, `ffe0215`: durable host/Compose templates and refreshed docs.
+- Helpin `f30b463e6`: compatible connections/profiles/UI, endpoint-bound secrets,
+  inherited route disclosure, and OAuth outage/fallback correction.
+- Helpin `543b51fa2`: removed the dead core weighted-credit adapter and floors;
+  moved commercial analytics into EE; tests now use the production lifecycle.
+- Helpin `0bd6487f5`: empty edition policies cannot admit a run.
+- Helpin `c98453bcf`: Ask Agent default loading, send guard, and UI fixture fixes.
+
+Validation:
+
+- Full runtime app/engine/credential/model suites and vet passed. Actual local
+  Qwen3-0.6B on llama.cpp b10955 passed streamed tool use, transcript restoration,
+  no-auth and reported usage. The temporary server/downloads were removed. This
+  does not claim a deployed Helpin canary or an actual durable-worker restart.
+- Full Helpin service and EE suites passed; the final floor-removal, missing
+  lifecycle, and empty-policy regressions also passed. Backend vet passed.
+- A Community source archive built API/worker/migrator/bootstrap and passed all
+  core/command tests with `server/ee` absent. Subsequent small guard/floor changes
+  passed the affected service/policy suites.
+- The Community frontend archive built with `src/ee` absent. Its broad run had
+  436 passing files, one failed Dock file, and a widget pageview-timer teardown
+  error. The Dock fixture was updated for the new default query, and the support
+  fixture now mocks unrelated widget initialization. A fresh EE-free archive then
+  passed all 124 affected Dock/support/profile/analytics tests with no errors.
+  The original broad invocation is not claimed as an entirely passing run.
+- EE profile/automation checks passed after the Dock correction; 85 Dock tests
+  passed separately. EE type checking and the final frontend production build passed, as did EE
+  API/worker/migrator/bootstrap/BYOK-operator builds. Runtime Compose validates, and the fresh
+  app example constructs strict admission plus an authenticated callback manager.
+
+### Operator steps still needed
+
+The user owns live migrations and restarts. No matching dev services were found
+in this host's systemd list/process inspection, so their actual restart commands
+must be supplied; do not guess service names or restart unrelated processes.
+
+On the dev host, with its existing private Helpin configuration loaded:
+
+```bash
+cd /root/helpin/server
+GOWORK=off go run -tags ee ./cmd/migrate pending
+GOWORK=off go run -tags ee ./cmd/migrate up
+```
+
+Then preview `cmd/ai-bootstrap` for the chosen workspace with `-funding managed`
+and explicit `-credential provider=ENV_VAR` mappings; inspect unconfigured routes
+and nonterminal legacy runs, then repeat with `-apply`. The exact command and
+rate preview depend on the workspace and operator-selected mappings/rate. See
+[AI connections](../ai-connections.md) for all command flags.
+
+Use EE consistently across API, worker and frontend. Runtime API and every worker
+need the same stable model encryption key and trusted callback config. Preserve
+other apps' global defaults. Finish/cancel legacy Helpin runs before enabling its
+strict policy, after credential canaries pass. Do not overwrite shared app config
+with the fresh-install example.
+
+Two questions were left pending: the dev launch/restart method, and the workspace
+plus flat USD/million-token rate for SaaS BYOK canaries (explicit zero is supported).
+BYOK stays off until the user applies that configuration. Paid tools remain
+separate. No fee choice or elapsed time constitutes permission to activate it.
+
+Still required after deployment: current UI/keyboard/mobile/dark visual checks;
+API-key and ChatGPT runs with outgoing credential attribution; live expired OAuth
+refresh, reconnect and revocation; durable interruption/worker restart/cleanup;
+strict Helpin versus unchanged other-app defaults; and actual database migration
+and edition-transition checks. Preserve these as release gates, not completed tests.

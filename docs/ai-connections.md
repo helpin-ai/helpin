@@ -3,7 +3,7 @@
 This document describes the profile contract being implemented in the
 [September 14 rollout plan](plans/2026-09-14-ai-profiles-and-ee-billing-plan.md).
 It supersedes the September 12 manual-only, full-rate personal-connection contract.
-Deployment remains gated on edition construction, migration/bootstrap, canaries,
+Edition construction is implemented. Deployment remains gated on migration/bootstrap, canaries,
 and live refresh/revocation validation. Do not restart an older installation into
 profile-based wiring before completing that coordinated rollout.
 
@@ -98,11 +98,10 @@ expired-token refresh, reconnect, and revocation are separate release gates.
 ChatGPT strips the previous-response identifier and does not support lossless
 provider-state replay, although ordinary transcript continuation is supported.
 
-Helpin and Runtime currently pin the published SDK `v0.6.0-alpha.1`, verified
-without Go workspace substitution. Explicit empty model controls clear inherited
-model controls while preserving execution limits. The separate Chat Completions
-transport and a real local-model validation remain later rollout gates; this
-checkpoint does not advertise local-agent support.
+Helpin and Runtime pin the published SDK `v0.6.0-alpha.2`, verified without Go
+workspace substitution. Explicit empty model controls clear inherited controls
+while preserving execution limits. Chat Completions and the real local-model
+adapter validation are implemented; deployed Helpin canaries remain pending.
 
 ## Build editions
 
@@ -151,3 +150,24 @@ A personal profile's originating owner is frozen separately from its actual
 connection owner. When a personal route falls back to a shared connection, its
 children, resume, and refresh still require the originating member. Profile
 edits or deletion do not rewrite the accepted selection.
+
+## Compatible/local agent models
+
+Use the Runtime `openai_compatible` provider for Chat Completions endpoints. The
+Runtime administrator approves each endpoint's ID, canonical URL and authentication
+mode in the trusted Helpin app entry. Local HTTP requires explicit `allow_http`.
+Helpin's connection form selects an approved ID; it cannot send an arbitrary URL.
+No-auth endpoints omit API keys and still have a revocable run credential record.
+A profile can name an unpriced model and freezes the connection's endpoint binding.
+Changes to that binding require a new connection/profile; accepted runs never
+redirect their credentials. Compatible routes have transcript continuation, not
+lossless Responses replay or provider-specific reasoning/service-tier controls.
+
+See Runtime `docs/2026-09-14-compatible-models.md` for the real local Qwen test and
+`docs/2026-09-14-helpin-deployment.md` for fresh host/compose templates. SDK
+`v0.6.0-alpha.2` is released and pinned in both consumers.
+
+Host SaaS development commands are `just backend-ee`, `just worker-ee`, and
+`just frontend-ee` in separate terminals. Community uses the existing commands
+without the `-ee` suffix. Do not switch a live EE deployment to Community while
+accepted EE runs are outstanding; drain them first to preserve their frozen policy.

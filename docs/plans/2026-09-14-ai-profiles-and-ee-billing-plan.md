@@ -1,6 +1,6 @@
 # AI profiles, community BYOK, and optional SaaS BYOK
 
-Status: implementation resumed at the user’s request. The [earlier checkpoint](2026-09-14-ai-profiles-checkpoint.md) records the first phase; current checkpoints below record subsequent work. Live rollout gates remain pending.
+Status: code implementation complete; live deployment acceptance pending. The [current checkpoint](2026-09-14-ai-profiles-checkpoint.md#resumed-implementation) records commits, verification, and the remaining user-run rollout gates.
 
 Split delivery into a standalone catalog prerequisite, **Plan A: AI configuration and execution**, and **Plan B: commercial billing extraction**. Plan A can use an adapter to the existing commercial implementation while Plan B proceeds separately. A clean community distribution requires both plans.
 
@@ -299,3 +299,48 @@ restored-transcript test passed; see Runtime's
 temporary server was stopped. No Helpin database migration or service restart has
 been performed, and SaaS BYOK remains off. Fresh-deployment docs, final edition
 boundary review, and deployment canaries remain.
+
+### Final edition boundary review
+
+Removed the unused weighted-credit consumer and feature floors from core. The
+only constructor references were legacy test fixtures; production already used
+the full usage lifecycle. Updated those fixtures to exercise admission, terminal
+idempotency, budget cancellation, and exemptions through that production boundary.
+Historical SQL, ledger records, and supported EE token pricing modes remain intact.
+Removed the now-unused EE floor helper as well. Billing analytics event builders
+and tracking now live under frontend EE; neutral identity syncing still accepts
+optional workspace metadata.
+
+Full service/EE regressions passed, and a temporary Community backend archive
+built and passed all core/command tests with `server/ee` absent. Review additionally
+requires missing lifecycle wiring to fail terminal settlement without advancing
+its marker, and an edition adapter cannot admit an empty policy snapshot. Runtime
+fresh app configuration loads strict admission and the authenticated callback;
+its Linux Compose template validates without starting services. Deployment docs
+include host processes, durable state, matching encryption keys, edition commands,
+and draining accepted EE work before a Community transition.
+
+### Verification and operator handoff
+
+The code delivery is complete; live rollout acceptance remains open. Helpin
+`543b51fa2` removes the obsolete financial path, `0bd6487f5` rejects empty admission
+policies, and `c98453bcf` waits for Ask Agent's resolved default before sending.
+Runtime deployment documentation is at `ffe0215`; both consumers use published
+SDK `v0.6.0-alpha.2`. All three module caches verified, and module tidy completed.
+
+The Community frontend build passed with EE sources absent. Its broad run recorded
+436 passing files and one failing Dock fixture, plus an unrelated widget timer
+leaking beyond test teardown. Updated the Dock dependency fixture and isolated
+widget initialization in the support fixture. A fresh EE-free archive passed all
+124 affected tests with no errors; 85 Dock cases also passed under EE. The broader
+invocation itself was not entirely green. Backend service/EE regression suites,
+EE-free backend builds/tests, and final backend vet passed.
+
+The current [checkpoint](2026-09-14-ai-profiles-checkpoint.md#resumed-implementation)
+records the remaining user-run migration/bootstrap, matching service restarts,
+workspace/tariff selection, and live acceptance gates. No service was restarted,
+no live SQL was applied, and no SaaS BYOK flag or rate was activated. Other apps'
+Runtime environment defaults remain supported. Do not mark live refresh, deployed
+worker recovery, or database edition transitions as validated by unit fixtures.
+
+Final EE frontend production build and API/worker/migrator/bootstrap/BYOK-operator builds passed. Existing bundle-size and Lottie warnings remain. Helpin and Runtime working changes are committed locally; neither repository was pushed.
