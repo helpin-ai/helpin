@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Verify the distributable source, not just linker reachability. Use a temporary
+# copy so this check cannot remove a developer's EE files or disturb other tests.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+community_check_dir=$(mktemp -d)
+trap 'rm -rf "$community_check_dir"' EXIT
+python3 - "$community_check_dir" <<'PY'
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+destination = Path(sys.argv[1])
+paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', 'server', 'packages/shared/test-data']).split(b'\0')
+for item in set(paths):
+    if not item:
+        continue
+    path = Path(item.decode())
+    if path.parts[:2] == ('server', 'ee') or not path.is_file():
+        continue
+    target = destination / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, target)
+PY
+cd "$community_check_dir/server"
+test ! -e ee
+go build -buildvcs=false ./cmd/api ./cmd/temporal-worker ./cmd/migrate ./cmd/ai-bootstrap
+go test -buildvcs=false ./internal/... ./cmd/...

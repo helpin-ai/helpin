@@ -75,7 +75,7 @@ jobs:
           MOBILE=false
           EVENTPIPELINE=false
 
-          if echo "$CHANGED" | grep -qE '^server/|^scripts/check-task-canonical\.sh$|^\.github/workflows/ci\.yml$'; then
+          if echo "$CHANGED" | grep -qE '^server/|^scripts/check-(task-canonical|community-backend)\.sh$|^\.github/workflows/ci\.yml$'; then
             SERVER=true
           fi
           if echo "$CHANGED" | grep -qE '^frontend/|^packages/(shared|widget-core)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
@@ -173,7 +173,9 @@ jobs:
 
       - name: Vet
         working-directory: server
-        run: go vet ./...
+        run: |
+          go vet ./...
+          go vet -tags ee ./...
 
       - name: Build
         working-directory: server
@@ -182,6 +184,21 @@ jobs:
           go build ./cmd/temporal-worker
           go build ./cmd/migrate
           go build ./cmd/clickhouse-migrate
+          go build -tags ee ./cmd/api ./cmd/temporal-worker ./cmd/migrate
+
+  community-backend:
+    name: Community without EE source
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Build and test community distribution
+        run: bash scripts/check-community-backend.sh
 
   server-tests:
     name: Server Tests
@@ -217,7 +234,7 @@ jobs:
           gcc --version || true
       - name: Test
         working-directory: server
-        run: go test ./...
+        run: go test -tags ee ./...
 
   # ------------------------ Frontend ------------------------
   frontend:

@@ -1,10 +1,11 @@
+//go:build ee
+
 package service
 
 import (
-	"testing"
-
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
- "github.com/helpin-ai/helpin/server/ee/pricing"
+	"testing"
 )
 
 func TestDirectSupportModelsMatchSmallPricingTier(t *testing.T) {

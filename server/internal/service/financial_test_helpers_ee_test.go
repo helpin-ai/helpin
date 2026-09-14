@@ -1,13 +1,15 @@
+//go:build ee
+
 package service
 
 import (
 	"context"
 	"fmt"
+	"github.com/helpin-ai/helpin/server/ee/pricing"
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	eeservice "github.com/helpin-ai/helpin/server/ee/service"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
- "github.com/helpin-ai/helpin/server/ee/pricing"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"testing"
@@ -15,55 +17,103 @@ import (
 )
 
 type AIUsageEstimateSource = eeservice.AIUsageEstimateSource
+
 type AIUsagePeriodScheduleResolver = eeservice.AIUsagePeriodScheduleResolver
+
 type AIUsagePeriodStore = eeservice.AIUsagePeriodStore
+
 type AIUsagePeriodWorker = eeservice.AIUsagePeriodWorker
+
 type AIUsageReservationRecoveryStore = eeservice.AIUsageReservationRecoveryStore
+
 type AIUsageReservationSweeper = eeservice.AIUsageReservationSweeper
+
 type AIUsageService = eeservice.AIUsageService
+
 type AIUsageSettlementCharge = eeservice.AIUsageSettlementCharge
+
 type AIUsageSettlementGateway = eeservice.AIUsageSettlementGateway
+
 type AIUsageSettlementStore = eeservice.AIUsageSettlementStore
+
 type AIUsageSettlementWorker = eeservice.AIUsageSettlementWorker
+
 type AIUsageStore = eeservice.AIUsageStore
+
 type BillingCheckoutInput = eeservice.BillingCheckoutInput
+
 type BillingCheckoutRequest = eeservice.BillingCheckoutRequest
+
 type BillingCheckoutSession = eeservice.BillingCheckoutSession
+
 type BillingOwnerRef = eeservice.BillingOwnerRef
+
 type BillingPlanChangePreview = eeservice.BillingPlanChangePreview
+
 type BillingPlanChangePreviewLine = eeservice.BillingPlanChangePreviewLine
+
 type BillingPlanChangeRequest = eeservice.BillingPlanChangeRequest
+
 type BillingPriceConfig = eeservice.BillingPriceConfig
+
 type BillingService = eeservice.BillingService
+
 type BillingStripeGateway = eeservice.BillingStripeGateway
+
 type BillingStripeInvoiceEvent = eeservice.BillingStripeInvoiceEvent
+
 type BillingStripeInvoicePreview = eeservice.BillingStripeInvoicePreview
+
 type BillingStripeInvoicePreviewLine = eeservice.BillingStripeInvoicePreviewLine
+
 type BillingStripeSubscriptionUpdate = eeservice.BillingStripeSubscriptionUpdate
+
 type BillingStripeTrialWillEndEvent = eeservice.BillingStripeTrialWillEndEvent
+
 type BillingSubscriptionCancelInput = eeservice.BillingSubscriptionCancelInput
+
 type BillingSubscriptionChangeInput = eeservice.BillingSubscriptionChangeInput
+
 type BillingTestScenarioService = eeservice.BillingTestScenarioService
+
 type CustomerIOBillingReader = eeservice.CustomerIOBillingReader
+
 type EntitlementService = eeservice.EntitlementService
+
 type OrganizationBillingSummary = eeservice.OrganizationBillingSummary
+
 type PaymentMethodRef = eeservice.PaymentMethodRef
+
 type StripeInvoice = eeservice.StripeInvoice
+
 type StripePaymentMethod = eeservice.StripePaymentMethod
+
 type StripeSettlementResult = eeservice.StripeSettlementResult
+
 type UsageFeature = eeservice.UsageFeature
+
 type UsageSeriesPoint = eeservice.UsageSeriesPoint
+
 type WorkspaceBillingCard = eeservice.WorkspaceBillingCard
+
 type WorkspaceUsage = eeservice.WorkspaceUsage
 
 var NewAIUsagePeriodWorker = eeservice.NewAIUsagePeriodWorker
+
 var NewAIUsageReservationSweeper = eeservice.NewAIUsageReservationSweeper
+
 var NewAIUsageService = eeservice.NewAIUsageService
+
 var NewAIUsageSettlementWorker = eeservice.NewAIUsageSettlementWorker
+
 var NewBillingService = eeservice.NewBillingService
+
 var NewBillingTestScenarioService = eeservice.NewBillingTestScenarioService
+
 var NewCustomerIOBillingReader = eeservice.NewCustomerIOBillingReader
+
 var NewEntitlementService = eeservice.NewEntitlementService
+
 var PriceCentsForPlan = eeservice.PriceCentsForPlan
 
 type fakeBillingGateway struct {
@@ -150,6 +200,81 @@ func (g *fakeBillingGateway) ListInvoices(ctx context.Context, customerID string
 	return nil, nil
 }
 
+func newTestAIUsageService(t *testing.T, store *fakeAIUsageStore) *AIUsageService {
+	t.Helper()
+	catalog, err := pricing.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewAIUsageService(catalog, store, fixedAIUsageEstimates{})
+}
+
+type fakeAIUsageStore struct {
+	reconciles    []eerepository.AIUsageReconcileRequest
+	reconcileErr  error
+	mode          string
+	reserveErr    error
+	reserveCalls  int
+	reservation   eerepository.AIUsageReservationRequest
+	reconcile     eerepository.AIUsageReconcileRequest
+	checkpoint    eerepository.AIUsageCheckpointRequest
+	checkpointErr error
+	checkpoints   int
+	uncharged     model.AIUsageLedgerEntry
+	releasedID    string
+	resizeCalls   int
+	resizedID     string
+	resizedTo     int64
+}
+
+func (f *fakeAIUsageStore) Reserve(_ context.Context, input eerepository.AIUsageReservationRequest) (*model.AIUsageReservation, error) {
+	f.reserveCalls++
+	f.reservation = input
+	if f.reserveErr != nil {
+		return nil, f.reserveErr
+	}
+	mode := f.mode
+	if mode == "" {
+		mode = model.AIUsageEnforcementStrict
+	}
+	return &model.AIUsageReservation{ID: "reservation", ReservedMicrousd: input.ReservedMicrousd, EnforcementMode: mode}, nil
+}
+
+func (f *fakeAIUsageStore) Reconcile(_ context.Context, input eerepository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error) {
+	f.reconcile = input
+	f.reconciles = append(f.reconciles, input)
+	if f.reconcileErr != nil {
+		return nil, f.reconcileErr
+	}
+	return &model.AIUsagePeriod{}, nil
+}
+
+func (f *fakeAIUsageStore) Checkpoint(_ context.Context, input eerepository.AIUsageCheckpointRequest) (*model.AIUsagePeriod, error) {
+	f.checkpoints++
+	f.checkpoint = input
+	if f.checkpointErr != nil {
+		return nil, f.checkpointErr
+	}
+	return &model.AIUsagePeriod{}, nil
+}
+
+func (f *fakeAIUsageStore) Release(_ context.Context, id, _ string) error {
+	f.releasedID = id
+	return nil
+}
+
+func (f *fakeAIUsageStore) ResizeReservation(_ context.Context, id string, target int64, _ time.Time) error {
+	f.resizeCalls++
+	f.resizedID = id
+	f.resizedTo = target
+	return nil
+}
+
+func (f *fakeAIUsageStore) RecordUncharged(_ context.Context, input model.AIUsageLedgerEntry) error {
+	f.uncharged = input
+	return nil
+}
+
 func newBillingTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -234,90 +359,8 @@ func newBillingTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func billingStringPtr(v string) *string { return &v }
-
-func newTestAIUsageService(t *testing.T, store *fakeAIUsageStore) *AIUsageService {
-	t.Helper()
-	catalog, err := pricing.LoadCatalog()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return NewAIUsageService(catalog, store, fixedAIUsageEstimates{})
-}
-
-type fakeAIUsageStore struct {
-	reconciles    []eerepository.AIUsageReconcileRequest
-	reconcileErr  error
-	mode          string
-	reserveErr    error
-	reserveCalls  int
-	reservation   eerepository.AIUsageReservationRequest
-	reconcile     eerepository.AIUsageReconcileRequest
-	checkpoint    eerepository.AIUsageCheckpointRequest
-	checkpointErr error
-	checkpoints   int
-	uncharged     model.AIUsageLedgerEntry
-	releasedID    string
-	resizeCalls   int
-	resizedID     string
-	resizedTo     int64
-}
-
-func (f *fakeAIUsageStore) Reserve(_ context.Context, input eerepository.AIUsageReservationRequest) (*model.AIUsageReservation, error) {
-	f.reserveCalls++
-	f.reservation = input
-	if f.reserveErr != nil {
-		return nil, f.reserveErr
-	}
-	mode := f.mode
-	if mode == "" {
-		mode = model.AIUsageEnforcementStrict
-	}
-	return &model.AIUsageReservation{ID: "reservation", ReservedMicrousd: input.ReservedMicrousd, EnforcementMode: mode}, nil
-}
-
-func (f *fakeAIUsageStore) Reconcile(_ context.Context, input eerepository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error) {
-	f.reconcile = input
-	f.reconciles = append(f.reconciles, input)
-	if f.reconcileErr != nil {
-		return nil, f.reconcileErr
-	}
-	return &model.AIUsagePeriod{}, nil
-}
-
-func (f *fakeAIUsageStore) Checkpoint(_ context.Context, input eerepository.AIUsageCheckpointRequest) (*model.AIUsagePeriod, error) {
-	f.checkpoints++
-	f.checkpoint = input
-	if f.checkpointErr != nil {
-		return nil, f.checkpointErr
-	}
-	return &model.AIUsagePeriod{}, nil
-}
-
-func (f *fakeAIUsageStore) Release(_ context.Context, id, _ string) error {
-	f.releasedID = id
-	return nil
-}
-
-func (f *fakeAIUsageStore) ResizeReservation(_ context.Context, id string, target int64, _ time.Time) error {
-	f.resizeCalls++
-	f.resizedID = id
-	f.resizedTo = target
-	return nil
-}
-
-func (f *fakeAIUsageStore) RecordUncharged(_ context.Context, input model.AIUsageLedgerEntry) error {
-	f.uncharged = input
-	return nil
-}
-
 type fixedAIUsageEstimates struct{ p90 int64 }
 
 func (f fixedAIUsageEstimates) P90Microusd(context.Context, string, aiusage.Tier, aiusage.FundingMode) (int64, bool, error) {
 	return f.p90, f.p90 > 0, nil
-}
-
-func testFlatTariff(rate int64) *aiusage.FlatTokenTariff {
-	return &aiusage.FlatTokenTariff{Version: "byok-2026-09", Currency: "USD",
-		MicrousdPerMillion: &rate, AccountingVersion: aiusage.FlatTokenAccountingVersion}
 }
