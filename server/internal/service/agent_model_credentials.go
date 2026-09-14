@@ -101,6 +101,12 @@ func requireAIConnectionRunOwner(run *model.AgentRun, actor string) error {
 	if err := decodeAIConnectionRunInput(run.Input, &input); err != nil {
 		return err
 	}
+	if owner, personal := input.AISelection.PersonalOwner(); personal {
+		if actor == "" || actor != owner || actor != derefString(run.TriggeredByUserID) {
+			return ErrAIConnection
+		}
+		return nil
+	}
 	if input.AISelection != nil && input.AISelection.ConnectionScope == "workspace" {
 		return nil
 	}

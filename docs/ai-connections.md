@@ -139,3 +139,15 @@ admission. To block new BYOK executions while preserving existing run snapshots
 and refresh authorization, preview `-workspace "$WORKSPACE_ID" -mode disable`,
 then repeat with `-apply`. Disabling preserves the workspace's tariff reference.
 Use connection/run revocation when accepted executions must also stop.
+
+Launch readiness is checked against Runtime's capabilities before acquiring a
+credential or choosing a fallback. Helpin uses `run_credentials_configured` and
+supported authentication modes, not global provider-key availability. ChatGPT
+also requires this app's `model_credentials` callback component to report
+configured authentication. Upgrade Runtime before restarting Helpin with this
+check. These are configuration checks, not provider authentication probes.
+
+A personal profile's originating owner is frozen separately from its actual
+connection owner. When a personal route falls back to a shared connection, its
+children, resume, and refresh still require the originating member. Profile
+edits or deletion do not rewrite the accepted selection.

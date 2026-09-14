@@ -46,6 +46,9 @@ func (s *AIProfileService) AdmitReviewedSelection(ctx context.Context, workspace
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkExecutionRoute(ctx, selection.Route); err != nil {
+		return nil, err
+	}
 	selection.Policy = policy
 	return &selection, nil
 }

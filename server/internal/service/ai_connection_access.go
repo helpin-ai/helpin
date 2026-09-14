@@ -69,3 +69,21 @@ func (s *AIConnectionService) boundConnectionRuns(ctx context.Context, workspace
 	}
 	return s.repo.BoundRuns(ctx, workspace, user, id)
 }
+
+func (s *AIConnectionService) authorizeAcceptedSelectionOwner(ctx context.Context, run *model.AgentRun, selection *model.AIExecutionSelection) error {
+	owner, personal := selection.PersonalOwner()
+	if !personal {
+		return nil
+	}
+	if owner == "" || owner != derefString(run.TriggeredByUserID) {
+		return ErrAIConnection
+	}
+	active, err := s.repo.ActiveMember(ctx, run.WorkspaceID, owner)
+	if err != nil {
+		return err
+	}
+	if !active {
+		return ErrAIConnection
+	}
+	return nil
+}

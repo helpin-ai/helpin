@@ -54,7 +54,7 @@ func (s *AgentService) prepareAIProfileRun(ctx context.Context, params *createRu
 			return nil, nil, nil, err
 		}
 		continuation := input.Event != nil && derefString(input.Event.Reason) == "continued_from_terminal_run"
-		personal := previous.AISelection != nil && previous.AISelection.ConnectionScope == "personal"
+		_, personal := previous.AISelection.PersonalOwner()
 		legacyPersonal := previous.AISelection == nil && previous.ModelConnectionID != ""
 		if continuation || personal || legacyPersonal {
 			if err := requireAIConnectionRunOwner(parent, user); err != nil {
@@ -122,6 +122,9 @@ func (s *AgentService) resolveLegacyAISelection(ctx context.Context, params *cre
 	}
 	policy, err := s.aiProfiles.selectionPolicy(ctx, params.workspaceID, route)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.aiProfiles.checkExecutionRoute(ctx, route); err != nil {
 		return nil, nil, err
 	}
 	_, credential, err := s.aiProfiles.routeCredential(ctx, params.workspaceID, user, unattended && c.Scope == "workspace", route)

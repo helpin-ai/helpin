@@ -402,6 +402,9 @@ func (s *AIConnectionService) RefreshRun(ctx context.Context, req sdk.ModelCrede
 	if json.Unmarshal(run.Input, &input) != nil || input.ModelConnectionID != c.ID || input.ModelProvider != req.Provider || c.Provider != req.Provider || c.AccountID != req.AccountID {
 		return nil, ErrAIConnection
 	}
+	if err := s.authorizeAcceptedSelectionOwner(ctx, run, input.AISelection); err != nil {
+		return nil, err
+	}
 	if id, mapped := agentRuntimeRunID(run); mapped && id != req.RunID {
 		return nil, ErrAIConnection
 	}
@@ -465,6 +468,16 @@ func (s *AIConnectionService) ReauthorizeRuns(ctx context.Context, workspace, us
 		runtimeID, ok := agentRuntimeRunID(&run)
 		if !ok {
 			continue
+		}
+		var input model.AgentRunInputPayload
+		if err := decodeAIConnectionRunInput(run.Input, &input); err != nil {
+			return err
+		}
+		if err := s.authorizeAcceptedSelectionOwner(ctx, &run, input.AISelection); err != nil {
+			if errors.Is(err, ErrAIConnection) {
+				continue
+			}
+			return err
 		}
 		if err := s.runtime.UpdateRunModelCredential(ctx, runtimeID, *credential); err != nil {
 			current, lookupErr := s.runtime.GetRun(ctx, runtimeID)

@@ -260,3 +260,21 @@ use profile names instead of legacy size labels. Community has no financial copy
 Focused backend policy/connection tests and UI regressions passed. The EE web type
 check caught a run/session union mismatch in Dock details; corrected it to read
 the accepted run input and the type check passed. No live configuration changed.
+
+### Admission and personal-origin review checkpoint
+
+Review found that a personal profile using a shared fallback lost personal
+inheritance. Added the originating profile owner to immutable selection metadata;
+child admission, resume, refresh, and reconnection now retain owner checks even
+for that shared fallback. Regression tests prove owner inheritance and rejection
+after membership loss. Existing snapshots retain their connection-owner behavior.
+
+Both production Helpin binaries now check Runtime run-credential capabilities at
+launch, independently of global environment-key availability. ChatGPT requires
+its own provider readiness plus this app's authenticated refresh callback;
+capability failures never trigger fallback. CRM reviewed admission, legacy
+selection, and restored selections use the same check. Runtime reports the
+callback component without exposing its secret or URL. Focused admission,
+connection, capability, and startup package tests passed. No current Helpin agent
+configuration declares a lossless response-chain requirement; the SDK validation
+and Runtime capability still distinguish ChatGPT from direct OpenAI.

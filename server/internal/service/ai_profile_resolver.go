@@ -56,8 +56,14 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 		}
 	}
 	selection := &model.AIExecutionSelection{ProfileID: p.ID, ProfileRevision: p.Revision, Source: source, Route: p.Primary}
+	if p.Scope == "personal" {
+		selection.ProfileOwnerID = p.UserID
+	}
 	selection.Policy, err = s.selectionPolicy(ctx, workspace, p.Primary)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.checkExecutionRoute(ctx, p.Primary); err != nil {
 		return nil, nil, err
 	}
 	c, credential, err := s.routeCredential(ctx, workspace, user, req.Unattended, p.Primary)
@@ -65,6 +71,9 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 		selection.Route, selection.FallbackReason = *p.Fallback, "primary_connection_unavailable"
 		selection.Policy, err = s.selectionPolicy(ctx, workspace, *p.Fallback)
 		if err != nil {
+			return nil, nil, err
+		}
+		if err := s.checkExecutionRoute(ctx, *p.Fallback); err != nil {
 			return nil, nil, err
 		}
 		c, credential, err = s.routeCredential(ctx, workspace, user, req.Unattended, *p.Fallback)
@@ -97,8 +106,11 @@ func (s *AIProfileService) Restore(ctx context.Context, workspace, user string, 
 	if err := sdk.ValidateRunModel(&selection.Route.Model); err != nil {
 		return nil, err
 	}
-	if selection.ConnectionScope == "personal" && (user == "" || derefString(selection.OwnerID) != user) {
+	if owner, personal := selection.PersonalOwner(); personal && (user == "" || owner != user) {
 		return nil, ErrAIConnection
+	}
+	if err := s.checkExecutionRoute(ctx, selection.Route); err != nil {
+		return nil, err
 	}
 	c, credential, err := s.routeCredential(ctx, workspace, user, selection.ConnectionScope == "workspace", selection.Route)
 	if err != nil {

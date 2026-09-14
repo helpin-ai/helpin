@@ -55,12 +55,31 @@ func (AIWorkspaceSettings) TableName() string { return "ai_workspace_settings" }
 type AIExecutionSelection struct {
 	ProfileID       string                     `json:"profile_id,omitempty"`
 	ProfileRevision int64                      `json:"profile_revision,omitempty"`
+	ProfileOwnerID  *string                    `json:"profile_owner_id,omitempty"`
 	ConnectionScope string                     `json:"connection_scope"`
 	OwnerID         *string                    `json:"owner_id,omitempty"`
 	Route           AIProfileRoute             `json:"route"`
 	Source          string                     `json:"source"`
 	FallbackReason  string                     `json:"fallback_reason,omitempty"`
 	Policy          *AIExecutionPolicySnapshot `json:"policy,omitempty"`
+}
+
+// PersonalOwner preserves the originating personal selection even when the
+// actual connection is shared. Older snapshots use the connection owner.
+func (s *AIExecutionSelection) PersonalOwner() (string, bool) {
+	if s == nil {
+		return "", false
+	}
+	if s.ProfileOwnerID != nil {
+		return *s.ProfileOwnerID, true
+	}
+	if s.ConnectionScope == "personal" {
+		if s.OwnerID != nil {
+			return *s.OwnerID, true
+		}
+		return "", true
+	}
+	return "", false
 }
 
 // AIExecutionPolicySnapshot is supplied by trusted edition policy at admission.

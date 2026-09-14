@@ -9,9 +9,16 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/gorm"
 )
 
 func setupAIProfileTest(t *testing.T) (*AIProfileService, model.AIProfileRoute, model.AIProfileRoute) {
+	t.Helper()
+	s, primary, fallback, _ := setupAIProfileTestDB(t)
+	return s, primary, fallback
+}
+
+func setupAIProfileTestDB(t *testing.T) (*AIProfileService, model.AIProfileRoute, model.AIProfileRoute, *gorm.DB) {
 	t.Helper()
 	connections, db := setupAIConnectionTest(t)
 	connections.SetAuthorizationService(authorization.NewAuthzService(db, connectionMembers{}, nil))
@@ -29,7 +36,7 @@ func setupAIProfileTest(t *testing.T) (*AIProfileService, model.AIProfileRoute, 
 		}
 		routes[i] = model.AIProfileRoute{ConnectionID: c.Connection.ID, Model: sdk.RunModel{Provider: "openai", Model: "custom-unpriced-model", Controls: &sdk.ModelControls{ReasoningEffort: strPtr("low")}}}
 	}
-	return NewAIProfileService(repository.NewAIProfileRepository(db), connections), routes[0], routes[1]
+	return NewAIProfileService(repository.NewAIProfileRepository(db), connections), routes[0], routes[1], db
 }
 
 func TestAIProfileResolutionFreezesAcceptedRoute(t *testing.T) {
