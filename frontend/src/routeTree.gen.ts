@@ -20,6 +20,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as SharedShareTokenRouteImport } from './routes/shared/$shareToken'
 import { Route as ShareShareTokenRouteImport } from './routes/share/$shareToken'
 import { Route as JoinTokenRouteImport } from './routes/join/$token'
+import { Route as EmailPreferencesTokenRouteImport } from './routes/email-preferences/$token'
 import { Route as AuthenticatedWorkspacesRouteImport } from './routes/_authenticated/workspaces'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
@@ -104,6 +105,7 @@ import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './route
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
 import { Route as AuthenticatedWSlugCrmPlaybooksIndexRouteImport } from './routes/_authenticated/w/$slug/crm/playbooks/index'
 import { Route as AuthenticatedWSlugCrmMeetingsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/meetings/index'
+import { Route as AuthenticatedWSlugCrmEmailsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/emails/index'
 import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/deals/index'
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
 import { Route as AuthenticatedWSlugCrmCompaniesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/companies/index'
@@ -175,6 +177,11 @@ const ShareShareTokenRoute = ShareShareTokenRouteImport.update({
 const JoinTokenRoute = JoinTokenRouteImport.update({
   id: '/join/$token',
   path: '/join/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmailPreferencesTokenRoute = EmailPreferencesTokenRouteImport.update({
+  id: '/email-preferences/$token',
+  path: '/email-preferences/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedWorkspacesRoute = AuthenticatedWorkspacesRouteImport.update({
@@ -671,6 +678,12 @@ const AuthenticatedWSlugCrmMeetingsIndexRoute =
     path: '/meetings/',
     getParentRoute: () => AuthenticatedWSlugCrmRoute,
   } as any)
+const AuthenticatedWSlugCrmEmailsIndexRoute =
+  AuthenticatedWSlugCrmEmailsIndexRouteImport.update({
+    id: '/emails/',
+    path: '/emails/',
+    getParentRoute: () => AuthenticatedWSlugCrmRoute,
+  } as any)
 const AuthenticatedWSlugCrmDealsIndexRoute =
   AuthenticatedWSlugCrmDealsIndexRouteImport.update({
     id: '/deals/',
@@ -791,6 +804,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
+  '/email-preferences/$token': typeof EmailPreferencesTokenRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
@@ -885,6 +899,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/emails/': typeof AuthenticatedWSlugCrmEmailsIndexRoute
   '/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/w/$slug/crm/playbooks/': typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
@@ -904,6 +919,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/workspaces': typeof AuthenticatedWorkspacesRoute
+  '/email-preferences/$token': typeof EmailPreferencesTokenRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
@@ -993,6 +1009,7 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/companies': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/w/$slug/crm/emails': typeof AuthenticatedWSlugCrmEmailsIndexRoute
   '/w/$slug/crm/meetings': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/w/$slug/crm/playbooks': typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
@@ -1013,6 +1030,7 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/workspaces': typeof AuthenticatedWorkspacesRoute
+  '/email-preferences/$token': typeof EmailPreferencesTokenRoute
   '/join/$token': typeof JoinTokenRoute
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
@@ -1108,6 +1126,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/_authenticated/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
+  '/_authenticated/w/$slug/crm/emails/': typeof AuthenticatedWSlugCrmEmailsIndexRoute
   '/_authenticated/w/$slug/crm/meetings/': typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   '/_authenticated/w/$slug/crm/playbooks/': typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
@@ -1129,6 +1148,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/profile'
     | '/workspaces'
+    | '/email-preferences/$token'
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
@@ -1223,6 +1243,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/'
     | '/w/$slug/crm/contacts/'
     | '/w/$slug/crm/deals/'
+    | '/w/$slug/crm/emails/'
     | '/w/$slug/crm/meetings/'
     | '/w/$slug/crm/playbooks/'
     | '/w/$slug/pm/epics/'
@@ -1242,6 +1263,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/profile'
     | '/workspaces'
+    | '/email-preferences/$token'
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
@@ -1331,6 +1353,7 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies'
     | '/w/$slug/crm/contacts'
     | '/w/$slug/crm/deals'
+    | '/w/$slug/crm/emails'
     | '/w/$slug/crm/meetings'
     | '/w/$slug/crm/playbooks'
     | '/w/$slug/pm/epics'
@@ -1350,6 +1373,7 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/profile'
     | '/_authenticated/workspaces'
+    | '/email-preferences/$token'
     | '/join/$token'
     | '/share/$shareToken'
     | '/shared/$shareToken'
@@ -1445,6 +1469,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/companies/'
     | '/_authenticated/w/$slug/crm/contacts/'
     | '/_authenticated/w/$slug/crm/deals/'
+    | '/_authenticated/w/$slug/crm/emails/'
     | '/_authenticated/w/$slug/crm/meetings/'
     | '/_authenticated/w/$slug/crm/playbooks/'
     | '/_authenticated/w/$slug/pm/epics/'
@@ -1463,6 +1488,7 @@ export interface RootRouteChildren {
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
+  EmailPreferencesTokenRoute: typeof EmailPreferencesTokenRoute
   JoinTokenRoute: typeof JoinTokenRoute
   ShareShareTokenRoute: typeof ShareShareTokenRoute
   SharedShareTokenRoute: typeof SharedShareTokenRoute
@@ -1545,6 +1571,13 @@ declare module '@tanstack/react-router' {
       path: '/join/$token'
       fullPath: '/join/$token'
       preLoaderRoute: typeof JoinTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/email-preferences/$token': {
+      id: '/email-preferences/$token'
+      path: '/email-preferences/$token'
+      fullPath: '/email-preferences/$token'
+      preLoaderRoute: typeof EmailPreferencesTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/workspaces': {
@@ -2135,6 +2168,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugCrmMeetingsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugCrmRoute
     }
+    '/_authenticated/w/$slug/crm/emails/': {
+      id: '/_authenticated/w/$slug/crm/emails/'
+      path: '/emails'
+      fullPath: '/w/$slug/crm/emails/'
+      preLoaderRoute: typeof AuthenticatedWSlugCrmEmailsIndexRouteImport
+      parentRoute: typeof AuthenticatedWSlugCrmRoute
+    }
     '/_authenticated/w/$slug/crm/deals/': {
       id: '/_authenticated/w/$slug/crm/deals/'
       path: '/deals'
@@ -2334,6 +2374,7 @@ interface AuthenticatedWSlugCrmRouteChildren {
   AuthenticatedWSlugCrmCompaniesIndexRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   AuthenticatedWSlugCrmContactsIndexRoute: typeof AuthenticatedWSlugCrmContactsIndexRoute
   AuthenticatedWSlugCrmDealsIndexRoute: typeof AuthenticatedWSlugCrmDealsIndexRoute
+  AuthenticatedWSlugCrmEmailsIndexRoute: typeof AuthenticatedWSlugCrmEmailsIndexRoute
   AuthenticatedWSlugCrmMeetingsIndexRoute: typeof AuthenticatedWSlugCrmMeetingsIndexRoute
   AuthenticatedWSlugCrmPlaybooksIndexRoute: typeof AuthenticatedWSlugCrmPlaybooksIndexRoute
 }
@@ -2357,6 +2398,7 @@ const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
   AuthenticatedWSlugCrmContactsIndexRoute:
     AuthenticatedWSlugCrmContactsIndexRoute,
   AuthenticatedWSlugCrmDealsIndexRoute: AuthenticatedWSlugCrmDealsIndexRoute,
+  AuthenticatedWSlugCrmEmailsIndexRoute: AuthenticatedWSlugCrmEmailsIndexRoute,
   AuthenticatedWSlugCrmMeetingsIndexRoute:
     AuthenticatedWSlugCrmMeetingsIndexRoute,
   AuthenticatedWSlugCrmPlaybooksIndexRoute:
@@ -2620,6 +2662,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   VerifyEmailRoute: VerifyEmailRoute,
+  EmailPreferencesTokenRoute: EmailPreferencesTokenRoute,
   JoinTokenRoute: JoinTokenRoute,
   ShareShareTokenRoute: ShareShareTokenRoute,
   SharedShareTokenRoute: SharedShareTokenRoute,

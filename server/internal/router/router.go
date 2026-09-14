@@ -79,6 +79,7 @@ type Handlers struct {
 	CRMMeeting          *handler.CRMMeetingHandler
 	CRMImport           *handler.CRMImportHandler
 	CRMEmail            *handler.CRMEmailHandler
+	CRMOutreach         *handler.CRMOutreachHandler
 	CRMCalendar         *handler.CRMCalendarHandler
 	CRMEnrichment       *handler.CRMEnrichmentHandler
 	CRMSignal           *handler.CRMSignalHandler
@@ -264,6 +265,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 	r.Route("/api", func(r chi.Router) {
 		r.Use(apiCORS)
+		if h.CRMOutreach != nil {
+			r.Get("/crm/outreach/unsubscribe/{token}", h.CRMOutreach.Unsubscribe)
+			r.Post("/crm/outreach/unsubscribe/{token}", h.CRMOutreach.Unsubscribe)
+		}
 
 		// ---- Public routes ----
 		r.Post("/auth/signup", h.Auth.Signup)
@@ -1594,7 +1599,22 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Email — crm.read / crm.edit
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts", h.CRMEmail.ListAccounts)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts", h.CRMEmail.CreateAccount)
+				if h.CRMOutreach != nil {
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/outreach/templates", h.CRMOutreach.Templates)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/templates", h.CRMOutreach.Templates)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/templates/{id}/render", h.CRMOutreach.RenderTemplate)
+					r.With(requirePerm(authorization.PermCRMEdit)).Put("/outreach/templates/{id}", h.CRMOutreach.Templates)
+					r.With(requirePerm(authorization.PermCRMEdit)).Delete("/outreach/templates/{id}", h.CRMOutreach.Templates)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/outreach/sequences", h.CRMOutreach.Sequences)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/sequences", h.CRMOutreach.Sequences)
+					r.With(requirePerm(authorization.PermCRMEdit)).Put("/outreach/sequences/{id}", h.CRMOutreach.Sequences)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/sequences/{id}/enroll", h.CRMOutreach.Enroll)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/outreach/enrollments", h.CRMOutreach.Enrollments)
+					r.With(requirePerm(authorization.PermCRMRead)).Get("/outreach/enrollments/{id}", h.CRMOutreach.Enrollments)
+					r.With(requirePerm(authorization.PermCRMEdit)).Post("/outreach/enrollments/{id}", h.CRMOutreach.Enrollments)
+				}
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}", h.CRMEmail.GetAccount)
+				r.With(requirePerm(authorization.PermCRMEdit)).Put("/email/accounts/{id}/signature", h.CRMEmail.UpdateSignature)
 				r.With(requirePerm(authorization.PermCRMEdit)).Delete("/email/accounts/{id}", h.CRMEmail.DeleteAccount)
 				r.With(requirePerm(authorization.PermCRMRead)).Get("/email/accounts/{id}/diagnostics", h.CRMEmail.GetAccountDiagnostics)
 				r.With(requirePerm(authorization.PermCRMEdit)).Post("/email/accounts/{id}/sync", h.CRMEmail.SyncAccount)

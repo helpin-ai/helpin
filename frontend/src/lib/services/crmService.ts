@@ -231,10 +231,12 @@ export const crmEmailService = {
   getAccountDiagnostics: (workspaceId: string, id: string) => api.get<CRMEmailAccountDiagnostics>(`/crm/email/accounts/${id}/diagnostics${qs(workspaceId)}`),
   syncAccount: (workspaceId: string, id: string, mode: 'incremental' | 'historical') => api.post<CRMEmailAccount>(`/crm/email/accounts/${id}/sync${qs(workspaceId)}`, { mode }),
   initiateOAuth: (workspaceId: string, provider: 'gmail' | 'microsoft' = 'gmail') => api.get<{ redirect_url: string }>(`/crm/email/oauth/initiate${qs(workspaceId)}&provider=${provider}`),
+  updateSignature: (workspaceId: string, accountId: string, signature: string) => api.put(`/crm/email/accounts/${accountId}/signature${qs(workspaceId)}`, { signature }),
   sendEmail: (
     workspaceId: string,
     payload: {
       account_id: string;
+      deal_id?: string;
       to: string[];
       cc?: string[];
       subject: string;

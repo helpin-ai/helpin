@@ -675,7 +675,9 @@ func main() {
 			model.CRMPlaybookWorkDue:  crmPlaybookExecution,
 			model.CRMPlaybookEntryDue: crmPlaybookExecution,
 		}).SetMaintenance(crmPlaybookExecution.MaintainScheduledWork)
-	scheduledEventsActivities := temporalapp.NewScheduledEventsActivities(scheduledEventsService)
+	crmSequenceEmail := service.NewCRMEmailService(crmEmailRepo, crmContactRepo, workspaceRepo, crmEmailSyncSettingsRepo, gmailOAuth, encryptionKey, gmailSyncClient, temporalClient, crmSummaryService)
+	crmOutreachService := service.NewCRMOutreachService(repository.NewCRMOutreachRepository(db), crmSequenceEmail, crmEmailRepo, crmPlaybookAuthz, pmStoryService, cfg.AppBaseURL)
+	scheduledEventsActivities := temporalapp.NewScheduledEventsActivities(scheduledEventsService).SetAdditionalDispatcher(crmOutreachService)
 	recurringActivities := service.NewPMRecurringTemplateActivities(pmRecurringTemplateService)
 
 	// Sprint automation activities.

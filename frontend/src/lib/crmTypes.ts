@@ -476,6 +476,7 @@ export type CRMEmailAccountStatus =
   | "error";
 
 export interface CRMEmailAccount {
+  signature?: string;
   id: string;
   workspace_id: string;
   member_id: string;
@@ -579,6 +580,7 @@ export interface CRMEmailThread {
 }
 
 export interface CRMEmailMessage {
+  association_warning?: string;
   id: string;
   workspace_id: string;
   email_account_id: string;

@@ -236,6 +236,7 @@ func createAgentRunActivityTables(t *testing.T, db *gorm.DB) {
 			stage_id TEXT NOT NULL,
 			amount REAL,
 			currency TEXT NOT NULL DEFAULT 'USD',
+            revenue_type TEXT NOT NULL DEFAULT 'one_time',
 			close_date DATETIME,
 			owner_member_id TEXT,
 			commercial_motion TEXT,

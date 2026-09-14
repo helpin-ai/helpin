@@ -70,6 +70,15 @@ vi.mock('../CRMEmailComposerDialog', () => ({
   ),
 }));
 
+vi.mock('../CRMEmailReplyComposer', () => ({
+  CRMEmailReplyComposer: ({ content, onChange, attachmentDraft, onAttachmentDraftChange }: { content: string; onChange: (value: string) => void; attachmentDraft?: { draftId: string }; onAttachmentDraftChange: (value: unknown) => void }) => <div>
+    <output data-testid="reply-draft">{content}</output>
+    <output data-testid="attachment-draft">{attachmentDraft?.draftId}</output>
+    <button onClick={() => onChange('<p>Keep this reply</p>')}>Write reply</button>
+    <button onClick={() => onAttachmentDraftChange({ draftId: 'attachment-draft-1', attachments: [{ id: 'attachment-1', status: 'done' }] })}>Attach proposal</button>
+  </div>,
+}));
+
 vi.mock('@/components/pm/CreateTaskModal', () => ({
   CreateTaskModal: () => null,
 }));
@@ -174,6 +183,22 @@ describe('EmailTimeline', () => {
     expect(container.textContent).toContain('only the person who connected colleague@example.com can reply');
     expect(container.querySelector('iframe[title="Email body"]')).not.toBeNull();
     expect([...container.querySelectorAll('button')].some((button) => button.textContent?.trim() === 'Send reply')).toBe(false);
+  });
+
+  it('keeps reply text and attachments scoped to each conversation', () => {
+    const thread = { id: 'thread-1', subject: 'Proposal', email_account_id: 'account-1', mailbox_email: 'owner@example.com', can_reply: true, contact_ids: [], last_message_at: '2026-09-01T12:00:00Z', message_count: 0 };
+    emailState.threads = [thread];
+    emailState.detail = { thread, participants: [], messages: [] };
+    const renderThread = (id: string) => act(() => root.render(<EmailTimeline workspaceId="workspace-1" selectedThreadId={id} />));
+    renderThread('thread-1');
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Write reply')?.click());
+    act(() => [...container.querySelectorAll('button')].find(button => button.textContent === 'Attach proposal')?.click());
+    renderThread('thread-2');
+    expect(container.querySelector('[data-testid="reply-draft"]')?.textContent).toBe('');
+    expect(container.querySelector('[data-testid="attachment-draft"]')?.textContent).toBe('');
+    renderThread('thread-1');
+    expect(container.querySelector('[data-testid="reply-draft"]')?.textContent).toBe('<p>Keep this reply</p>');
+    expect(container.querySelector('[data-testid="attachment-draft"]')?.textContent).toBe('attachment-draft-1');
   });
 
   it('keeps the design-system conversation composer in a bottom-pinned reply region', () => {

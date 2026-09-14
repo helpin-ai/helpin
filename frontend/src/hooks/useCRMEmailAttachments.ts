@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { uploadToS3 } from '@/lib/api';
 import { unwrap } from '@/lib/queryUtils';
@@ -24,15 +24,23 @@ function newDraftId() {
   });
 }
 
-export function useCRMEmailAttachments(workspaceId: string) {
-  const [draftId, setDraftId] = useState(newDraftId);
-  const [attachments, setAttachments] = useState<PendingCRMEmailAttachment[]>([]);
+export interface CRMEmailAttachmentDraft { draftId: string; attachments: PendingCRMEmailAttachment[] }
+
+export function useCRMEmailAttachments(workspaceId: string, initialDraft?: CRMEmailAttachmentDraft, onDraftChange?: (draft: CRMEmailAttachmentDraft) => void) {
+  const [draftId, setDraftId] = useState(() => initialDraft?.draftId ?? newDraftId());
+  const [attachments, setAttachments] = useState<PendingCRMEmailAttachment[]>(initialDraft?.attachments ?? []);
+  const [pendingUploads, setPendingUploads] = useState(0);
+  const uploadLock = useRef(false);
+  useEffect(() => { onDraftChange?.({ draftId, attachments }); }, [draftId, attachments, onDraftChange]);
   const totalSize = useMemo(() => attachments.reduce((sum, item) => sum + item.fileSize, 0), [attachments]);
 
   const uploadFiles = useCallback(async (files: File[]) => {
     if (attachments.length + files.length > MAX_FILES) { toast.error('You can attach up to 10 files'); return; }
     if (files.some((file) => file.size > MAX_FILE_SIZE)) { toast.error('Each attachment must be 10MB or smaller'); return; }
     if (totalSize + files.reduce((sum, file) => sum + file.size, 0) > MAX_TOTAL_SIZE) { toast.error('Attachments must be 16MB or smaller in total'); return; }
+    if (uploadLock.current) return;
+    uploadLock.current = true;
+    setPendingUploads(files.length);
     for (const file of files) {
       let attachmentId = '';
       try {
@@ -53,6 +61,8 @@ export function useCRMEmailAttachments(workspaceId: string) {
         toast.error(error instanceof Error ? error.message : `Could not attach ${file.name}`);
       }
     }
+    uploadLock.current = false;
+    setPendingUploads(0);
   }, [attachments.length, draftId, totalSize, workspaceId]);
 
   const pickFiles = useCallback(() => {
@@ -71,8 +81,9 @@ export function useCRMEmailAttachments(workspaceId: string) {
   return {
     draftId,
     attachments,
+    hasFailedUploads: attachments.some((item) => item.status === 'error'),
     attachmentIds: attachments.filter((item) => item.status === 'done').map((item) => item.id),
-    uploading: attachments.some((item) => item.status === 'uploading'),
+    uploading: pendingUploads > 0 || attachments.some((item) => item.status === 'uploading'),
     pickFiles,
     remove,
     reset,
