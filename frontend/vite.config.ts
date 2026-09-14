@@ -13,7 +13,14 @@ export default defineConfig(({ mode }) => {
 
   return {
   plugins: [
-    TanStackRouterVite({ autoCodeSplitting: true }),
+    TanStackRouterVite({
+      autoCodeSplitting: true,
+      ...(env.VITE_EDITION === 'ee' ? {} : {
+        routeFileIgnorePattern: '(^|/)(billing|billing-preview)\\.tsx$',
+        generatedRouteTree: './.tanstack/routeTree.community.gen.js',
+        disableTypes: true,
+      }),
+    }),
     react({
       babel: {
         plugins: ['babel-plugin-react-compiler'],
@@ -43,6 +50,11 @@ export default defineConfig(({ mode }) => {
     dedupe: ['react', 'react-dom', '@tanstack/react-query', 'zustand'],
     alias: {
       "@edition": path.resolve(__dirname, editionPath),
+      // Keep the shared route type catalog stable; the Community runtime tree
+      // is generated separately and never registers commercial routes.
+      ...(env.VITE_EDITION === 'ee' ? {} : {
+        './routeTree.gen': path.resolve(__dirname, './.tanstack/routeTree.community.gen.js'),
+      }),
       "@": path.resolve(__dirname, "./src"),
       // The published package declares lib/index.js as its main entry but only
       // ships the ESM build. Resolve that shipped entry explicitly for Vite.

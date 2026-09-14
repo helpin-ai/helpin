@@ -1,0 +1,32 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.ee.tsbuildinfo",
+    "paths": {
+      "@/components/agents/AISettingsLink": [
+        "./src/shims/AISettingsLink.tsx"
+      ],
+      "@edition": [
+        "../../frontend/src/ee/edition"
+      ],
+      "@edition/*": [
+        "../../frontend/src/ee/edition/*"
+      ],
+      "@desktop/*": [
+        "./src/*"
+      ],
+      "@/components/pm/task-detail/taskRouteNavigation": [
+        "./src/shims/taskRouteNavigation.ts"
+      ],
+      "@/*": [
+        "../../frontend/src/*"
+      ],
+      "@helpin-ai/support-core": [
+        "../../packages/support-core/src/index.ts"
+      ],
+      "@helpin-ai/shared": [
+        "../../packages/shared/src/index.ts"
+      ]
+    }
+  }
+}

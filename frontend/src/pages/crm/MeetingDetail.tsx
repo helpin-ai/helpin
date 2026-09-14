@@ -1,3 +1,4 @@
+import { meetingProcessingRecovery } from '@edition/config';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -586,7 +587,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                 <QuietSection title="Processing paused">
                   <QuietStatusText tone="blocker" className="text-quiet-accent">AI capacity required</QuietStatusText>
                   <p className="mt-1 max-w-[680px] text-sm leading-[1.6] text-quiet-text-tertiary">
-                    The transcript is safe. Upgrade or add AI capacity, then retry processing to create meeting notes.
+                    {meetingProcessingRecovery}
                   </p>
                 </QuietSection>
               ) : null}

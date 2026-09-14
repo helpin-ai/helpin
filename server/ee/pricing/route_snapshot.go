@@ -1,3 +1,5 @@
+//go:build ee
+
 package pricing
 
 import "github.com/helpin-ai/helpin/server/internal/aimodel"

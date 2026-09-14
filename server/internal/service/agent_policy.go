@@ -48,7 +48,7 @@ func normalizeJSONSlice(raw json.RawMessage) json.RawMessage {
 }
 
 var supportedAgentReasoningEfforts = sdk.ReasoningEfforts()
-var supportedAgentServiceTiers = []string{"standard", "fast", "flex"}
+var supportedAgentServiceTiers = sdk.ServiceTiers()
 
 var supportedAgentIconKeys = []string{
 	"violet_star", "ocean_orbit", "forest_cap", "sunset_flame",

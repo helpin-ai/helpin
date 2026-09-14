@@ -1,6 +1,5 @@
-import { billingEnabled } from '@edition/config';
 import { useCallback } from 'react';
-import { createFileRoute, useNavigate, notFound } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { BillingSettingsPage } from '@edition';
 import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport';
 import {
@@ -10,7 +9,6 @@ import {
 } from '@edition';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/settings/billing')({
-  beforeLoad: () => { if (!billingEnabled) throw notFound(); },
   validateSearch: (search) => ({
     choose_plan: shouldOpenBillingPlanChooser(search) || undefined,
   }),
