@@ -1,3 +1,4 @@
+import type { AI_MODELS } from '@/generated/aiModels';
 import type { SpecClarification } from './project';
 import type { AgentSkillRef } from './skills';
 import type { AutomationRule } from './automations';
@@ -37,7 +38,7 @@ export type AgentModelTier = 'small' | 'medium' | 'large' | 'flagship';
 export type AgentInvocationMode = 'interactive' | 'autonomous';
 export type AgentRunPauseReason = 'none' | 'human_input' | 'human_approval' | 'authentication' | 'awaiting_user_message';
 export type AgentReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-export type AgentServiceTier = 'standard' | 'fast' | 'flex';
+export type AgentServiceTier = typeof AI_MODELS.service_tiers[number] | 'default' | 'priority';
 
 export interface AgentExecutionConfig {
   reasoning_effort?: AgentReasoningEffort;

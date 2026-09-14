@@ -6493,6 +6493,15 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		}
 		startReq.MCPServers = resolvedMCP.Servers
 	}
+	// Registration and external tool resolution may involve network waits.
+	// Recheck revocation before submission; the post-bind check closes the
+	// remaining race while StartRun is in flight.
+	if credential != nil {
+		if err := s.recheckRunAISelection(ctx, run, derefString(params.actorID)); err != nil {
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+	}
 	runtimeRun, err := runtimeLauncher.StartRun(ctx, startReq)
 	if err != nil && shouldRetryAgentRuntimeStart(err) {
 		slog.WarnContext(ctx, "retrying agent runtime start after transient failure", "error", err, "run_id", run.ID, "agent_id", params.agent.ID)

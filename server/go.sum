@@ -205,8 +205,6 @@ github.com/hablullah/go-juliandays v1.0.0 h1:A8YM7wIj16SzlKT0SRJc9CD29iiaUzpBLzh
 github.com/hablullah/go-juliandays v1.0.0/go.mod h1:0JOYq4oFOuDja+oospuc61YoX+uNEn7Z6uHYTbBzdGc=
 github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
-github.com/helpin-ai/agent-runtime-go v0.6.0-alpha.2 h1:bp6eyXY8ZeqP0FtQIvmW1Uowhyq9jCJkOC73jr4BD7w=
-github.com/helpin-ai/agent-runtime-go v0.6.0-alpha.2/go.mod h1:3XDPyvHh+NCNjlDLyHuemk27ryr7g+xZAmTbeCSOEIk=
 github.com/helpin-ai/agent-runtime-go v0.6.0-alpha.3 h1:+FQCR9lSthp1mAOx0CMqSD05vu1H8IIYRZ5g2nrXnCI=
 github.com/helpin-ai/agent-runtime-go v0.6.0-alpha.3/go.mod h1:3XDPyvHh+NCNjlDLyHuemk27ryr7g+xZAmTbeCSOEIk=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=

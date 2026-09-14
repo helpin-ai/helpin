@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	sdk "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/helpin/server/internal/aimodel"
 )
 
@@ -23,9 +24,10 @@ func export(output io.Writer) error {
 		return err
 	}
 	snapshot := struct {
-		Models []aimodel.PublicModel    `json:"models"`
-		Tiers  []aimodel.TierDefinition `json:"tiers"`
-	}{Models: catalog.PublicModels(), Tiers: catalog.Tiers}
+		ServiceTiers []string                 `json:"service_tiers"`
+		Models       []aimodel.PublicModel    `json:"models"`
+		Tiers        []aimodel.TierDefinition `json:"tiers"`
+	}{Models: catalog.PublicModels(), Tiers: catalog.Tiers, ServiceTiers: sdk.ServiceTiers()}
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode model metadata: %w", err)

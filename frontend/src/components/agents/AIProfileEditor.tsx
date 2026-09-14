@@ -1,3 +1,4 @@
+import { AI_MODELS } from '@/generated/aiModels';
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import { useId, useState } from "react";
 import type { AIConnection } from "@/lib/services/aiConnectionService";
@@ -123,7 +124,7 @@ export function AIProfileEditor({
             <ProfileRouteFields
               route={primary}
               onChange={setPrimary}
-              connections={available}
+              connections={available.filter((c) => c.scope === scope)}
               disabled={busy}
             />
           </QuietSection>
@@ -339,12 +340,8 @@ function ProfileRouteFields({
             <SelectContent>
               {[
                 "unset",
-                "standard",
-                "fast",
-                "flex",
-                "auto",
-                "default",
-                "priority",
+                ...AI_MODELS.service_tiers,
+                ...(["default", "priority"].includes(route.model.controls.service_tier ?? "") ? [route.model.controls.service_tier!] : []),
               ].map((v) => (
                 <SelectItem key={v} value={v}>
                   {v === "unset" ? "Provider default" : v}
