@@ -1,3 +1,4 @@
+import { ChevronRightIcon } from "@/lib/pmIcons";
 import { useWorkspaceAccess, usePermissions } from "@/hooks/queries/useSession";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -64,6 +65,7 @@ export function SequenceEditor({
   const teams = useAccessibleTeams(workspaceId);
   const accounts = useEmailAccounts(workspaceId);
   const pipelines = usePipelines(workspaceId);
+  const [chosenPipeline, setChosenPipeline] = useState<string>();
   const user = useAuthStore((s) => s.user?.id);
   const access = useWorkspaceAccess(workspaceId);
   const canEdit = usePermissions(access.data).has("crm.edit");
@@ -72,11 +74,19 @@ export function SequenceEditor({
   const mailboxes = (accounts.data ?? []).filter(
     (a) => a.member_id === user && a.can_send,
   );
-  const stages = (pipelines.data ?? []).flatMap((p) =>
-    (p.stages ?? [])
-      .filter((s) => !["won", "lost"].includes(s.stage_type))
-      .map((s) => ({ value: s.id, label: `${p.name} · ${s.name}` })),
-  );
+  const pipelineId =
+    chosenPipeline ??
+    (pipelines.data ?? []).find((pipeline) =>
+      pipeline.stages?.some((stage) => stage.id === form.entry_stage_id),
+    )?.id ??
+    "manual";
+  const stages = (
+    (pipelines.data ?? []).find((pipeline) => pipeline.id === pipelineId)
+      ?.stages ?? []
+  )
+    .filter((stage) => !["won", "lost"].includes(stage.stage_type))
+    .map((stage) => ({ value: stage.id, label: stage.name }));
+  const needsStage = pipelineId !== "manual" && !form.entry_stage_id;
   const patch = (change: Partial<EmailSequence>) => {
     setForm((current) => ({ ...current, ...change }));
     setDirty(true);
@@ -88,6 +98,10 @@ export function SequenceEditor({
       ),
     });
   const save = async (status = form.status) => {
+    if (needsStage && status !== "archived") {
+      toast.error("Choose a stage for automatic enrollment.");
+      return;
+    }
     setSaving(true);
     try {
       const row = unwrap(
@@ -150,7 +164,7 @@ export function SequenceEditor({
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={saving || !dirty}
+                disabled={saving || !dirty || needsStage}
                 onClick={() => void save()}
               >
                 Save {form.status === "draft" ? "draft" : "changes"}
@@ -211,13 +225,18 @@ export function SequenceEditor({
                 >
                   <div className="flex items-center gap-2 px-4 py-3">
                     <button
-                      onClick={() => setActive(index)}
-                      className="min-w-0 flex-1 text-left text-sm"
+                      onClick={() => setActive(active === index ? -1 : index)}
+                      aria-expanded={active === index}
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <span className="mr-2 text-xs text-muted-foreground">
+                      <ChevronRightIcon
+                        aria-hidden="true"
+                        className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none ${active === index ? "rotate-90" : ""}`}
+                      />
+                      <span className="text-xs text-muted-foreground">
                         {index + 1}
                       </span>
-                      <span className="font-medium">
+                      <span className="min-w-0 truncate font-medium">
                         {step.kind === "email"
                           ? active === index
                             ? "Email"
@@ -413,8 +432,91 @@ export function SequenceEditor({
               )}
             </main>
             <aside className="min-w-0 space-y-5 text-sm">
-              <details open className="border-b border-border/50 pb-4">
-                <summary className="cursor-pointer font-medium">
+              <details className="group/disclosure border-b border-border/50 pb-4">
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden font-medium">
+                  <ChevronRightIcon
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-open/disclosure:rotate-90 motion-reduce:transition-none"
+                  />
+                  Enrollment
+                </summary>
+                <div className="mt-3 space-y-3">
+                  <QuietSelect
+                    label="Enrollment pipeline"
+                    value={pipelineId}
+                    onChange={(value) => {
+                      setChosenPipeline(value);
+                      patch({ entry_stage_id: "", entry_account_id: "" });
+                    }}
+                    options={[
+                      { value: "manual", label: "Manual enrollment only" },
+                      ...(pipelines.data ?? []).map((pipeline) => ({
+                        value: pipeline.id,
+                        label: pipeline.name,
+                      })),
+                    ]}
+                    disabled={!editable || saving || pipelines.isLoading}
+                  />
+                  {pipelineId !== "manual" && (
+                    <>
+                      <QuietSelect
+                        label="Enrollment stage"
+                        value={form.entry_stage_id || "choose-stage"}
+                        onChange={(entry_stage_id) => patch({ entry_stage_id })}
+                        options={[
+                          {
+                            value: "choose-stage",
+                            label: stages.length
+                              ? "Select a stage"
+                              : "No open stages",
+                            disabled: true,
+                          },
+                          ...stages,
+                        ]}
+                        disabled={!editable || saving || !stages.length}
+                      />
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        Enroll the deal’s primary contact when it enters this
+                        stage. Applies to future changes, once per recipient.
+                      </p>
+                    </>
+                  )}
+                  {form.entry_stage_id && (
+                    <QuietSelect
+                      label="Automation sender"
+                      value={form.entry_account_id || ""}
+                      onChange={(entry_account_id) =>
+                        patch({ entry_account_id })
+                      }
+                      options={mailboxes.map((account) => ({
+                        value: account.id,
+                        label: account.email_address,
+                      }))}
+                      disabled={!editable || saving}
+                    />
+                  )}
+                  {form.entry_stage_id && (
+                    <p className="text-xs text-muted-foreground">
+                      Saving authorizes this rule to send from your selected
+                      mailbox.
+                    </p>
+                  )}
+                  {form.entry_error && (
+                    <p className="text-xs text-destructive">
+                      {form.entry_error}
+                    </p>
+                  )}
+                </div>
+              </details>
+              <details
+                open
+                className="group/disclosure border-b border-border/50 pb-4"
+              >
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden font-medium">
+                  <ChevronRightIcon
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-open/disclosure:rotate-90 motion-reduce:transition-none"
+                  />
                   Delivery
                 </summary>
                 <div className="mt-3 space-y-3">
@@ -488,52 +590,6 @@ export function SequenceEditor({
                   or lost
                 </p>
               </div>
-              <details className="border-t border-border/50 pt-4">
-                <summary className="cursor-pointer font-medium">
-                  Automatic enrollment
-                </summary>
-                <div className="mt-3 space-y-3">
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    Enroll the deal’s primary contact when it enters a stage.
-                    Applies to future stage changes, once per recipient.
-                  </p>
-                  <QuietSelect
-                    label="Enrollment stage"
-                    value={form.entry_stage_id || "manual"}
-                    onChange={(value) =>
-                      patch({ entry_stage_id: value === "manual" ? "" : value })
-                    }
-                    options={[
-                      { value: "manual", label: "Manual enrollment only" },
-                      ...stages,
-                    ]}
-                    disabled={!editable || saving}
-                  />
-                  {form.entry_stage_id && (
-                    <QuietSelect
-                      label="Automation sender"
-                      value={form.entry_account_id || ""}
-                      onChange={(entry_account_id) =>
-                        patch({ entry_account_id })
-                      }
-                      options={mailboxes.map((account) => ({
-                        value: account.id,
-                        label: account.email_address,
-                      }))}
-                      disabled={!editable || saving}
-                    />
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Saving authorizes this rule to send from your selected
-                    mailbox.
-                  </p>
-                  {form.entry_error && (
-                    <p className="text-xs text-destructive">
-                      {form.entry_error}
-                    </p>
-                  )}
-                </div>
-              </details>
               {editable && form.id && (
                 <Button
                   variant="ghost"

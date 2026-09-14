@@ -1,3 +1,4 @@
+import { ChevronRightIcon } from "@/lib/pmIcons";
 import { ConfirmDialog } from "@/components/pm/ConfirmDialog";
 import { useWorkspaceAccess, usePermissions } from "@/hooks/queries/useSession";
 import { useState, useEffect } from "react";
@@ -96,9 +97,19 @@ export function SequenceActivity({
           Loading recipients…
         </p>
       ) : query.isError ? (
-        <Button variant="ghost" onClick={() => void query.refetch()}>
-          Couldn’t load recipients. Try again
-        </Button>
+        <QuietEmptyState
+          title="Couldn’t load activity"
+          description="Activity is temporarily unavailable. Please try again."
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void query.refetch()}
+            >
+              Try again
+            </Button>
+          }
+        />
       ) : rows.length ? (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -184,12 +195,12 @@ export function SequenceActivity({
           title={
             search || status !== "all"
               ? "No matching recipients"
-              : "No recipients yet"
+              : "No activity yet"
           }
           description={
             search || status !== "all"
               ? "Try another search or status."
-              : "Add contacts to a published sequence to see their progress here."
+              : "Once contacts join a sequence, their progress will appear here."
           }
         />
       )}
@@ -447,8 +458,12 @@ function RecipientContent({
                 </a>
               )}
               {step.kind === "email" && delivery?.status === "sent" && (
-                <details className="mt-2 text-xs text-muted-foreground">
-                  <summary className="cursor-pointer">
+                <details className="group/disclosure mt-2 text-xs text-muted-foreground">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                    <ChevronRightIcon
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-open/disclosure:rotate-90 motion-reduce:transition-none"
+                    />
                     View sent email ·{" "}
                     {format(new Date(delivery.updated_at), "MMM d, h:mm a")}
                   </summary>

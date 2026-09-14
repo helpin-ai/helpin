@@ -149,6 +149,14 @@ async function setup(page: Page) {
           name: "Sales",
           stages: [{ id: "stage", name: "Qualified", stage_type: "open" }],
         },
+        {
+          id: "renewals",
+          name: "Renewals",
+          stages: [
+            { id: "renewal-stage", name: "Review renewal", stage_type: "open" },
+            { id: "renewal-won", name: "Renewed", stage_type: "won" },
+          ],
+        },
       ];
     else if (path.endsWith("/me"))
       data = {
@@ -203,11 +211,15 @@ test("sequence editor adds task and configures stage enrollment", async ({
   await page
     .getByRole("textbox", { name: "Task title" })
     .fill("Call {{full_name}}");
-  await page.getByText("Automatic enrollment", { exact: true }).click();
+  await page.getByText("Enrollment", { exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Enrollment pipeline", exact: true })
+    .click();
+  await page.getByRole("option", { name: "Sales", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Enrollment stage", exact: true })
     .click();
-  await page.getByRole("option", { name: "Sales · Qualified" }).click();
+  await page.getByRole("option", { name: "Qualified", exact: true }).click();
   await page.getByRole("combobox", { name: "Automation sender" }).click();
   await page.getByRole("option", { name: "waqar@contentstudio.io" }).click();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
@@ -409,3 +421,161 @@ for (const mode of ["dark", "narrow"])
       ),
     ).toBeTruthy();
   });
+
+test("activity shows an empty placeholder when there are no recipients", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/e2e/crm/harness/outreach.html");
+  await page.getByRole("button", { name: "activity", exact: true }).click();
+  await expect(
+    page.getByText("No activity yet", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Loading recipients…")).not.toBeVisible();
+});
+
+test("activity errors offer retry and recover to the empty placeholder", async ({
+  page,
+}) => {
+  await setup(page);
+  let failed = true;
+  await page.route("**/api/crm/outreach/enrollments?**", (route) =>
+    route.fulfill({
+      status: failed ? 503 : 200,
+      json: failed ? { error: "Service unavailable" } : [],
+    }),
+  );
+  await page.goto("/e2e/crm/harness/outreach.html");
+  await page.getByRole("button", { name: "activity", exact: true }).click();
+  await expect(
+    page.getByText("Couldn’t load activity", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("No activity yet", { exact: true }),
+  ).not.toBeVisible();
+  failed = false;
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(
+    page.getByText("No activity yet", { exact: true }),
+  ).toBeVisible();
+});
+
+test("activity stops loading when the recipients request stalls", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route("**/api/crm/outreach/enrollments?**", () => {});
+  await page.goto("/e2e/crm/harness/outreach.html");
+  await page.getByRole("button", { name: "activity", exact: true }).click();
+  await expect(page.getByText("Loading recipients…")).toBeVisible();
+  await expect(
+    page.getByText("Couldn’t load activity", { exact: true }),
+  ).toBeVisible({ timeout: 22000 });
+  await expect(page.getByText("Loading recipients…")).not.toBeVisible();
+});
+
+test("automatic enrollment scopes stages to the selected pipeline and clears old selections", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/e2e/crm/harness/outreach.html?tab=sequences");
+  await page.getByRole("button", { name: "Demo follow-up" }).click();
+  await page.getByText("Enrollment", { exact: true }).click();
+  const pipeline = page.getByRole("combobox", {
+    name: "Enrollment pipeline",
+    exact: true,
+  });
+  const stage = page.getByRole("combobox", {
+    name: "Enrollment stage",
+    exact: true,
+  });
+  await expect(stage).not.toBeVisible();
+  await pipeline.click();
+  await page.getByRole("option", { name: "Sales", exact: true }).click();
+  await stage.click();
+  await expect(
+    page.getByRole("option", { name: "Review renewal", exact: true }),
+  ).not.toBeVisible();
+  await page.getByRole("option", { name: "Qualified", exact: true }).click();
+  await pipeline.click();
+  await page.getByRole("option", { name: "Renewals", exact: true }).click();
+  await expect(stage).not.toContainText("Qualified");
+  await stage.click();
+  await expect(
+    page.getByRole("option", { name: "Qualified", exact: true }),
+  ).not.toBeVisible();
+  await expect(
+    page.getByRole("option", { name: "Renewed", exact: true }),
+  ).not.toBeVisible();
+  await page
+    .getByRole("option", { name: "Review renewal", exact: true })
+    .click();
+  await pipeline.click();
+  await page
+    .getByRole("option", { name: "Manual enrollment only", exact: true })
+    .click();
+  await expect(stage).not.toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Automation sender" }),
+  ).not.toBeVisible();
+});
+
+test("automatic enrollment restores the pipeline for a saved stage", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route("**/api/crm/outreach/sequences?**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          ...sequence,
+          entry_stage_id: "renewal-stage",
+          entry_account_id: "mailbox",
+        },
+      ],
+    }),
+  );
+  await page.goto("/e2e/crm/harness/outreach.html?tab=sequences");
+  await page.getByRole("button", { name: "Demo follow-up" }).click();
+  await page.getByText("Enrollment", { exact: true }).click();
+  await expect(
+    page.getByRole("combobox", { name: "Enrollment pipeline", exact: true }),
+  ).toContainText("Renewals");
+  await expect(
+    page.getByRole("combobox", { name: "Enrollment stage", exact: true }),
+  ).toContainText("Review renewal");
+  await page
+    .getByRole("combobox", { name: "Enrollment stage", exact: true })
+    .click();
+  await expect(page.locator("aside summary").nth(0)).toHaveText("Enrollment");
+  await expect(page.locator("aside summary").nth(1)).toHaveText("Delivery");
+  await page.screenshot({
+    path: "/tmp/crm-enrollment-pipeline-stages.png",
+    fullPage: true,
+  });
+});
+
+test("sequence steps can collapse and expand with the keyboard", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/e2e/crm/harness/outreach.html?tab=sequences");
+  await page.getByRole("button", { name: "Demo follow-up" }).click();
+  const step = page.getByRole("button", { name: /1 Email Start immediately/ });
+  await expect(step).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    page.getByRole("textbox", { name: "Step 1 subject" }),
+  ).toBeVisible();
+  await step.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("textbox", { name: "Step 1 subject" }),
+  ).not.toBeVisible();
+  const closed = page.getByRole("button", {
+    name: /1 Thanks,.*Start immediately/,
+  });
+  await expect(closed).toHaveAttribute("aria-expanded", "false");
+  await closed.focus();
+  await page.keyboard.press("Enter");
+  await expect(step).toHaveAttribute("aria-expanded", "true");
+});
