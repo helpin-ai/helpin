@@ -88,7 +88,7 @@ func (s *AIProfileService) validateRoute(ctx context.Context, workspace, user, s
 	if err != nil {
 		return err
 	}
-	if c == nil || c.WorkspaceID != workspace {
+	if c == nil || c.WorkspaceID != workspace || c.SupersededBy != nil {
 		return ErrAIConnection
 	}
 	if scope == "workspace" && (c.Scope != "workspace" || c.UserID != nil) {

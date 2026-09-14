@@ -42,6 +42,20 @@ func (r *AIStandardProfileRepository) Connection(ctx context.Context, id string)
 	return &connection, err
 }
 
+// ManagedConnection reuses the existing EE default, including a disconnected
+// one. A disconnected default must not cause provisioning to create a bypass.
+func (r *AIStandardProfileRepository) ManagedConnection(ctx context.Context, workspace, provider string) (*model.AIConnection, error) {
+	var connection model.AIConnection
+	query := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("workspace_id = ? AND provider = ? AND scope = 'workspace' AND user_id IS NULL AND funding = 'managed' AND superseded_by IS NULL", workspace, provider)
+	// Prefer a pre-existing managed connection over the later generated copy.
+	err := query.Clauses(clause.OrderBy{Expression: clause.Expr{SQL: "CASE WHEN id = ? THEN 1 ELSE 0 END, created_at, id", Vars: []any{model.StandardAIConnectionID(workspace, provider)}}}).Take(&connection).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &connection, err
+}
+
 func (r *AIStandardProfileRepository) SaveConnection(ctx context.Context, c *model.AIConnection) error {
 	return r.db.WithContext(ctx).Save(c).Error
 }

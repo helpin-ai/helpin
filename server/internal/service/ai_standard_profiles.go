@@ -83,15 +83,21 @@ func (s *AIStandardProfiles) EnsureWorkspace(ctx context.Context, workspace stri
 
 func (s *AIStandardProfiles) ensureConnection(ctx context.Context, store *repository.AIStandardProfileRepository, workspace, provider string) (*model.AIConnection, error) {
 	id := model.StandardAIConnectionID(workspace, provider)
-	c, err := store.Connection(ctx, id)
+	c, err := store.ManagedConnection(ctx, workspace, provider)
 	if err != nil {
 		return nil, err
 	}
+	if c == nil {
+		c, err = store.Connection(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+	}
 	fresh := c == nil
 	if fresh {
-		c = &model.AIConnection{ID: id, WorkspaceID: workspace, Scope: "workspace", Funding: s.funding, Name: "Standard " + provider, Provider: provider, Status: "unconfigured", CreatedAt: time.Now().UTC()}
+		c = &model.AIConnection{ID: id, WorkspaceID: workspace, Scope: "workspace", Funding: s.funding, Name: provider + " (" + s.funding + ")", Provider: provider, Status: "unconfigured", CreatedAt: time.Now().UTC()}
 	}
-	if c.WorkspaceID != workspace || c.Scope != "workspace" || c.UserID != nil || c.Provider != provider {
+	if c.WorkspaceID != workspace || c.Scope != "workspace" || c.UserID != nil || c.Provider != provider || c.SupersededBy != nil {
 		return nil, errors.New("standard connection identity conflicts with existing configuration")
 	}
 	// Only an untouched placeholder may change funding. Customer keys and
@@ -103,6 +109,10 @@ func (s *AIStandardProfiles) ensureConnection(ctx context.Context, store *reposi
 	changed := fresh
 	if placeholder && c.Funding != s.funding && s.funding == "managed" {
 		c.Funding = s.funding
+		changed = true
+	}
+	if c.ID == id && c.Funding == "managed" && (c.Name == "Standard "+provider || c.Name == provider+" (customer)") {
+		c.Name = provider + " (managed)"
 		changed = true
 	}
 	if apiKey := strings.TrimSpace(s.credentials[provider]); apiKey != "" && len(s.key) == 32 {

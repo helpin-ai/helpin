@@ -8,6 +8,9 @@ import (
 // AIConnection belongs to a workspace or one of its members. Secret material is never
 // serialized; device sessions and OAuth refresh tokens remain app-owned.
 type AIConnection struct {
+	// Superseded generated defaults remain readable for frozen run selections,
+	// but are no longer offered when configuring new profiles.
+	SupersededBy    *string                 `json:"-" gorm:"type:uuid"`
 	Endpoint        *sdk.ModelEndpoint      `json:"endpoint,omitempty" gorm:"serializer:json;type:jsonb"`
 	Policy          *AIConnectionPolicyView `json:"policy,omitempty" gorm:"-"`
 	ID              string                  `json:"id" gorm:"type:uuid;primaryKey"`

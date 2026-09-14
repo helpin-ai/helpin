@@ -20,7 +20,7 @@ func (r *AIConnectionRepository) Create(ctx context.Context, c *model.AIConnecti
 }
 func (r *AIConnectionRepository) List(ctx context.Context, workspace, user string) ([]model.AIConnection, error) {
 	out := []model.AIConnection{}
-	err := r.db.WithContext(ctx).Omit("encrypted_secret").Where("workspace_id = ? AND (user_id = ? OR scope = ?)", workspace, user, "workspace").Order("created_at DESC").Find(&out).Error
+	err := r.db.WithContext(ctx).Omit("encrypted_secret").Where("workspace_id = ? AND (user_id = ? OR scope = ?) AND superseded_by IS NULL", workspace, user, "workspace").Order("created_at DESC").Find(&out).Error
 	return out, err
 }
 func (r *AIConnectionRepository) Get(ctx context.Context, id string) (*model.AIConnection, error) {

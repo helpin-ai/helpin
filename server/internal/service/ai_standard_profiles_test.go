@@ -180,7 +180,7 @@ func TestStandardAIProfilesAdoptOnlyEmptyPlaceholder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Funding != "managed" || c.Status != "connected" {
+	if c.Funding != "managed" || c.Status != "connected" || c.Name != "openrouter (managed)" {
 		t.Fatal("empty migration placeholder was not provisioned")
 	}
 }
