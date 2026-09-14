@@ -156,7 +156,7 @@ func (s *AIConnectionService) Create(ctx context.Context, workspace, user string
 	default:
 		return nil, errors.New("unsupported AI provider")
 	}
-	c := &model.AIConnection{ID: uuid.NewString(), WorkspaceID: workspace, UserID: &user, Scope: req.Scope, Name: req.Name, Provider: req.Provider, Status: "connected"}
+	c := &model.AIConnection{ID: uuid.NewString(), WorkspaceID: workspace, UserID: &user, Scope: req.Scope, Funding: "customer", Name: req.Name, Provider: req.Provider, Status: "connected"}
 	if req.Scope == "workspace" {
 		c.UserID = nil
 	}

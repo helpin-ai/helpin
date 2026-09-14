@@ -652,11 +652,31 @@ func PreflightAgentRunAIUsage(ctx context.Context, meter *AIUsageMeter, run *mod
 		if runInput.ModelConnectionID != "" {
 			funding = aiusage.FundingCustomerPlatform
 		}
+		serviceTier := "standard"
+		var flatTariff *aiusage.FlatTokenTariff
+		if selection := runInput.AISelection; selection != nil && selection.Policy != nil {
+			funding = selection.Policy.FundingMode
+			flatTariff = selection.Policy.FlatTariff
+			provider, modelID = selection.Route.Model.Provider, selection.Route.Model.Model
+			if controls := selection.Route.Model.Controls; controls != nil && controls.ServiceTier != nil {
+				switch strings.ToLower(strings.TrimSpace(*controls.ServiceTier)) {
+				case "", "auto", "default", "standard":
+				case "fast", "priority":
+					serviceTier = "priority"
+				default:
+					serviceTier = strings.ToLower(strings.TrimSpace(*controls.ServiceTier))
+				}
+			}
+			// Historical managed price aliases are still catalogued separately.
+			if funding == aiusage.FundingHelpinHosted && provider == "openrouter_responses" {
+				provider = "openrouter"
+			}
+		}
 		featureKey := AgentRunAIUsageFeature(agent)
 		metering, err := meter.usage.Preflight(ctx, PreflightRequest{Metering: MeteringRequest{
 			WorkspaceID: run.WorkspaceID, TaskNature: taskNatureForFeature(featureKey), FeatureKey: featureKey,
-			Provider: provider, Model: modelID, Route: "", ServiceTier: "standard",
-			FundingMode: funding, InputTokensEstimate: int64((len(run.Input) + 3) / 4),
+			Provider: provider, Model: modelID, Route: "", ServiceTier: serviceTier,
+			FundingMode: funding, FlatTariff: flatTariff, InputTokensEstimate: int64((len(run.Input) + 3) / 4),
 			MaximumOutputTokens: 128000, ExecutionID: run.ID,
 			IdempotencyKey: aiUsageIdempotencyKey(run.WorkspaceID, "agent_run", run.ID),
 		}})

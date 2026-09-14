@@ -34,10 +34,13 @@ func TestCRMPlaybookLauncherUsesExistingRuntimeOnceForAllJourneys(t *testing.T) 
 				f.Exec(t, db, "DELETE FROM agent_runs WHERE id=?", binding.RunID)
 				client := &playbookRuntimeEcho{lostResponse: uncertain}
 				agents := (&AgentService{agentRepo: host.agentRepo, runRepo: host.runRepo}).SetAgentRuntimeClient(client).SetAgentRuntimeLaunchEnabled(true)
-				launcher := NewCRMPlaybookAgentLauncher(agents, repository.NewCRMPlaybookExecutionRepository(db), &AIUsageMeter{consumer: &recordingAIUsageConsumer{}})
+				consumer := &recordingAIUsageConsumer{}
+				launcher := NewCRMPlaybookAgentLauncher(agents, repository.NewCRMPlaybookExecutionRepository(db), &AIUsageMeter{consumer: consumer})
 				launcher.SetExecutionService(host.playbookExecution)
 				host.playbookExecution.launcher = launcher
 				run, err := launcher.StartPlaybookRun(context.Background(), binding)
+				// Accepted executions must not re-enter billing admission on retry.
+				consumer.preflightErr = errors.New("billing configuration changed after acceptance")
 				if uncertain {
 					if !errors.Is(err, ErrCRMPlaybookLaunchUncertain) {
 						t.Fatalf("unknown start: %v", err)

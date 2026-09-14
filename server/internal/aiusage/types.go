@@ -28,6 +28,8 @@ const (
 	// FundingCustomerFlat charges normalized tokens at the accepted flat tariff;
 	// paid tools retain their own prices and receive no token surcharge.
 	FundingCustomerFlat FundingMode = "customer_funded_flat"
+	// FundingCustomerUnbilled records community usage without a Helpin charge.
+	FundingCustomerUnbilled FundingMode = "customer_unbilled"
 )
 
 // TokenRates holds integer micro-USD prices per one million actual tokens.

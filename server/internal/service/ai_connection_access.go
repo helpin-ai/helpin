@@ -29,6 +29,9 @@ func (s *AIConnectionService) authorizeConnectionManagement(ctx context.Context,
 	if err != nil || c == nil || c.WorkspaceID != workspace {
 		return ErrAIConnection
 	}
+	if c.Funding == "managed" {
+		return ErrAIConnection
+	}
 	if c.Scope == "workspace" && c.UserID == nil {
 		return s.requireConnectionManager(ctx, workspace, user)
 	}

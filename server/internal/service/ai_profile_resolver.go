@@ -56,9 +56,17 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 		}
 	}
 	selection := &model.AIExecutionSelection{ProfileID: p.ID, ProfileRevision: p.Revision, Source: source, Route: p.Primary}
+	selection.Policy, err = s.selectionPolicy(ctx, workspace, p.Primary)
+	if err != nil {
+		return nil, nil, err
+	}
 	c, credential, err := s.routeCredential(ctx, workspace, user, req.Unattended, p.Primary)
 	if errors.Is(err, ErrAIConnectionUnavailable) && p.Fallback != nil {
 		selection.Route, selection.FallbackReason = *p.Fallback, "primary_connection_unavailable"
+		selection.Policy, err = s.selectionPolicy(ctx, workspace, *p.Fallback)
+		if err != nil {
+			return nil, nil, err
+		}
 		c, credential, err = s.routeCredential(ctx, workspace, user, req.Unattended, *p.Fallback)
 	}
 	if err != nil {

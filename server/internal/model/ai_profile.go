@@ -4,6 +4,7 @@ import (
 	"time"
 
 	sdk "github.com/helpin-ai/agent-runtime-go"
+	"github.com/helpin-ai/helpin/server/internal/aiusage"
 )
 
 // AIProfileRoute binds model controls to a connection, never to a browser-supplied secret.
@@ -50,11 +51,20 @@ func (AIWorkspaceSettings) TableName() string { return "ai_workspace_settings" }
 
 // AIExecutionSelection freezes the route accepted at admission. It contains no secrets.
 type AIExecutionSelection struct {
-	ProfileID       string         `json:"profile_id,omitempty"`
-	ProfileRevision int64          `json:"profile_revision,omitempty"`
-	ConnectionScope string         `json:"connection_scope"`
-	OwnerID         *string        `json:"owner_id,omitempty"`
-	Route           AIProfileRoute `json:"route"`
-	Source          string         `json:"source"`
-	FallbackReason  string         `json:"fallback_reason,omitempty"`
+	ProfileID       string                     `json:"profile_id,omitempty"`
+	ProfileRevision int64                      `json:"profile_revision,omitempty"`
+	ConnectionScope string                     `json:"connection_scope"`
+	OwnerID         *string                    `json:"owner_id,omitempty"`
+	Route           AIProfileRoute             `json:"route"`
+	Source          string                     `json:"source"`
+	FallbackReason  string                     `json:"fallback_reason,omitempty"`
+	Policy          *AIExecutionPolicySnapshot `json:"policy,omitempty"`
+}
+
+// AIExecutionPolicySnapshot is supplied by trusted edition policy at admission.
+// It travels with the accepted route and is never supplied by a launch DTO.
+type AIExecutionPolicySnapshot struct {
+	Mode        string                   `json:"mode"`
+	FundingMode aiusage.FundingMode      `json:"funding_mode"`
+	FlatTariff  *aiusage.FlatTokenTariff `json:"flat_tariff,omitempty"`
 }

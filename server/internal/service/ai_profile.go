@@ -14,8 +14,9 @@ import (
 
 // AIProfileService manages workspace-scoped profiles and resolves their routes.
 type AIProfileService struct {
-	repo        *repository.AIProfileRepository
-	connections *AIConnectionService
+	repo            *repository.AIProfileRepository
+	connections     *AIConnectionService
+	admissionPolicy AIConnectionAdmissionPolicy
 }
 
 func NewAIProfileService(repo *repository.AIProfileRepository, connections *AIConnectionService) *AIProfileService {

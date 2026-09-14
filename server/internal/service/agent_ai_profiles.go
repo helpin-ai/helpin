@@ -120,11 +120,15 @@ func (s *AgentService) resolveLegacyAISelection(ctx context.Context, params *cre
 	if err := s.aiProfiles.validateRoute(ctx, params.workspaceID, user, c.Scope, &route); err != nil {
 		return nil, nil, err
 	}
+	policy, err := s.aiProfiles.selectionPolicy(ctx, params.workspaceID, route)
+	if err != nil {
+		return nil, nil, err
+	}
 	_, credential, err := s.aiProfiles.routeCredential(ctx, params.workspaceID, user, unattended && c.Scope == "workspace", route)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &model.AIExecutionSelection{Route: route, ConnectionScope: c.Scope, OwnerID: c.UserID, Source: "legacy_override"}, credential, nil
+	return &model.AIExecutionSelection{Route: route, ConnectionScope: c.Scope, OwnerID: c.UserID, Source: "legacy_override", Policy: policy}, credential, nil
 }
 
 func (s *AgentService) applyAISelection(params *createRunParams, selection *model.AIExecutionSelection, credential *sdk.ModelCredential) (*sdk.RunModel, *sdk.ModelCredential, *model.Agent, error) {

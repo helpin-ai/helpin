@@ -9,6 +9,7 @@ type AIConnection struct {
 	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	UserID          *string    `json:"user_id" gorm:"type:uuid;index"`
 	Scope           string     `json:"scope" gorm:"not null;default:personal"`
+	Funding         string     `json:"funding" gorm:"not null;default:customer"`
 	Name            string     `json:"name" gorm:"not null"`
 	Provider        string     `json:"provider" gorm:"not null"`
 	Status          string     `json:"status" gorm:"not null"`
