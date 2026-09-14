@@ -15,6 +15,9 @@ type AIConnectionAdmissionPolicy interface {
 
 func (s *AIProfileService) SetAdmissionPolicy(policy AIConnectionAdmissionPolicy) *AIProfileService {
 	s.admissionPolicy = policy
+	if s.connections != nil {
+		s.connections.admissionPolicy = policy
+	}
 	return s
 }
 

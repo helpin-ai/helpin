@@ -1,3 +1,4 @@
+import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import { useId } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AISettingsLink } from "@/components/agents/AISettingsLink";
@@ -77,7 +78,11 @@ export function AIProfilePicker({
             </SelectItem>
           )}
           {profiles.map((p) => (
-            <SelectItem key={p.id} value={p.id}>
+            <SelectItem
+              key={p.id}
+              value={p.id}
+              disabled={p.primary_policy?.allowed === false}
+            >
               {p.name} · {p.scope === "personal" ? "Personal" : "Workspace"}
             </SelectItem>
           ))}
@@ -90,6 +95,20 @@ export function AIProfilePicker({
             ? ` · Fallback: ${selected.fallback.model.provider} / ${selected.fallback.model.model}, before execution only`
             : " · No fallback"}
         </p>
+      )}
+      {selected && (
+        <>
+          <AIConnectionPolicyNotice
+            policy={selected.primary_policy}
+            label="Primary"
+          />
+          {selected.fallback && (
+            <AIConnectionPolicyNotice
+              policy={selected.fallback_policy}
+              label="Fallback"
+            />
+          )}
+        </>
       )}
       {workspace?.id === workspaceId && (
         <AISettingsLink

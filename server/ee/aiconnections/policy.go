@@ -6,14 +6,16 @@ package aiconnections
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/helpin-ai/helpin/server/ee/pricing"
+	"github.com/helpin-ai/helpin/server/internal/service"
 
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/gorm"
 )
 
-var ErrBYOKUnavailable = errors.New("BYOK is not enabled for this workspace or its token tariff is not configured")
+var ErrBYOKUnavailable = fmt.Errorf("%w: BYOK is not enabled for this workspace or its token tariff is not configured", service.ErrAIConnectionPolicyUnavailable)
 
 type Tariff struct {
 	Version            string `gorm:"primaryKey"`

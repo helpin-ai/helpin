@@ -1,3 +1,4 @@
+import { AIConnectionPolicyNotice } from "@/components/agents/AIConnectionPolicyNotice";
 import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { aiConnectionService } from "@/lib/services/aiConnectionService";
@@ -171,7 +172,8 @@ function AISettingsContent({
             <QuietListRow
               key={c.id}
               title={c.name}
-              meta={`${c.provider} · ${c.status.replaceAll("_", " ")}`}
+              meta={`${c.provider} · ${c.status.replaceAll("_", " ")}${c.funding === "managed" ? " · Managed" : ""}`}
+              detail={<AIConnectionPolicyNotice policy={c.policy} />}
             />
           ))
         )}
@@ -213,7 +215,11 @@ function AISettingsContent({
                 <SelectContent>
                   <SelectItem value="none">Not configured</SelectItem>
                   {ownProfiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
+                    <SelectItem
+                      key={p.id}
+                      value={p.id}
+                      disabled={p.primary_policy?.allowed === false}
+                    >
                       {p.name}
                     </SelectItem>
                   ))}
@@ -256,9 +262,23 @@ function AISettingsContent({
               title={p.name}
               meta={`${p.primary.model.provider} · ${p.primary.model.model}`}
               detail={
-                p.fallback
-                  ? `Fallback: ${p.fallback.model.provider} · ${p.fallback.model.model}, before execution only`
-                  : "No fallback"
+                <>
+                  <AIConnectionPolicyNotice
+                    policy={p.primary_policy}
+                    label="Primary"
+                  />
+                  <span className="block">
+                    {p.fallback
+                      ? `Fallback: ${p.fallback.model.provider} · ${p.fallback.model.model}, before execution only`
+                      : "No fallback"}
+                  </span>
+                  {p.fallback && (
+                    <AIConnectionPolicyNotice
+                      policy={p.fallback_policy}
+                      label="Fallback"
+                    />
+                  )}
+                </>
               }
               trailing={
                 canManage ? (

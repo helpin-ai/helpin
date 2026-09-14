@@ -38,7 +38,26 @@ func (s *AIProfileService) List(ctx context.Context, workspace, user string) ([]
 	if err := s.requireMember(ctx, workspace, user); err != nil {
 		return nil, err
 	}
-	return s.repo.List(ctx, workspace, user)
+	profiles, err := s.repo.List(ctx, workspace, user)
+	if err != nil {
+		return nil, err
+	}
+	visible, err := s.connections.List(ctx, workspace, user)
+	if err != nil {
+		return nil, err
+	}
+	connections := make(map[string]model.AIConnection, len(visible))
+	for _, c := range visible {
+		connections[c.ID] = c
+	}
+	for i := range profiles {
+		p := &profiles[i]
+		p.PrimaryPolicy = profileRoutePolicy(p.Primary, p.Scope, connections)
+		if p.Fallback != nil {
+			p.FallbackPolicy = profileRoutePolicy(*p.Fallback, p.Scope, connections)
+		}
+	}
+	return profiles, nil
 }
 
 func (s *AIProfileService) authorizeProfile(ctx context.Context, workspace, user string, p *model.AIProfile, manage bool) error {

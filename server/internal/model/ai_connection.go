@@ -5,19 +5,20 @@ import "time"
 // AIConnection belongs to a workspace or one of its members. Secret material is never
 // serialized; device sessions and OAuth refresh tokens remain app-owned.
 type AIConnection struct {
-	ID              string     `json:"id" gorm:"type:uuid;primaryKey"`
-	WorkspaceID     string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	UserID          *string    `json:"user_id" gorm:"type:uuid;index"`
-	Scope           string     `json:"scope" gorm:"not null;default:personal"`
-	Funding         string     `json:"funding" gorm:"not null;default:customer"`
-	Name            string     `json:"name" gorm:"not null"`
-	Provider        string     `json:"provider" gorm:"not null"`
-	Status          string     `json:"status" gorm:"not null"`
-	AccountID       string     `json:"account_id,omitempty"`
-	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
-	EncryptedSecret []byte     `json:"-"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	Policy          *AIConnectionPolicyView `json:"policy,omitempty" gorm:"-"`
+	ID              string                  `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID     string                  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	UserID          *string                 `json:"user_id" gorm:"type:uuid;index"`
+	Scope           string                  `json:"scope" gorm:"not null;default:personal"`
+	Funding         string                  `json:"funding" gorm:"not null;default:customer"`
+	Name            string                  `json:"name" gorm:"not null"`
+	Provider        string                  `json:"provider" gorm:"not null"`
+	Status          string                  `json:"status" gorm:"not null"`
+	AccountID       string                  `json:"account_id,omitempty"`
+	ExpiresAt       *time.Time              `json:"expires_at,omitempty"`
+	EncryptedSecret []byte                  `json:"-"`
+	CreatedAt       time.Time               `json:"created_at"`
+	UpdatedAt       time.Time               `json:"updated_at"`
 }
 
 type CreateAIConnectionRequest struct {
@@ -36,3 +37,11 @@ type AIConnectionLogin struct {
 }
 
 func (AIConnection) TableName() string { return "ai_connections" }
+
+// AIConnectionPolicyView describes whether edition policy permits a new
+// selection. It does not probe credentials or claim that the provider is online.
+type AIConnectionPolicyView struct {
+	Allowed bool                       `json:"allowed"`
+	Message string                     `json:"message,omitempty"`
+	Pricing *AIExecutionPolicySnapshot `json:"pricing,omitempty"`
+}

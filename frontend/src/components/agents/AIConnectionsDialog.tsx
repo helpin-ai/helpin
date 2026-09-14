@@ -1,3 +1,4 @@
+import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import { useEffect, useId, useState } from "react";
 import {
   aiConnectionService,
@@ -167,9 +168,15 @@ export function AIConnectionsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{scope === "personal" ? "My AI connections" : "Workspace AI connections"}</DialogTitle>
+          <DialogTitle>
+            {scope === "personal"
+              ? "My AI connections"
+              : "Workspace AI connections"}
+          </DialogTitle>
           <DialogDescription>
-            {scope === "personal" ? "Only you can use these connections in this workspace, for manual runs and chats." : "Workspace members can select these connections. Shared profiles can also use them for automation."}
+            {scope === "personal"
+              ? "Only you can use these connections in this workspace, for manual runs and chats."
+              : "Workspace members can select these connections. Shared profiles can also use them for automation."}
           </DialogDescription>
         </DialogHeader>
         <div className="divide-y divide-border">
@@ -190,37 +197,43 @@ export function AIConnectionsDialog({
                 <p className="text-xs text-muted-foreground">
                   {providerLabels[connection.provider]} ·{" "}
                   {connection.status.replaceAll("_", " ")}
+                  {connection.funding === "managed"
+                    ? " · Managed by your administrator"
+                    : ""}
                 </p>
+                <AIConnectionPolicyNotice policy={connection.policy} />
               </div>
-              <div className="flex gap-2">
-                {connection.status === "pending" ? (
+              {connection.funding !== "managed" && (
+                <div className="flex gap-2">
+                  {connection.status === "pending" ? (
+                    <QuietTextAction
+                      disabled={busy}
+                      onClick={() => void continueLogin(connection)}
+                    >
+                      Continue login
+                    </QuietTextAction>
+                  ) : (
+                    <QuietTextAction
+                      disabled={busy}
+                      onClick={() => {
+                        setReconnecting(connection.id);
+                        setProvider(connection.provider);
+                        setName(connection.name);
+                        setApiKey("");
+                        setLogin(undefined);
+                      }}
+                    >
+                      Reconnect
+                    </QuietTextAction>
+                  )}
                   <QuietTextAction
                     disabled={busy}
-                    onClick={() => void continueLogin(connection)}
+                    onClick={() => void disconnect(connection)}
                   >
-                    Continue login
+                    Disconnect
                   </QuietTextAction>
-                ) : (
-                  <QuietTextAction
-                    disabled={busy}
-                    onClick={() => {
-                      setReconnecting(connection.id);
-                      setProvider(connection.provider);
-                      setName(connection.name);
-                      setApiKey("");
-                      setLogin(undefined);
-                    }}
-                  >
-                    Reconnect
-                  </QuietTextAction>
-                )}
-                <QuietTextAction
-                  disabled={busy}
-                  onClick={() => void disconnect(connection)}
-                >
-                  Disconnect
-                </QuietTextAction>
-              </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -287,7 +300,11 @@ export function AIConnectionsDialog({
             </SelectTrigger>
             <SelectContent>
               {Object.entries(providerLabels)
-                .filter(([key]) => (scope === "personal" || key !== "openai_chatgpt") && models.some((m) => m.provider === key))
+                .filter(
+                  ([key]) =>
+                    (scope === "personal" || key !== "openai_chatgpt") &&
+                    models.some((m) => m.provider === key),
+                )
                 .map(([key, label]) => (
                   <SelectItem key={key} value={key}>
                     {label}

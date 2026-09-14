@@ -52,7 +52,7 @@ import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApp
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { getAgentTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { CRM_AGENT_TARGET_OPTIONS } from '@/lib/agentCRMTargets';
-import { agentModelTierLabel } from '@/lib/agentModelTier';
+import { AIProfileLabel } from '@/components/agents/AIProfileLabel';
 import { AIProfilePicker } from '@/components/agents/AIProfilePicker';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
@@ -2040,7 +2040,7 @@ function AgentCard({
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Model size</p>
-            <p className="text-sm text-muted-foreground">{agentModelTierLabel(agent.model_tier)}</p>
+            <p className="text-sm text-muted-foreground"><AIProfileLabel workspaceId={agent.workspace_id} profileId={agent.ai_profile_id} /></p>
           </div>
           <div className="space-y-1">
             <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Mode</p>
@@ -2322,7 +2322,7 @@ export function AgentRow({
 
       <div className="min-w-0 space-y-1">
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Config</p>
-        <p className="truncate text-sm font-medium text-foreground">{agentModelTierLabel(agent.model_tier)}</p>
+        <p className="truncate text-sm font-medium text-foreground"><AIProfileLabel workspaceId={agent.workspace_id} profileId={agent.ai_profile_id} /></p>
         <p className="truncate text-xs text-muted-foreground">{invocationLabel}</p>
       </div>
 
@@ -4381,8 +4381,8 @@ export function AgentsPage() {
                   </div>
                   <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-5">
                     <div className="space-y-1 p-3">
-                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model size</dt>
-                      <dd className="truncate text-sm font-medium">{agentModelTierLabel(form.model_tier)}</dd>
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">AI profile</dt>
+                      <dd className="truncate text-sm font-medium"><AIProfileLabel workspaceId={workspaceId} profileId={form.ai_profile_id} /></dd>
                     </div>
                     <div className="space-y-1 p-3">
                       <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>
@@ -5636,8 +5636,8 @@ export function AgentsPage() {
                 </div>
                 <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-4 lg:grid-cols-8">
                   <div className="space-y-1 p-3">
-                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Model size</dt>
-                    <dd className="truncate text-sm font-medium">{agentModelTierLabel(form.model_tier)}</dd>
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">AI profile</dt>
+                    <dd className="truncate text-sm font-medium"><AIProfileLabel workspaceId={workspaceId} profileId={form.ai_profile_id} /></dd>
                   </div>
                   <div className="space-y-1 p-3">
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Mode</dt>

@@ -116,3 +116,20 @@ it("replaces legacy launch fields with one explicit profile selection", async ()
   );
   expect(onChange).toHaveBeenCalledWith({ ai_profile_id: "personal" });
 });
+
+it("disables a policy-rejected primary even when its fallback is allowed", async () => {
+  const denied = { ...profiles[0], primary_policy: { allowed: false, message: "BYOK is disabled" },
+    fallback: profiles[1].primary, fallback_policy: { allowed: true } };
+  client.setQueryData(["ai-profiles", "ws"], [denied]);
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: [denied], error: null });
+  const onChange = vi.fn();
+  await act(async () => root.render(<QueryClientProvider client={client}>
+    <AIProfilePicker workspaceId="ws" value="personal" onChange={onChange} />
+  </QueryClientProvider>));
+  expect(document.body.textContent).toContain("Primary: BYOK is disabled");
+  await openPicker();
+  const item = document.querySelector<HTMLElement>('[cmdk-item][data-value="personal"]');
+  expect(item?.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => item!.click());
+  expect(onChange).not.toHaveBeenCalled();
+});

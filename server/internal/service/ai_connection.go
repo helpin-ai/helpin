@@ -37,13 +37,14 @@ type aiConnectionSecret struct {
 	Device *chatgptauth.DeviceSession `json:"device,omitempty"`
 }
 type AIConnectionService struct {
-	repo    *repository.AIConnectionRepository
-	key     []byte
-	cfg     AIConnectionConfig
-	oauth   *chatgptauth.Client
-	catalog *aimodel.Catalog
-	runtime *AgentRuntimeClient
-	authz   *authorization.AuthzService
+	admissionPolicy AIConnectionAdmissionPolicy
+	repo            *repository.AIConnectionRepository
+	key             []byte
+	cfg             AIConnectionConfig
+	oauth           *chatgptauth.Client
+	catalog         *aimodel.Catalog
+	runtime         *AgentRuntimeClient
+	authz           *authorization.AuthzService
 }
 
 func NewAIConnectionService(repo *repository.AIConnectionRepository, catalog *aimodel.Catalog, runtime *AgentRuntimeClient, cfg AIConnectionConfig) (*AIConnectionService, error) {
@@ -90,7 +91,17 @@ func (s *AIConnectionService) List(ctx context.Context, workspace, user string) 
 	if err != nil || !member {
 		return nil, ErrAIConnection
 	}
-	return s.repo.List(ctx, workspace, user)
+	connections, err := s.repo.List(ctx, workspace, user)
+	if err != nil {
+		return nil, err
+	}
+	for i := range connections {
+		connections[i].Policy, err = connectionPolicyView(ctx, s.admissionPolicy, workspace, &connections[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return connections, nil
 }
 func aiConnectionAAD(c *model.AIConnection) []byte {
 	return []byte("ai-connection|v1|" + c.WorkspaceID + "|" + derefString(c.UserID) + "|" + c.ID + "|" + c.Provider)

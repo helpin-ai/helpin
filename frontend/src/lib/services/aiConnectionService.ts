@@ -1,6 +1,24 @@
 import { api } from "@/lib/api";
 
+export interface AIExecutionPolicySnapshot {
+  mode: "community" | "ee";
+  funding_mode: string;
+  flat_tariff?: {
+    version: string;
+    currency: string;
+    microusd_per_million: number;
+    accounting_version: string;
+  };
+}
+export interface AIConnectionPolicyView {
+  allowed: boolean;
+  message?: string;
+  pricing?: AIExecutionPolicySnapshot;
+}
+
 export interface AIConnection {
+  funding?: "customer" | "managed";
+  policy?: AIConnectionPolicyView;
   id: string;
   scope: "personal" | "workspace";
   user_id: string | null;
@@ -39,7 +57,12 @@ export const aiConnectionService = {
     }>(path(workspace, "/")),
   create: (
     workspace: string,
-    request: { name: string; provider: string; api_key?: string; scope?: "personal" | "workspace" },
+    request: {
+      name: string;
+      provider: string;
+      api_key?: string;
+      scope?: "personal" | "workspace";
+    },
   ) => api.post<AIConnectionLogin>(path(workspace, "/"), request),
   poll: (workspace: string, id: string) =>
     api.post<AIConnectionLogin>(

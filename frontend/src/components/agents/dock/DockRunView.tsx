@@ -1,3 +1,4 @@
+import { AIExecutionDetails } from "../AIExecutionDetails";
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -202,6 +203,7 @@ export function DockRunView({
           {loading && !streamState ? (
             <div className="grid min-h-28 place-items-center text-[#8a8781]"><Loading01Icon className="h-4 w-4 animate-spin" /></div>
           ) : null}
+          <AIExecutionDetails input={run.input} />
           <DockTranscript
             stream={streamState}
             active={transcriptStreaming}

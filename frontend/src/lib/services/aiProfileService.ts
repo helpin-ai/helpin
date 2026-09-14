@@ -1,3 +1,4 @@
+import type { AIConnectionPolicyView } from "./aiConnectionService";
 import { api } from "@/lib/api";
 
 export interface AIModelControls {
@@ -12,6 +13,8 @@ export interface AIProfileRoute {
 }
 
 export interface AIProfile {
+  primary_policy?: AIConnectionPolicyView;
+  fallback_policy?: AIConnectionPolicyView;
   id: string;
   workspace_id: string;
   user_id: string | null;

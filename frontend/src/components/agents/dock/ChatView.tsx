@@ -1,3 +1,4 @@
+import { AIExecutionDetails } from "../AIExecutionDetails";
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -956,6 +957,7 @@ export function ChatView({
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}
+      {run && <AIExecutionDetails input={run.input} />}
       {run?.status === 'paused' && run.pause_reason === 'authentication' && typeof run.input?.model_connection_id === 'string' && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} /></div>}
       {!run && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} value={aiConnection} onChange={setAIConnection} disabled={sending} /></div>}
       {composer.visible && (

@@ -248,3 +248,15 @@ It distinguishes explicit zero from an unset rate; disabling affects new
 admissions and preserves the tariff reference. In-memory transaction tests cover
 preview rollback, idempotency, changed-version rejection, new versions, disable,
 and missing workspaces. No live workspace flag or tariff was changed.
+
+### Prospective policy and accepted-run display checkpoint
+
+Connection/profile lists now project edition permission and prospective funding
+without persisting display metadata. Policy-store failures remain errors; an
+intentional BYOK restriction disables the primary selection even when its
+fallback is allowed. Settings and pickers disclose each route's policy. Run
+details display the actual route and immutable admission fee, and agent summaries
+use profile names instead of legacy size labels. Community has no financial copy.
+Focused backend policy/connection tests and UI regressions passed. The EE web type
+check caught a run/session union mismatch in Dock details; corrected it to read
+the accepted run input and the type check passed. No live configuration changed.

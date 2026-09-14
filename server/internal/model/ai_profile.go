@@ -15,17 +15,19 @@ type AIProfileRoute struct {
 
 // AIProfile is a workspace-scoped personal or shared model selection.
 type AIProfile struct {
-	ID          string          `json:"id" gorm:"type:uuid;primaryKey"`
-	WorkspaceID string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	UserID      *string         `json:"user_id" gorm:"type:uuid;index"`
-	Scope       string          `json:"scope" gorm:"not null"`
-	Name        string          `json:"name" gorm:"not null"`
-	Revision    int64           `json:"revision" gorm:"not null"`
-	Primary     AIProfileRoute  `json:"primary" gorm:"serializer:json;type:jsonb;not null"`
-	Fallback    *AIProfileRoute `json:"fallback" gorm:"serializer:json;type:jsonb"`
-	DeletedAt   *time.Time      `json:"-"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	PrimaryPolicy  *AIConnectionPolicyView `json:"primary_policy,omitempty" gorm:"-"`
+	FallbackPolicy *AIConnectionPolicyView `json:"fallback_policy,omitempty" gorm:"-"`
+	ID             string                  `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID    string                  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	UserID         *string                 `json:"user_id" gorm:"type:uuid;index"`
+	Scope          string                  `json:"scope" gorm:"not null"`
+	Name           string                  `json:"name" gorm:"not null"`
+	Revision       int64                   `json:"revision" gorm:"not null"`
+	Primary        AIProfileRoute          `json:"primary" gorm:"serializer:json;type:jsonb;not null"`
+	Fallback       *AIProfileRoute         `json:"fallback" gorm:"serializer:json;type:jsonb"`
+	DeletedAt      *time.Time              `json:"-"`
+	CreatedAt      time.Time               `json:"created_at"`
+	UpdatedAt      time.Time               `json:"updated_at"`
 }
 
 func (AIProfile) TableName() string { return "ai_profiles" }

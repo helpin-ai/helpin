@@ -1,3 +1,4 @@
+import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import { useId, useState } from "react";
 import type { AIConnection } from "@/lib/services/aiConnectionService";
 import {
@@ -197,6 +198,7 @@ function ProfileRouteFields({
   disabled: boolean;
 }) {
   const id = useId();
+  const connection = connections.find((c) => c.id === route.connection_id);
   const supportsReasoning = ["openai", "openai_chatgpt", "openrouter"].includes(
     route.model.provider,
   );
@@ -238,6 +240,7 @@ function ProfileRouteFields({
         </Select>
       </div>
       <div>
+        <AIConnectionPolicyNotice policy={connection?.policy} />
         <Label htmlFor={`${id}-model`}>Model identifier</Label>
         <QuietUnderlineInput
           id={`${id}-model`}
