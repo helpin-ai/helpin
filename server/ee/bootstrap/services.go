@@ -39,10 +39,6 @@ func New(opts Options) (*edition.Services, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load AI pricing: %w", err)
 	}
-	profiles, err := service.NewAIProfileBootstrapService(repository.NewAIProfileBootstrapRepository(opts.DB), opts.Config.AIConnectionEncryptionKey)
-	if err != nil {
-		return nil, fmt.Errorf("configure managed AI profiles: %w", err)
-	}
 	billingRepo := eerepository.NewBillingRepository(opts.DB)
 	usageRepo := eerepository.NewAIUsageRepository(opts.DB)
 	gateway := billingstripe.New(opts.Config.StripeSecretKey)
@@ -63,10 +59,15 @@ func New(opts Options) (*edition.Services, error) {
 			credentials[provider] = key
 		}
 	}
+	profiles, err := service.NewAIStandardProfiles(repository.NewAIStandardProfileRepository(opts.DB), opts.Config.AIConnectionEncryptionKey, "managed", credentials)
+	if err != nil {
+		return nil, fmt.Errorf("configure managed AI profiles: %w", err)
+	}
 	result := &edition.Services{
+		InitializeAIProfiles:       profiles.EnsureAll,
 		Usage:                      eeservice.NewAIUsageService(catalog, usageRepo, nil),
 		Entitlements:               eeservice.NewEntitlementService(billing),
-		WorkspaceLifecycle:         &workspaceLifecycle{billing: billing, profiles: profiles, credentials: credentials},
+		WorkspaceLifecycle:         &workspaceLifecycle{billing: billing, profiles: profiles},
 		Seats:                      billing,
 		BillingInsights:            eeservice.NewCustomerIOBillingReader(billingRepo, opts.Workspace),
 		BillingMetadata:            billingRepo,

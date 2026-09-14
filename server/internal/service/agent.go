@@ -1337,6 +1337,9 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	}
 
 	agent := newBuiltInAgentRecord(workspaceID, presetKey, presetVersionKey, preset)
+	if err := s.assignInitialStandardProfile(ctx, agent, presetDefaultAITier(presetKey)); err != nil {
+		return nil, err
+	}
 	if err := s.validateSharedAIProfile(ctx, agent.WorkspaceID, agent.AIProfileID); err != nil {
 		return nil, err
 	}
@@ -2426,8 +2429,16 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	if string(version.ExecutionConfig) == "{}" {
 		version.ExecutionConfig = normalizeExecutionConfigJSON(basePreset.ExecutionConfig)
 	}
-	if strings.TrimSpace(version.ModelTier) == "" {
-		version.ModelTier = deriveAgentModelTier(version.Provider, version.Model, version.ExecutionConfig)
+	// Copies start from the family's default size, independent of the source's model override.
+	version.ModelTier = presetDefaultAITier(familyKey)
+	standard, err := standardModelForTier(version.ModelTier)
+	if err != nil {
+		return nil, err
+	}
+	version.Provider, version.Model = &standard.Provider, &standard.Model
+	version.ExecutionConfig, err = executionConfigWithModelControls(version.ExecutionConfig, standard.Controls)
+	if err != nil {
+		return nil, err
 	}
 	versionValidationAgent := &model.Agent{
 		IsSystem:         true,
@@ -3424,6 +3435,9 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	if sourceTemplate != nil {
 		agent.SourceTemplateID = &sourceTemplate.ID
 		agent.SourceTemplateKey = strings.TrimSpace(sourceTemplate.Key)
+	}
+	if err := s.assignInitialStandardProfile(ctx, agent, "small"); err != nil {
+		return nil, err
 	}
 	normalizeAgentRecord(agent)
 	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {

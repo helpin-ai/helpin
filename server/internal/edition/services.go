@@ -17,6 +17,7 @@ type BillingMetadata interface {
 }
 
 type Services struct {
+	InitializeAIProfiles       func(context.Context) error
 	Usage                      service.AIUsageLifecycle
 	Entitlements               service.EntitlementPolicy
 	WorkspaceLifecycle         service.WorkspaceLifecyclePolicy

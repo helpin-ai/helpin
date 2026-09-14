@@ -1457,11 +1457,11 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	if version.VersionKey == "" || version.VersionKey == defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder) {
 		t.Fatalf("expected a new custom version key, got %q", version.VersionKey)
 	}
-	if version.Model == nil || *version.Model != "gpt-5-mini" {
-		t.Fatalf("expected persisted model override, got %+v", version.Model)
+	if version.Model == nil || *version.Model != "openai/gpt-5.6-terra" || version.ModelTier != "large" {
+		t.Fatalf("expected copied preset to reset to Large, got %+v", version)
 	}
-	if strings.TrimSpace(string(version.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
-		t.Fatalf("expected persisted execution config override, got %s", version.ExecutionConfig)
+	if strings.TrimSpace(string(version.ExecutionConfig)) != `{}` {
+		t.Fatalf("expected default model controls on a preset copy, got %s", version.ExecutionConfig)
 	}
 	if version.RuntimeKind != "native_sdk" {
 		t.Fatalf("expected persisted runtime override, got %q", version.RuntimeKind)
@@ -1480,7 +1480,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 	}
 }
 
-func TestCreateWorkspacePresetVersion_PreservesExplicitBlankModel(t *testing.T) {
+func TestCreateWorkspacePresetVersion_BlankModelUsesFamilyDefault(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
 	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
@@ -1507,10 +1507,10 @@ func TestCreateWorkspacePresetVersion_PreservesExplicitBlankModel(t *testing.T) 
 		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
 	}
 	if version.Model == nil {
-		t.Fatal("expected explicit blank model to be preserved")
+		t.Fatal("expected the family default model")
 	}
-	if *version.Model != "" {
-		t.Fatalf("expected explicit blank model, got %q", *version.Model)
+	if *version.Model != "openai/gpt-5.6-terra" || version.ModelTier != "large" {
+		t.Fatalf("expected Large default, got %+v", version)
 	}
 
 	presets := svc.ListAgentPresets(context.Background(), "ws-test")
@@ -1518,8 +1518,8 @@ func TestCreateWorkspacePresetVersion_PreservesExplicitBlankModel(t *testing.T) 
 		if preset.VersionKey != version.VersionKey {
 			continue
 		}
-		if preset.Model == nil || *preset.Model != "" {
-			t.Fatalf("expected listed workspace preset to keep blank model, got %+v", preset.Model)
+		if preset.Model == nil || *preset.Model != "openai/gpt-5.6-terra" {
+			t.Fatalf("expected listed workspace preset to use family default, got %+v", preset.Model)
 		}
 		return
 	}
@@ -1885,6 +1885,7 @@ func TestUpdateWorkspacePresetVersion_PropagatesToPinnedSystemAgent(t *testing.T
 	updatedPrompt := "Workspace forge v2"
 	blankModel := ""
 	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
+		Provider:              agentTestStringPtr(model.AgentModelProviderOpenAI),
 		Model:                 &blankModel,
 		SystemPrompt:          &updatedPrompt,
 		ExecutionConfig:       json.RawMessage(`{"reasoning_effort":"high","service_tier":"fast"}`),
@@ -1953,7 +1954,8 @@ func TestUpdateWorkspacePresetVersion_RejectsInvalidRouting(t *testing.T) {
 
 	invalidProvider := model.AgentModelProviderAnthropic
 	if _, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
-		Provider: &invalidProvider,
+		Provider:        &invalidProvider,
+		ExecutionConfig: json.RawMessage(`{"reasoning_effort":"high"}`),
 	}, "user-2"); err == nil {
 		t.Fatal("expected invalid routing error")
 	}
@@ -1965,8 +1967,8 @@ func TestUpdateWorkspacePresetVersion_RejectsInvalidRouting(t *testing.T) {
 	if stored == nil {
 		t.Fatal("expected stored workspace preset version")
 	}
-	if stored.Provider == nil || *stored.Provider != model.AgentModelProviderOpenAI {
-		t.Fatalf("expected provider to remain openai after failed update, got %+v", stored.Provider)
+	if stored.Provider == nil || *stored.Provider != model.AgentModelProviderOpenRouter {
+		t.Fatalf("expected provider to remain openrouter after failed update, got %+v", stored.Provider)
 	}
 }
 

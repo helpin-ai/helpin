@@ -11,19 +11,16 @@ import (
 )
 
 type workspaceLifecycle struct {
-	billing     *eeservice.BillingService
-	profiles    *service.AIProfileBootstrapService
-	credentials map[string]string
+	billing  *eeservice.BillingService
+	profiles *service.AIStandardProfiles
 }
 
 func (p *workspaceLifecycle) WorkspaceCreated(ctx context.Context, workspace string) error {
 	if err := p.billing.WorkspaceCreated(ctx, workspace); err != nil {
 		return err
 	}
-	// Defaults have already been seeded. Both the imported managed credentials and
-	// the agent/profile defaults are initialized transactionally by the bootstrap.
-	_, err := p.profiles.Apply(ctx, service.AIProfileBootstrapOptions{WorkspaceID: workspace, Funding: "managed", Credentials: p.credentials})
-	if err != nil {
+	// Provision the shared defaults without changing saved agent selections.
+	if err := p.profiles.EnsureWorkspace(ctx, workspace); err != nil {
 		return fmt.Errorf("initialize managed AI profiles: %w", err)
 	}
 	return nil

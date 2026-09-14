@@ -719,6 +719,11 @@ func main() {
 	if err != nil {
 		fatalWithSentry("configure edition", err)
 	}
+	if editionServices.InitializeAIProfiles != nil {
+		if err := editionServices.InitializeAIProfiles(context.Background()); err != nil {
+			fatalWithSentry("failed to initialize standard AI profiles", err)
+		}
+	}
 	aiUsageService := editionServices.Usage
 	customerIOIdentityService := service.NewCustomerIOIdentityService(
 		service.NewCustomerIOTrackClient(service.CustomerIOTrackConfig{

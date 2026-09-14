@@ -36,5 +36,5 @@ for item in set(paths):
 PY
 cd "$community_check_dir/server"
 test ! -e ee
-go build -buildvcs=false ./cmd/api ./cmd/temporal-worker ./cmd/migrate ./cmd/ai-bootstrap
+go build -buildvcs=false ./cmd/api ./cmd/temporal-worker ./cmd/migrate
 go test -buildvcs=false ./internal/... ./cmd/...

@@ -3,7 +3,7 @@
 This document describes the profile contract being implemented in the
 [September 14 rollout plan](plans/2026-09-14-ai-profiles-and-ee-billing-plan.md).
 It supersedes the September 12 manual-only, full-rate personal-connection contract.
-Edition construction is implemented. Deployment remains gated on migration/bootstrap, canaries,
+Edition construction is implemented. Deployment remains gated on migration/provisioning, canaries,
 and live refresh/revocation validation. Do not restart an older installation into
 profile-based wiring before completing that coordinated rollout.
 
@@ -33,7 +33,7 @@ paid tools are charged separately. A zero rate is valid; an unset rate is not.
 SaaS BYOK defaults off per workspace. The historical percentage and full-equivalent
 modes remain readable for older records but do not define new profile pricing.
 
-## Configuration and bootstrap
+## Configuration and provisioning
 
 - Apply core migrations through `cmd/migrate`. An EE build adds its migration
   source with `go run -tags ee ./cmd/migrate up`; historical SQL remains in the
@@ -49,42 +49,30 @@ modes remain readable for older records but do not define new profile pricing.
   `AGENT_RUNTIME_CHATGPT_ENABLED`. Enable them only in validated deployments.
   `CHATGPT_OAUTH_CLIENT_ID` optionally overrides the SDK's public client ID.
 
-The operator bootstrap imports only explicitly named API-key environment
-variables. From `server/`, preview a community migration with:
+Normal migrations and application startup provision the standard profiles. There
+is no separate `ai-bootstrap` command. Migration `202609140011` creates Small,
+Medium, Large and Flagship, resets existing system agents and preset copies to
+their family's size, and resets other custom agents to Small. It applies the same
+reset to saved agent and workspace preset versions, preserves non-model execution
+settings, and never changes accepted run inputs or checkpoints. This is an explicit
+one-time reset of legacy model choices, not a lossless migration.
 
-```sh
-go run ./cmd/ai-bootstrap -env-file /absolute/path/to/helpin/server/.env -workspace WORKSPACE_UUID \
-  -credential openai=OPENAI_API_KEY -credential openrouter=OPENROUTER_API_KEY
-```
+API and worker startup provision standard profiles for existing workspaces; new
+workspaces are provisioned automatically. EE fills untouched standard connection
+placeholders using Helpin's provider configuration and updates connected managed
+keys when deployment keys rotate. Existing customer credentials and disconnected
+connections are preserved. Community uses customer-funded connections and permits
+unconfigured placeholders. No credential values belong in SQL migrations.
 
-Omit mappings for keys that are not configured. Add `-apply` after reviewing the
-JSON report. For SaaS-managed imports use `go run -tags ee ./cmd/ai-bootstrap`
-with `-funding managed`. A changed existing key additionally requires
-`-rotate-credentials`; this supports managed-key rotation without exposing those
-connections to workspace credential editing.
+Normal provisioning does not assign agents, restore cleared defaults, or overwrite
+edited profiles. New custom agents start on Small unless an explicit profile is
+selected. Preset copies start on the family's default size; later edits remain
+supported. Profiles created deliberately by users remain separate from the four
+standard profiles. Legacy generated duplicates can be cleaned up once after the
+reset; that cleanup is not part of startup.
 
-Preview writes roll back. Apply runs in one workspace transaction. Repeating it
-preserves edited profiles, cleared defaults, and current credentials. Missing
-keys create visibly unconfigured routes. The established tier routes remain
-unchanged; configure a usable workspace default if the Small route is unavailable.
-Each migrated agent with an explicit model preserves its provider, model,
-reasoning, routing controls, and independent execution configuration. Agents
-without a model use their configured size, or the Small route when no size is
-configured. The report counts these Small defaults as `agents_defaulted_to_small`.
-Agents reuse an equivalent active shared profile, preferring the four standard
-size profiles. Distinct custom routes get reusable profiles named for their model
-and controls, never for an agent. Equivalence includes the connection, model,
-endpoint and controls; a profile with a fallback is not a single-route match.
-Migration `202609140010` adds a workspace bootstrap completion marker. After the
-first successful apply, reruns can import or rotate credentials but do not
-reassign agents, including agents reset to workspace inheritance. Explicit models
-still require a provider; unknown sizes and invalid controls fail the preview. Historical
-versions, reviewed CRM setups, completed runs, and active run identities are not
-rewritten. Older CRM setups need review/publication to acquire an explicit profile.
-
-The report lists nonterminal runs still using runtime defaults. Finish or
-explicitly cancel them before enabling Helpin's trusted runtime app policy
-`require_run_model_credentials`. The runtime enforces this policy at engine
+Finish or cancel legacy runs using Runtime defaults before enabling Helpin's trusted
+runtime app policy `require_run_model_credentials`. The runtime enforces this policy at engine
 admission, before queueing. Other apps and standalone runtime installations keep
 their existing environment keys and defaults. Provider readiness remains a startup
 snapshot: restart after changing runtime provider-key configuration.
@@ -116,7 +104,7 @@ adapter validation are implemented; deployed Helpin canaries remain pending.
 
 Community is the default Go build (`go run ./cmd/api` and `go run ./cmd/temporal-worker`). It records usage with no financial policy, price catalog, subscription gate, or billing jobs. Missing deployment provider keys do not prevent startup; a feature still needs a configured provider when invoked.
 
-SaaS uses `go run -tags ee ./cmd/api` and `go run -tags ee ./cmd/temporal-worker`, plus `go run -tags ee ./cmd/migrate up` for registered EE migrations. Its API and every worker require `AI_CONNECTION_ENCRYPTION_KEY`, even when personal ChatGPT is disabled. Existing workspaces must run the managed profile bootstrap before cutover. Newly created SaaS workspaces receive managed connections/profiles from the explicitly configured Helpin provider keys after their agent defaults are seeded. Missing providers remain unconfigured.
+SaaS uses `go run -tags ee ./cmd/api` and `go run -tags ee ./cmd/temporal-worker`, plus `go run -tags ee ./cmd/migrate up` for registered EE migrations. Its API and every worker require `AI_CONNECTION_ENCRYPTION_KEY`, even when personal ChatGPT is disabled. Existing and new workspaces receive standard profiles automatically; the normal migration performs the one-time agent reset. Missing provider keys leave connections visibly unconfigured.
 
 Container builds default to community too. SaaS builds pass `--build-arg GO_BUILD_TAGS=ee`; the staging and production workflows declare that choice explicitly. Both binaries must use the same edition. No live migration or service restart command was run as part of this change.
 
