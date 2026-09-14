@@ -1,3 +1,4 @@
+import { billingEnabled } from '@edition/config';
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -98,7 +99,7 @@ vi.mock('@/components/ui/icon-picker', () => ({
   StoredIcon: () => null,
 }))
 
-vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
+vi.mock('@edition', () => ({
   UpgradeRequiredDialog: ({
     open,
     onUpgrade,
@@ -205,7 +206,7 @@ describe('CreateDocumentDialog', () => {
     })
   })
 
-  it('closes the document dialog before routing to upgrade billing', async () => {
+  it.skipIf(!billingEnabled)('closes the document dialog before routing to upgrade billing', async () => {
     const onOpenChange = vi.fn()
     testState.mutateAsync.mockRejectedValueOnce(new Error('Starter includes up to 500 documents'))
 

@@ -60,7 +60,7 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
 import type { SupportAIRewriteOperation, SupportAttachmentPayload, SupportCannedResponse, SupportReplyDeliveryMode } from '@/lib/pmTypes';

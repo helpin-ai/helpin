@@ -61,7 +61,7 @@ vi.mock('@/lib/services/agentService', () => ({
   },
 }))
 
-vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
+vi.mock('@edition', () => ({
   UpgradeRequiredDialog: () => null,
 }))
 

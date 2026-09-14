@@ -28,7 +28,7 @@ import {
   SecurityCheckIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { AutomationShell } from '@/components/automation/AutomationShell';
 import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { QuietEmptyState, QuietIconAction, QuietPrimaryAction } from '@/components/design-system/quiet';
@@ -55,7 +55,7 @@ import { CRM_AGENT_TARGET_OPTIONS } from '@/lib/agentCRMTargets';
 import { agentModelTierLabel } from '@/lib/agentModelTier';
 import { AIProfilePicker } from '@/components/agents/AIProfilePicker';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 import type {
   Agent,

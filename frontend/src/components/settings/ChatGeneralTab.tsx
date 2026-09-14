@@ -1,3 +1,4 @@
+import { brandingDescription } from '@edition';
 import { AIFollowUpSettings } from './chat-widget/AIFollowUpSettings';
 import { useEffect, useRef, useState } from 'react';
 import { useSettingsAutosave } from '@/hooks/useSettingsAutosave';
@@ -17,7 +18,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { formatReplyTimeCopy, SPECIAL_NOTICE_MAX_LENGTH } from '@helpin-ai/shared';
 import { toast } from 'sonner';
 import { Copy01Icon, CodeIcon, Message01Icon, HelpCircleIcon, Image01Icon, Key01Icon, BotIcon, ArrowDown01Icon, StarIcon, Alert01Icon } from '@/lib/icons';
-import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces, useWorkspaceBilling } from '@/hooks/queries';
+import { useChatSettings, useUpdateChatSettings, useRegenerateWidgetKey, useDocsSpaces } from '@/hooks/queries';
+import { useWorkspaceBilling } from '@edition';
 import { useSupportAgents, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { WidgetPreview } from './WidgetPreview';
@@ -1414,11 +1416,7 @@ function Dashboard() {
                 <div>
                   <Label className="text-sm font-medium">Show "Powered by Helpin"</Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {canRemoveBranding
-                      ? 'Display branding in the widget footer.'
-                      : billing?.plan === 'founder'
-                        ? 'Workspaces on the Founder plan keep Helpin branding visible.'
-                        : 'Upgrade to the Growth plan to hide Helpin branding.'}
+                    {brandingDescription(billing)}
                   </p>
                 </div>
                 <Switch

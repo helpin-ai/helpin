@@ -3,13 +3,13 @@ import { formatDistanceToNow } from 'date-fns';
 import { AiMagicIcon, ArrowRight01Icon, Cancel01Icon, Loading01Icon } from '@/lib/icons';
 import { ArrowReloadHorizontalIcon } from '@/lib/pmIcons';
 import { Button } from '@/components/ui/button';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import {
   useDismissTaskStandingBriefSuggestion,
   useRefreshTaskStandingBrief,
   useTaskStandingBrief,
 } from '@/hooks/queries';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import type { TaskStandingBriefSuggestion } from '@/lib/pmTypes';
 
 interface TaskStandingBriefCardProps {

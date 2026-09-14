@@ -27,7 +27,7 @@ import {
 } from '@/lib/knowledgeSourceWebsiteForm';
 import type { AgentKnowledgeSourceRequest } from '@/lib/pmTypes';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -42,7 +42,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 

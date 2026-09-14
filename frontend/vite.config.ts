@@ -7,6 +7,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const editionPath = env.VITE_EDITION === 'ee' ? './src/ee/edition' : './src/edition/community'
   const hmrHost = env.VITE_HMR_HOST?.trim()
   const hmrClientPort = Number(env.VITE_HMR_CLIENT_PORT) || undefined
 
@@ -41,6 +42,7 @@ export default defineConfig(({ mode }) => {
   resolve: {
     dedupe: ['react', 'react-dom', '@tanstack/react-query', 'zustand'],
     alias: {
+      "@edition": path.resolve(__dirname, editionPath),
       "@": path.resolve(__dirname, "./src"),
       // The published package declares lib/index.js as its main entry but only
       // ships the ESM build. Resolve that shipped entry explicitly for Vite.
@@ -61,6 +63,7 @@ export default defineConfig(({ mode }) => {
       '**/.idea/**',
       '**/.git/**',
       '**/.cache/**',
+      ...(env.VITE_EDITION === 'ee' ? [] : ['**/src/ee/**']),
     ],
   },
 }})

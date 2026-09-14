@@ -768,7 +768,7 @@ export function CustomAgentCreatePanel({
             >
               <span>
                 <span className="block text-sm font-semibold">Advanced settings</span>
-                <span className="mt-1 block text-xs text-muted-foreground">Model size and task limits.</span>
+                <span className="mt-1 block text-xs text-muted-foreground">AI profile and task limits.</span>
               </span>
               <span className="text-xs text-muted-foreground">{advancedOpen ? 'Hide' : 'Show'}</span>
             </button>

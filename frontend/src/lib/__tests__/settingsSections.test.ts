@@ -1,3 +1,4 @@
+import { billingEnabled } from '@edition/config';
 import { describe, expect, it } from 'vitest';
 import { getSettingsSidebarGroups, SETTINGS_ROUTE_SECTIONS } from '../settingsSections';
 
@@ -8,11 +9,16 @@ function visibleSectionIDs(canManageSettings: boolean) {
 }
 
 describe('getSettingsSidebarGroups', () => {
-  it('shows billing even when workspace settings management is unavailable', () => {
+  it.skipIf(billingEnabled)('omits billing in community workspaces', () => {
+    expect(SETTINGS_ROUTE_SECTIONS.map(section => section.id)).not.toContain('billing');
+    expect(visibleSectionIDs(true)).not.toContain('billing');
+    expect(visibleSectionIDs(false)).not.toContain('billing');
+  });
+  it.skipIf(!billingEnabled)('shows billing even when workspace settings management is unavailable', () => {
     expect(visibleSectionIDs(false)).toContain('billing');
   });
 
-  it('keeps billing in the workspace settings group', () => {
+  it.skipIf(!billingEnabled)('keeps billing in the workspace settings group', () => {
     const workspaceGroup = getSettingsSidebarGroups(false).find((group) => group.label === 'Workspace');
 
     expect(workspaceGroup?.sections.map((section) => section.id)).toContain('billing');

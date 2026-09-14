@@ -1,3 +1,4 @@
+import { billingEnabled } from '@edition/config';
 import type { FC, CSSProperties } from 'react';
 import type { Permission } from '@/lib/types';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -109,7 +110,7 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
   sidebar?: boolean;
 };
 
-export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
+const allSettingsSections: SettingsSectionMeta[] = [
  { id: 'ai-connections', label: 'AI connections', description: 'Your AI connections and profiles for this workspace.', icon: Automations, group: 'Personal' },
  { id: 'ai', label: 'AI', description: 'Shared connections, profiles, and the workspace default.', icon: Automations, group: 'Workspace' },
   {
@@ -327,6 +328,8 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'Data',
   },
 ];
+
+export const SETTINGS_ROUTE_SECTIONS = allSettingsSections.filter((section) => billingEnabled || section.id !== 'billing');
 
 export const SETTINGS_SECTIONS = SETTINGS_ROUTE_SECTIONS.filter(
   (section): section is SettingsSectionMeta<SettingsSection> =>

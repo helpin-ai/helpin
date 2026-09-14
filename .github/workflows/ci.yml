@@ -78,7 +78,7 @@ jobs:
           if echo "$CHANGED" | grep -qE '^server/|^scripts/check-(task-canonical|community-backend)\.sh$|^\.github/workflows/ci\.yml$'; then
             SERVER=true
           fi
-          if echo "$CHANGED" | grep -qE '^frontend/|^packages/(shared|widget-core)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
+          if echo "$CHANGED" | grep -qE '^scripts/check-community-frontend\.sh$|^frontend/|^packages/(shared|widget-core)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
             FRONTEND=true
           fi
           if echo "$CHANGED" | grep -qE '^apps/admin/|^frontend/src/index\.css$|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
@@ -242,9 +242,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: arc-runners-helpin-ai
-    # Plan budget: ≤ 4 min build. Tsc -b alone can stretch to 3-4m on
-    # cold cache; allow headroom.
-    timeout-minutes: 10
+    # Compile both editions, including cold TypeScript caches.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -254,7 +253,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build frontend
-        run: pnpm --dir frontend run build
+        run: |
+          pnpm --dir frontend run build
+          pnpm --dir frontend run build:ee
 
   frontend-tests:
     name: Frontend Vitest
@@ -273,7 +274,26 @@ jobs:
       - name: Build widget-core (frontend imports compiled output)
         run: pnpm --filter @helpin-ai/widget-core build
       - name: Frontend Vitest
-        run: pnpm --dir frontend run test
+        run: pnpm --dir frontend run test:ee
+
+  community-frontend:
+    name: Community frontend without EE source
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build shared widget code
+        run: pnpm --filter @helpin-ai/widget-core build
+      - name: Build and test community distribution
+        run: bash scripts/check-community-frontend.sh
 
   # ------------------------ Packages ------------------------
   packages-tests:

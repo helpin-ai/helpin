@@ -14,7 +14,7 @@ func TestExportMatchesCommittedPublicPricing(t *testing.T) {
 	if err := run([]string{"export", "--format", "typescript"}, &output); err != nil {
 		t.Fatal(err)
 	}
-	want, err := os.ReadFile("../../../frontend/src/generated/aiPricing.ts")
+	want, err := os.ReadFile("../../../frontend/src/ee/generated/aiPricing.ts")
 	if err != nil {
 		t.Fatal(err)
 	}

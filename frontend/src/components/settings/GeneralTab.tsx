@@ -1,3 +1,4 @@
+import { billingEnabled } from '@edition/config';
 import { SettingsSaveBar } from './SettingsSaveBar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -493,7 +494,7 @@ export function GeneralTab({ workspaceId, editable }: {
               This will permanently delete <span className="font-semibold text-foreground">{workspace?.name}</span> and all of its data including tasks, epics, sprints, comments, attachments, and settings. This action cannot be undone.
             </p>
             <p className="text-sm text-muted-foreground">
-              If this workspace has an active subscription, deleting it will cancel the subscription immediately. Past invoices and payment records remain available in billing records.
+              {billingEnabled ? 'If this workspace has an active subscription, deleting it will cancel the subscription immediately. Past invoices and payment records remain available in billing records.' : 'Deleting this workspace removes its members, settings, and data.'}
             </p>
             <div className="space-y-2">
               <Label htmlFor="delete-confirm">

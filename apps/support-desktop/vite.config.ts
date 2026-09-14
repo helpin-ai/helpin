@@ -13,6 +13,8 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom', '@tanstack/react-query', 'zustand'],
     alias: [
+      { find: '@/components/agents/AISettingsLink', replacement: path.resolve(__dirname, './src/shims/AISettingsLink.tsx') },
+      { find: '@edition', replacement: path.resolve(frontendSrc, process.env.VITE_EDITION === 'ee' ? 'ee/edition' : 'edition/community') },
       {
         find: '@/components/pm/task-detail/taskRouteNavigation',
         replacement: path.resolve(__dirname, './src/shims/taskRouteNavigation.ts'),

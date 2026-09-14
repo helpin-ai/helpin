@@ -7,7 +7,7 @@ import { BotIcon, GitBranchIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import { AgentAvatar, resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { CodingCapacityNotice } from '@/components/agents/CodingCapacityNotice';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
@@ -28,7 +28,7 @@ import { gitService } from '@/lib/services/gitService';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import type { AgentRunDeliveryMode, Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from './agentRunConstants';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { queryKeys } from '@/lib/queryKeys';
 

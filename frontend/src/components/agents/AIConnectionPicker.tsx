@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { AISettingsLink } from "@/components/agents/AISettingsLink";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { AIConnectionSelection } from "@/lib/services/aiConnectionService";
 import { AIProfilePicker } from "./AIProfilePicker";
@@ -26,13 +26,12 @@ export function AIConnectionPicker({
           {value.model_name ? ` · ${value.model_name}` : ""}.
         </p>
         {workspace?.id === workspaceId && (
-          <Link
+          <AISettingsLink
             className="text-xs underline"
-            to="/w/$slug/settings/$section"
-            params={{ slug: workspace.slug, section: "ai-connections" }}
+            slug={workspace.slug}
           >
             Manage my AI connections
-          </Link>
+          </AISettingsLink>
         )}
       </div>
     );

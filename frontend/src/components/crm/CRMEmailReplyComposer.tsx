@@ -16,8 +16,8 @@ import { crmEmailService } from '@/lib/services/crmService';
 import { unwrap } from '@/lib/queryUtils';
 import { useCRMEmailAttachments } from '@/hooks/useCRMEmailAttachments';
 import { CRMEmailAttachmentStrip } from './CRMEmailAttachmentStrip';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { UpgradeRequiredDialog } from '@edition';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 
 export function CRMEmailReplyComposer({
   workspaceId,

@@ -20,7 +20,7 @@ import {
 } from '@/lib/meetingPresentation';
 import { MeetingProcessingState } from '@/components/crm/MeetingProcessingState';
 import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
   QuietDetailLayout,
@@ -53,7 +53,7 @@ import { useTeamWorkflow } from '@/hooks/queries/useWorkflows';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { resolveMeetingActionStateId } from '@/lib/meetingActionTaskTarget';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';

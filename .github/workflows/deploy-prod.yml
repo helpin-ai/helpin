@@ -249,8 +249,9 @@ jobs:
             --filter @helpin-ai/widget-embed... \
             --filter @helpin-ai/react... \
             --filter @helpin-ai/nextjs... \
-            --filter frontend... \
+            --filter frontend^... \
             build
+          pnpm --dir frontend run build:ee
 
       - name: Link Netlify site
         working-directory: build-prod-netlify

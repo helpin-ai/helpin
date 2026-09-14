@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { AISettingsLink } from "@/components/agents/AISettingsLink";
 import { aiProfileService } from "@/lib/services/aiProfileService";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { Label } from "@/components/ui/label";
@@ -92,16 +92,13 @@ export function AIProfilePicker({
         </p>
       )}
       {workspace?.id === workspaceId && (
-        <Link
+        <AISettingsLink
           className="text-xs underline text-quiet-text-secondary"
-          to="/w/$slug/settings/$section"
-          params={{
-            slug: workspace.slug,
-            section: sharedOnly ? "ai" : "ai-connections",
-          }}
+          slug={workspace.slug}
+          shared={sharedOnly}
         >
           Manage AI profiles
-        </Link>
+        </AISettingsLink>
       )}
     </div>
   );

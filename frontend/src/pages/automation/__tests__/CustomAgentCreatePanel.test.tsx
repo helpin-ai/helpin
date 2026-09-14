@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import React, { act } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CustomAgentCreatePanel } from '../CustomAgentCreatePanel';
@@ -22,12 +23,14 @@ Element.prototype.scrollIntoView = vi.fn();
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
+let queryClient: QueryClient;
 
 afterEach(() => {
   act(() => {
     root?.unmount();
   });
   root = null;
+  queryClient?.clear();
   container?.remove();
   container = null;
 });
@@ -38,10 +41,16 @@ function renderPanel(overrides: Partial<{
   onCreate: () => void;
   mode: 'create' | 'edit';
   canSave: boolean;
+  advancedOpen: boolean;
 }> = {}) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  queryClient.setQueryData(['ai-profiles', 'ws-1'], [{
+    id: 'shared', workspace_id: 'ws-1', user_id: null, scope: 'workspace', name: 'Workspace model', revision: 1,
+    primary: { connection_id: 'connection', model: { provider: 'openai', model: 'custom-model', controls: {} } }, fallback: null,
+  }]);
   const props = {
     form: createDefaultCustomAgentForm(),
     workspaceId: 'ws-1',
@@ -86,7 +95,7 @@ function renderPanel(overrides: Partial<{
     ...overrides,
   };
   act(() => {
-    root?.render(<CustomAgentCreatePanel {...props} />);
+    root?.render(<QueryClientProvider client={queryClient}><CustomAgentCreatePanel {...props} /></QueryClientProvider>);
   });
   return props;
 }
@@ -181,7 +190,7 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).toContain('Agent name');
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       approval_mode: 'mutating_tools',
-      runtime_kind: 'codex',
+      runtime_kind: 'native_sdk',
       default_invocation_mode: 'interactive',
     }));
   });
@@ -232,7 +241,7 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).toContain('Can ask follow-up questions or request approval.');
   });
 
-  it('shows billing model sizes without runtime choices', () => {
+  it('offers workspace profiles while preserving run mode', () => {
     renderPanel({
       form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
       advancedOpen: true,
@@ -241,8 +250,8 @@ describe('CustomAgentCreatePanel', () => {
     click('Start blank');
     click('Advanced settings');
 
-    expect(container?.textContent).toContain('Model size');
-    expect(container?.textContent).toContain('Large');
+    expect(container?.textContent).toContain('AI profile');
+    expect(container?.textContent).toContain('Workspace default');
     expect(container?.textContent).toContain('Interactive');
     expect(container?.textContent).not.toContain('OpenCode');
     expect(container?.textContent).not.toContain('Codex');
@@ -252,20 +261,13 @@ describe('CustomAgentCreatePanel', () => {
     expect(document.body.textContent).toContain('Autonomous');
   });
 
-  it('shows the catalog model-size description without an exact model', () => {
-    renderPanel({
-      form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
-      advancedOpen: true,
-    });
-
-    click('Start blank');
+  it('shows the selected profile route and fallback policy', () => {
+    renderPanel({ mode: 'edit', advancedOpen: true, form: { ...createDefaultCustomAgentForm(), name: 'Planner', ai_profile_id: 'shared' } });
     click('Advanced settings');
-
-    expect(container?.textContent).toContain('Large');
-    expect(container?.textContent).toContain('Advanced models for planning, coding, review, and complex agent work');
-    expect(container?.textContent).not.toContain('GPT-5.6 Terra');
-    expect(container?.textContent).not.toContain('OpenAI');
-    expect(container?.textContent).toContain('Coming soon');
+    expect(container?.textContent).toContain('Workspace model');
+    expect(container?.textContent).toContain('openai');
+    expect(container?.textContent).toContain('custom-model');
+    expect(container?.textContent).toContain('No fallback');
   });
 
   it('does not reveal legacy runtime-specific limits', () => {

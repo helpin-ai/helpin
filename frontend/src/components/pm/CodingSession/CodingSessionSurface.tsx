@@ -9,7 +9,7 @@ import { CodingReviewHistoryPanel } from '@/components/pm/CodingSession/CodingRe
 import { CodingSessionHeader } from '@/components/pm/CodingSession/CodingSessionHeader';
 import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTranscriptPane';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
 import {
@@ -38,7 +38,7 @@ import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { Button } from '@/components/ui/button';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 
 const STATUS_ICON = {
   queued: <Clock01Icon className="h-3.5 w-3.5" />,
