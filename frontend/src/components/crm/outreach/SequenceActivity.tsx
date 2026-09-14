@@ -1,3 +1,5 @@
+import { MailboxCapacityPanel } from "./MailboxCapacity";
+import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { ChevronRightIcon } from "@/lib/pmIcons";
 import { ConfirmDialog } from "@/components/pm/ConfirmDialog";
 import { useWorkspaceAccess, usePermissions } from "@/hooks/queries/useSession";
@@ -72,6 +74,9 @@ export function SequenceActivity({
   const rows = query.data ?? [];
   return (
     <div className="min-w-0 space-y-4">
+      {!contactId && !dealId && (
+        <MailboxCapacityPanel workspaceId={workspaceId} />
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <QuietSearchInput
           containerClassName="min-w-0 flex-1"
@@ -154,7 +159,15 @@ export function SequenceActivity({
                             : "text-muted-foreground"
                       }
                     >
-                      {labels[row.status] ?? row.status}
+                      <QuickTooltip
+                        label={row.error || labels[row.status] || row.status}
+                      >
+                        <span tabIndex={row.error ? 0 : undefined}>
+                          {row.status === "active" && row.error
+                            ? "Queued"
+                            : (labels[row.status] ?? row.status)}
+                        </span>
+                      </QuickTooltip>
                     </span>
                   </td>
                   <td className="px-3 text-xs text-muted-foreground">
@@ -166,7 +179,7 @@ export function SequenceActivity({
                   </td>
                   <td className="whitespace-nowrap text-xs text-muted-foreground">
                     {row.status === "active" ? (
-                      format(new Date(row.next_at), "MMM d, h:mm a")
+                      `${row.error ? "Next check · " : ""}${format(new Date(row.next_at), "MMM d, h:mm a")}`
                     ) : row.status === "needs_review" ? (
                       <button
                         className="underline"

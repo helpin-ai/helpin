@@ -1,5 +1,7 @@
 import { api } from "@/lib/api";
 import type {
+  MailboxCapacity,
+  MailboxSendingPolicy,
   EmailTemplate,
   EmailSequence,
   SequenceEnrollment,
@@ -10,6 +12,12 @@ import type {
 const path = (ws: string, resource: string) =>
   `/crm/outreach/${resource}?workspace_id=${encodeURIComponent(ws)}`;
 export const crmOutreachService = {
+  mailboxCapacity: (ws: string) =>
+    api.get<MailboxCapacity[]>(path(ws, "mailbox-capacity"), {
+      signal: AbortSignal.timeout(15000),
+    }),
+  saveMailboxCapacity: (ws: string, id: string, data: MailboxSendingPolicy) =>
+    api.put<MailboxCapacity[]>(path(ws, `mailbox-capacity/${id}`), data),
   renderTemplate: (
     ws: string,
     id: string,

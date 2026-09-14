@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ func (a *outreachTestAuth) CanAccessModule(context.Context, *authorization.Actor
 }
 
 type outreachTestMail struct {
+	sendErr       error
 	sends, checks int
 	fail, found   bool
 }
@@ -38,6 +40,9 @@ func (m *outreachTestMail) ValidateActionSender(_ context.Context, ws, account, 
 }
 func (m *outreachTestMail) SendActionEmail(context.Context, string, string, string, model.CRMPlaybookEmailAction) (*model.CRMEmailMessage, error) {
 	m.sends++
+	if m.sendErr != nil {
+		return nil, m.sendErr
+	}
 	if m.fail {
 		return nil, errors.New("connection interrupted")
 	}
@@ -208,22 +213,21 @@ func TestCRMOutreachUnsubscribeStopsAllAndRejectsEnrollment(t *testing.T) {
 	}
 }
 func TestCRMOutreachMailboxRateLimit(t *testing.T) {
-	db, s, _ := outreachFixture(t)
-	seq := outreachSequence(t, s, "automatic")
-	row := outreachEnroll(t, s, seq)
-	existing := model.CRMSequenceDelivery{ID: uuid.NewString(), EnrollmentID: uuid.NewString(), WorkspaceID: "ws", AccountID: "mail", Kind: "email", CreatedAt: s.now()}
-	if err := db.Create(&existing).Error; err != nil {
-		t.Fatal(err)
-	}
-	claimed, err := s.repo.Claim(context.Background(), s.now())
+	_, s, _ := outreachFixture(t)
+	ctx := context.Background()
+	a, err := s.accounts.GetAccountByIDForWorkspace(ctx, "ws", "mail")
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := &model.CRMSequenceDelivery{ID: uuid.NewString(), EnrollmentID: row.ID, AccountID: "mail", Kind: "email"}
-	if _, err := s.repo.PrepareDelivery(context.Background(), claimed, d, s.now()); !errors.Is(err, repository.ErrOutreachRateLimit) {
+	if err = s.accounts.ReserveSend(ctx, a, model.CRMEmailSendReservation{ID: uuid.NewString(), Automated: true}, 0, s.now()); err != nil {
+		t.Fatal(err)
+	}
+	var limited *repository.SendCapacityError
+	if err = s.accounts.ReserveSend(ctx, a, model.CRMEmailSendReservation{ID: uuid.NewString(), Automated: true}, 0, s.now()); !errors.As(err, &limited) {
 		t.Fatalf("limit bypassed: %v", err)
 	}
 }
+
 func TestCRMOutreachStopsOnReplyAndRevokedAccess(t *testing.T) {
 	for _, scenario := range []string{"reply", "access", "bounce", "stale_sync"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -311,7 +315,8 @@ func TestCRMOutreachTaskWaitsWithoutDuplicateCreation(t *testing.T) {
 		t.Fatal("task completion failed", stored.Status)
 	}
 }
-func TestCRMOutreachAutomaticStageEnrollmentUsesPrimaryContactOnce(t *testing.T) {
+func outreachEntryFixture(t *testing.T) (*gorm.DB, *CRMOutreachService, *model.CRMEmailSequence) {
+	t.Helper()
 	db, s, _ := outreachFixture(t)
 	outreachTaskTables(t, db)
 	for _, sql := range []string{
@@ -333,6 +338,10 @@ func TestCRMOutreachAutomaticStageEnrollmentUsesPrimaryContactOnce(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return db, s, seq
+}
+func TestCRMOutreachAutomaticStageEnrollmentUsesPrimaryContactOnce(t *testing.T) {
+	db, s, seq := outreachEntryFixture(t)
 	mustExecCRMEmailLifecycle(t, db, `INSERT INTO pm_activity_log VALUES('old','ws','deal','deal','deal.stage_changed','updated','stage',?)`, s.now().Add(-time.Hour))
 	if err := s.processEntries(context.Background()); err != nil {
 		t.Fatal(err)
@@ -447,5 +456,124 @@ func TestCRMOutreachActivityPaginationAndWorkspaceFilter(t *testing.T) {
 	other, err := s.Enrollments(ctx, "other", "", "", "", model.CRMSequenceEnrollmentFilter{Search: "amna"})
 	if err != nil || len(other) != 0 {
 		t.Fatal("search leaked another workspace")
+	}
+}
+
+func TestCRMOutreachProviderCooldownRetriesOnlyKnownUnsent(t *testing.T) {
+	_, s, m := outreachFixture(t)
+	seq := outreachSequence(t, s, "automatic")
+	row := outreachEnroll(t, s, seq)
+	now := s.now()
+	m.sendErr = &repository.SendCapacityError{Reason: "provider_cooldown", RetryAt: now.Add(2 * time.Minute)}
+	if err := s.DispatchDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := s.repo.Enrollment(context.Background(), "ws", row.ID)
+	if stored.Status != "active" || !strings.Contains(stored.Error, "provider") {
+		t.Fatalf("not queued: %+v", stored)
+	}
+	m.sendErr = nil
+	s.now = func() time.Time { return now.Add(3 * time.Minute) }
+	if err := s.DispatchDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if m.sends != 2 || m.checks != 0 {
+		t.Fatalf("sends=%d reconciles=%d", m.sends, m.checks)
+	}
+}
+func TestCRMOutreachClaimPrioritizesFollowupsAndOtherMailboxes(t *testing.T) {
+	db, s, _ := outreachFixture(t)
+	seq := outreachSequence(t, s, "automatic")
+	first := outreachEnroll(t, s, seq)
+	// Establish the oldest mailbox without relying on random UUID ordering.
+	if err := db.Model(first).Update("next_at", s.now().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	follow := *first
+	follow.ID = uuid.NewString()
+	follow.UnsubscribeToken = uuid.NewString()
+	follow.Email = "follow@example.com"
+	follow.StepIndex = 1
+	follow.NextAt = s.now()
+	if err := db.Create(&follow).Error; err != nil {
+		t.Fatal(err)
+	}
+	other := *first
+	other.ID = uuid.NewString()
+	other.UnsubscribeToken = uuid.NewString()
+	other.Email = "other@example.com"
+	other.AccountID = "other-mailbox"
+	other.NextAt = s.now()
+	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := s.repo.Claim(context.Background(), s.now())
+	if err != nil || claimed.ID != follow.ID {
+		t.Fatalf("follow-up not prioritized: %v %+v", err, claimed)
+	}
+	claimed, err = s.repo.Claim(context.Background(), s.now(), "mail")
+	if err != nil || claimed.ID != other.ID {
+		t.Fatalf("other mailbox not serviced: %v %+v", err, claimed)
+	}
+}
+
+func TestCRMOutreachEntrySkipsIneligibleButRetriesDatabaseFailure(t *testing.T) {
+	for _, transient := range []bool{false, true} {
+		t.Run(fmt.Sprint("transient=", transient), func(t *testing.T) {
+			db, s, seq := outreachEntryFixture(t)
+			mustExecCRMEmailLifecycle(t, db, `INSERT INTO pm_activity_log VALUES('event','ws','deal','deal','deal.stage_changed','updated','stage',?)`, s.now().Add(time.Second))
+			if transient {
+				if err := db.Callback().Query().Before("gorm:query").Register("fail_contact", func(tx *gorm.DB) {
+					if tx.Statement.Table == "crm_contacts" {
+						tx.AddError(errors.New("temporary database outage"))
+					}
+				}); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				mustExecCRMEmailLifecycle(t, db, `UPDATE crm_contacts SET email = '' WHERE id = 'contact'`)
+			}
+			if err := s.processEntries(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := s.repo.Sequence(context.Background(), "ws", seq.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if transient {
+				if stored.EntryCursorID != "" {
+					t.Fatal("consumed transient failure")
+				}
+				if err := db.Callback().Query().Remove("fail_contact"); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.processEntries(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				rows, err := s.repo.Enrollments(context.Background(), "ws", seq.ID, "", "")
+				if err != nil || len(rows) != 1 {
+					t.Fatalf("retry lost recipient: %v %v", rows, err)
+				}
+			} else if stored.EntryCursorID != "event" {
+				t.Fatal("ineligible recipient blocks subsequent enrollment events")
+			}
+		})
+	}
+}
+
+func TestCRMOutreachMailboxCapacityOwnerIsolation(t *testing.T) {
+	db, s, _ := outreachFixture(t)
+	mustExecCRMEmailLifecycle(t, db, `UPDATE crm_email_accounts SET provider='gmail', is_active=true, status='connected' WHERE id='mail'`)
+	mustExecCRMEmailLifecycle(t, db, `INSERT INTO crm_email_accounts(id,workspace_id,member_id,email_address,provider,is_active,status) VALUES('other','ws','teammate','other@example.com','gmail',true,'connected')`)
+	rows, err := s.MailboxCapacities(context.Background(), "ws", "owner")
+	if err != nil || len(rows) != 1 || rows[0].AccountID != "mail" {
+		t.Fatalf("capacity leaked: %+v %v", rows, err)
+	}
+	policy := model.CRMMailboxSendingPolicy{DailyLimit: 50, ManualReserve: 5, MinIntervalSeconds: 60}
+	if err := s.SaveMailboxCapacity(context.Background(), "ws", "owner", "other", policy); err == nil {
+		t.Fatal("changed teammate policy")
+	}
+	if err := s.SaveMailboxCapacity(context.Background(), "other-workspace", "owner", "mail", policy); err == nil {
+		t.Fatal("changed cross-workspace policy")
 	}
 }

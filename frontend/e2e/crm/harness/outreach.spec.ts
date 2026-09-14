@@ -620,3 +620,46 @@ test("enrollment without an eligible mailbox shows a connection prompt instead o
   ).toHaveAttribute("href", "/w/email-test/settings/crm-email");
   await expect(page.getByText(/Saving authorizes this rule/)).not.toBeVisible();
 });
+
+for (const mode of ["light", "dark", "narrow"])
+test(`activity shows mailbox capacity and saves owner sending limits ${mode}`, async ({
+  page,
+}) => {
+  await setup(page);
+  let limit = 100;
+  await page.route("**/api/crm/outreach/mailbox-capacity**", async (route) => {
+    if (route.request().method() === "PUT")
+      limit = route.request().postDataJSON().daily_limit;
+    await route.fulfill({
+      json: [
+        {
+          account_id: "mailbox",
+          email: "waqar@contentstudio.io",
+          daily_limit: limit,
+          manual_reserve: 10,
+          min_interval_seconds: 60,
+          used: 60,
+          sent: 59,
+          remaining: limit - 60,
+          sequence_remaining: limit - 70,
+          queued: 45,
+        },
+      ],
+    });
+  });
+  if (mode === "narrow") await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/e2e/crm/harness/outreach.html${mode === "dark" ? "?dark" : ""}`);
+  await page.getByRole("button", { name: "activity", exact: true }).click();
+  await expect(page.getByText("45 queued", { exact: true })).toBeVisible();
+  await page.screenshot({ path: `/tmp/crm-capacity-${mode}.png`, fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page
+    .getByRole("button", { name: "Sending limits for waqar@contentstudio.io" })
+    .click();
+  await page.getByRole("spinbutton", { name: "Daily email limit" }).fill("5");
+  await expect(page.getByRole("button", { name: "Save limits", exact: true })).toBeDisabled();
+  await page.getByRole("spinbutton", { name: "Daily email limit" }).fill("150");
+  await page.screenshot({ path: `/tmp/crm-capacity-limits-${mode}.png`, fullPage: true });
+  await page.getByRole("button", { name: "Save limits", exact: true }).click();
+  await expect.poll(() => limit).toBe(150);
+});

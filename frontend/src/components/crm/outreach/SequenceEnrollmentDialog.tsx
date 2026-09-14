@@ -1,3 +1,4 @@
+import { MailboxCapacityHint } from "./MailboxCapacity";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -111,6 +112,12 @@ export function SequenceEnrollmentDialog({
                 />
               </label>
             </div>
+            {sender && (
+              <MailboxCapacityHint
+                workspaceId={workspaceId}
+                accountId={sender.id}
+              />
+            )}
             {sequences.isLoading || accounts.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : !seq ? (

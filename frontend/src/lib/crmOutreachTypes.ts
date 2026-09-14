@@ -35,6 +35,7 @@ export interface EmailSequence {
   entry_stage_id: string;
   entry_account_id: string;
   entry_error?: string;
+  daily_new_recipients?: number;
   created_at: string;
   updated_at: string;
 }
@@ -84,4 +85,21 @@ export interface EnrollmentPreview {
   email: string;
   steps: SequenceStep[];
   error?: string;
+}
+
+export interface MailboxSendingPolicy {
+  daily_limit: number;
+  manual_reserve: number;
+  min_interval_seconds: number;
+}
+export interface MailboxCapacity extends MailboxSendingPolicy {
+  account_id: string;
+  email: string;
+  used: number;
+  sent: number;
+  remaining: number;
+  sequence_remaining: number;
+  queued: number;
+  cooldown_until?: string;
+  next_available_at?: string;
 }
