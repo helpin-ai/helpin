@@ -1,55 +1,105 @@
-# Personal AI connections
+# AI connections and profiles
 
-Helpin can optionally attach a personal provider credential to a manual agent run
-or chat. Existing agents and automations continue using Agent Runtime's keys by
-default. The task run panel, Run now dialog, and new chat composer expose the same
-connection/model picker. Authentication-paused runs expose a reconnect action.
+This document describes the profile contract being implemented in the
+[September 14 rollout plan](plans/2026-09-14-ai-profiles-and-ee-billing-plan.md).
+It supersedes the September 12 manual-only, full-rate personal-connection contract.
+Deployment remains gated on edition construction, migration/bootstrap, canaries,
+and live refresh/revocation validation. Do not restart an older installation into
+profile-based wiring before completing that coordinated rollout.
 
-The Go/Python SDKs handle ChatGPT device login and refresh. Helpin stores API keys,
-device sessions, and OAuth tokens encrypted in `ai_connections`, scoped to one user
-within one workspace. Agent Runtime receives only a per-run API key/access token;
-it does not own permanent ChatGPT connections or refresh tokens. Teammates and
-scheduled root runs cannot use another user's personal connection. Descendants
-keep the original owner's connection/model. A new independent run/chat is required
-to change them.
+Connections hold encrypted credentials; profiles bind a connection to an explicit
+provider, model, and model controls. A profile may have one direct fallback.
+Selection order is a manual override, an agent's shared default, then the workspace
+default. Accepted runs retain their selected route and policy across retries and
+resumes. Profile names do not determine charges.
 
-Helpin AI credits **continue to apply at the usual full rate**, including when
-inference is funded by the customer's API key or subscription. The ledger uses
-`customer_funded_platform` and records the selected model's pricing identity.
-The picker and connection dialog disclose this before launch.
+Personal connections and profiles belong to a user within a workspace. They are
+available for explicit manual use and trusted descendants. Shared connections
+belong to the workspace and support unattended execution. Shared management uses
+workspace settings permissions; selecting a shared connection requires current
+workspace access. ChatGPT connections remain personal. Existing personal IDs and
+encryption AAD are preserved; there is no account-wide credential migration.
 
-Configuration:
+Fallback happens before admission when the authorized primary connection is
+known to be unavailable. Authorization, capability, policy, billing, and
+infrastructure errors do not authorize fallback. Execution never changes routes
+mid-run. CRM freezes its route in the reviewed setup and requires another review
+to change that route; its financial policy is accepted when the run launches.
 
-- Apply `server/internal/dbmigrate/sql/202609120002_personal_ai_connections.sql` using the migration command. The earlier retired-run disposition gate remains a prerequisite if it is still pending.
-- Set `AI_CONNECTION_ENCRYPTION_KEY` to a stable 32-byte key (raw, hexadecimal, or base64). Without it personal connections remain disabled.
-- Set the runtime's separate `AGENT_RUNTIME_MODEL_CREDENTIAL_ENCRYPTION_KEY` on its API and every worker (raw 32 bytes or base64).
-- Configure the runtime app's `model_credential_callback` URL to `/api/internal/agent-runtime/model-credentials/refresh` and its token environment variable to Helpin's `INTERNAL_API_SECRET` value.
-- Keep `CHATGPT_CONNECTIONS_ENABLED=false` and the runtime's `AGENT_RUNTIME_CHATGPT_ENABLED=false` until separate live account/deployment validation is approved and passes. `CHATGPT_OAUTH_CLIENT_ID` optionally overrides the SDK's public client ID.
+Community records normalized usage without Helpin token or tool charges. SaaS
+managed routes retain hosted pricing. New SaaS BYOK uses an explicit versioned
+flat USD fee per million normalized tokens, equally across providers and models;
+paid tools are charged separately. A zero rate is valid; an unset rate is not.
+SaaS BYOK defaults off per workspace. The historical percentage and full-equivalent
+modes remain readable for older records but do not define new profile pricing.
 
-The callback checks connection/run ownership, active membership, provider/account,
+## Configuration and bootstrap
+
+- Apply core migrations through `cmd/migrate`. An EE build adds its migration
+  source with `go run -tags ee ./cmd/migrate up`; historical SQL remains in the
+  original ledger with unchanged checksums.
+- Set Helpin's stable `AI_CONNECTION_ENCRYPTION_KEY` (32 bytes, raw, hexadecimal,
+  or base64), and configure its runtime URL and service token.
+- Set the runtime's separate `AGENT_RUNTIME_MODEL_CREDENTIAL_ENCRYPTION_KEY` on
+  its API and every worker (32 raw bytes or base64).
+- Configure the runtime app's `model_credential_callback` URL to Helpin's
+  `/api/internal/agent-runtime/model-credentials/refresh`, with a token environment
+  variable holding Helpin's `INTERNAL_API_SECRET`.
+- ChatGPT requires Helpin's `CHATGPT_CONNECTIONS_ENABLED` and the runtime's
+  `AGENT_RUNTIME_CHATGPT_ENABLED`. Enable them only in validated deployments.
+  `CHATGPT_OAUTH_CLIENT_ID` optionally overrides the SDK's public client ID.
+
+The operator bootstrap imports only explicitly named API-key environment
+variables. From `server/`, preview a community migration with:
+
+```sh
+go run ./cmd/ai-bootstrap -workspace WORKSPACE_UUID \
+  -credential openai=OPENAI_API_KEY -credential openrouter=OPENROUTER_API_KEY
+```
+
+Omit mappings for keys that are not configured. Add `-apply` after reviewing the
+JSON report. For SaaS-managed imports use `go run -tags ee ./cmd/ai-bootstrap`
+with `-funding managed`. A changed existing key additionally requires
+`-rotate-credentials`; this supports managed-key rotation without exposing those
+connections to workspace credential editing.
+
+Preview writes roll back. Apply runs in one workspace transaction. Repeating it
+preserves edited profiles, cleared defaults, and current credentials. Missing
+keys create visibly unconfigured routes. The established tier routes remain
+unchanged; configure a usable workspace default if the Small route is unavailable.
+Each migrated agent preserves its exact provider, model, reasoning, routing
+controls, and independent execution configuration. Agents with implicit provider
+or model values must be configured explicitly before migration. Historical
+versions, reviewed CRM setups, completed runs, and active run identities are not
+rewritten. Older CRM setups need review/publication to acquire an explicit profile.
+
+The report lists nonterminal runs still using runtime defaults. Finish or
+explicitly cancel them before enabling Helpin's trusted runtime app policy
+`require_run_model_credentials`. The runtime enforces this policy at engine
+admission, before queueing. Other apps and standalone runtime installations keep
+their existing environment keys and defaults. Provider readiness remains a startup
+snapshot: restart after changing runtime provider-key configuration.
+
+## Refresh and validation
+
+The callback checks connection/run ownership, active access, provider/account,
 and runtime mapping. Row locks serialize refresh; rejected-token fingerprints
 avoid repeated rotation by concurrent workers. Reconnect updates active run
-credentials and resumes matching model-authentication interactions. Disconnect
-clears the saved secret and revokes bound run credentials; failures are retryable.
-A post-launch check covers disconnects racing admission. Requests already in flight
-may finish; revocation prevents subsequent model requests.
+credentials and resumes matching authentication interactions. Disconnect clears
+the secret and revokes bound credentials. A post-launch check covers disconnects
+racing admission. Already in-flight requests may finish; revocation prevents
+subsequent model calls.
 
-Validation includes encrypted storage/ownership tests, concurrent refresh,
-revoked membership, manual-only admission, normal and estimated credit charges,
-existing chat/run-view tests, TypeScript checks, the production frontend build, and isolated browser checks with
-mocked connection endpoints. A real OpenAI per-run credential smoke passed with the
-global key unset. The September 13 test-system run
-`run_9b1445790f13e52c710f2c3d` (Helpin run
+The September 13 test-system run `run_9b1445790f13e52c710f2c3d` (Helpin run
 `086a992f-a4ca-479b-8923-67923861fa9d`) used `openai_chatgpt` / `gpt-5.6-terra`
 with app-owned OAuth credentials and produced 10 model responses and 37 tool calls
-before a Git tool stalled. This later observation supersedes the September 12
-blocked inference test. Live token refresh, reconnect, and revocation remain
-separate release gates; successful tool continuation does not prove lossless
-ChatGPT response replay.
+before a Git tool stalled. This supports inference and tool execution; live
+expired-token refresh, reconnect, and revocation are separate release gates.
+ChatGPT strips the previous-response identifier and does not support lossless
+provider-state replay, although ordinary transcript continuation is supported.
 
-Helpin and Runtime pin the published SDK release `v0.6.0-alpha.1`; builds and
-integration tests were verified without Go workspace substitution. The SDK adds
-typed run model controls and shared provider/control validation. An explicit empty
-controls object clears inherited model controls while preserving agent execution
-limits. No production deployment or credential-policy activation is implied by
-this dependency update.
+Helpin and Runtime currently pin the published SDK `v0.6.0-alpha.1`, verified
+without Go workspace substitution. Explicit empty model controls clear inherited
+model controls while preserving execution limits. The separate Chat Completions
+transport and a real local-model validation remain later rollout gates; this
+checkpoint does not advertise local-agent support.
