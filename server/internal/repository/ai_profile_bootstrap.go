@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/gorm"
@@ -37,6 +38,24 @@ func (r *AIProfileBootstrapRepository) Connection(ctx context.Context, id string
 
 func (r *AIProfileBootstrapRepository) SaveConnection(ctx context.Context, c *model.AIConnection) error {
 	return r.db.WithContext(ctx).Save(c).Error
+}
+
+func (r *AIProfileBootstrapRepository) Settings(ctx context.Context, workspace string) (*model.AIWorkspaceSettings, error) {
+	return NewAIProfileRepository(r.db).Settings(ctx, workspace)
+}
+
+func (r *AIProfileBootstrapRepository) SharedProfiles(ctx context.Context, workspace string) ([]model.AIProfile, error) {
+	var profiles []model.AIProfile
+	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("workspace_id = ? AND scope = ? AND user_id IS NULL AND deleted_at IS NULL", workspace, "workspace").
+		Order("created_at,id").Find(&profiles).Error
+	return profiles, err
+}
+
+func (r *AIProfileBootstrapRepository) Complete(ctx context.Context, workspace string) error {
+	return r.db.WithContext(ctx).Model(&model.AIWorkspaceSettings{}).
+		Where("workspace_id = ? AND profiles_bootstrapped_at IS NULL", workspace).
+		UpdateColumn("profiles_bootstrapped_at", time.Now().UTC()).Error
 }
 
 // EnsureProfile never resurrects or overwrites a user's edited profile.

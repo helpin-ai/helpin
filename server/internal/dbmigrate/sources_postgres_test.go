@@ -144,5 +144,24 @@ func TestCommunityMigrationLedgerPostgres(t *testing.T) {
 	if _, err := db.ExecContext(ctx, assign); err == nil {
 		t.Fatal("new agent references deleted profile")
 	}
-
+	// Upgrade existing settings without resetting a chosen default or inventing
+	// completion. The nullable marker is set only by a successful bootstrap.
+	if _, err := db.ExecContext(ctx, `CREATE TABLE ai_workspace_settings (workspace_id uuid PRIMARY KEY, default_profile_id uuid, updated_at timestamptz);
+ INSERT INTO ai_workspace_settings VALUES ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001',now());
+ DELETE FROM schema_migrations WHERE version='202609140010'`); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := Up(ctx, db); err != nil {
+			t.Fatalf("bootstrap marker upgrade: %v", err)
+		}
+	}
+	var defaultID string
+	var completed sql.NullTime
+	if err := db.QueryRowContext(ctx, "SELECT default_profile_id,profiles_bootstrapped_at FROM ai_workspace_settings").Scan(&defaultID, &completed); err != nil {
+		t.Fatal(err)
+	}
+	if defaultID != "00000000-0000-0000-0000-000000000001" || completed.Valid {
+		t.Fatal("marker migration changed workspace configuration")
+	}
 }

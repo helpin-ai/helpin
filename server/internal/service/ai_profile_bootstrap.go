@@ -60,7 +60,7 @@ func (s *AIProfileBootstrapService) Apply(ctx context.Context, opts AIProfileBoo
 	}
 	result := &AIProfileBootstrapResult{}
 	err := s.store.Transaction(ctx, opts.WorkspaceID, func(store *repository.AIProfileBootstrapRepository) error {
-		agents, err := store.Agents(ctx, opts.WorkspaceID)
+		settings, err := store.Settings(ctx, opts.WorkspaceID)
 		if err != nil {
 			return err
 		}
@@ -83,6 +83,7 @@ func (s *AIProfileBootstrapService) Apply(ctx context.Context, opts AIProfileBoo
 		}
 		// Keep the established tier routes. Missing keys remain visibly unconfigured.
 		var defaultID string
+		tierIDs := []string{}
 		for _, tier := range []aimodel.Tier{aimodel.TierSmall, aimodel.TierMedium, aimodel.TierLarge, aimodel.TierFlagship} {
 			route := selectableAgentTierRoutes[tier]
 			c, err := ensureConnection(route.Provider)
@@ -102,43 +103,20 @@ func (s *AIProfileBootstrapService) Apply(ctx context.Context, opts AIProfileBoo
 			if created {
 				result.ProfilesCreated++
 			}
+			tierIDs = append(tierIDs, p.ID)
 			if tier == aimodel.TierSmall {
 				defaultID = p.ID
 			}
 		}
-		for _, agent := range agents {
-			if agent.AIProfileID != nil {
-				continue
-			}
-			route, err := bootstrapAgentModel(agent)
-			if err != nil {
-				return fmt.Errorf("agent %s: %w", agent.ID, err)
-			}
-			c, err := ensureConnection(route.Provider)
-			if err != nil {
+		if settings.ProfilesBootstrappedAt == nil {
+			if err := s.assignBootstrapProfiles(ctx, store, opts.WorkspaceID, tierIDs, ensureConnection, result); err != nil {
 				return err
-			}
-			p := bootstrapProfile(opts.WorkspaceID, "agent:"+agent.ID, agent.Name,
-				model.AIProfileRoute{ConnectionID: c.ID, Model: route})
-			created, err := store.EnsureProfile(ctx, p)
-			if err != nil {
-				return err
-			}
-			// Existing per-agent bootstrap profiles also mark a completed migration.
-			// A later explicit reset to workspace inheritance must remain a reset.
-			if !created {
-				continue
-			}
-			if err := store.AssignAgent(ctx, opts.WorkspaceID, agent.ID, p.ID); err != nil {
-				return err
-			}
-			result.ProfilesCreated++
-			result.AgentsMigrated++
-			if strings.TrimSpace(derefString(agent.Model)) == "" && strings.TrimSpace(agent.ModelTier) == "" {
-				result.AgentsDefaultedToSmall++
 			}
 		}
 		if err := store.EnsureDefault(ctx, &model.AIWorkspaceSettings{WorkspaceID: opts.WorkspaceID, DefaultProfileID: &defaultID, UpdatedAt: time.Now().UTC()}); err != nil {
+			return err
+		}
+		if err := store.Complete(ctx, opts.WorkspaceID); err != nil {
 			return err
 		}
 		for provider, c := range connections {

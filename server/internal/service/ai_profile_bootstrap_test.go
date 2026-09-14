@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -137,7 +138,7 @@ func TestBootstrapPreviewAndApplyPreserveHistoricalState(t *testing.T) {
 	}
 }
 
-func TestBootstrapCredentialRotationIsExplicitAndMigrationIsAtomic(t *testing.T) {
+func TestBootstrapCredentialRotationIsExplicit(t *testing.T) {
 	svc, connections, db := bootstrapFixture(t)
 	opts := AIProfileBootstrapOptions{WorkspaceID: "workspace", Funding: "customer", Credentials: map[string]string{"openai": "first-key"}}
 	ctx := context.Background()
@@ -160,20 +161,7 @@ func TestBootstrapCredentialRotationIsExplicitAndMigrationIsAtomic(t *testing.T)
 	if err != nil || secret.APIKey != "second-key" {
 		t.Fatal("explicit rotation did not replace the secret")
 	}
-	if err := db.Exec(`INSERT INTO agents VALUES ('invalid','workspace','Invalid',NULL,'explicit-model','{}',NULL)`).Error; err != nil {
-		t.Fatal(err)
-	}
-	opts.Credentials["openai"] = "third-key"
-	if _, err := svc.Apply(ctx, opts); err == nil {
-		t.Fatal("explicit model without provider accepted")
-	}
-	if err := db.Where("provider = ?", "openai").First(&c).Error; err != nil {
-		t.Fatal(err)
-	}
-	secret, err = connections.open(&c)
-	if err != nil || secret.APIKey != "second-key" {
-		t.Fatal("failed migration partially rotated credentials")
-	}
+
 }
 
 func TestBootstrapUnconfiguredAgentUsesSmallAndPreservesReset(t *testing.T) {
@@ -272,6 +260,132 @@ func TestBootstrapAgentModelDefaultsOnlyMissingSelections(t *testing.T) {
 			}
 			if got.Provider != wantProvider || got.Model != wantModel || derefString(got.Controls.ReasoningEffort) != "high" {
 				t.Fatalf("resolved model = %+v", got)
+			}
+		})
+	}
+}
+
+func TestBootstrapInvalidInitialSelectionRollsBack(t *testing.T) {
+	svc, _, db := bootstrapFixture(t)
+	if err := db.Exec(`INSERT INTO agents VALUES ('invalid','workspace','Invalid',NULL,'explicit-model','{}',NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.Apply(context.Background(), AIProfileBootstrapOptions{WorkspaceID: "workspace", Funding: "managed", Credentials: map[string]string{"openai": "fixture-key"}})
+	if err == nil {
+		t.Fatal("explicit model without provider accepted")
+	}
+	for _, table := range []string{"ai_connections", "ai_profiles", "ai_workspace_settings"} {
+		var count int64
+		if err := db.Table(table).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("failed migration committed %s", table)
+		}
+	}
+}
+
+func TestBootstrapReusesSharedRoutes(t *testing.T) {
+	svc, _, db := bootstrapFixture(t)
+	for _, query := range []string{
+		`INSERT INTO agents VALUES ('same','workspace','Another reviewer','openai','private-model','{"reasoning_effort":"high","max_tool_steps":12}',NULL)`,
+		`INSERT INTO agents VALUES ('different','workspace','Different reasoning','openai','private-model','{"reasoning_effort":"low"}',NULL)`,
+		`INSERT INTO agents VALUES ('small1','workspace','Empty 1',NULL,NULL,'{}',NULL)`,
+		`INSERT INTO agents VALUES ('small2','workspace','Empty 2','anthropic',NULL,'{}',NULL)`,
+	} {
+		if err := db.Exec(query).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := svc.Apply(context.Background(), AIProfileBootstrapOptions{WorkspaceID: "workspace", Funding: "managed", Credentials: map[string]string{"openai": "fixture-openai", "openrouter": "fixture-openrouter"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AgentsMigrated != 5 || result.ProfilesCreated != 6 || result.AgentsDefaultedToSmall != 2 {
+		t.Fatalf("result = %+v", result)
+	}
+	var agents []model.Agent
+	if err := db.Order("id").Find(&agents).Error; err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]string{}
+	for _, a := range agents {
+		ids[a.ID] = derefString(a.AIProfileID)
+	}
+	if ids["agent"] == "" || ids["agent"] != ids["same"] || ids["agent"] == ids["different"] {
+		t.Fatalf("custom assignments = %v", ids)
+	}
+	var small model.AIProfile
+	if err := db.Where("name = ?", "Small").First(&small).Error; err != nil {
+		t.Fatal(err)
+	}
+	if ids["small1"] != small.ID || ids["small2"] != small.ID {
+		t.Fatalf("small assignments = %v", ids)
+	}
+	var settings model.AIWorkspaceSettings
+	if err := db.First(&settings).Error; err != nil {
+		t.Fatal(err)
+	}
+	if settings.ProfilesBootstrappedAt == nil {
+		t.Fatal("completion not recorded")
+	}
+	var profiles []model.AIProfile
+	if err := db.Find(&profiles).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range profiles {
+		if p.Name == "Reviewer" || p.Name == "Another reviewer" || p.Name == "Different reasoning" {
+			t.Fatal("profile named after an agent")
+		}
+	}
+}
+
+func TestBootstrapMatchesOnlyEquivalentActiveSharedProfiles(t *testing.T) {
+	for _, variant := range []string{"equivalent", "reasoning", "connection", "fallback", "personal", "deleted"} {
+		t.Run(variant, func(t *testing.T) {
+			svc, _, db := bootstrapFixture(t)
+			ctx := context.Background()
+			opts := AIProfileBootstrapOptions{WorkspaceID: "workspace", Funding: "managed", Credentials: map[string]string{"openai": "fixture-key"}}
+			c, err := svc.bootstrapConnection(ctx, svc.store, opts, "openai")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var agent model.Agent
+			if err := db.First(&agent).Error; err != nil {
+				t.Fatal(err)
+			}
+			route, err := bootstrapAgentModel(agent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := bootstrapProfile("workspace", "existing", "My reusable profile", model.AIProfileRoute{ConnectionID: c.ID, Model: route})
+			switch variant {
+			case "reasoning":
+				low := "low"
+				p.Primary.Model.Controls.ReasoningEffort = &low
+			case "connection":
+				p.Primary.ConnectionID = "different-connection"
+			case "fallback":
+				fallback := p.Primary
+				p.Fallback = &fallback
+			case "personal":
+				user := "owner"
+				p.Scope, p.UserID = "personal", &user
+			case "deleted":
+				now := time.Now().UTC()
+				p.DeletedAt = &now
+			}
+			if err := db.Create(p).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.Apply(ctx, opts); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.First(&agent, "id = ?", "agent").Error; err != nil {
+				t.Fatal(err)
+			}
+			if (derefString(agent.AIProfileID) == p.ID) != (variant == "equivalent") {
+				t.Fatalf("unexpected profile assignment: %v", agent.AIProfileID)
 			}
 		})
 	}

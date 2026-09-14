@@ -71,9 +71,14 @@ Each migrated agent with an explicit model preserves its provider, model,
 reasoning, routing controls, and independent execution configuration. Agents
 without a model use their configured size, or the Small route when no size is
 configured. The report counts these Small defaults as `agents_defaulted_to_small`.
-Each agent receives its own migration profile so later resets to workspace
-inheritance remain intact on retries. Explicit models still require a provider;
-unknown sizes and invalid controls fail the preview. Historical
+Agents reuse an equivalent active shared profile, preferring the four standard
+size profiles. Distinct custom routes get reusable profiles named for their model
+and controls, never for an agent. Equivalence includes the connection, model,
+endpoint and controls; a profile with a fallback is not a single-route match.
+Migration `202609140010` adds a workspace bootstrap completion marker. After the
+first successful apply, reruns can import or rotate credentials but do not
+reassign agents, including agents reset to workspace inheritance. Explicit models
+still require a provider; unknown sizes and invalid controls fail the preview. Historical
 versions, reviewed CRM setups, completed runs, and active run identities are not
 rewritten. Older CRM setups need review/publication to acquire an explicit profile.
 

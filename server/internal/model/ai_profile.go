@@ -44,9 +44,10 @@ type SaveAIProfileRequest struct {
 
 // AIWorkspaceSettings holds the shared default independently of commercial policy.
 type AIWorkspaceSettings struct {
-	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;primaryKey"`
-	DefaultProfileID *string   `json:"default_profile_id" gorm:"type:uuid"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	WorkspaceID            string     `json:"workspace_id" gorm:"type:uuid;primaryKey"`
+	DefaultProfileID       *string    `json:"default_profile_id" gorm:"type:uuid"`
+	UpdatedAt              time.Time  `json:"updated_at"`
+	ProfilesBootstrappedAt *time.Time `json:"-"`
 }
 
 func (AIWorkspaceSettings) TableName() string { return "ai_workspace_settings" }
