@@ -1,6 +1,6 @@
 # AI profiles, community BYOK, and optional SaaS BYOK
 
-Status: implementation in progress. The checkpoints below record completed work; unchecked plan sections remain outstanding.
+Status: paused at the user’s request on September 14. Implementation is incomplete. See the [resume checkpoint](2026-09-14-ai-profiles-checkpoint.md) for commits, validation and remaining work.
 
 Split delivery into a standalone catalog prerequisite, **Plan A: AI configuration and execution**, and **Plan B: commercial billing extraction**. Plan A can use an adapter to the existing commercial implementation while Plan B proceeds separately. A clean community distribution requires both plans.
 
