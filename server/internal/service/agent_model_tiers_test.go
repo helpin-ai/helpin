@@ -134,3 +134,24 @@ func TestCustomCodingModelTiersUseNativeIncludingRetiredPins(t *testing.T) {
 		}
 	}
 }
+
+func TestTierChangePreservesIndependentExecutionSettings(t *testing.T) {
+	original := model.JSONBlob(`{"reasoning_effort":"high","max_tool_steps":42,"native_context":{"enabled":true},"service_tier":"priority","openrouter":{"provider":{"quantizations":["int4"]}}}`)
+	snapshot := AgentModelTierSnapshot{ModelTier: "large", Provider: "openrouter", Model: "openai/gpt-5.6-terra", ServiceTier: "standard", RuntimeKind: "native_sdk"}
+	agent := &model.Agent{ExecutionConfig: original}
+	version := &model.AgentVersion{ExecutionConfig: original}
+	applyModelTierSnapshotToAgent(agent, snapshot)
+	applyModelTierSnapshotToVersion(version, snapshot)
+	for _, raw := range []model.JSONBlob{agent.ExecutionConfig, version.ExecutionConfig} {
+		cfg, err := model.ParseAgentExecutionConfig(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.ReasoningEffort == nil || *cfg.ReasoningEffort != "high" || cfg.MaxToolSteps == nil || *cfg.MaxToolSteps != 42 || cfg.NativeContext == nil || !cfg.NativeContext.Enabled {
+			t.Fatalf("tier erased independent controls: %s", raw)
+		}
+		if cfg.ServiceTier != nil || cfg.OpenRouter != nil {
+			t.Fatalf("tier retained old route controls: %s", raw)
+		}
+	}
+}

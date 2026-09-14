@@ -1,6 +1,6 @@
 # AI profiles, community BYOK, and optional SaaS BYOK
 
-Status: agreed implementation plan. This document replaces the earlier combined proposal; it does not record completed implementation.
+Status: implementation in progress. The checkpoints below record completed work; unchecked plan sections remain outstanding.
 
 Split delivery into a standalone catalog prerequisite, **Plan A: AI configuration and execution**, and **Plan B: commercial billing extraction**. Plan A can use an adapter to the existing commercial implementation while Plan B proceeds separately. A clean community distribution requires both plans.
 
@@ -188,3 +188,28 @@ This is a separate project, dependent on the catalog split and neutral usage lif
 - Community builds and runs with EE directories absent, without commercial configuration, prices, routes, frontend assets, or billing jobs. Operational authorization and resource safeguards remain active.
 - EE regression tests cover managed usage pricing, the configured BYOK fee, subscriptions, seats, workspace locks, reservations, and settlement. Webhook and worker retries cannot duplicate a charge or lose a business update after recording an event.
 - Fresh community and EE databases, existing EE upgrades, and supported edition transitions preserve migration history, strict checksums, connection decryption, and historical billing records. A community binary recognizes previously applied EE rows without loading EE SQL and without weakening checksum validation for available core migrations.
+
+
+## Implementation checkpoints
+
+- `7c6b1c318`: separated the neutral model catalog from commercial prices; migrated tier/connection pickers and both startup paths; added independent frontend model generation. Reviewed aliases, disabled routes, unknown models, persisted pricing shape, and public export parity. Catalog/service/frontend tests, backend build, and relevant vet checks passed. Shared SDK controls and the later edition boundary remain outstanding.
+
+### A1 call-site inventory (September 14)
+
+The concrete lifecycle dependency is concentrated in two consumers (`AIUsageMeter` and `AICompletionService`), rather than requiring each product feature to implement billing. Preserve the existing product wrappers and replace their lifecycle dependency with one consumed interface.
+
+| Boundary | Current paths | Contract and migration checks |
+|---|---|---|
+| Direct completions | `ai_completion.go`: `Complete`, execution attempt | Preflight per resolved attempt, release on failure, reconcile on success; retain governance and action audit. |
+| Legacy governed chat | `ai_usage_meter.go`: `MeteredLLMProvider`, `chatCompletionTokenPriced` | Require metering context; preserve explicitly exempt calls and action audit. Route the active path through the same lifecycle. |
+| Agent admission | `ai_usage_meter.go`: `PreflightAgentRunAIUsage`; `agent.go`; `crm_playbook_agent_launcher.go` | Persist immutable context before launch, including the separate CRM reviewed snapshot. Missing financial services cannot block community. |
+| Interactive checkpoints | `ai_usage_meter.go`: `checkpointAgentRun`; `agent_runtime_projection.go` | Apply cumulative deltas once; persist the usage watermark with telemetry; suspend on an interaction pause. |
+| Resume and heartbeat | `agent.go`; `agent_runtime_projection.go` | Restore the same context via `Heartbeat`; do not resolve a new price or connection on resume. |
+| Terminal and late usage | `agent_runtime_usage_settlement.go`; `ai_usage_meter.go`: `reconcileAgentRun` | Keep late-event idempotency and watermarks; financial settlement is optional but raw usage persistence is mandatory. |
+| Failure and release | `agent.go`; `crm_playbook_agent_launcher.go`; `ai_usage.go` | Release/fail must be valid with no financial reservation; preserve launch cleanup and retry behavior. |
+| Embeddings | `ai_embedding_gateway.go` | Context and audit required; commercial meter already optional. Keep raw estimated tokens even when no charge is made. |
+| Reranking | `support_knowledge_reranker.go` | Context, governance, and audit required; no commercial meter to remove. |
+| Legacy preflight adapters | `crm_meeting.go`; internal command/support-reply dependencies | Retain wrapper signatures; community uses a real adapter rather than disabling wrappers with nil. |
+| Construction | `cmd/api/main.go`; `cmd/temporal-worker/main.go` | Select an edition implementation once; wire the same lifecycle into direct completions, agent services, projections, and CRM launchers. |
+
+The consumed lifecycle needs `ResolveMeteringContext`, `Preflight`, `Checkpoint`, `Reconcile`, `Heartbeat`, `SuspendReservation`, `Fail`, and `Release`. The community implementation must retain identity, normalized raw telemetry, and transactional run watermarks without requiring prices, reservations, periods, or credit balances. Existing agent checkpoint/terminal tests and direct completion tests provide regression coverage; add community interruption, resume, missing-price, and idempotency cases before switching wiring.

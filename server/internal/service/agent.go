@@ -1462,8 +1462,14 @@ func applyAgentVersionToAgent(agent *model.Agent, version *model.AgentVersion) {
 	}
 }
 
-func modelTierExecutionConfig(snapshot AgentModelTierSnapshot) model.JSONBlob {
-	config := model.AgentExecutionConfig{}
+func modelTierExecutionConfig(snapshot AgentModelTierSnapshot, existing model.JSONBlob) model.JSONBlob {
+	config, err := model.ParseAgentExecutionConfig(existing)
+	if err != nil {
+		// Validation reports malformed configuration; applying a tier must not erase it.
+		return existing
+	}
+	config.ServiceTier = nil
+	config.OpenRouter = nil
 	serviceTier := strings.TrimSpace(snapshot.ServiceTier)
 	if serviceTier != "" && serviceTier != defaultAICompletionServiceTier {
 		config.ServiceTier = &serviceTier
@@ -1486,7 +1492,7 @@ func applyModelTierSnapshotToAgent(agent *model.Agent, snapshot AgentModelTierSn
 	agent.RuntimeKind = snapshot.RuntimeKind
 	agent.Provider = trimPtr(&snapshot.Provider)
 	agent.Model = trimPtr(&snapshot.Model)
-	agent.ExecutionConfig = modelTierExecutionConfig(snapshot)
+	agent.ExecutionConfig = modelTierExecutionConfig(snapshot, agent.ExecutionConfig)
 }
 
 func applyModelTierSnapshotToVersion(version *model.AgentVersion, snapshot AgentModelTierSnapshot) {
@@ -1497,7 +1503,7 @@ func applyModelTierSnapshotToVersion(version *model.AgentVersion, snapshot Agent
 	version.RuntimeKind = snapshot.RuntimeKind
 	version.Provider = trimPtr(&snapshot.Provider)
 	version.Model = trimPtr(&snapshot.Model)
-	version.ExecutionConfig = modelTierExecutionConfig(snapshot)
+	version.ExecutionConfig = modelTierExecutionConfig(snapshot, version.ExecutionConfig)
 }
 
 func agentVersionFromAgent(agent *model.Agent, actorID string) *model.AgentVersion {
