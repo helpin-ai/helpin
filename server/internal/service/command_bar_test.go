@@ -435,7 +435,7 @@ func TestCreateRunPreflightsAICreditsBeforeQueueingRun(t *testing.T) {
 	runRepo := repository.NewAgentRunRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	consumer := &recordingAIUsageConsumer{preflightErr: fmt.Errorf("AI usage exhausted")}
-	service := (&AgentService{runRepo: runRepo, agentRepo: agentRepo}).SetAIUsageMeter(NewAIUsageMeter(consumer))
+	service := (&AgentService{runRepo: runRepo, agentRepo: agentRepo}).SetAIUsageMeter(NewTokenPricedAIUsageMeter(consumer))
 
 	ctx := context.Background()
 	workspaceID := "11111111-1111-1111-1111-111111111111"
@@ -464,7 +464,7 @@ func TestCreateRunPreflightsAICreditsBeforeQueueingRun(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "AI usage exhausted") {
 		t.Fatalf("createRun() error = %v, want AI usage exhausted", err)
 	}
-	if consumer.preflight.WorkspaceID != workspaceID || consumer.preflight.FeatureKey != BillingFeatureForgeRun || consumer.preflight.Credits != 100 {
+	if consumer.preflight.WorkspaceID != workspaceID || consumer.preflight.FeatureKey != BillingFeatureForgeRun {
 		t.Fatalf("preflight = %#v, want Forge run preflight", consumer.preflight)
 	}
 	runs, total, err := runRepo.ListByWorkspace(ctx, workspaceID, model.PMPagination{Page: 1, PerPage: 10})

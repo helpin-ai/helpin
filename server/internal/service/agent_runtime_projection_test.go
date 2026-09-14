@@ -109,26 +109,6 @@ func (r *fakeAgentRuntimeProjectionAgentRepo) GetByID(_ context.Context, _, _ st
 	return r.agent, r.err
 }
 
-type fakeAgentRuntimeProjectionUsageConsumer struct {
-	preflightErr    error
-	preflightInputs []BillingCreditPreflight
-	consumeErr      error
-	consumeInputs   []BillingCreditConsumption
-}
-
-func (c *fakeAgentRuntimeProjectionUsageConsumer) PreflightCredits(_ context.Context, input BillingCreditPreflight) error {
-	c.preflightInputs = append(c.preflightInputs, input)
-	return c.preflightErr
-}
-
-func (c *fakeAgentRuntimeProjectionUsageConsumer) ConsumeCredits(_ context.Context, input BillingCreditConsumption) (*BillingSummary, error) {
-	c.consumeInputs = append(c.consumeInputs, input)
-	if c.consumeErr != nil {
-		return nil, c.consumeErr
-	}
-	return nil, nil
-}
-
 type fakeAgentRuntimeProjectionMessageRepo struct {
 	messages []model.AgentRunMessage
 	creates  int
@@ -1265,7 +1245,7 @@ func TestAgentRuntimeProjectionCancelsOnCumulativeUsageOverage(t *testing.T) {
 	repo := &fakeAgentRuntimeProjectionRunRepo{
 		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_overage": run},
 	}
-	usageConsumer := &fakeAgentRuntimeProjectionUsageConsumer{preflightErr: model.ErrAIUsageExhausted}
+	usageConsumer := &recordingAIUsageConsumer{charge: 101}
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentRuntimeProjectionService{
 		runRepo: repo,
@@ -1274,11 +1254,14 @@ func TestAgentRuntimeProjectionCancelsOnCumulativeUsageOverage(t *testing.T) {
 			PresetKey: model.AgentPresetCodeBuilder,
 			IsSystem:  true,
 		}},
-		usageMeter:         &AIUsageMeter{consumer: usageConsumer},
+		usageMeter:         NewTokenPricedAIUsageMeter(usageConsumer),
 		agentRuntimeClient: runtimeClient,
 		now:                time.Now,
 	}
 
+	if err := storeAgentRunMeteringContext(run, MeteringContext{PolicyMode: "community", WorkspaceID: "ws-1", FeatureKey: BillingFeatureForgeRun, IdempotencyKey: "ws-1:agent-runtime:" + run.ID + ":terminal-usage", EnforcementMode: model.AIUsageEnforcementStrict, MaxBillableMicrousd: 100}); err != nil {
+		t.Fatal(err)
+	}
 	err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
 		RunID: "run_runtime_overage",
 		Type:  "usage.checkpoint",
@@ -1304,8 +1287,8 @@ func TestAgentRuntimeProjectionCancelsOnCumulativeUsageOverage(t *testing.T) {
 	if run.Status != model.AgentRunStatusRunning {
 		t.Fatalf("expected status to remain projection-owned running, got %q", run.Status)
 	}
-	if len(usageConsumer.preflightInputs) != 1 || usageConsumer.preflightInputs[0].FeatureKey != BillingFeatureForgeRun {
-		t.Fatalf("expected Forge preflight input, got %#v", usageConsumer.preflightInputs)
+	if usageConsumer.heartbeatCalls != 1 {
+		t.Fatalf("expected Forge preflight input, got %#v", usageConsumer.heartbeatCalls)
 	}
 	if repo.updates != 1 || repo.notifications != 1 {
 		t.Fatalf("expected one update/notify, got %d/%d", repo.updates, repo.notifications)
@@ -1325,16 +1308,19 @@ func TestAgentRuntimeProjectionDoesNotCancelOverageForNonCumulativeUsage(t *test
 	repo := &fakeAgentRuntimeProjectionRunRepo{
 		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_delta": run},
 	}
-	usageConsumer := &fakeAgentRuntimeProjectionUsageConsumer{preflightErr: model.ErrAIUsageExhausted}
+	usageConsumer := &recordingAIUsageConsumer{charge: 101}
 	runtimeClient := &fakeAgentRuntimeSignalClient{}
 	svc := &AgentRuntimeProjectionService{
 		runRepo:            repo,
 		agentRepo:          &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{ID: "agent-1"}},
-		usageMeter:         &AIUsageMeter{consumer: usageConsumer},
+		usageMeter:         NewTokenPricedAIUsageMeter(usageConsumer),
 		agentRuntimeClient: runtimeClient,
 		now:                time.Now,
 	}
 
+	if err := storeAgentRunMeteringContext(run, MeteringContext{PolicyMode: "community", WorkspaceID: "ws-1", FeatureKey: BillingFeatureForgeRun, IdempotencyKey: "ws-1:agent-runtime:" + run.ID + ":terminal-usage", EnforcementMode: model.AIUsageEnforcementStrict, MaxBillableMicrousd: 100}); err != nil {
+		t.Fatal(err)
+	}
 	err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
 		RunID: "run_runtime_delta",
 		Type:  "usage.checkpoint",
@@ -1352,8 +1338,8 @@ func TestAgentRuntimeProjectionDoesNotCancelOverageForNonCumulativeUsage(t *test
 	if len(runtimeClient.cancelCalls) != 0 {
 		t.Fatalf("expected no runtime cancel calls, got %#v", runtimeClient.cancelCalls)
 	}
-	if len(usageConsumer.preflightInputs) != 0 {
-		t.Fatalf("expected no preflight for non-cumulative checkpoint, got %#v", usageConsumer.preflightInputs)
+	if usageConsumer.heartbeatCalls != 0 {
+		t.Fatalf("expected no preflight for non-cumulative checkpoint, got %#v", usageConsumer.heartbeatCalls)
 	}
 }
 
@@ -1372,7 +1358,7 @@ func TestAgentRuntimeProjectionConsumesTerminalUsageOnce(t *testing.T) {
 	runRepo := &fakeAgentRuntimeProjectionRunRepo{
 		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_consume": run},
 	}
-	usageConsumer := &fakeAgentRuntimeProjectionUsageConsumer{}
+	usageConsumer := &recordingAIUsageConsumer{}
 	svc := &AgentRuntimeProjectionService{
 		runRepo: runRepo,
 		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
@@ -1380,8 +1366,11 @@ func TestAgentRuntimeProjectionConsumesTerminalUsageOnce(t *testing.T) {
 			PresetKey: model.AgentPresetCodeBuilder,
 			IsSystem:  true,
 		}},
-		usageMeter: &AIUsageMeter{consumer: usageConsumer},
+		usageMeter: NewTokenPricedAIUsageMeter(usageConsumer),
 		now:        func() time.Time { return completedAt },
+	}
+	if err := storeAgentRunMeteringContext(run, MeteringContext{PolicyMode: "community", WorkspaceID: "ws-1", FeatureKey: BillingFeatureForgeRun, IdempotencyKey: "ws-1:agent-runtime:" + run.ID + ":terminal-usage", EnforcementMode: model.AIUsageEnforcementStrict, MaxBillableMicrousd: 100}); err != nil {
+		t.Fatal(err)
 	}
 	event := AgentRuntimeEventEnvelope{
 		RunID:  "run_runtime_consume",
@@ -1408,7 +1397,7 @@ func TestAgentRuntimeProjectionConsumesTerminalUsageOnce(t *testing.T) {
 		t.Fatalf("expected one terminal usage consumption, got %#v", usageConsumer.consumeInputs)
 	}
 	input := usageConsumer.consumeInputs[0]
-	if input.WorkspaceID != "ws-1" || input.FeatureKey != BillingFeatureForgeRun || input.IdempotencyKey != "ws-1:agent-runtime:helpin-run-consume:terminal-usage" {
+	if input.Context.WorkspaceID != "ws-1" || input.Context.FeatureKey != BillingFeatureForgeRun || input.Context.IdempotencyKey != "ws-1:agent-runtime:helpin-run-consume:terminal-usage" {
 		t.Fatalf("unexpected consumption input: %#v", input)
 	}
 	if !runtimeUsageAlreadyConsumed(run.OutputSummary) {
@@ -1431,7 +1420,7 @@ func TestAgentRuntimeProjectionTerminalUsageFailureDoesNotBlockStatusProjection(
 	runRepo := &fakeAgentRuntimeProjectionRunRepo{
 		byExternal: map[string]*model.AgentRun{agentRuntimeName + "|run_runtime_consume_failure": run},
 	}
-	usageConsumer := &fakeAgentRuntimeProjectionUsageConsumer{consumeErr: model.ErrBillingWorkspaceLocked}
+	usageConsumer := &recordingAIUsageConsumer{consumeErr: model.ErrBillingWorkspaceLocked}
 	svc := &AgentRuntimeProjectionService{
 		runRepo: runRepo,
 		agentRepo: &fakeAgentRuntimeProjectionAgentRepo{agent: &model.Agent{
@@ -1439,10 +1428,13 @@ func TestAgentRuntimeProjectionTerminalUsageFailureDoesNotBlockStatusProjection(
 			PresetKey: model.AgentPresetCodeBuilder,
 			IsSystem:  true,
 		}},
-		usageMeter: &AIUsageMeter{consumer: usageConsumer},
+		usageMeter: NewTokenPricedAIUsageMeter(usageConsumer),
 		now:        func() time.Time { return completedAt },
 	}
 
+	if err := storeAgentRunMeteringContext(run, MeteringContext{PolicyMode: "community", WorkspaceID: "ws-1", FeatureKey: BillingFeatureForgeRun, IdempotencyKey: "ws-1:agent-runtime:" + run.ID + ":terminal-usage", EnforcementMode: model.AIUsageEnforcementStrict, MaxBillableMicrousd: 100}); err != nil {
+		t.Fatal(err)
+	}
 	if err := svc.ApplyEvent(context.Background(), AgentRuntimeEventEnvelope{
 		RunID:  "run_runtime_consume_failure",
 		Type:   "run.completed",

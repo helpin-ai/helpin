@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -54,17 +53,6 @@ const (
 	BillingFeatureDockChatTitle           = "dock_chat_title_generation"
 )
 
-// AIUsageCalculation is the normalized token usage input for internal AI usage
-// metering. Customer-facing surfaces call the result "AI usage"; the billing
-// ledger still stores credits internally.
-type AIUsageCalculation struct {
-	FeatureKey        string
-	InputTokens       int
-	OutputTokens      int
-	ReasoningTokens   int
-	CachedInputTokens int
-}
-
 func aiUsageIdempotencyKey(parts ...string) string {
 	clean := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -87,15 +75,9 @@ func aiUsagePayloadIdempotencyKey(payload []byte, parts ...string) string {
 // AIUsageFeatureDefinition describes one metered AI feature.
 type AIUsageFeatureDefinition = aipolicy.UsageFeatureDefinition
 
-type aiUsageCreditConsumer interface {
-	PreflightCredits(ctx context.Context, input BillingCreditPreflight) error
-	ConsumeCredits(ctx context.Context, input BillingCreditConsumption) (*BillingSummary, error)
-}
-
-// AIUsageMeter is the central adapter from AI token usage to the billing ledger.
+// AIUsageMeter connects product calls to the edition-selected usage lifecycle.
 type AIUsageMeter struct {
-	consumer aiUsageCreditConsumer
-	usage    AIUsageLifecycle
+	usage AIUsageLifecycle
 }
 
 // AIUsageMeterInput describes one completed AI action to charge.
@@ -143,11 +125,7 @@ func aiUsageFeaturesFromRegistry(registry *aipolicy.Registry) map[string]AIUsage
 	return aipolicy.UsageFeatures(registry)
 }
 
-func NewAIUsageMeter(consumer aiUsageCreditConsumer) *AIUsageMeter {
-	return &AIUsageMeter{consumer: consumer}
-}
-
-// NewTokenPricedAIUsageMeter creates the active micro-USD metering adapter.
+// NewTokenPricedAIUsageMeter wires the active lifecycle (community or EE).
 func NewTokenPricedAIUsageMeter(usage AIUsageLifecycle) *AIUsageMeter {
 	return &AIUsageMeter{usage: usage}
 }
@@ -238,51 +216,17 @@ func (p *MeteredLLMProvider) ChatCompletion(ctx context.Context, req llm.ChatReq
 			}
 		}
 	}
-	if p.meter == nil {
+	if p.meter == nil || !ok {
 		resp, err := p.base.ChatCompletion(ctx, req)
 		p.finishAIActionAudit(ctx, auditExecution, resp, err)
 		return resp, err
 	}
-	if ok && p.meter.usage != nil {
-		resp, err := p.chatCompletionTokenPriced(ctx, req, metering)
-		p.finishAIActionAudit(ctx, auditExecution, resp, err)
-		return resp, err
+	if p.meter.usage == nil {
+		return nil, errors.New("AI usage lifecycle is required")
 	}
-	if ok {
-		if err := p.meter.Preflight(ctx, AIUsageMeterInput{
-			WorkspaceID:    metering.WorkspaceID,
-			FeatureKey:     metering.FeatureKey,
-			IdempotencyKey: metering.IdempotencyKey,
-			Metadata:       metering.Metadata,
-		}); err != nil {
-			return nil, err
-		}
-	}
-
-	resp, err := p.base.ChatCompletion(ctx, req)
-	if err != nil || resp == nil {
-		p.finishAIActionAudit(ctx, auditExecution, resp, err)
-		return resp, err
-	}
-	if !ok {
-		return resp, nil
-	}
-	if _, err := p.meter.Consume(ctx, AIUsageMeterInput{
-		WorkspaceID:       metering.WorkspaceID,
-		FeatureKey:        metering.FeatureKey,
-		IdempotencyKey:    metering.IdempotencyKey,
-		InputTokens:       resp.TokensUsed.InputTokens,
-		OutputTokens:      resp.TokensUsed.OutputTokens,
-		ReasoningTokens:   resp.TokensUsed.ReasoningTokens,
-		CachedInputTokens: resp.TokensUsed.CachedInputTokens,
-		CacheWriteTokens:  resp.TokensUsed.CacheWriteTokens,
-		Metadata:          metering.Metadata,
-	}); err != nil {
-		p.finishAIActionAudit(ctx, auditExecution, resp, err)
-		return nil, err
-	}
-	p.finishAIActionAudit(ctx, auditExecution, resp, nil)
-	return resp, nil
+	resp, err := p.chatCompletionTokenPriced(ctx, req, metering)
+	p.finishAIActionAudit(ctx, auditExecution, resp, err)
+	return resp, err
 }
 
 func (p *MeteredLLMProvider) finishAIActionAudit(ctx context.Context, execution *model.AIActionExecution, resp *llm.ChatResponse, callErr error) {
@@ -425,92 +369,20 @@ func taskNatureForFeature(featureKey string) string {
 	}
 }
 
+// These legacy product wrappers have no independent reservation. Chat and agent
+// executions admit and reconcile through the resolved lifecycle; embedding usage
+// remains in its action audit. Keep missing lifecycle wiring an error.
 func (m *AIUsageMeter) Preflight(ctx context.Context, input AIUsageMeterInput) error {
-	if m != nil && m.usage != nil {
-		// Token-priced calls reserve with their resolved provider route immediately
-		// before execution. Agent Runtime launches use PreflightAgentRunAIUsage,
-		// which persists the resulting reservation on the durable run.
-		return nil
+	if m == nil || m.usage == nil {
+		return errors.New("AI usage lifecycle is required")
 	}
-	if m == nil || m.consumer == nil {
-		return fmt.Errorf("ai usage meter billing consumer is required")
-	}
-	credits := BillingCreditsForFeature(input.FeatureKey)
-	if credits == 0 {
-		return nil
-	}
-	return m.consumer.PreflightCredits(ctx, BillingCreditPreflight{
-		WorkspaceID: input.WorkspaceID,
-		FeatureKey:  input.FeatureKey,
-		Credits:     credits,
-	})
+	return ctx.Err()
 }
-
 func (m *AIUsageMeter) PreflightUsage(ctx context.Context, input AIUsageMeterInput) error {
-	if m != nil && m.usage != nil {
-		return nil
-	}
-	if m == nil || m.consumer == nil {
-		return fmt.Errorf("ai usage meter billing consumer is required")
-	}
-	units := CalculateAIUsageUnits(AIUsageCalculation{
-		FeatureKey:        input.FeatureKey,
-		InputTokens:       input.InputTokens,
-		OutputTokens:      input.OutputTokens,
-		ReasoningTokens:   input.ReasoningTokens,
-		CachedInputTokens: input.CachedInputTokens,
-	})
-	if units == 0 {
-		return nil
-	}
-	return m.consumer.PreflightCredits(ctx, BillingCreditPreflight{
-		WorkspaceID: input.WorkspaceID,
-		FeatureKey:  input.FeatureKey,
-		Credits:     units,
-	})
+	return m.Preflight(ctx, input)
 }
-
 func (m *AIUsageMeter) Consume(ctx context.Context, input AIUsageMeterInput) (*BillingSummary, error) {
-	if m != nil && m.usage != nil {
-		return nil, nil
-	}
-	if m == nil || m.consumer == nil {
-		return nil, fmt.Errorf("ai usage meter billing consumer is required")
-	}
-	units := CalculateAIUsageUnits(AIUsageCalculation{
-		FeatureKey:        input.FeatureKey,
-		InputTokens:       input.InputTokens,
-		OutputTokens:      input.OutputTokens,
-		ReasoningTokens:   input.ReasoningTokens,
-		CachedInputTokens: input.CachedInputTokens,
-	})
-	if units == 0 {
-		return nil, nil
-	}
-	metadata := map[string]any{}
-	for key, value := range input.Metadata {
-		metadata[key] = value
-	}
-	if feature, ok := AIUsageFeature(input.FeatureKey); ok {
-		metadata["usage_label"] = feature.Label
-		metadata["usage_category"] = feature.Category
-		metadata["usage_floor"] = feature.FloorUnits
-	}
-	metadata["input_tokens"] = input.InputTokens
-	metadata["output_tokens"] = input.OutputTokens
-	metadata["reasoning_tokens"] = input.ReasoningTokens
-	metadata["cached_input_tokens"] = input.CachedInputTokens
-	metadata["cache_write_tokens"] = input.CacheWriteTokens
-	metadata["weighted_token_formula"] = "input + output*6 + reasoning*6 - cached_input*0.90"
-
-	return m.consumer.ConsumeCredits(ctx, BillingCreditConsumption{
-		WorkspaceID:    input.WorkspaceID,
-		FeatureKey:     input.FeatureKey,
-		Credits:        units,
-		IdempotencyKey: input.IdempotencyKey,
-		Metadata:       metadata,
-		AllowOverage:   input.AllowOverage,
-	})
+	return nil, m.Preflight(ctx, input)
 }
 
 // AIUsageFeature returns the metering definition for a feature key.
@@ -529,32 +401,6 @@ func AIUsageFeatures() []AIUsageFeatureDefinition {
 		return features[i].FeatureKey < features[j].FeatureKey
 	})
 	return features
-}
-
-// CalculateAIUsageUnits converts model token usage into internal usage units.
-func CalculateAIUsageUnits(input AIUsageCalculation) int {
-	feature, ok := AIUsageFeature(input.FeatureKey)
-	if ok && !feature.Chargeable {
-		return 0
-	}
-
-	weightedTokens := float64(max(input.InputTokens, 0)) +
-		float64(max(input.OutputTokens, 0))*6 +
-		float64(max(input.ReasoningTokens, 0))*6 -
-		float64(max(input.CachedInputTokens, 0))*0.90
-	if weightedTokens < 0 {
-		weightedTokens = 0
-	}
-
-	tokenUnits := int(math.Ceil(weightedTokens / 1000))
-	floor := 0
-	if ok {
-		floor = feature.FloorUnits
-	}
-	if tokenUnits < floor {
-		return floor
-	}
-	return tokenUnits
 }
 
 func AgentRunAIUsageFeature(agent *model.Agent) string {
@@ -588,32 +434,6 @@ func AgentRunAIUsageFeature(agent *model.Agent) string {
 	default:
 		return BillingFeatureBuiltInLightAgentRun
 	}
-}
-
-func RecordAgentRunAIUsage(ctx context.Context, meter *AIUsageMeter, run *model.AgentRun, agent *model.Agent) error {
-	if meter == nil || run == nil {
-		return nil
-	}
-	inputTokens := run.InputTokens
-	outputTokens := run.OutputTokens
-	if inputTokens == 0 && outputTokens == 0 && run.TokensUsed > 0 {
-		inputTokens = run.TokensUsed
-	}
-	_, err := meter.Consume(ctx, AIUsageMeterInput{
-		WorkspaceID:       run.WorkspaceID,
-		FeatureKey:        AgentRunAIUsageFeature(agent),
-		IdempotencyKey:    aiUsageIdempotencyKey(run.WorkspaceID, "agent_run", run.ID),
-		InputTokens:       inputTokens,
-		OutputTokens:      outputTokens,
-		CachedInputTokens: run.CachedInputTokens,
-		Metadata: map[string]interface{}{
-			"run_id":     run.ID,
-			"agent_id":   run.AgentID,
-			"preset_key": strings.TrimSpace(agentPresetKey(agent)),
-			"is_system":  agent != nil && agent.IsSystem,
-		},
-	})
-	return err
 }
 
 func PreflightAgentRunAIUsage(ctx context.Context, meter *AIUsageMeter, run *model.AgentRun, agent *model.Agent) error {
@@ -663,17 +483,7 @@ func PreflightAgentRunAIUsage(ctx context.Context, meter *AIUsageMeter, run *mod
 		}
 		return storeAgentRunMeteringContext(run, *metering)
 	}
-	return meter.Preflight(ctx, AIUsageMeterInput{
-		WorkspaceID:    run.WorkspaceID,
-		FeatureKey:     AgentRunAIUsageFeature(agent),
-		IdempotencyKey: aiUsageIdempotencyKey(run.WorkspaceID, "agent_run", run.ID, "preflight"),
-		Metadata: map[string]interface{}{
-			"run_id":     run.ID,
-			"agent_id":   run.AgentID,
-			"preset_key": strings.TrimSpace(agentPresetKey(agent)),
-			"is_system":  agent != nil && agent.IsSystem,
-		},
-	})
+	return errors.New("AI usage lifecycle is required")
 }
 
 func agentPricingIdentity(agent *model.Agent) (provider, modelID, route string) {
@@ -748,6 +558,9 @@ func agentRunMeteringContext(run *model.AgentRun) (MeteringContext, bool) {
 
 func (m *AIUsageMeter) reconcileAgentRun(ctx context.Context, run *model.AgentRun, usage agentRuntimeUsagePayload) error {
 	if m == nil || m.usage == nil {
+		return errors.New("AI usage lifecycle is required")
+	}
+	if run == nil {
 		return nil
 	}
 	metering, ok := agentRunMeteringContext(run)
@@ -918,12 +731,4 @@ func agentRunCheckpointTelemetry(run *model.AgentRun, checkpoint agentRunUsageCh
 	return agentRunTokenTelemetry(run, agentRuntimeUsagePayload{InputTokens: checkpoint.InputTokens,
 		CachedInputTokens: checkpoint.CachedInputTokens, OutputTokens: checkpoint.OutputTokens,
 		ReasoningOutputTokens: checkpoint.ReasoningOutputTokens})
-}
-
-// BillingCreditsForFeature is retained for the legacy optional credit adapter.
-func BillingCreditsForFeature(key string) int {
-	if feature, ok := AIUsageFeature(key); ok && feature.Chargeable {
-		return feature.FloorUnits
-	}
-	return 0
 }

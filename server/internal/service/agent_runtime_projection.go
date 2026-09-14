@@ -1329,46 +1329,22 @@ func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, 
 	if !ok {
 		return false, nil
 	}
-	agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
+	if s.usageMeter.usage == nil {
+		return false, errors.New("AI usage lifecycle is required")
+	}
+	if metering, ok := agentRunMeteringContext(run); ok {
+		if err := s.usageMeter.usage.Heartbeat(ctx, metering); err != nil {
+			return false, err
+		}
+	}
+	exceeded, err := s.usageMeter.agentRunUsageExceedsBudget(run, usage)
 	if err != nil {
 		return false, err
 	}
-	if s.usageMeter.usage != nil {
-		if metering, ok := agentRunMeteringContext(run); ok {
-			if heartbeatErr := s.usageMeter.usage.Heartbeat(ctx, metering); heartbeatErr != nil {
-				return false, heartbeatErr
-			}
-		}
-		exceeded, chargeErr := s.usageMeter.agentRunUsageExceedsBudget(run, usage)
-		if chargeErr != nil {
-			return false, chargeErr
-		}
-		if !exceeded {
-			return false, nil
-		}
-		err = model.ErrAIUsageExhausted
-	} else {
-		err = s.usageMeter.PreflightUsage(ctx, AIUsageMeterInput{
-			WorkspaceID:       run.WorkspaceID,
-			FeatureKey:        AgentRunAIUsageFeature(agent),
-			InputTokens:       usage.InputTokens,
-			OutputTokens:      int(agentRunTokenTelemetry(run, usage).OutputTokens),
-			ReasoningTokens:   usage.ReasoningOutputTokens,
-			CachedInputTokens: usage.CachedInputTokens,
-			Metadata: map[string]interface{}{
-				"run_id":         run.ID,
-				"runtime_run_id": runtimeRunID,
-				"agent_id":       run.AgentID,
-				"checkpoint":     true,
-			},
-		})
-	}
-	if err == nil {
+	if !exceeded {
 		return false, nil
 	}
-	if !isAIUsageCreditLimitError(err) {
-		return false, err
-	}
+
 	if _, cancelErr := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); cancelErr != nil {
 		return false, fmt.Errorf("cancel over-budget agent runtime run: %w", cancelErr)
 	}

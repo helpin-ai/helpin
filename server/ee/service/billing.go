@@ -1503,13 +1503,6 @@ func billingStringValue(value *string) string {
 	return *value
 }
 
-func BillingCreditsForFeature(featureKey string) int {
-	if feature, ok := AIUsageFeature(featureKey); ok && feature.Chargeable {
-		return feature.FloorUnits
-	}
-	return 0
-}
-
 // WorkspaceCreated supplies the commercial lifecycle policy to core workspace creation.
 func (s *BillingService) WorkspaceCreated(ctx context.Context, workspaceID string) error {
 	_, err := s.EnsureTrialForWorkspace(ctx, workspaceID)

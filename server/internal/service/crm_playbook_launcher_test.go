@@ -35,7 +35,7 @@ func TestCRMPlaybookLauncherUsesExistingRuntimeOnceForAllJourneys(t *testing.T) 
 				client := &playbookRuntimeEcho{lostResponse: uncertain}
 				agents := (&AgentService{agentRepo: host.agentRepo, runRepo: host.runRepo}).SetAgentRuntimeClient(client).SetAgentRuntimeLaunchEnabled(true)
 				consumer := &recordingAIUsageConsumer{}
-				launcher := NewCRMPlaybookAgentLauncher(agents, repository.NewCRMPlaybookExecutionRepository(db), &AIUsageMeter{consumer: consumer})
+				launcher := NewCRMPlaybookAgentLauncher(agents, repository.NewCRMPlaybookExecutionRepository(db), NewTokenPricedAIUsageMeter(consumer))
 				launcher.SetExecutionService(host.playbookExecution)
 				host.playbookExecution.launcher = launcher
 				run, err := launcher.StartPlaybookRun(context.Background(), binding)

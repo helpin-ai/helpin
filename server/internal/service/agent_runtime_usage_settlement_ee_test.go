@@ -107,28 +107,6 @@ func TestTerminalUsageFailureRetriesWithoutMarkingSettled(t *testing.T) {
 	}
 }
 
-func TestLegacyLateUsageDoesNotReapplyFeatureFloor(t *testing.T) {
-	svc, run, _ := terminalUsageFixture(t)
-	consumer := &fakeAgentRuntimeProjectionUsageConsumer{}
-	svc.usageMeter = &AIUsageMeter{consumer: consumer}
-	for _, event := range []AgentRuntimeEventEnvelope{terminalUsageEvent(agentruntime.EventRunCancelled, 100, 10), terminalUsageEvent(agentruntime.EventUsageCheckpoint, 101, 10), terminalUsageEvent(agentruntime.EventUsageCheckpoint, 100000, 10), terminalUsageEvent(agentruntime.EventUsageCheckpoint, 100000, 10)} {
-		if err := svc.ApplyEvent(context.Background(), event); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if len(consumer.consumeInputs) != 2 {
-		t.Fatalf("legacy settlements=%d", len(consumer.consumeInputs))
-	}
-	total := consumer.consumeInputs[0].Credits + consumer.consumeInputs[1].Credits
-	want := CalculateAIUsageUnits(AIUsageCalculation{FeatureKey: BillingFeatureBuiltInLightAgentRun, InputTokens: 100000, OutputTokens: 10})
-	if total != want {
-		t.Fatalf("charged=%d want=%d", total, want)
-	}
-	if run.Status != model.AgentRunStatusCancelled {
-		t.Fatal("late usage changed status")
-	}
-}
-
 func TestLateUsageDoesNotResetStrictChargeCap(t *testing.T) {
 	svc, run, store := terminalUsageFixture(t)
 	metering, ok := agentRunMeteringContext(run)

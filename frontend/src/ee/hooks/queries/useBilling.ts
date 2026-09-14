@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { billingService } from '@/ee/lib/services/billingService';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
-import { trackWorkspaceBillingEvent } from '@/lib/analytics';
+import { trackWorkspaceBillingEvent } from '@/ee/lib/billingAnalytics';
 import type {
   CheckoutRequest,
   ConfirmCheckoutRequest,

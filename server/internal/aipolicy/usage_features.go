@@ -6,7 +6,6 @@ type UsageFeatureDefinition struct {
 	FeatureKey string
 	Label      string
 	Category   string
-	FloorUnits int
 	Chargeable bool
 }
 
@@ -23,7 +22,6 @@ func UsageFeatures(registry *Registry) map[string]UsageFeatureDefinition {
 			FeatureKey: action.FeatureKey,
 			Label:      action.Label,
 			Category:   string(action.Category),
-			FloorUnits: action.FloorUnits,
 			Chargeable: action.Chargeable,
 		}
 	}
