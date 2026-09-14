@@ -27,6 +27,7 @@ type AIProfileBootstrapOptions struct {
 
 type AIProfileBootstrapResult struct {
 	AgentsMigrated           int      `json:"agents_migrated"`
+	AgentsDefaultedToSmall   int      `json:"agents_defaulted_to_small"`
 	ProfilesCreated          int      `json:"profiles_created"`
 	UnconfiguredProviders    []string `json:"unconfigured_providers"`
 	RunsUsingRuntimeDefaults []string `json:"runs_using_runtime_defaults"`
@@ -133,6 +134,9 @@ func (s *AIProfileBootstrapService) Apply(ctx context.Context, opts AIProfileBoo
 			}
 			result.ProfilesCreated++
 			result.AgentsMigrated++
+			if strings.TrimSpace(derefString(agent.Model)) == "" && strings.TrimSpace(agent.ModelTier) == "" {
+				result.AgentsDefaultedToSmall++
+			}
 		}
 		if err := store.EnsureDefault(ctx, &model.AIWorkspaceSettings{WorkspaceID: opts.WorkspaceID, DefaultProfileID: &defaultID, UpdatedAt: time.Now().UTC()}); err != nil {
 			return err
@@ -179,13 +183,29 @@ func bootstrapAPIProvider(provider string) bool {
 
 func bootstrapAgentModel(agent model.Agent) (sdk.RunModel, error) {
 	provider, name := strings.TrimSpace(derefString(agent.Provider)), strings.TrimSpace(derefString(agent.Model))
+	controls := &sdk.ModelControls{}
+	if name == "" {
+		// A provider alone is not a model choice. Preserve a named size, or use
+		// Small when the agent has neither a model nor a size configured.
+		tier := aimodel.Tier(strings.TrimSpace(agent.ModelTier))
+		if tier == "" {
+			tier = aimodel.TierSmall
+		}
+		route, ok := selectableAgentTierRoutes[tier]
+		if !ok {
+			return sdk.RunModel{}, fmt.Errorf("unknown model size %q", tier)
+		}
+		provider, name = route.Provider, route.Model
+		if quantizations := providerQuantizationsForAgentRoute(route); len(quantizations) != 0 {
+			controls.OpenRouter = &sdk.OpenRouterModelControls{Provider: &sdk.OpenRouterProviderPreferences{Quantizations: quantizations}}
+		}
+	}
 	if provider == "openrouter-responses" {
 		provider = "openrouter_responses"
 	}
 	if provider == "" || name == "" {
-		return sdk.RunModel{}, errors.New("provider and model must be explicit before profile migration")
+		return sdk.RunModel{}, errors.New("an explicit model requires a provider before profile migration")
 	}
-	controls := &sdk.ModelControls{}
 	if len(agent.ExecutionConfig) > 0 {
 		if err := json.Unmarshal(agent.ExecutionConfig, controls); err != nil {
 			return sdk.RunModel{}, err

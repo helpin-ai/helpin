@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/gorm"
@@ -158,12 +160,12 @@ func TestBootstrapCredentialRotationIsExplicitAndMigrationIsAtomic(t *testing.T)
 	if err != nil || secret.APIKey != "second-key" {
 		t.Fatal("explicit rotation did not replace the secret")
 	}
-	if err := db.Exec(`INSERT INTO agents VALUES ('invalid','workspace','Invalid',NULL,NULL,'{}',NULL)`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO agents VALUES ('invalid','workspace','Invalid',NULL,'explicit-model','{}',NULL)`).Error; err != nil {
 		t.Fatal(err)
 	}
 	opts.Credentials["openai"] = "third-key"
 	if _, err := svc.Apply(ctx, opts); err == nil {
-		t.Fatal("implicit default route migration accepted")
+		t.Fatal("explicit model without provider accepted")
 	}
 	if err := db.Where("provider = ?", "openai").First(&c).Error; err != nil {
 		t.Fatal(err)
@@ -171,5 +173,106 @@ func TestBootstrapCredentialRotationIsExplicitAndMigrationIsAtomic(t *testing.T)
 	secret, err = connections.open(&c)
 	if err != nil || secret.APIKey != "second-key" {
 		t.Fatal("failed migration partially rotated credentials")
+	}
+}
+
+func TestBootstrapUnconfiguredAgentUsesSmallAndPreservesReset(t *testing.T) {
+	svc, _, db := bootstrapFixture(t)
+	if err := db.Exec(`INSERT INTO agents VALUES ('unconfigured','workspace','Unconfigured','anthropic',NULL,'{"native_context":{"enabled":true},"max_tool_steps":88}',NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	opts := AIProfileBootstrapOptions{WorkspaceID: "workspace", Funding: "managed", DryRun: true,
+		Credentials: map[string]string{"openai": "fixture-openai", "openrouter": "fixture-openrouter"}}
+	preview, err := svc.Apply(ctx, opts)
+	if err != nil || preview == nil || preview.AgentsDefaultedToSmall != 1 || preview.AgentsMigrated != 2 {
+		t.Fatalf("preview = %+v, error = %v", preview, err)
+	}
+	var agent model.Agent
+	if err := db.First(&agent, "id = ?", "unconfigured").Error; err != nil {
+		t.Fatal(err)
+	}
+	if agent.AIProfileID != nil {
+		t.Fatal("preview assigned the Small route")
+	}
+	opts.DryRun = false
+	result, err := svc.Apply(ctx, opts)
+	if err != nil || result == nil || result.AgentsDefaultedToSmall != 1 || len(result.UnconfiguredProviders) != 0 {
+		t.Fatalf("apply = %+v, error = %v", result, err)
+	}
+	if err := db.First(&agent, "id = ?", "unconfigured").Error; err != nil {
+		t.Fatal(err)
+	}
+	if agent.AIProfileID == nil {
+		t.Fatal("missing Small route profile")
+	}
+	var profile model.AIProfile
+	if err := db.First(&profile, "id = ?", *agent.AIProfileID).Error; err != nil {
+		t.Fatal(err)
+	}
+	small := selectableAgentTierRoutes[aimodel.TierSmall]
+	if profile.Primary.Model.Provider != small.Provider || profile.Primary.Model.Model != small.Model {
+		t.Fatalf("default route = %+v", profile.Primary.Model)
+	}
+	if string(agent.ExecutionConfig) != `{"native_context":{"enabled":true},"max_tool_steps":88}` {
+		t.Fatal("migration changed independent execution settings")
+	}
+	if err := db.Model(&model.Agent{}).Where("id = ?", agent.ID).UpdateColumn("ai_profile_id", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	result, err = svc.Apply(ctx, opts)
+	if err != nil || result == nil || result.AgentsMigrated != 0 || result.AgentsDefaultedToSmall != 0 {
+		t.Fatalf("retry = %+v, error = %v", result, err)
+	}
+	agent = model.Agent{}
+	if err := db.First(&agent, "id = ?", "unconfigured").Error; err != nil {
+		t.Fatal(err)
+	}
+	if agent.AIProfileID != nil {
+		t.Fatal("retry erased explicit workspace inheritance")
+	}
+}
+
+func TestBootstrapAgentModelDefaultsOnlyMissingSelections(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		provider, model, tier string
+		wantTier              aimodel.Tier
+		wantError             bool
+	}{
+		{name: "empty", wantTier: aimodel.TierSmall},
+		{name: "whitespace", provider: "anthropic", model: "  ", wantTier: aimodel.TierSmall},
+		{name: "configured size", provider: "anthropic", tier: "large", wantTier: aimodel.TierLarge},
+		{name: "explicit model wins", provider: "openai", model: "private-model", tier: "large"},
+		{name: "unknown size", tier: "unknown", wantError: true},
+		{name: "explicit model missing provider", model: "private-model", wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := model.Agent{Provider: &tc.provider, Model: &tc.model, ModelTier: tc.tier,
+				ExecutionConfig: model.JSONBlob(`{"reasoning_effort":"high","max_tool_steps":88}`)}
+			got, err := bootstrapAgentModel(agent)
+			if tc.wantError {
+				if err == nil {
+					t.Fatal("invalid explicit selection accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantProvider, wantModel := tc.provider, tc.model
+			if tc.wantTier != "" {
+				route := selectableAgentTierRoutes[tc.wantTier]
+				wantProvider, wantModel = route.Provider, route.Model
+				if want := providerQuantizationsForAgentRoute(route); len(want) > 0 {
+					if got.Controls.OpenRouter == nil || got.Controls.OpenRouter.Provider == nil || !reflect.DeepEqual(got.Controls.OpenRouter.Provider.Quantizations, want) {
+						t.Fatal("missing tier routing preferences")
+					}
+				}
+			}
+			if got.Provider != wantProvider || got.Model != wantModel || derefString(got.Controls.ReasoningEffort) != "high" {
+				t.Fatalf("resolved model = %+v", got)
+			}
+		})
 	}
 }

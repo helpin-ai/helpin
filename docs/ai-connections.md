@@ -67,9 +67,13 @@ Preview writes roll back. Apply runs in one workspace transaction. Repeating it
 preserves edited profiles, cleared defaults, and current credentials. Missing
 keys create visibly unconfigured routes. The established tier routes remain
 unchanged; configure a usable workspace default if the Small route is unavailable.
-Each migrated agent preserves its exact provider, model, reasoning, routing
-controls, and independent execution configuration. Agents with implicit provider
-or model values must be configured explicitly before migration. Historical
+Each migrated agent with an explicit model preserves its provider, model,
+reasoning, routing controls, and independent execution configuration. Agents
+without a model use their configured size, or the Small route when no size is
+configured. The report counts these Small defaults as `agents_defaulted_to_small`.
+Each agent receives its own migration profile so later resets to workspace
+inheritance remain intact on retries. Explicit models still require a provider;
+unknown sizes and invalid controls fail the preview. Historical
 versions, reviewed CRM setups, completed runs, and active run identities are not
 rewritten. Older CRM setups need review/publication to acquire an explicit profile.
 
