@@ -100,6 +100,10 @@ func (s *AIProfileService) validateRoute(ctx context.Context, workspace, user, s
 	if route.Model.Provider != c.Provider {
 		return errors.New("profile provider must match its connection")
 	}
+	if route.Model.Endpoint != nil && !sameModelEndpoint(route.Model.Endpoint, c.Endpoint) {
+		return errors.New("profile endpoint must match its connection")
+	}
+	route.Model.Endpoint = c.Endpoint
 	route.Model.Model = strings.TrimSpace(route.Model.Model)
 	if route.Model.Controls == nil {
 		route.Model.Controls = &sdk.ModelControls{}

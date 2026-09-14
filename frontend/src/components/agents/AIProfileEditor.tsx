@@ -216,6 +216,7 @@ function ProfileRouteFields({
                 connection_id: value,
                 model: {
                   provider: connection.provider,
+                  endpoint: connection.endpoint,
                   model: "",
                   controls: {},
                 },
@@ -241,6 +242,14 @@ function ProfileRouteFields({
       </div>
       <div>
         <AIConnectionPolicyNotice policy={connection?.policy} />
+        {connection?.endpoint && (
+          <p className="text-xs text-quiet-text-secondary">
+            Endpoint: {connection.endpoint.id} ·{" "}
+            {connection.endpoint.auth_mode === "none"
+              ? "No authentication"
+              : "API key"}
+          </p>
+        )}
         <Label htmlFor={`${id}-model`}>Model identifier</Label>
         <QuietUnderlineInput
           id={`${id}-model`}

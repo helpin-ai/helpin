@@ -12,7 +12,7 @@ import {
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 vi.mock("@/lib/services/aiProfileService", () => ({
-  aiProfileService: { list: vi.fn() },
+  aiProfileService: { list: vi.fn(), settings: vi.fn() },
 }));
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -47,6 +47,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.mocked(aiProfileService.settings).mockResolvedValue({data: { default_profile_id: "workspace" }, error: null});
   vi.mocked(aiProfileService.list).mockResolvedValue({
     data: profiles,
     error: null,
@@ -132,4 +133,26 @@ it("disables a policy-rejected primary even when its fallback is allowed", async
   expect(item?.getAttribute("aria-disabled")).toBe("true");
   await act(async () => item!.click());
   expect(onChange).not.toHaveBeenCalled();
+});
+
+it("discloses the inherited workspace route without selecting an override", async () => {
+  const onChange = vi.fn();
+  await act(async () => root.render(<QueryClientProvider client={client}>
+    <AIProfilePicker workspaceId="ws" onChange={onChange} />
+  </QueryClientProvider>));
+  for (let i = 0; i < 20 && !document.body.textContent?.includes("Workspace default: workspace profile"); i++) {
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  }
+  expect(document.body.textContent).toContain("Workspace default: workspace profile");
+  expect(document.body.textContent).toContain("openai · custom-model · No fallback");
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+it("uses the agent default before the workspace default", async () => {
+  await act(async () => root.render(<QueryClientProvider client={client}>
+    <AIProfilePicker workspaceId="ws" defaultProfileId="workspace" onChange={() => {}} />
+  </QueryClientProvider>));
+  await openPicker();
+  expect(document.body.textContent).toContain("Agent default: workspace profile");
+  expect(aiProfileService.settings).not.toHaveBeenCalled();
 });

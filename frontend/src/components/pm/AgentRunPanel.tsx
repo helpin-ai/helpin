@@ -579,7 +579,7 @@ export function AgentRunPanel({
                 </SelectContent>
               </Select>
             </div>
-            <AIConnectionPicker workspaceId={workspaceId} value={aiConnection} onChange={setAIConnection} />
+            <AIConnectionPicker workspaceId={workspaceId} defaultProfileId={selectedAgent?.ai_profile_id} value={aiConnection} onChange={setAIConnection} />
             {delivery?.selectedRepository ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={setDeliveryMode} /> : null}
             {actionDisabledReason ? <p className="min-w-0 text-xs text-muted-foreground">{actionDisabledReason}</p> : null}
             <Tooltip>

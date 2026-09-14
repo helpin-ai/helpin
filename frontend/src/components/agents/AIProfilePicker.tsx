@@ -20,12 +20,14 @@ export function AIProfilePicker({
   onChange,
   disabled = false,
   sharedOnly = false,
+  defaultProfileId,
 }: {
   workspaceId: string;
   value?: string | null;
   onChange: (value: string | null) => void;
   disabled?: boolean;
   sharedOnly?: boolean;
+  defaultProfileId?: string | null;
 }) {
   const id = useId();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
@@ -38,6 +40,18 @@ export function AIProfilePicker({
         throw new Error(res.error || "Unable to load AI profiles");
       return res.data;
     },
+  });
+  const settings = useQuery({
+    queryKey: ["ai-settings", workspaceId],
+    enabled:
+      !!workspaceId && !value && !defaultProfileId && !!query.data?.length,
+    queryFn: async () => {
+      const result = await aiProfileService.settings(workspaceId);
+      if (result.error || !result.data)
+        throw new Error(result.error || "Unable to load AI default");
+      return result.data;
+    },
+    retry: false,
   });
   if (query.isPending)
     return (
@@ -54,7 +68,9 @@ export function AIProfilePicker({
   const profiles = query.data.filter(
     (p) => !sharedOnly || p.scope === "workspace",
   );
-  const selected = profiles.find((p) => p.id === value);
+  const selectedId =
+    value || defaultProfileId || settings.data?.default_profile_id;
+  const selected = profiles.find((p) => p.id === selectedId);
   return (
     <div className="min-w-0 space-y-2">
       <Label htmlFor={id}>AI profile</Label>
@@ -88,6 +104,22 @@ export function AIProfilePicker({
           ))}
         </SelectContent>
       </Select>
+      {!value && selected && (
+        <p className="text-xs text-quiet-text-secondary">
+          {defaultProfileId ? "Agent" : "Workspace"} default: {selected.name}
+        </p>
+      )}
+      {!value && !defaultProfileId && settings.isError && (
+        <QuietTextAction type="button" onClick={() => void settings.refetch()}>
+          Retry loading the default route
+        </QuietTextAction>
+      )}
+      {!value && !selected && !settings.isError && !settings.isFetching && (
+        <p role="status" className="text-xs text-quiet-text-secondary">
+          No available default profile. Select a profile or configure the
+          workspace default.
+        </p>
+      )}
       {selected && (
         <p className="text-xs text-quiet-text-secondary">
           {selected.primary.model.provider} · {selected.primary.model.model}

@@ -105,7 +105,7 @@ export function AgentRunNowDialog({
 
         <div className="space-y-4">
           <CodingCapacityNotice agent={agent} />
-          <AIConnectionPicker workspaceId={workspaceId} value={aiConnection} onChange={onAIConnectionChange} disabled={submitting} />
+          <AIConnectionPicker workspaceId={workspaceId} defaultProfileId={agent?.ai_profile_id} value={aiConnection} onChange={onAIConnectionChange} disabled={submitting} />
           {['task', 'epic', 'repository'].includes(targetType) ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={onDeliveryModeChange} /> : null}
           {targets.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">

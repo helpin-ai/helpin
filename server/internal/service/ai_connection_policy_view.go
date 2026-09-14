@@ -38,7 +38,7 @@ func connectionPolicyView(ctx context.Context, policy AIConnectionAdmissionPolic
 // describes prospective funding; accepted runs keep their persisted snapshot.
 func profileRoutePolicy(route model.AIProfileRoute, scope string, connections map[string]model.AIConnection) *model.AIConnectionPolicyView {
 	c, ok := connections[route.ConnectionID]
-	if !ok || c.Provider != route.Model.Provider || (scope == "workspace" && c.Scope != "workspace") {
+	if !ok || !sameModelEndpoint(c.Endpoint, route.Model.Endpoint) || c.Provider != route.Model.Provider || (scope == "workspace" && c.Scope != "workspace") {
 		return &model.AIConnectionPolicyView{Message: "This connection is unavailable to this workspace member."}
 	}
 	return c.Policy

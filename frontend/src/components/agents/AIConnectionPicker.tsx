@@ -10,12 +10,14 @@ export function AIConnectionPicker({
   onChange,
   disabled = false,
   locked = false,
+  defaultProfileId,
 }: {
   workspaceId: string;
   value: AIConnectionSelection;
   onChange: (value: AIConnectionSelection) => void;
   disabled?: boolean;
   locked?: boolean;
+  defaultProfileId?: string | null;
 }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   if (locked && value.model_connection_id && !value.ai_profile_id) {
@@ -26,10 +28,7 @@ export function AIConnectionPicker({
           {value.model_name ? ` · ${value.model_name}` : ""}.
         </p>
         {workspace?.id === workspaceId && (
-          <AISettingsLink
-            className="text-xs underline"
-            slug={workspace.slug}
-          >
+          <AISettingsLink className="text-xs underline" slug={workspace.slug}>
             Manage my AI connections
           </AISettingsLink>
         )}
@@ -39,6 +38,7 @@ export function AIConnectionPicker({
   return (
     <AIProfilePicker
       workspaceId={workspaceId}
+      defaultProfileId={defaultProfileId}
       value={value.ai_profile_id}
       onChange={(id) => onChange(id ? { ai_profile_id: id } : {})}
       disabled={disabled || locked}

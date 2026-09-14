@@ -471,6 +471,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.Use(middleware.RequireWorkspaceID)
 					r.Use(wsActive)
 					r.Get("/", h.AIConnection.List)
+					r.Get("/endpoints", h.AIConnection.Endpoints)
 					r.Post("/", h.AIConnection.Create)
 					r.Post("/{connectionID}/poll", h.AIConnection.Poll)
 					r.Post("/{connectionID}/reconnect", h.AIConnection.Reconnect)

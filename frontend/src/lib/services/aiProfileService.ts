@@ -1,4 +1,7 @@
-import type { AIConnectionPolicyView } from "./aiConnectionService";
+import type {
+  AIConnectionPolicyView,
+  AIModelEndpoint,
+} from "./aiConnectionService";
 import { api } from "@/lib/api";
 
 export interface AIModelControls {
@@ -9,7 +12,12 @@ export interface AIModelControls {
 
 export interface AIProfileRoute {
   connection_id: string;
-  model: { provider: string; model: string; controls: AIModelControls };
+  model: {
+    provider: string;
+    model: string;
+    controls: AIModelControls;
+    endpoint?: AIModelEndpoint;
+  };
 }
 
 export interface AIProfile {

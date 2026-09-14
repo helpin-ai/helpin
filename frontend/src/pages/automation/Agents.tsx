@@ -258,6 +258,15 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     default_invocation_mode: 'autonomous',
     supported_modes: ['autonomous', 'interactive'],
   },
+  ask_agent: {
+    ...DEFAULT_PRESET_MODEL,
+    label: 'Ask Agent',
+    default_role: 'Workspace Assistant',
+    description: 'Answers questions and carries out work from workspace chat.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
+    supported_modes: ['interactive'],
+  },
   command_agent: {
     ...DEFAULT_PRESET_MODEL,
     label: 'Sub-agent',

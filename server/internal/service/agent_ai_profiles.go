@@ -116,7 +116,7 @@ func (s *AgentService) resolveLegacyAISelection(ctx context.Context, params *cre
 			return nil, nil, err
 		}
 	}
-	route := model.AIProfileRoute{ConnectionID: c.ID, Model: sdk.RunModel{Provider: c.Provider, Model: name, Controls: controls}}
+	route := model.AIProfileRoute{ConnectionID: c.ID, Model: sdk.RunModel{Provider: c.Provider, Model: name, Controls: controls, Endpoint: c.Endpoint}}
 	if err := s.aiProfiles.validateRoute(ctx, params.workspaceID, user, c.Scope, &route); err != nil {
 		return nil, nil, err
 	}

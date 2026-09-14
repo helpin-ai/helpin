@@ -16,7 +16,14 @@ export interface AIConnectionPolicyView {
   pricing?: AIExecutionPolicySnapshot;
 }
 
+export interface AIModelEndpoint {
+  id: string;
+  base_url: string;
+  auth_mode: "api_key" | "none";
+}
+
 export interface AIConnection {
+  endpoint?: AIModelEndpoint;
   funding?: "customer" | "managed";
   policy?: AIConnectionPolicyView;
   id: string;
@@ -49,6 +56,8 @@ export interface AIConnectionLogin {
 const path = (workspace: string, suffix = "") =>
   `/ai-connections${suffix}?workspace_id=${encodeURIComponent(workspace)}`;
 export const aiConnectionService = {
+  endpoints: (workspace: string) =>
+    api.get<AIModelEndpoint[] | null>(path(workspace, "/endpoints")),
   list: (workspace: string) =>
     api.get<{
       enabled: boolean;
@@ -62,6 +71,7 @@ export const aiConnectionService = {
       provider: string;
       api_key?: string;
       scope?: "personal" | "workspace";
+      endpoint_id?: string;
     },
   ) => api.post<AIConnectionLogin>(path(workspace, "/"), request),
   poll: (workspace: string, id: string) =>

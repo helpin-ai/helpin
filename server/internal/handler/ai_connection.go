@@ -123,3 +123,13 @@ func (h *AIConnectionHandler) failure(w http.ResponseWriter, err error) {
 	}
 	writeError(w, 400, "Unable to update AI connection. Check the provider, model, and credentials, then retry.")
 }
+
+// Endpoints exposes approved destinations to authenticated workspace members.
+func (h *AIConnectionHandler) Endpoints(w http.ResponseWriter, r *http.Request) {
+	endpoints, err := h.service.AvailableEndpoints(r.Context(), middleware.GetWorkspaceID(r.Context()), middleware.GetUserID(r.Context()))
+	if err != nil {
+		h.failure(w, err)
+		return
+	}
+	writeJSON(w, 200, endpoints)
+}

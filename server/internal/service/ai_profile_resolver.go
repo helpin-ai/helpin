@@ -116,7 +116,7 @@ func (s *AIProfileService) Restore(ctx context.Context, workspace, user string, 
 	if err != nil {
 		return nil, err
 	}
-	if c.Provider != selection.Route.Model.Provider || c.Scope != selection.ConnectionScope || derefString(c.UserID) != derefString(selection.OwnerID) {
+	if !sameModelEndpoint(c.Endpoint, selection.Route.Model.Endpoint) || c.Provider != selection.Route.Model.Provider || c.Scope != selection.ConnectionScope || derefString(c.UserID) != derefString(selection.OwnerID) {
 		return nil, ErrAIConnection
 	}
 	return credential, nil

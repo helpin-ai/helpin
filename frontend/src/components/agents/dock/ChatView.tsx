@@ -1,3 +1,4 @@
+import { useAgents } from "@/hooks/queries/useAgents";
 import { AIExecutionDetails } from "../AIExecutionDetails";
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
@@ -166,6 +167,8 @@ export function ChatView({
   }, [initialDraft, onDraftConsumed, setValue]);
 
   const run = detail?.run ?? null;
+  const agentDefaults = useAgents(!run && active ? workspaceId : "");
+  const askAgentDefault = agentDefaults.data?.find(agent => agent.preset_key === "ask_agent")?.ai_profile_id;
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
   useEffect(() => {
     if (detailRefreshed.current) onRunIdChange?.(run?.id ?? null);
@@ -959,7 +962,7 @@ export function ChatView({
       ) : null}
       {run && <AIExecutionDetails input={run.input} />}
       {run?.status === 'paused' && run.pause_reason === 'authentication' && typeof run.input?.model_connection_id === 'string' && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} /></div>}
-      {!run && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} value={aiConnection} onChange={setAIConnection} disabled={sending} /></div>}
+      {!run && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} /></div>}
       {composer.visible && (
         <div className="border-t border-border/60">
           {starterSuggestions.length > 0 && composer.enabled && (

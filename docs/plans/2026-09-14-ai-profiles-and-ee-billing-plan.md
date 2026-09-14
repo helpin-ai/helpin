@@ -1,6 +1,6 @@
 # AI profiles, community BYOK, and optional SaaS BYOK
 
-Status: paused at the user’s request on September 14. Implementation is incomplete. See the [resume checkpoint](2026-09-14-ai-profiles-checkpoint.md) for commits, validation and remaining work.
+Status: implementation resumed at the user’s request. The [earlier checkpoint](2026-09-14-ai-profiles-checkpoint.md) records the first phase; current checkpoints below record subsequent work. Live rollout gates remain pending.
 
 Split delivery into a standalone catalog prerequisite, **Plan A: AI configuration and execution**, and **Plan B: commercial billing extraction**. Plan A can use an adapter to the existing commercial implementation while Plan B proceeds separately. A clean community distribution requires both plans.
 
@@ -278,3 +278,24 @@ callback component without exposing its secret or URL. Focused admission,
 connection, capability, and startup package tests passed. No current Helpin agent
 configuration declares a lossless response-chain requirement; the SDK validation
 and Runtime capability still distinguish ChatGPT from direct OpenAI.
+
+### Compatible endpoint checkpoint
+
+SDK `v0.6.0-alpha.2` is published; both consumers use the released tag. Runtime
+commit `c374065` adds trusted app endpoint bindings, admission/recovery checks,
+explicit API-key/no-auth credentials, and the Eino Chat Completions adapter.
+Helpin creates connections from approved endpoint IDs, freezes the complete
+binding with encrypted secrets and accepted profiles, and exposes compatible
+connections without a price-catalog dependency. Default pickers disclose inherited
+routes; accepted-run details identify compatible endpoint authentication.
+
+Review also fixed OAuth refresh outages incorrectly qualifying for fallback:
+known authentication rejection may use the configured fallback; HTTP 429/5xx and
+other infrastructure failures cannot. Owner, profile, endpoint, and fallback
+regressions passed. Runtime app/engine/credential/model suites and vet passed;
+six focused UI cases and the EE type check passed. The actual local Qwen tool and
+restored-transcript test passed; see Runtime's
+`docs/2026-09-14-compatible-models.md` for server/model versions and limits. The
+temporary server was stopped. No Helpin database migration or service restart has
+been performed, and SaaS BYOK remains off. Fresh-deployment docs, final edition
+boundary review, and deployment canaries remain.

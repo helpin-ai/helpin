@@ -1,10 +1,14 @@
 package model
 
-import "time"
+import (
+	sdk "github.com/helpin-ai/agent-runtime-go"
+	"time"
+)
 
 // AIConnection belongs to a workspace or one of its members. Secret material is never
 // serialized; device sessions and OAuth refresh tokens remain app-owned.
 type AIConnection struct {
+	Endpoint        *sdk.ModelEndpoint      `json:"endpoint,omitempty" gorm:"serializer:json;type:jsonb"`
 	Policy          *AIConnectionPolicyView `json:"policy,omitempty" gorm:"-"`
 	ID              string                  `json:"id" gorm:"type:uuid;primaryKey"`
 	WorkspaceID     string                  `json:"workspace_id" gorm:"type:uuid;not null;index"`
@@ -22,10 +26,11 @@ type AIConnection struct {
 }
 
 type CreateAIConnectionRequest struct {
-	Scope    string `json:"scope,omitempty"`
-	Name     string `json:"name"`
-	Provider string `json:"provider"`
-	APIKey   string `json:"api_key,omitempty"`
+	EndpointID string `json:"endpoint_id,omitempty"`
+	Scope      string `json:"scope,omitempty"`
+	Name       string `json:"name"`
+	Provider   string `json:"provider"`
+	APIKey     string `json:"api_key,omitempty"`
 }
 
 type AIConnectionLogin struct {

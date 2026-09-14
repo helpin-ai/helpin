@@ -19,6 +19,7 @@ export function AIExecutionDetails({
   const model = object(route?.model);
   if (typeof model?.provider !== "string" || typeof model.model !== "string")
     return null;
+  const endpoint = object(model.endpoint);
   const policy = object(selection?.policy);
   const pricing =
     policy &&
@@ -40,6 +41,11 @@ export function AIExecutionDetails({
             ? " · Fallback selected before execution"
             : ""}
         </p>
+        {typeof endpoint?.id === "string" && (
+          <p>
+            Endpoint: {endpoint.id} · {endpoint.auth_mode === "none" ? "No authentication" : "API key"}
+          </p>
+        )}
         <AIConnectionPolicyNotice policy={{ allowed: true, pricing }} />
       </div>
     </details>

@@ -104,7 +104,12 @@ func (s *AIConnectionService) List(ctx context.Context, workspace, user string) 
 	return connections, nil
 }
 func aiConnectionAAD(c *model.AIConnection) []byte {
-	return []byte("ai-connection|v1|" + c.WorkspaceID + "|" + derefString(c.UserID) + "|" + c.ID + "|" + c.Provider)
+	aad := "ai-connection|v1|" + c.WorkspaceID + "|" + derefString(c.UserID) + "|" + c.ID + "|" + c.Provider
+	if c.Provider == "openai_compatible" && c.Endpoint != nil {
+		binding, _ := json.Marshal(c.Endpoint)
+		aad += "|" + string(binding)
+	}
+	return []byte(aad)
 }
 func (s *AIConnectionService) seal(c *model.AIConnection, secret aiConnectionSecret) error {
 	raw, err := json.Marshal(secret)
@@ -155,7 +160,25 @@ func (s *AIConnectionService) Create(ctx context.Context, workspace, user string
 	if req.Name == "" || len(req.Name) > 100 {
 		return nil, errors.New("connection name is required and must not exceed 100 characters")
 	}
+	var endpoint *sdk.ModelEndpoint
+	if req.Provider == "openai_compatible" {
+		var err error
+		endpoint, err = s.resolveEndpoint(ctx, workspace, user, req.EndpointID)
+		if err != nil {
+			return nil, err
+		}
+	} else if req.EndpointID != "" {
+		return nil, errors.New("endpoint is only supported for compatible connections")
+	}
 	switch req.Provider {
+	case "openai_compatible":
+		if endpoint.AuthMode == "none" {
+			if req.APIKey != "" {
+				return nil, errors.New("no-auth endpoints do not accept an API key")
+			}
+		} else if req.APIKey == "" || len(req.APIKey) > 65536 || strings.ContainsAny(req.APIKey, "\r\n") {
+			return nil, errors.New("a valid API key is required")
+		}
 	case "openai", "anthropic", "openrouter":
 		if req.APIKey == "" || len(req.APIKey) > 65536 || strings.ContainsAny(req.APIKey, "\r\n") {
 			return nil, errors.New("a valid API key is required")
@@ -167,7 +190,7 @@ func (s *AIConnectionService) Create(ctx context.Context, workspace, user string
 	default:
 		return nil, errors.New("unsupported AI provider")
 	}
-	c := &model.AIConnection{ID: uuid.NewString(), WorkspaceID: workspace, UserID: &user, Scope: req.Scope, Funding: "customer", Name: req.Name, Provider: req.Provider, Status: "connected"}
+	c := &model.AIConnection{Endpoint: endpoint, ID: uuid.NewString(), WorkspaceID: workspace, UserID: &user, Scope: req.Scope, Funding: "customer", Name: req.Name, Provider: req.Provider, Status: "connected"}
 	if req.Scope == "workspace" {
 		c.UserID = nil
 	}
@@ -289,6 +312,11 @@ func (s *AIConnectionService) Reconnect(ctx context.Context, workspace, user, id
 			secret.Device = session
 			c.Status = "pending"
 			c.ExpiresAt = &session.ExpiresAt
+		} else if c.Provider == "openai_compatible" && c.Endpoint != nil && c.Endpoint.AuthMode == "none" {
+			if apiKey != "" {
+				return errors.New("no-auth endpoints do not accept an API key")
+			}
+			c.Status = "connected"
 		} else {
 			apiKey = strings.TrimSpace(apiKey)
 			if apiKey == "" || len(apiKey) > 65536 || strings.ContainsAny(apiKey, "\r\n") {
@@ -333,6 +361,12 @@ func (s *AIConnectionService) loadConnectionCredential(ctx context.Context, work
 			return err
 		}
 		next := sdk.ModelCredential{Type: "api_key", APIKey: secret.APIKey, ConnectionID: c.ID}
+		if c.Provider == "openai_compatible" {
+			if err := sdk.ValidateModelEndpoint(c.Endpoint); err != nil {
+				return err
+			}
+			next.Type = c.Endpoint.AuthMode
+		}
 		if c.Provider == "openai_chatgpt" {
 			if !s.cfg.ChatGPTEnabled || secret.Token == nil {
 				return ErrAIConnection
@@ -347,9 +381,12 @@ func (s *AIConnectionService) loadConnectionCredential(ctx context.Context, work
 					var authErr *chatgptauth.AuthError
 					if errors.As(err, &authErr) && (authErr.Code == "reconnect_required" || authErr.Code == "account_changed") {
 						c.Status = "reauthorization_required"
+						publicErr = ErrAIConnectionUnavailable
+						return nil
 					}
-					publicErr = ErrAIConnectionUnavailable
-					return nil
+					// A timeout, upstream 5xx, or malformed response does not
+					// authorize changing the selected model or funding route.
+					return fmt.Errorf("refresh AI connection: %w", err)
 				}
 				secret.Token = refreshed
 				token = refreshed
@@ -400,6 +437,9 @@ func (s *AIConnectionService) RefreshRun(ctx context.Context, req sdk.ModelCrede
 	}
 	var input model.AgentRunInputPayload
 	if json.Unmarshal(run.Input, &input) != nil || input.ModelConnectionID != c.ID || input.ModelProvider != req.Provider || c.Provider != req.Provider || c.AccountID != req.AccountID {
+		return nil, ErrAIConnection
+	}
+	if input.AISelection != nil && !sameModelEndpoint(c.Endpoint, input.AISelection.Route.Model.Endpoint) {
 		return nil, ErrAIConnection
 	}
 	if err := s.authorizeAcceptedSelectionOwner(ctx, run, input.AISelection); err != nil {

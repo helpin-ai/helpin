@@ -29,7 +29,28 @@ func (s *AIProfileService) checkExecutionRoute(ctx context.Context, route model.
 	if err != nil {
 		return fmt.Errorf("check agent runtime capabilities: %w", err)
 	}
-	return validateRuntimeRoute(capabilities, c.AppID(), route.Model.Provider)
+	if err := validateRuntimeRoute(capabilities, c.AppID(), route.Model.Provider); err != nil {
+		return err
+	}
+	if route.Model.Provider == "openai_compatible" {
+		for _, app := range capabilities.Apps {
+			if app.AppID != c.AppID() {
+				continue
+			}
+			for _, endpoint := range app.ModelEndpoints {
+				if sameModelEndpoint(&endpoint, route.Model.Endpoint) {
+					for _, provider := range capabilities.Providers {
+						if provider.Name == "openai_compatible" && slices.Contains(provider.AuthModes, endpoint.AuthMode) {
+							return nil
+						}
+					}
+					return errors.New("compatible endpoint authentication mode is unsupported")
+				}
+			}
+		}
+		return errors.New("compatible endpoint is no longer approved or its binding changed")
+	}
+	return nil
 }
 
 func validateRuntimeRoute(capabilities *sdk.Capabilities, appID, provider string) error {
@@ -54,6 +75,13 @@ func validateRuntimeRoute(capabilities *sdk.Capabilities, appID, provider string
 		if route.Name == name {
 			ready = route.RunCredentialsConfigured && slices.Contains(route.AuthModes, auth)
 			break
+		}
+	}
+	if provider == "openai_compatible" {
+		for _, route := range capabilities.Providers {
+			if route.Name == name {
+				ready = route.RunCredentialsConfigured && slices.Contains(route.Protocols, "chat_completions")
+			}
 		}
 	}
 	if !ready {
