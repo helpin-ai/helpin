@@ -1,5 +1,7 @@
 # AI profiles implementation checkpoint — September 14, 2026
 
+The [review correction plan](2026-09-14-ai-profiles-review-fixes.md) is the latest status and supersedes the earlier completion assessment.
+
 Implementation resumed at the user's request. See [Resumed implementation](#resumed-implementation) for the current state. The original pause snapshot below is retained as history; its outstanding-code list is superseded by that update.
 
 Plan: [AI profiles, community BYOK, and optional SaaS BYOK](2026-09-14-ai-profiles-and-ee-billing-plan.md).
@@ -269,3 +271,28 @@ API-key and ChatGPT runs with outgoing credential attribution; live expired OAut
 refresh, reconnect and revocation; durable interruption/worker restart/cleanup;
 strict Helpin versus unchanged other-app defaults; and actual database migration
 and edition-transition checks. Preserve these as release gates, not completed tests.
+
+
+## Review corrections
+
+The [correction plan](2026-09-14-ai-profiles-review-fixes.md) records the completed
+review work and supersedes earlier completion claims. Local Helpin implementation
+commits are `b10159511`, `bd77197a3`, `5d02b5e5a`, and `45862fdb3`, preceded by plan
+commit `2f829d4bc`. SDK `37fb037` is published as `v0.6.0-alpha.3`; Runtime remains
+unchanged at `ffe0215` and retains its standalone credential defaults.
+
+Verified locally: EE backend service suites and binary builds; backend vet;
+Community backend with EE source absent; real PostgreSQL migration rollback,
+checksum, optional-source and profile-assignment checks; race-enabled continuation,
+CRM retry, Dock and disconnect tests; SDK tests and model export drift; both desktop
+type checks; final EE frontend type check/build; and Community frontend with EE
+source absent (437 files, 2,640 passed, three skipped). The focused EE UI suite
+passed 102 tests with one existing skip. The disposable PostgreSQL instance was
+removed. No user services were restarted and no live database was migrated.
+
+User rollout: apply core migrations `202609140008` and `202609140009` through the
+normal EE migrate command, then rebuild/restart Helpin API, worker and frontend.
+The SaaS desktop workflow now explicitly selects EE. Bootstrap dotenv loading
+requires `-env-file /absolute/path/to/.env` unless its values are already in the
+process environment. Live ChatGPT expiry/reconnect/revocation and workspace BYOK
+activation gates remain as previously documented; these fixes do not enable flags.

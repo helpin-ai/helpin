@@ -1,6 +1,6 @@
 # AI profiles and edition isolation: review corrections
 
-Status: implementing. This correction plan supersedes the earlier code-complete
+Status: implemented and verified locally. This correction plan supersedes the earlier code-complete
 assessment in `2026-09-14-ai-profiles-and-ee-billing-plan.md`. Live acceptance is
 still pending; SaaS BYOK remains disabled until its release gates pass.
 
@@ -50,4 +50,43 @@ still pending; SaaS BYOK remains disabled until its release gates pass.
 
 ## Progress
 
-- Plan recorded before implementation. No deployment action performed.
+- `2f829d4bc`: plan recorded before implementation.
+- `b10159511`: compatible endpoint propagation, new-run tariff admission,
+  attributed membership, personal primary scope, and targeted regressions.
+- `bd77197a3`: all EE Go sources tagged, explicit SaaS desktop edition and matching
+  TypeScript configuration, Community route/copy exclusion, SDK tier choices.
+- `5d02b5e5a`: referenced-profile deletion guard, additive indexes and active-profile
+  assignment trigger, explicit bootstrap dotenv path, model export drift test,
+  and real PostgreSQL transaction/ledger regression plus CI job.
+- SDK `v0.6.0-alpha.3` publishes canonical service-tier choices and alias handling.
+  Helpin consumes the release without a module replacement. Runtime needs no
+  behavior change; its existing accepted values remain compatible.
+- `45862fdb3`: launch regression coverage now exercises the ordinary continuation entry point,
+  CRM reviewed launch and accepted retry, Dock-to-runtime launch, and disconnection
+  during registration or submission. UI coverage submits the chosen Dock profile.
+- Real PostgreSQL checks passed: optional EE rows, core checksum enforcement,
+  unique-key conflict rollback, retry, idempotent indexes and assignment guard.
+  The disposable test container was removed. No development database was touched.
+- SDK tests, backend EE service suites, backend vet, EE binary builds, desktop
+  Community/EE type checks, the model export drift test, and race-enabled launch
+  regressions passed. The Community backend source-removal check passed.
+- Focused UI suite: 102 passed, one existing skip. Community artifact checks prove
+  the identified commercial copy and billing routes are absent.
+- Full Community frontend source-removal check passed: production build, artifact
+  assertions, 437 test files, 2,640 passing tests and three existing skips.
+- Final EE frontend production build and type check passed after the SDK-derived
+  tier export update. Both desktop editions type-check. EE binary builds passed.
+- Final Go module tidy/verification passed. Helpin commits remain local; only SDK
+  tag `v0.6.0-alpha.3` was published. No deployment action performed.
+
+## Deployment handoff
+
+- Apply new core migrations `202609140008_ai_profile_reference_indexes.sql` and
+  `202609140009_agent_ai_profile_liveness.sql` through the existing migrator. No
+  historical SQL changed, and no live migration was applied during this work.
+- Rebuild/restart Helpin API and worker with `-tags ee` for SaaS, and web/desktop
+  with the EE edition. Community remains the default for community distributions.
+- Runtime has no new source change or required restart for these corrections.
+- Keep SaaS BYOK activation behind its existing live acceptance and explicit tariff
+  gates. Expired ChatGPT refresh/reconnect/revocation canaries remain a deployment
+  gate; local fixtures do not claim to replace them.

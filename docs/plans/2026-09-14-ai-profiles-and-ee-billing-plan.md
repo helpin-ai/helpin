@@ -1,6 +1,6 @@
 # AI profiles, community BYOK, and optional SaaS BYOK
 
-Status: code implementation complete; live deployment acceptance pending. The [current checkpoint](2026-09-14-ai-profiles-checkpoint.md#resumed-implementation) records commits, verification, and the remaining user-run rollout gates.
+Status: review corrections implemented and verified locally; live deployment acceptance remains pending. See the [review correction plan](2026-09-14-ai-profiles-review-fixes.md). The [current checkpoint](2026-09-14-ai-profiles-checkpoint.md#resumed-implementation) records commits, verification, and the remaining user-run rollout gates.
 
 Split delivery into a standalone catalog prerequisite, **Plan A: AI configuration and execution**, and **Plan B: commercial billing extraction**. Plan A can use an adapter to the existing commercial implementation while Plan B proceeds separately. A clean community distribution requires both plans.
 
@@ -87,7 +87,7 @@ Use one Helpin resolver, including paths that bypass the ordinary agent launcher
 - Freeze selection when the launch is accepted, before it is queued. Profile edits cannot change queued, running, or resumed runs. Credential refresh can replace tokens for the same authorized connection without selecting a different route.
 - Recheck personal ownership, active membership, and connection status at launch, refresh, and resume. Shared execution requires the corresponding workspace authorization. Access loss or disconnect must not silently switch a running execution to another credential.
 - Show the effective route, connection scope, fallback policy, and SaaS charging policy in selection and run details. Replace “Runtime default” with “Agent default.”
-- Disabling the SaaS BYOK flag blocks new customer-funded selections. Existing accepted runs retain their snapshot and refresh authorization; emergency revocation uses the explicit connection/run revocation mechanism.
+- Disabling the SaaS BYOK flag blocks new customer-funded admissions, including new continuation and trusted-child runs. Existing accepted runs retain their snapshot and refresh authorization; emergency revocation uses the explicit connection/run revocation mechanism.
 
 ### A4. SDK and app-scoped Runtime credential policy
 

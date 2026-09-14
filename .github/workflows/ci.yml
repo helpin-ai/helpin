@@ -222,6 +222,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+          cache-dependency-path: server/go.sum
       - name: Check real migration transactions and edition ledger compatibility
         working-directory: server
         env:
