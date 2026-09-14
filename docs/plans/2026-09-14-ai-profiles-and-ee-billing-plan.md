@@ -6,24 +6,25 @@ Split delivery into a standalone catalog prerequisite, **Plan A: AI configuratio
 
 ## Product decisions
 
-Named AI profiles are the common configuration mechanism. Helpin owns connections, model selection, authorization, and fallback before launch. Agent Runtime receives the resolved model configuration and run-scoped credentials.
+Named AI profiles are the common configuration mechanism. Helpin owns its connections, model selection, authorization, and fallback before launch. For Helpin runs, Agent Runtime receives the resolved model configuration and run-scoped credentials. Runtime remains independently usable with its existing provider keys and defaults; Usermaven and other apps retain that behavior unless their trusted app configuration explicitly disables it.
 
 | Edition and route | Availability | Helpin charging |
 |---|---|---|
 | Community, customer credentials or local endpoint | Core functionality | No credits, subscription, or Helpin usage charges |
 | SaaS, Helpin-managed credentials | Default; managed Small, Medium, Large, and Flagship profiles | Existing managed usage charges |
-| SaaS, customer API key or personal ChatGPT connection | Implemented in the first release; workspace feature flag defaults off | Explicitly configured, versioned usage-based platform fee |
+| SaaS, customer API key or personal ChatGPT connection | Implemented in the first release; workspace feature flag defaults off | Configured percentage of published-equivalent model token cost; paid tools billed separately |
 
 - Small/Medium/Large/Flagship are managed profile names supplied by the commercial integration, not special routing concepts in core.
 - SaaS BYOK includes connection management, explicit profile selection, and one optional fallback from the start. Enforce its workspace flag in both backend APIs and UI.
-- Enabling SaaS BYOK requires a complete fee policy. Do not inherit the existing 10% customer-funded mode or the full-rate customer-funded-platform mode. This plan chooses no monetary rate; configuration must specify the applicable usage basis and treatment of paid tools before activation.
+- SaaS BYOK uses a **token-usage basis**: apply an explicitly configured percentage to model token usage valued at a versioned published-equivalent model tariff. There is no per-run or per-outcome fee. Paid tools use their existing separate tool tariffs, with no additional BYOK percentage applied to tool charges. Community has no Helpin model or tool charges.
+- Enabling SaaS BYOK requires a complete policy with that percentage and the applicable model/tool tariff versions. This plan leaves the percentage open, not the basis. Do not inherit the existing 10% customer-funded mode or the full-rate customer-funded-platform mode; an unset percentage is a configuration error, distinct from an explicitly configured zero.
 - Charge the route actually selected: customer credentials use the configured SaaS BYOK policy; fallback to Helpin credentials uses normal managed pricing. Disclose both outcomes before selection and persist the actual policy with the run. Community charges neither route.
 - Personal connections remain owned by a user **within a workspace** in this release. Account-wide ownership migration and automatic personal-profile preferences are deferred. Manual runs use an explicit override or the agent/workspace default.
 - Shared workspace connections support unattended agents. Personal ChatGPT connections are available for manual execution and authorized descendants, not unattended schedules or shared agent defaults.
 - Scope covers every agent-run launch path. Other Helpin AI features retain their current routing, but receive the community metering implementation and are included in the later billing extraction.
 - Add a Chat Completions-compatible runtime transport for local agent execution. This does not claim that every Helpin AI feature can run locally.
 
-The implemented contract will supersede [AI connections](../ai-connections.md) where it specifies runtime environment-key defaults and full-rate charging for customer credentials. Preserve its personal workspace scope and restrictions on unattended personal execution. Update that document in the implementation PRs; do not treat the existing database encryption context as account-wide.
+The implemented contract will supersede [AI connections](../ai-connections.md) where it specifies Helpin using runtime environment-key defaults and full-rate charging for customer credentials. Runtime default-key support for other apps remains unchanged. Preserve its personal workspace scope and restrictions on unattended personal execution. Update that document in the implementation PRs; do not treat the existing database encryption context as account-wide.
 
 ## Prerequisite PR: separate capabilities from pricing
 
@@ -32,7 +33,7 @@ Do this first, in isolation, preserving current SaaS routes and charges.
 - Split the current `aiusage.RouteDefinition` concerns into neutral model capabilities and commercial prices. Context limits, supported controls, cache support, protocols, and authentication modes must be usable without a price record.
 - Update tier resolution, selectable models, startup validation in both Helpin binaries, and frontend catalog generation. Core configuration and custom models must not depend on the generated commercial pricing catalog.
 - Put shared structural validation in the SDK and have Helpin and Runtime consume it. Runtime remains authoritative for supported execution capabilities. Remove the mirrored provider/control validation rules as consumers migrate.
-- Distinguish ordinary transcript continuation from lossless provider-specific reasoning/state replay. Reject incompatible profiles for agents that require the latter; do not advertise a provider as supporting it merely because another provider or execution path does.
+- Distinguish ordinary transcript continuation from lossless provider-specific reasoning/state replay. Reject incompatible profiles for agents that require the latter; do not advertise a provider as supporting it merely because another provider or execution path does. Specifically, Runtime's ChatGPT transport removes `previous_response_id` (`internal/runtime/native_chatgpt.go`), so `openai_chatgpt` must not inherit lossless response-chain replay capability from `openai`. Successful transcript/tool continuation does not establish lossless replay.
 - Define which execution fields are model controls. Applying a profile updates those fields without replacing unrelated tools, approval settings, native-context configuration, or execution limits. Preserve reasoning effort when migrating an existing tier snapshot.
 
 Acceptance: existing managed model selection and prices remain equivalent; a custom unpriced model can be represented and validated without inventing a price; provider/control validation agrees across SDK, Helpin, and Runtime.
@@ -41,12 +42,15 @@ Acceptance: existing managed model selection and prices remain equivalent; a cus
 
 ### A1. Supply a complete community usage lifecycle
 
+Deliver A1 as its own PR series. Its first deliverable is a reviewed call-site inventory covering required context, lifecycle methods, failure behavior, API/worker wiring, and test coverage. Use that inventory to divide the adapters and consumer migrations into independently reviewable changes; do not assume the reported 77-site count is the refactor boundary.
+
 Community needs a zero-financial implementation, not a nil billing service scattered through callers.
 
 - Define neutral interfaces for admission and the existing usage lifecycle: preflight, checkpoints, heartbeat, suspension/resume, settlement, failure, and release. Preserve stable operation IDs and retry/idempotency behavior.
 - Implement community admission without financial reservations or credit checks. Retain execution identity, raw usage, audit records, and operational safeguards. Unknown or unpriced models must work without a fabricated catalog entry.
 - Wire the implementation through API and worker startup and all metered consumers, including embeddings and reranking. These consumers still require their metering context and audit information; absence of a commercial meter must not remove those requirements.
-- Adapt current SaaS billing to the same contract. Keep managed pricing unchanged; supply an explicit fee policy for flagged SaaS BYOK.
+- Adapt current SaaS billing to the same contract. Keep managed pricing unchanged; supply the token-based fee policy for flagged SaaS BYOK. The neutral lifecycle carries raw model usage by token category, reported-versus-estimated attribution, and separately identified paid-tool usage with stable idempotency keys. Keep monetary calculation in the commercial adapter.
+- Persist an immutable EE snapshot containing the fee basis (`model_token_equivalent_percentage`), configured percentage, applicable model token rates and tariff version, paid-tool tariff references/versions, and the actual resolved funding route. Account for cached token categories without double counting. Settlement is the configured percentage of equivalent model-token cost plus separately calculated tool charges, never a percentage of the combined total. Model and tool retries cannot charge either component twice.
 - Do not use existing customer-funded constants as a shortcut for free community execution: current modes include percentage or full equivalent charges.
 
 Inventory actual call sites and required methods before changing the interface. Some gateways already permit a nil commercial meter while still requiring context; preserve that distinction during migration.
@@ -84,18 +88,23 @@ Use one Helpin resolver, including paths that bypass the ordinary agent launcher
 - Show the effective route, connection scope, fallback policy, and SaaS charging policy in selection and run details. Replace “Runtime default” with “Agent default.”
 - Disabling the SaaS BYOK flag blocks new customer-funded selections. Existing accepted runs retain their snapshot and refresh authorization; emergency revocation uses the explicit connection/run revocation mechanism.
 
-### A4. SDK and credential-only Runtime
+### A4. SDK and app-scoped Runtime credential policy
 
 - Add `ai_profile_id` to agent configuration and launch requests. An omitted override uses the resolver. Retain legacy connection/model overrides for one compatibility release, translate them into an explicit selection, and reject conflicting profile and legacy inputs.
 - Extend SDK `RunModel` with typed model controls and the transport/endpoint configuration needed for compatible endpoints. Explicit model controls replace legacy model-control values, including when empty; unrelated agent execution fields remain intact.
 - Helpin supplies a concrete model and request-only credential specification for every launch, including automation, CRM, and children. Local endpoints without authentication require an explicit supported no-auth mode, not an absent credential that invokes defaults.
-- Remove Runtime model-provider environment-key lookup and implicit provider/model defaults. Missing or unsupported resolved configuration produces an admission error.
-- Runtime capabilities report supported protocols/providers, authentication modes, controls, and readiness to accept run credentials rather than ambient provider-key availability.
+- Preserve Runtime model-provider environment-key lookup and existing provider/model defaults for standalone execution and apps such as Usermaven. Add a trusted per-app policy, proposed as `require_run_model_credentials` with a backward-compatible default of `false`. Helpin enables it after its launch migration. When enabled, require an explicit model and credential specification and reject missing values before queueing, even if Runtime environment keys are present. Explicit local no-auth is permitted only for a compatible configured route.
+- Enforce this policy from authenticated app configuration, not a caller-supplied run flag. Persist the accepted credential source and prevent workers, summaries, children, and resumed runs from silently using Runtime defaults. Explicit run credentials must never fall back to environment credentials on failure, including for apps that retain default-key support.
+- Preserve existing capability fields for global provider-key availability and add app-effective credential requirements/readiness alongside protocols, authentication modes, and controls. Helpin checks run-credential readiness; standalone and Usermaven consumers can still discover default-key availability. Do not change the meaning of existing capability fields.
 - Retain encrypted run credential storage, terminal cleanup, and the app refresh callback. OAuth refresh tokens stay in Helpin. Runtime service credentials and encryption keys remain required.
 - Refresh must honor the persisted run/connection binding, workspace, originating owner where applicable, and revocation state. Preserve request/log redaction and never send model credentials to host tool callbacks.
 - Publish a fetchable SDK release and update Helpin and Runtime together. Validate clean builds without local module replacements and verify the release can be fetched by a fresh installation.
 
 ### A5. Chat Completions-compatible local execution
+
+Make A5 independently mergeable and the last Plan A delivery. First prove the resolver and Helpin app credential policy with existing OpenAI, Anthropic, and OpenRouter API-key routes. Community API-key BYOK can ship without A5 once its other release gates pass; local-agent support is advertised only after A5 passes.
+
+This is a new transport: Runtime currently uses the Claude chat model and OpenAI Responses model, and does not yet depend on the Eino Chat Completions component. Include dependency selection, SDK compatibility, and adapter integration in its scope.
 
 - Add a distinct Chat Completions transport. Existing Responses support is not sufficient for an endpoint that only implements Chat Completions.
 - Cover streaming text, tool calls and results, stable call IDs, multi-turn execution, cancellation, continuation/recovery, provider errors, and usage reporting. Advertise only capabilities the transport implements.
@@ -108,11 +117,20 @@ Use one Helpin resolver, including paths that bypass the ordinary agent launcher
 - Preserve existing personal connection IDs, workspace/user ownership, run references, and encryption AAD. There is no account-wide re-encryption migration in this release.
 - Convert existing agent routes to profiles while preserving exact model controls and unrelated execution settings. Preserve historical agent versions, reviewed CRM snapshots, and completed-run records.
 - Provide an idempotent Helpin operator bootstrap that imports explicitly supplied provider credentials into shared or managed connections as appropriate. Missing credentials leave a route visibly unconfigured; do not depend on private Doppler access or scraping process environments.
-- Inventory nonterminal runs that still use Runtime environment credentials. Finish or explicitly cancel them under the rollout procedure before removing that execution path; never silently change their identity.
+- Inventory nonterminal Helpin runs that still use Runtime environment credentials. Finish or explicitly cancel those runs under the rollout procedure before enabling Helpin's strict app policy; never silently change their identity. Other apps' runs and Runtime's default credential path remain supported.
 - Update fresh-install configuration across **Helpin, agent-runtime, and agent-runtime-go**. Configure the Runtime API and every worker with the model-credential encryption key, durable state, app authorization, and callback wiring. Cover host development and compose deployment.
-- Remove Runtime provider keys only after credential-based canaries pass. A fresh community installation must work with documented configuration and fetchable dependencies, without private prebuilt binaries.
-- Track ChatGPT inference and live refresh as separate gates. Inference has been observed in the test system; expired-token refresh, restart, and revocation still require explicit end-to-end validation before rollout. Update stale validation statements in the existing connections document.
+- Enable Helpin's strict app policy only after credential-based canaries pass. A dedicated Helpin Runtime deployment can omit provider keys; a shared deployment may retain keys needed by Usermaven or other apps. Verify strict Helpin runs cannot consume those keys. A fresh community installation must work with documented configuration and fetchable dependencies, without private prebuilt binaries.
+- Track ChatGPT inference and live refresh as separate gates. The September 13 test confirmed inference and tool execution using ChatGPT credentials; see the evidence record below. Expired-token refresh, restart, and revocation still require explicit end-to-end validation before rollout. Update the stale validation statements in Helpin's `docs/ai-connections.md` and Runtime's `docs/2026-09-12-run-credentials.md`, and document the app policy in Runtime's app configuration contract. Those Runtime documents must continue to describe standalone and Usermaven default-key support.
 - Keep SaaS BYOK off until connection, refresh, fallback, fee, and authorization acceptance tests pass and an explicit tariff is configured. Implement the complete path before enabling the flag.
+
+### ChatGPT inference evidence: September 13, 2026
+
+Recorded from the earlier test-system investigation in this working session and reconfirmed by the user on September 14:
+
+- Runtime run: `run_9b1445790f13e52c710f2c3d`; Helpin run: `086a992f-a4ca-479b-8923-67923861fa9d`.
+- Selected route: `openai_chatgpt`, model `gpt-5.6-terra`, app-owned OAuth credential. The earlier inspection confirmed that credential source rather than the API-key route.
+- Observed progress: 10 successful model responses and 37 tool calls before the run stalled in `commit_and_push`. The stall was traced to a Git authentication/process-handling issue, after model inference and tool execution had succeeded. It was not a completed end-to-end run.
+- This record supports ChatGPT inference and tool execution, not expired-token refresh, reconnect/revocation, or lossless provider-state replay. It records the prior investigation; it is not a new live validation or an archived raw-log artifact.
 
 ## Plan B: extract commercial billing into EE
 
@@ -131,7 +149,7 @@ This is a separate project, dependent on the catalog split and neutral usage lif
 - Refactor the migrator to register SQL sources before moving future migrations into EE. Preserve the existing ledger and strict checksums for historical SQL.
 - Support core and optional EE sources with deterministic ordering and duplicate-version rejection. Keep historical migration files and checksums intact; new EE-specific SQL can then live with EE and register only in that edition.
 - Existing EE ledger entries and tables must remain valid when opening the database with a community build. Do not delete records, rewrite applied migrations, or require EE files merely to recognize previously applied history.
-- A second ledger is not required by this design. Test fresh installs, existing upgrades, and edition transitions against the selected registration scheme.
+- A second ledger is not required by this design. Test fresh installs, existing upgrades, and edition transitions against the selected registration scheme. Add an explicit regression test in which a community binary opens a database containing applied EE migration rows without the EE sources: startup, status, validation, and migration application must not reject those rows as unknown migrations, and core checksum validation must still detect real mismatches.
 
 ### B3. Extract implementation and commercial policy
 
@@ -145,23 +163,25 @@ This is a separate project, dependent on the catalog split and neutral usage lif
 ## Delivery order and acceptance
 
 1. Merge the standalone capability/catalog split with existing SaaS behavior preserved.
-2. Deliver Plan A in bounded changes: the usage lifecycle and commercial adapter; connections/profiles/settings; resolver and launch coverage; SDK/Runtime transport and credentials; migration and deployment. Keep the old execution path until the replacement and rollout gates pass.
+2. Start A1 as a separate PR series with the call-site inventory, then the lifecycle contract, adapters, and consumer migrations. Develop connections/profiles/settings and resolver work against that contract. Deliver SDK/app-policy changes and Helpin migration using existing OpenAI, Anthropic, and OpenRouter transports before A5. Preserve Runtime defaults for other apps throughout.
 3. Develop Plan B separately after its interface prerequisites: verified correctness fixes, migrator registration, then backend/frontend extraction. Full EE removal is not bundled into the first catalog PR.
-4. Enable SaaS BYOK only for explicitly configured workspaces after its tests pass. Release community only after both agent execution and the EE-free build gates pass.
+4. Enable SaaS BYOK only for explicitly configured workspaces after its tests pass. Release community API-key BYOK after its agent execution and EE-free build gates pass; A5 is not a prerequisite for that release.
+5. Merge and release A5 independently, last in Plan A, after streaming/tool integration and real local-server validation. Only this milestone enables the local-agent claim.
 
 ### Plan A acceptance
 
-- Community shared API-key, personal ChatGPT, and compatible local routes launch without credit balances, subscriptions, or commercial price entries. Raw usage and audit context survive preflight, interruption, approval pause, heartbeat, resume, failure, and settlement without financial effects.
-- Existing SaaS managed routes retain their expected charges. SaaS BYOK is blocked by backend and UI when disabled or lacking a complete fee policy; when enabled, the configured fee is applied exactly once. Test fallback in each funding direction and changes to policy after acceptance.
+- Community shared API-key and personal ChatGPT routes launch without credit balances, subscriptions, or commercial price entries; apply the same gate to compatible local routes when A5 lands. Raw usage and audit context survive preflight, interruption, approval pause, heartbeat, resume, failure, and settlement without financial effects.
+- Existing SaaS managed routes retain their expected charges. SaaS BYOK is blocked by backend and UI when disabled or lacking a complete fee policy; when enabled, the configured fee is applied exactly once. Test input/output/cache token accounting, separate paid-tool charges without a BYOK surcharge, an explicit zero percentage versus an unset percentage, fallback in each funding direction, and changes to policy after acceptance.
 - Test personal owner/workspace isolation, shared management permissions, expired OAuth with live refresh, disconnect, membership loss, and trusted-child authorization.
 - Exercise every launch path in A3, including CRM's reviewed snapshot, queued runs, children, and recovery. Inspect outgoing model authentication in test transports to prove selection; checking a stored connection ID alone is insufficient.
 - Test primary/fallback availability, missing defaults, invalid capabilities, explicit overrides, legacy-input conflicts, and no switch after execution starts. Profile edits must not alter accepted runs.
 - Test that profile/tier migration preserves reasoning controls, native context, approvals, and other execution settings. SDK, Helpin, and Runtime agree on supported controls and continuation requirements.
-- With all Runtime provider-key variables unset, run API-key, ChatGPT, and explicit no-auth local execution. Cover streaming tool calls, multiple turns, cancellation, worker restart, terminal credential cleanup, and credential redaction.
+- With Runtime provider-key variables unset, run Helpin API-key and ChatGPT execution under its strict app policy; add explicit no-auth local execution at A5. Cover streaming tool calls, multiple turns, cancellation, worker restart, terminal credential cleanup, and credential redaction.
+- In the same Runtime with global keys configured, test that Helpin rejects missing run model/credentials while a Usermaven-style app with the policy omitted retains existing defaults. Explicit credentials never fall back on expiry, rejection, revocation, summary, child launch, or resume. Test standalone execution and backward-compatible capabilities.
 - Validate fresh deployment using released dependencies and documented keys/configuration across all three repositories. Record live ChatGPT inference and refresh results separately.
 
 ### Plan B acceptance
 
 - Community builds and runs with EE directories absent, without commercial configuration, prices, routes, frontend assets, or billing jobs. Operational authorization and resource safeguards remain active.
 - EE regression tests cover managed usage pricing, the configured BYOK fee, subscriptions, seats, workspace locks, reservations, and settlement. Webhook and worker retries cannot duplicate a charge or lose a business update after recording an event.
-- Fresh community and EE databases, existing EE upgrades, and supported edition transitions preserve migration history, strict checksums, connection decryption, and historical billing records.
+- Fresh community and EE databases, existing EE upgrades, and supported edition transitions preserve migration history, strict checksums, connection decryption, and historical billing records. A community binary recognizes previously applied EE rows without loading EE SQL and without weakening checksum validation for available core migrations.
