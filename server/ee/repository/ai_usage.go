@@ -63,7 +63,8 @@ func NewAIUsageRepository(db *gorm.DB) *AIUsageRepository { return &AIUsageRepos
 
 // Reserve atomically holds allowance for an execution.
 func (r *AIUsageRepository) Reserve(ctx context.Context, input AIUsageReservationRequest) (*model.AIUsageReservation, error) {
-	if input.WorkspaceID == "" || input.IdempotencyKey == "" || input.ReservedMicrousd <= 0 {
+	// Explicitly free BYOK still needs a reservation for durable usage tracking.
+	if input.WorkspaceID == "" || input.IdempotencyKey == "" || input.ReservedMicrousd < 0 {
 		return nil, fmt.Errorf("invalid AI usage reservation")
 	}
 	var reservation model.AIUsageReservation
@@ -86,7 +87,7 @@ func (r *AIUsageRepository) Reserve(ctx context.Context, input AIUsageReservatio
 		if err := query.First(&period).Error; err != nil {
 			return fmt.Errorf("load open AI usage period: %w", err)
 		}
-		if period.EnforcementMode == model.AIUsageEnforcementStrict && period.UsedMicrousd+period.ReservedMicrousd+input.ReservedMicrousd > period.AllowanceMicrousd {
+		if input.ReservedMicrousd > 0 && period.EnforcementMode == model.AIUsageEnforcementStrict && period.UsedMicrousd+period.ReservedMicrousd+input.ReservedMicrousd > period.AllowanceMicrousd {
 			return model.ErrAIUsageExhausted
 		}
 		now := time.Now().UTC()
@@ -163,7 +164,7 @@ func (r *AIUsageRepository) ResizeReservation(ctx context.Context, id string, ta
 			return fmt.Errorf("load AI usage period: %w", err)
 		}
 		delta := targetMicrousd - reservation.ReservedMicrousd
-		if period.EnforcementMode == model.AIUsageEnforcementStrict && period.UsedMicrousd+period.ReservedMicrousd+delta > period.AllowanceMicrousd {
+		if delta > 0 && period.EnforcementMode == model.AIUsageEnforcementStrict && period.UsedMicrousd+period.ReservedMicrousd+delta > period.AllowanceMicrousd {
 			return model.ErrAIUsageExhausted
 		}
 		if heartbeat.IsZero() {

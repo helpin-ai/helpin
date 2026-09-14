@@ -30,6 +30,28 @@ func TestAIUsageReserveCountsActiveReservations(t *testing.T) {
 	}
 }
 
+func TestAIUsageReserveRejectsInvalidRequest(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input AIUsageReservationRequest
+	}{
+		{name: "missing workspace", input: AIUsageReservationRequest{IdempotencyKey: "run"}},
+		{name: "missing idempotency key", input: AIUsageReservationRequest{WorkspaceID: "ws"}},
+		{name: "negative hold", input: AIUsageReservationRequest{WorkspaceID: "ws", IdempotencyKey: "run", ReservedMicrousd: -1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := setupAIUsageRepository(t, model.AIUsageEnforcementStrict, 0)
+			if _, err := repo.Reserve(context.Background(), test.input); err == nil {
+				t.Fatal("invalid reservation accepted")
+			}
+			var count int64
+			if err := repo.db.Model(&model.AIUsageReservation{}).Count(&count).Error; err != nil || count != 0 {
+				t.Fatal("invalid request persisted a reservation")
+			}
+		})
+	}
+}
+
 func TestAIUsageReserveSoftBudgetNeverBlocks(t *testing.T) {
 	repo := setupAIUsageRepository(t, model.AIUsageEnforcementSoft, 1_000_000)
 	if _, err := repo.Reserve(context.Background(), AIUsageReservationRequest{WorkspaceID: "ws", IdempotencyKey: "run:1", ReservedMicrousd: 2_000_000}); err != nil {
