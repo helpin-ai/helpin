@@ -963,34 +963,42 @@ func (s *BillingService) CancelWorkspaceSubscriptionImmediately(ctx context.Cont
 }
 
 func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, update BillingStripeSubscriptionUpdate) (*BillingSummary, error) {
-	if update.EventID != "" {
-		isNew, err := s.repo.InsertStripeWebhookEvent(ctx, update.EventID, update.EventType)
-		if err != nil {
-			return nil, err
-		}
-		if !isNew {
-			if update.WorkspaceID != "" {
-				return s.GetWorkspaceBilling(ctx, update.WorkspaceID)
-			}
-			return nil, nil
-		}
-	}
-
-	billing, err := s.repo.GetByWorkspaceID(ctx, update.WorkspaceID)
+	var previousState billingAnalyticsState
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, update.EventID, update.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+		billing, previous, err := s.applyStripeSubscriptionMutation(ctx, repo, &update)
+		previousState = previous
+		return billing, nil, err
+	})
 	if err != nil {
 		return nil, err
+	}
+	if !processed {
+		if update.WorkspaceID != "" {
+			return s.GetWorkspaceBilling(ctx, update.WorkspaceID)
+		}
+		return nil, nil
+	}
+	if billing.Plan != model.BillingPlanFounder {
+		s.trackStripeSubscriptionEvents(ctx, previousState, update, billing)
+		s.syncCustomerIOWorkspace(ctx, update.WorkspaceID)
+	}
+	return s.summaryWithEntitlements(ctx, billing)
+}
+
+// Both the business write and webhook receipt commit together. Failed historical
+// events whose processed flag is false remain eligible for a successful retry.
+func (s *BillingService) applyStripeSubscriptionMutation(ctx context.Context, repo *repository.BillingRepository, update *BillingStripeSubscriptionUpdate) (*model.WorkspaceBilling, billingAnalyticsState, error) {
+	billing, err := repo.GetByWorkspaceIDForUpdate(ctx, update.WorkspaceID)
+	if err != nil {
+		return nil, billingAnalyticsState{}, err
 	}
 	if billing == nil {
 		billing = &model.WorkspaceBilling{WorkspaceID: update.WorkspaceID}
 	}
 	if billing.Plan == model.BillingPlanFounder {
-		if update.EventID != "" {
-			if err := s.repo.MarkStripeWebhookProcessed(ctx, update.EventID); err != nil {
-				return nil, err
-			}
-		}
-		return s.summaryWithEntitlements(ctx, billing)
+		return billing, billingAnalyticsState{}, nil
 	}
+
 	previousState := billingAnalyticsState{
 		Plan: billing.Plan, Interval: billing.BillingInterval, Status: billing.Status,
 		CancelAtPeriodEnd: billing.CancelAtPeriodEnd,
@@ -1060,17 +1068,10 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 	billing.StripeSubscriptionID = optionalBillingString(update.StripeSubscriptionID)
 	billing.StripePriceID = optionalBillingString(update.StripePriceID)
 	billing.LastStripeEventID = optionalBillingString(update.EventID)
-	if err := s.repo.UpsertWorkspaceBilling(ctx, billing); err != nil {
-		return nil, err
+	if err := repo.UpsertWorkspaceBilling(ctx, billing); err != nil {
+		return nil, billingAnalyticsState{}, err
 	}
-	if update.EventID != "" {
-		if err := s.repo.MarkStripeWebhookProcessed(ctx, update.EventID); err != nil {
-			return nil, err
-		}
-	}
-	s.trackStripeSubscriptionEvents(ctx, previousState, update, billing)
-	s.syncCustomerIOWorkspace(ctx, update.WorkspaceID)
-	return s.summaryWithEntitlements(ctx, billing)
+	return billing, previousState, nil
 }
 
 func (s *BillingService) ApplyStripeInvoicePaymentFailed(ctx context.Context, event BillingStripeInvoiceEvent) (*BillingSummary, error) {

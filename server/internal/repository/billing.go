@@ -28,6 +28,17 @@ func NewBillingRepository(db *gorm.DB) *BillingRepository {
 	return &BillingRepository{db: db}
 }
 
+// GetByWorkspaceIDForUpdate serializes subscription changes with writes to the
+// workspace's billing state. Call it inside a lifecycle transaction.
+func (r *BillingRepository) GetByWorkspaceIDForUpdate(ctx context.Context, workspaceID string) (*model.WorkspaceBilling, error) {
+	var billing model.WorkspaceBilling
+	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ?", workspaceID).First(&billing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &billing, err
+}
+
 // GetOpenAIUsagePeriod returns the current transactional allowance period.
 func (r *BillingRepository) GetOpenAIUsagePeriod(ctx context.Context, workspaceID string) (*model.AIUsagePeriod, error) {
 	if !r.db.Migrator().HasTable(&model.AIUsagePeriod{}) {
