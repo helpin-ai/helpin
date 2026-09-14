@@ -72,7 +72,7 @@ func TestCreateAgentModelTierResolvesInternalExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent returned error: %v", err)
 	}
-	if created.ModelTier != "medium" || derefString(created.Provider) != "openrouter" || derefString(created.Model) != "google/gemini-3.7-flash" {
+	if created.ModelTier != "medium" || derefString(created.Provider) != "openrouter" || derefString(created.Model) != "google/gemini-3.8-flash" {
 		t.Fatalf("resolved execution = %#v", created)
 	}
 	if created.RuntimeKind != "native_sdk" {
@@ -937,8 +937,8 @@ func TestEnsureBuiltInAgent_UpgradesManagedFlashDefaultsToCurrentRoutes(t *testi
 					t.Fatalf("parse execution config: %v", err)
 				}
 				if managedAssistant {
-					if reconciled.ModelTier != "medium" {
-						t.Fatalf("model tier = %q, want medium for DeepSeek V4.1 Flash", reconciled.ModelTier)
+					if reconciled.ModelTier != presetDefaultAITier(presetKey) {
+						t.Fatalf("model tier = %q, want %s", reconciled.ModelTier, presetDefaultAITier(presetKey))
 					}
 					if config.MaxToolSteps == nil || *config.MaxToolSteps != managedAssistantMaxToolSteps || config.OpenRouter == nil || config.OpenRouter.Provider == nil ||
 						!slices.Equal(config.OpenRouter.Provider.Quantizations, defaultFastOpenRouterQuantizations) {

@@ -36,7 +36,7 @@
         "deepseek/deepseek-v4.1-flash",
         "deepseek/deepseek-v4.1-flash:nitro"
       ],
-      "tier": "medium",
+      "tier": "small",
       "enabled": true
     },
     {
@@ -236,7 +236,7 @@
       "canonical_model": "deepseek-v4.1-flash",
       "route": "deepseek/deepseek-v4.1-flash",
       "service_tier": "standard",
-      "tier": "medium",
+      "tier": "small",
       "cache_read_support": true,
       "cache_write_support": false,
       "context_window": 1048576,
@@ -248,7 +248,7 @@
       "canonical_model": "deepseek-v4.1-flash",
       "route": "deepseek/deepseek-v4.1-flash:nitro",
       "service_tier": "standard",
-      "tier": "medium",
+      "tier": "small",
       "cache_read_support": true,
       "cache_write_support": false,
       "context_window": 1048576,

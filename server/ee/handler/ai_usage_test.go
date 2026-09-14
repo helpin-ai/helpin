@@ -22,7 +22,7 @@ func TestAIUsagePricingHandlerReturnsCanonicalPublicCatalog(t *testing.T) {
 		t.Fatalf("status = %d", recorder.Code)
 	}
 	body := recorder.Body.String()
-	for _, expected := range []string{`"pricing_version":"2026-09-10"`, `"key":"small"`, `"allowance_microusd":99000000`} {
+	for _, expected := range []string{`"pricing_version":"2026-09-14"`, `"key":"small"`, `"allowance_microusd":99000000`} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("response missing %s: %s", expected, body)
 		}

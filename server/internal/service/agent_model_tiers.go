@@ -15,7 +15,7 @@ var selectableAgentTierRoutes = map[aimodel.Tier]AICompletionRoute{
 		Provider: "openrouter", Model: defaultFastOpenRouterAgentModel, ServiceTier: defaultAICompletionServiceTier,
 	},
 	aimodel.TierMedium: {
-		Provider: "openrouter", Model: "google/gemini-3.7-flash", ServiceTier: defaultAICompletionServiceTier,
+		Provider: "openrouter", Model: "google/gemini-3.8-flash", ServiceTier: defaultAICompletionServiceTier,
 	},
 	aimodel.TierLarge: {
 		Provider: "openrouter", Model: "openai/gpt-5.6-terra", ServiceTier: defaultAICompletionServiceTier,

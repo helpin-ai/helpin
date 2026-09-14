@@ -14,6 +14,11 @@ import (
 )
 
 func TestStandardAIProfileResetPostgres(t *testing.T) {
+	testStandardAIProfileResetPostgres(t, nil)
+}
+
+func testStandardAIProfileResetPostgres(t *testing.T, afterReset func(context.Context, *sql.DB, string)) {
+	t.Helper()
 	dsn := os.Getenv("AI_PROFILES_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("isolated PostgreSQL fixture required")
@@ -130,6 +135,9 @@ func TestStandardAIProfileResetPostgres(t *testing.T) {
 	var input string
 	if err := db.QueryRowContext(ctx, "SELECT input->>'model_name' FROM agent_runs").Scan(&input); err != nil || input != "accepted-old-model" {
 		t.Fatal("accepted run changed")
+	}
+	if afterReset != nil {
+		afterReset(ctx, db, workspace)
 	}
 	if _, err := db.ExecContext(ctx, "UPDATE agents SET ai_profile_id=NULL; UPDATE ai_workspace_settings SET default_profile_id=NULL"); err != nil {
 		t.Fatal(err)

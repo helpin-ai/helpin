@@ -117,8 +117,11 @@ func TestCatalogResolvesDeepSeek41FlashRoutes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if resolved.CanonicalModel != "deepseek-v4.1-flash" || resolved.Route != route || resolved.Tier != TierMedium {
+		if resolved.CanonicalModel != "deepseek-v4.1-flash" || resolved.Route != route || resolved.Tier != TierSmall {
 			t.Fatalf("unexpected routing or metering identity: %+v", resolved)
+		}
+		if resolved.Rates.InputMicrousdPerMillion != 330_000 || resolved.Rates.CacheReadMicrousdPerMillion != 33_000 || resolved.Rates.OutputMicrousdPerMillion != 1_320_000 {
+			t.Fatalf("unexpected Small tariff: %+v", resolved.Rates)
 		}
 		if resolved.ContextWindow != 1_048_576 || resolved.MaximumOutput != 384_000 {
 			t.Fatalf("unexpected model limits: %+v", resolved)
@@ -180,8 +183,8 @@ func TestPublicPricingUsesPercentageAllowanceDenominators(t *testing.T) {
 	}
 
 	pricing := catalog.PublicSnapshot()
-	if pricing.PricingVersion != "2026-09-10" {
-		t.Errorf("pricing version = %q, want 2026-09-10", pricing.PricingVersion)
+	if pricing.PricingVersion != "2026-09-14" {
+		t.Errorf("pricing version = %q, want 2026-09-14", pricing.PricingVersion)
 	}
 
 	wantAllowances := map[string]int64{

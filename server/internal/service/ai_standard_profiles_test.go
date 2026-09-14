@@ -183,6 +183,9 @@ func TestAgentCreationAssignsStandardProfiles(t *testing.T) {
 		if derefString(agent.AIProfileID) != model.StandardAIProfileID("ws-test", preset.ModelTier) {
 			t.Fatalf("wrong profile for preset %s", preset.Key)
 		}
+		if preset.Key == model.AgentPresetAskAgent && derefString(agent.AIProfileID) != model.StandardAIProfileID("ws-test", "small") {
+			t.Fatal("Ask Agent must default to Small")
+		}
 	}
 	medium := model.StandardAIProfileID("ws-test", "medium")
 	req := modelCreateAgentRequest(nil)

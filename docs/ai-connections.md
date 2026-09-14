@@ -57,6 +57,15 @@ reset to saved agent and workspace preset versions, preserves non-model executio
 settings, and never changes accepted run inputs or checkpoints. This is an explicit
 one-time reset of legacy model choices, not a lossless migration.
 
+Migration `202609140012` updates unchanged standard Small profiles to
+`deepseek/deepseek-v4.1-flash:nitro`, with provider quantizations `fp8`, `fp16`,
+`bf16`, and `fp32`, and Medium to `google/gemini-3.8-flash`. Ask Agent defaults
+to Small; agents and saved versions using its former standard Medium default
+move to Small. Custom profile routes and other explicit profile selections are
+preserved, as are accepted run inputs. New installations use these same defaults.
+EE pricing version `2026-09-14` sets managed Small input tokens to $0.33 per
+million. Small cached-input and output rates, and BYOK tariff rates, are unchanged.
+
 API and worker startup provision standard profiles for existing workspaces; new
 workspaces are provisioned automatically. EE fills untouched standard connection
 placeholders using Helpin's provider configuration and updates connected managed

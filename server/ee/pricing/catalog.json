@@ -1,6 +1,6 @@
 {
-  "pricing_version": "2026-09-10",
-  "effective_date": "2026-09-10",
+  "pricing_version": "2026-09-14",
+  "effective_date": "2026-09-14",
   "reviewed_date": "2026-09-10",
   "source_urls": [
     "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
@@ -20,8 +20,8 @@
       "key": "small",
       "label": "Small",
       "description": "Fast, efficient models for routine and high-volume work",
-      "ceiling_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 250000, "output_microusd_per_million": 1200000},
-      "customer_rates": {"input_microusd_per_million": 220000, "cache_read_microusd_per_million": 33000, "cache_write_microusd_per_million": 275000, "output_microusd_per_million": 1320000}
+      "ceiling_rates": {"input_microusd_per_million": 300000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 250000, "output_microusd_per_million": 1200000},
+      "customer_rates": {"input_microusd_per_million": 330000, "cache_read_microusd_per_million": 33000, "cache_write_microusd_per_million": 275000, "output_microusd_per_million": 1320000}
     },
     {
       "key": "medium",
@@ -58,8 +58,8 @@
     {"provider": "openai", "canonical_model": "gpt-5.6-luna", "route": "gpt-5.6-luna", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 250000, "output_microusd_per_million": 1200000}, "enabled": true},
     {"provider": "openrouter", "canonical_model": "glm-5.3-flash", "route": "z-ai/glm-5.3-flash:exacto", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 150000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 500000}, "enabled": true},
     {"provider": "openrouter", "canonical_model": "glm-5.3-flash", "route": "z-ai/glm-5.3-flash:nitro", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 150000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 500000}, "enabled": true},
-    {"provider": "openrouter", "canonical_model": "deepseek-v4.1-flash", "route": "deepseek/deepseek-v4.1-flash", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 300000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
-    {"provider": "openrouter", "canonical_model": "deepseek-v4.1-flash", "route": "deepseek/deepseek-v4.1-flash:nitro", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 300000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "deepseek-v4.1-flash", "route": "deepseek/deepseek-v4.1-flash", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 300000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "deepseek-v4.1-flash", "route": "deepseek/deepseek-v4.1-flash:nitro", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 300000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
     {"provider": "openrouter", "canonical_model": "deepseek-v4-flash-0731", "route": "deepseek/deepseek-v4-flash-0731", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
     {"provider": "openrouter", "canonical_model": "deepseek-v4-flash-0731", "route": "deepseek/deepseek-v4-flash-0731:nitro", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
     {"provider": "openrouter", "canonical_model": "gemini-3.7-flash", "route": "google/gemini-3.7-flash", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 375000, "cache_read_microusd_per_million": 37500, "cache_write_microusd_per_million": 20834, "output_microusd_per_million": 1875000}, "enabled": true},

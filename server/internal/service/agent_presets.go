@@ -13,7 +13,7 @@ const (
 	defaultAnthropicAgentModel      = "claude-opus-4-8"
 	defaultOpenAIAgentModel         = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel     = "openai/gpt-5.6-terra"
-	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4-flash-0731:nitro"
+	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4.1-flash:nitro"
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
 	// preferred fast OpenRouter model.
 	defaultAtlasAgentModel = defaultFastOpenRouterAgentModel
@@ -25,7 +25,7 @@ const (
 	defaultQuillAgentModel = defaultFastOpenRouterAgentModel
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
-	defaultAskAgentModel = "deepseek/deepseek-v4.1-flash:nitro"
+	defaultAskAgentModel = defaultFastOpenRouterAgentModel
 	// defaultCommandAgentModel uses the same native route for delegated work.
 	defaultCommandAgentModel = defaultAskAgentModel
 	// managedAssistantMaxToolSteps gives Ask Agent and Sub-agent enough room
@@ -59,7 +59,7 @@ func defaultManagedAssistantExecutionConfig() model.JSONBlob {
 
 func isLegacyDeepSeekFlashModel(modelName string) bool {
 	switch strings.TrimSpace(modelName) {
-	case "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-flash-0731":
+	case "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-flash-0731", "deepseek/deepseek-v4-flash-0731:nitro":
 		return true
 	default:
 		return false
@@ -712,6 +712,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &commandAgentDefaultModel,
+			ModelTier:             "medium",
 			ExecutionConfig:       managedAssistantExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
@@ -736,6 +737,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &askAgentDefaultModel,
+			ModelTier:             "small",
 			ExecutionConfig:       managedAssistantExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},

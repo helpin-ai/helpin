@@ -36,7 +36,7 @@ export const AI_MODELS = {
       "canonical_model": "deepseek-v4.1-flash",
       "selection_model": "deepseek/deepseek-v4.1-flash",
       "label": "DeepSeek V4.1 Flash",
-      "tier": "medium",
+      "tier": "small",
       "enabled": true
     },
     {
