@@ -29,6 +29,7 @@ type MeteringRequest struct {
 	AllowedPaidTools                                                                       []string
 	ExecutionID, IdempotencyKey                                                            string
 	Promotional                                                                            bool
+	FlatTariff                                                                             *aiusage.FlatTokenTariff
 }
 
 // MeteringContext carries the immutable usage and optional financial policy.
@@ -41,6 +42,9 @@ type MeteringContext struct {
 	WorkspaceID, TaskNature, FeatureKey, OperationKey string
 	FundingMode                                       aiusage.FundingMode
 	IdempotencyKey, EnforcementMode                   string
+	FlatTariff                                        *aiusage.FlatTokenTariff
+	// Nil identifies a historical context; new contexts freeze even an empty map.
+	ToolRates map[string]int64
 }
 
 // AIUsageOperationMediaEnrichment identifies the separately governed media pass.
@@ -58,6 +62,10 @@ type CompletionUsage struct {
 	RunID             string
 	RunOutputSummary  model.JSONBlob
 	AllowLateUsage    bool
+	// Durable checkpoints supply both to round cumulative flat fees once,
+	// independent of how many interruptions split the execution.
+	PreviousTelemetry   *aiusage.TokenTelemetry
+	CumulativeTelemetry *aiusage.TokenTelemetry
 }
 
 // UsageResult reports customer-charged and internally absorbed value.

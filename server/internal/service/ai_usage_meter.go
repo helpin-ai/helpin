@@ -780,12 +780,15 @@ func (m *AIUsageMeter) reconcileAgentRun(ctx context.Context, run *model.AgentRu
 	if agentRunUsageIsZero(usage) {
 		status = "estimated"
 	}
+	previousTelemetry := agentRunCheckpointTelemetry(run, checkpoint)
+	cumulativeTelemetry := agentRunTokenTelemetry(run, usage)
 	previousSummary := append(json.RawMessage(nil), run.OutputSummary...)
 	if err := storeAgentRunUsageCheckpoint(run, agentRunUsageCheckpoint{Turn: checkpoint.Turn + 1, InputTokens: usage.InputTokens, CachedInputTokens: usage.CachedInputTokens, OutputTokens: usage.OutputTokens, ReasoningOutputTokens: usage.ReasoningOutputTokens}); err != nil {
 		return err
 	}
 	_, err := m.usage.Reconcile(ctx, CompletionUsage{
 		Context:           metering,
+		PreviousTelemetry: &previousTelemetry, CumulativeTelemetry: &cumulativeTelemetry,
 		Telemetry:         agentRunTokenTelemetry(run, delta),
 		MeasurementStatus: status,
 		AllowLateUsage:    true, RunID: run.ID, RunOutputSummary: model.JSONBlob(run.OutputSummary),
@@ -811,6 +814,8 @@ func (m *AIUsageMeter) checkpointAgentRun(ctx context.Context, run *model.AgentR
 	}
 	turn := checkpoint.Turn + 1
 	metering.IdempotencyKey = aiUsageIdempotencyKey(metering.IdempotencyKey, "turn", fmt.Sprint(turn))
+	previousTelemetry := agentRunCheckpointTelemetry(run, checkpoint)
+	cumulativeTelemetry := agentRunTokenTelemetry(run, usage)
 	previousSummary := append(json.RawMessage(nil), run.OutputSummary...)
 	nextCheckpoint := agentRunUsageCheckpoint{
 		Turn: turn, InputTokens: usage.InputTokens, CachedInputTokens: usage.CachedInputTokens,
@@ -821,6 +826,7 @@ func (m *AIUsageMeter) checkpointAgentRun(ctx context.Context, run *model.AgentR
 	}
 	if _, err := m.usage.Checkpoint(ctx, CompletionUsage{
 		Context:           metering,
+		PreviousTelemetry: &previousTelemetry, CumulativeTelemetry: &cumulativeTelemetry,
 		Telemetry:         agentRunTokenTelemetry(run, delta),
 		MeasurementStatus: "actual",
 		RunID:             run.ID,
@@ -905,4 +911,10 @@ func agentPresetKey(agent *model.Agent) string {
 		return ""
 	}
 	return agent.PresetKey
+}
+
+func agentRunCheckpointTelemetry(run *model.AgentRun, checkpoint agentRunUsageCheckpoint) aiusage.TokenTelemetry {
+	return agentRunTokenTelemetry(run, agentRuntimeUsagePayload{InputTokens: checkpoint.InputTokens,
+		CachedInputTokens: checkpoint.CachedInputTokens, OutputTokens: checkpoint.OutputTokens,
+		ReasoningOutputTokens: checkpoint.ReasoningOutputTokens})
 }

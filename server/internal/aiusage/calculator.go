@@ -122,6 +122,11 @@ func CalculateCharge(input ChargeInput) (Charge, error) {
 	}
 	result := Charge{PublishedEquivalentMicrousd: published}
 	switch input.FundingMode {
+	case FundingCustomerFlat:
+		// The route rates are the flat tariff, not a provider-equivalent price.
+		result.PublishedEquivalentMicrousd = 0
+		result.OrchestrationMicrousd = published - input.PaidToolMicrousd
+		result.FinalMicrousd = published
 	case FundingHelpinHosted:
 		result.HostedMicrousd = published
 		result.FinalMicrousd = published
@@ -161,6 +166,12 @@ func RoundMicrousdToCents(microusd int64) (int64, int64, error) {
 }
 
 func validateChargeInput(input ChargeInput) error {
+	if input.FundingMode == FundingCustomerFlat &&
+		(input.Rates.InputMicrousdPerMillion != input.Rates.OutputMicrousdPerMillion ||
+			input.Rates.InputMicrousdPerMillion != input.Rates.CacheReadMicrousdPerMillion ||
+			input.Rates.InputMicrousdPerMillion != input.Rates.CacheWriteMicrousdPerMillion) {
+		return ErrInvalidTokenTelemetry
+	}
 	values := []int64{
 		input.Tokens.InputTokensTotal, input.Tokens.UncachedInputTokens,
 		input.Tokens.CacheReadTokens, input.Tokens.CacheWriteTokens,

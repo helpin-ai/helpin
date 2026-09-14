@@ -48,7 +48,13 @@ func NewAIUsageService(catalog *aiusage.Catalog, store AIUsageStore, estimates A
 
 // ResolveMeteringContext resolves an exact eligible route and enforces built-in task sizing.
 func (s *AIUsageService) ResolveMeteringContext(input MeteringRequest) (MeteringContext, error) {
-	if s == nil || s.catalog == nil {
+	if s == nil {
+		return MeteringContext{}, model.ErrPricingConfigurationMissing
+	}
+	if input.FundingMode == aiusage.FundingCustomerFlat {
+		return s.resolveFlatMeteringContext(input)
+	}
+	if s.catalog == nil {
 		return MeteringContext{}, model.ErrPricingConfigurationMissing
 	}
 	var resolved aiusage.ResolvedRoute
@@ -76,7 +82,7 @@ func (s *AIUsageService) ResolveMeteringContext(input MeteringRequest) (Metering
 	return MeteringContext{
 		Route: resolved, PricingVersion: s.catalog.PricingVersion, Promotional: input.Promotional,
 		WorkspaceID: input.WorkspaceID, TaskNature: input.TaskNature, FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
-		FundingMode: funding, IdempotencyKey: input.IdempotencyKey,
+		FundingMode: funding, IdempotencyKey: input.IdempotencyKey, ToolRates: s.snapshotToolRates(),
 	}, nil
 }
 
@@ -163,7 +169,7 @@ func (s *AIUsageService) prepareCompletion(ctx context.Context, input Completion
 	if err != nil {
 		return model.AIUsageLedgerEntry{}, 0, 0, false, err
 	}
-	toolMicrousd, toolSnapshot, err := s.priceObservedTools(input.PaidTools)
+	toolMicrousd, toolSnapshot, err := s.priceObservedTools(input.Context, input.PaidTools)
 	if err != nil {
 		return model.AIUsageLedgerEntry{}, 0, 0, false, err
 	}
@@ -174,7 +180,13 @@ func (s *AIUsageService) prepareCompletion(ctx context.Context, input Completion
 	if err != nil {
 		return model.AIUsageLedgerEntry{}, 0, 0, false, err
 	}
-	if input.MeasurementStatus == "estimated" {
+	if input.Context.FundingMode == aiusage.FundingCustomerFlat && input.CumulativeTelemetry != nil {
+		charge, err = flatCheckpointCharge(input, toolMicrousd)
+		if err != nil {
+			return model.AIUsageLedgerEntry{}, 0, 0, false, err
+		}
+	}
+	if input.MeasurementStatus == "estimated" && input.Context.FundingMode != aiusage.FundingCustomerFlat {
 		fallback := launchEstimateMicrousd(input.Context.TaskNature, string(input.Context.Route.Tier))
 		charge.PublishedEquivalentMicrousd = fallback
 		charge.FinalMicrousd = fallback
@@ -198,6 +210,9 @@ func (s *AIUsageService) prepareCompletion(ctx context.Context, input Completion
 	if input.MeasurementStatus == "estimated" {
 		entry.EntryKind = "estimate"
 		entry.EstimationMethod = "launch_fallback"
+		if input.Context.FundingMode == aiusage.FundingCustomerFlat {
+			entry.EstimationMethod = "estimated_tokens"
+		}
 	}
 	if input.Context.Promotional {
 		entry.EntryKind = "promotional"
@@ -268,10 +283,10 @@ func (s *AIUsageService) deterministicBound(input MeteringRequest, metering Mete
 		return 0, fmt.Errorf("invalid AI usage token bound")
 	}
 	maximumOutput := input.MaximumOutputTokens
-	if maximumOutput > metering.Route.MaximumOutput {
+	if metering.Route.MaximumOutput > 0 && maximumOutput > metering.Route.MaximumOutput {
 		maximumOutput = metering.Route.MaximumOutput
 	}
-	toolMicrousd, err := s.priceAllowedTools(input.AllowedPaidTools)
+	toolMicrousd, err := s.priceAllowedTools(metering, input.AllowedPaidTools)
 	if err != nil {
 		return 0, err
 	}
@@ -286,11 +301,11 @@ func (s *AIUsageService) deterministicBound(input MeteringRequest, metering Mete
 	return charge.FinalMicrousd, nil
 }
 
-func (s *AIUsageService) priceAllowedTools(keys []string) (int64, error) {
+func (s *AIUsageService) priceAllowedTools(metering MeteringContext, keys []string) (int64, error) {
 	var total int64
 	for _, key := range keys {
-		rate, ok := s.toolRate(key)
-		if !ok {
+		rate, ok := s.acceptedToolRate(metering, key)
+		if !ok || rate < 0 {
 			return 0, fmt.Errorf("%w: paid tool %q", model.ErrPricingConfigurationMissing, key)
 		}
 		if total > math.MaxInt64-rate {
@@ -301,11 +316,11 @@ func (s *AIUsageService) priceAllowedTools(keys []string) (int64, error) {
 	return total, nil
 }
 
-func (s *AIUsageService) priceObservedTools(tools []aiusage.PaidToolUsage) (int64, []byte, error) {
+func (s *AIUsageService) priceObservedTools(metering MeteringContext, tools []aiusage.PaidToolUsage) (int64, []byte, error) {
 	var total int64
 	for _, usage := range tools {
-		rate, ok := s.toolRate(usage.Key)
-		if !ok || usage.Count < 0 {
+		rate, ok := s.acceptedToolRate(metering, usage.Key)
+		if !ok || rate < 0 || usage.Count < 0 {
 			return 0, nil, fmt.Errorf("%w: paid tool %q", model.ErrPricingConfigurationMissing, usage.Key)
 		}
 		if usage.Count != 0 && rate > math.MaxInt64/usage.Count {
@@ -321,7 +336,15 @@ func (s *AIUsageService) priceObservedTools(tools []aiusage.PaidToolUsage) (int6
 	return total, snapshot, err
 }
 
-func (s *AIUsageService) toolRate(key string) (int64, bool) {
+func (s *AIUsageService) acceptedToolRate(metering MeteringContext, key string) (int64, bool) {
+	if metering.ToolRates != nil {
+		rate, ok := metering.ToolRates[strings.ToLower(strings.TrimSpace(key))]
+		return rate, ok
+	}
+	// Only historical contexts predate immutable tool tariffs.
+	if s.catalog == nil {
+		return 0, false
+	}
 	for _, tool := range s.catalog.Tools {
 		if strings.EqualFold(strings.TrimSpace(tool.Key), strings.TrimSpace(key)) {
 			return tool.CustomerMicrousd, true

@@ -25,6 +25,9 @@ const (
 	FundingCustomer FundingMode = "customer_funded"
 	// FundingCustomerPlatform applies the full Helpin platform charge to personal connections.
 	FundingCustomerPlatform FundingMode = "customer_funded_platform"
+	// FundingCustomerFlat charges normalized tokens at the accepted flat tariff;
+	// paid tools retain their own prices and receive no token surcharge.
+	FundingCustomerFlat FundingMode = "customer_funded_flat"
 )
 
 // TokenRates holds integer micro-USD prices per one million actual tokens.
