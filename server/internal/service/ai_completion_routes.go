@@ -241,3 +241,20 @@ func aiCompletionRouteKey(route AICompletionRoute) string {
 		strings.ToLower(strings.TrimSpace(route.OpenRouterProvider)),
 	}, ":")
 }
+
+// ValidateAvailability lets an edition add readiness requirements without making
+// the product route registry depend on prices or subscriptions.
+func (r AICompletionRouteRegistry) ValidateAvailability(validate func(AICompletionRoute) error) []error {
+	if validate == nil {
+		return nil
+	}
+	var issues []error
+	for key, policy := range r.policies {
+		for _, route := range append([]AICompletionRoute{policy.Primary}, policy.Fallbacks...) {
+			if err := validate(route); err != nil {
+				issues = append(issues, fmt.Errorf("%s: %w", key, err))
+			}
+		}
+	}
+	return issues
+}

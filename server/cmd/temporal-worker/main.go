@@ -24,12 +24,8 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
-	"github.com/helpin-ai/helpin/server/ee/billingstripe"
-	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
-	eeservice "github.com/helpin-ai/helpin/server/ee/service"
 	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
-	"github.com/helpin-ai/helpin/server/ee/pricing"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
@@ -185,17 +181,15 @@ func main() {
 	docsHelpcenterSearchRepo := repository.NewDocsHelpcenterSearchRepository(db)
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
-	billingRepo := eerepository.NewBillingRepository(db)
 	modelCatalog, modelCatalogErr := aimodel.LoadCatalog()
 	if modelCatalogErr != nil {
 		fatalWithSentry("load model catalog", modelCatalogErr)
 	}
-	pricingCatalog, pricingCatalogErr := pricing.LoadCatalog()
-	if pricingCatalogErr != nil {
-		fatalWithSentry("load AI pricing catalog", pricingCatalogErr)
+	editionServices, err := newEditionServices(db, cfg, workspaceRepo)
+	if err != nil {
+		fatalWithSentry("configure edition", err)
 	}
-	aiUsageRepo := eerepository.NewAIUsageRepository(db)
-	aiUsageService := eeservice.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
+	aiUsageService := editionServices.Usage
 	aiUsageMeter := service.NewTokenPricedAIUsageMeter(aiUsageService)
 	aiActionExecutionRepo := repository.NewAIActionExecutionRepository(db)
 	aiActionRegistry := aipolicy.DefaultRegistry()
@@ -282,19 +276,19 @@ func main() {
 	if issues := completionRoutes.Validate(modelCatalog); len(issues) != 0 {
 		fatalWithSentry("validate AI completion model routes", errors.Join(issues...))
 	}
-	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
+	if issues := completionRoutes.ValidateAvailability(editionServices.ValidateCompletionRoute); len(issues) != 0 {
+		fatalWithSentry("validate edition completion routes", errors.Join(issues...))
+	}
+	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); editionServices.RequireConfiguredProviders && len(issues) != 0 {
 		fatalWithSentry("validate AI completion providers", errors.Join(issues...))
 	}
 	agentTierResolver := service.NewAgentModelTierResolver(modelCatalog, supportLLMRouter.HasChatProvider)
-	if issues := agentTierResolver.ValidateSelectable(); len(issues) != 0 {
+	if issues := agentTierResolver.ValidateSelectable(); editionServices.RequireConfiguredProviders && len(issues) != 0 {
 		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
 	}
 	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes).
 		SetGovernance(aiActionRegistry, aiActionExecutionRepo)
 	var llmProvider llm.Provider = supportLLMProvider
-	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
-	billingService := eeservice.NewBillingService(billingRepo, stripeGateway, time.Now)
-	billingService.SetWorkspaceRepository(workspaceRepo)
 	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
 		redisOpts, err := redis.ParseURL(cfg.RedisURL)
@@ -463,7 +457,7 @@ func main() {
 	if err != nil {
 		fatalWithSentry("initialize AI connections", err)
 	}
-	agentService.SetAIConnectionService(aiConnectionService).SetAIProfileService(service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService))
+	agentService.SetAIConnectionService(aiConnectionService).SetAIProfileService(service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService).SetAdmissionPolicy(editionServices.ConnectionPolicy))
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
@@ -677,7 +671,7 @@ func main() {
 	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), crmPlaybookAuthz, crmSituationService)
 	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
 	crmPlaybookLauncher := service.NewCRMPlaybookAgentLauncher(agentService, crmPlaybookExecutionRepo, aiUsageMeter)
-	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, crmPlaybookAuthz, workspaceRepo).SetEntitlements(eeservice.NewEntitlementService(billingService))
+	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, crmPlaybookAuthz, workspaceRepo).SetEntitlements(editionServices.Entitlements)
 	crmPlaybookLauncher.SetExecutionService(crmPlaybookExecution)
 	scheduledEventsService := service.NewAutomationScheduledEventService(repository.NewAutomationScheduledEventRepository(db),
 		map[string]service.ScheduledEventHandler{

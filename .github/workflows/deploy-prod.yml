@@ -149,6 +149,7 @@ jobs:
         run: |
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
+            --build-arg GO_BUILD_TAGS=ee \
             --target api \
             -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
@@ -159,6 +160,7 @@ jobs:
             build-prod-server/server/
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
+            --build-arg GO_BUILD_TAGS=ee \
             --target temporal-worker \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:sha-${{ github.sha }} \
@@ -169,6 +171,7 @@ jobs:
             build-prod-server/server/
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
+            --build-arg GO_BUILD_TAGS=ee \
             --target migrate \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:sha-${{ github.sha }} \

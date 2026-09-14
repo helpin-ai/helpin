@@ -103,3 +103,11 @@ without Go workspace substitution. Explicit empty model controls clear inherited
 model controls while preserving execution limits. The separate Chat Completions
 transport and a real local-model validation remain later rollout gates; this
 checkpoint does not advertise local-agent support.
+
+## Build editions
+
+Community is the default Go build (`go run ./cmd/api` and `go run ./cmd/temporal-worker`). It records usage with no financial policy, price catalog, subscription gate, or billing jobs. Missing deployment provider keys do not prevent startup; a feature still needs a configured provider when invoked.
+
+SaaS uses `go run -tags ee ./cmd/api` and `go run -tags ee ./cmd/temporal-worker`, plus `go run -tags ee ./cmd/migrate up` for registered EE migrations. Its API and every worker require `AI_CONNECTION_ENCRYPTION_KEY`, even when personal ChatGPT is disabled. Existing workspaces must run the managed profile bootstrap before cutover. Newly created SaaS workspaces receive managed connections/profiles from the explicitly configured Helpin provider keys after their agent defaults are seeded. Missing providers remain unconfigured.
+
+Container builds default to community too. SaaS builds pass `--build-arg GO_BUILD_TAGS=ee`; the staging and production workflows declare that choice explicitly. Both binaries must use the same edition. No service has been restarted as part of this change.
