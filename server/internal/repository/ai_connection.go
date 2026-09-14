@@ -71,9 +71,10 @@ func (r *AIConnectionRepository) ActiveMember(ctx context.Context, workspace, us
 	return n > 0, err
 }
 
-// ActiveWorkspace checks operational availability for unattended shared execution.
-func (r *AIConnectionRepository) ActiveWorkspace(ctx context.Context, workspace string) (bool, error) {
+// WorkspaceExists rejects deleted workspaces before loading shared credentials.
+// Workspaces have no lifecycle status column; edition policy handles billing gates.
+func (r *AIConnectionRepository) WorkspaceExists(ctx context.Context, workspace string) (bool, error) {
 	var n int64
-	err := r.db.WithContext(ctx).Model(&model.Workspace{}).Where("id = ? AND status = ?", workspace, "active").Count(&n).Error
+	err := r.db.WithContext(ctx).Model(&model.Workspace{}).Where("id = ?", workspace).Count(&n).Error
 	return n > 0, err
 }

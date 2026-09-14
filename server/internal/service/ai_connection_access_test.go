@@ -29,7 +29,7 @@ func TestSharedAIConnectionAccessAndOwnership(t *testing.T) {
 	s, db := setupAIConnectionTest(t)
 	s.SetAuthorizationService(authorization.NewAuthzService(db, connectionMembers{}, nil))
 	ctx := context.Background()
-	if err := db.Exec(`CREATE TABLE workspaces (id TEXT, status TEXT); INSERT INTO workspaces VALUES ('workspace','active')`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE workspaces (id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('workspace')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	req := model.CreateAIConnectionRequest{Name: "Team", Scope: "workspace", Provider: "openai", APIKey: "shared-key"}
@@ -73,11 +73,11 @@ func TestSharedAIConnectionAccessAndOwnership(t *testing.T) {
 	if err != nil || cred.APIKey != "rotated" {
 		t.Fatalf("unattended route depends on former creator: %v", err)
 	}
-	if err := db.Exec(`UPDATE workspaces SET status='inactive'`).Error; err != nil {
+	if err := db.Exec(`DELETE FROM workspaces`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.sharedCredential(ctx, "workspace", id); err == nil {
-		t.Fatal("inactive workspace executed")
+		t.Fatal("deleted workspace executed")
 	}
 	req.Provider, req.APIKey = "openai_chatgpt", ""
 	if _, err := s.Create(ctx, "workspace", "owner", req); err == nil {
@@ -88,7 +88,7 @@ func TestSharedAIConnectionAccessAndOwnership(t *testing.T) {
 func TestPersonalAIConnectionPreservesAADAndRejectsUnattendedAccess(t *testing.T) {
 	s, db := setupAIConnectionTest(t)
 	ctx := context.Background()
-	if err := db.Exec(`CREATE TABLE workspaces (id TEXT, status TEXT); INSERT INTO workspaces VALUES ('workspace','active')`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE workspaces (id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('workspace')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	login, err := s.Create(ctx, "workspace", "owner", model.CreateAIConnectionRequest{Name: "Personal", Provider: "openai", APIKey: "private-key"})

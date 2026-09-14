@@ -25,7 +25,7 @@ func setupAIProfileTestDB(t *testing.T) (*AIProfileService, model.AIProfileRoute
 	if err := db.AutoMigrate(&model.AIProfile{}, &model.AIWorkspaceSettings{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(`CREATE TABLE workspaces (id TEXT, status TEXT); INSERT INTO workspaces VALUES ('workspace','active')`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE workspaces (id TEXT PRIMARY KEY); INSERT INTO workspaces VALUES ('workspace')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT, ai_profile_id TEXT)`).Error; err != nil {

@@ -39,7 +39,7 @@ func (s *AIConnectionService) authorizeConnectionManagement(ctx context.Context,
 }
 
 // Access to shared secrets is checked by the calling entry point: active member
-// for interactive use, active workspace for the trusted unattended resolver.
+// for interactive use, existing workspace for the trusted unattended resolver.
 func accessAIConnection(c *model.AIConnection, workspace, user string) error {
 	if c != nil && c.WorkspaceID == workspace && c.Scope == "workspace" && c.UserID == nil {
 		return nil
@@ -51,8 +51,8 @@ func (s *AIConnectionService) sharedCredential(ctx context.Context, workspace, i
 	if !s.Enabled() {
 		return nil, nil, ErrAIConnection
 	}
-	active, err := s.repo.ActiveWorkspace(ctx, workspace)
-	if err != nil || !active {
+	exists, err := s.repo.WorkspaceExists(ctx, workspace)
+	if err != nil || !exists {
 		return nil, nil, ErrAIConnection
 	}
 	// Empty user can only authorize a workspace-owned connection.

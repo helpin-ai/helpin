@@ -18,7 +18,7 @@ func TestCRMProfileLaunchAndAcceptedRetry(t *testing.T) {
 	profiles, _, _, connectionsDB := setupAIProfileTestDB(t)
 	ctx := context.Background()
 	f.Exec(t, connectionsDB, "INSERT INTO workspace_members(workspace_id,user_id,status) VALUES (?,?,'active')", f.Workspace, f.SalesUser)
-	f.Exec(t, connectionsDB, "INSERT INTO workspaces(id,status) VALUES (?,'active')", f.Workspace)
+	f.Exec(t, connectionsDB, "INSERT INTO workspaces(id) VALUES (?)", f.Workspace)
 	connection := &model.AIConnection{ID: uuid.NewString(), WorkspaceID: f.Workspace, Scope: "workspace", Name: "Reviewed key", Provider: "openai", Status: "connected"}
 	if err := profiles.connections.seal(connection, aiConnectionSecret{APIKey: "reviewed-key"}); err != nil {
 		t.Fatal(err)
