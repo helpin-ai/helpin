@@ -18,6 +18,9 @@ function createTestQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } })
 }
 
+// This transcript fixture must not start the live widget's pageview timer.
+vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }))
+
 vi.mock('@tanstack/react-router', () => ({
   useLocation: () => ({ pathname: '/w/acme/support/conv-1' }),
   useNavigate: () => vi.fn(),

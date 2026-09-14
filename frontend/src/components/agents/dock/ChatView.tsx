@@ -169,6 +169,7 @@ export function ChatView({
   const run = detail?.run ?? null;
   const agentDefaults = useAgents(!run && active ? workspaceId : "");
   const askAgentDefault = agentDefaults.data?.find(agent => agent.preset_key === "ask_agent")?.ai_profile_id;
+  const agentDefaultUnavailable = !run && !aiConnection.ai_profile_id && (agentDefaults.isPending || agentDefaults.isError);
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
   useEffect(() => {
     if (detailRefreshed.current) onRunIdChange?.(run?.id ?? null);
@@ -506,12 +507,12 @@ export function ChatView({
   const composer = resolveDockComposerState(
     run ? { status: run.status, pause_reason: run.pause_reason } : null,
     !!dockConfirm || structuredPending,
-    detailLoading || sending,
+    detailLoading || sending || agentDefaultUnavailable,
   );
 
   const sendContent = useCallback(
     async (content: string, messageReferences: DockEntityReference[] = references, retryClientMessageID?: string) => {
-      if (!content || sending) return;
+      if (!content || sending || agentDefaultUnavailable) return;
       const clientMessageId = retryClientMessageID ?? newClientMessageID();
       const needsTitle = !detail?.chat.title.trim();
       setSending(true);
@@ -615,10 +616,11 @@ export function ChatView({
         setSending(false);
       }
     },
-    [aiConnection, chatId, currentUserId, detail?.chat.title, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
+    [agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
   );
 
   const submit = async () => {
+    if (agentDefaultUnavailable) return;
     const readyAttachmentCount = mediaAttachments.filter((attachment) => attachment.status === 'ready' && attachment.id).length;
     const content = value.trim() || (readyAttachmentCount === 1 ? 'Review the attached file.' : readyAttachmentCount > 1 ? 'Review the attached files.' : '');
     if (!content) return;
@@ -962,7 +964,13 @@ export function ChatView({
       ) : null}
       {run && <AIExecutionDetails input={run.input} />}
       {run?.status === 'paused' && run.pause_reason === 'authentication' && typeof run.input?.model_connection_id === 'string' && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} /></div>}
-      {!run && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} /></div>}
+      {!run && <div className="px-3.5 py-2">
+        {!aiConnection.ai_profile_id && agentDefaults.isPending
+          ? <p role="status" className="text-xs text-quiet-text-secondary">Loading the agent’s AI default…</p>
+          : !aiConnection.ai_profile_id && agentDefaults.isError
+            ? <button type="button" className="text-xs underline" onClick={() => void agentDefaults.refetch()}>Retry loading the agent’s AI default</button>
+            : <AIConnectionPicker workspaceId={workspaceId} defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} />}
+      </div>}
       {composer.visible && (
         <div className="border-t border-border/60">
           {starterSuggestions.length > 0 && composer.enabled && (

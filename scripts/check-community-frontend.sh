@@ -32,4 +32,4 @@ test ! -e src/ee
 export VITE_EDITION=community
 export NODE_OPTIONS=--max-old-space-size=4096
 node scripts/build.mjs
-node_modules/.bin/vitest run --maxWorkers=4
+node_modules/.bin/vitest run --minWorkers=1 --maxWorkers="${COMMUNITY_TEST_WORKERS:-2}"
