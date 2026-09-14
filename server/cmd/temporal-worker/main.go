@@ -277,8 +277,8 @@ func main() {
 			OpenRouterProvider: cfg.CRMMeetingFallbackOpenRouterProvider,
 		},
 	})
-	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
-		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
+	if issues := completionRoutes.Validate(modelCatalog); len(issues) != 0 {
+		fatalWithSentry("validate AI completion model routes", errors.Join(issues...))
 	}
 	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
 		fatalWithSentry("validate AI completion providers", errors.Join(issues...))

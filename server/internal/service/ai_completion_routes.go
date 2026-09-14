@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 )
 
 const defaultAICompletionServiceTier = "standard"
@@ -171,7 +171,7 @@ func (r AICompletionRouteRegistry) Policy(featureKey, operationKey string) (AICo
 }
 
 // Validate returns all catalog and structural route-policy issues.
-func (r AICompletionRouteRegistry) Validate(catalog *aiusage.Catalog) []error {
+func (r AICompletionRouteRegistry) Validate(catalog *aimodel.Catalog) []error {
 	var issues []error
 	for key, policy := range r.policies {
 		if strings.TrimSpace(policy.FeatureKey) == "" {

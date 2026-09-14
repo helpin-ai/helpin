@@ -611,8 +611,8 @@ func TestCustomerIOOrganizationSummaryCountsPaidActiveWorkspaces(t *testing.T) {
 	}
 
 	svc := &CustomerIOIdentityService{
-		billingRepo: repository.NewBillingRepository(db),
-		logger:      slog.Default(),
+		billingInsights: NewCustomerIOBillingReader(repository.NewBillingRepository(db), nil),
+		logger:          slog.Default(),
 	}
 	summary := svc.organizationSummary(context.Background(), orgID)
 	if summary.PaidWorkspaceCount != 2 {

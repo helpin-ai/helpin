@@ -1,39 +1,23 @@
 package service
 
-type EntitlementFeature string
+import "github.com/helpin-ai/helpin/server/internal/model"
+
+type EntitlementFeature = model.EntitlementFeature
+type EntitlementLimit = model.EntitlementLimit
+type EntitlementError = model.EntitlementError
 
 const (
-	EntitlementFeatureCustomAgents           EntitlementFeature = "custom_agents"
-	EntitlementFeatureAutomationFlows        EntitlementFeature = "automation_flows"
-	EntitlementFeatureAgentScheduling        EntitlementFeature = "agent_scheduling"
-	EntitlementFeatureAIConversationRouting  EntitlementFeature = "ai_conversation_routing"
-	EntitlementFeatureRoundRobinAssignment   EntitlementFeature = "round_robin_assignment"
-	EntitlementFeatureSLAPolicies            EntitlementFeature = "sla_policies"
-	EntitlementFeatureMultilingualHelpCenter EntitlementFeature = "multilingual_help_center"
-	EntitlementFeatureAIArticleTranslation   EntitlementFeature = "ai_article_translation"
-	EntitlementFeatureDealAutomation         EntitlementFeature = "deal_automation"
-	EntitlementFeatureRemoveBranding         EntitlementFeature = "remove_branding"
+	EntitlementFeatureCustomAgents           = model.EntitlementFeatureCustomAgents
+	EntitlementFeatureAutomationFlows        = model.EntitlementFeatureAutomationFlows
+	EntitlementFeatureAgentScheduling        = model.EntitlementFeatureAgentScheduling
+	EntitlementFeatureAIConversationRouting  = model.EntitlementFeatureAIConversationRouting
+	EntitlementFeatureRoundRobinAssignment   = model.EntitlementFeatureRoundRobinAssignment
+	EntitlementFeatureSLAPolicies            = model.EntitlementFeatureSLAPolicies
+	EntitlementFeatureMultilingualHelpCenter = model.EntitlementFeatureMultilingualHelpCenter
+	EntitlementFeatureAIArticleTranslation   = model.EntitlementFeatureAIArticleTranslation
+	EntitlementFeatureDealAutomation         = model.EntitlementFeatureDealAutomation
+	EntitlementFeatureRemoveBranding         = model.EntitlementFeatureRemoveBranding
+	EntitlementLimitTeams                    = model.EntitlementLimitTeams
+	EntitlementLimitDocuments                = model.EntitlementLimitDocuments
+	EntitlementLimitContacts                 = model.EntitlementLimitContacts
 )
-
-type EntitlementLimit string
-
-const (
-	EntitlementLimitTeams     EntitlementLimit = "teams"
-	EntitlementLimitDocuments EntitlementLimit = "documents"
-	EntitlementLimitContacts  EntitlementLimit = "contacts"
-)
-
-type EntitlementError struct {
-	Feature      string
-	Limit        string
-	RequiredPlan string
-	CurrentPlan  string
-	Message      string
-}
-
-func (e *EntitlementError) Error() string {
-	if e == nil {
-		return ""
-	}
-	return e.Message
-}

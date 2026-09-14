@@ -43,7 +43,7 @@ func TestCustomerIOOutboxRefreshesWorkspaceBillingState(t *testing.T) {
 		}
 		return customerIOTestResponse(http.StatusOK), nil
 	})}
-	identity := NewCustomerIOIdentityService(NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site", APIKey: "key", Endpoint: "https://customer.test", HTTPClient: httpClient}), nil, repository.NewWorkspaceRepository(db), nil, repository.NewBillingRepository(db))
+	identity := NewCustomerIOIdentityService(NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site", APIKey: "key", Endpoint: "https://customer.test", HTTPClient: httpClient}), nil, repository.NewWorkspaceRepository(db), nil, NewCustomerIOBillingReader(repository.NewBillingRepository(db), repository.NewWorkspaceRepository(db)))
 
 	found, err := identity.RefreshWorkspaceForOutbox(context.Background(), workspace.ID)
 	if err != nil || !found {
@@ -57,7 +57,7 @@ func TestCustomerIOOutboxRefreshesWorkspaceBillingState(t *testing.T) {
 	failingClient := &http.Client{Transport: customerIORoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return customerIOTestResponse(http.StatusServiceUnavailable), nil
 	})}
-	failingIdentity := NewCustomerIOIdentityService(NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site", APIKey: "key", Endpoint: "https://customer.test", HTTPClient: failingClient}), nil, repository.NewWorkspaceRepository(db), nil, repository.NewBillingRepository(db))
+	failingIdentity := NewCustomerIOIdentityService(NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site", APIKey: "key", Endpoint: "https://customer.test", HTTPClient: failingClient}), nil, repository.NewWorkspaceRepository(db), nil, NewCustomerIOBillingReader(repository.NewBillingRepository(db), repository.NewWorkspaceRepository(db)))
 	_, err = failingIdentity.RefreshWorkspaceForOutbox(context.Background(), workspace.ID)
 	var deliveryErr *CustomerIODeliveryError
 	if !errors.As(err, &deliveryErr) || deliveryErr.StatusCode != http.StatusServiceUnavailable {

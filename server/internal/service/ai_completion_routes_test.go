@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 )
 
 func TestAICompletionRouteRegistryCoversDirectFeatures(t *testing.T) {
@@ -39,7 +39,7 @@ func TestAICompletionRouteRegistryCoversDirectFeatures(t *testing.T) {
 }
 
 func TestAICompletionRouteRegistryResolvesEveryFixedRouteInPricingCatalog(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestAICompletionRouteRegistryAppliesCRMOverridesOnlyToCRMFeatures(t *testin
 		t.Fatalf("non-CRM route changed = %#v", nonCRM.Primary)
 	}
 
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestAICompletionRouteRegistryRejectsOpenRouterSelectionOnDirectRoute(t *tes
 			Provider: "anthropic", Model: "claude-sonnet-5", OpenRouterProvider: "anthropic",
 		},
 	})
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestSupportRewriteRoutesUseOnlySmallTierModels(t *testing.T) {
 	if policy.Primary.Provider != "openrouter" || policy.Primary.Model != "deepseek/deepseek-v4-flash-0731" {
 		t.Errorf("primary = %+v, want DeepSeek V4 Flash through OpenRouter", policy.Primary)
 	}
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := aimodel.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
