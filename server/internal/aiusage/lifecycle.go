@@ -1,6 +1,9 @@
 package aiusage
 
-import "context"
+import (
+	"context"
+	sdk "github.com/helpin-ai/agent-runtime-go"
+)
 
 // AIUsageLifecycle preserves admission, durable usage accounting, and recovery
 // independently of the edition's financial policy. A community implementation
@@ -21,6 +24,7 @@ type AIUsageLifecycle interface {
 
 // MeteringRequest identifies and bounds one model execution.
 type MeteringRequest struct {
+	Endpoint                                                                               *sdk.ModelEndpoint
 	WorkspaceID, TaskNature, FeatureKey, OperationKey, Provider, Model, Route, ServiceTier string
 	FundingMode                                                                            FundingMode
 	InputTokensEstimate, MaximumOutputTokens                                               int64

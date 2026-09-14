@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	sdk "github.com/helpin-ai/agent-runtime-go"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
@@ -452,9 +453,11 @@ func PreflightAgentRunAIUsage(ctx context.Context, meter *AIUsageMeter, run *mod
 		}
 		serviceTier := "standard"
 		var flatTariff *aiusage.FlatTokenTariff
+		var endpoint *sdk.ModelEndpoint
 		if selection := runInput.AISelection; selection != nil && selection.Policy != nil {
 			funding = selection.Policy.FundingMode
 			flatTariff = selection.Policy.FlatTariff
+			endpoint = selection.Route.Model.Endpoint
 			provider, modelID = selection.Route.Model.Provider, selection.Route.Model.Model
 			if controls := selection.Route.Model.Controls; controls != nil && controls.ServiceTier != nil {
 				switch strings.ToLower(strings.TrimSpace(*controls.ServiceTier)) {
@@ -473,7 +476,7 @@ func PreflightAgentRunAIUsage(ctx context.Context, meter *AIUsageMeter, run *mod
 		featureKey := AgentRunAIUsageFeature(agent)
 		metering, err := meter.usage.Preflight(ctx, PreflightRequest{Metering: MeteringRequest{
 			WorkspaceID: run.WorkspaceID, TaskNature: taskNatureForFeature(featureKey), FeatureKey: featureKey,
-			Provider: provider, Model: modelID, Route: "", ServiceTier: serviceTier,
+			Provider: provider, Model: modelID, Endpoint: endpoint, Route: "", ServiceTier: serviceTier,
 			FundingMode: funding, FlatTariff: flatTariff, InputTokensEstimate: int64((len(run.Input) + 3) / 4),
 			MaximumOutputTokens: 128000, ExecutionID: run.ID,
 			IdempotencyKey: aiUsageIdempotencyKey(run.WorkspaceID, "agent_run", run.ID),

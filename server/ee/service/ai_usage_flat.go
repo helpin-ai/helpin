@@ -1,3 +1,5 @@
+//go:build ee
+
 package service
 
 import (
@@ -15,7 +17,7 @@ func (s *AIUsageService) resolveFlatMeteringContext(input MeteringRequest) (Mete
 	if err := pricing.ValidateFlatTokenTariff(input.FlatTariff); err != nil {
 		return MeteringContext{}, fmt.Errorf("%w: %v", model.ErrPricingConfigurationMissing, err)
 	}
-	if err := sdk.ValidateRunModel(&sdk.RunModel{Provider: input.Provider, Model: input.Model}); err != nil {
+	if err := sdk.ValidateRunModel(&sdk.RunModel{Provider: input.Provider, Model: input.Model, Endpoint: input.Endpoint}); err != nil {
 		return MeteringContext{}, err
 	}
 	if input.OperationKey != "" {

@@ -18,7 +18,7 @@ type AIProfileSelectionRequest struct {
 // Resolve selects once before admission. Only a known unavailable connection
 // permits fallback; invalid selections and authorization errors are terminal.
 func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, req AIProfileSelectionRequest) (*model.AIExecutionSelection, *sdk.ModelCredential, error) {
-	if !req.Unattended {
+	if user != "" || !req.Unattended {
 		if err := s.requireMember(ctx, workspace, user); err != nil {
 			return nil, nil, err
 		}
@@ -47,7 +47,7 @@ func (s *AIProfileService) Resolve(ctx context.Context, workspace, user string, 
 	if p.Scope == "personal" && (req.Unattended || source != "override") {
 		return nil, nil, errors.New("personal profiles require an explicit manual selection")
 	}
-	if err := s.validateRoute(ctx, workspace, user, p.Scope, &p.Primary); err != nil {
+	if err := s.validatePrimaryRoute(ctx, workspace, user, p.Scope, &p.Primary); err != nil {
 		return nil, nil, err
 	}
 	if p.Fallback != nil {

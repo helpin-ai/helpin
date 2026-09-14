@@ -112,6 +112,24 @@ func (s *AIProfileService) validateRoute(ctx context.Context, workspace, user, s
 	return sdk.ValidateRunModel(&route.Model)
 }
 
+// validatePrimaryRoute keeps personal profile primaries owner-bound. Fallbacks
+// use validateRoute and may reference an authorized shared connection.
+func (s *AIProfileService) validatePrimaryRoute(ctx context.Context, workspace, user, scope string, route *model.AIProfileRoute) error {
+	if err := s.validateRoute(ctx, workspace, user, scope, route); err != nil {
+		return err
+	}
+	if scope == "personal" {
+		c, err := s.connections.repo.Get(ctx, route.ConnectionID)
+		if err != nil {
+			return err
+		}
+		if c == nil || c.Scope != "personal" || derefString(c.UserID) != user {
+			return errors.New("personal profiles require your personal primary connection")
+		}
+	}
+	return nil
+}
+
 func (s *AIProfileService) Save(ctx context.Context, workspace, user, id string, req model.SaveAIProfileRequest) (*model.AIProfile, error) {
 	if err := s.requireMember(ctx, workspace, user); err != nil {
 		return nil, err
@@ -146,7 +164,7 @@ func (s *AIProfileService) Save(ctx context.Context, workspace, user, id string,
 	if err := s.authorizeProfile(ctx, workspace, user, p, true); err != nil {
 		return nil, err
 	}
-	if err := s.validateRoute(ctx, workspace, user, p.Scope, &req.Primary); err != nil {
+	if err := s.validatePrimaryRoute(ctx, workspace, user, p.Scope, &req.Primary); err != nil {
 		return nil, err
 	}
 	if req.Fallback != nil {

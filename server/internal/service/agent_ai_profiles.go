@@ -37,6 +37,11 @@ func (s *AgentService) prepareAIProfileRun(ctx context.Context, params *createRu
 		return nil, nil, nil, errors.New("select a profile or legacy connection, not both")
 	}
 	user := derefString(params.actorID)
+	if user != "" {
+		if err := s.aiProfiles.requireMember(ctx, params.workspaceID, user); err != nil {
+			return nil, nil, nil, err
+		}
+	}
 	var input model.AgentRunInputPayload
 	if err := decodeAIConnectionRunInput(params.input, &input); err != nil {
 		return nil, nil, nil, err
@@ -71,7 +76,12 @@ func (s *AgentService) prepareAIProfileRun(ctx context.Context, params *createRu
 				if err != nil {
 					return nil, nil, nil, err
 				}
-				return s.applyAISelection(params, previous.AISelection, credential)
+				// This is a new run, unlike restoring an accepted run after a pause.
+				selection, err := s.aiProfiles.AdmitReviewedSelection(ctx, params.workspaceID, previous.AISelection)
+				if err != nil {
+					return nil, nil, nil, err
+				}
+				return s.applyAISelection(params, selection, credential)
 			}
 			params.modelConnectionID, params.modelName = previous.ModelConnectionID, previous.ModelName
 		}

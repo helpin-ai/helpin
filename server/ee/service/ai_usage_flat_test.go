@@ -1,8 +1,12 @@
+//go:build ee
+
 package service
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	sdk "github.com/helpin-ai/agent-runtime-go"
 	"strings"
 	"testing"
 
@@ -133,5 +137,25 @@ func TestFlatBYOKCheckpointRoundingMatchesOneExecution(t *testing.T) {
 	}
 	if total != 6 {
 		t.Fatalf("split execution charge = %d, want 6", total)
+	}
+}
+
+func TestFlatBYOKCompatibleEndpointAdmission(t *testing.T) {
+	for _, valid := range []bool{false, true} {
+		t.Run(fmt.Sprint(valid), func(t *testing.T) {
+			store := &fakeAIUsageStore{}
+			svc := NewAIUsageService(nil, store, nil)
+			req := MeteringRequest{Provider: "openai_compatible", Model: "local-model", FundingMode: aiusage.FundingCustomerFlat, FlatTariff: testFlatTariff(1_000_000), InputTokensEstimate: 1000, MaximumOutputTokens: 1000}
+			if valid {
+				req.Endpoint = &sdk.ModelEndpoint{ID: "local", BaseURL: "http://127.0.0.1:18183/v1", AuthMode: "none"}
+			}
+			_, err := svc.Preflight(context.Background(), PreflightRequest{Metering: req})
+			if valid && err != nil {
+				t.Fatal(err)
+			}
+			if !valid && (err == nil || store.reserveCalls != 0) {
+				t.Fatal("invalid endpoint admitted")
+			}
+		})
 	}
 }

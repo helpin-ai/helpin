@@ -75,8 +75,9 @@ Use one Helpin resolver, including paths that bypass the ordinary agent launcher
 | Manual run without an override | Agent shared profile, then workspace default |
 | Scheduled, triggered, or other unattended execution | Agent shared profile, then workspace default |
 | CRM playbook launch | Reviewed, frozen runtime-agent selection, with authorized credentials resolved for that selection |
-| Continuation, approval resume, or worker recovery | Original resolved execution snapshot |
-| Trusted child of a manual personal run | Inherit the originating selection and owner through the authorized parent relationship |
+| Approval resume, same-run retry, or worker recovery | Original resolved execution and tariff snapshot |
+| New continuation run | Original route and owner; current edition policy and new tariff snapshot |
+| Trusted child of a manual personal run | Inherit the originating route and owner through the authorized parent relationship; admit current edition policy and freeze a new tariff |
 | Other agent-created child | Resolve the child agent's shared default |
 
 - Include CRM's separate start-request construction and metering preflight in the launch inventory. Do not overwrite its reviewed snapshot with the latest profile; a material route change requires the appropriate review again.
