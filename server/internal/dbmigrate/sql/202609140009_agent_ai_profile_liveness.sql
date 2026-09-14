@@ -1,8 +1,9 @@
 -- Serialize new agent assignments with profile deletion. Historical versions
--- retain their original references, and archived agents do not block deletion.
+-- retain their original references. Agents are hard-deleted, so every existing
+-- agent assignment must reference an active profile.
 CREATE OR REPLACE FUNCTION enforce_active_agent_ai_profile() RETURNS trigger AS $$
 BEGIN
- IF NEW.ai_profile_id IS NULL OR NEW.deleted_at IS NOT NULL THEN
+ IF NEW.ai_profile_id IS NULL THEN
   RETURN NEW;
  END IF;
  PERFORM 1 FROM ai_profiles
@@ -18,5 +19,5 @@ END;
 $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS agents_active_ai_profile ON agents;
 CREATE TRIGGER agents_active_ai_profile
- BEFORE INSERT OR UPDATE OF ai_profile_id, workspace_id, deleted_at ON agents
+ BEFORE INSERT OR UPDATE OF ai_profile_id, workspace_id ON agents
  FOR EACH ROW EXECUTE FUNCTION enforce_active_agent_ai_profile();

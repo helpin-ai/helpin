@@ -97,8 +97,12 @@ func TestCommunityMigrationLedgerPostgres(t *testing.T) {
 	if err := Up(ctx, db); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("core checksum not enforced: %v", err)
 	}
+	if _, err := db.ExecContext(ctx, "UPDATE schema_migrations SET checksum=$1 WHERE version=$2", core[0].Checksum, core[0].Version); err != nil {
+		t.Fatal(err)
+	}
 	// Run the new index migration against real PostgreSQL twice (idempotency).
-	if _, err := db.ExecContext(ctx, "CREATE TABLE agents (ai_profile_id uuid, workspace_id uuid, deleted_at timestamptz); CREATE TABLE agent_versions (ai_profile_id uuid)"); err != nil {
+	// Agents are hard-deleted: unlike profiles, their schema has no deleted_at.
+	if _, err := db.ExecContext(ctx, "CREATE TABLE agents (ai_profile_id uuid, workspace_id uuid); CREATE TABLE agent_versions (ai_profile_id uuid)"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := migrationFiles.ReadFile("sql/202609140008_ai_profile_reference_indexes.sql")
@@ -117,14 +121,18 @@ func TestCommunityMigrationLedgerPostgres(t *testing.T) {
  INSERT INTO ai_profiles VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',NULL,'workspace',NULL)`); err != nil {
 		t.Fatal(err)
 	}
-	guard, err := migrationFiles.ReadFile("sql/202609140009_agent_ai_profile_liveness.sql")
-	if err != nil {
+	// Leave the liveness migration pending, as on an installation upgrading from
+	// 008. Exercise the same transactional admission and ledger path as cmd/migrate.
+	if _, err := db.ExecContext(ctx, "DELETE FROM schema_migrations WHERE version='202609140009'"); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
-		if _, err := db.ExecContext(ctx, string(guard)); err != nil {
-			t.Fatal(err)
+		if err := Up(ctx, db); err != nil {
+			t.Fatalf("upgrade with hard-deleted agents: %v", err)
 		}
+	}
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM schema_migrations WHERE version='202609140009'").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("liveness migration not recorded: %d %v", count, err)
 	}
 	const assign = `INSERT INTO agents(ai_profile_id,workspace_id) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002')`
 	if _, err := db.ExecContext(ctx, assign); err != nil {

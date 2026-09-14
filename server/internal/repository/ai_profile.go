@@ -63,7 +63,7 @@ func (r *AIProfileRepository) Delete(ctx context.Context, workspace, id string, 
 			return ErrAIProfileChanged
 		}
 		var count int64
-		if err := tx.Model(&model.Agent{}).Where("workspace_id = ? AND ai_profile_id = ? AND deleted_at IS NULL", workspace, id).Count(&count).Error; err != nil {
+		if err := tx.Model(&model.Agent{}).Where("workspace_id = ? AND ai_profile_id = ?", workspace, id).Count(&count).Error; err != nil {
 			return err
 		}
 		if count != 0 {
