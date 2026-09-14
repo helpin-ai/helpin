@@ -22,6 +22,9 @@ func (c *AgentRuntimeClient) RevokeRunModelCredential(ctx context.Context, runID
 }
 
 func (s *AgentService) prepareAIConnectionRun(ctx context.Context, params *createRunParams) (*sdk.RunModel, *sdk.ModelCredential, *model.Agent, error) {
+	if s.aiProfiles != nil {
+		return s.prepareAIProfileRun(ctx, params)
+	}
 	if params.parentRunID != nil {
 		parent, err := s.runRepo.GetByID(ctx, params.workspaceID, *params.parentRunID)
 		if err != nil {
@@ -97,6 +100,9 @@ func requireAIConnectionRunOwner(run *model.AgentRun, actor string) error {
 	var input model.AgentRunInputPayload
 	if err := decodeAIConnectionRunInput(run.Input, &input); err != nil {
 		return err
+	}
+	if input.AISelection != nil && input.AISelection.ConnectionScope == "workspace" {
+		return nil
 	}
 	if input.ModelConnectionID != "" && (actor == "" || actor != derefString(run.TriggeredByUserID)) {
 		return ErrAIConnection

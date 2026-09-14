@@ -57,6 +57,7 @@ type UpdateDockChatRequest struct {
 
 // SendDockChatMessageRequest is the payload for a user chat turn.
 type SendDockChatMessageRequest struct {
+	AIProfileID       string                 `json:"ai_profile_id,omitempty"`
 	ModelConnectionID string                 `json:"model_connection_id,omitempty"`
 	ModelName         string                 `json:"model_name,omitempty"`
 	ClientMessageID   string                 `json:"client_message_id"`

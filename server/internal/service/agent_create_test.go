@@ -83,6 +83,7 @@ func TestCreateAgentModelTierResolvesInternalExecution(t *testing.T) {
 func TestCustomAgentVersionCanChangeModelTierWithoutMutatingPriorSnapshot(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	if err := db.Exec(`CREATE TABLE agent_versions (
+ ai_profile_id TEXT,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, agent_id TEXT NOT NULL,
 		version_key TEXT NOT NULL, label TEXT NOT NULL, description TEXT,
 		runtime_kind TEXT NOT NULL, model_tier TEXT NOT NULL DEFAULT '', provider TEXT, model TEXT,
@@ -2153,6 +2154,7 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 
 	statements := []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,

@@ -1512,6 +1512,7 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME
 		)`,
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,

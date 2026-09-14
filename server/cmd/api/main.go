@@ -1154,7 +1154,7 @@ func main() {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
 	agentService.SetExternalMCPService(externalMCPService)
-	agentService.SetAIConnectionService(aiConnectionService)
+	agentService.SetAIConnectionService(aiConnectionService).SetAIProfileService(aiProfileService)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarPlanDismissalRepo).
 		SetWebsocketPublisher(wsPublisher)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
@@ -1783,7 +1783,7 @@ func main() {
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
 	aiConnectionService.SetAuthorizationService(authzService)
 	crmSituationService := service.NewCRMSituationService(crmSituationRepo, authzService)
-	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), authzService, crmSituationService)
+	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), authzService, crmSituationService).SetAIProfileService(aiProfileService)
 	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
 	crmPlaybookLauncher := service.NewCRMPlaybookAgentLauncher(agentService, crmPlaybookExecutionRepo, aiUsageMeter)
 	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, authzService, workspaceRepo).SetEntitlements(entitlementService)

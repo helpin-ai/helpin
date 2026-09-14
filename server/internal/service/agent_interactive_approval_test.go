@@ -1969,6 +1969,7 @@ func newInteractiveApprovalTestDB(t *testing.T) *gorm.DB {
 
 	statements := []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,

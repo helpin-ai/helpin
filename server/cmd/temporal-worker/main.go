@@ -454,6 +454,14 @@ func main() {
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
 		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetModelTierResolver(agentTierResolver).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+
+	aiConnectionService, err := service.NewAIConnectionService(repository.NewAIConnectionRepository(db), modelCatalog, agentRuntimeClient, service.AIConnectionConfig{
+		EncryptionKey: cfg.AIConnectionEncryptionKey, ChatGPTEnabled: cfg.ChatGPTConnectionsEnabled, ChatGPTClientID: cfg.ChatGPTClientID, AppID: cfg.AgentRuntimeAppID,
+	})
+	if err != nil {
+		fatalWithSentry("initialize AI connections", err)
+	}
+	agentService.SetAIConnectionService(aiConnectionService).SetAIProfileService(service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService))
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}

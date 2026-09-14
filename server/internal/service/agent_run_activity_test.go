@@ -40,6 +40,7 @@ func createAgentRunActivityTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	tables := []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,

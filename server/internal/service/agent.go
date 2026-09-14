@@ -811,6 +811,7 @@ type AgentService struct {
 	mcpRepo                    *repository.MCPRepository
 	externalMCPService         *ExternalMCPService
 	aiConnections              *AIConnectionService
+	aiProfiles                 *AIProfileService
 }
 
 func (s *AgentService) SetModelTierResolver(resolver *AgentModelTierResolver) *AgentService {
@@ -1336,6 +1337,9 @@ func (s *AgentService) ensureBuiltInAgent(ctx context.Context, workspaceID, acto
 	}
 
 	agent := newBuiltInAgentRecord(workspaceID, presetKey, presetVersionKey, preset)
+	if err := s.validateSharedAIProfile(ctx, agent.WorkspaceID, agent.AIProfileID); err != nil {
+		return nil, err
+	}
 	if err := s.validateModelRouting(agent); err != nil {
 		return nil, err
 	}
@@ -1448,6 +1452,7 @@ func applyAgentVersionToAgent(agent *model.Agent, version *model.AgentVersion) {
 	}
 	agent.ActiveVersionID = &version.ID
 	agent.RuntimeKind = version.RuntimeKind
+	agent.AIProfileID = version.AIProfileID
 	agent.ModelTier = version.ModelTier
 	agent.Provider = version.Provider
 	agent.Model = version.Model
@@ -1517,6 +1522,7 @@ func agentVersionFromAgent(agent *model.Agent, actorID string) *model.AgentVersi
 		Label:                 "Default",
 		RuntimeKind:           strings.TrimSpace(agent.RuntimeKind),
 		ModelTier:             strings.TrimSpace(agent.ModelTier),
+		AIProfileID:           agent.AIProfileID,
 		Provider:              agent.Provider,
 		Model:                 agent.Model,
 		ExecutionConfig:       normalizeExecutionConfigJSON(agent.ExecutionConfig),
@@ -2596,6 +2602,9 @@ func (s *AgentService) CreateAgentVersion(ctx context.Context, workspaceID, agen
 		}
 		applyModelTierSnapshotToVersion(&version, snapshot)
 	}
+	if err := s.validateSharedAIProfile(ctx, workspaceID, version.AIProfileID); err != nil {
+		return nil, err
+	}
 	if err := validateAgentVersion(&version); err != nil {
 		return nil, err
 	}
@@ -2640,6 +2649,9 @@ func (s *AgentService) UpdateAgentVersion(ctx context.Context, workspaceID, agen
 	}
 	if actorID != "" {
 		version.UpdatedBy = &actorID
+	}
+	if err := s.validateSharedAIProfile(ctx, workspaceID, version.AIProfileID); err != nil {
+		return nil, err
 	}
 	if err := validateAgentVersion(version); err != nil {
 		return nil, err
@@ -2687,6 +2699,9 @@ func (s *AgentService) ActivateAgentVersion(ctx context.Context, workspaceID, ag
 	if err := validateRuntimeForAgent(agent); err != nil {
 		return nil, err
 	}
+	if err := s.validateSharedAIProfile(ctx, agent.WorkspaceID, agent.AIProfileID); err != nil {
+		return nil, err
+	}
 	if err := s.validateModelRouting(agent); err != nil {
 		return nil, err
 	}
@@ -2727,6 +2742,9 @@ func (s *AgentService) DeleteAgentVersion(ctx context.Context, workspaceID, agen
 }
 
 func applyAgentVersionCreateRequest(version *model.AgentVersion, req model.CreateAgentVersionRequest) {
+	if req.AIProfileID != nil {
+		version.AIProfileID = trimPtr(req.AIProfileID)
+	}
 	if req.ModelTier != nil {
 		version.ModelTier = strings.TrimSpace(*req.ModelTier)
 	}
@@ -2772,6 +2790,7 @@ func applyAgentVersionUpdateRequest(version *model.AgentVersion, req model.Updat
 	applyAgentVersionCreateRequest(version, model.CreateAgentVersionRequest{
 		RuntimeKind:           req.RuntimeKind,
 		ModelTier:             req.ModelTier,
+		AIProfileID:           req.AIProfileID,
 		Provider:              req.Provider,
 		Model:                 req.Model,
 		ExecutionConfig:       req.ExecutionConfig,
@@ -2928,6 +2947,9 @@ func (s *AgentService) validateSystemAgentPresetState(ctx context.Context, agent
 		return err
 	}
 	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
+		return err
+	}
+	if err := s.validateSharedAIProfile(ctx, agent.WorkspaceID, agent.AIProfileID); err != nil {
 		return err
 	}
 	if err := s.validateModelRouting(agent); err != nil {
@@ -3367,6 +3389,7 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 		Status:                     "idle",
 		RuntimeKind:                runtimeKind,
 		ModelTier:                  strings.TrimSpace(stringOrDefault(req.ModelTier, "")),
+		AIProfileID:                trimPtr(req.AIProfileID),
 		Skills:                     skills,
 		TriggerMode:                triggerMode,
 		Provider:                   trimPtr(req.Provider),
@@ -3410,6 +3433,9 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 		return nil, err
 	}
 	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
+		return nil, err
+	}
+	if err := s.validateSharedAIProfile(ctx, agent.WorkspaceID, agent.AIProfileID); err != nil {
 		return nil, err
 	}
 	if err := s.validateModelRouting(agent); err != nil {
@@ -3546,6 +3572,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		} else {
 			agent.RuntimeKind = "native_sdk"
 		}
+	}
+	if req.AIProfileID != nil {
+		agent.AIProfileID = trimPtr(req.AIProfileID)
 	}
 	if req.ModelTier != nil {
 		agent.ModelTier = strings.TrimSpace(*req.ModelTier)
@@ -3693,6 +3722,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		return nil, err
 	}
 	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
+		return nil, err
+	}
+	if err := s.validateSharedAIProfile(ctx, agent.WorkspaceID, agent.AIProfileID); err != nil {
 		return nil, err
 	}
 	if err := s.validateModelRouting(agent); err != nil {
@@ -4545,6 +4577,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
 			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
@@ -4608,6 +4641,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
 			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
@@ -4659,6 +4693,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
 			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
@@ -4708,6 +4743,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:      req.DeliveryMode,
+			aiProfileID:       req.AIProfileID,
 			modelConnectionID: req.ModelConnectionID,
 			modelName:         req.ModelName,
 			workspaceID:       workspaceID, agent: agent, targetType: "objective", targetID: objective.Objective.ID,
@@ -4765,6 +4801,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
 			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
@@ -4815,6 +4852,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:      req.DeliveryMode,
+			aiProfileID:       req.AIProfileID,
 			modelConnectionID: req.ModelConnectionID,
 			modelName:         req.ModelName,
 			workspaceID:       workspaceID,
@@ -4870,6 +4908,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:      req.DeliveryMode,
+			aiProfileID:       req.AIProfileID,
 			modelConnectionID: req.ModelConnectionID,
 			modelName:         req.ModelName,
 			workspaceID:       workspaceID,
@@ -4916,6 +4955,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
 			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
@@ -4959,6 +4999,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
 			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
@@ -5002,6 +5043,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
 			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
@@ -5045,6 +5087,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
 			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
@@ -5083,6 +5126,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 
 		run, err := s.createRun(ctx, createRunParams{
 			deliveryMode:         req.DeliveryMode,
+			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
 			modelName:            req.ModelName,
 			workspaceID:          workspaceID,
@@ -5357,6 +5401,9 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 
 func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, workspaceID string, run *model.AgentRun, runtimeRunID, actorID string, req model.ResumeAgentRunRequest, intent string) (*model.AgentRun, *model.AgentRunMessage, error) {
 	if err := requireAIConnectionRunOwner(run, actorID); err != nil {
+		return nil, nil, err
+	}
+	if err := s.recheckRunAISelection(ctx, run, actorID); err != nil {
 		return nil, nil, err
 	}
 	if err := rejectUnclaimedCRMPlaybookRun(run.Input); err != nil {
@@ -6150,6 +6197,7 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 }
 
 type createRunParams struct {
+	aiProfileID          string
 	modelConnectionID    string
 	modelName            string
 	deliveryMode         string
@@ -6176,9 +6224,9 @@ type createRunParams struct {
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
-	selectedModel, credential, billingAgent, err := s.prepareAIConnectionRun(ctx, &params)
-	if err != nil {
-		return nil, err
+	var err error
+	if params.aiProfileID != "" && (params.modelConnectionID != "" || params.modelName != "") {
+		return nil, fmt.Errorf("select a profile or legacy connection, not both")
 	}
 
 	if err := validateAgentRunDeliveryMode(params.deliveryMode); err != nil {
@@ -6273,8 +6321,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			if err := decodeAIConnectionRunInput(activeRun.Input, &activeInput); err != nil {
 				return nil, err
 			}
-			if activeInput.ModelConnectionID != params.modelConnectionID || (params.modelName != "" && activeInput.ModelName != params.modelName) {
+			if (params.aiProfileID != "" && (activeInput.AISelection == nil || activeInput.AISelection.ProfileID != params.aiProfileID)) || (params.modelConnectionID != "" && activeInput.ModelConnectionID != params.modelConnectionID) || (params.modelName != "" && activeInput.ModelName != params.modelName) {
 				return nil, fmt.Errorf("an active run uses a different AI connection or model; finish or cancel it before starting another run")
+			}
+			if err := s.recheckRunAISelection(ctx, activeRun, derefString(params.actorID)); err != nil {
+				return nil, err
 			}
 			if agentRunIsPreview(activeRun) != (params.deliveryMode == "preview") {
 				return nil, fmt.Errorf("an active run has a different delivery mode; finish or cancel it before starting another run")
@@ -6296,6 +6347,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
 		err := fmt.Errorf("an agent run is already active for this %s", params.targetType)
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
+		return nil, err
+	}
+
+	selectedModel, credential, billingAgent, err := s.prepareAIConnectionRun(ctx, &params)
+	if err != nil {
 		return nil, err
 	}
 
@@ -6472,7 +6528,7 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	// Bind first, then recheck: a disconnect racing admission must revoke this run.
 	if credential != nil {
-		if _, _, err := s.aiConnections.Credential(ctx, params.workspaceID, *params.actorID, params.modelConnectionID, false); err != nil {
+		if err := s.recheckRunAISelection(ctx, run, derefString(params.actorID)); err != nil {
 			revokeErr := s.aiConnections.runtime.RevokeRunModelCredential(ctx, runtimeRun.ID)
 			_, cancelErr := s.agentRuntimeClient.CancelRun(ctx, runtimeRun.ID)
 			if revokeErr != nil || cancelErr != nil {
@@ -7439,7 +7495,7 @@ func (s *AgentService) validateModelRouting(agent *model.Agent) error {
 	if err := validateModelProvider(provider); err != nil {
 		return err
 	}
-	if !s.isModelProviderConfigured(provider) {
+	if s.aiProfiles == nil && !s.isModelProviderConfigured(provider) {
 		switch provider {
 		case model.AgentModelProviderAnthropic:
 			return fmt.Errorf("provider anthropic is not configured (missing ANTHROPIC_API_KEY)")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	sdk "github.com/helpin-ai/agent-runtime-go"
 	"slices"
 	"strings"
 	"time"
@@ -71,7 +72,28 @@ func (s *CRMPlaybookAgentLauncher) StartPlaybookRun(ctx context.Context, request
 	if err != nil {
 		return nil, err
 	}
+
+	var selectedModel *sdk.RunModel
+	var credential *sdk.ModelCredential
+	if s.agents.aiProfiles != nil {
+		selection := source.Connection.Snapshot.AISelection
+		if selection == nil {
+			return nil, errors.New("review and publish this playbook again to bind its AI connection")
+		}
+		credential, err = s.agents.aiProfiles.Restore(ctx, binding.WorkspaceID, actor.UserID, selection)
+		if err != nil {
+			return nil, err
+		}
+		selectedModel = &selection.Route.Model
+	}
 	input := binding.Input
+	if selectedModel != nil {
+		input.CredentialSource = "app"
+		input.AISelection = source.Connection.Snapshot.AISelection
+		input.ModelConnectionID = input.AISelection.Route.ConnectionID
+		input.ModelProvider, input.ModelName = selectedModel.Provider, selectedModel.Model
+	}
+
 	input.AllowedTools = slices.Clone(prepared.agent.AllowedTools)
 	input.AdditionalContext = playbookRunInstructions(input)
 	input.Trigger = &model.AgentRunTriggerContext{Source: model.AgentRunTriggerSourceAutomationRule, TriggerType: model.CRMPlaybookWorkDue, RuleID: &source.Connection.Snapshot.Flow.ID, ActorID: &actor.UserID, FiredAt: &binding.CreatedAt}
@@ -117,6 +139,7 @@ func (s *CRMPlaybookAgentLauncher) StartPlaybookRun(ctx context.Context, request
 	if err != nil {
 		return nil, s.failBeforeLaunch(ctx, stored, err)
 	}
+	request.Model, request.ModelCredential = selectedModel, credential
 	request.AgentID = prepared.agent.ID
 	request.Metadata["crm_playbook_connection_id"] = binding.ConnectionID
 	request.Metadata["crm_playbook_situation_id"] = binding.SituationID
@@ -135,6 +158,14 @@ func (s *CRMPlaybookAgentLauncher) StartPlaybookRun(ctx context.Context, request
 		return stored, err
 	}
 	stored.ExternalRuntimeID = strPtr(remote.ID)
+	if credential != nil {
+		if err := s.agents.recheckRunAISelection(ctx, stored, actor.UserID); err != nil {
+			_ = s.agents.aiConnections.runtime.RevokeRunModelCredential(ctx, remote.ID)
+			_, _ = s.agents.agentRuntimeClient.CancelRun(ctx, remote.ID)
+			return stored, s.failBeforeLaunch(ctx, stored, err)
+		}
+	}
+
 	s.agents.recordTriggerExecution(ctx, stored.WorkspaceID, stored.AgentID, input.Trigger, stored.TargetType, stored.TargetID, stored, nil)
 	s.agents.publishRunEvent(stored, actor.UserID)
 	return stored, nil

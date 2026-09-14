@@ -279,7 +279,8 @@ var setupTestSchema = []string{
 	`CREATE TABLE pm_task_owners (task_id TEXT NOT NULL, user_id TEXT NOT NULL)`,
 	`CREATE TABLE pm_sprint_closeouts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, closed_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE git_repositories (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, active BOOLEAN NOT NULL DEFAULT 1, selected BOOLEAN NOT NULL DEFAULT 1, deleted_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
-	`CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0, preset_key TEXT NOT NULL DEFAULT '', approval_mode TEXT NOT NULL DEFAULT 'never', template_key TEXT, template_instance_id TEXT, source_template_key TEXT NOT NULL DEFAULT '')`,
+	`CREATE TABLE agents (
+ ai_profile_id TEXT,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL DEFAULT 0, preset_key TEXT NOT NULL DEFAULT '', approval_mode TEXT NOT NULL DEFAULT 'never', template_key TEXT, template_instance_id TEXT, source_template_key TEXT NOT NULL DEFAULT '')`,
 	`CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, agent_id TEXT NOT NULL, status TEXT NOT NULL, approval_state TEXT NOT NULL DEFAULT 'not_required', target_type TEXT NOT NULL DEFAULT 'task', target_id TEXT NOT NULL DEFAULT '', triggered_by_user_id TEXT, output_summary TEXT NOT NULL DEFAULT '{}', completed_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE agent_run_artifacts (id TEXT PRIMARY KEY, workspace_id TEXT, run_id TEXT NOT NULL, artifact_type TEXT NOT NULL DEFAULT '', inline_content TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 	`CREATE TABLE automation_rules (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT 1, template_key TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,

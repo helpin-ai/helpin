@@ -34,7 +34,7 @@ func (s *CRMPlaybookService) ReviewConnection(ctx context.Context, ws, id string
 	if source == nil {
 		return nil, ErrCRMPlaybookNotFound
 	}
-	snapshot, fingerprint, err := compileCRMPlaybookConnection(*source)
+	snapshot, fingerprint, err := s.compileConnectionWithAIProfile(ctx, *source)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,9 @@ func (s *CRMPlaybookService) PublishConnection(ctx context.Context, ws, id strin
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.store.PublishConnection(ctx, ws, id, actor.WorkspaceMemberID, req, fingerprint, compileCRMPlaybookConnection)
+	result, err := s.store.PublishConnection(ctx, ws, id, actor.WorkspaceMemberID, req, fingerprint, func(source model.CRMPlaybookConnectionSource) (model.CRMPlaybookConnectionSnapshot, string, error) {
+		return s.compileConnectionWithAIProfile(ctx, source)
+	})
 	if err == nil && result == nil {
 		return nil, ErrCRMPlaybookNotFound
 	}

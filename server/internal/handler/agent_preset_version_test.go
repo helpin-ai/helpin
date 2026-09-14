@@ -238,6 +238,7 @@ func newAgentPresetVersionTestHandler(t *testing.T) (*AgentHandler, *gorm.DB) {
 
 	schema := []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,

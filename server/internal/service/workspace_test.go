@@ -70,7 +70,8 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 		)`,
 		`CREATE TABLE IF NOT EXISTS agent_run_artifacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, cached_input_tokens INTEGER NOT NULL DEFAULT 0, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0)`,
-		`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS agents (
+ ai_profile_id TEXT,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agent_handoffs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS workspace_key_history (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS team_workspace_memberships (
@@ -146,6 +147,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 	db := newTestDB(t)
 	for _, stmt := range []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
