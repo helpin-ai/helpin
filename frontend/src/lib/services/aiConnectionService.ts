@@ -2,6 +2,8 @@ import { api } from "@/lib/api";
 
 export interface AIConnection {
   id: string;
+  scope: "personal" | "workspace";
+  user_id: string | null;
   name: string;
   provider: string;
   status: "pending" | "connected" | "reauthorization_required" | "disconnected";
@@ -15,6 +17,7 @@ export interface AIConnectionModel {
   tier: string;
 }
 export interface AIConnectionSelection {
+  ai_profile_id?: string;
   model_connection_id?: string;
   model_name?: string;
 }
@@ -36,7 +39,7 @@ export const aiConnectionService = {
     }>(path(workspace, "/")),
   create: (
     workspace: string,
-    request: { name: string; provider: string; api_key?: string },
+    request: { name: string; provider: string; api_key?: string; scope?: "personal" | "workspace" },
   ) => api.post<AIConnectionLogin>(path(workspace, "/"), request),
   poll: (workspace: string, id: string) =>
     api.post<AIConnectionLogin>(

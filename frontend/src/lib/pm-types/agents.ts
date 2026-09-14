@@ -56,6 +56,7 @@ export interface AgentExecutionConfig {
 }
 
 export interface Agent {
+  ai_profile_id?: string | null;
   id: string;
   workspace_id: string;
   is_system: boolean;
@@ -275,6 +276,7 @@ export interface AgentRunStreamEvent {
 export type AgentRunDeliveryMode = 'publish' | 'preview';
 
 export interface StartAgentRunRequest {
+ ai_profile_id?: string;
   model_connection_id?: string;
   model_name?: string;
   delivery_mode?: AgentRunDeliveryMode;
@@ -523,6 +525,7 @@ export interface AgentRunArtifact {
 }
 
 export interface CreateAgentRequest {
+  ai_profile_id?: string | null;
   workspace_id: string;
   name: string;
   icon_key?: AgentIconKey;
@@ -632,6 +635,7 @@ export interface AgentTemplateStarterFlowField {
 }
 
 export interface CreateAgentFromTemplateOverrides {
+  ai_profile_id?: string | null;
   role?: string;
   icon_key?: AgentIconKey;
   runtime_kind?: AgentRuntimeKind;
@@ -677,6 +681,7 @@ export interface CreateAgentFromTemplateResponse {
 }
 
 export interface UpdateAgentRequest {
+  ai_profile_id?: string | null;
   name?: string;
   icon_key?: AgentIconKey;
   preset_key?: AgentPresetKey;
@@ -708,6 +713,7 @@ export interface UpdateAgentRequest {
 }
 
 export interface AgentVersion {
+  ai_profile_id?: string | null;
   id: string;
   workspace_id: string;
   agent_id: string;
@@ -733,6 +739,7 @@ export interface AgentVersion {
 }
 
 export interface CreateAgentVersionRequest {
+  ai_profile_id?: string | null;
   label: string;
   description?: string;
   source_version_id?: string;
@@ -750,6 +757,7 @@ export interface CreateAgentVersionRequest {
 }
 
 export interface UpdateAgentVersionRequest {
+  ai_profile_id?: string | null;
   label?: string;
   description?: string;
   runtime_kind?: AgentRuntimeKind;

@@ -34,6 +34,7 @@ const providerLabels: Record<string, string> = {
 };
 export function AIConnectionsDialog({
   workspaceId,
+  scope = "personal",
   open,
   onOpenChange,
   connections,
@@ -41,6 +42,7 @@ export function AIConnectionsDialog({
   onChanged,
 }: {
   workspaceId: string;
+  scope?: "personal" | "workspace";
   open: boolean;
   onOpenChange: (open: boolean) => void;
   connections: AIConnection[];
@@ -106,6 +108,7 @@ export function AIConnectionsDialog({
           )
         : await aiConnectionService.create(workspaceId, {
             name,
+            scope,
             provider,
             api_key: apiKey || undefined,
           });
@@ -164,17 +167,15 @@ export function AIConnectionsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>My AI connections</DialogTitle>
+          <DialogTitle>{scope === "personal" ? "My AI connections" : "Workspace AI connections"}</DialogTitle>
           <DialogDescription>
-            Only you can use these connections in this workspace. They are
-            available for manual runs and chats. Helpin AI credits still apply
-            at the usual rate.
+            {scope === "personal" ? "Only you can use these connections in this workspace, for manual runs and chats." : "Workspace members can select these connections. Shared profiles can also use them for automation."}
           </DialogDescription>
         </DialogHeader>
         <div className="divide-y divide-border">
           {connections.length === 0 && (
             <p className="py-3 text-sm text-muted-foreground">
-              No personal connections yet. Runs use the runtime default.
+              No connections yet. Add one below, then create an AI profile.
             </p>
           )}
           {connections.map((connection) => (
@@ -245,7 +246,7 @@ export function AIConnectionsDialog({
         )}
         {login?.connection.status === "connected" && (
           <p role="status" className="text-sm">
-            Connected. You can select this connection for a new run.
+            Connected. Profiles using this connection can start new runs.
           </p>
         )}
         <form
@@ -286,7 +287,7 @@ export function AIConnectionsDialog({
             </SelectTrigger>
             <SelectContent>
               {Object.entries(providerLabels)
-                .filter(([key]) => models.some((m) => m.provider === key))
+                .filter(([key]) => (scope === "personal" || key !== "openai_chatgpt") && models.some((m) => m.provider === key))
                 .map(([key, label]) => (
                   <SelectItem key={key} value={key}>
                     {label}

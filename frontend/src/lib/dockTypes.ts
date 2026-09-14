@@ -42,6 +42,7 @@ export interface DockChatListResponse {
 }
 
 export interface SendDockChatMessageRequest {
+  ai_profile_id?: string;
   model_connection_id?: string;
   model_name?: string;
   client_message_id: string

@@ -52,7 +52,8 @@ import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApp
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { getAgentTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { CRM_AGENT_TARGET_OPTIONS } from '@/lib/agentCRMTargets';
-import { AGENT_MODEL_TIER_OPTIONS, agentModelTierLabel } from '@/lib/agentModelTier';
+import { agentModelTierLabel } from '@/lib/agentModelTier';
+import { AIProfilePicker } from '@/components/agents/AIProfilePicker';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
@@ -414,6 +415,8 @@ type SecurityTriageSeverity = typeof SECURITY_TRIAGE_SEVERITY_OPTIONS[number]['v
 // ---------------------------------------------------------------------------
 
 interface AgentFormData {
+  ai_profile_id?: string;
+  native_context?: AgentExecutionConfig['native_context'];
   name: string;
   icon_key: AgentIconKey;
   preset_key: AgentPresetKey;
@@ -709,7 +712,7 @@ function deriveExecutionConfigFields(
   runtimeKind: AgentRuntimeKind,
   provider: AgentModelProvider,
   executionConfig?: AgentExecutionConfig,
-): Pick<AgentFormData, 'reasoning_effort' | 'service_tier' | 'max_tool_steps'> {
+): Pick<AgentFormData, 'reasoning_effort' | 'service_tier' | 'max_tool_steps' | 'native_context'> {
   const normalizedProvider = normalizeProviderForRuntime(runtimeKind, provider);
   const reasoningEffort = runtimeKind === 'native_sdk' && normalizedProvider !== 'anthropic' ? (executionConfig?.reasoning_effort ?? '') : '';
   const serviceTier = runtimeKind === 'native_sdk' && normalizedProvider === 'openai'
@@ -722,11 +725,12 @@ function deriveExecutionConfigFields(
     reasoning_effort: reasoningEffort,
     service_tier: serviceTier,
     max_tool_steps: maxToolSteps,
+    native_context: executionConfig?.native_context,
   };
 }
 
 function buildExecutionConfigPayload(form: AgentFormData): AgentExecutionConfig | undefined {
-  const config: AgentExecutionConfig = {};
+  const config: AgentExecutionConfig = { ...(form.native_context ? { native_context: form.native_context } : {}) };
   if (form.runtime_kind === 'native_sdk') {
     if (form.provider !== 'anthropic' && form.reasoning_effort) {
       config.reasoning_effort = form.reasoning_effort;
@@ -815,6 +819,7 @@ function buildUpdatePayload(
   if (agent?.is_system) {
     return {
       name: form.name.trim(),
+      ai_profile_id: form.ai_profile_id || '',
       preset_key: form.preset_key,
       preset_version_key: form.preset_version_key,
       provider: provider || undefined,
@@ -831,7 +836,7 @@ function buildUpdatePayload(
     name: form.name.trim(),
     icon_key: form.icon_key,
     trigger_mode: 'manual',
-    model_tier: form.model_tier,
+    ai_profile_id: form.ai_profile_id || '',
     system_prompt: form.system_prompt.trim() || undefined,
     team_ids: teamIds,
     allowed_tools: normalizeToolList(form.allowed_tools),
@@ -863,6 +868,7 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     preset_key: presetKey,
     preset_version_key: agent.preset_version_key?.trim() || preset?.version_key || fallbackPresetVersionKey(presetKey),
     runtime_kind: agent.runtime_kind || runtimeKind,
+    ai_profile_id: agent.ai_profile_id ?? '',
     model_tier: agent.model_tier ?? preset?.model_tier ?? 'large',
     supported_modes: supportedModes,
     provider,
@@ -938,6 +944,7 @@ function buildCustomAgentForm(agent: Agent): AgentFormData {
     preset_key: presetKey,
     preset_version_key: fallbackPresetVersionKey(presetKey),
     runtime_kind: runtimeKind,
+    ai_profile_id: agent.ai_profile_id ?? '',
     model_tier: agent.model_tier ?? 'large',
     supported_modes: supportedModesForForm(runtimeKind),
     provider,
@@ -970,6 +977,7 @@ function buildCustomAgentVersionForm(agent: Agent, version: AgentVersion): Agent
   return {
     ...buildCustomAgentForm(agent),
     runtime_kind: runtimeKind,
+    ai_profile_id: version.ai_profile_id ?? '',
     model_tier: version.model_tier ?? agent.model_tier ?? 'large',
     supported_modes: version.supported_modes?.length ? version.supported_modes : supportedModesForForm(runtimeKind),
     provider,
@@ -993,7 +1001,7 @@ function comparableCustomAgentForm(form: AgentFormData) {
     : [];
   return {
     name: form.name.trim(),
-    model_tier: form.model_tier,
+    ai_profile_id: form.ai_profile_id || '',
     icon_key: form.icon_key,
     runtime_kind: form.runtime_kind,
     provider,
@@ -3187,6 +3195,7 @@ export function AgentsPage() {
           name: form.name.trim(),
           team_id: form.team_id || undefined,
           overrides: {
+            ai_profile_id: form.ai_profile_id || '',
             role: templateDraft.template.default_role,
             icon_key: form.icon_key,
             runtime_kind: form.runtime_kind,
@@ -3247,7 +3256,7 @@ export function AgentsPage() {
         label: versionLabelDraft.trim(),
         description: versionDescriptionDraft.trim() || undefined,
         source_version_id: selectedCustomVersionID || undefined,
-        model_tier: form.model_tier,
+        ai_profile_id: form.ai_profile_id || '',
         system_prompt: form.system_prompt.trim() || undefined,
         skills: form.skills,
         allowed_tools: normalizeToolList(form.allowed_tools),
@@ -3316,7 +3325,7 @@ export function AgentsPage() {
       const res = await automationService.updateAgentVersion(workspaceId, editingAgent.id, selectedCustomVersion.id, {
         label: selectedCustomVersion.label,
         description: selectedCustomVersion.description,
-        model_tier: form.model_tier,
+        ai_profile_id: form.ai_profile_id || '',
         system_prompt: form.system_prompt.trim() || undefined,
         skills: form.skills,
         allowed_tools: normalizeToolList(form.allowed_tools),
@@ -4743,43 +4752,18 @@ export function AgentsPage() {
                     </Collapsible.Content>
                   </Collapsible.Root>
 
-                  {/* 03 — Execution */}
-                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
-                    <Collapsible.Trigger asChild>
-                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
-                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                        <span className="flex-1 text-sm font-medium">Model size</span>
-                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{agentModelTierLabel(form.model_tier)}</span>
-                      </button>
-                    </Collapsible.Trigger>
-                    <Collapsible.Content>
-                      <div className="border-t border-border/60 p-4">
-                        <div className="max-w-lg space-y-2">
-                          <FieldLabel>Model size</FieldLabel>
-                          <Select
-                            value={form.model_tier}
-                            disabled={editingSystemAgent || versionReadOnly}
-                            onValueChange={(value) => setForm((current) => ({ ...current, model_tier: value as AgentModelTier }))}
-                          >
-                            <SelectTrigger className="h-9" aria-label="Model size">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {AGENT_MODEL_TIER_OPTIONS.map((tier) => (
-                                <SelectItem key={tier.value} value={tier.value}>{tier.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-[11px] leading-relaxed text-muted-foreground">
-                            {AGENT_MODEL_TIER_OPTIONS.find((tier) => tier.value === form.model_tier)?.description}
-                          </p>
-                          {editingSystemAgent ? (
-                            <p className="text-[11px] leading-relaxed text-muted-foreground">Built-in model sizes are managed by Helpin.</p>
-                          ) : null}
-                        </div>
-                      </div>
-                    </Collapsible.Content>
-                  </Collapsible.Root>
+                  <div className="border-t border-quiet-divider-strong py-4">
+                    <AIProfilePicker workspaceId={workspaceId || ""} value={form.ai_profile_id} sharedOnly disabled={saving} onChange={id => {
+                      if (editingSystemAgent && editingAgent && workspaceId) {
+                        setSaving(true);
+                        void automationService.updateAgent(workspaceId, editingAgent.id, { ai_profile_id: id || '' }).then(res => {
+                          if (res.error) toast.error('Unable to update AI profile', { description: res.error });
+                          else { setForm(current => ({ ...current, ai_profile_id: id || '' })); if (res.data) setEditingAgent(res.data); void loadAgents(); }
+                        }).catch(() => toast.error('Unable to update AI profile')).finally(() => setSaving(false));
+                      } else setForm(current => ({ ...current, ai_profile_id: id || '' }));
+                    }} />
+                    <p className="mt-2 text-xs text-quiet-text-secondary">{editingSystemAgent ? 'Changes save immediately for new runs of this agent.' : 'Save this version to apply its AI profile to new runs.'} Accepted runs keep their original selection.</p>
+                  </div>
 
                   </div>
                 </section>
@@ -6153,23 +6137,7 @@ export function AgentsPage() {
             <div className="rounded-xl border border-border/60 bg-card p-5">
               <div className="grid gap-5 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <FieldLabel tooltip="Templates use a Helpin-managed model size so capability and billing remain predictable.">Model size</FieldLabel>
-                  <Select
-                    value={form.model_tier}
-                    disabled
-                  >
-                    <SelectTrigger className="h-9" aria-label="Model size">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AGENT_MODEL_TIER_OPTIONS.map((tier) => (
-                        <SelectItem key={tier.value} value={tier.value}>{tier.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    {AGENT_MODEL_TIER_OPTIONS.find((tier) => tier.value === form.model_tier)?.description}
-                  </p>
+                  <AIProfilePicker workspaceId={workspaceId || ""} value={form.ai_profile_id} sharedOnly onChange={id => setForm(current => ({ ...current, ai_profile_id: id || '' }))} />
                 </div>
 
                 <div className="space-y-2">

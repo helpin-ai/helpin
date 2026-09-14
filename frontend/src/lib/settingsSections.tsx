@@ -69,6 +69,7 @@ const MCP = hi(Robot01Icon);
 const ExternalMCP = hi(Globe02Icon);
 
 export type SettingsSection =
+  | 'ai'
   | 'general'
   | 'members'
   | 'teams'
@@ -95,7 +96,7 @@ export type SettingsSection =
   | 'chat-general'
   | 'inboxes-routing';
 
-export type SettingsRouteSection = SettingsSection | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
+export type SettingsRouteSection = SettingsSection | 'ai-connections' | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
 
 export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSection> = {
   id: T;
@@ -109,6 +110,8 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
 };
 
 export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
+ { id: 'ai-connections', label: 'AI connections', description: 'Your AI connections and profiles for this workspace.', icon: Automations, group: 'Personal' },
+ { id: 'ai', label: 'AI', description: 'Shared connections, profiles, and the workspace default.', icon: Automations, group: 'Workspace' },
   {
     id: 'profile',
     label: 'Profile',

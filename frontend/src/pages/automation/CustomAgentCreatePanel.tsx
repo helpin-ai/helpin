@@ -5,7 +5,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentIconPicker } from '@/components/agents/AgentIconPicker';
 import { QuietSearchInput } from '@/components/design-system/quiet';
 import { HelpCircleIcon } from '@/lib/icons';
-import { AGENT_MODEL_TIER_OPTIONS } from '@/lib/agentModelTier';
+import { AIProfilePicker } from '@/components/agents/AIProfilePicker';
 import { CRM_AGENT_TARGET_OPTIONS } from '@/lib/agentCRMTargets';
 import {
   Command,
@@ -35,7 +35,6 @@ import {
 } from '@/components/ui/tooltip';
 import type {
   AgentInvocationMode,
-  AgentModelTier,
   AgentSkillRef,
   AgentTargetType,
   SkillCatalogEntry,
@@ -775,22 +774,7 @@ export function CustomAgentCreatePanel({
             </button>
             {advancedOpen ? (
               <div className="grid gap-3 border-t border-border pt-3 md:grid-cols-2">
-                    <label className="block space-y-2">
-                      <FieldLabel tooltip="Model sizes map to Helpin-managed models and billing rates. The underlying provider and model may change without changing this agent version.">Model size</FieldLabel>
-                      <Select value={form.model_tier} onValueChange={(value) => update({ model_tier: value as AgentModelTier })}>
-                        <SelectTrigger className="h-9" aria-label="Model size">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {AGENT_MODEL_TIER_OPTIONS.map((tier) => (
-                            <SelectItem key={tier.value} value={tier.value}>{tier.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-[11px] leading-relaxed text-muted-foreground">
-                        {AGENT_MODEL_TIER_OPTIONS.find((tier) => tier.value === form.model_tier)?.description}
-                      </p>
-                    </label>
+                    <div className="space-y-2"><AIProfilePicker workspaceId={workspaceId} value={form.ai_profile_id} sharedOnly onChange={id => update({ ai_profile_id: id || "" })} /></div>
                     <label className="block space-y-2">
                       <FieldLabel tooltip="Coming soon: this will limit how many runs this agent can work on at the same time. It is saved as 1 today.">Parallel tasks</FieldLabel>
                       <div className="flex items-center gap-2">

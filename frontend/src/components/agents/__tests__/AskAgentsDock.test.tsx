@@ -55,6 +55,10 @@ const mocks = vi.hoisted(() => ({
   uploadEditorFile: vi.fn(),
 }));
 
+// Profile queries have their own provider-backed tests; keep these dock tests
+// focused on transcript, message correlation, and composer behavior.
+vi.mock('@/components/agents/AIConnectionPicker', () => ({ AIConnectionPicker: () => null }));
+
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
 vi.mock('sonner', () => ({
