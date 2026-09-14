@@ -1,4 +1,4 @@
-package aiusage
+package pricing
 
 import (
 	"errors"

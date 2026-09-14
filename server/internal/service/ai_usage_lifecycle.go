@@ -10,3 +10,9 @@ type CompletionUsage = aiusage.CompletionUsage
 type UsageResult = aiusage.UsageResult
 
 const AIUsageOperationMediaEnrichment = aiusage.AIUsageOperationMediaEnrichment
+
+const (
+	mediaEnrichmentProvider       = aiusage.MediaEnrichmentProvider
+	mediaEnrichmentCanonicalModel = aiusage.MediaEnrichmentCanonicalModel
+	mediaEnrichmentRoute          = aiusage.MediaEnrichmentRoute
+)

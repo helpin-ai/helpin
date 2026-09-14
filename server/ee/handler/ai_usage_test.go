@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 )
 
 func TestAIUsagePricingHandlerReturnsCanonicalPublicCatalog(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := pricing.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}

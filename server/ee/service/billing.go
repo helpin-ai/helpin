@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -234,7 +235,7 @@ type BillingManagerRef = model.BillingManagerRef
 type BillingSummary = model.BillingSummary
 
 type BillingService struct {
-	repo             *repository.BillingRepository
+	repo             *eerepository.BillingRepository
 	gateway          BillingStripeGateway
 	now              func() time.Time
 	priceConf        BillingPriceConfig
@@ -245,7 +246,7 @@ type BillingService struct {
 	productAnalytics billingAnalytics
 }
 
-func NewBillingService(repo *repository.BillingRepository, gateway BillingStripeGateway, now func() time.Time) *BillingService {
+func NewBillingService(repo *eerepository.BillingRepository, gateway BillingStripeGateway, now func() time.Time) *BillingService {
 	if now == nil {
 		now = time.Now
 	}
@@ -378,13 +379,13 @@ func (s *BillingService) GetWorkspaceBilling(ctx context.Context, workspaceID st
 }
 
 // NextAIUsagePeriodSchedule derives the next renewal-anniversary allowance from subscription state.
-func (s *BillingService) NextAIUsagePeriodSchedule(ctx context.Context, workspaceID string, start time.Time) (repository.AIUsagePeriodSchedule, error) {
+func (s *BillingService) NextAIUsagePeriodSchedule(ctx context.Context, workspaceID string, start time.Time) (eerepository.AIUsagePeriodSchedule, error) {
 	billing, err := s.repo.GetByWorkspaceID(ctx, workspaceID)
 	if err != nil {
-		return repository.AIUsagePeriodSchedule{}, err
+		return eerepository.AIUsagePeriodSchedule{}, err
 	}
 	if billing == nil {
-		return repository.AIUsagePeriodSchedule{}, fmt.Errorf("workspace billing is missing")
+		return eerepository.AIUsagePeriodSchedule{}, fmt.Errorf("workspace billing is missing")
 	}
 	mode := model.AIUsageEnforcementStrict
 	if billing.Plan == model.BillingPlanFounder {
@@ -397,7 +398,7 @@ func (s *BillingService) NextAIUsagePeriodSchedule(ctx context.Context, workspac
 	if billing.Status == model.BillingStatusTrialing && billing.TrialEndsAt != nil && billing.TrialEndsAt.After(start) {
 		end = *billing.TrialEndsAt
 	}
-	return repository.AIUsagePeriodSchedule{
+	return eerepository.AIUsagePeriodSchedule{
 		WorkspaceID: workspaceID, Plan: billing.Plan, BillingInterval: billing.BillingInterval,
 		PricingVersion: "2026-08-13", EnforcementMode: mode, Anchor: billing.CurrentPeriodStart,
 		Start: start, End: end, AllowanceMicrousd: allowance,
@@ -899,7 +900,7 @@ func (s *BillingService) CancelWorkspaceSubscriptionImmediately(ctx context.Cont
 
 func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, update BillingStripeSubscriptionUpdate) (*BillingSummary, error) {
 	var previousState billingAnalyticsState
-	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, update.EventID, update.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, update.EventID, update.EventType, func(repo *eerepository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
 		billing, previous, err := s.applyStripeSubscriptionMutation(ctx, repo, &update)
 		previousState = previous
 		return billing, nil, err
@@ -922,7 +923,7 @@ func (s *BillingService) ApplyStripeSubscriptionUpdate(ctx context.Context, upda
 
 // Both the business write and webhook receipt commit together. Failed historical
 // events whose processed flag is false remain eligible for a successful retry.
-func (s *BillingService) applyStripeSubscriptionMutation(ctx context.Context, repo *repository.BillingRepository, update *BillingStripeSubscriptionUpdate) (*model.WorkspaceBilling, billingAnalyticsState, error) {
+func (s *BillingService) applyStripeSubscriptionMutation(ctx context.Context, repo *eerepository.BillingRepository, update *BillingStripeSubscriptionUpdate) (*model.WorkspaceBilling, billingAnalyticsState, error) {
 	billing, err := repo.GetByWorkspaceIDForUpdate(ctx, update.WorkspaceID)
 	if err != nil {
 		return nil, billingAnalyticsState{}, err
@@ -1014,7 +1015,7 @@ func (s *BillingService) ApplyStripeInvoicePaymentFailed(ctx context.Context, ev
 	if occurredAt.IsZero() {
 		occurredAt = s.now().UTC()
 	}
-	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *eerepository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
 		billing, err := billingForStripeInvoiceEvent(ctx, repo, event)
 		if err != nil || billing == nil {
 			return billing, nil, err
@@ -1050,7 +1051,7 @@ func (s *BillingService) ApplyStripeInvoicePaymentSucceeded(ctx context.Context,
 	if occurredAt.IsZero() {
 		occurredAt = s.now().UTC()
 	}
-	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *eerepository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
 		billing, err := billingForStripeInvoiceEvent(ctx, repo, event)
 		if err != nil || billing == nil {
 			return billing, nil, err
@@ -1086,7 +1087,7 @@ func (s *BillingService) ApplyStripeTrialWillEnd(ctx context.Context, event Bill
 	if occurredAt.IsZero() {
 		occurredAt = s.now().UTC()
 	}
-	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *repository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
+	billing, processed, err := s.repo.ProcessStripeLifecycleEvent(ctx, event.EventID, event.EventType, func(repo *eerepository.BillingRepository) (*model.WorkspaceBilling, *repository.CustomerIOLifecycleEventInput, error) {
 		billing, err := billingForStripeInvoiceEvent(ctx, repo, BillingStripeInvoiceEvent{SubscriptionID: event.SubscriptionID, CustomerID: event.CustomerID})
 		if err != nil || billing == nil {
 			return billing, nil, err
@@ -1147,7 +1148,7 @@ func (s *BillingService) billingForStripeInvoiceEvent(ctx context.Context, event
 	return billingForStripeInvoiceEvent(ctx, s.repo, event)
 }
 
-func billingForStripeInvoiceEvent(ctx context.Context, repo *repository.BillingRepository, event BillingStripeInvoiceEvent) (*model.WorkspaceBilling, error) {
+func billingForStripeInvoiceEvent(ctx context.Context, repo *eerepository.BillingRepository, event BillingStripeInvoiceEvent) (*model.WorkspaceBilling, error) {
 	if event.SubscriptionID != "" {
 		billing, err := repo.GetByStripeSubscriptionID(ctx, event.SubscriptionID)
 		if err != nil || billing != nil {

@@ -85,13 +85,7 @@ func aiUsagePayloadIdempotencyKey(payload []byte, parts ...string) string {
 }
 
 // AIUsageFeatureDefinition describes one metered AI feature.
-type AIUsageFeatureDefinition struct {
-	FeatureKey string
-	Label      string
-	Category   string
-	FloorUnits int
-	Chargeable bool
-}
+type AIUsageFeatureDefinition = aipolicy.UsageFeatureDefinition
 
 type aiUsageCreditConsumer interface {
 	PreflightCredits(ctx context.Context, input BillingCreditPreflight) error
@@ -146,23 +140,7 @@ type MeteredLLMProvider struct {
 var aiUsageFeatures = aiUsageFeaturesFromRegistry(aipolicy.DefaultRegistry())
 
 func aiUsageFeaturesFromRegistry(registry *aipolicy.Registry) map[string]AIUsageFeatureDefinition {
-	features := make(map[string]AIUsageFeatureDefinition)
-	for _, action := range registry.Actions() {
-		_, exists := features[action.FeatureKey]
-		// The feature-level action owns the customer-facing label/category.
-		// Specialized sub-actions only supply execution policy and audit detail.
-		if exists && !strings.HasPrefix(action.Key, "feature.") {
-			continue
-		}
-		features[action.FeatureKey] = AIUsageFeatureDefinition{
-			FeatureKey: action.FeatureKey,
-			Label:      action.Label,
-			Category:   string(action.Category),
-			FloorUnits: action.FloorUnits,
-			Chargeable: action.Chargeable,
-		}
-	}
-	return features
+	return aipolicy.UsageFeatures(registry)
 }
 
 func NewAIUsageMeter(consumer aiUsageCreditConsumer) *AIUsageMeter {
@@ -790,11 +768,11 @@ func (m *AIUsageMeter) reconcileAgentRun(ctx context.Context, run *model.AgentRu
 		if err != nil {
 			return err
 		}
-		charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{FundingMode: metering.FundingMode, Tokens: prior, Rates: metering.Route.Rates})
+		charge, err := m.usage.ChargeForTokens(metering, prior)
 		if err != nil {
 			return err
 		}
-		metering.MaxBillableMicrousd = max(metering.MaxBillableMicrousd-charge.FinalMicrousd, 0)
+		metering.MaxBillableMicrousd = max(metering.MaxBillableMicrousd-charge, 0)
 	}
 	status := "actual"
 	if agentRunUsageIsZero(usage) {
@@ -899,17 +877,20 @@ func agentRunUsageIsZero(usage agentRuntimeUsagePayload) bool {
 		usage.OutputTokens == 0 && usage.ReasoningOutputTokens == 0
 }
 
-func agentRunUsageExceedsBudget(run *model.AgentRun, usage agentRuntimeUsagePayload) bool {
+func (m *AIUsageMeter) agentRunUsageExceedsBudget(run *model.AgentRun, usage agentRuntimeUsagePayload) (bool, error) {
 	metering, ok := agentRunMeteringContext(run)
 	if !ok || metering.EnforcementMode != model.AIUsageEnforcementStrict || metering.MaxBillableMicrousd <= 0 {
-		return false
+		return false, nil
+	}
+	if m == nil || m.usage == nil {
+		return false, errors.New("usage lifecycle is required")
 	}
 	normalized, err := aiusage.NormalizeTokens(agentRunTokenTelemetry(run, usage))
 	if err != nil {
-		return false
+		return false, err
 	}
-	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{FundingMode: metering.FundingMode, Tokens: normalized, Rates: metering.Route.Rates})
-	return err == nil && charge.FinalMicrousd >= metering.MaxBillableMicrousd
+	charge, err := m.usage.ChargeForTokens(metering, normalized)
+	return err == nil && charge >= metering.MaxBillableMicrousd, err
 }
 
 // agentRunTokenTelemetry normalizes inclusive native/Codex completion usage.
@@ -937,4 +918,12 @@ func agentRunCheckpointTelemetry(run *model.AgentRun, checkpoint agentRunUsageCh
 	return agentRunTokenTelemetry(run, agentRuntimeUsagePayload{InputTokens: checkpoint.InputTokens,
 		CachedInputTokens: checkpoint.CachedInputTokens, OutputTokens: checkpoint.OutputTokens,
 		ReasoningOutputTokens: checkpoint.ReasoningOutputTokens})
+}
+
+// BillingCreditsForFeature is retained for the legacy optional credit adapter.
+func BillingCreditsForFeature(key string) int {
+	if feature, ok := AIUsageFeature(key); ok && feature.Chargeable {
+		return feature.FloorUnits
+	}
+	return 0
 }

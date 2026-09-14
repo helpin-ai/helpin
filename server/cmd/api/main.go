@@ -28,12 +28,15 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/ee/billingstripe"
+	eehandler "github.com/helpin-ai/helpin/server/ee/handler"
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
+	eeservice "github.com/helpin-ai/helpin/server/ee/service"
 	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
-	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/cache"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/coordination"
@@ -707,7 +710,7 @@ func main() {
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
+	billingRepo := eerepository.NewBillingRepository(db)
 	customerIOOutboxRepo := repository.NewCustomerIOLifecycleOutboxRepository(db)
 	productAnalyticsOutboxRepo := repository.NewProductAnalyticsOutboxRepository(db)
 	supportTagRepo := repository.NewSupportTagRepository(db)
@@ -726,23 +729,23 @@ func main() {
 		userRepo,
 		workspaceRepo,
 		orgRepo,
-		service.NewCustomerIOBillingReader(billingRepo, workspaceRepo),
+		eeservice.NewCustomerIOBillingReader(billingRepo, workspaceRepo),
 	)
 	modelCatalog, modelCatalogErr := aimodel.LoadCatalog()
 	if modelCatalogErr != nil {
 		log.Fatalf("load model catalog: %v", modelCatalogErr)
 	}
-	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
+	pricingCatalog, pricingCatalogErr := pricing.LoadCatalog()
 	if pricingCatalogErr != nil {
 		log.Fatalf("load AI pricing catalog: %v", pricingCatalogErr)
 	}
-	aiUsageRepo := repository.NewAIUsageRepository(db)
-	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
+	aiUsageRepo := eerepository.NewAIUsageRepository(db)
+	aiUsageService := eeservice.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
 	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
 	settlementCtx, settlementCancel := context.WithCancel(context.Background())
 	settlementDone := make(chan struct{})
 	if stripeGateway != nil {
-		settlementWorker := service.NewAIUsageSettlementWorker(aiUsageRepo, stripeGateway)
+		settlementWorker := eeservice.NewAIUsageSettlementWorker(aiUsageRepo, stripeGateway)
 		go func() {
 			defer close(settlementDone)
 			settlementWorker.Run(settlementCtx, time.Minute)
@@ -750,23 +753,23 @@ func main() {
 	} else {
 		close(settlementDone)
 	}
-	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
+	billingService := eeservice.NewBillingService(billingRepo, stripeGateway, time.Now)
 	periodCtx, periodCancel := context.WithCancel(context.Background())
 	periodDone := make(chan struct{})
-	periodWorker := service.NewAIUsagePeriodWorker(aiUsageRepo, billingService.NextAIUsagePeriodSchedule)
+	periodWorker := eeservice.NewAIUsagePeriodWorker(aiUsageRepo, billingService.NextAIUsagePeriodSchedule)
 	go func() {
 		defer close(periodDone)
 		periodWorker.Run(periodCtx, time.Minute)
 	}()
 	reservationCtx, reservationCancel := context.WithCancel(context.Background())
 	reservationDone := make(chan struct{})
-	reservationSweeper := service.NewAIUsageReservationSweeper(aiUsageRepo)
+	reservationSweeper := eeservice.NewAIUsageReservationSweeper(aiUsageRepo)
 	go func() {
 		defer close(reservationDone)
 		reservationSweeper.Run(reservationCtx, time.Minute, 15*time.Minute)
 	}()
-	billingTestScenarioService := service.NewBillingTestScenarioService(db, billingService, time.Now)
-	billingService.SetPriceConfig(service.BillingPriceConfig{
+	billingTestScenarioService := eeservice.NewBillingTestScenarioService(db, billingService, time.Now)
+	billingService.SetPriceConfig(eeservice.BillingPriceConfig{
 		StarterMonthly: cfg.StripeStarterMonthlyPriceID,
 		StarterAnnual:  cfg.StripeStarterAnnualPriceID,
 		GrowthMonthly:  cfg.StripeGrowthMonthlyPriceID,
@@ -1741,7 +1744,7 @@ func main() {
 	}
 	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
 	billingService.SetOrgRoleResolver(orgService)
-	entitlementService := service.NewEntitlementService(billingService)
+	entitlementService := eeservice.NewEntitlementService(billingService)
 	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)
 	supportInboxService.SetEntitlementService(entitlementService)
@@ -1940,12 +1943,13 @@ func main() {
 			AppBaseURL:       cfg.AppBaseURL,
 			MobileAppBaseURL: cfg.MobileAppBaseURL,
 		}),
-		Passkey:             handler.NewPasskeyHandler(passkeyService),
-		Organization:        handler.NewOrganizationHandler(orgService),
-		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
-		Setup:               setupHandler,
-		Billing:             handler.NewBillingHandler(billingService, cfg.StripeWebhookSecret, cfg.AppBaseURL, billingTestScenarioService, strings.EqualFold(os.Getenv("BILLING_TEST_SCENARIOS_ENABLED"), "true")),
-		AIUsage:             handler.NewAIUsageHandler(pricingCatalog),
+		Passkey:      handler.NewPasskeyHandler(passkeyService),
+		Organization: handler.NewOrganizationHandler(orgService),
+		Workspace:    handler.NewWorkspaceHandler(workspaceService, authzService),
+		Setup:        setupHandler,
+		Edition: eehandler.NewRoutes(
+			eehandler.NewBillingHandler(billingService, cfg.StripeWebhookSecret, cfg.AppBaseURL, billingTestScenarioService, strings.EqualFold(os.Getenv("BILLING_TEST_SCENARIOS_ENABLED"), "true")),
+			eehandler.NewAIUsageHandler(pricingCatalog), authzService),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
 		Invite:              handler.NewInviteHandler(inviteService),

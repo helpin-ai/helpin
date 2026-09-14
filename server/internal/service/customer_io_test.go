@@ -15,7 +15,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/repository"
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 )
 
 func TestCustomerIOTrackClientIdentifiesPersonWithTrackAPIEntityShape(t *testing.T) {
@@ -611,7 +611,7 @@ func TestCustomerIOOrganizationSummaryCountsPaidActiveWorkspaces(t *testing.T) {
 	}
 
 	svc := &CustomerIOIdentityService{
-		billingInsights: NewCustomerIOBillingReader(repository.NewBillingRepository(db), nil),
+		billingInsights: NewCustomerIOBillingReader(eerepository.NewBillingRepository(db), nil),
 		logger:          slog.Default(),
 	}
 	summary := svc.organizationSummary(context.Background(), orgID)

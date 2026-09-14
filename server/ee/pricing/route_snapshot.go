@@ -1,4 +1,4 @@
-package aiusage
+package pricing
 
 import "github.com/helpin-ai/helpin/server/internal/aimodel"
 

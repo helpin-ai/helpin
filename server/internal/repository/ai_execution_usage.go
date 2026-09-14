@@ -28,17 +28,17 @@ func (r *AIExecutionUsageRepository) RecordExecutionUsage(ctx context.Context, e
 	}
 	entry.ID = uuid.NewString()
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var current, requested runUsageWatermark
+		var current, requested RunUsageWatermark
 		if entry.RunID != "" {
 			if len(summary) == 0 {
 				return fmt.Errorf("run usage requires its output summary")
 			}
 			var err error
-			current, err = loadRunUsageWatermark(tx, entry.WorkspaceID, entry.RunID)
+			current, err = LoadRunUsageWatermark(tx, entry.WorkspaceID, entry.RunID)
 			if err != nil {
 				return err
 			}
-			requested, err = parseRunUsageWatermark(json.RawMessage(summary))
+			requested, err = ParseRunUsageWatermark(json.RawMessage(summary))
 			if err != nil {
 				return err
 			}

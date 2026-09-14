@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"strings"
@@ -9,11 +10,11 @@ import (
 
 // CustomerIOBillingReader projects commercial metadata without granting entitlements.
 type CustomerIOBillingReader struct {
-	billingRepo   *repository.BillingRepository
+	billingRepo   *eerepository.BillingRepository
 	workspaceRepo *repository.WorkspaceRepository
 }
 
-func NewCustomerIOBillingReader(billing *repository.BillingRepository, workspace *repository.WorkspaceRepository) *CustomerIOBillingReader {
+func NewCustomerIOBillingReader(billing *eerepository.BillingRepository, workspace *repository.WorkspaceRepository) *CustomerIOBillingReader {
 	return &CustomerIOBillingReader{billingRepo: billing, workspaceRepo: workspace}
 }
 

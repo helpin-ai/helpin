@@ -1,4 +1,4 @@
-package aiusage
+package pricing
 
 import (
 	"errors"
@@ -15,7 +15,7 @@ func TestFlatTariffChargesEveryTokenOnceAndToolsSeparately(t *testing.T) {
 	for _, rate := range []int64{0, 1, 1_000_000, 20_000_000} {
 		tariff := FlatTokenTariff{MicrousdPerMillion: &rate}
 		charge, err := CalculateCharge(ChargeInput{FundingMode: FundingCustomerFlat, Tokens: tokens,
-			Rates: tariff.Rates(), PaidToolMicrousd: 30_000})
+			Rates: FlatTokenRates(tariff), PaidToolMicrousd: 30_000})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -30,7 +30,7 @@ func TestFlatTariffRejectsOverflowAndUnequalRates(t *testing.T) {
 	rate := int64(math.MaxInt64)
 	tariff := FlatTokenTariff{MicrousdPerMillion: &rate}
 	_, err := CalculateCharge(ChargeInput{FundingMode: FundingCustomerFlat,
-		Tokens: NormalizedTokens{UncachedInputTokens: math.MaxInt64}, Rates: tariff.Rates()})
+		Tokens: NormalizedTokens{UncachedInputTokens: math.MaxInt64}, Rates: FlatTokenRates(tariff)})
 	if !errors.Is(err, ErrChargeOverflow) {
 		t.Fatalf("overflow error = %v", err)
 	}

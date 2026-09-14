@@ -6,6 +6,9 @@ import "context"
 // independently of the edition's financial policy. A community implementation
 // records telemetry without financial reservations or settlement.
 type AIUsageLifecycle interface {
+	// ChargeForTokens evaluates an accepted policy without financial side effects.
+	// Community returns zero; EE uses the immutable admission rates.
+	ChargeForTokens(MeteringContext, NormalizedTokens) (int64, error)
 	ResolveMeteringContext(MeteringRequest) (MeteringContext, error)
 	Preflight(context.Context, PreflightRequest) (*MeteringContext, error)
 	Checkpoint(context.Context, CompletionUsage) (*UsageResult, error)
@@ -67,3 +70,10 @@ type CompletionUsage struct {
 type UsageResult struct {
 	ChargedMicrousd, AbsorbedMicrousd int64
 }
+
+// Media enrichment is a separately governed operation with an explicit reader.
+const (
+	MediaEnrichmentProvider       = "openrouter"
+	MediaEnrichmentCanonicalModel = "gemini-3.8-flash"
+	MediaEnrichmentRoute          = "google/gemini-3.8-flash"
+)

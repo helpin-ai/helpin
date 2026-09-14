@@ -9,6 +9,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+ eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	"gorm.io/gorm"
 )
 
@@ -150,7 +151,7 @@ func TestCreateInvitation_LockedWorkspaceBlocksNewInvite(t *testing.T) {
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
+	billingRepo := eerepository.NewBillingRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
 	createInviteBillingTable(t, db)
@@ -188,7 +189,7 @@ func TestCreateInvitation_ActivePaidPlanAllowsAdditionalSeats(t *testing.T) {
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	settingsRepo := repository.NewSettingsRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
+	billingRepo := eerepository.NewBillingRepository(db)
 	jwtManager := auth.NewJWTManager("test-secret")
 
 	createInviteBillingTable(t, db)

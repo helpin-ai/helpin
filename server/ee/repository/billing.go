@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	corerepository "github.com/helpin-ai/helpin/server/internal/repository"
 	"math"
 	"strings"
 	"time"
@@ -22,7 +23,7 @@ type BillingRepository struct {
 // StripeLifecycleMutation applies a billing change inside the webhook transaction
 // and returns the lifecycle event to enqueue. A nil event marks the webhook
 // processed without enqueueing (for example, when no billing row matches).
-type StripeLifecycleMutation func(*BillingRepository) (*model.WorkspaceBilling, *CustomerIOLifecycleEventInput, error)
+type StripeLifecycleMutation func(*BillingRepository) (*model.WorkspaceBilling, *corerepository.CustomerIOLifecycleEventInput, error)
 
 func NewBillingRepository(db *gorm.DB) *BillingRepository {
 	return &BillingRepository{db: db}
@@ -128,14 +129,14 @@ func (r *BillingRepository) ProcessStripeLifecycleEvent(
 		}
 
 		txRepo := &BillingRepository{db: tx}
-		var lifecycle *CustomerIOLifecycleEventInput
+		var lifecycle *corerepository.CustomerIOLifecycleEventInput
 		var err error
 		billing, lifecycle, err = mutate(txRepo)
 		if err != nil {
 			return err
 		}
 		if lifecycle != nil {
-			if _, err := enqueueCustomerIOLifecycleEventTx(ctx, tx, *lifecycle); err != nil {
+			if _, err := corerepository.EnqueueCustomerIOLifecycleEventTx(ctx, tx, *lifecycle); err != nil {
 				return err
 			}
 		}
@@ -157,7 +158,7 @@ func (r *BillingRepository) ProcessStripeLifecycleEvent(
 func (r *BillingRepository) CreateTrialWithLifecycleEvent(
 	ctx context.Context,
 	billing *model.WorkspaceBilling,
-	event CustomerIOLifecycleEventInput,
+	event corerepository.CustomerIOLifecycleEventInput,
 ) (*model.WorkspaceBilling, bool, error) {
 	if billing.ID == "" {
 		billing.ID = uuid.NewString()
@@ -175,7 +176,7 @@ func (r *BillingRepository) CreateTrialWithLifecycleEvent(
 		if !created {
 			return nil
 		}
-		if _, err := enqueueCustomerIOLifecycleEventTx(ctx, tx, event); err != nil {
+		if _, err := corerepository.EnqueueCustomerIOLifecycleEventTx(ctx, tx, event); err != nil {
 			return err
 		}
 		return nil
@@ -216,7 +217,7 @@ func (r *BillingRepository) ExpireOverdueTrialsWithLifecycleEvents(ctx context.C
 				continue
 			}
 			eventAt := candidates[i].TrialEndsAt.UTC()
-			if _, err := enqueueCustomerIOLifecycleEventTx(ctx, tx, CustomerIOLifecycleEventInput{
+			if _, err := corerepository.EnqueueCustomerIOLifecycleEventTx(ctx, tx, corerepository.CustomerIOLifecycleEventInput{
 				SemanticKey: fmt.Sprintf("trial_expired:%s:%d", candidates[i].WorkspaceID, eventAt.Unix()),
 				WorkspaceID: candidates[i].WorkspaceID,
 				EventName:   "trial_expired",

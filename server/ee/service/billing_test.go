@@ -10,6 +10,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -226,7 +227,7 @@ func seedBillingOutboxWorkspace(t *testing.T, db *gorm.DB, workspaceID string, n
 
 func TestBillingServiceTrialInitializationOutbox(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 	configureBillingOutboxTest(t, db, svc)
@@ -255,7 +256,7 @@ func TestBillingServiceTrialInitializationOutbox(t *testing.T) {
 
 func TestBillingServiceExpireOverdueTrialsOutboxIsIdempotent(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 	configureBillingOutboxTest(t, db, svc)
@@ -291,7 +292,7 @@ func TestBillingServiceExpireOverdueTrialsOutboxIsIdempotent(t *testing.T) {
 
 func TestBillingServiceExpireOverdueTrialsOutboxRollback(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 	configureBillingOutboxTest(t, db, svc)
@@ -322,7 +323,7 @@ func TestBillingServiceExpireOverdueTrialsOutboxRollback(t *testing.T) {
 
 func TestBillingServiceReadExpiredTrialUsesOutbox(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 	configureBillingOutboxTest(t, db, svc)
@@ -354,7 +355,7 @@ func TestBillingServiceReadExpiredTrialUsesOutbox(t *testing.T) {
 
 func TestBillingServiceEnsureTrialForFounderOrgStartsFounderPlan(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -385,7 +386,7 @@ func TestBillingServiceEnsureTrialForFounderOrgStartsFounderPlan(t *testing.T) {
 
 func TestBillingServiceEnsureTrialForWorkspaceStartsGrowthTrial(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -414,7 +415,7 @@ func TestBillingServiceSummaryUsesPercentageAIUsagePeriod(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
 		ID: "billing", WorkspaceID: "workspace-usage", Plan: model.BillingPlanStarter,
 		Status: model.BillingStatusActive, BillingInterval: "monthly", CurrentPeriodStart: now,
@@ -441,7 +442,7 @@ func TestBillingServiceSummaryUsesPercentageAIUsagePeriod(t *testing.T) {
 
 func TestBillingServiceRejectsStripeActionsForFounderPlan(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	gateway := &fakeBillingGateway{}
 	svc := NewBillingService(repo, gateway, func() time.Time { return now })
@@ -483,7 +484,7 @@ func TestBillingServiceRejectsStripeActionsForFounderPlan(t *testing.T) {
 
 func TestBillingServiceResetsFounderCreditsMonthly(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -517,7 +518,7 @@ func TestBillingServiceResetsFounderCreditsMonthly(t *testing.T) {
 
 func TestBillingServiceLocksExpiredUnpaidTrial(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -553,7 +554,7 @@ func TestBillingServiceLocksExpiredUnpaidTrial(t *testing.T) {
 
 func TestBillingServiceExpireOverdueTrialsLocksInternalTrials(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -624,7 +625,7 @@ func TestBillingServiceExpireOverdueTrialsLocksInternalTrials(t *testing.T) {
 
 func TestBillingServiceConsumeCreditsRejectsWhenOnDemandDisabled(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -654,7 +655,7 @@ func TestBillingServiceConsumeCreditsRejectsWhenOnDemandDisabled(t *testing.T) {
 
 func TestBillingServiceConsumeCreditsRejectsWhenWorkspaceLocked(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -683,7 +684,7 @@ func TestBillingServiceConsumeCreditsRejectsWhenWorkspaceLocked(t *testing.T) {
 
 func TestBillingServicePreflightCreditsRejectsWhenUsageExhausted(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -712,7 +713,7 @@ func TestBillingServicePreflightCreditsRejectsWhenUsageExhausted(t *testing.T) {
 
 func TestBillingServiceConsumeCreditsNeverBillsLegacyOnDemandBlocks(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	gateway := &fakeBillingGateway{}
 	svc := NewBillingService(repo, gateway, func() time.Time { return now })
@@ -749,7 +750,7 @@ func TestBillingServiceConsumeCreditsNeverBillsLegacyOnDemandBlocks(t *testing.T
 
 func TestBillingServiceDoesNotOpenLegacyStripeChargeContext(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	gateway := &fakeBillingGateway{}
 	svc := NewBillingService(repo, gateway, func() time.Time { return now })
@@ -782,7 +783,7 @@ func TestBillingServiceDoesNotOpenLegacyStripeChargeContext(t *testing.T) {
 
 func TestBillingServiceLegacyOnDemandFailureRemainsAtomic(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	gateway := &fakeBillingGateway{}
 	svc := NewBillingService(repo, gateway, func() time.Time { return now })
@@ -841,7 +842,7 @@ func TestBillingServiceLegacyOnDemandFailureRemainsAtomic(t *testing.T) {
 
 func TestBillingRepositoryConsumeCreditsRejectsOverLimitInsideLock(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 
 	if err := repo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
@@ -879,7 +880,7 @@ func TestBillingRepositoryConsumeCreditsRejectsOverLimitInsideLock(t *testing.T)
 
 func TestBillingServiceRejectsCheckoutForExistingPaidSubscription(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 	svc.SetPriceConfig(BillingPriceConfig{GrowthMonthly: "price_growth_monthly"})
@@ -913,7 +914,7 @@ func TestBillingServiceRejectsCheckoutForExistingPaidSubscription(t *testing.T) 
 
 func TestBillingServiceConfirmCheckoutReactivatesExpiredTrialWithFallbackPeriodStart(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	gateway := &fakeBillingGateway{
 		checkoutSession: &BillingCheckoutSession{
@@ -974,7 +975,7 @@ func TestBillingServiceCanManageWorkspaceBillingRejectsDelegatedBillingOwner(t *
 	)`).Error; err != nil {
 		t.Fatalf("create workspaces table: %v", err)
 	}
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 	svc.SetOrgRoleResolver(testOrgRoleResolver{roles: map[string]string{
@@ -1018,7 +1019,7 @@ func TestBillingServiceCanManageOrgBillingRejectsDelegatedWorkspaceBillingOwner(
 	)`).Error; err != nil {
 		t.Fatalf("create workspaces table: %v", err)
 	}
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 	svc.SetOrgRoleResolver(testOrgRoleResolver{roles: map[string]string{
@@ -1054,7 +1055,7 @@ func TestBillingServiceCanManageOrgBillingRejectsDelegatedWorkspaceBillingOwner(
 
 func TestBillingServiceChangePlanUpgradesExistingSubscriptionImmediately(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	gateway := &fakeBillingGateway{}
 	svc := NewBillingService(repo, gateway, func() time.Time { return now })
@@ -1101,7 +1102,7 @@ func TestBillingServiceChangePlanUpgradesExistingSubscriptionImmediately(t *test
 
 func TestBillingServiceChangePlanDowngradesExistingSubscriptionImmediately(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	renewal := now.Add(30 * 24 * time.Hour)
 	gateway := &fakeBillingGateway{}
@@ -1149,7 +1150,7 @@ func TestBillingServiceChangePlanDowngradesExistingSubscriptionImmediately(t *te
 
 func TestBillingServiceChangePlanSwitchesAnnualToMonthlyImmediately(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	gateway := &fakeBillingGateway{}
 	svc := NewBillingService(repo, gateway, func() time.Time { return now })
@@ -1193,7 +1194,7 @@ func TestBillingServiceChangePlanSwitchesAnnualToMonthlyImmediately(t *testing.T
 
 func TestBillingServiceChangePlanRejectsFreePlan(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	renewal := now.Add(365 * 24 * time.Hour)
 	gateway := &fakeBillingGateway{}
@@ -1233,7 +1234,7 @@ func TestBillingServiceChangePlanRejectsFreePlan(t *testing.T) {
 
 func TestBillingServiceCanceledSubscriptionKeepsPaidPlanAndLocksWorkspace(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -1289,7 +1290,7 @@ func TestBillingServiceCanceledSubscriptionKeepsPaidPlanAndLocksWorkspace(t *tes
 
 func TestBillingServiceResumeSubscriptionClearsScheduledCancellation(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	renewal := now.Add(30 * 24 * time.Hour)
 	gateway := &fakeBillingGateway{}
@@ -1330,7 +1331,7 @@ func TestBillingServiceResumeSubscriptionClearsScheduledCancellation(t *testing.
 
 func TestBillingServiceRecordsPaymentFailedNotice(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -1369,7 +1370,7 @@ func TestBillingServiceRecordsPaymentFailedNotice(t *testing.T) {
 
 func TestBillingServicePaymentFailedAtomicallyEnqueuesLifecycleEvent(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	receivedAt := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	occurredAt := receivedAt.Add(-2 * time.Minute)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return receivedAt })
@@ -1406,7 +1407,7 @@ func TestBillingServicePaymentFailedAtomicallyEnqueuesLifecycleEvent(t *testing.
 
 func TestBillingServicePaymentFailedRollsBackWhenOutboxInsertFails(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 	configureBillingOutboxTest(t, db, svc)
@@ -1432,7 +1433,7 @@ func TestBillingServicePaymentFailedRollsBackWhenOutboxInsertFails(t *testing.T)
 
 func TestBillingServiceReprocessesUnprocessedWebhookEvent(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -1483,7 +1484,7 @@ func TestBillingServiceReprocessesUnprocessedWebhookEvent(t *testing.T) {
 
 func TestBillingServiceDoesNotApplyCustomerOnlyInvoiceToAmbiguousWorkspace(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 
@@ -1528,7 +1529,7 @@ func TestBillingServiceDoesNotApplyCustomerOnlyInvoiceToAmbiguousWorkspace(t *te
 
 func TestBillingServiceClearsPaymentNoticeOnSucceededInvoice(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	failedAt := now.Add(-time.Hour)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
@@ -1572,7 +1573,7 @@ func TestBillingServiceClearsPaymentNoticeOnSucceededInvoice(t *testing.T) {
 
 func TestBillingServiceRecordsTrialWillEndNotice(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	trialEnd := now.Add(48 * time.Hour)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
@@ -1613,7 +1614,7 @@ func TestBillingServiceRecordsTrialWillEndNotice(t *testing.T) {
 
 func TestBillingServiceSubscriptionUpdateKeepsCreditsWithinSamePeriod(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	periodStart := now.Add(-24 * time.Hour)
 	periodEnd := now.Add(29 * 24 * time.Hour)
@@ -1660,7 +1661,7 @@ func TestBillingServiceSubscriptionUpdateKeepsCreditsWithinSamePeriod(t *testing
 
 func TestBillingServiceSubscriptionUpdateResetsCreditsWhenPeriodAdvances(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	oldStart := now.AddDate(0, -1, 0)
 	newStart := now
@@ -1710,7 +1711,7 @@ func TestBillingServiceSubscriptionUpdateResetsCreditsWhenPeriodAdvances(t *test
 
 func TestBillingServiceCanceledSubscriptionDisablesOnDemandAndRecordsCanceledAt(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	canceledAt := now.Add(-time.Minute)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
@@ -1757,7 +1758,7 @@ func TestBillingServiceCanceledSubscriptionDisablesOnDemandAndRecordsCanceledAt(
 
 func TestBillingServiceUnpaidSubscriptionLocksWorkspace(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	now := time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC)
 	svc := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
 

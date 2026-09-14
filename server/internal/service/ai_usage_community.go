@@ -25,6 +25,13 @@ func NewCommunityAIUsage(store AIExecutionUsageStore) *CommunityAIUsage {
 
 var _ AIUsageLifecycle = (*CommunityAIUsage)(nil)
 
+func (s *CommunityAIUsage) ChargeForTokens(metering MeteringContext, _ aiusage.NormalizedTokens) (int64, error) {
+	if metering.PolicyMode != "community" {
+		return 0, fmt.Errorf("community usage requires its accepted policy")
+	}
+	return 0, nil
+}
+
 // ResolveMeteringContext pins execution identity, including custom unpriced models.
 func (s *CommunityAIUsage) ResolveMeteringContext(input MeteringRequest) (MeteringContext, error) {
 	if strings.TrimSpace(input.Provider) == "" || strings.TrimSpace(input.Model) == "" || strings.TrimSpace(input.IdempotencyKey) == "" {

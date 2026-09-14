@@ -6,6 +6,7 @@ package aiconnections
 import (
 	"context"
 	"errors"
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -62,7 +63,7 @@ func (p *Policy) ResolveConnectionPolicy(ctx context.Context, workspace string, 
 	}
 	flat := &aiusage.FlatTokenTariff{Version: tariff.Version, Currency: tariff.Currency,
 		MicrousdPerMillion: &tariff.MicrousdPerMillion, AccountingVersion: tariff.AccountingVersion}
-	if err := flat.Validate(); err != nil {
+	if err := pricing.ValidateFlatTokenTariff(flat); err != nil {
 		return nil, ErrBYOKUnavailable
 	}
 	return &model.AIExecutionPolicySnapshot{Mode: "ee", FundingMode: aiusage.FundingCustomerFlat, FlatTariff: flat}, nil

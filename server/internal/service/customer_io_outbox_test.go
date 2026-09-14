@@ -10,6 +10,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+ eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 )
 
 func TestCustomerIOOutboxRefreshesWorkspaceBillingState(t *testing.T) {
@@ -27,7 +28,7 @@ func TestCustomerIOOutboxRefreshesWorkspaceBillingState(t *testing.T) {
 	if err := db.Exec(`INSERT INTO workspaces (id,name,slug,owner_id) VALUES (?,?,?,?)`, workspace.ID, workspace.Name, workspace.Slug, userID).Error; err != nil {
 		t.Fatalf("seed workspace: %v", err)
 	}
-	if err := repository.NewBillingRepository(db).UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{ID: "billing-1", WorkspaceID: workspace.ID, Plan: model.BillingPlanGrowth, Status: model.BillingStatusPastDue, BillingInterval: "monthly", IncludedCredits: 25000}); err != nil {
+	if err := eerepository.NewBillingRepository(db).UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{ID: "billing-1", WorkspaceID: workspace.ID, Plan: model.BillingPlanGrowth, Status: model.BillingStatusPastDue, BillingInterval: "monthly", IncludedCredits: 25000}); err != nil {
 		t.Fatalf("seed billing: %v", err)
 	}
 	if err := db.Exec(`INSERT INTO users (id,email,password_hash,full_name) VALUES (?,?,?,?)`, userID, "owner@example.com", "hash", "Owner").Error; err != nil {
@@ -43,7 +44,7 @@ func TestCustomerIOOutboxRefreshesWorkspaceBillingState(t *testing.T) {
 		}
 		return customerIOTestResponse(http.StatusOK), nil
 	})}
-	identity := NewCustomerIOIdentityService(NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site", APIKey: "key", Endpoint: "https://customer.test", HTTPClient: httpClient}), nil, repository.NewWorkspaceRepository(db), nil, NewCustomerIOBillingReader(repository.NewBillingRepository(db), repository.NewWorkspaceRepository(db)))
+	identity := NewCustomerIOIdentityService(NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site", APIKey: "key", Endpoint: "https://customer.test", HTTPClient: httpClient}), nil, repository.NewWorkspaceRepository(db), nil, NewCustomerIOBillingReader(eerepository.NewBillingRepository(db), repository.NewWorkspaceRepository(db)))
 
 	found, err := identity.RefreshWorkspaceForOutbox(context.Background(), workspace.ID)
 	if err != nil || !found {
@@ -57,7 +58,7 @@ func TestCustomerIOOutboxRefreshesWorkspaceBillingState(t *testing.T) {
 	failingClient := &http.Client{Transport: customerIORoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return customerIOTestResponse(http.StatusServiceUnavailable), nil
 	})}
-	failingIdentity := NewCustomerIOIdentityService(NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site", APIKey: "key", Endpoint: "https://customer.test", HTTPClient: failingClient}), nil, repository.NewWorkspaceRepository(db), nil, NewCustomerIOBillingReader(repository.NewBillingRepository(db), repository.NewWorkspaceRepository(db)))
+	failingIdentity := NewCustomerIOIdentityService(NewCustomerIOTrackClient(CustomerIOTrackConfig{SiteID: "site", APIKey: "key", Endpoint: "https://customer.test", HTTPClient: failingClient}), nil, repository.NewWorkspaceRepository(db), nil, NewCustomerIOBillingReader(eerepository.NewBillingRepository(db), repository.NewWorkspaceRepository(db)))
 	_, err = failingIdentity.RefreshWorkspaceForOutbox(context.Background(), workspace.ID)
 	var deliveryErr *CustomerIODeliveryError
 	if !errors.As(err, &deliveryErr) || deliveryErr.StatusCode != http.StatusServiceUnavailable {

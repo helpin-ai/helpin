@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	corerepository "github.com/helpin-ai/helpin/server/internal/repository"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
@@ -36,7 +37,7 @@ type AIUsageReconcileRequest struct {
 }
 
 // ErrAIUsageWatermarkChanged requires reloading the run before retrying a delta.
-var ErrAIUsageWatermarkChanged = errors.New("terminal usage watermark changed")
+var ErrAIUsageWatermarkChanged = corerepository.ErrAIUsageWatermarkChanged
 
 // AIUsageCheckpointRequest describes an idempotent partial usage posting that
 // keeps the execution reservation active for a later turn.
@@ -189,11 +190,11 @@ func (r *AIUsageRepository) Reconcile(ctx context.Context, input AIUsageReconcil
 				return ErrAIUsageWatermarkChanged
 			}
 			if input.AllowLateUsage && input.RunID != "" {
-				current, err := loadRunUsageWatermark(tx, existing.WorkspaceID, input.RunID)
+				current, err := corerepository.LoadRunUsageWatermark(tx, existing.WorkspaceID, input.RunID)
 				if err != nil {
 					return err
 				}
-				requested, err := parseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
+				requested, err := corerepository.ParseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
 				if err != nil {
 					return err
 				}
@@ -295,11 +296,11 @@ func (r *AIUsageRepository) Checkpoint(ctx context.Context, input AIUsageCheckpo
 				if existing.InputTokensTotal != input.Entry.InputTokensTotal || existing.OutputTokens != input.Entry.OutputTokens || existing.ReasoningTokens != input.Entry.ReasoningTokens || existing.CacheReadTokens != input.Entry.CacheReadTokens {
 					return ErrAIUsageWatermarkChanged
 				}
-				current, err := loadRunUsageWatermark(tx, existing.WorkspaceID, input.RunID)
+				current, err := corerepository.LoadRunUsageWatermark(tx, existing.WorkspaceID, input.RunID)
 				if err != nil {
 					return err
 				}
-				requested, err := parseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
+				requested, err := corerepository.ParseRunUsageWatermark(json.RawMessage(input.RunOutputSummary))
 				if err != nil {
 					return err
 				}
@@ -459,7 +460,7 @@ func (r *AIUsageRepository) ClosePeriod(ctx context.Context, workspaceID string,
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		cents, adjustment, err := aiusage.RoundMicrousdToCents(period.OverageMicrousd)
+		cents, adjustment, err := pricing.RoundMicrousdToCents(period.OverageMicrousd)
 		if err != nil {
 			return err
 		}

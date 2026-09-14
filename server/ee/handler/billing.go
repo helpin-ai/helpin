@@ -12,9 +12,9 @@ import (
 	stripe "github.com/stripe/stripe-go/v86"
 	"github.com/stripe/stripe-go/v86/webhook"
 
+	"github.com/helpin-ai/helpin/server/ee/service"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
 type BillingHandler struct {

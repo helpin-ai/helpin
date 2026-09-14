@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 }
 
 func run(args []string, output io.Writer) error {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := pricing.LoadCatalog()
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func run(args []string, output io.Writer) error {
 	}
 }
 
-func exportTypeScript(output io.Writer, catalog *aiusage.Catalog) error {
+func exportTypeScript(output io.Writer, catalog *pricing.Catalog) error {
 	snapshot := catalog.PublicSnapshot()
 	encoded, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {

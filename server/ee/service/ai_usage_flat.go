@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	sdk "github.com/helpin-ai/agent-runtime-go"
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 func (s *AIUsageService) resolveFlatMeteringContext(input MeteringRequest) (MeteringContext, error) {
-	if err := input.FlatTariff.Validate(); err != nil {
+	if err := pricing.ValidateFlatTokenTariff(input.FlatTariff); err != nil {
 		return MeteringContext{}, fmt.Errorf("%w: %v", model.ErrPricingConfigurationMissing, err)
 	}
 	if err := sdk.ValidateRunModel(&sdk.RunModel{Provider: input.Provider, Model: input.Model}); err != nil {
@@ -40,7 +41,7 @@ func (s *AIUsageService) resolveFlatMeteringContext(input MeteringRequest) (Mete
 	}
 	return MeteringContext{
 		Route: aiusage.ResolvedRoute{Provider: input.Provider, CanonicalModel: input.Model,
-			Route: route, ServiceTier: input.ServiceTier, Rates: tariff.Rates(), RateSnapshot: snapshot},
+			Route: route, ServiceTier: input.ServiceTier, Rates: pricing.FlatTokenRates(tariff), RateSnapshot: snapshot},
 		PricingVersion: tariff.Version, FlatTariff: &tariff, ToolRates: tools,
 		WorkspaceID: input.WorkspaceID, TaskNature: input.TaskNature, FeatureKey: input.FeatureKey,
 		FundingMode: aiusage.FundingCustomerFlat, IdempotencyKey: input.IdempotencyKey,
@@ -58,30 +59,30 @@ func (s *AIUsageService) snapshotToolRates() map[string]int64 {
 	return rates
 }
 
-func flatCheckpointCharge(input CompletionUsage, tools int64) (aiusage.Charge, error) {
+func flatCheckpointCharge(input CompletionUsage, tools int64) (pricing.Charge, error) {
 	if input.PreviousTelemetry == nil {
-		return aiusage.Charge{}, aiusage.ErrInvalidTokenTelemetry
+		return pricing.Charge{}, aiusage.ErrInvalidTokenTelemetry
 	}
 	current, err := aiusage.NormalizeTokens(*input.CumulativeTelemetry)
 	if err != nil {
-		return aiusage.Charge{}, err
+		return pricing.Charge{}, err
 	}
 	previous, err := aiusage.NormalizeTokens(*input.PreviousTelemetry)
 	if err != nil {
-		return aiusage.Charge{}, err
+		return pricing.Charge{}, err
 	}
-	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{FundingMode: aiusage.FundingCustomerFlat,
+	charge, err := pricing.CalculateCharge(pricing.ChargeInput{FundingMode: aiusage.FundingCustomerFlat,
 		Tokens: current, Rates: input.Context.Route.Rates, PaidToolMicrousd: tools})
 	if err != nil {
-		return aiusage.Charge{}, err
+		return pricing.Charge{}, err
 	}
-	prior, err := aiusage.CalculateCharge(aiusage.ChargeInput{FundingMode: aiusage.FundingCustomerFlat,
+	prior, err := pricing.CalculateCharge(pricing.ChargeInput{FundingMode: aiusage.FundingCustomerFlat,
 		Tokens: previous, Rates: input.Context.Route.Rates})
 	if err != nil {
-		return aiusage.Charge{}, err
+		return pricing.Charge{}, err
 	}
 	if charge.OrchestrationMicrousd < prior.OrchestrationMicrousd {
-		return aiusage.Charge{}, aiusage.ErrInvalidTokenTelemetry
+		return pricing.Charge{}, aiusage.ErrInvalidTokenTelemetry
 	}
 	charge.OrchestrationMicrousd -= prior.OrchestrationMicrousd
 	charge.FinalMicrousd -= prior.FinalMicrousd

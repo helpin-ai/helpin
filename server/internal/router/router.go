@@ -30,8 +30,7 @@ type Handlers struct {
 	Organization        *handler.OrganizationHandler
 	Workspace           *handler.WorkspaceHandler
 	Setup               *handler.SetupHandler
-	Billing             *handler.BillingHandler
-	AIUsage             *handler.AIUsageHandler
+	Edition             EditionRoutes
 	Settings            *handler.SettingsHandler
 	Automation          *handler.AutomationHandler
 	Invite              *handler.InviteHandler
@@ -154,9 +153,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	}
 	wsAccess := authorization.RequireWorkspaceAccess(authz)
 	wsActive := wsAccess
-	if h.Billing != nil {
+	if h.Edition != nil {
 		wsActive = func(next http.Handler) http.Handler {
-			return wsAccess(h.Billing.RequireUnlockedWorkspace(next))
+			return wsAccess(h.Edition.RequireActiveWorkspace(next))
 		}
 	}
 
@@ -287,8 +286,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/mcp/oauth/revoke", h.MCP.RevokeToken)
 		}
 		r.Get("/health", h.Health.Check)
-		if h.AIUsage != nil {
-			r.Get("/ai-pricing", h.AIUsage.Pricing)
+		if h.Edition != nil {
+			h.Edition.RegisterPublic(r)
 		}
 		r.Get("/system/ensure-cors", h.Health.EnsureStorageCORS)
 		r.Get("/invitations/info", h.Invite.GetInfo)
@@ -303,9 +302,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Post("/webhooks/postmark/delivery", h.PostmarkInbound.PostmarkDelivery)
 			r.Post("/webhooks/postmark/bounce", h.PostmarkInbound.PostmarkBounce)
 			r.Post("/webhooks/postmark/spam-complaint", h.PostmarkInbound.PostmarkSpamComplaint)
-		}
-		if h.Billing != nil {
-			r.Post("/webhooks/stripe", h.Billing.StripeWebhook)
 		}
 		if h.CRMMeeting != nil {
 			r.Post("/webhooks/meeting-capture/{provider}", h.CRMMeeting.Webhook)
@@ -578,13 +574,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Delete("/organizations/{id}/members/{userId}", h.Organization.RemoveMember)
 			r.Post("/organizations/{id}/transfer-ownership", h.Organization.TransferOwnership)
 
-			// Organization billing is owner-only.
-			if h.Billing != nil {
-				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{id}/billing", h.Billing.GetOrganizationBilling)
-				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{id}/billing/cards", h.Billing.ListCards)
-				r.With(h.Billing.RequireOrgBillingOwner).Put("/organizations/{id}/billing/cards/{cardId}", h.Billing.UpdateCard)
-				r.With(h.Billing.RequireOrgBillingOwner).Delete("/organizations/{id}/billing/cards/{cardId}", h.Billing.DeleteCard)
-				r.With(h.Billing.RequireOrgBillingOwner).Get("/organizations/{id}/billing/invoices", h.Billing.ListInvoices)
+			// Optional edition routes retain this authenticated boundary.
+			if h.Edition != nil {
+				h.Edition.RegisterAuthenticated(r)
 			}
 
 			// Workspaces — workspace-scoped routes with RBAC
@@ -623,20 +615,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Post("/logo", h.Workspace.UploadLogo)
 				r.With(requirePerm(authorization.PermWorkspaceUpdate)).Delete("/logo", h.Workspace.DeleteLogo)
 				r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
-				if h.Billing != nil {
-					r.With(requirePerm(authorization.PermSettingsRead)).Get("/billing", h.Billing.Get)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/checkout", h.Billing.Checkout)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/confirm-checkout", h.Billing.ConfirmCheckout)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/preview-plan-change", h.Billing.PreviewPlanChange)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/change-plan", h.Billing.ChangePlan)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/resume-subscription", h.Billing.ResumeSubscription)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/portal", h.Billing.Portal)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Put("/billing/extra-usage", h.Billing.SetOnDemand)
-					r.With(requirePerm(authorization.PermSettingsManage), h.Billing.RequireWorkspaceBillingOwner).Post("/billing/test-scenario", h.Billing.ApplyTestScenario)
-					// Usage is read-only and visible to any settings reader (matches the
-					// billing summary). Payment-method changes remain billing-owner-only.
-					r.With(requirePerm(authorization.PermSettingsRead)).Get("/billing/usage", h.Billing.GetUsage)
-					r.With(h.Billing.RequireWorkspaceBillingOwner).Put("/billing/payment-method", h.Billing.LinkPaymentMethod)
+				if h.Edition != nil {
+					h.Edition.RegisterWorkspace(r)
 				}
 
 				// Import routes require pm.import

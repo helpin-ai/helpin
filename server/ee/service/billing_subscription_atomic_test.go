@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func TestSubscriptionWebhookMutationAndReceiptAreAtomic(t *testing.T) {
@@ -16,7 +16,7 @@ func TestSubscriptionWebhookMutationAndReceiptAreAtomic(t *testing.T) {
 	} {
 		t.Run(trigger, func(t *testing.T) {
 			db := newBillingTestDB(t)
-			repo := repository.NewBillingRepository(db)
+			repo := eerepository.NewBillingRepository(db)
 			ctx := context.Background()
 			now := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
 			s := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })
@@ -62,7 +62,7 @@ func TestSubscriptionWebhookMutationAndReceiptAreAtomic(t *testing.T) {
 
 func TestSubscriptionWebhookRetriesPreviouslyUnprocessedEvent(t *testing.T) {
 	db := newBillingTestDB(t)
-	repo := repository.NewBillingRepository(db)
+	repo := eerepository.NewBillingRepository(db)
 	ctx := context.Background()
 	now := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
 	s := NewBillingService(repo, &fakeBillingGateway{}, func() time.Time { return now })

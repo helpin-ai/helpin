@@ -17,7 +17,7 @@ import (
 	"github.com/stripe/stripe-go/v86/subscription"
 	"github.com/stripe/stripe-go/v86/subscriptionschedule"
 
-	"github.com/helpin-ai/helpin/server/internal/service"
+	"github.com/helpin-ai/helpin/server/ee/service"
 )
 
 var _ service.BillingStripeGateway = (*Gateway)(nil)

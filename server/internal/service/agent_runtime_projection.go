@@ -1339,7 +1339,11 @@ func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, 
 				return false, heartbeatErr
 			}
 		}
-		if !agentRunUsageExceedsBudget(run, usage) {
+		exceeded, chargeErr := s.usageMeter.agentRunUsageExceedsBudget(run, usage)
+		if chargeErr != nil {
+			return false, chargeErr
+		}
+		if !exceeded {
 			return false, nil
 		}
 		err = model.ErrAIUsageExhausted

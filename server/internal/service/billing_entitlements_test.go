@@ -11,13 +11,14 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+ eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 )
 
 func seedEntitlementBilling(t *testing.T, db *gorm.DB, workspaceID, plan, status string) *EntitlementService {
 	t.Helper()
 
 	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
-	billingRepo := repository.NewBillingRepository(db)
+	billingRepo := eerepository.NewBillingRepository(db)
 	if err := billingRepo.UpsertWorkspaceBilling(context.Background(), &model.WorkspaceBilling{
 		WorkspaceID:        workspaceID,
 		Plan:               plan,

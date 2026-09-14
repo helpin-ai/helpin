@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -63,7 +63,7 @@ func (p *scriptedAICompletionProvider) ChatCompletion(_ context.Context, req llm
 
 func newTestAICompletionService(t *testing.T, provider llm.Provider, store *fakeAIUsageStore) *AICompletionService {
 	t.Helper()
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := pricing.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestAICompletionServiceDoesNotFallbackOnUsagePreflightFailure(t *testing.T)
 }
 
 func TestAICompletionServiceAppliesPerRouteOpenRouterProviderSelection(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := pricing.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestAICompletionServiceCleansUpCanceledRewrite(t *testing.T) {
 	defer cancel()
 	store := &cancelAwareRewriteStore{}
 	audit := &cancelAwareRewriteAudit{}
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := pricing.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}

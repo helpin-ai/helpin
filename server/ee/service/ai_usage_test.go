@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	coreservice "github.com/helpin-ai/helpin/server/internal/service"
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/ee/pricing"
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func TestAIUsageServiceResolvesBuiltInTaskTiers(t *testing.T) {
@@ -38,13 +40,13 @@ func TestAIUsageServiceResolvesBuiltInTaskTiers(t *testing.T) {
 
 func TestAIUsageServiceResolvesCompanyContextRoute(t *testing.T) {
 	usageService := newTestAIUsageService(t, &fakeAIUsageStore{})
-	policy, ok := DefaultAICompletionRouteRegistry().Policy(BillingFeatureCompanyProductContext, "")
+	policy, ok := coreservice.DefaultAICompletionRouteRegistry().Policy(coreservice.BillingFeatureCompanyProductContext, "")
 	if !ok {
 		t.Fatal("company context route policy missing")
 	}
 	resolved, err := usageService.ResolveMeteringContext(MeteringRequest{
-		WorkspaceID: "ws", TaskNature: taskNatureForFeature(BillingFeatureCompanyProductContext),
-		FeatureKey: BillingFeatureCompanyProductContext, Provider: policy.Primary.Provider,
+		WorkspaceID: "ws", TaskNature: "support",
+		FeatureKey: coreservice.BillingFeatureCompanyProductContext, Provider: policy.Primary.Provider,
 		Model: policy.Primary.Model, Route: policy.Primary.Model, FundingMode: aiusage.FundingHelpinHosted,
 		Promotional: true,
 	})
@@ -84,7 +86,7 @@ func TestAIUsageServiceAllowsConfiguredMediaEnrichmentRouteForSupportWork(t *tes
 	service := newTestAIUsageService(t, &fakeAIUsageStore{})
 
 	resolved, err := service.ResolveMeteringContext(MeteringRequest{
-		WorkspaceID: "ws", TaskNature: "support", FeatureKey: BillingFeatureAskChat,
+		WorkspaceID: "ws", TaskNature: "support", FeatureKey: coreservice.BillingFeatureAskChat,
 		OperationKey: AIUsageOperationMediaEnrichment,
 		Provider:     "openrouter", Model: "google/gemini-3.8-flash", Route: "google/gemini-3.8-flash",
 		FundingMode: aiusage.FundingHelpinHosted,
@@ -101,7 +103,7 @@ func TestAIUsageServiceRejectsMediaEnrichmentOperationForOtherModels(t *testing.
 	service := newTestAIUsageService(t, &fakeAIUsageStore{})
 
 	_, err := service.ResolveMeteringContext(MeteringRequest{
-		WorkspaceID: "ws", TaskNature: "support", FeatureKey: BillingFeatureAskChat,
+		WorkspaceID: "ws", TaskNature: "support", FeatureKey: coreservice.BillingFeatureAskChat,
 		OperationKey: AIUsageOperationMediaEnrichment,
 		Provider:     "openai", Model: "gpt-5.6-terra", Route: "gpt-5.6-terra",
 		FundingMode: aiusage.FundingHelpinHosted,
@@ -132,11 +134,11 @@ func TestAIUsageServicePreflightUsesGreaterP90AndDeterministicBound(t *testing.T
 }
 
 func TestAIUsageServicePaidToolsIncreaseReservationBound(t *testing.T) {
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := pricing.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog.Tools = append(catalog.Tools, aiusage.ToolRate{Key: "web_search", Provider: "openai", CustomerMicrousd: 250_000})
+	catalog.Tools = append(catalog.Tools, pricing.ToolRate{Key: "web_search", Provider: "openai", CustomerMicrousd: 250_000})
 	store := &fakeAIUsageStore{}
 	service := NewAIUsageService(catalog, store, fixedAIUsageEstimates{})
 	_, err = service.Preflight(context.Background(), PreflightRequest{Metering: MeteringRequest{
@@ -244,7 +246,7 @@ func TestAIUsageServiceMissingTelemetryUsesLaunchEstimate(t *testing.T) {
 
 func newTestAIUsageService(t *testing.T, store *fakeAIUsageStore) *AIUsageService {
 	t.Helper()
-	catalog, err := aiusage.LoadCatalog()
+	catalog, err := pricing.LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,14 +254,14 @@ func newTestAIUsageService(t *testing.T, store *fakeAIUsageStore) *AIUsageServic
 }
 
 type fakeAIUsageStore struct {
-	reconciles    []repository.AIUsageReconcileRequest
+	reconciles    []eerepository.AIUsageReconcileRequest
 	reconcileErr  error
 	mode          string
 	reserveErr    error
 	reserveCalls  int
-	reservation   repository.AIUsageReservationRequest
-	reconcile     repository.AIUsageReconcileRequest
-	checkpoint    repository.AIUsageCheckpointRequest
+	reservation   eerepository.AIUsageReservationRequest
+	reconcile     eerepository.AIUsageReconcileRequest
+	checkpoint    eerepository.AIUsageCheckpointRequest
 	checkpointErr error
 	checkpoints   int
 	uncharged     model.AIUsageLedgerEntry
@@ -269,7 +271,7 @@ type fakeAIUsageStore struct {
 	resizedTo     int64
 }
 
-func (f *fakeAIUsageStore) Reserve(_ context.Context, input repository.AIUsageReservationRequest) (*model.AIUsageReservation, error) {
+func (f *fakeAIUsageStore) Reserve(_ context.Context, input eerepository.AIUsageReservationRequest) (*model.AIUsageReservation, error) {
 	f.reserveCalls++
 	f.reservation = input
 	if f.reserveErr != nil {
@@ -282,7 +284,7 @@ func (f *fakeAIUsageStore) Reserve(_ context.Context, input repository.AIUsageRe
 	return &model.AIUsageReservation{ID: "reservation", ReservedMicrousd: input.ReservedMicrousd, EnforcementMode: mode}, nil
 }
 
-func (f *fakeAIUsageStore) Reconcile(_ context.Context, input repository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error) {
+func (f *fakeAIUsageStore) Reconcile(_ context.Context, input eerepository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error) {
 	f.reconcile = input
 	f.reconciles = append(f.reconciles, input)
 	if f.reconcileErr != nil {
@@ -291,7 +293,7 @@ func (f *fakeAIUsageStore) Reconcile(_ context.Context, input repository.AIUsage
 	return &model.AIUsagePeriod{}, nil
 }
 
-func (f *fakeAIUsageStore) Checkpoint(_ context.Context, input repository.AIUsageCheckpointRequest) (*model.AIUsagePeriod, error) {
+func (f *fakeAIUsageStore) Checkpoint(_ context.Context, input eerepository.AIUsageCheckpointRequest) (*model.AIUsagePeriod, error) {
 	f.checkpoints++
 	f.checkpoint = input
 	if f.checkpointErr != nil {

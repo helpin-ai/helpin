@@ -24,11 +24,13 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/ee/billingstripe"
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
+	eeservice "github.com/helpin-ai/helpin/server/ee/service"
 	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
-	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
@@ -183,17 +185,17 @@ func main() {
 	docsHelpcenterSearchRepo := repository.NewDocsHelpcenterSearchRepository(db)
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
+	billingRepo := eerepository.NewBillingRepository(db)
 	modelCatalog, modelCatalogErr := aimodel.LoadCatalog()
 	if modelCatalogErr != nil {
 		fatalWithSentry("load model catalog", modelCatalogErr)
 	}
-	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
+	pricingCatalog, pricingCatalogErr := pricing.LoadCatalog()
 	if pricingCatalogErr != nil {
 		fatalWithSentry("load AI pricing catalog", pricingCatalogErr)
 	}
-	aiUsageRepo := repository.NewAIUsageRepository(db)
-	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
+	aiUsageRepo := eerepository.NewAIUsageRepository(db)
+	aiUsageService := eeservice.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
 	aiUsageMeter := service.NewTokenPricedAIUsageMeter(aiUsageService)
 	aiActionExecutionRepo := repository.NewAIActionExecutionRepository(db)
 	aiActionRegistry := aipolicy.DefaultRegistry()
@@ -291,7 +293,7 @@ func main() {
 		SetGovernance(aiActionRegistry, aiActionExecutionRepo)
 	var llmProvider llm.Provider = supportLLMProvider
 	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
-	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
+	billingService := eeservice.NewBillingService(billingRepo, stripeGateway, time.Now)
 	billingService.SetWorkspaceRepository(workspaceRepo)
 	var redisClient *redis.Client
 	if cfg.RedisURL != "" {
@@ -675,7 +677,7 @@ func main() {
 	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), crmPlaybookAuthz, crmSituationService)
 	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
 	crmPlaybookLauncher := service.NewCRMPlaybookAgentLauncher(agentService, crmPlaybookExecutionRepo, aiUsageMeter)
-	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, crmPlaybookAuthz, workspaceRepo).SetEntitlements(service.NewEntitlementService(billingService))
+	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, crmPlaybookAuthz, workspaceRepo).SetEntitlements(eeservice.NewEntitlementService(billingService))
 	crmPlaybookLauncher.SetExecutionService(crmPlaybookExecution)
 	scheduledEventsService := service.NewAutomationScheduledEventService(repository.NewAutomationScheduledEventRepository(db),
 		map[string]service.ScheduledEventHandler{

@@ -9,6 +9,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+ eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 )
 
 // createDeleteStubTables creates the extra tables referenced by the workspace
@@ -710,7 +711,7 @@ func TestWorkspaceService_DeleteCancelsActiveSubscriptionImmediately(t *testing.
 	createDeleteStubTables(t, db)
 	ctx := context.Background()
 	gateway := &fakeBillingGateway{}
-	billingRepo := repository.NewBillingRepository(db)
+	billingRepo := eerepository.NewBillingRepository(db)
 	billingSvc := NewBillingService(billingRepo, gateway, nil)
 	svc.SetBillingService(billingSvc)
 
@@ -751,7 +752,7 @@ func TestWorkspaceService_DeleteStopsWhenSubscriptionCancellationFails(t *testin
 	createDeleteStubTables(t, db)
 	ctx := context.Background()
 	gateway := &fakeBillingGateway{cancelErr: errors.New("stripe unavailable")}
-	billingRepo := repository.NewBillingRepository(db)
+	billingRepo := eerepository.NewBillingRepository(db)
 	billingSvc := NewBillingService(billingRepo, gateway, nil)
 	svc.SetBillingService(billingSvc)
 

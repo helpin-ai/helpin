@@ -6,19 +6,19 @@ import (
 	"log/slog"
 	"time"
 
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 // AIUsagePeriodStore is the transaction boundary for allowance rollover.
 type AIUsagePeriodStore interface {
 	ListDuePeriods(context.Context, time.Time, int) ([]model.AIUsagePeriod, error)
 	ClosePeriod(context.Context, string, time.Time) (*model.AIUsageSettlement, error)
-	OpenNextPeriod(context.Context, repository.AIUsagePeriodSchedule) (*model.AIUsagePeriod, error)
+	OpenNextPeriod(context.Context, eerepository.AIUsagePeriodSchedule) (*model.AIUsagePeriod, error)
 }
 
 // AIUsagePeriodScheduleResolver derives the next plan allowance and anniversary window.
-type AIUsagePeriodScheduleResolver func(context.Context, string, time.Time) (repository.AIUsagePeriodSchedule, error)
+type AIUsagePeriodScheduleResolver func(context.Context, string, time.Time) (eerepository.AIUsagePeriodSchedule, error)
 
 // AIUsagePeriodWorker rolls periods independently from Stripe settlement.
 type AIUsagePeriodWorker struct {

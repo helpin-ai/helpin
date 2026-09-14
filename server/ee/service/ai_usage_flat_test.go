@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/helpin-ai/helpin/server/ee/pricing"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 )
 
@@ -45,7 +46,7 @@ func TestFlatBYOKRequiresCompleteTariffBeforeReservation(t *testing.T) {
 
 func TestFlatBYOKCustomModelFreezesTokenAndToolTariffs(t *testing.T) {
 	store := &fakeAIUsageStore{}
-	catalog := &aiusage.Catalog{Tools: []aiusage.ToolRate{{Key: "search", CustomerMicrousd: 7500}}}
+	catalog := &pricing.Catalog{Tools: []pricing.ToolRate{{Key: "search", CustomerMicrousd: 7500}}}
 	svc := NewAIUsageService(catalog, store, nil)
 	tariff := testFlatTariff(2_000_000)
 	metering, err := svc.Preflight(context.Background(), PreflightRequest{Metering: MeteringRequest{

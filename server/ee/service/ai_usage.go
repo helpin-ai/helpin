@@ -9,22 +9,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/ee/pricing"
+	eerepository "github.com/helpin-ai/helpin/server/ee/repository"
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/model"
-	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 const (
-	mediaEnrichmentProvider       = "openrouter"
-	mediaEnrichmentCanonicalModel = "gemini-3.8-flash"
-	mediaEnrichmentRoute          = "google/gemini-3.8-flash"
+	mediaEnrichmentProvider       = aiusage.MediaEnrichmentProvider
+	mediaEnrichmentCanonicalModel = aiusage.MediaEnrichmentCanonicalModel
+	mediaEnrichmentRoute          = aiusage.MediaEnrichmentRoute
 )
 
 // AIUsageStore is the transactional persistence needed by direct-call metering.
 type AIUsageStore interface {
-	Reserve(context.Context, repository.AIUsageReservationRequest) (*model.AIUsageReservation, error)
-	Reconcile(context.Context, repository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error)
-	Checkpoint(context.Context, repository.AIUsageCheckpointRequest) (*model.AIUsagePeriod, error)
+	Reserve(context.Context, eerepository.AIUsageReservationRequest) (*model.AIUsageReservation, error)
+	Reconcile(context.Context, eerepository.AIUsageReconcileRequest) (*model.AIUsagePeriod, error)
+	Checkpoint(context.Context, eerepository.AIUsageCheckpointRequest) (*model.AIUsagePeriod, error)
 	Release(context.Context, string, string) error
 	RecordUncharged(context.Context, model.AIUsageLedgerEntry) error
 }
@@ -36,13 +37,13 @@ type AIUsageEstimateSource interface {
 
 // AIUsageService prices, reserves, and reconciles actual AI usage.
 type AIUsageService struct {
-	catalog   *aiusage.Catalog
+	catalog   *pricing.Catalog
 	store     AIUsageStore
 	estimates AIUsageEstimateSource
 }
 
 // NewAIUsageService creates the token-priced AI usage service.
-func NewAIUsageService(catalog *aiusage.Catalog, store AIUsageStore, estimates AIUsageEstimateSource) *AIUsageService {
+func NewAIUsageService(catalog *pricing.Catalog, store AIUsageStore, estimates AIUsageEstimateSource) *AIUsageService {
 	return &AIUsageService{catalog: catalog, store: store, estimates: estimates}
 }
 
@@ -66,7 +67,7 @@ func (s *AIUsageService) ResolveMeteringContext(input MeteringRequest) (Metering
 	}
 	if err != nil {
 		switch {
-		case errors.Is(err, aiusage.ErrPricingConfigurationMissing):
+		case errors.Is(err, pricing.ErrPricingConfigurationMissing):
 			return MeteringContext{}, fmt.Errorf("%w: %v", model.ErrPricingConfigurationMissing, err)
 		default:
 			return MeteringContext{}, fmt.Errorf("%w: %v", model.ErrModelUnavailableUnderPricing, err)
@@ -112,7 +113,7 @@ func (s *AIUsageService) Preflight(ctx context.Context, input PreflightRequest) 
 	if s.store == nil {
 		return nil, model.ErrPricingConfigurationMissing
 	}
-	reservation, err := s.store.Reserve(ctx, repository.AIUsageReservationRequest{
+	reservation, err := s.store.Reserve(ctx, eerepository.AIUsageReservationRequest{
 		WorkspaceID: input.Metering.WorkspaceID, TaskNature: input.Metering.TaskNature,
 		ModelTier: string(metering.Route.Tier), ExecutionID: input.Metering.ExecutionID,
 		IdempotencyKey: input.Metering.IdempotencyKey, ReservedMicrousd: bound,
@@ -134,7 +135,7 @@ func (s *AIUsageService) Reconcile(ctx context.Context, input CompletionUsage) (
 	if done {
 		return &UsageResult{ChargedMicrousd: charged, AbsorbedMicrousd: absorbed}, nil
 	}
-	if _, err := s.store.Reconcile(ctx, repository.AIUsageReconcileRequest{
+	if _, err := s.store.Reconcile(ctx, eerepository.AIUsageReconcileRequest{
 		ReservationID: input.Context.ReservationID, Entry: entry,
 		ChargedMicrousd: charged, AbsorbedMicrousd: absorbed,
 		AllowLateUsage: input.AllowLateUsage, RunID: input.RunID, RunOutputSummary: input.RunOutputSummary,
@@ -154,7 +155,7 @@ func (s *AIUsageService) Checkpoint(ctx context.Context, input CompletionUsage) 
 	if done {
 		return &UsageResult{ChargedMicrousd: charged, AbsorbedMicrousd: absorbed}, nil
 	}
-	if _, err := s.store.Checkpoint(ctx, repository.AIUsageCheckpointRequest{
+	if _, err := s.store.Checkpoint(ctx, eerepository.AIUsageCheckpointRequest{
 		ReservationID: input.Context.ReservationID, Entry: entry,
 		ChargedMicrousd: charged, AbsorbedMicrousd: absorbed,
 		RunID: input.RunID, RunOutputSummary: input.RunOutputSummary,
@@ -173,7 +174,7 @@ func (s *AIUsageService) prepareCompletion(ctx context.Context, input Completion
 	if err != nil {
 		return model.AIUsageLedgerEntry{}, 0, 0, false, err
 	}
-	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{
+	charge, err := pricing.CalculateCharge(pricing.ChargeInput{
 		FundingMode: input.Context.FundingMode, Tokens: normalized, Rates: input.Context.Route.Rates,
 		PaidToolMicrousd: toolMicrousd,
 	})
@@ -290,7 +291,7 @@ func (s *AIUsageService) deterministicBound(input MeteringRequest, metering Mete
 	if err != nil {
 		return 0, err
 	}
-	charge, err := aiusage.CalculateCharge(aiusage.ChargeInput{
+	charge, err := pricing.CalculateCharge(pricing.ChargeInput{
 		FundingMode: metering.FundingMode,
 		Tokens:      aiusage.NormalizedTokens{InputTokensTotal: input.InputTokensEstimate, UncachedInputTokens: input.InputTokensEstimate, OutputTokens: maximumOutput},
 		Rates:       metering.Route.Rates, PaidToolMicrousd: toolMicrousd,
@@ -309,7 +310,7 @@ func (s *AIUsageService) priceAllowedTools(metering MeteringContext, keys []stri
 			return 0, fmt.Errorf("%w: paid tool %q", model.ErrPricingConfigurationMissing, key)
 		}
 		if total > math.MaxInt64-rate {
-			return 0, aiusage.ErrChargeOverflow
+			return 0, pricing.ErrChargeOverflow
 		}
 		total += rate
 	}
@@ -324,11 +325,11 @@ func (s *AIUsageService) priceObservedTools(metering MeteringContext, tools []ai
 			return 0, nil, fmt.Errorf("%w: paid tool %q", model.ErrPricingConfigurationMissing, usage.Key)
 		}
 		if usage.Count != 0 && rate > math.MaxInt64/usage.Count {
-			return 0, nil, aiusage.ErrChargeOverflow
+			return 0, nil, pricing.ErrChargeOverflow
 		}
 		component := rate * usage.Count
 		if total > math.MaxInt64-component {
-			return 0, nil, aiusage.ErrChargeOverflow
+			return 0, nil, pricing.ErrChargeOverflow
 		}
 		total += component
 	}
@@ -368,3 +369,8 @@ func validateAIUsageOperation(operationKey, taskNature string, resolved aiusage.
 }
 
 var _ AIUsageLifecycle = (*AIUsageService)(nil)
+
+func (s *AIUsageService) ChargeForTokens(metering MeteringContext, tokens aiusage.NormalizedTokens) (int64, error) {
+	charge, err := pricing.CalculateCharge(pricing.ChargeInput{FundingMode: metering.FundingMode, Tokens: tokens, Rates: metering.Route.Rates})
+	return charge.FinalMicrousd, err
+}
