@@ -32,6 +32,7 @@ func main() {
 }
 
 func run() error {
+	envFile := flag.String("env-file", "", "explicit dotenv path (default: process environment only)")
 	workspace := flag.String("workspace", "", "workspace UUID to bootstrap")
 	funding := flag.String("funding", "customer", "customer, or managed in an EE build")
 	rotate := flag.Bool("rotate-credentials", false, "replace the explicitly supplied bootstrap credentials")
@@ -45,8 +46,10 @@ func run() error {
 	if *funding == "managed" && !managedBootstrapEnabled {
 		return fmt.Errorf("managed credentials require an EE build (-tags ee)")
 	}
-	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("load local configuration: %w", err)
+	if *envFile != "" {
+		if err := godotenv.Load(*envFile); err != nil {
+			return fmt.Errorf("load explicit configuration: %w", err)
+		}
 	}
 	keys := map[string]string{}
 	for _, mapping := range credentials {

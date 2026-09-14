@@ -28,6 +28,9 @@ func setupAIProfileTestDB(t *testing.T) (*AIProfileService, model.AIProfileRoute
 	if err := db.Exec(`CREATE TABLE workspaces (id TEXT, status TEXT); INSERT INTO workspaces VALUES ('workspace','active')`).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec(`CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT, ai_profile_id TEXT, deleted_at DATETIME)`).Error; err != nil {
+		t.Fatal(err)
+	}
 	routes := make([]model.AIProfileRoute, 2)
 	for i, name := range []string{"Primary", "Fallback"} {
 		c, err := connections.Create(context.Background(), "workspace", "owner", model.CreateAIConnectionRequest{Name: name, Scope: "workspace", Provider: "openai", APIKey: name + "-key"})
@@ -158,5 +161,30 @@ func TestAIProfilePersonalAndSharedAuthorization(t *testing.T) {
 	req.Primary = fallback
 	if _, err := s.Save(ctx, "workspace", "teammate", "", req); err == nil {
 		t.Fatal("member created shared profile")
+	}
+}
+
+func TestAIProfileDeletionRequiresAgentReassignment(t *testing.T) {
+	s, primary, _, db := setupAIProfileTestDB(t)
+	ctx := context.Background()
+	p, err := s.Save(ctx, "workspace", "owner", "", model.SaveAIProfileRequest{Name: "Team", Scope: "workspace", Primary: primary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO agents (id,workspace_id,ai_profile_id) VALUES ('agent','workspace',?)", p.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, "workspace", "owner", p.ID, p.Revision); !errors.Is(err, repository.ErrAIProfileInUse) {
+		t.Fatalf("referenced profile deleted: %v", err)
+	}
+	stored, err := s.repo.Get(ctx, "workspace", p.ID)
+	if err != nil || stored == nil || stored.Revision != p.Revision {
+		t.Fatal("rejected deletion changed profile")
+	}
+	if err := db.Exec("UPDATE agents SET ai_profile_id=NULL WHERE id='agent'").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, "workspace", "owner", p.ID, p.Revision); err != nil {
+		t.Fatal(err)
 	}
 }

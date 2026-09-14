@@ -19,6 +19,10 @@ func NewAIProfileHandler(s *service.AIProfileService) *AIProfileHandler {
 }
 
 func (h *AIProfileHandler) failure(w http.ResponseWriter, err error) {
+	if errors.Is(err, repository.ErrAIProfileInUse) {
+		writeError(w, http.StatusConflict, "This profile is used by agents. Change their AI profile before deleting it.")
+		return
+	}
 	if errors.Is(err, repository.ErrAIProfileChanged) {
 		writeError(w, http.StatusConflict, err.Error())
 		return

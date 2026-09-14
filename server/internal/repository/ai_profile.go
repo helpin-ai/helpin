@@ -10,6 +10,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ErrAIProfileInUse requires agents to be reassigned before a profile is deleted.
+var ErrAIProfileInUse = errors.New("AI profile is used by agents; change their AI profile before deleting it")
+
 // ErrAIProfileChanged prevents lost edits and stale default changes.
 var ErrAIProfileChanged = errors.New("AI profile changed; reload and retry")
 
@@ -58,6 +61,13 @@ func (r *AIProfileRepository) Delete(ctx context.Context, workspace, id string, 
 		}
 		if result.RowsAffected != 1 {
 			return ErrAIProfileChanged
+		}
+		var count int64
+		if err := tx.Model(&model.Agent{}).Where("workspace_id = ? AND ai_profile_id = ? AND deleted_at IS NULL", workspace, id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return ErrAIProfileInUse
 		}
 		return tx.Model(&model.AIWorkspaceSettings{}).Where("workspace_id = ? AND default_profile_id = ?", workspace, id).Update("default_profile_id", nil).Error
 	})

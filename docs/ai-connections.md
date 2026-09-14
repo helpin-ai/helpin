@@ -53,7 +53,7 @@ The operator bootstrap imports only explicitly named API-key environment
 variables. From `server/`, preview a community migration with:
 
 ```sh
-go run ./cmd/ai-bootstrap -workspace WORKSPACE_UUID \
+go run ./cmd/ai-bootstrap -env-file /absolute/path/to/helpin/server/.env -workspace WORKSPACE_UUID \
   -credential openai=OPENAI_API_KEY -credential openrouter=OPENROUTER_API_KEY
 ```
 
@@ -171,3 +171,8 @@ Host SaaS development commands are `just backend-ee`, `just worker-ee`, and
 `just frontend-ee` in separate terminals. Community uses the existing commands
 without the `-ee` suffix. Do not switch a live EE deployment to Community while
 accepted EE runs are outstanding; drain them first to preserve their frozen policy.
+
+Bootstrap reads only the process environment unless `-env-file` names an explicit
+dotenv file. It never guesses a file from the working directory. Existing process
+environment values take precedence; each imported key still requires an explicit
+`-credential provider=ENVIRONMENT_VARIABLE` mapping.
