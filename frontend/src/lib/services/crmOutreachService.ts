@@ -44,9 +44,15 @@ export const crmOutreachService = {
       status?: string;
       page?: string;
     } = {},
+    signal?: AbortSignal,
   ) =>
     api.get<SequenceEnrollment[]>(
       `${path(ws, "enrollments")}&${new URLSearchParams(Object.entries(filters).filter(([, v]) => Boolean(v)) as [string, string][]).toString()}`,
+      {
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
+          : AbortSignal.timeout(15000),
+      },
     ),
   detail: (ws: string, id: string) =>
     api.get<{ enrollment: SequenceEnrollment; deliveries: SequenceDelivery[] }>(

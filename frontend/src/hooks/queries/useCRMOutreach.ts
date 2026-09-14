@@ -32,17 +32,23 @@ export function useSequenceEnrollments(
   const query = useInfiniteQuery({
     queryKey: ["crm", ws, "sequenceEnrollments", filters],
     initialPageParam: 1,
-    queryFn: async ({ pageParam }) =>
+    queryFn: async ({ pageParam, signal }) =>
       unwrap(
-        await crmOutreachService.enrollments(ws, {
-          ...filters,
-          page: String(pageParam),
-        }),
+        await crmOutreachService.enrollments(
+          ws,
+          {
+            ...filters,
+            page: String(pageParam),
+          },
+          signal,
+        ),
       ),
     getNextPageParam: (last, pages) =>
       last.length === 50 ? pages.length + 1 : undefined,
     enabled: !!ws,
-    refetchInterval: 15000,
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : 15000,
   });
   return { ...query, data: query.data?.pages.flat() };
 }

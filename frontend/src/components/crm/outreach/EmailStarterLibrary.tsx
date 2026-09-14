@@ -1,3 +1,4 @@
+import { ChevronRightIcon } from "@/lib/pmIcons";
 import { useState } from "react";
 import {
   Dialog,
@@ -198,9 +199,13 @@ export function EmailStarterLibrary({
                     <details
                       key={`${starter.id}:${emailIndex}:${i}`}
                       open={i === 0}
-                      className="border-b border-border/40 pb-3"
+                      className="group/disclosure border-b border-border/40 pb-3"
                     >
-                      <summary className="cursor-pointer text-sm font-medium">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden text-sm font-medium">
+                        <ChevronRightIcon
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-open/disclosure:rotate-90 motion-reduce:transition-none"
+                        />
                         {mode === "sequences" && (
                           <span className="mr-2 text-xs font-normal text-muted-foreground">
                             Day {day}
