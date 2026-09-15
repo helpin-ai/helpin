@@ -1665,3 +1665,18 @@
     position: static !important;
   }
 }
+
+/* ── Support widget vs. the agent dock ─────────────────────────────────────
+   The support widget mounts a shadow host (`#helpin-widget-container`, from
+   @helpin-ai/sdk-js) as a fixed element at the very top of the stacking order.
+   On phones the open agent dock fills the screen and the launcher floats over
+   its panel. While the dock is open there, pull the host under the dock root
+   (z-60) — still above the app, just behind the panel and its scrim. Giving
+   the host its own z-index also contains the launcher's z-index inside it.
+   The inline style on the host means these need `!important`. */
+@media (max-width: 767px) {
+  body[data-helpin-dock-open] #helpin-widget-container {
+    position: fixed !important;
+    z-index: 55 !important;
+  }
+}
