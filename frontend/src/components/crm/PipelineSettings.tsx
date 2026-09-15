@@ -232,16 +232,16 @@ export function PipelineSettings() {
           return (
             <section
               key={pipeline.id}
-              className="group/pipeline border-t border-quiet-divider-strong"
+              className="group/pipeline overflow-hidden rounded-lg border border-border/70 bg-card"
             >
-              <div className="flex flex-wrap items-center justify-between gap-3 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
                 <h2
                   id={`pipeline-${pipeline.id}`}
                   className="min-w-0 basis-full sm:flex-1 sm:basis-0"
                 >
                   <span className="min-w-0 space-y-2">
                     <span className="flex flex-wrap items-center gap-2">
-                      <span className="break-words text-base font-semibold tracking-tight">
+                      <span className="break-words text-sm font-semibold text-quiet-text-primary">
                         {pipeline.name}
                       </span>
                       {pipeline.is_default && (
@@ -321,6 +321,7 @@ export function PipelineSettings() {
                 role="region"
                 aria-labelledby={`pipeline-${pipeline.id}`}
                 hidden={!expanded}
+                className="border-t border-quiet-divider-strong px-4 pb-4 pt-2"
               >
                 {expanded && (
                   <PipelineStageTable

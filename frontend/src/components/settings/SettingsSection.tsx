@@ -4,17 +4,18 @@ import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 /** Settings disclosure with the same section chrome as Support routing. Content stays mounted. */
-export function SettingsSection({ title, description, defaultOpen = false, className, children }: {
+export function SettingsSection({ title, description, defaultOpen = false, className, optionId, children }: {
   title: string;
   description?: string;
   defaultOpen?: boolean;
   className?: string;
+  optionId?: string;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Card className={cn('gap-0 rounded-lg border-border/70 py-0', className)}>
-      <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <details data-settings-option={optionId} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
         <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-4 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
           <span className="min-w-0 flex-1">
             <span role="heading" aria-level={2} className="block text-sm font-semibold text-quiet-text-primary">{title}</span>
