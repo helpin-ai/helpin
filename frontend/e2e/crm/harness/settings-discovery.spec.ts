@@ -19,6 +19,8 @@ for (const mode of ['light', 'dark', 'narrow']) test(`settings directory and sea
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   if (mode !== 'narrow') {
     const sidebar = page.locator('aside');
+    await expect(sidebar.getByRole('button', { name: 'Integration', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Integrations & data', exact: true })).toHaveCount(0);
     const workspace = sidebar.getByRole('button', { name: 'Workspace', exact: true });
     await expect(workspace).toHaveAttribute('aria-expanded', 'false');
     await workspace.focus();
@@ -39,5 +41,8 @@ for (const mode of ['light', 'dark', 'narrow']) test(`settings directory and sea
   await page.goBack();
   await expect(page.getByRole('region', { name: 'Recently visited' })).toContainText('Email');
   await page.getByRole('searchbox', { name: 'Search settings', exact: true }).fill('nothing-matches-xyz');
+  await expect(page.getByRole('region', { name: 'Recently visited' })).toBeHidden();
   await expect(page.getByRole('status')).toContainText('No matching settings');
+  await page.getByRole('button', { name: 'Clear search', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Recently visited' })).toBeVisible();
 });

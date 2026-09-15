@@ -112,3 +112,14 @@ it('deletes only after the confirmation is accepted', async () => {
   await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Delete Daily driver"]')!.click());
   expect(aiProfileService.remove).toHaveBeenCalledWith('ws', profile);
 });
+
+it('can clear the workspace default from its profile row', async () => {
+  const onClearDefault = vi.fn();
+  const onSetDefault = vi.fn();
+  await render({ isDefault: true, onClearDefault, onSetDefault });
+  const clear = document.querySelector<HTMLButtonElement>('[aria-label="Clear Daily driver as the workspace default"]');
+  expect(clear).not.toBeNull();
+  await act(async () => { clear?.click(); });
+  expect(onClearDefault).toHaveBeenCalledOnce();
+  expect(onSetDefault).not.toHaveBeenCalled();
+});

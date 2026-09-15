@@ -192,9 +192,9 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
   const ConnectAction = visibleAccounts.length === 0 ? QuietPrimaryAction : QuietTextAction;
 
   return (
-    <section className="border-b border-quiet-divider-strong pb-5">
-      <h2 className="text-sm font-medium">Mailboxes</h2>
-      <div className="mt-3 space-y-3">
+    <section className="rounded-lg border border-border/70 bg-card">
+      <h2 className="border-b border-quiet-divider-strong px-4 py-3 text-sm font-semibold text-quiet-text-primary">Connected accounts</h2>
+      <div className="space-y-3 px-4 pb-4 pt-1">
         {visibleAccounts.length === 0 && (
           <div className="rounded-lg border bg-muted/20 px-5 py-7 text-center">
             <Mail01Icon className="mx-auto h-7 w-7 text-muted-foreground" />

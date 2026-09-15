@@ -86,7 +86,7 @@ it('explains why a profile cannot be created before a connection exists', async 
   expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Add a connection before creating a profile.');
 });
 
-it('says a shared profile is needed before a default can be chosen', async () => {
+it('keeps default selection in the profiles list without a separate section', async () => {
   vi.mocked(aiConnectionService.list).mockResolvedValue({
     data: {
       enabled: true,
@@ -96,7 +96,8 @@ it('says a shared profile is needed before a default can be chosen', async () =>
     error: null,
   });
   await render('workspace');
-  expect(document.body.textContent).toContain('Create a shared profile to choose a default.');
+  expect(document.body.textContent).not.toContain('Create a shared profile to choose a default.');
+  expect(document.querySelector('#workspace-ai-default')).toBeNull();
 });
 
 it('does not repeat the section description in the page body', async () => {
@@ -113,4 +114,28 @@ it('tells a member without manage permission that the page is read-only', async 
   await render('workspace');
   expect(document.body.textContent).toContain('Connections are read-only');
   expect(Array.from(document.querySelectorAll('button')).some((b) => b.textContent?.includes('Add connection'))).toBe(false);
+});
+
+it('orders Workspace before Personal and keeps management scoped when switching tabs', async () => {
+  frame.permissions = new Set();
+  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
+  await render('workspace');
+  const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  expect(tabs.map(tab => tab.textContent)).toEqual(['Workspace', 'Personal']);
+  expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+  expect(document.body.textContent).toContain('Connections are read-only');
+  await act(async () => { tabs[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })); });
+  expect(tabs[1].getAttribute('aria-selected')).toBe('true');
+  expect(document.body.textContent).not.toContain('Connections are read-only');
+  expect(document.body.textContent).not.toContain('Default profile');
+  expect(Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Add connection' && !button.disabled)).toBe(true);
+  await act(async () => { tabs[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 })); });
+  expect(document.body.textContent).toContain('Connections are read-only');
+});
+
+it('keeps personal setup links on the Personal tab', async () => {
+  vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });
+  await render('personal');
+  expect(document.querySelector('[role="tab"][data-state="active"]')?.textContent).toBe('Personal');
+  expect(document.body.textContent).not.toContain('Default profile');
 });

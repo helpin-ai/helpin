@@ -128,6 +128,9 @@ const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
   CRM: Autonomy,
 };
 export const SETTINGS_HOME_LABEL = 'Settings home';
+export const SETTINGS_SIDEBAR_GROUP_LABELS: Record<string, string> = {
+  'Integrations & data': 'Integration',
+};
 
 const allSettingsSections: SettingsSectionMeta[] = [
   {
@@ -206,6 +209,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
   ...billingSettingsSections(Account).map(section => ({ ...section, group: 'Workspace', keywords: ['invoices', 'payment', 'subscription', 'plan', 'usage', 'credits'] })),
   {
     id: 'ai-connections',
+    sidebar: false,
     label: 'Personal AI setup',
     description: 'Your API keys and ChatGPT login, plus the profiles that use them.',
     icon: AIConnections,
@@ -214,11 +218,12 @@ const allSettingsSections: SettingsSectionMeta[] = [
   },
   {
     id: 'ai',
-    label: 'Workspace AI setup',
-    description: 'Shared connections, profiles, and the default profile agents inherit.',
+    label: 'AI setup',
+    description: 'Workspace and personal AI connections, profiles, and the workspace default.',
+    keywords: ['personal AI', 'workspace AI', 'API keys', 'ChatGPT', 'models', 'profiles'],
     icon: WorkspaceAI,
     group: 'AI & knowledge',
-    requiredPermission: 'settings.read',
+    requiredPermission: 'workspace.read',
   },
   {
     id: 'knowledge',
@@ -343,8 +348,8 @@ const allSettingsSections: SettingsSectionMeta[] = [
     id: 'crm-email',
     options: [{"id": "email-signature", "label": "Email signature", "keywords": ["signature", "footer"]}, {"id": "email-sending-limits", "label": "Sending limits", "keywords": ["daily limit", "sending limit", "quota", "capacity", "pacing"]}, {"id": "email-sync", "label": "Sync preferences", "keywords": ["email history", "address filters", "blocklist", "allowlist"]}, {"id": "email-calendar", "label": "Calendar events", "keywords": ["private meetings", "solo meetings", "calendar sync"]}, {"id": "email-contacts", "label": "Contact creation", "keywords": ["automatic contacts", "blocked prefixes", "noreply"]}],
     keywords: ["gmail", "email sync", "mailbox", "outlook"],
-    label: 'Email',
-    description: 'Manage mailboxes, sending limits, and CRM email preferences.',
+    label: 'Email & calendar',
+    description: 'Connected accounts, sending limits, and sync preferences.',
     icon: EmailAccounts,
     group: 'CRM',
   },

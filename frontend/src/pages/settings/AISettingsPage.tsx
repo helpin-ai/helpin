@@ -20,8 +20,8 @@ import type { AIProfile } from "@/lib/services/aiProfileService";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -29,26 +29,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/design-system/quiet-dropdown-select";
 import { AiNetworkIcon, Key01Icon, PlusSignIcon, Shield01Icon, SparklesIcon } from "@/lib/icons";
 import { SettingsPageFrame } from "./SettingsPageFrame";
 
-export function AISettingsPage({ scope }: { scope: "personal" | "workspace" }) {
+export function AISettingsPage({ scope = "workspace" }: { scope?: "personal" | "workspace" }) {
   return (
-    <SettingsPageFrame section={scope === "personal" ? "ai-connections" : "ai"}>
+    <SettingsPageFrame section="ai">
       {({ workspaceId, permissions }) => (
-        <AISettingsContent
-          key={`${workspaceId}-${scope}`}
-          workspaceId={workspaceId}
-          scope={scope}
-          canManage={scope === "personal" || permissions.has("workspace.update")}
-        />
+        <Tabs key={`${workspaceId}-${scope}`} defaultValue={scope} className="gap-5">
+          <TabsList variant="quiet" aria-label="AI setup scope">
+            <TabsTrigger value="workspace">Workspace</TabsTrigger>
+            <TabsTrigger value="personal">Personal</TabsTrigger>
+          </TabsList>
+          <TabsContent value="workspace">
+            <AISettingsContent workspaceId={workspaceId} scope="workspace" canManage={permissions.has("workspace.update")} />
+          </TabsContent>
+          <TabsContent value="personal">
+            <AISettingsContent workspaceId={workspaceId} scope="personal" canManage />
+          </TabsContent>
+        </Tabs>
       )}
     </SettingsPageFrame>
   );
@@ -128,7 +127,7 @@ function AISettingsContent({
   const models = connections.data?.models ?? [];
   const defaultProfileId = settings.data?.default_profile_id ?? null;
   const canCreateProfile = canManage && ownConnections.length > 0;
-  const createProfileButton = <Button size="sm" variant="outline" disabled={!canCreateProfile} onClick={() => setEditing("new")}>Create profile</Button>;
+  const createProfileButton = <Button size="sm" className="gap-1.5" disabled={!canCreateProfile} onClick={() => setEditing("new")}><PlusSignIcon className="h-4 w-4" />Create profile</Button>;
 
   return (
     <div className="space-y-7">
@@ -210,23 +209,6 @@ function AISettingsContent({
         )}
       </section>
 
-      {scope === "workspace" && (
-        <WorkspaceDefaultSection
-          canManage={canManage}
-          profiles={ownProfiles}
-          defaultProfileId={defaultProfileId}
-          isSaving={setDefault.isPending}
-          settingsError={settings.isError}
-          profilesError={profiles.isError}
-          isLoading={settings.isPending || profiles.isPending}
-          onRetry={() => {
-            if (settings.isError) void settings.refetch();
-            if (profiles.isError) void profiles.refetch();
-          }}
-          onChange={chooseDefault}
-        />
-      )}
-
       <section>
         <AISectionLabel
           label="Profiles"
@@ -243,6 +225,12 @@ function AISettingsContent({
             ) : undefined
           }
         />
+        {scope === "workspace" && settings.isError && (
+          <Alert variant="destructive" className="mb-3">
+            <AlertTitle>Could not load the workspace default</AlertTitle>
+            <AlertDescription><Button size="sm" variant="ghost" onClick={() => void settings.refetch()}>Retry</Button></AlertDescription>
+          </Alert>
+        )}
         {profiles.isPending ? (
           <Skeleton className="h-32 w-full" />
         ) : profiles.isError ? (
@@ -260,11 +248,7 @@ function AISettingsContent({
             title="No profiles yet"
             description="A profile combines a connection, a model, and an optional fallback."
             action={
-              canCreateProfile ? (
-                <Button size="sm" onClick={() => setEditing("new")}>
-                  Create profile
-                </Button>
-              ) : canManage ? (
+              canCreateProfile ? createProfileButton : canManage ? (
                 <Button size="sm" variant="outline" onClick={() => setDialog({ kind: "add" })}>
                   Add a connection first
                 </Button>
@@ -295,9 +279,10 @@ function AISettingsContent({
                     connections={allConnections}
                     isDefault={scope === "workspace" && defaultProfileId === profile.id}
                     canManage={canManage}
-                    canSetDefault={scope === "workspace"}
+                    canSetDefault={scope === "workspace" && !settings.isPending && !settings.isError && !setDefault.isPending}
                     onEdit={setEditing}
                     onSetDefault={(p) => void chooseDefault(p.id)}
+                    onClearDefault={() => void chooseDefault(null)}
                   />
                 ))}
               </TableBody>
@@ -329,94 +314,5 @@ function AISettingsContent({
         />
       )}
     </div>
-  );
-}
-
-function WorkspaceDefaultSection({
-  canManage,
-  profiles,
-  defaultProfileId,
-  isSaving,
-  settingsError,
-  profilesError,
-  isLoading,
-  onRetry,
-  onChange,
-}: {
-  canManage: boolean;
-  profiles: AIProfile[];
-  defaultProfileId: string | null;
-  isSaving: boolean;
-  settingsError: boolean;
-  profilesError: boolean;
-  isLoading: boolean;
-  onRetry: () => void;
-  onChange: (profileId: string | null) => void;
-}) {
-  const reason = !canManage
-    ? "Only workspace admins can change the default."
-    : profilesError
-      ? "Could not load profiles."
-      : settingsError
-        ? "Could not load the current default."
-        : profiles.length === 0
-          ? "Create a shared profile to choose a default."
-          : isSaving
-            ? "Saving…"
-            : "Agents and automation use this profile unless a shared agent profile is selected.";
-  const disabled =
-    !canManage || profilesError || settingsError || profiles.length === 0 || isSaving;
-
-  return (
-    <section>
-      <AISectionLabel label="Default profile" />
-      <div className="rounded-lg border border-border bg-card px-4 py-3.5">
-        <Label htmlFor="workspace-ai-default">Default profile</Label>
-        {isLoading ? (
-          <Skeleton className="mt-2 h-8 w-64" />
-        ) : (
-          <Select
-            value={defaultProfileId || "none"}
-            disabled={disabled}
-            onValueChange={(id) => onChange(id === "none" ? null : id)}
-          >
-            <SelectTrigger
-              id="workspace-ai-default"
-              aria-describedby="workspace-ai-default-reason"
-              variant="underline"
-              className="mt-1 w-full px-0.5"
-            >
-              <SelectValue placeholder="Choose a shared profile" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Not configured</SelectItem>
-              {profiles.map((profile) => (
-                <SelectItem
-                  key={profile.id}
-                  value={profile.id}
-                  textValue={profile.name}
-                  disabled={profile.primary_policy?.allowed === false}
-                >
-                  <span>{profile.name}</span>
-                  {profile.primary_policy?.allowed === false && (
-                    <span className="block text-[11px] text-muted-foreground">
-                      {profile.primary_policy.message ?? "Unavailable for new runs"}
-                    </span>
-                  )}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-        <p id="workspace-ai-default-reason" className="mt-1.5 text-xs text-muted-foreground">
-          {reason}
-          {(profilesError || settingsError) && (
-            <button type="button" className="ml-1.5 underline" onClick={onRetry}>
-              Retry
-            </button>
-          )}
-        </p>
-      </div>
-    </section>
   );
 }

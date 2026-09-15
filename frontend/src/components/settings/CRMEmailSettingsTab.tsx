@@ -6,13 +6,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { QuietPrimaryAction, QuietUnderlineInput } from '@/components/design-system/quiet';
 import { CRMEmailSettingsSection } from '@/components/crm/CRMEmailSettingsSection';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useEmailSyncSettings, useUpdateEmailSyncSettings } from '@/hooks/queries/useCRM';
-import { Cancel01Icon, FloppyDiskIcon, PlusSignIcon, RotateLeft01Icon, Tick01Icon } from '@/lib/icons';
+import { Cancel01Icon, InformationCircleIcon, FloppyDiskIcon, PlusSignIcon, RotateLeft01Icon, Tick01Icon } from '@/lib/icons';
 import { unwrap } from '@/lib/queryUtils';
 import { crmEmailSyncSettingsService } from '@/lib/services/crmService';
 import type {
@@ -51,8 +52,10 @@ function SettingRow({
   return (
     <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center">
       <div>
-        <Label className="text-sm font-medium">{label}</Label>
-        {description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>}
+        <div className="flex items-center gap-1">
+          <Label className="text-sm font-medium">{label}</Label>
+          {description && <QuickTooltip label={description}><button type="button" aria-label={`About ${label.toLowerCase()}`} className="inline-flex size-5 items-center justify-center rounded-sm text-quiet-text-secondary focus-visible:outline-2 focus-visible:outline-ring"><InformationCircleIcon className="size-3.5" /></button></QuickTooltip>}
+        </div>
       </div>
       <div className="sm:justify-self-end">{children}</div>
     </div>
@@ -209,7 +212,7 @@ function CRMEmailSettingsContent({
 
       <EmailAccountConnect workspaceId={workspaceId} memberId={user?.id ?? ''} showAll />
 
-      <CRMEmailSettingsSection title="Sync preferences" optionId="email-sync" summary={`${historicalSyncDays} days of history · ${filterPatterns.length} filter patterns`}>
+      <CRMEmailSettingsSection title="Sync preferences" optionId="email-sync">
         <div className="space-y-5">
           <SettingRow label="Email history" description="Used for the first import and recovery syncs.">
             <Select value={String(historicalSyncDays)} onValueChange={(value) => setHistoricalSyncDays(Number(value))}>
@@ -268,7 +271,7 @@ function CRMEmailSettingsContent({
         </div>
       </CRMEmailSettingsSection>
 
-      <CRMEmailSettingsSection title="Calendar events" optionId="email-calendar" summary={`${includePrivateMeetings ? 'Private meetings included' : 'Private meetings excluded'} · ${includeSoloMeetings ? 'Solo meetings included' : 'Solo meetings excluded'}`}>
+      <CRMEmailSettingsSection title="Calendar events" optionId="email-calendar">
         <div className="space-y-5">
           <SettingRow label="Internal activity" description="Optionally ignore email and meetings where everyone uses your company domain.">
             <Select value={internalExclusion} onValueChange={(value) => setInternalExclusion(value as CRMInternalExclusion)}>
@@ -294,7 +297,7 @@ function CRMEmailSettingsContent({
         </div>
       </CRMEmailSettingsSection>
 
-      <CRMEmailSettingsSection title="Contact creation" optionId="email-contacts" summary={recordCreationMode === 'disabled' ? 'Manual only' : recordCreationMode === 'selective' ? 'Outbound email and meeting participants' : 'All email and meeting participants'}>
+      <CRMEmailSettingsSection title="Contact creation" optionId="email-contacts">
         <div className="space-y-5">
           <SettingRow
             label="Create contacts"
@@ -321,8 +324,7 @@ function CRMEmailSettingsContent({
           <div className="space-y-2">
             <div className="flex flex-wrap items-end justify-between gap-2">
               <div>
-                <Label htmlFor="blocked-email-prefix">Blocked email prefixes</Label>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">Prevent automated addresses such as noreply@ from creating contacts.</p>
+                <div className="flex items-center gap-1"><Label htmlFor="blocked-email-prefix">Blocked email prefixes</Label><QuickTooltip label="Prevent automated addresses such as noreply@ from creating contacts."><button type="button" aria-label="About blocked email prefixes" className="inline-flex size-5 items-center justify-center rounded-sm text-quiet-text-secondary focus-visible:outline-2 focus-visible:outline-ring"><InformationCircleIcon className="size-3.5" /></button></QuickTooltip></div>
               </div>
               <Button type="button" variant="ghost" size="sm" onClick={() => void resetPrefixesToDefault()} className="h-7 text-xs text-muted-foreground">
                 <RotateLeft01Icon className="mr-1.5 h-3.5 w-3.5" />Reset defaults
