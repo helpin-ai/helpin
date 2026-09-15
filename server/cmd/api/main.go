@@ -190,6 +190,7 @@ func main() {
 			&model.PasswordResetToken{},
 			&model.EmailVerificationToken{},
 			&model.OAuthMobileHandoff{},
+			&model.CLIConnection{}, &model.CLIToken{}, &model.CLIExecution{},
 			&model.Organization{},
 			&model.OrganizationMember{},
 			&model.Workspace{},
@@ -1799,6 +1800,11 @@ func main() {
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 	agentService.SetMCPRepository(mcpRepo)
+	cliService, err := service.NewCLIService(repository.NewCLIRepository(db), workspaceRepo, authzService, agentService, service.CLIConfig{Enabled: cfg.CLIEnabled, PublicBaseURL: cfg.CLIPublicBaseURL, AppBaseURL: cfg.AppBaseURL})
+	if err != nil {
+		slog.Error("invalid CLI configuration", "error", err)
+		os.Exit(1)
+	}
 	mcpService := service.NewMCPService(
 		mcpRepo,
 		workspaceRepo,
@@ -1943,6 +1949,7 @@ func main() {
 		AIConnection:        handler.NewAIConnectionHandler(aiConnectionService),
 		AIProfile:           handler.NewAIProfileHandler(aiProfileService),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
+		CLI:                 handler.NewCLIHandler(cliService),
 		MCP:                 handler.NewMCPHandler(mcpService),
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),

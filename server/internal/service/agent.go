@@ -4513,6 +4513,8 @@ func truncateRunContextText(value string, limit int) string {
 }
 
 type startTargetRunOptions struct {
+	local *localRunPreparation
+
 	allowActiveParentRun bool
 	// dockChatID marks the run as the backing run of a dock chat. Dock chat
 	// runs are keyed by their chat, not their target, so the per-target
@@ -4561,7 +4563,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		resolved := agentcontract.ResolveAgentProfile(agent, resolveInvocationMode(agent))
 
 		var delivery *model.TaskDeliveryTarget
-		if s.gitService != nil {
+		if s.gitService != nil && opts.local == nil {
 			delivery, err = s.gitService.ResolveTaskDeliveryTargetForRun(ctx, workspaceID, task.ID, resolved.RequiresRepo)
 			if err != nil {
 				return nil, err
@@ -4572,7 +4574,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, err
 		}
 		additionalContext := req.AdditionalContext
-		if s.delegatesRunToAgentRuntime(agent, "task") {
+		if s.delegatesRunToAgentRuntime(agent, "task") || opts.local != nil {
 			// Delegated runs receive no execution-time instruction assembly
 			// (the Temporal path builds task context inside the workflow), so
 			// stamp the equivalent launch context into additional_context.
@@ -4590,6 +4592,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			local:                opts.local,
 			deliveryMode:         req.DeliveryMode,
 			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
@@ -4654,6 +4657,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			local:                opts.local,
 			deliveryMode:         req.DeliveryMode,
 			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
@@ -4706,6 +4710,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			local:                opts.local,
 			deliveryMode:         req.DeliveryMode,
 			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
@@ -4756,6 +4761,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build objective run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
+			local:             opts.local,
 			deliveryMode:      req.DeliveryMode,
 			aiProfileID:       req.AIProfileID,
 			modelConnectionID: req.ModelConnectionID,
@@ -4814,6 +4820,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		workingBranch := strings.TrimSpace(derefString(req.WorkingBranch))
 
 		run, err := s.createRun(ctx, createRunParams{
+			local:                opts.local,
 			deliveryMode:         req.DeliveryMode,
 			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
@@ -4865,6 +4872,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			local:             opts.local,
 			deliveryMode:      req.DeliveryMode,
 			aiProfileID:       req.AIProfileID,
 			modelConnectionID: req.ModelConnectionID,
@@ -4921,6 +4929,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			local:             opts.local,
 			deliveryMode:      req.DeliveryMode,
 			aiProfileID:       req.AIProfileID,
 			modelConnectionID: req.ModelConnectionID,
@@ -4968,6 +4977,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build document run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
+			local:                opts.local,
 			deliveryMode:         req.DeliveryMode,
 			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
@@ -5012,6 +5022,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build crm contact run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
+			local:                opts.local,
 			deliveryMode:         req.DeliveryMode,
 			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
@@ -5056,6 +5067,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build crm company run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
+			local:                opts.local,
 			deliveryMode:         req.DeliveryMode,
 			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
@@ -5100,6 +5112,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			return nil, fmt.Errorf("build crm deal run input: %w", err)
 		}
 		run, err := s.createRun(ctx, createRunParams{
+			local:                opts.local,
 			deliveryMode:         req.DeliveryMode,
 			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
@@ -5139,6 +5152,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
+			local:                opts.local,
 			deliveryMode:         req.DeliveryMode,
 			aiProfileID:          req.AIProfileID,
 			modelConnectionID:    req.ModelConnectionID,
@@ -5250,6 +5264,9 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	}
 	if !model.IsAgentRunActiveStatus(run.Status) {
 		return nil, fmt.Errorf("only queued, running, or paused runs can be cancelled")
+	}
+	if model.IsLocalAgentRun(run) {
+		return s.cancelLocalRun(ctx, run, actorID)
 	}
 	if s.agentRuntimeClient == nil {
 		return nil, fmt.Errorf("agent runtime client is not configured")
@@ -5388,6 +5405,10 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 	if err != nil {
 		return nil, nil, err
 	}
+	if model.IsLocalAgentRun(run) {
+		return nil, nil, ErrCLIConflict
+	}
+
 	if run.RuntimeKind == "codex" || run.RuntimeKind == "opencode" {
 		return nil, nil, fmt.Errorf("this run used a retired coding engine and cannot continue; start a new native run and review existing changes and completed actions before retrying")
 	}
@@ -6211,6 +6232,8 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 }
 
 type createRunParams struct {
+	local *localRunPreparation
+
 	aiProfileID          string
 	modelConnectionID    string
 	modelName            string
@@ -6283,6 +6306,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		if err != nil {
 			return nil, err
 		}
+	}
+	if activeRun != nil && (params.local != nil || model.IsLocalAgentRun(activeRun)) {
+		return nil, ErrCLIConflict
 	}
 	// Scheduled support assessments are independent of visitor chat runs.
 	// A visitor must never be resumed into a restricted assessment run.
@@ -6373,6 +6399,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	approvalState := agentcontract.ResolveApprovalState(resolved)
 
 	runID := params.runID
+	if params.local != nil {
+		runID = params.local.runID
+	}
 	if runID == "" {
 		runID = uuid.NewString()
 	}
@@ -6416,6 +6445,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	if params.workingBranch != nil && strings.TrimSpace(*params.workingBranch) != "" {
 		run.WorkingBranch = params.workingBranch
 	}
+	if params.local != nil {
+		if err := prepareLocalRun(run, params); err != nil {
+			return nil, err
+		}
+	}
 	if err := PreflightAgentRunAIUsage(ctx, s.aiUsageMeter, run, billingAgent); err != nil {
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)
 		return nil, err
@@ -6435,6 +6469,10 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		}
 	}
 	s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, nil)
+
+	if params.local != nil {
+		return run, nil
+	}
 
 	// Agent Runtime is the only execution path — a run that cannot delegate
 	// fails loudly instead of falling back to a local executor.
@@ -6951,6 +6989,10 @@ func (s *AgentService) reconcileStuckRuns(ctx context.Context, runs []model.Agen
 }
 
 func (s *AgentService) reconcileStuckRun(ctx context.Context, run *model.AgentRun) *model.AgentRun {
+	if model.IsLocalAgentRun(run) {
+		return run
+	}
+
 	// Delegated agent-runtime runs never record a Temporal workflow, so the
 	// stale-queued heuristic below (which fails queued runs without a
 	// WorkflowID) does not apply; their lifecycle is owned by the runtime

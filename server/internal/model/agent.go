@@ -719,6 +719,9 @@ type AgentRunWorkspaceContext struct {
 
 // AgentRunInputPayload is the shared input contract for all agent runs.
 type AgentRunInputPayload struct {
+	ExecutionLocation string       `json:"execution_location,omitempty"`
+	LocalExecution    *CLILocalRun `json:"local_execution,omitempty"`
+
 	CredentialSource    string                     `json:"credential_source,omitempty"`
 	ModelProvider       string                     `json:"model_provider,omitempty"`
 	ModelConnectionID   string                     `json:"model_connection_id,omitempty"`

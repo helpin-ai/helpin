@@ -59,6 +59,7 @@ type Handlers struct {
 	AgentRuntimeHost    *handler.AgentRuntimeHostHandler
 	AIConnection        *handler.AIConnectionHandler
 	AIProfile           *handler.AIProfileHandler
+	CLI                 *handler.CLIHandler
 	MCP                 *handler.MCPHandler
 	ExternalMCP         *handler.ExternalMCPHandler
 	SupportInbox        *handler.SupportInboxHandler
@@ -174,6 +175,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		MaxAge:           3600,
 	})).Get("/view_headers", h.Health.ViewHeaders)
 	r.Get("/health", h.Health.Check)
+	if h.CLI != nil {
+		r.Get("/agent-runtime/cli.json", h.CLI.Discovery)
+		r.Get("/.well-known/oauth-authorization-server/api/cli/oauth", h.CLI.Metadata)
+	}
 	if h.MCP != nil {
 		r.Get("/.well-known/oauth-authorization-server", h.MCP.AuthorizationServerMetadata)
 		r.Get("/.well-known/oauth-protected-resource", h.MCP.ProtectedResourceMetadata)
@@ -285,6 +290,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/auth/reset-password", h.Auth.ResetPassword)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
 		r.Post("/auth/signout", h.Auth.Signout)
+		if h.CLI != nil {
+			r.Get("/cli/oauth/authorize", h.CLI.AuthorizeRedirect)
+			r.Post("/cli/oauth/token", h.CLI.Token)
+			r.Post("/cli/oauth/revoke", h.CLI.RevokeToken)
+			r.Get("/cli/v1/me", h.CLI.Me)
+			r.Get("/cli/v1/agents", h.CLI.Agents)
+			r.Post("/cli/v1/runs", h.CLI.Admit)
+			r.Get("/cli/v1/runs/{run_id}/execution", h.CLI.Execution)
+			r.Post("/cli/v1/runs/{run_id}/{action:bind|renew|revoke}", h.CLI.Execution)
+		}
 		if h.MCP != nil {
 			r.Post("/mcp/oauth/register", h.MCP.RegisterClient)
 			r.Get("/mcp/oauth/authorize", h.MCP.AuthorizeRedirect)
@@ -506,6 +521,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 			if h.AgentRuntimeHost != nil {
 				r.With(middleware.RequireWorkspaceID, wsAccess).Get("/agent-artifacts/{id}/content-url", h.AgentRuntimeHost.BrowserArtifactContentURL)
+			}
+			if h.CLI != nil {
+				r.Get("/cli/oauth/request", h.CLI.ConsentRequest)
+				r.Post("/cli/oauth/authorize", h.CLI.Authorize)
 			}
 			if h.MCP != nil {
 				r.Get("/mcp/oauth/request", h.MCP.AuthorizationRequest)

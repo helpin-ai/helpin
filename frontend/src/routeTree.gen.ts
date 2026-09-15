@@ -36,6 +36,7 @@ import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
 import { Route as AuthenticatedWSlugCrmRouteImport } from './routes/_authenticated/w/$slug/crm'
 import { Route as AuthenticatedWSlugAutomationRouteImport } from './routes/_authenticated/w/$slug/automation'
+import { Route as AuthenticatedOauthCliAuthorizeRouteImport } from './routes/_authenticated/oauth/cli/authorize'
 import { Route as AuthenticatedWSlugSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/sprints/index'
 import { Route as AuthenticatedWSlugSettingsIndexRouteImport } from './routes/_authenticated/w/$slug/settings/index'
 import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authenticated/w/$slug/pm/index'
@@ -266,6 +267,12 @@ const AuthenticatedWSlugAutomationRoute =
     id: '/automation',
     path: '/automation',
     getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedOauthCliAuthorizeRoute =
+  AuthenticatedOauthCliAuthorizeRouteImport.update({
+    id: '/oauth/cli/authorize',
+    path: '/oauth/cli/authorize',
+    getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedWSlugSprintsIndexRoute =
   AuthenticatedWSlugSprintsIndexRouteImport.update({
@@ -824,6 +831,7 @@ export interface FileRoutesByFullPath {
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -940,6 +948,7 @@ export interface FileRoutesByTo {
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
+  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
@@ -1054,6 +1063,7 @@ export interface FileRoutesById {
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/_authenticated/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1174,6 +1184,7 @@ export interface FileRouteTypes {
     | '/shared/$shareToken'
     | '/oauth/authorize'
     | '/w/$slug'
+    | '/oauth/cli/authorize'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/dashboard'
@@ -1290,6 +1301,7 @@ export interface FileRouteTypes {
     | '/share/$shareToken'
     | '/shared/$shareToken'
     | '/oauth/authorize'
+    | '/oauth/cli/authorize'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
     | '/w/$slug/setup'
@@ -1403,6 +1415,7 @@ export interface FileRouteTypes {
     | '/shared/$shareToken'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
+    | '/_authenticated/oauth/cli/authorize'
     | '/_authenticated/w/$slug/automation'
     | '/_authenticated/w/$slug/crm'
     | '/_authenticated/w/$slug/dashboard'
@@ -1710,6 +1723,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/automation'
       preLoaderRoute: typeof AuthenticatedWSlugAutomationRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/oauth/cli/authorize': {
+      id: '/_authenticated/oauth/cli/authorize'
+      path: '/oauth/cli/authorize'
+      fullPath: '/oauth/cli/authorize'
+      preLoaderRoute: typeof AuthenticatedOauthCliAuthorizeRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/w/$slug/sprints/': {
       id: '/_authenticated/w/$slug/sprints/'
@@ -2684,6 +2704,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedWorkspacesRoute: typeof AuthenticatedWorkspacesRoute
   AuthenticatedOauthAuthorizeRoute: typeof AuthenticatedOauthAuthorizeRoute
   AuthenticatedWSlugRoute: typeof AuthenticatedWSlugRouteWithChildren
+  AuthenticatedOauthCliAuthorizeRoute: typeof AuthenticatedOauthCliAuthorizeRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -2692,6 +2713,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedWorkspacesRoute: AuthenticatedWorkspacesRoute,
   AuthenticatedOauthAuthorizeRoute: AuthenticatedOauthAuthorizeRoute,
   AuthenticatedWSlugRoute: AuthenticatedWSlugRouteWithChildren,
+  AuthenticatedOauthCliAuthorizeRoute: AuthenticatedOauthCliAuthorizeRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

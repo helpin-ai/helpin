@@ -679,6 +679,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	if err != nil {
 		return err
 	}
+	if model.IsLocalAgentRun(run) {
+		return ErrCLIForbidden
+	}
 	if ignore, err := s.ignoreStaleTurnLifecycle(ctx, run, event); err != nil {
 		return err
 	} else if ignore {
