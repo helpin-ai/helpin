@@ -2,6 +2,31 @@
 
 Status: planned; revised September 15 to consolidate infrastructure while preserving the existing product experience. This plan covers the first supported self-hosted Community Edition release for Helpin and Agent Runtime. It does not change the SaaS/EE deployment path, production secrets, or existing databases until the release gates below pass.
 
+## v0.1 scope — authoritative first-tag checklist
+
+**Release posture: Community 0.1 beta, not 1.0.** Use a distinct bundle tag such as `community-v0.1.0`, pinning the compatible Helpin and Runtime image versions without resetting existing product/SDK version lines. State the beta limitations in the README and release notes.
+
+This section decides readiness for the first tag. The detailed sections below are the reference design; items assigned to v0.2 or optional extensions do not block v0.1. A beta label does not waive the visitor-security or publication blockers.
+
+| Included in v0.1 | Applicable reference sections |
+| --- | --- |
+| License and EE publication-boundary decision, contributor/security files, private-doc/personal-data review, redacted history scan | Repository publication; licensing; delivery step 0 |
+| All seven first-hour changes in the recorded dependency order: origins; identity defaults/settings; modules; SDK/URLs; local signup; telemetry/email defaults; AI diagnostics | Public visitor security; First-install prerequisites; AI configuration; delivery step 1. Identity settings covers origins/mode and existing rotation/signing documentation, not a new secret-view UI. |
+| Support/identification SDK only; public help-center; one Postgres server plus NATS, Temporal, Redis, storage, Helpin and Runtime services | Pixel scope; Compose services; environment contract. No analytics collector, coding requirement, or local scheduler redesign. |
+| Prebuilt images and five-command installer: install, start, stop, logs, status | Release layout; image pipeline |
+| DNS/public URL guide, `Caddyfile.example` and equivalent external reverse-proxy routes; one real outside-origin support journey on a release-candidate host | Public support deployment. Operator supplies the HTTPS proxy; no bundled edge or ACME CI service for v0.1. |
+| amd64 and arm64 Helpin API/worker/migrator, frontend, help-center, and paired default Runtime support images | Architecture build changes plus one full core smoke per architecture; explicitly verify all infrastructure image manifests. Optional coding may remain amd64-only. |
+| Minimal SMTP for application mail: invitations, password resets, verification when enabled, and existing application notifications using the shared sender | App-email work below. No-mail local signup still works; support reply/inbound email remains separately configured Postmark. |
+| Deterministic PR checks plus the core support release checks and an external DNS/TLS smoke | Gate matrix below; use local chat/embedding and SMTP test fixtures. No paid services in PRs. |
+| Tested backup/restore of the same v0.1 release, persistent-key handling, and migration idempotency on empty/populated databases | Backup/rollback instructions. No previous-release upgrade gate exists yet. |
+| Honest README/ROADMAP limits and no default telemetry | Known limitations; publication; completion criteria |
+
+**v0.2:** bundled `compose.public.yaml` edge and ACME CI fixture; deterministic Postmark support-delivery fixture/acceptance step 10; upgrade acceptance from released v0.1; cached-loader SDK upgrade compatibility test; new secret-view UI. These items have explicit follow-up owners/tasks before v0.1 publication, but their implementations are not first-tag gates.
+
+**Optional:** coding profile/image/tests and live Postmark support-mail smoke. Test Postmark manually if advertising that configured channel; SMTP app mail does not imply generic SMTP support conversations or inbound email.
+
+The v0.1 finish line is: publish the reviewed source and images, install on a clean supported host, create an owner without email, configure a customer-site origin, run the exact support snippet through an outside-origin conversation and help-center article, prove denied-origin/identity isolation, send app mail through configured SMTP, and restore a backup. Automated cross-version upgrades begin with v0.2.
+
 ## Problem and outcome
 
 Community code is already separated at compile time, but there is no supported clean-machine installation. Helpin's current Compose file is development infrastructure with the API and frontend commented out, and Agent Runtime's Compose examples assume that the host already provides the application and infrastructure services. Source-level community checks exercise commercial-code separation, but they do not prove that a user can install, configure, upgrade, and run the product.
@@ -15,14 +40,14 @@ public support: configure DNS → start with HTTPS → install widget → receiv
 
 The primary release journey is self-hosted customer support: an operator installs Helpin, serves the widget/pixel from their own domain, embeds it on a customer-facing website, receives a conversation in the inbox, replies, and publishes a help-center article. Agent execution supports this journey; it is not the only release acceptance target.
 
-The result is a working community Helpin instance with its own Agent Runtime, durable storage, migrations, health checks, and backups. Users supply their own agent model credentials; retrieval embeddings and non-agent AI features have the separate process-level configuration described below. Coding is an optional extension outside the v1 support release gate. Community usage recording remains zero-cost and does not require SaaS billing or a BYOK tariff.
+The result is a working community Helpin instance with its own Agent Runtime, durable storage, migrations, health checks, and backups. Users supply their own agent model credentials; retrieval embeddings and non-agent AI features have the separate process-level configuration described below. Coding is an optional extension outside the v0.1 support release gate. Community usage recording remains zero-cost and does not require SaaS billing or a BYOK tariff.
 
-Use `docs/strategy/2026-09-10-open-source-intercom-alternative-gap-list.md` as a launch-gap inventory, with each item rechecked against the current code. This plan owns the first-hour visitor-security, deployment-default, publication, and truthful-configuration work below; it does not claim to deliver every Tier 1–3 roadmap item. SMTP remains explicitly deferred despite its Tier 0 classification in that earlier document: the v1 local path has email-free signup, and email-dependent support requires optional Postmark.
+Use `docs/strategy/2026-09-10-open-source-intercom-alternative-gap-list.md` as a launch-gap inventory, with each item rechecked against the current code. This plan owns the first-hour visitor-security, deployment-default, publication, and truthful-configuration work below; it does not claim to deliver every Tier 1–3 roadmap item. The v0.1 local path has email-free signup and optional SMTP application mail; the support email channel still requires optional Postmark. Generic SMTP support replies/inbound processing remain deferred.
 
 ## Decisions and boundaries
 
 - Community is the default build in both repositories. EE is selected explicitly by Go build tags and the EE frontend build command.
-- Community releases use prebuilt, versioned images. The first release supports Docker Compose on Linux amd64; arm64 is either added with a tested multi-architecture build or explicitly listed as unsupported. Do not advertise an architecture that has not passed the full Compose gate.
+- Community releases use prebuilt, versioned images for Linux amd64 and arm64. Wire architecture-aware builds and run the full core smoke on each architecture, including the paired Runtime and infrastructure images. Document Docker Desktop on Apple Silicon as a Linux arm64 installation. Coding may remain amd64-only. Do not claim native arm64 support based only on Helpin images or amd64 emulation.
 - The bundle pins image tags or digests. It never uses `latest` for application images. Infrastructure image updates are reviewed separately.
 - Keep NATS, Temporal, and Redis in the supported bundle. Use one Postgres server with separate databases and database users for Helpin, Runtime, and Temporal (including Temporal visibility). Keep the Helpin worker and Runtime normal worker on the existing durable execution path. Runtime coding is an opt-in worker; Temporal UI and database admin UIs are optional. S3-compatible storage uses MinIO by default, with an external storage option.
 - Runtime remains a separate service and remains useful standalone. Helpin supplies tenant context, tools, credentials, and events through its configured app entry.
@@ -77,12 +102,12 @@ Record canonical public origins in deployment configuration. Keep internal servi
 
 1. Choose the public hostnames and create A records to the server's public IPv4 address; publish AAAA only with working IPv6 routing. Optional aliases may use CNAME records to a hostname, never a URL with a scheme/path.
 2. Point customer-site installation snippets to the public widget URL. The customer's website does not need to move to the Helpin server. An optional first-party alias, such as `support.customer.example`, needs its own DNS record, configured host routing, and certificate.
-3. Ship a pinned Caddy public-deployment override with explicit host entries and persistent certificate storage. It exposes ports 80/443, routes HTTPS to private Compose services, and renews certificates. Operators with an existing reverse proxy can omit this service and use the documented equivalent routes. Follow [Caddy's DNS, port, and storage prerequisites](https://caddyserver.com/docs/automatic-https).
+3. For v0.1, ship `Caddyfile.example` and equivalent external reverse-proxy instructions with explicit host entries, public ports 80/443, private upstream addresses, and certificate-storage/renewal guidance. The operator runs the proxy or uses an existing one. Define how it reaches the Compose ingress without exposing internal services. Follow [Caddy's DNS, port, and storage prerequisites](https://caddyserver.com/docs/automatic-https). A bundled Caddy override and ACME test fixture are v0.2 work.
 4. Keep databases, NATS, Redis, Temporal, Runtime service APIs, storage admin consoles, and internal callback routes off the public ingress. The visitor hostname exposes only the required public paths. The staff dashboard can remain behind an operator access gateway without putting widget traffic behind that login.
 5. Preserve trusted host/protocol/client-address information through the proxy. Verify secure cookies, auth redirects, customer-domain resolution, WebSocket upgrades, streaming timeouts, upload limits, and client-IP rate limiting. Do not trust arbitrary forwarded headers from untrusted clients.
 6. Verify DNS resolution, certificate validity, public origins, and a visitor conversation from outside the Docker host. Test wrong DNS, broken AAAA, blocked ports, missing certificates, and unavailable upstreams with specific diagnostics.
 
-V1 uses explicit operator-configured hostnames. No automatic DNS provisioning, unrestricted on-demand certificates, or mandatory Cloudflare account. Audit the existing help-center custom-domain and TLS-ask paths so DNS instructions and host checks work with self-hosted origins rather than SaaS suffixes. If dynamic customer domains are enabled later, retain domain authorization before certificate issuance; a DNS CNAME alone is not application authorization.
+v0.1 uses explicit operator-configured hostnames. No automatic DNS provisioning, unrestricted on-demand certificates, or mandatory Cloudflare account. Audit the existing help-center custom-domain and TLS-ask paths so DNS instructions and host checks work with self-hosted origins rather than SaaS suffixes. If dynamic customer domains are enabled later, retain domain authorization before certificate issuance; a DNS CNAME alone is not application authorization.
 
 Public TLS terminates at the edge. The narrowly allowed internal model-credential HTTP callback remains a separate concern and does not justify exposing internal routes.
 
@@ -92,7 +117,7 @@ The current support installation snippet in `ChatGeneralTab.tsx` hardcodes `clie
 
 Reuse the existing `/sdk/*` asset handler with the complete pinned SDK distribution copied into the serving image and `SDK_DIST_DIR` set, or an equivalent static location in the frontend image. Choose one authoritative serving path during implementation; the public contract is `/sdk/lib.js` and adjacent hashed assets. The current Go image's fallback to a source-tree directory is not release packaging.
 
-Build the SDK and required widget packages as part of the Community artifact. Include hashed JavaScript, CSS, lazy chunks, and other required assets together. The loader resolves its full SDK relative to its own URL. Cross-origin module assets need the correct CORS/MIME headers. Keep the mutable loader on a short cache and immutable hashed assets on long caches; test an upgrade with an older cached loader and retain the referenced assets for the supported cache overlap.
+Build the SDK and required widget packages as part of the Community artifact. Include hashed JavaScript, CSS, lazy chunks, and other required assets together. The loader resolves its full SDK relative to its own URL. Cross-origin module assets need the correct CORS/MIME headers. Keep the mutable loader on a short cache and immutable hashed assets on long caches; v0.1 tests that its loader and referenced assets are served together correctly. The cached-loader cross-release upgrade test and asset-overlap policy are required before v0.2, the first supported upgrade.
 
 The widget's HTTP and WebSocket traffic uses `/widget/*`, including `/widget/ws`; simply proxying `/api/*` will not work. Preserve visitor-session authentication and enforce the installation origin policy before servicing widget requests, as specified below. Keep CORS scoped to the appropriate routes. Do not broaden dashboard CORS globally or require a staff cookie in a customer browser.
 
@@ -110,7 +135,7 @@ Implement this before publishing the widget installation path. Today installatio
 - Make origin controls effective in `report_only` as well as `enforced` identity mode. These modes govern identity proof, not the site allowlist. Origin checks reduce browser misuse; they do not make a public install key secret or authenticate a non-browser caller.
 - Use current settings APIs and add the missing settings UI for site origins and identity mode. New Community installations select `report_only` through edition defaults; retain existing EE defaults and never downgrade a saved installation during upgrade. List every installation creation/default path and migration default so they agree.
 - In `report_only`, unsigned identity is accepted as unverified input. It must not grant access to a different visitor's conversation history merely because the submitted email/external ID matches. Cover cross-visitor/workspace identity and session confusion with negative tests. Valid signed identity must retain verified provenance.
-- Provide a permission-checked secret view/rotation UI using the existing backend capability where available, and document the exact existing HMAC v1 payload, normalization, timestamp validity, and server-side signing examples. Never include the signing secret in public config, snippets, or browser signing code. Test valid, missing, expired, and mismatched proofs; enforced mode must reject invalid identity without breaking anonymous chat.
+- In v0.1, document the existing permission-checked rotation/setup path and exact HMAC v1 payload, normalization, timestamp validity, and server-side signing examples. Keep origin/mode settings UI in scope; defer a new secret-view UI to v0.2. Reuse the existing rotation capability without building a separate secrets-management surface. Never include the signing secret in public config, snippets, or browser signing code. Test valid, missing, expired, and mismatched proofs; enforced mode must reject invalid identity without breaking anonymous chat.
 
 Make “Add your website origin” the first widget setup task, before presenting installation as ready. Explain the required scheme/host/port with an example and show “Add your website origin to enable the widget” while the list is empty. A fresh `report_only` installation may exist with no configured origins, but visitor requests remain denied; the settings UI must distinguish this incomplete setup from an active installation. The current empty-list validation tied only to switching into `enforced` is not sufficient. Origin admission applies independently of identity mode, and denied requests return a clear, non-sensitive error rather than appearing to load indefinitely.
 
@@ -146,9 +171,15 @@ Apply the policy consistently to signup, login/session handling, API authorizati
 
 Test signup through workspace creation and Ask Agent with no Postmark credentials; assert no verification token/email is produced in disabled mode. Test that required mode still enforces verification even when email delivery is unavailable.
 
-Postmark is currently the only outbound email implementation. No-email local operation must clearly identify unavailable invitations, password reset, support email delivery, and sender-domain onboarding before implying an email was sent. Reuse any existing non-email invitation path only after checking its authorization and expiry behavior. Password changes by authenticated users remain separate from email-based password recovery. SMTP and a new general mail abstraction are outside this release.
+Postmark is currently the only outbound email implementation. v0.1 adds a minimal SMTP sender for application mail: invitations, password reset, optional verification, and existing app notifications. Reuse the existing `authEmailSender` and notification sender contracts. Invitations currently depend on `*email.Client`; replace that dependency with the narrow send-invitation contract and wire both implementations. Reuse message rendering without duplicating templates or introducing a general mail framework.
 
-For deterministic delivery tests, add a narrowly scoped injectable HTTP endpoint/client to the existing Postmark adapter and run a local Postmark-compatible fixture in CI. Keep the production endpoint default; this is a test seam, not another supported mail provider. Test the no-email local setup separately from the opt-in Postmark flows.
+Keep app-mail provider selection explicit, with existing Postmark defaults compatible and no implicit failover between providers. Add documented SMTP host/port, sender, credentials, and TLS configuration; choose exact environment names in implementation. Handle certificate verification, timeouts, authentication/send failures, valid MIME headers/bodies, and header-injection rejection. Any plaintext local relay mode must be explicit; do not silently downgrade TLS. Normalize unconfigured senders to nil instead of hiding typed-nil clients inside interfaces.
+
+Test invitations and password resets end to end against a small local SMTP receiver, plus required-verification mode and delivery failure. Test transport security behavior at the adapter boundary. This fixture is independent of the deferred Postmark support-delivery fixture.
+
+Support reply threading, inbound parsing, sender-domain onboarding, and custom delivery metadata remain on the current Postmark integration. SMTP app mail does not enable an SMTP support email channel. With no app-mail provider, local signup still works and email-dependent actions explain the missing configuration before implying delivery.
+
+In v0.2, add a narrowly scoped Postmark adapter test seam and a deterministic support-delivery fixture. v0.1 retains existing Postmark tests and a manual configured support-mail smoke when advertising that optional channel; no new Postmark end-to-end fixture blocks the first tag.
 
 ### No unsolicited telemetry or SaaS operational defaults
 
@@ -216,20 +247,20 @@ Record these in a concise README section linked to specific public roadmap items
 - The crawler's robots.txt handling discovers sitemap URLs but does not enforce Disallow. State this before operators enable crawling and track a real crawl-policy fix.
 - Retrieved/crawled content does not yet have a complete, tested untrusted-content/prompt-injection handling contract. Runtime history-summary instructions are not proof that retrieval is protected.
 - Contact deletion is not a complete customer-data erasure/export operation across conversations, messages, sessions, and associated records. Do not describe a single-row delete as complete erasure.
-- SMTP and arbitrary local embedding dimensions are not supported by this release; explain the usable alternatives and configuration boundaries above.
+- SMTP in v0.1 covers application mail, not support reply/inbound email. Arbitrary local embedding dimensions remain unsupported; explain the usable alternatives and configuration boundaries above.
 
 Public documentation names limitations without publishing private exploit details. If the release review finds an exploitable data boundary failure, resolve or disable the affected path rather than treating a roadmap entry as sufficient.
 
 ## Not in this release
 
 - A complete per-workspace/local AI stack for every feature: embeddings stay on the current process-level 1,536-dimension contract, and direct Helpin LLM features keep their separate configuration. No claim that an Ollama chat profile makes all AI local.
-- Coding execution as a v1 support requirement: optional extension only, with separate tests/docs and no core acceptance dependency.
+- Coding execution as a v0.1 support requirement: optional extension only, with separate tests/docs and no core acceptance dependency.
 - ClickHouse and `events-pipeline`: no containers, ingestion endpoint, or `CLICKHOUSE_DSN` in the default bundle. ClickHouse-backed CRM behavioral signals/event analytics are unavailable; ordinary CRM features and other signal sources are not categorically disabled.
 - Google OAuth login: optional configuration, disabled when unconfigured; password signup is sufficient for first use.
-- SMTP or provider-neutral outbound mail: deferred. Postmark remains optional for email-dependent features.
+- Generic SMTP support replies/inbound email or a broad provider-neutral mail framework: deferred. v0.1 includes narrow SMTP app mail; Postmark remains the optional support-mail integration.
 - SQLite Runtime packaging, lightweight launch/recovery changes, and merged API/coding execution: deferred as described above.
-- arm64 artifacts: unsupported for v1 unless the image build and full acceptance suite are made architecture-aware and pass.
-- Automated upgrade/backup orchestration in `setup.sh`: deferred; v1 ships explicit tested operator commands.
+- arm64 coding artifacts: optional and deferred if not tested. The core support stack targets both amd64 and arm64 in v0.1.
+- Automated upgrade/backup orchestration in `setup.sh`: deferred; v0.1 ships explicit tested operator commands.
 
 ## Release layout
 
@@ -238,7 +269,7 @@ Keep the release bundle in the Helpin repository under `community/`. The Helpin 
 ```text
 community/
   compose.yaml                 # complete pinned application stack
-  compose.public.yaml          # optional bundled HTTPS edge for public deployment
+  # compose.public.yaml        # v0.2 bundled edge; not part of v0.1
   Caddyfile.example            # explicit public hostnames and route boundaries
   .env.example                 # documented variables and safe defaults
   apps.example.json            # generated Runtime app configuration template
@@ -249,7 +280,7 @@ community/
 
 The release workflow publishes the application images and attaches this bundle to the matching GitHub release. The bundle version, Helpin image tag, Runtime image tag, and optional coding image tag are recorded together. A user can download a historical release and reproduce that release without relying on mutable branch files.
 
-The v1 script provides only these actions:
+The v0.1 script provides only these actions:
 
 ```text
 install     create directories, generate initial secrets, validate prerequisites
@@ -259,7 +290,7 @@ logs        show selected service logs
 status      show container and health status without printing secret values
 ```
 
-Ship upgrade, backup, restore, and configuration-change restart procedures as explicit Docker Compose and database commands in the operator guide. Do not automate variable diffing or schema rollback in Bash. Publish new-variable notes and an updated example for each release; preserve the operator's environment file and volumes. Test these same documented procedures in CI.
+Ship backup, same-release restore, and configuration-change restart procedures as explicit Docker Compose and database commands in the v0.1 guide. Add cross-version upgrade instructions and their gate in v0.2. Do not automate variable diffing or schema rollback in Bash. Publish new-variable notes and an updated example for each release; preserve the operator's environment file and volumes. Test these same documented procedures in CI.
 
 ## Compose services and dependencies
 
@@ -267,7 +298,7 @@ The Compose file should use YAML anchors for shared environment and health setti
 
 | Service | Image/build | Responsibility | Persistent data |
 | --- | --- | --- | --- |
-| `edge` (public override) | Pinned Caddy, or operator's existing proxy | Public HTTPS and host/path routing | Certificate/config volume |
+| External proxy (v0.1 operator-provided; bundled edge in v0.2) | Example Caddy/existing proxy configuration | Public HTTPS and host/path routing | Operator-managed certificate/config storage |
 | `postgres` | Postgres with required extensions, including pgvector | Separate Helpin, Runtime, Temporal, and visibility databases/users | `postgres_data` |
 | `redis` | Pinned Redis | Helpin support delivery, limits, caches, and realtime coordination | `redis_data` |
 | `nats` | Pinned NATS | Runtime/Helpin events | `nats_data` |
@@ -330,9 +361,11 @@ Helpin variables:
 | `CORS_ORIGINS` | Backend origin validation uses the operator's public origin; the main UI calls same-origin `/api`. |
 | `SDK_DIST_DIR` | Packaged SDK asset directory in the chosen serving image; no source-tree dependency. |
 | `AWS_S3_PUBLIC_BASE_URL` | Public asset base where supported; does not by itself prove presigned upload/download URLs use a browser-reachable endpoint. |
-| `POSTMARK_APP_SERVER_TOKEN`, `POSTMARK_APP_FROM_EMAIL` | Optional product email configuration; not required for local signup/login. |
+| `POSTMARK_APP_SERVER_TOKEN`, `POSTMARK_APP_FROM_EMAIL` | Existing optional app-mail provider, alongside new SMTP configuration; not required for local signup/login. |
 | `POSTMARK_REPLY_SERVER_TOKEN`, `POSTMARK_REPLY_FROM_EMAIL` | Optional support outbound email configuration; document any additional sender/domain prerequisites. |
 | `GOOGLE_AUTH_CLIENT_ID`, `GOOGLE_AUTH_CLIENT_SECRET` | Optional Google login; document redirect configuration and hide the login option when unconfigured. |
+
+Add the chosen SMTP app-mail variables and explicit provider-selection setting after implementation; distinguish app-mail from Postmark support-reply settings. Do not imply that setting SMTP credentials enables incoming support email.
 
 Define the public widget/loader/help-center origins and edge hostname configuration in the bundle; add backend configuration only where the existing origin settings cannot represent them. Document MinIO/S3 signing versus public addressing, and preserve the signed host/path through the proxy. Browser upload URLs must not contain Compose-only hostnames.
 
@@ -426,12 +459,12 @@ Add a Community release workflow alongside the existing EE staging/production wo
    - Go vet/build for community binaries
    - manifest/config validation
 3. Build and publish Helpin API, Helpin worker/migrator, and frontend images from the community build with no `GO_BUILD_TAGS=ee`.
-4. Pin the Runtime default image from a compatible Runtime release. Coding image publication/testing belongs to its optional extension and does not block the v1 support bundle.
+4. Pin the Runtime default image from a compatible Runtime release. Coding image publication/testing belongs to its optional extension and does not block the v0.1 support bundle.
 5. Produce the Compose bundle with immutable image tags/digests and the matching Runtime version.
 6. Run the disposable Compose acceptance job against the exact published image references.
 7. Attach the bundle, checksums, release notes, and a software bill of materials to the GitHub release only after acceptance passes.
 
-The server Dockerfile currently hardcodes `GOARCH=amd64`; v1 builds/publishes amd64 explicitly. Before publishing arm64, wire Docker `TARGETARCH` through every relevant Go binary build and test all runtime dependencies and final images on that architecture. Do not label amd64 binaries as multi-architecture images.
+The server Dockerfile currently hardcodes `GOARCH=amd64`. For v0.1, wire Docker `TARGETARCH` through every shipped Go binary build and publish amd64/arm64 image manifests for the core services. Verify frontend/help-center native dependencies and default Runtime tools/base images on both architectures. Run the full core smoke on native runners for each supported architecture; do not label an amd64 binary or emulated-only result as native arm64 support. Optional coding is outside this matrix.
 
 The existing EE workflows continue to pass `GO_BUILD_TAGS=ee` and build `build:ee`. They must not be reused for community artifacts through an environment toggle. The frontend community build must be checked against the actual generated static artifact, not only TypeScript success.
 
@@ -452,7 +485,7 @@ The test must:
 7. Add a deterministic chat-provider connection and configure the separate embedding fixture. Verify successful semantic indexing/retrieval and visible failure or lexical-only status with missing credentials and incompatible vectors. No paid external API is required.
 8. Start Ask Agent, confirm the request reaches Runtime, and verify normalized usage is recorded without a Helpin credit/tariff requirement.
 9. Exercise a product background workflow through Helpin's Temporal worker.
-10. Exercise Redis-backed support email delivery against the Postmark-compatible CI fixture after the adapter test seam exists; separately assert actionable behavior with email unconfigured.
+10. v0.2: exercise Redis-backed support email delivery against the new Postmark-compatible CI fixture. v0.1 tests actionable behavior with support email unconfigured and uses a manual smoke for configured Postmark.
 11. Verify widget/help-center rate limiting and help-center answer budgets.
 12. Verify an attachment/artifact round trip through the bundled object store, including a browser-accessible presigned URL.
 13. Publish a help-center article and load/search it from the operator-facing help-center origin.
@@ -462,7 +495,7 @@ The test must:
 17. Serve a separate customer-site fixture on a different HTTPS origin. In a fresh workspace, verify the first widget setup task is “Add your website origin,” the empty-list state explains why the widget is not ready, and visitor requests are denied. Add the customer site through that settings flow and verify it becomes ready. Paste the exact generated snippet and verify loader, module/CSS assets, visitor session, identification under the fresh Community report_only default, customer message, staff inbox reply, AI reply with a test provider, reconnect, history, and attachment delivery. No fixture silently changes the identity mode or seeds an origin outside the normal setup flow.
 18. Reject a third origin on widget HTTP and both WebSocket paths, including copied-key, token restore, and missing/null-origin cases. Verify cross-visitor/workspace identity isolation and signed/enforced-mode behavior. Assert the allowed customer browser uses only the configured self-hosted origins for Helpin traffic: no SaaS/CDN fallback, mixed content, unsupported collector retries, or staff authentication dependency. Verify framework/hosted-runtime snippets as well as the script loader. Account for the loader's bot/headless detection in the test harness without weakening production behavior.
 19. Exercise the public/private proxy route boundary, forwarded-address rate limits, CSP/CORS, same-host and split-host routing, and signed storage URLs. API keys and callback secrets must not enter snippets or browser responses.
-20. Test the public override with a test certificate authority/ACME fixture in CI, and real DNS/trusted TLS on an operator-approved public release-candidate host before stable release. Test certificate persistence/renewal behavior and an SDK upgrade with cached loader assets.
+20. v0.1: run the outside-origin support journey using real DNS/trusted HTTPS and the supplied proxy example on an operator-approved release-candidate host. v0.2 adds bundled-edge ACME CI, certificate lifecycle coverage, and cached-loader SDK upgrade tests.
 21. Tear down containers while retaining sanitized status, Helpin ledger head, Runtime image digest, Temporal schema versions, and failure logs.
 
 ### Which checks run when
@@ -471,18 +504,18 @@ The numbered list is an acceptance inventory, not one mandatory PR job.
 
 | Gate | Checks | External dependencies |
 | --- | --- | --- |
-| PR | Existing relevant source/unit checks; deterministic Compose steps 1–9, 14, 16; focused origin/identity negative tests from 18; fresh report_only defaults, non-staff module access, and no-default-telemetry checks | Local fixtures only; use test TLS where needed. |
-| Release candidate | Exact pinned images: all numbered support steps, including delivery, limits, uploads, help-center publication, restart, full outside-origin journey, cached SDK assets, and proxy boundaries; upgrade/restore gates | Deterministic fixtures plus a separately configured DNS/TLS smoke. |
-| Pre-stable external smoke | Actual public DNS and trusted HTTPS, real configured model/embedding credential routing, and optional Postmark feature smoke when email support is advertised | Explicit release-test credentials/domain, never ordinary PR secrets. Core no-email startup remains mandatory. |
-| Optional coding extension | Disposable repository edit/test, pause/resume, worker restart, retained workspace, and queue isolation | Run only for coding changes or an explicitly published coding extension. Not a v1 support gate. |
+| v0.1 PR | Existing relevant source/unit checks; deterministic Compose steps 1–9, 14, 16; focused visitor-boundary tests from 18; defaults/module/telemetry checks; app-mail SMTP tests | Local chat/embedding/SMTP fixtures and test certificates only; no ACME issuer. |
+| v0.1 release candidate | Exact pinned images: steps 1–9, 11–19, 21; SMTP app-mail end-to-end check; architecture matrix; same-release backup/restore and migration idempotency; step 20's real-host portion | Deterministic fixtures plus one configured DNS/TLS support smoke. No previous-release upgrade, Postmark fixture, or cached-loader upgrade gate. |
+| v0.2 additions | Step 10 fixture; bundled-edge/ACME and cached-loader parts of 20; upgrade gate from v0.1; secret-view UI | Reuse v0.1 gates and add only the deferred fixtures/upgrade coverage. |
+| Optional coding extension | Disposable repository edit/test, pause/resume, worker restart, retained workspace, and queue isolation | Run only for coding changes or an explicitly published coding extension. Not a v0.1 support gate. |
 
-Keep at least the negative visitor-boundary checks in PRs even though the full browser journey runs on release candidates. Run independent checks as separate jobs with clear failure names. A PR gate must not wait on DNS issuance, paid providers, or Postmark delivery. A local Postmark fixture is not live Postmark.
+Keep at least the negative visitor-boundary checks in PRs even though the full browser journey runs on release candidates. Run independent checks as separate jobs with clear failure names. A PR gate must not wait on DNS issuance, paid providers, or Postmark delivery. The v0.1 SMTP receiver does not substitute for testing Postmark support delivery. Live provider/embedding routing can be checked during the single RC-host support smoke; test configured Postmark manually when advertising that optional channel.
 
 Real-provider coverage validates supported support routes and the separate embedding configuration; it does not make four tier presets or coding a prerequisite for the support quickstart.
 
-## Upgrade acceptance test
+## Upgrade acceptance test — v0.2
 
-The upgrade job installs the previous Community release into empty volumes, creates representative data, configures an encrypted connection, runs an agent, and records Helpin's migration ledger head, Runtime image version/digest, Temporal schema versions, and profile IDs. Runtime's Postgres startup uses explicit `MigratePostgres` SQL; GORM AutoMigrate applies to its SQLite path, which this bundle does not use. Runtime has no equivalent migration head. Retrying a partial Runtime schema upgrade must still be tested, not assumed trivial. It then:
+This section does not gate v0.1. v0.1 validates same-release backup/restore and migration idempotency, retaining encryption keys and durable data. For v0.2, the upgrade job installs released Community v0.1 into empty volumes, creates representative data, configures an encrypted connection, runs an agent, and records Helpin's migration ledger head, Runtime image version/digest, Temporal schema versions, and profile IDs. Runtime's Postgres startup uses explicit `MigratePostgres` SQL; GORM AutoMigrate applies to its SQLite path, which this bundle does not use. Runtime has no equivalent migration head. Retrying a partial Runtime schema upgrade must still be tested, not assumed trivial. It then:
 
 - backs up the database and configuration;
 - downloads the new pinned bundle and runs the documented Compose upgrade commands;
@@ -493,7 +526,7 @@ The upgrade job installs the previous Community release into empty volumes, crea
 - verifies the community artifact still has no EE routes/assets;
 - verifies Helpin ledger/checksum behavior and Runtime SQL schema convergence after an interrupted upgrade, using a real Postgres database.
 
-For the first public release, use a populated release-candidate fixture and backup/restore checks until a previous public version exists. State the supported starting schema explicitly.
+Do not turn an invented pre-v0.1 release fixture into an upgrade gate. v0.1 tests empty/populated migration reapplication and restores its own backups; v0.2 names v0.1 as the supported starting version.
 
 Do not rotate `AI_CONNECTION_ENCRYPTION_KEY`, `AGENT_RUNTIME_MODEL_CREDENTIAL_ENCRYPTION_KEY`, or `AGENT_RUNTIME_MCP_CREDENTIAL_ENCRYPTION_KEY` during an ordinary upgrade. A key rotation is a separate documented migration with re-encryption and recovery checks.
 
@@ -509,7 +542,7 @@ Extend CI with focused checks for:
 - community provider placeholders and standard profile provisioning;
 - no-billing frontend route registration and artifact content;
 - migration idempotency on empty and populated databases;
-- migration upgrade from the previous released schema;
+- same-release backup/restore and empty/populated migration idempotency in v0.1; cross-version migration upgrade in v0.2;
 - API/worker/Runtime health and event protocol compatibility;
 - origin enforcement on HTTP/WebSocket/legacy routes and visitor identity isolation;
 - fresh Community report_only defaults, signed-identity setup, and module access for a non-staff owner;
@@ -532,7 +565,7 @@ Add a public Community Edition section to Helpin's README and a dedicated `docs/
 - customer-site pixel/widget installation, CSP/CORS, identity, and an outside-host conversation check;
 - staff-only versus public visitor endpoints, internal service boundaries, and browser-reachable storage URLs;
 - installation and first login without email verification in the local bundle;
-- optional Postmark/Google login configuration and email-dependent feature limits;
+- optional SMTP app mail, Postmark support mail, and Google login configuration, with their separate feature limits;
 - public help-center host mapping and publication;
 - agent profile credentials versus process-level embeddings, triage, and help-center answers; fixed vector dimensions and visible lexical-only fallback;
 - provider key configuration for each supported AI feature;
@@ -540,7 +573,7 @@ Add a public Community Edition section to Helpin's README and a dedicated `docs/
 - external Postgres/Redis/NATS/Temporal/S3 configuration;
 - optional coding worker in a separate advanced guide, absent from the support quickstart and core release gate;
 - backups and restore limits;
-- upgrades and new-variable review;
+- same-release restore and persistent configuration for v0.1; upgrades/new-variable review starting with v0.2;
 - logs, health checks, and troubleshooting;
 - how to build from source with community defaults;
 - how to opt into EE separately, without implying that setting an environment variable unlocks it.
@@ -562,14 +595,14 @@ The operator guide should use the same Compose bundle tested by CI. Do not copy 
 
 0. Resolve license and public-EE-versus-private-overlay choices together. Prepare contributor/security files, monitored private reporting, a docs/code disposition manifest, and a redacted history scan. Verify the actual public tree before any publication; local work need not wait for publication approval.
 1. Implement visitor-origin enforcement, Community report_only defaults and signing/settings UI, and deployment-level Support/Docs/Agents defaults including removal of Community staff-email gating. Add negative boundary tests. Define the public address/ingress contract and implement the confirmed support-and-identification SDK mode. Implement the Community relative API base/proxy and self-hosted SDK/snippet packaging; audit absolute URL consumers. Add explicit local email-verification policy and normal first-owner onboarding with no mail service. Extend the audit to telemetry/error-reporting defaults and email domains/templates. Add truthful per-feature AI configuration and retrieval-status diagnostics. These are first-install blockers.
-2. Assemble the shared-Postgres Compose stack, including public help-center, NATS, Temporal, Redis, and storage. Ensure extensions and all schemas initialize in order on empty and existing volumes. Add the public HTTPS override and narrowly gated internal model-callback HTTP allowance. Verify browser-facing object URLs and explicit help-center domains.
-3. Add the five-command installer and operator documentation for manual upgrade/backup/restore, optional email/OAuth, LAN MCP servers, and excluded services. Add the small Postmark test seam.
-4. Add Community image builds and a bundle workflow in Helpin with a pinned Runtime version input, explicit amd64 builds, and final-image content checks. Multi-architecture publication requires TARGETARCH plumbing and matching acceptance.
-5. Add the split PR/release gates above: local deterministic checks and visitor-negative tests on PRs; full publication, recovery, public support, and upgrade checks on release candidates. Coding runs separately.
-6. Add upgrade and backup/restore gates using Helpin ledger state, Runtime image/schema verification, and Temporal schema versions.
+2. Assemble the shared-Postgres Compose stack, including public help-center, NATS, Temporal, Redis, and storage. Ensure extensions and all schemas initialize in order on empty and existing volumes. Add the external HTTPS proxy examples and narrowly gated internal model-callback HTTP allowance; the bundled edge is v0.2. Verify browser-facing object URLs and explicit help-center domains.
+3. Add minimal SMTP app mail with a local receiver test, the five-command installer, and operator documentation for backup/same-release restore, external TLS, optional email/OAuth, LAN MCP, and excluded services. Defer the Postmark test seam to v0.2.
+4. Add Community image builds and a bundle workflow in Helpin with a pinned Runtime version input, TARGETARCH plumbing, amd64/arm64 core image manifests and smoke runs, and final-image content checks.
+5. Add the v0.1 PR/release gates in the authoritative scope: deterministic/negative tests on PRs and the core support journey on both architectures plus an RC public host. Coding runs separately.
+6. Validate same-release backup/restore and migration idempotency for v0.1 using Helpin ledger state, Runtime image/schema verification, and Temporal schema versions. Schedule the released-v0.1-to-v0.2 upgrade gate for v0.2.
 7. Run the external DNS/TLS and support-model/embedding release smoke; test real Postmark separately when validating optional email features. No external credentials are needed in PRs, and default local signup needs no email provider.
-8. Publish a release candidate after the licensing gate and test it on a clean host outside CI.
-9. Publish the first stable Community release only after the exact bundle passes.
+8. Publish a Community v0.1 beta release candidate after the publication gate and test it on a clean public host outside CI.
+9. Publish Community v0.1 beta when the top-of-document scope passes. Do not call it 1.0/stable or wait for v0.2-only work.
 
 Step 1 is an ordering group, not a single PR. Deliver its changes in this rough sequence:
 
@@ -578,7 +611,7 @@ Step 1 is an ordering group, not a single PR. Deliver its changes in this rough 
 3. Module selection and removal of Community staff-email gating.
 4. SDK/snippet addressing and browser-host configuration.
 5. Local signup verification policy.
-6. Telemetry and email defaults.
+6. Telemetry/email defaults and narrow SMTP app-mail wiring.
 7. AI configuration/readiness diagnostics.
 
 Module selection/staff-email removal and local signup must land before acceptance step 5 can pass. Origin enforcement, settings onboarding, and SDK addressing must land before steps 17–18 can pass. Independent preparation can overlap, but tests must not bypass these dependencies with seeded settings or privileged staff identities.
@@ -589,11 +622,11 @@ Each stage should be independently reviewable. Do not publish a community releas
 
 Before every upgrade, retain a database backup, the previous bundle, image digests, and the environment/configuration revision. A failed application rollout can return to the previous bundle if migrations have not changed the schema. After a migration, use a forward fix or a coordinated database restore; reverting containers alone is not a complete rollback. Restore operations must account for external side effects and must not automatically replay old agent runs.
 
-The release notes should identify the exact supported upgrade path and any migrations that require downtime. A community installation should report its Helpin, Runtime, Compose bundle, and schema versions in a safe diagnostic command without printing secrets.
+The v0.1 release notes document same-release restore and explicitly make no tested previous-version upgrade claim. From v0.2, release notes identify the supported upgrade path and any migrations that require downtime. A community installation should report its Helpin, Runtime, Compose bundle, and schema versions in a safe diagnostic command without printing secrets.
 
 ## Completion criteria
 
-The change is ready for publication when:
+For v0.1, apply the authoritative scope at the top of this document. The following reference criteria apply with their assigned release:
 
 - a clean host can install with one environment file and no private registry access, rebuild, or email provider;
 - local signup has no verification gate; SaaS verification remains enforced;
@@ -608,10 +641,11 @@ The change is ready for publication when:
 - Community has no telemetry/error-reporting destination or Helpin-owned operational email domain by default;
 - publication has approved licenses/EE boundary, contributor/security guidance, reviewed docs/code, and a completed redacted Git-history scan;
 - README/ROADMAP explicitly describe embedding/direct-LLM configuration and the tracked crawler, authenticated-rate-limit, retrieval-trust, and data-erasure limitations;
-- a previous release upgrades while preserving encrypted credentials and durable history;
+- v0.1 backups restore into the same release with credentials and durable history preserved; v0.2 adds the previous-release upgrade gate;
 - community source, binaries, images, frontend assets, and routes contain no EE/billing code;
 - external provider keys are optional at startup and configuration errors are actionable at use time;
-- the default stack shares one Postgres server, retains NATS/Temporal/Redis, makes admin UIs and coding optional, and has documented backups, stable key handling, and safe upgrade behavior;
+- the v0.1 stack shares one Postgres server, retains NATS/Temporal/Redis, makes admin UIs and coding optional, and has documented backups, stable key handling, and same-release restore; cross-version upgrade acceptance starts in v0.2;
+- the core stack passes amd64 and arm64 smoke tests, and optional SMTP application mail passes invitation/password-reset checks;
 - the EE staging/production workflows remain unchanged and continue to build EE explicitly.
 
 ## Reference implementation patterns
