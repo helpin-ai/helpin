@@ -30,7 +30,7 @@ export function SettingsHomeView({ groups, slug, recent = [], autoFocus = false,
       event.preventDefault();
       if (event.key === 'Enter') first.click(); else first.focus();
     }} containerClassName="w-full" className="h-11" />
-      {recentSections.length > 0 && <section aria-label="Recently visited">
+      {!query.trim() && recentSections.length > 0 && <section aria-label="Recently visited">
         <h2 className="text-sm font-semibold text-quiet-text-primary">Recently visited</h2>
         <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{recentSections.map(section => <QuietTextAction key={section.id} asChild><a {...linkProps(buildSettingsRoutePath(slug, section.id))}>{section.label}</a></QuietTextAction>)}</div>
       </section>}
