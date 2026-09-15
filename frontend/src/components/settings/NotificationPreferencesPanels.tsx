@@ -1,4 +1,6 @@
 import { type ReactNode } from 'react';
+import { SettingsSection } from './SettingsSection';
+import { Card, CardContent } from '@/components/ui/card';
 import { ArrowDown01Icon, InformationCircleIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
@@ -258,12 +260,12 @@ export function WorkspaceMuteNotificationsCard({
         : null;
 
   return (
-    <div className={cardClassName}>
+    <Card className={cn("gap-0 rounded-lg border-border/70 py-0", cardClassName)}><CardContent className="px-4 py-1">
       <PreferenceRow title="Mute this workspace" description="Only affects your notifications, including support alerts.">
         <Switch aria-label="Mute this workspace" checked={prefs?.mute_workspace ?? false} disabled={updatePrefs.isPending} onCheckedChange={handleMuteToggle} />
       </PreferenceRow>
-      {notice ? <p role="status" className="pt-1 text-xs text-quiet-accent">{notice}</p> : null}
-    </div>
+      {notice ? <p role="status" className="pb-3 pt-1 text-xs text-quiet-accent">{notice}</p> : null}
+    </CardContent></Card>
   );
 }
 
@@ -303,12 +305,11 @@ function NotificationCategoriesCard({
   }
 
   if (isLoading) {
-    return <Skeleton className="h-80 w-full" />;
+    return <SettingsSection title={title} className={cardClassName}><Skeleton className="mt-3 h-24 w-full" /></SettingsSection>;
   }
 
   return (
-    <section aria-label={title} className={cn('space-y-2', cardClassName)}>
-      <h3 className="text-sm font-semibold text-quiet-text-primary">{title}</h3>
+    <SettingsSection title={title} className={cardClassName}>
       <div>
         <div className="grid grid-cols-[minmax(0,1fr)_56px_56px] items-center gap-2 border-b border-quiet-divider-strong py-2 text-xs text-quiet-text-secondary sm:grid-cols-[minmax(0,1fr)_80px_80px]">
           <span><span className="sr-only">Activity type</span></span>
@@ -335,7 +336,7 @@ function NotificationCategoriesCard({
           ))}
         </div>
       </div>
-    </section>
+    </SettingsSection>
   );
 }
 

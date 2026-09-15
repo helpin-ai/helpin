@@ -1,5 +1,6 @@
 import { useNotificationPreferences } from '@/hooks/queries/useNotifications';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
+import { SettingsSection } from '@/components/settings/SettingsSection';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { useTitle } from '@/hooks/useTitle';
@@ -25,12 +26,11 @@ export default function NotificationSettings() {
   return (
     <div className="space-y-7">
       <QuietPageHeader title="Notifications" description="Choose how you receive updates. Changes save automatically." />
-      <section aria-label="All workspaces" className="space-y-3">
-        <QuietSectionHeader title="All workspaces" className="[&>div]:text-quiet-text-primary" />
+      <SettingsSection title="General" description="Applies across all workspaces" defaultOpen>
         <AccountNotificationPreferences />
-      </section>
+      </SettingsSection>
       {workspace?.id ? (
-        <section aria-label="This workspace" className="space-y-5 border-t border-quiet-divider-strong pt-5">
+        <section aria-label="This workspace" className="space-y-3">
           <QuietSectionHeader title={<>This workspace <span className="font-normal normal-case tracking-normal text-quiet-text-secondary">· {workspace.name}</span></>} className="[&>div]:text-quiet-text-primary" />
           {preferences.isError ? <div role="alert" className="text-sm text-quiet-text-secondary">Couldn’t load workspace preferences. <Button variant="ghost" onClick={() => preferences.refetch()}>Try again</Button></div> : <>
           <WorkspaceMuteNotificationsCard workspaceId={workspace.id} />

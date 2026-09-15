@@ -14,6 +14,10 @@ for (const mode of ['light', 'dark', 'narrow']) test(`notification preferences $
   await page.route('**/api/workspaces/ws-settings/me', route => route.fulfill({ json: { modules: ['pm', 'docs', 'support', 'crm'], permissions: ['settings.read'], membership: { role: 'member' }, team_memberships: [] } }));
   await page.goto(`/e2e/crm/harness/notification-settings.html${mode === 'dark' ? '?dark' : ''}`);
   await expect(page.getByRole('switch', { name: 'Email notifications', exact: true })).toBeChecked();
+  await expect(page.getByRole("heading", { name: "Projects & docs", exact: true })).toBeVisible();
+  await page.screenshot({ path: `/tmp/notification-settings-${mode}-sections.png`, fullPage: true });
+  await expect(page.getByRole('switch', { name: 'Comments and replies: in-app', exact: true })).toBeHidden();
+  await page.getByRole('heading', { name: 'Projects & docs', exact: true }).click();
   await expect(page.getByRole('switch', { name: 'Comments and replies: in-app', exact: true })).not.toBeChecked();
   await expect(page.getByLabel('Delivery day', { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `/tmp/notification-settings-${mode}.png`, fullPage: true });
@@ -22,6 +26,7 @@ for (const mode of ['light', 'dark', 'narrow']) test(`notification preferences $
   await expect(page.getByRole('tooltip')).toContainText('five per hour');
   await page.keyboard.press('Tab');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await page.getByRole('heading', { name: 'Support inbox', exact: true }).click();
   await page.getByRole('button', { name: 'About customer replies', exact: true }).focus();
   await expect(page.getByRole('tooltip')).toContainText('after 3 minutes');
   await page.keyboard.press('Escape');
@@ -62,5 +67,6 @@ test('module access controls visible categories without resetting preferences', 
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Support inbox', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'CRM', exact: true })).toBeVisible();
+  await page.getByRole('heading', { name: 'Support inbox', exact: true }).click();
   await expect(page.getByRole('switch', { name: 'Customer replies: email', exact: true })).not.toBeChecked();
 });
