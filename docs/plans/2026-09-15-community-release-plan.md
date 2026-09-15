@@ -100,9 +100,9 @@ Generated snippets contain the public widget installation key and public URLs, n
 
 The SDK currently combines support interactions with analytics capture. Chat/session/identity endpoints are in Helpin's Go API, while the production client ingress sends analytics routes to the events pipeline. Serving `lib.js` alone does not provide an analytics collector.
 
-Proposed first-release scope, pending the user's pixel clarification: chat, visitor identification/lead capture, conversation history, uploads, and help-center integration work without ClickHouse. Do not advertise pageview/custom-event analytics under that scope. Add or reuse an explicit SDK capture mode that suppresses unsupported analytics transport/queues while preserving support identification and sessions; `autoPageview=false` alone is insufficient if identification or other calls still emit events. Verify the real network trace rather than accepting repeated failed collection requests.
+Confirmed first-release scope: support and visitor identification only. Chat, visitor identification/lead capture, conversation history, uploads, and help-center integration work without ClickHouse. Pageviews, custom-event analytics, and behavioral tracking are excluded. Add or reuse an explicit SDK capture mode that disables analytics transport, capture hooks, persistence, and retry queues while preserving support identification and sessions; `autoPageview=false` alone is insufficient if identification or other calls still emit events. Select this mode in every generated Community installation snippet and hosted-runtime path. Verify the real network trace rather than accepting repeated failed collection requests.
 
-If pageviews/custom-event collection is required for the first release, revise the events-pipeline/ClickHouse exclusion and service/data-retention plan before implementation. Do not install a dummy collector that silently discards events while reporting success.
+Identification must reach the existing Go support endpoints without depending on an analytics event being sent. Test anonymous-to-identified transitions, lead capture, reload/session restoration, and logout without analytics requests. Preserve existing widget identity verification and workspace/session boundaries. Calls to unsupported analytics APIs must have documented disabled behavior without reporting successful delivery. Do not install a dummy collector or add an events-pipeline/ClickHouse service. Analytics can be considered in a separate future plan.
 
 ## First-install prerequisites
 
@@ -468,7 +468,7 @@ The operator guide should use the same Compose bundle tested by CI. Do not copy 
 ## Delivery sequence
 
 0. Record the owner's license choices and add root licenses/EE boundaries in both repositories before public publication; local packaging work need not wait.
-1. Define the public address/ingress contract and confirm support-pixel versus analytics scope. Implement the Community relative API base/proxy and self-hosted SDK/snippet packaging; audit absolute URL consumers. Add explicit local email-verification policy and normal first-owner onboarding with no mail service. These are first-install blockers.
+1. Define the public address/ingress contract and implement the confirmed support-and-identification SDK mode. Implement the Community relative API base/proxy and self-hosted SDK/snippet packaging; audit absolute URL consumers. Add explicit local email-verification policy and normal first-owner onboarding with no mail service. These are first-install blockers.
 2. Assemble the shared-Postgres Compose stack, including public help-center, NATS, Temporal, Redis, and storage. Ensure extensions and all schemas initialize in order on empty and existing volumes. Add the public HTTPS override and narrowly gated internal model-callback HTTP allowance. Verify browser-facing object URLs and explicit help-center domains.
 3. Add the five-command installer and operator documentation for manual upgrade/backup/restore, optional email/OAuth, LAN MCP servers, and excluded services. Add the small Postmark test seam.
 4. Add Community image builds and a bundle workflow in Helpin with a pinned Runtime version input, explicit amd64 builds, and final-image content checks. Multi-architecture publication requires TARGETARCH plumbing and matching acceptance.
@@ -494,7 +494,7 @@ The change is ready for publication when:
 - local signup has no verification gate; SaaS verification remains enforced;
 - the main frontend and included public help-center work on the operator hostname;
 - public DNS/HTTPS setup is documented and tested, and the exact generated widget snippet delivers a complete customer-to-inbox conversation from another origin;
-- SDK assets and required visitor traffic stay on configured self-hosted endpoints, with analytics scope explicit;
+- SDK assets and required visitor traffic stay on configured self-hosted endpoints; support identification works with analytics capture, persistence, and delivery disabled, and no event collector is required;
 - public visitor access works independently of staff login and internal services remain private;
 - both repositories have owner-selected distribution licenses before publication;
 - the exact published bundle passes health, migration, product, AI, restart, and optional coding checks;
