@@ -15,7 +15,9 @@ public support: configure DNS → start with HTTPS → install widget → receiv
 
 The primary release journey is self-hosted customer support: an operator installs Helpin, serves the widget/pixel from their own domain, embeds it on a customer-facing website, receives a conversation in the inbox, replies, and publishes a help-center article. Agent execution supports this journey; it is not the only release acceptance target.
 
-The result is a working community Helpin instance with its own Agent Runtime, durable storage, migrations, health checks, backups, and an optional coding worker. Users supply their own AI provider keys. Community usage recording remains zero-cost and does not require SaaS billing or a BYOK tariff.
+The result is a working community Helpin instance with its own Agent Runtime, durable storage, migrations, health checks, and backups. Users supply their own agent model credentials; retrieval embeddings and non-agent AI features have the separate process-level configuration described below. Coding is an optional extension outside the v1 support release gate. Community usage recording remains zero-cost and does not require SaaS billing or a BYOK tariff.
+
+Use `docs/strategy/2026-09-10-open-source-intercom-alternative-gap-list.md` as a launch-gap inventory, with each item rechecked against the current code. This plan owns the first-hour visitor-security, deployment-default, publication, and truthful-configuration work below; it does not claim to deliver every Tier 1–3 roadmap item. SMTP remains explicitly deferred despite its Tier 0 classification in that earlier document: the v1 local path has email-free signup, and email-dependent support requires optional Postmark.
 
 ## Decisions and boundaries
 
@@ -92,9 +94,25 @@ Reuse the existing `/sdk/*` asset handler with the complete pinned SDK distribut
 
 Build the SDK and required widget packages as part of the Community artifact. Include hashed JavaScript, CSS, lazy chunks, and other required assets together. The loader resolves its full SDK relative to its own URL. Cross-origin module assets need the correct CORS/MIME headers. Keep the mutable loader on a short cache and immutable hashed assets on long caches; test an upgrade with an older cached loader and retain the referenced assets for the supported cache overlap.
 
-The widget's HTTP and WebSocket traffic uses `/widget/*`, including `/widget/ws`; simply proxying `/api/*` will not work. Preserve the existing public visitor-session authentication and route-scoped CORS. Do not broaden dashboard CORS globally or require a staff cookie in a customer browser.
+The widget's HTTP and WebSocket traffic uses `/widget/*`, including `/widget/ws`; simply proxying `/api/*` will not work. Preserve visitor-session authentication and enforce the installation origin policy before servicing widget requests, as specified below. Keep CORS scoped to the appropriate routes. Do not broaden dashboard CORS globally or require a staff cookie in a customer browser.
 
 Generated snippets contain the public widget installation key and public URLs, never service tokens or provider secrets. Document script/module and connect-src CSP requirements, customer website placement, identity/lead calls, attachment URLs, session restore, and optional first-party DNS aliases. Turning off staff email verification does not disable signed widget identity checks or change the meaning of a visitor-supplied email.
+
+### Public visitor security — release blockers
+
+Implement this before publishing the widget installation path. Today installation `allowed_origins` is stored but not enforced by the Go widget handlers, and both normal and legacy widget WebSocket upgrades bypass origin checks. This is an application boundary, not just a proxy or response-header change.
+
+- Use one shared installation-origin validator for widget HTTP and WebSocket entry points, including legacy aliases, key-based setup, token-based requests, identification, session restore, uploads, and conversation access. Resolve the installation from the authoritative key/session relationship and reject a mismatched key/session pair.
+- Match normalized scheme, hostname, and effective port against the saved allowed origins. Do not infer approval from a referrer, submitted page URL, wildcard, or the staff dashboard's global CORS list. Require explicit customer-site origins during installation; an empty list does not mean all sites. Staff previews and local test origins are added deliberately.
+- Reject disallowed browser origins before creating a session, upgrading a WebSocket, mutating state, or returning visitor data. Apply the check to both WebSocket entry paths, not just the normal public key path. Missing, malformed, multiple, and `null` origins must not bypass the browser policy; any necessary non-browser path needs its own documented authentication contract.
+- Inventory preflight and actual-request handling: session credentials in a POST body/header are not available as values during OPTIONS. An OPTIONS response cannot grant application access; the actual request must independently validate the resolved installation and origin before side effects. Reflect permitted origins where appropriate and set cache variation correctly.
+- Keep truly public SDK static assets and published help-center content separately accessible. The six wildcard route groups are not six equivalent authenticated widget surfaces; do not apply a tenant-session rule indiscriminately to global static files.
+- Make origin controls effective in `report_only` as well as `enforced` identity mode. These modes govern identity proof, not the site allowlist. Origin checks reduce browser misuse; they do not make a public install key secret or authenticate a non-browser caller.
+- Use current settings APIs and add the missing settings UI for site origins and identity mode. New Community installations select `report_only` through edition defaults; retain existing EE defaults and never downgrade a saved installation during upgrade. List every installation creation/default path and migration default so they agree.
+- In `report_only`, unsigned identity is accepted as unverified input. It must not grant access to a different visitor's conversation history merely because the submitted email/external ID matches. Cover cross-visitor/workspace identity and session confusion with negative tests. Valid signed identity must retain verified provenance.
+- Provide a permission-checked secret view/rotation UI using the existing backend capability where available, and document the exact existing HMAC v1 payload, normalization, timestamp validity, and server-side signing examples. Never include the signing secret in public config, snippets, or browser signing code. Test valid, missing, expired, and mismatched proofs; enforced mode must reject invalid identity without breaking anonymous chat.
+
+The fresh-install test follows the real setup flow: create a workspace, configure its allowed customer-site origin, copy the generated snippet, and identify without secretly flipping identity mode in fixtures. A third origin must fail on HTTP and WebSocket paths even with a copied public key or valid session token. Test changing the allowlist, cached config, and session restoration so enforcement does not rely on a stale browser setting.
 
 ### Pixel scope and the event collector
 
@@ -130,9 +148,27 @@ Postmark is currently the only outbound email implementation. No-email local ope
 
 For deterministic delivery tests, add a narrowly scoped injectable HTTP endpoint/client to the existing Postmark adapter and run a local Postmark-compatible fixture in CI. Keep the production endpoint default; this is a test seam, not another supported mail provider. Test the no-email local setup separately from the opt-in Postmark flows.
 
+### No unsolicited telemetry or SaaS operational defaults
+
+Extend the URL audit beyond browser snippets to backend/worker/runtime error reporting, frontend/help-center reporting, product analytics integrations, email templates, logos, staff links, support reply/route domains, and generated diagnostics.
+
+Community examples and images have no populated Sentry DSN or other telemetry/error-reporting destination by default. Operators can opt into their own configured services. Remove Helpin-owned reply-domain fallbacks from Community behavior: without explicit domain/mail configuration, email-dependent features report unavailable rather than claiming addresses under `helpin.email`. Templates use the operator's app URL and locally served brand assets while preserving required attribution/license notices.
+
+Audit executable defaults and generated messages; do not indiscriminately replace package import paths, copyright text, or documentation links containing `helpin.ai`. Verify runtime behavior as well as source/image contents: signup, inbox, worker failures, widget activity, and outgoing test email must not send data to Helpin-owned reporting or operational endpoints. No actual environment secret values are needed in tool output.
+
 ### Licensing is a publication prerequisite
 
 Neither repository currently has a root license for its application code. The owner must select the license for Helpin Community and Agent Runtime, and define the EE source/distribution boundary. Add the selected root LICENSE files, applicable EE notices, and third-party notices before public artifacts are published. Do not infer a license from dependency licenses. Packaging work can proceed while this decision is pending; public release cannot.
+
+### Community presents Support, Help Center, and Agents
+
+Add one deployment-owned module/capability selection using existing edition and authorization wiring. The Community bundle exposes Support, Docs/Help Center, and the Agents needed for support; PM, standalone CRM, generic Automation navigation, and coding presets are not the default landing experience. Existing full-product deployments preserve their configured modules.
+
+Backend accessible modules must be the intersection of deployment selection and user/workspace authorization, including owners/admins. Frontend navigation, landing redirects, command palette, setup tasks, direct routes, and module-specific API operations consume the effective result. Hiding a sidebar alone is insufficient, and deployment enablement must not grant permissions to a user who lacks them.
+
+The current frontend `featureFlags.ts` restricts Support/CRM to a hardcoded staff-email list. Replace that Community restriction with the server's effective capabilities; verify a newly registered owner with an unrelated email can access Support. Audit agent visibility separately: the frontend currently maps Agents to Automation, so do not enable every automation surface merely to show support agents. Reuse existing module IDs where possible instead of inventing a new module framework.
+
+Preserve underlying contact/Docs/agent services required by support even when their independent product UI is disabled. Public widget endpoints remain available under their own authorization. Test the default landing page, module permissions, disabled direct URLs/API entry points, and support-to-contact/knowledge operations.
 
 ### Public help-center is included
 
@@ -140,8 +176,52 @@ Add the existing `help-center/` application as `helpin-helpcenter`, using its No
 
 Audit its built-in SaaS URL fallbacks and build-time widget variables as well as the main frontend. The released Community help-center must not send requests to Helpin SaaS or require rebuilding to configure the operator host. Use existing runtime host/proxy configuration where available; add only the configuration needed by this service.
 
+## AI configuration and visible limitations
+
+Agent-run AI profiles support per-run credentials and compatible model endpoints. That does not configure all Helpin AI features.
+
+| Feature | Current routing/configuration | Release promise |
+| --- | --- | --- |
+| Runtime-backed support/Ask Agent runs | Accepted AI profile and encrypted run credentials | Document supported provider/endpoint setup and test actual routing. |
+| Docs/support retrieval and coverage embeddings | Helpin's process-level OpenAI-compatible adapter; `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_EMBEDDING_MODEL`; model defaults to `text-embedding-3-small` and vector dimensions remain 1,536 | Document the separate configuration. Arbitrary local embedding dimensions and per-workspace embedding profiles are deferred. |
+| Help-center AI answers, triage, and other direct `internal/llm` features | Process-global provider credentials and current route policy | List required configuration per feature; do not imply an agent profile supplies it. |
+| Lexical knowledge search | Existing Postgres text-search path when semantic retrieval is unavailable | Show a clear semantic-index/retrieval status and document the reduced mode. Do not silently advertise full hybrid retrieval. |
+
+The compatible embedding endpoint/model knobs already exist; saying embeddings can only contact OpenAI would overstate the limitation. A compatible endpoint still must satisfy the existing API/credential and 1,536-dimension contracts, and must be validated before claiming support. Do not change vector schemas or add re-embedding orchestration in this packaging work.
+
+Add focused, user-visible configuration/readiness diagnostics to existing AI/knowledge settings. Distinguish no model configured, semantic indexing unavailable, and lexical-only search. Default no-provider startup should work; launching an unconfigured AI feature must explain what to configure.
+
+CI needs a deterministic embedding fixture as well as a chat fixture: serve 1,536-element vectors, import/index a document, and assert the retrieval path and usage recording. Also test missing credentials, provider error, and wrong dimensions, with visible status and the intended lexical fallback. This verifies wiring, not retrieval quality or a fully local AI stack.
+
+## Repository publication
+
+Treat repository publication as a separate gate from container delivery. Recheck Helpin, Runtime, and the SDK repositories included in the public dependency chain.
+
+1. **License and EE boundary together:** before publication, the owner records both the license choices and whether EE source is public open-core or a private overlay. Neither option is implied by build tags. Produce a concrete file/build boundary: if open-core, EE files carry their distinct terms and stay out of Community artifacts; if private, validate Community builds from the actual public tree and EE builds with the overlay. Public EE source with separate terms is not itself a Community artifact leak.
+2. **Contributor/security entry points:** add `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue/PR templates, and a public `ROADMAP.md`. The owner supplies a monitored private vulnerability-reporting channel (for example GitHub private reporting) before release; do not invent an address or direct sensitive reports into ordinary issues.
+3. **Docs disposition:** create a reviewed manifest classifying tracked docs as public/current, public/historical, or private. Update shipped-feature status in retained PRDs. Remove private billing audits, pricing strategy, and SaaS-only operational runbooks from the public publication tree, retaining them in a private archive before removal. Start with the gap list's stale-doc list, `docs/mattermost-integration.md`, `docs/BACKLOG-and-ideas.md`, `docs/pricing-strategy.md`, and `docs/plans/2026-09-15-native-release-runbook.md`. Namespace/variable names are not automatically secrets; review content rather than doing a blind keyword purge.
+4. **Unused code:** inspect imports, workspace membership, build/release jobs, asset copies, and tests before deleting `widget/` or `packages/widget-embed`. The latter is still referenced by current release workflows. Remove confirmed obsolete paths and their references together; preserve any active widget runtime needed by the shipped SDK.
+5. **History and artifacts:** run a redacted secrets scan (gitleaks or equivalent) over all refs/history intended for publication, plus the working publication tree, SDK sources, examples, release archives, and images. Review findings and rotate/revoke exposed live credentials before publication; deleting a file at HEAD does not remove it from history. Keep scanner reports access-controlled and do not print secret values. External public telemetry DSNs are not necessarily credentials, but must still be removed as unsolicited destinations.
+6. **Publication method:** use the docs/secret/license inventory to approve either sanitized existing history or a clean public export. No force-push/history rewrite, deletion of private archives, repo visibility change, or public publication is part of the plan-only work. Test the exact prospective public checkout independently of private worktrees and build caches.
+
+Public `ROADMAP.md` should be a short current product document, not a raw copy of internal audits, strategy, or this working plan. The public quickstart leads with support and knowledge; link optional coding separately.
+
+## Known limitations to publish and track
+
+Record these in a concise README section linked to specific public roadmap items, after a final code check. They are not claimed fixed by packaging:
+
+- No general authenticated `/api` rate-limiting layer today; widget/help-center limiters do not cover it.
+- The crawler's robots.txt handling discovers sitemap URLs but does not enforce Disallow. State this before operators enable crawling and track a real crawl-policy fix.
+- Retrieved/crawled content does not yet have a complete, tested untrusted-content/prompt-injection handling contract. Runtime history-summary instructions are not proof that retrieval is protected.
+- Contact deletion is not a complete customer-data erasure/export operation across conversations, messages, sessions, and associated records. Do not describe a single-row delete as complete erasure.
+- SMTP and arbitrary local embedding dimensions are not supported by this release; explain the usable alternatives and configuration boundaries above.
+
+Public documentation names limitations without publishing private exploit details. If the release review finds an exploitable data boundary failure, resolve or disable the affected path rather than treating a roadmap entry as sufficient.
+
 ## Not in this release
 
+- A complete per-workspace/local AI stack for every feature: embeddings stay on the current process-level 1,536-dimension contract, and direct Helpin LLM features keep their separate configuration. No claim that an Ollama chat profile makes all AI local.
+- Coding execution as a v1 support requirement: optional extension only, with separate tests/docs and no core acceptance dependency.
 - ClickHouse and `events-pipeline`: no containers, ingestion endpoint, or `CLICKHOUSE_DSN` in the default bundle. ClickHouse-backed CRM behavioral signals/event analytics are unavailable; ordinary CRM features and other signal sources are not categorically disabled.
 - Google OAuth login: optional configuration, disabled when unconfigured; password signup is sufficient for first use.
 - SMTP or provider-neutral outbound mail: deferred. Postmark remains optional for email-dependent features.
@@ -318,14 +398,8 @@ For the private Compose network, generate service-name HTTP URLs with the narrow
     "token_env": "HELPIN_INTERNAL_API_SECRET",
     "package_token_env": "HELPIN_INTERNAL_API_SECRET"
   },
-  "workspace_provider": {
-    "transport": "repository",
-    "base_url": "https://<helpin-host>/api/internal/agent-runtime/workspace",
-    "token_env": "HELPIN_INTERNAL_API_SECRET",
-    "root_dir": "/tmp/agent-runtime-workspaces"
-  },
   "browser": {
-    "enabled": true,
+    "enabled": false,
     "allowed_domains": [],
     "artifact_provider": {
       "transport": "http",
@@ -336,7 +410,7 @@ For the private Compose network, generate service-name HTTP URLs with the narrow
 }
 ```
 
-Community must not set `allowed_domains: ["*"]` by default. Browser access should be disabled or explicitly configured by the operator. The generated template must not replace other app entries when an operator supplies an existing config.
+The base support config omits repository workspace preparation and disables browser execution. Put repository provider/root configuration in the optional coding extension. The default Runtime image can retain its existing git/ripgrep/ffmpeg/browser packages for now; image slimming is deferred and package presence does not enable browser tools. Community must not set `allowed_domains: ["*"]` by default. Enabling browser execution requires explicit operator configuration. The generated template must not replace other app entries when an operator supplies an existing config.
 
 ## Build and image pipeline
 
@@ -350,7 +424,7 @@ Add a Community release workflow alongside the existing EE staging/production wo
    - Go vet/build for community binaries
    - manifest/config validation
 3. Build and publish Helpin API, Helpin worker/migrator, and frontend images from the community build with no `GO_BUILD_TAGS=ee`.
-4. Build and publish Runtime default and coding images from the matching Runtime release.
+4. Pin the Runtime default image from a compatible Runtime release. Coding image publication/testing belongs to its optional extension and does not block the v1 support bundle.
 5. Produce the Compose bundle with immutable image tags/digests and the matching Runtime version.
 6. Run the disposable Compose acceptance job against the exact published image references.
 7. Attach the bundle, checksums, release notes, and a software bill of materials to the GitHub release only after acceptance passes.
@@ -363,7 +437,7 @@ The image build should use reproducible metadata: source commit, release version
 
 ## Clean-install acceptance test
 
-Create a CI job that runs on a clean runner with Docker Compose and no repository-local volumes. It should use a temporary project directory and the published release bundle.
+Run the selected CI checks on clean runners with Docker Compose and no repository-local volumes. PR jobs use locally built candidate images and fixtures; release jobs use the exact pinned release bundle and image digests. Keep each check in a temporary project directory.
 
 The test must:
 
@@ -371,9 +445,9 @@ The test must:
 2. Run `setup.sh install` or the equivalent noninteractive installer mode.
 3. Start the supported default stack with one Postgres server and without admin UIs or the coding worker; wait for health/readiness of Postgres, Redis, NATS, Temporal, Helpin, Runtime, and frontend.
 4. Confirm Helpin's core schema migrations complete and Runtime's Postgres schema migration completes.
-5. Sign up through the normal local password flow, log in, and complete organization/workspace onboarding without email verification or Postmark. Verify the UI and API honor the configured policy.
+5. Sign up with a non-staff email through the normal local password flow, log in, and complete organization/workspace onboarding without email verification or Postmark. Verify the owner lands in Support with Docs/Help Center and support Agents accessible, and disabled modules cannot be entered via direct routes or APIs.
 6. Verify the community settings surface has no billing route, upgrade dialog, or commercial price asset.
-7. Add a test provider connection using a deterministic mock provider or a local compatible endpoint; do not make the basic CI gate depend on a paid external API.
+7. Add a deterministic chat-provider connection and configure the separate embedding fixture. Verify successful semantic indexing/retrieval and visible failure or lexical-only status with missing credentials and incompatible vectors. No paid external API is required.
 8. Start Ask Agent, confirm the request reaches Runtime, and verify normalized usage is recorded without a Helpin credit/tariff requirement.
 9. Exercise a product background workflow through Helpin's Temporal worker.
 10. Exercise Redis-backed support email delivery against the Postmark-compatible CI fixture after the adapter test seam exists; separately assert actionable behavior with email unconfigured.
@@ -382,15 +456,27 @@ The test must:
 13. Publish a help-center article and load/search it from the operator-facing help-center origin.
 14. Test the same prebuilt frontend on a different hostname, including API calls, WebSockets, widget preview/snippets, and redirects.
 15. Restart Runtime API and normal worker and verify a durable run can resume.
-16. Start the optional coding profile, run a disposable repository task, pause/resume it, restart the coding worker, and verify the named workspace volume is reused.
-17. Assert no service logs secret values, and assert the default Runtime worker rejects coding queue work.
-18. Serve a separate customer-site fixture on a different HTTPS origin. Paste the exact generated installation snippet and verify loader, module/CSS assets, visitor session, identification, customer message, staff inbox reply, AI reply with a test provider, reconnect, history, and attachment delivery.
-19. Assert the customer browser uses only the configured self-hosted origins for Helpin traffic: no SaaS/CDN fallback, mixed content, unsupported collector retries, or staff authentication dependency. Verify framework/hosted-runtime snippets as well as the script loader. Account for the loader's bot/headless detection in the test harness without weakening production behavior.
-20. Exercise the public/private proxy route boundary, forwarded-address rate limits, CSP/CORS, same-host and split-host routing, and signed storage URLs. API keys and callback secrets must not enter snippets or browser responses.
-21. Test the public override with a test certificate authority/ACME fixture in CI, and real DNS/trusted TLS on an operator-approved public release-candidate host before stable release. Test certificate persistence/renewal behavior and an SDK upgrade with cached loader assets.
-22. Tear down containers while retaining sanitized status, Helpin ledger head, Runtime image digest, Temporal schema versions, and failure logs.
+16. Assert no service logs secret values, and assert the default Runtime worker rejects coding queue work.
+17. Serve a separate customer-site fixture on a different HTTPS origin. Configure that site through the normal allowed-origin settings flow. Paste the exact generated snippet and verify loader, module/CSS assets, visitor session, identification under the fresh Community report_only default, customer message, staff inbox reply, AI reply with a test provider, reconnect, history, and attachment delivery. No fixture silently changes the identity mode.
+18. Reject a third origin on widget HTTP and both WebSocket paths, including copied-key, token restore, and missing/null-origin cases. Verify cross-visitor/workspace identity isolation and signed/enforced-mode behavior. Assert the allowed customer browser uses only the configured self-hosted origins for Helpin traffic: no SaaS/CDN fallback, mixed content, unsupported collector retries, or staff authentication dependency. Verify framework/hosted-runtime snippets as well as the script loader. Account for the loader's bot/headless detection in the test harness without weakening production behavior.
+19. Exercise the public/private proxy route boundary, forwarded-address rate limits, CSP/CORS, same-host and split-host routing, and signed storage URLs. API keys and callback secrets must not enter snippets or browser responses.
+20. Test the public override with a test certificate authority/ACME fixture in CI, and real DNS/trusted TLS on an operator-approved public release-candidate host before stable release. Test certificate persistence/renewal behavior and an SDK upgrade with cached loader assets.
+21. Tear down containers while retaining sanitized status, Helpin ledger head, Runtime image digest, Temporal schema versions, and failure logs.
 
-Use a separate pre-release smoke with real provider API keys for OpenAI, Anthropic, and OpenRouter. The real-provider test verifies the four standard profiles and actual credential routing; it is not the deterministic pull-request gate.
+### Which checks run when
+
+The numbered list is an acceptance inventory, not one mandatory PR job.
+
+| Gate | Checks | External dependencies |
+| --- | --- | --- |
+| PR | Existing relevant source/unit checks; deterministic Compose steps 1–9, 14, 16; focused origin/identity negative tests from 18; fresh report_only defaults, non-staff module access, and no-default-telemetry checks | Local fixtures only; use test TLS where needed. |
+| Release candidate | Exact pinned images: all numbered support steps, including delivery, limits, uploads, help-center publication, restart, full outside-origin journey, cached SDK assets, and proxy boundaries; upgrade/restore gates | Deterministic fixtures plus a separately configured DNS/TLS smoke. |
+| Pre-stable external smoke | Actual public DNS and trusted HTTPS, real configured model/embedding credential routing, and optional Postmark feature smoke when email support is advertised | Explicit release-test credentials/domain, never ordinary PR secrets. Core no-email startup remains mandatory. |
+| Optional coding extension | Disposable repository edit/test, pause/resume, worker restart, retained workspace, and queue isolation | Run only for coding changes or an explicitly published coding extension. Not a v1 support gate. |
+
+Keep at least the negative visitor-boundary checks in PRs even though the full browser journey runs on release candidates. Run independent checks as separate jobs with clear failure names. A PR gate must not wait on DNS issuance, paid providers, or Postmark delivery. A local Postmark fixture is not live Postmark.
+
+Real-provider coverage validates supported support routes and the separate embedding configuration; it does not make four tier presets or coding a prerequisite for the support quickstart.
 
 ## Upgrade acceptance test
 
@@ -423,7 +509,11 @@ Extend CI with focused checks for:
 - migration idempotency on empty and populated databases;
 - migration upgrade from the previous released schema;
 - API/worker/Runtime health and event protocol compatibility;
-- normal versus coding task queue admission;
+- origin enforcement on HTTP/WebSocket/legacy routes and visitor identity isolation;
+- fresh Community report_only defaults, signed-identity setup, and module access for a non-staff owner;
+- separate embedding/direct-LLM configuration and explicit degradation status;
+- no unsolicited telemetry or SaaS email/asset destinations;
+- ordinary-worker rejection of coding; optional coding execution in its own suite;
 - run pause/resume after API and worker restarts;
 - backup/restore documentation commands;
 - installer behavior when Docker is missing, ports are occupied, or an existing `.env` is present.
@@ -442,10 +532,11 @@ Add a public Community Edition section to Helpin's README and a dedicated `docs/
 - installation and first login without email verification in the local bundle;
 - optional Postmark/Google login configuration and email-dependent feature limits;
 - public help-center host mapping and publication;
-- provider key configuration;
+- agent profile credentials versus process-level embeddings, triage, and help-center answers; fixed vector dimensions and visible lexical-only fallback;
+- provider key configuration for each supported AI feature;
 - changing provider keys and why encryption keys must remain stable;
 - external Postgres/Redis/NATS/Temporal/S3 configuration;
-- optional coding worker and its trust boundary;
+- optional coding worker in a separate advanced guide, absent from the support quickstart and core release gate;
 - backups and restore limits;
 - upgrades and new-variable review;
 - logs, health checks, and troubleshooting;
@@ -456,7 +547,7 @@ The operator guide should use the same Compose bundle tested by CI. Do not copy 
 
 ## Security and licensing checks
 
-- Scan the final images and bundle for credentials, local paths, `.env` files, and commercial source.
+- Scan the intended public Git history/refs, publication tree, release archives, final images, and bundle with redacted secret findings. Apply the approved EE licensing/publication boundary and remove private material before publication.
 - Keep generated secrets out of logs and shell history where practical; setup should write them to a protected environment file with restrictive permissions.
 - Use non-root application users in all application containers.
 - Do not mount the Docker socket, host repositories, or the host filesystem.
@@ -467,18 +558,18 @@ The operator guide should use the same Compose bundle tested by CI. Do not copy 
 
 ## Delivery sequence
 
-0. Record the owner's license choices and add root licenses/EE boundaries in both repositories before public publication; local packaging work need not wait.
-1. Define the public address/ingress contract and implement the confirmed support-and-identification SDK mode. Implement the Community relative API base/proxy and self-hosted SDK/snippet packaging; audit absolute URL consumers. Add explicit local email-verification policy and normal first-owner onboarding with no mail service. These are first-install blockers.
+0. Resolve license and public-EE-versus-private-overlay choices together. Prepare contributor/security files, monitored private reporting, a docs/code disposition manifest, and a redacted history scan. Verify the actual public tree before any publication; local work need not wait for publication approval.
+1. Implement visitor-origin enforcement, Community report_only defaults and signing/settings UI, and deployment-level Support/Docs/Agents defaults including removal of Community staff-email gating. Add negative boundary tests. Define the public address/ingress contract and implement the confirmed support-and-identification SDK mode. Implement the Community relative API base/proxy and self-hosted SDK/snippet packaging; audit absolute URL consumers. Add explicit local email-verification policy and normal first-owner onboarding with no mail service. Extend the audit to telemetry/error-reporting defaults and email domains/templates. Add truthful per-feature AI configuration and retrieval-status diagnostics. These are first-install blockers.
 2. Assemble the shared-Postgres Compose stack, including public help-center, NATS, Temporal, Redis, and storage. Ensure extensions and all schemas initialize in order on empty and existing volumes. Add the public HTTPS override and narrowly gated internal model-callback HTTP allowance. Verify browser-facing object URLs and explicit help-center domains.
 3. Add the five-command installer and operator documentation for manual upgrade/backup/restore, optional email/OAuth, LAN MCP servers, and excluded services. Add the small Postmark test seam.
 4. Add Community image builds and a bundle workflow in Helpin with a pinned Runtime version input, explicit amd64 builds, and final-image content checks. Multi-architecture publication requires TARGETARCH plumbing and matching acceptance.
-5. Add clean-install acceptance, including browser host portability, email-free signup, help-center publication, separate workflow/delivery/limits/storage checks, and coding. Make the outside-origin widget-to-inbox conversation the primary support acceptance journey.
+5. Add the split PR/release gates above: local deterministic checks and visitor-negative tests on PRs; full publication, recovery, public support, and upgrade checks on release candidates. Coding runs separately.
 6. Add upgrade and backup/restore gates using Helpin ledger state, Runtime image/schema verification, and Temporal schema versions.
-7. Run real-provider and optional real-Postmark pre-release smoke tests; the default installation still needs no email provider.
+7. Run the external DNS/TLS and support-model/embedding release smoke; test real Postmark separately when validating optional email features. No external credentials are needed in PRs, and default local signup needs no email provider.
 8. Publish a release candidate after the licensing gate and test it on a clean host outside CI.
 9. Publish the first stable Community release only after the exact bundle passes.
 
-Each stage should be independently reviewable. Do not publish a community release from a branch whose EE build or staging deployment merely happens to pass; the acceptance artifact must be the community bundle itself.
+Deliver the first-hour work as separate reviewable changes: visitor-origin validation; identity defaults/settings; module selection; browser/SDK addressing; local signup; telemetry/email defaults; and AI configuration diagnostics. Step 1 is an ordering group, not a single PR. Each stage should be independently reviewable. Do not publish a community release from a branch whose EE build or staging deployment merely happens to pass; the acceptance artifact must be the community bundle itself.
 
 ## Rollback and support policy
 
@@ -497,7 +588,12 @@ The change is ready for publication when:
 - SDK assets and required visitor traffic stay on configured self-hosted endpoints; support identification works with analytics capture, persistence, and delivery disabled, and no event collector is required;
 - public visitor access works independently of staff login and internal services remain private;
 - both repositories have owner-selected distribution licenses before publication;
-- the exact published bundle passes health, migration, product, AI, restart, and optional coding checks;
+- the exact published support bundle passes health, migration, visitor security, product, AI, and restart checks; optional coding is validated separately;
+- new Community installations use report_only identity with unverified provenance, enforce customer-site origins, and expose signing setup without leaking the secret;
+- a fresh non-staff owner lands in Support, with Help Center/Docs and support Agents available;
+- Community has no telemetry/error-reporting destination or Helpin-owned operational email domain by default;
+- publication has approved licenses/EE boundary, contributor/security guidance, reviewed docs/code, and a completed redacted Git-history scan;
+- README/ROADMAP explicitly describe embedding/direct-LLM configuration and the tracked crawler, authenticated-rate-limit, retrieval-trust, and data-erasure limitations;
 - a previous release upgrades while preserving encrypted credentials and durable history;
 - community source, binaries, images, frontend assets, and routes contain no EE/billing code;
 - external provider keys are optional at startup and configuration errors are actionable at use time;
