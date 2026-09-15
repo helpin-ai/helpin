@@ -64,7 +64,9 @@ async function setup(page: Page) {
         ? route.request().postDataJSON()
         : undefined;
     requests.push({ path, method, payload });
-    if (path.endsWith("/templates")) {
+    if (path.endsWith("/email/sync-settings")) {
+      data = { historical_sync_days: 90, filter_mode: "blocklist", filter_patterns: [], internal_exclusion: "none", include_private_meetings: false, include_solo_meetings: false, record_creation_mode: "selective", blocked_record_prefixes: ["noreply"], ...payload };
+    } else if (path.endsWith("/templates")) {
       if (payload) {
         templates.push({ ...template, ...payload, id: "new-template" });
         data = templates.at(-1);
@@ -703,4 +705,48 @@ test('activity explains how to enable sending limits without a connected mailbox
   await page.goto('/e2e/crm/harness/outreach.html');
   await page.getByRole('button', { name:'activity', exact:true }).click();
   await expect(page.getByRole('link', {name:'Connect a sending mailbox',exact:true})).toHaveAttribute('href','/w/email-test/settings/crm-email');
+});
+
+
+test("email toolbar separates general settings from tab actions", async ({ page }) => {
+  await setup(page);
+  await page.goto("/e2e/crm/harness/outreach.html");
+  const settings = page.getByRole("link", { name: "Email settings" });
+  await expect(settings).toHaveAttribute("href", "/w/email-test/settings/crm-email");
+  const templates = page.getByRole("button", { name: "templates", exact: true });
+  const create = page.getByRole("button", { name: "New template", exact: true });
+  const tabBox = await templates.boundingBox();
+  const createBox = await create.boundingBox();
+  expect(Math.abs(tabBox!.y - createBox!.y)).toBeLessThan(16);
+  await page.screenshot({ path: "/tmp/crm-email-toolbar.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(settings).toBeVisible();
+  await expect(create).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "/tmp/crm-email-toolbar-narrow.png", fullPage: true });
+  await page.getByRole("button", { name: "activity", exact: true }).click();
+  await expect(settings).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add contacts", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Browse starters" })).toHaveCount(0);
+});
+
+for (const mode of ["light", "dark", "narrow"])
+test(`email preferences start collapsed and keep edits when closed ${mode}`, async ({ page }) => {
+  if (mode === "narrow") await page.setViewportSize({ width: 390, height: 844 });
+  const requests = await setup(page);
+  await page.goto(`/e2e/crm/harness/outreach.html?settings${mode === "dark" ? "&dark" : ""}`);
+  await expect(page.getByText("waqar@contentstudio.io", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save changes", exact: true })).toHaveCount(0);
+  const calendar = page.locator("summary").filter({ hasText: "Calendar events" });
+  await expect(calendar).toBeVisible();
+  await expect(page.locator("#include-private-meetings")).not.toBeVisible();
+  await page.screenshot({ path: `/tmp/crm-email-settings-${mode}.png`, fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await calendar.click();
+  await page.locator("#include-private-meetings").click();
+  await calendar.click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect.poll(() => requests.find(r => r.path.endsWith("/email/sync-settings") && r.method === "PUT")?.payload.include_private_meetings).toBe(true);
+  await calendar.click();
+  await expect(page.locator("#include-private-meetings")).toHaveAttribute("data-state", "checked");
 });

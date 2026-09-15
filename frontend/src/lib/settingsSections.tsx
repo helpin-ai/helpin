@@ -297,8 +297,8 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'crm-email',
-    label: 'Email Sync',
-    description: 'Connect Gmail to sync conversations and detect CRM signals.',
+    label: 'Email',
+    description: 'Manage mailboxes, sending limits, and CRM email preferences.',
     icon: EmailAccounts,
     group: 'CRM',
   },

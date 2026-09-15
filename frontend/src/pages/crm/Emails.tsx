@@ -1,5 +1,6 @@
 import { EmailStarterLibrary } from "@/components/crm/outreach/EmailStarterLibrary";
 import { useWorkspaceAccess, usePermissions } from "@/hooks/queries/useSession";
+import { Settings02Icon } from "@/lib/icons";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,8 @@ import {
   QuietSearchInput,
   QuietEmptyState,
   QuietSelect,
+  QuietTextAction,
+  QuietPrimaryAction,
 } from "@/components/design-system/quiet";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -83,47 +86,54 @@ export function EmailsPage() {
         variant="shell"
         title="Emails"
         actions={
-          <>
+          <QuietTextAction asChild>
+            <a href={`/w/${ws?.slug}/settings/crm-email`}>
+              <Settings02Icon className="h-4 w-4" />
+              Email settings
+            </a>
+          </QuietTextAction>
+        }
+      />
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-border/50 px-4 sm:px-6">
+        <div className="flex gap-6 text-sm">
+          {(["templates", "sequences", "activity"] as const).map((value) => (
+            <button
+              key={value}
+              onClick={() => {
+                setTab(value);
+                setSearch("");
+              }}
+              className={`py-3 capitalize ${tab === value ? "border-b-2 border-foreground font-medium" : "text-muted-foreground"}`}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-4 py-2">
             {canEdit && tab !== "activity" && (
-              <Button
-                variant="ghost"
-                size="sm"
+              <QuietTextAction
                 onClick={() => setStarters(tab)}
               >
                 Browse starters
-              </Button>
+              </QuietTextAction>
             )}
             {canEdit && tab === "templates" && (
-              <Button size="sm" onClick={() => setTemplate({})}>
+              <QuietPrimaryAction onClick={() => setTemplate({})}>
                 New template
-              </Button>
+              </QuietPrimaryAction>
             )}
             {canEdit && tab === "sequences" && (
-              <Button size="sm" onClick={() => setSequence({})}>
+              <QuietPrimaryAction onClick={() => setSequence({})}>
                 New sequence
-              </Button>
+              </QuietPrimaryAction>
             )}
             {canEdit && tab === "activity" && (
-              <Button size="sm" onClick={() => setEnroll(true)}>
+              <QuietPrimaryAction onClick={() => setEnroll(true)}>
                 Add contacts
-              </Button>
+              </QuietPrimaryAction>
             )}
-          </>
-        }
-      />
-      <div className="flex gap-6 border-b border-border/50 px-6 text-sm">
-        {(["templates", "sequences", "activity"] as const).map((value) => (
-          <button
-            key={value}
-            onClick={() => {
-              setTab(value);
-              setSearch("");
-            }}
-            className={`py-3 capitalize ${tab === value ? "border-b-2 border-foreground font-medium" : "text-muted-foreground"}`}
-          >
-            {value}
-          </button>
-        ))}
+
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
         <div className="mx-auto max-w-6xl space-y-5">

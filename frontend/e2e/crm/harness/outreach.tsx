@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { CRMEmailSettingsTab } from "@/components/settings/CRMEmailSettingsTab";
 import { EmailsPage } from "@/pages/crm/Emails";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -24,7 +25,7 @@ createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={client}>
     <TooltipProvider>
       <div className="h-screen bg-background text-foreground">
-        <EmailsPage />
+        {new URLSearchParams(location.search).has("settings") ? <div className="mx-auto max-w-4xl p-6"><CRMEmailSettingsTab workspaceId="ws-email" /></div> : <EmailsPage />}
       </div>
       <Toaster />
     </TooltipProvider>
