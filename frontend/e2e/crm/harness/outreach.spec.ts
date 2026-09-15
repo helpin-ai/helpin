@@ -687,3 +687,20 @@ for (const saved of [false, true]) {
     await expect(page.getByText('Sequence saved', { exact: true })).toHaveCount(0);
   });
 }
+
+test('activity rejects an empty recipient response instead of staying loading', async ({ page }) => {
+  await setup(page);
+  await page.route('**/api/crm/outreach/enrollments?**', route => route.fulfill({status:200,contentType:'application/json',body:'null'}));
+  await page.goto('/e2e/crm/harness/outreach.html');
+  await page.getByRole('button', { name:'activity', exact:true }).click();
+  await expect(page.getByText('Couldn’t load activity', {exact:true})).toBeVisible();
+  await expect(page.getByText('Loading recipients…', {exact:true})).toHaveCount(0);
+});
+
+test('activity explains how to enable sending limits without a connected mailbox', async ({ page }) => {
+  await setup(page);
+  await page.route('**/api/crm/outreach/mailbox-capacity?**', route => route.fulfill({json:[]}));
+  await page.goto('/e2e/crm/harness/outreach.html');
+  await page.getByRole('button', { name:'activity', exact:true }).click();
+  await expect(page.getByRole('link', {name:'Connect a sending mailbox',exact:true})).toHaveAttribute('href','/w/email-test/settings/crm-email');
+});

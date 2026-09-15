@@ -4,7 +4,7 @@ import {
   useInfiniteQuery,
 } from "@tanstack/react-query";
 import { crmOutreachService } from "@/lib/services/crmOutreachService";
-import { unwrap } from "@/lib/queryUtils";
+import { unwrap, unwrapRequired } from "@/lib/queryUtils";
 export function useEmailTemplates(ws: string) {
   return useQuery({
     queryKey: ["crm", ws, "emailTemplates"],
@@ -33,7 +33,7 @@ export function useSequenceEnrollments(
     queryKey: ["crm", ws, "sequenceEnrollments", filters],
     initialPageParam: 1,
     queryFn: async ({ pageParam, signal }) =>
-      unwrap(
+      unwrapRequired(
         await crmOutreachService.enrollments(
           ws,
           {
@@ -42,6 +42,7 @@ export function useSequenceEnrollments(
           },
           signal,
         ),
+        "Recipient activity",
       ),
     getNextPageParam: (last, pages) =>
       last.length === 50 ? pages.length + 1 : undefined,
@@ -60,7 +61,7 @@ export function useOutreachRefresh(ws: string) {
 export function useMailboxCapacity(ws: string, enabled = true) {
   return useQuery({
     queryKey: ["crm", ws, "mailboxCapacity"],
-    queryFn: async () => unwrap(await crmOutreachService.mailboxCapacity(ws)),
+    queryFn: async () => unwrapRequired(await crmOutreachService.mailboxCapacity(ws), "Mailbox capacity"),
     enabled: !!ws && enabled,
     staleTime: 30000,
     refetchInterval: 30000,
