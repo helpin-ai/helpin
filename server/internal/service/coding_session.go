@@ -336,7 +336,12 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	if agentRunIsPreview(run) {
 		deliveryMode = "preview"
 	}
+	executionLocation := "cloud"
+	if model.IsLocalAgentRun(run) {
+		executionLocation = "local"
+	}
 	session := &model.CodingSession{
+		ExecutionLocation:   executionLocation,
 		DeliveryMode:        deliveryMode,
 		ID:                  run.ID,
 		RunID:               run.ID,
@@ -860,6 +865,9 @@ func (s *AgentService) resolveCodingSessionRepoState(ctx context.Context, run *m
 }
 
 func codingSessionCapabilitiesForRun(run *model.AgentRun) model.CodingSessionCapabilities {
+	if model.IsLocalAgentRun(run) {
+		return model.CodingSessionCapabilities{}
+	}
 	capabilities := model.CodingSessionCapabilities{
 		LiveTextStreaming: true,
 		ToolStreaming:     true,

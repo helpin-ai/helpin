@@ -14,11 +14,12 @@ import (
 type localRunPreparation struct {
 	runID, connectionID, executionID string
 	review                           bool
+	validate                         func(context.Context, *model.AgentRun) error
 }
 
 // AdmitLocalRun shares target validation, agent materialization, model selection,
 // transcript creation, and billing preflight with cloud launches, without dispatch.
-func (s *AgentService) AdmitLocalRun(ctx context.Context, c *model.CLIConnection, e *model.CLIExecution, req model.CLIAdmissionRequest, actor *authorization.Actor) (*model.AgentRun, error) {
+func (s *AgentService) AdmitLocalRun(ctx context.Context, c *model.CLIConnection, e *model.CLIExecution, req model.CLIAdmissionRequest, actor *authorization.Actor, validate func(context.Context, *model.AgentRun) error) (*model.AgentRun, error) {
 	targetType, targetID, ok := strings.Cut(req.Target, ":")
 	if !ok || targetID == "" {
 		return nil, ErrCLIInvalid
@@ -46,7 +47,7 @@ func (s *AgentService) AdmitLocalRun(ctx context.Context, c *model.CLIConnection
 			return nil, ErrCLIForbidden
 		}
 	}
-	local := &localRunPreparation{runID: e.RunID, connectionID: c.ID, executionID: e.ID, review: req.Review}
+	local := &localRunPreparation{runID: e.RunID, connectionID: c.ID, executionID: e.ID, review: req.Review, validate: validate}
 	return s.startTargetRunWithOptions(ctx, c.WorkspaceID, targetType, targetID, model.StartAgentRunRequest{AgentID: req.AgentID, AdditionalContext: &req.Instructions, DeliveryMode: "preview"}, &c.UserID, manualRunTriggerContext(), nil, nil, startTargetRunOptions{local: local})
 }
 func localAgentPolicy(agent *model.Agent, review bool) (model.CLIAgentSnapshot, []string, error) {

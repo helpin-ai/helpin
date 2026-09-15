@@ -190,7 +190,7 @@ func main() {
 			&model.PasswordResetToken{},
 			&model.EmailVerificationToken{},
 			&model.OAuthMobileHandoff{},
-			&model.CLIConnection{}, &model.CLIToken{}, &model.CLIExecution{},
+			&model.CLIConnection{}, &model.CLIToken{}, &model.CLIExecution{}, &model.CLIGeneration{},
 			&model.Organization{},
 			&model.OrganizationMember{},
 			&model.Workspace{},
@@ -1800,7 +1800,7 @@ func main() {
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 	agentService.SetMCPRepository(mcpRepo)
-	cliService, err := service.NewCLIService(repository.NewCLIRepository(db), workspaceRepo, authzService, agentService, service.CLIConfig{Enabled: cfg.CLIEnabled, PublicBaseURL: cfg.CLIPublicBaseURL, AppBaseURL: cfg.AppBaseURL})
+	cliService, err := service.NewCLIService(repository.NewCLIRepository(db), workspaceRepo, authzService, agentService, service.CLIConfig{Enabled: cfg.CLIEnabled, GatewayEnabled: cfg.CLIModelGatewayEnabled, PublicBaseURL: cfg.CLIPublicBaseURL, AppBaseURL: cfg.AppBaseURL})
 	if err != nil {
 		slog.Error("invalid CLI configuration", "error", err)
 		os.Exit(1)

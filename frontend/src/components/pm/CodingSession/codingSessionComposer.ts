@@ -40,7 +40,7 @@ export function resolveCodingSessionComposerState(
     };
   }
 
-  if (!session) return HIDDEN_COMPOSER;
+  if (!session || session.execution_location === 'local') return HIDDEN_COMPOSER;
 
   if (
     activeInteraction?.status === 'pending'

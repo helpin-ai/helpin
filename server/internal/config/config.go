@@ -99,6 +99,7 @@ type Config struct {
 	AppBaseURL                        string
 	MobileAppBaseURL                  string
 	CLIEnabled                        bool
+	CLIModelGatewayEnabled            bool
 	CLIPublicBaseURL                  string
 	MCPServerEnabled                  bool
 	MCPOAuthEnabled                   bool
@@ -370,6 +371,7 @@ func Load() (*Config, error) {
 		AppBaseURL:                             appBaseURL,
 		MobileAppBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("MOBILE_APP_BASE_URL")), "/"),
 		CLIEnabled:                             parseBoolEnv(os.Getenv("CLI_ENABLED")),
+		CLIModelGatewayEnabled:                 parseBoolEnv(os.Getenv("CLI_MODEL_GATEWAY_ENABLED")),
 		CLIPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("CLI_PUBLIC_BASE_URL")), "/"),
 		MCPServerEnabled:                       parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVER_ENABLED")),
 		MCPOAuthEnabled:                        parseBoolEnvDefaultTrue(os.Getenv("MCP_OAUTH_ENABLED")),

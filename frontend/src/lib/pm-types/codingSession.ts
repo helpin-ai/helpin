@@ -109,6 +109,7 @@ export interface CodingSessionDiff {
 }
 
 export interface CodingSession {
+  execution_location?: 'local' | 'cloud';
   delivery_mode?: AgentRunDeliveryMode;
   id: string;
   run_id: string;

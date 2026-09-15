@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,7 +48,7 @@ func setupCLIService(t *testing.T) (*CLIService, *gorm.DB, *cliTestAuthz, *fakeA
 	now := time.Now().UTC()
 	seedCodingDelegationAgent(t, db, model.AgentPresetCodeBuilder, model.InvocationModeAutonomous, now)
 	seedCodingDelegationTaskAndDelivery(t, db, now)
-	if err := db.AutoMigrate(&model.CLIConnection{}, &model.CLIToken{}, &model.CLIExecution{}); err != nil {
+	if err := db.AutoMigrate(&model.CLIConnection{}, &model.CLIToken{}, &model.CLIExecution{}, &model.CLIGeneration{}); err != nil {
 		t.Fatal(err)
 	}
 	client := &fakeAgentRuntimeSignalClient{}
@@ -279,5 +282,65 @@ func TestCLIExpiredAccessAndLogout(t *testing.T) {
 	}
 	if _, err := s.Exchange(context.Background(), "refresh_token", tokens.RefreshToken, cliClientID, s.resource(), "", ""); !errors.Is(err, ErrCLIUnauthorized) {
 		t.Fatalf("revoked refresh: %v", err)
+	}
+}
+
+type cliUsageRecorder struct {
+	mu      sync.Mutex
+	entries map[string]model.AIExecutionUsage
+}
+
+func (r *cliUsageRecorder) RecordExecutionUsage(_ context.Context, entry model.AIExecutionUsage, _ model.JSONBlob) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.entries[entry.IdempotencyKey] = entry
+	return nil
+}
+
+// EnableCLIConnectedFixture configures deterministic inference and real community metering.
+func EnableCLIConnectedFixture(t *testing.T, s *CLIService, db *gorm.DB) func() int64 {
+	t.Helper()
+	s.config.GatewayEnabled = true
+	s.validateNative = func(context.Context, *model.AgentRun) error { return nil }
+	recorder := &cliUsageRecorder{entries: map[string]model.AIExecutionUsage{}}
+	s.agents.aiUsageMeter = NewTokenPricedAIUsageMeter(NewCommunityAIUsage(recorder))
+	for _, sql := range []string{"ALTER TABLE agent_run_messages ADD COLUMN dock_chat_id TEXT", "ALTER TABLE agent_run_messages ADD COLUMN dock_chat_sequence INTEGER", "ALTER TABLE agent_run_messages ADD COLUMN client_message_id TEXT", "ALTER TABLE agent_run_messages ADD COLUMN delivery_status TEXT DEFAULT 'sent'"} {
+		if err := db.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.generate = func(_ context.Context, _ *model.AgentRun, req model.CLINativeRequest) (*model.CLINativeResponse, error) {
+		result := &model.CLINativeResponse{Message: model.CLINativeMessage{Role: "assistant"}, Usage: model.CLIUsage{InputTokens: 100, OutputTokens: 20}}
+		name := ""
+		var input any
+		switch req.Step {
+		case 0:
+			name = "read_files"
+			input = map[string]any{"files": []map[string]string{{"path": "calc.py"}}}
+		case 1:
+			name = "write_file"
+			input = map[string]string{"path": "calc.py", "content": "def add(a, b):\n    return a + b\n"}
+		case 2:
+			name = "run_command"
+			input = map[string]any{"program": "python3", "args": []string{"-c", "from calc import add; assert add(2, 3) == 5; print('tests passed')"}}
+		default:
+			result.Message.Content = "Fixed addition and verified the tests."
+			return result, nil
+		}
+		raw, err := json.Marshal(input)
+		if err != nil {
+			return nil, err
+		}
+		result.Message.Blocks = []model.CLINativeBlock{{Type: "tool_call", ToolCallID: fmt.Sprintf("call-%d", req.Step), ToolName: name, Input: raw}}
+		return result, nil
+	}
+	return func() int64 {
+		recorder.mu.Lock()
+		defer recorder.mu.Unlock()
+		var total int64
+		for _, e := range recorder.entries {
+			total += e.InputTokens
+		}
+		return total
 	}
 }

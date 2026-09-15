@@ -34,6 +34,7 @@ var ErrCLIConflict = errors.New("CLI execution conflict; refresh its state befor
 // CLIConfig separates this resource and issuer from MCP OAuth and cloud workers.
 type CLIConfig struct {
 	Enabled                   bool
+	GatewayEnabled            bool
 	PublicBaseURL, AppBaseURL string
 }
 type cliWorkspaceLister interface {
@@ -48,11 +49,13 @@ type cliAuthorizer interface {
 
 // CLIService owns workspace-scoped consent and local run admission.
 type CLIService struct {
-	repo       *repository.CLIRepository
-	workspaces cliWorkspaceLister
-	authz      cliAuthorizer
-	agents     *AgentService
-	config     CLIConfig
+	repo           *repository.CLIRepository
+	workspaces     cliWorkspaceLister
+	authz          cliAuthorizer
+	agents         *AgentService
+	config         CLIConfig
+	validateNative func(context.Context, *model.AgentRun) error
+	generate       func(context.Context, *model.AgentRun, model.CLINativeRequest) (*model.CLINativeResponse, error)
 }
 
 // NewCLIService constructs the separately gated CLI API.
@@ -73,7 +76,10 @@ func NewCLIService(repo *repository.CLIRepository, workspaces cliWorkspaceLister
 			}
 		}
 	}
-	return &CLIService{repo: repo, workspaces: workspaces, authz: authz, agents: agents, config: cfg}, nil
+	s := &CLIService{repo: repo, workspaces: workspaces, authz: authz, agents: agents, config: cfg}
+	s.generate = s.generateNative
+	s.validateNative = func(ctx context.Context, run *model.AgentRun) error { _, _, err := s.modelRoute(ctx, run); return err }
+	return s, nil
 }
 
 // Enabled reports the deployment rollout gate.
@@ -81,7 +87,11 @@ func (s *CLIService) Enabled() bool { return s != nil && s.config.Enabled }
 
 // Discovery describes the admission capabilities implemented by this phase.
 func (s *CLIService) Discovery() map[string]any {
-	return map[string]any{"protocol_version": "agent-runtime-cli/v1alpha1", "app_id": "helpin", "name": "Helpin", "api_base_url": s.resource(), "issuer": s.issuer(), "client_id": cliClientID, "resource": s.resource(), "scopes": []string{cliScope}, "capabilities": []string{"admission", "execution_leases"}}
+	capabilities := []string{"admission", "execution_leases"}
+	if s.config.GatewayEnabled {
+		capabilities = append(capabilities, "model_gateway", "event_sync", "artifacts")
+	}
+	return map[string]any{"protocol_version": "agent-runtime-cli/v1alpha1", "app_id": "helpin", "name": "Helpin", "api_base_url": s.resource(), "issuer": s.issuer(), "client_id": cliClientID, "resource": s.resource(), "scopes": []string{cliScope}, "capabilities": capabilities}
 }
 
 // OAuthMetadata exposes this issuer without modifying the existing MCP issuer.

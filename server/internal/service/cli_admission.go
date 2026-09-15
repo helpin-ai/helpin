@@ -72,7 +72,11 @@ func (s *CLIService) Admit(ctx context.Context, c *model.CLIConnection, req mode
 	}
 	var run *model.AgentRun
 	if created {
-		run, err = s.agents.AdmitLocalRun(ctx, c, execution, req, actor)
+		var validate func(context.Context, *model.AgentRun) error
+		if s.config.GatewayEnabled {
+			validate = s.validateNative
+		}
+		run, err = s.agents.AdmitLocalRun(ctx, c, execution, req, actor, validate)
 	} else {
 		run, err = s.agents.runRepo.GetByID(ctx, c.WorkspaceID, execution.RunID)
 	}

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +25,10 @@ import (
 
 // TestCLIHTTPBinary runs the unmodified CLI against real Helpin handlers and
 // service/repository layers. Only the browser session and workspace are fixtures.
-func TestCLIHTTPBinary(t *testing.T) {
+func TestCLIHTTPBinary(t *testing.T)          { testCLIHTTPBinary(t, false) }
+func TestCLIConnectedHTTPBinary(t *testing.T) { testCLIHTTPBinary(t, true) }
+func testCLIHTTPBinary(t *testing.T, connected bool) {
+	t.Helper()
 	binary := os.Getenv("AGENT_RUNTIME_CLI_TEST_BINARY")
 	if binary == "" {
 		t.Skip("set AGENT_RUNTIME_CLI_TEST_BINARY to exercise the compiled CLI")
@@ -34,6 +38,10 @@ func TestCLIHTTPBinary(t *testing.T) {
 	baseURL := "http://" + server.Listener.Addr().String()
 	defer server.Close()
 	svc, db, dispatches := service.NewCLIIntegrationFixture(t, baseURL)
+	var observedUsage func() int64
+	if connected {
+		observedUsage = service.EnableCLIConnectedFixture(t, svc, db)
+	}
 	h := handler.NewCLIHandler(svc)
 	router.Get("/agent-runtime/cli.json", h.Discovery)
 	router.Get("/.well-known/oauth-authorization-server/api/cli/oauth", h.Metadata)
@@ -46,6 +54,9 @@ func TestCLIHTTPBinary(t *testing.T) {
 	router.Get("/api/cli/v1/me", h.Me)
 	router.Get("/api/cli/v1/agents", h.Agents)
 	router.Post("/api/cli/v1/runs", h.Admit)
+	router.Post("/api/cli/v1/runs/{run_id}/model", h.Model)
+	router.Post("/api/cli/v1/runs/{run_id}/events", h.Report)
+	router.Post("/api/cli/v1/runs/{run_id}/artifacts", h.Artifact)
 	router.Get("/api/cli/v1/runs/{run_id}/execution", h.Execution)
 	router.Post("/api/cli/v1/runs/{run_id}/{action:bind|renew|revoke}", h.Execution)
 	server.Start()
@@ -166,6 +177,59 @@ func TestCLIHTTPBinary(t *testing.T) {
 	run("executions", "revoke", "helpin", admission.RunID)
 	if out, err := command("executions", "renew", "helpin", admission.RunID, "--epoch", "1").CombinedOutput(); err == nil {
 		t.Fatalf("revoked grant accepted: %s", out)
+	}
+	if connected {
+		env = append(env, "PATH="+os.Getenv("PATH"))
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "calc.py"), []byte("def add(a, b): return a - b\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		git := exec.Command("git", "init", dir)
+		if out, err := git.CombinedOutput(); err != nil {
+			t.Fatalf("git init %v %s", err, out)
+		}
+		git = exec.Command("git", "-C", dir, "add", "calc.py")
+		if out, err := git.CombinedOutput(); err != nil {
+			t.Fatalf("git add %v %s", err, out)
+		}
+		run("run", "--connection", "helpin", "--agent", "agent-1", "--target", "task:task-1", "--dir", dir, "--yes", "--json", "Fix addition and run tests")
+		for attempt := 0; attempt < 4; attempt++ {
+			listing := strings.Fields(string(run("runs", "list")))
+			if len(listing) < 2 {
+				t.Fatal("no local run")
+			}
+			if listing[1] == "completed" {
+				break
+			}
+			if listing[1] != "paused" {
+				t.Fatalf("unexpected local state: %v", listing)
+			}
+			run("runs", "resume", listing[0], "--intent", "approve", "--json")
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "calc.py"))
+		if err != nil || !strings.Contains(string(data), "a + b") {
+			t.Fatalf("local edit missing: %s %v", data, err)
+		}
+		var finished model.AgentRun
+		if err = db.Where("status = ?", "completed").First(&finished).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(finished.OutputSummary), "local_report") {
+			t.Fatal("missing local provenance")
+		}
+		var artifacts int64
+		if err = db.Model(&model.AgentRunArtifact{}).Where("run_id = ?", finished.ID).Count(&artifacts).Error; err != nil {
+			t.Fatal(err)
+		}
+		if artifacts < 2 || observedUsage() < 400 || dispatches() != 0 {
+			t.Fatalf("artifacts=%d observed tokens=%d cloud=%d", artifacts, observedUsage(), dispatches())
+		}
+		listing := strings.Fields(string(run("runs", "list")))
+		before := observedUsage()
+		run("runs", "sync", listing[0])
+		if observedUsage() != before {
+			t.Fatal("result replay rebilled usage")
+		}
 	}
 	run("logout", "helpin")
 	var revoked int64

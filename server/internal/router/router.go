@@ -297,6 +297,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/cli/v1/me", h.CLI.Me)
 			r.Get("/cli/v1/agents", h.CLI.Agents)
 			r.Post("/cli/v1/runs", h.CLI.Admit)
+			r.Post("/cli/v1/runs/{run_id}/model", h.CLI.Model)
+			r.Post("/cli/v1/runs/{run_id}/events", h.CLI.Report)
+			r.Post("/cli/v1/runs/{run_id}/artifacts", h.CLI.Artifact)
 			r.Get("/cli/v1/runs/{run_id}/execution", h.CLI.Execution)
 			r.Post("/cli/v1/runs/{run_id}/{action:bind|renew|revoke}", h.CLI.Execution)
 		}

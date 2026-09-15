@@ -6449,6 +6449,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		if err := prepareLocalRun(run, params); err != nil {
 			return nil, err
 		}
+		if params.local.validate != nil {
+			if err := params.local.validate(ctx, run); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := PreflightAgentRunAIUsage(ctx, s.aiUsageMeter, run, billingAgent); err != nil {
 		s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, nil, err)

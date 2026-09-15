@@ -38,6 +38,7 @@ func (CLIToken) TableName() string { return "cli_tokens" }
 
 // CLIExecution is a revocable, fenced local execution lease and admission record.
 type CLIExecution struct {
+	BusyID         string     `json:"-" gorm:"not null;default:''"`
 	ID             string     `json:"id" gorm:"primaryKey"`
 	ConnectionID   string     `json:"connection_id" gorm:"not null;uniqueIndex:idx_cli_admission,priority:1"`
 	RequestID      string     `json:"request_id" gorm:"not null;uniqueIndex:idx_cli_admission,priority:2"`

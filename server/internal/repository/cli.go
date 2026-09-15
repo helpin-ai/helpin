@@ -118,3 +118,96 @@ func (r *CLIRepository) Renew(ctx context.Context, e *model.CLIExecution, now ti
 func (r *CLIRepository) RevokeExecution(ctx context.Context, id string, now time.Time) error {
 	return r.db.WithContext(ctx).Model(&model.CLIExecution{}).Where("id = ?", id).Update("revoked_at", now).Error
 }
+
+// BeginGeneration reserves an attempt and fences simultaneous provider requests.
+func (r *CLIRepository) BeginGeneration(ctx context.Context, e *model.CLIExecution, g *model.CLIGeneration) (bool, error) {
+	created := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.CLIExecution{}).Where("id = ? AND epoch = ? AND local_run_id = ? AND busy_id = '' AND revoked_at IS NULL AND lease_expires_at > ?", e.ID, e.Epoch, e.LocalRunID, time.Now().UTC()).Where("EXISTS (SELECT 1 FROM agent_runs WHERE id = ? AND status IN ?)", e.RunID, []string{"queued", "running", "paused"}).Update("busy_id", g.ID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return nil
+		}
+		if err := tx.Create(g).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.AgentRun{}).Where("id = ? AND status IN ?", e.RunID, []string{"queued", "running", "paused"}).Updates(map[string]any{"status": "running", "pause_reason": "none", "last_heartbeat_at": time.Now().UTC()}).Error; err != nil {
+			return err
+		}
+		created = true
+		return nil
+	})
+	return created, err
+}
+
+// Generation retrieves a provider attempt, including an uncertain pending attempt.
+func (r *CLIRepository) Generation(ctx context.Context, id string) (*model.CLIGeneration, error) {
+	var g model.CLIGeneration
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&g).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &g, err
+}
+
+// SaveGeneration durably stores server-observed output before returning it.
+func (r *CLIRepository) SaveGeneration(ctx context.Context, g *model.CLIGeneration) error {
+	return r.db.WithContext(ctx).Save(g).Error
+}
+
+// FinishGeneration releases the fence after usage checkpoint persistence.
+func (r *CLIRepository) FinishGeneration(ctx context.Context, eID, gID string) error {
+	return r.db.WithContext(ctx).Model(&model.CLIExecution{}).Where("id = ? AND busy_id = ?", eID, gID).Update("busy_id", "").Error
+}
+
+// GenerationUsage returns only durable provider observations.
+func (r *CLIRepository) GenerationUsage(ctx context.Context, eID string) (model.CLIUsage, error) {
+	var u model.CLIUsage
+	err := r.db.WithContext(ctx).Model(&model.CLIGeneration{}).Select("COALESCE(SUM(input_tokens),0) AS input_tokens, COALESCE(SUM(output_tokens),0) AS output_tokens, COALESCE(SUM(cached_input_tokens),0) AS cached_input_tokens, COALESCE(SUM(reasoning_output_tokens),0) AS reasoning_output_tokens").Where("execution_id = ?", eID).Scan(&u).Error
+	return u, err
+}
+
+// SaveLocalResults atomically stores reported content and updates the normal run.
+func (r *CLIRepository) SaveLocalResults(ctx context.Context, e *model.CLIExecution, run *model.AgentRun, messages []model.AgentRunMessage, artifact *model.AgentRunArtifact) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.CLIExecution{}).Where("id = ? AND epoch = ? AND local_run_id = ? AND busy_id = ? AND revoked_at IS NULL", e.ID, e.Epoch, e.LocalRunID, e.BusyID).Updates(map[string]any{"updated_at": time.Now().UTC(), "busy_id": ""})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrInvalidTransaction
+		}
+		for _, m := range messages {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&m).Error; err != nil {
+				return err
+			}
+		}
+		if artifact != nil {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(artifact).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&model.AgentRun{}).Where("id = ? AND workspace_id = ? AND status IN ?", run.ID, run.WorkspaceID, []string{"queued", "running", "paused", run.Status}).Updates(map[string]any{"status": run.Status, "pause_reason": run.PauseReason, "completed_at": run.CompletedAt, "output_summary": run.OutputSummary}).Error
+	})
+}
+
+// SaveLocalArtifact persists an idempotent inline artifact after service authorization.
+func (r *CLIRepository) SaveLocalArtifact(ctx context.Context, a *model.AgentRunArtifact) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(a).Error
+}
+
+// LockExecution serializes result settlement against model dispatch.
+func (r *CLIRepository) LockExecution(ctx context.Context, e *model.CLIExecution, operation string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&model.CLIExecution{}).Where("id = ? AND epoch = ? AND local_run_id = ? AND busy_id = '' AND revoked_at IS NULL", e.ID, e.Epoch, e.LocalRunID).Update("busy_id", operation)
+	return result.RowsAffected == 1, result.Error
+}
+
+// SaveProviderUsage updates shared run counters only from the provider journal.
+func (r *CLIRepository) SaveProviderUsage(ctx context.Context, run *model.AgentRun, usage model.CLIUsage) error {
+	return r.db.WithContext(ctx).Model(&model.AgentRun{}).Where("id = ? AND workspace_id = ?", run.ID, run.WorkspaceID).Updates(map[string]any{
+		"output_summary": run.OutputSummary, "input_tokens": usage.InputTokens, "output_tokens": usage.OutputTokens,
+		"cached_input_tokens": usage.CachedInputTokens, "tokens_used": usage.InputTokens + usage.OutputTokens,
+	}).Error
+}

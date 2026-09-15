@@ -266,3 +266,71 @@ func cliBrowserMFA(r *http.Request) bool {
 	claims := middleware.ClaimsFrom(r.Context())
 	return claims != nil && claims.MFASatisfied
 }
+
+// Model executes one idempotent, fenced model request under the current user.
+func (h *CLIHandler) Model(w http.ResponseWriter, r *http.Request) {
+	c := h.principal(w, r)
+	if c == nil {
+		return
+	}
+	var req model.CLIModelRequest
+	if err := decodeCLIExecutionJSON(w, r, &req); err != nil {
+		writeCLIError(w, r, service.ErrCLIInvalid)
+		return
+	}
+	result, err := h.service.Generate(r.Context(), c, chi.URLParam(r, "run_id"), req)
+	if err != nil {
+		writeCLIError(w, r, err)
+		return
+	}
+	writeJSON(w, 200, result)
+}
+
+// Report ingests bounded local reports without trusting their usage claims.
+func (h *CLIHandler) Report(w http.ResponseWriter, r *http.Request) {
+	c := h.principal(w, r)
+	if c == nil {
+		return
+	}
+	var req model.CLIResultRequest
+	if err := decodeCLIExecutionJSON(w, r, &req); err != nil {
+		writeCLIError(w, r, service.ErrCLIInvalid)
+		return
+	}
+	if err := h.service.Report(r.Context(), c, chi.URLParam(r, "run_id"), req); err != nil {
+		writeCLIError(w, r, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+// Artifact persists a private local evidence attachment.
+func (h *CLIHandler) Artifact(w http.ResponseWriter, r *http.Request) {
+	c := h.principal(w, r)
+	if c == nil {
+		return
+	}
+	var req model.CLIArtifactRequest
+	if err := decodeCLIExecutionJSON(w, r, &req); err != nil {
+		writeCLIError(w, r, service.ErrCLIInvalid)
+		return
+	}
+	id, err := h.service.Artifact(r.Context(), c, chi.URLParam(r, "run_id"), req)
+	if err != nil {
+		writeCLIError(w, r, err)
+		return
+	}
+	writeJSON(w, 201, map[string]string{"artifact_id": id, "provenance": "local_report"})
+}
+func decodeCLIExecutionJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<20)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return service.ErrCLIInvalid
+	}
+	return nil
+}
