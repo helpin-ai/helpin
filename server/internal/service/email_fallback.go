@@ -1105,7 +1105,8 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if forwardedAttribution.Applied {
 		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
 	}
-	if isTeammateReply {
+	isNotice := inboundEmailHasAbsenceNotice(messageMetadata)
+	if isTeammateReply && !isNotice {
 		messageMetadata = mergeExternalEmailReplyMetadata(messageMetadata)
 	}
 	senderType := "customer"
@@ -1115,8 +1116,10 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if isTeammateReply {
 		senderType = "user"
 		senderUserID = teammate.UserID
-		emailDirection = "outbound"
-		emailStatus = "external"
+		if !isNotice {
+			emailDirection = "outbound"
+			emailStatus = "external"
+		}
 	}
 	msg := &model.SupportMessage{
 		ID:                uuid.NewString(),
@@ -1138,10 +1141,14 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		}
 	}
 
+	if isNotice {
+		msg.MessageType = model.SupportMessageTypeEmailNotice
+	}
+
 	normalizedStatus := model.NormalizeSupportConversationStatus(conv.Status)
 	wasResolved := normalizedStatus == model.SupportConversationStatusResolved
-	shouldReopenCustomerReply := !isTeammateReply && (wasResolved || normalizedStatus == model.SupportConversationStatusWaitingOnCustomer)
-	shouldMoveTeammateReplyToWaiting := isTeammateReply && wasResolved
+	shouldReopenCustomerReply := !isTeammateReply && !isNotice && (wasResolved || normalizedStatus == model.SupportConversationStatusWaitingOnCustomer)
+	shouldMoveTeammateReplyToWaiting := isTeammateReply && !isNotice && wasResolved
 
 	var createdMsg *model.SupportMessage
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1211,7 +1218,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 
 		// Email replies belong to the human inbox. Cancel AI ownership silently:
 		// sending a handoff email here can itself feed an autoresponder loop.
-		if !isTeammateReply && (!model.SupportAIReplyAllowed(settings, conv, msg) || !shouldAutomaticallyProcessSupportAI(settings)) && (derefString(conv.AssignedAgentID) != "" || derefString(conv.AIState) == "pending" || derefString(conv.AIActiveRunID) != "") {
+		if !isTeammateReply && !isNotice && (!model.SupportAIReplyAllowed(settings, conv, msg) || !shouldAutomaticallyProcessSupportAI(settings)) && (derefString(conv.AssignedAgentID) != "" || derefString(conv.AIState) == "pending" || derefString(conv.AIActiveRunID) != "") {
 			flow := supportEmailReopenFlowState(conv)
 			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
 				"assigned_agent_id": nil, "human_takeover": true, "ai_state": "escalated", "flow_state": flow,
@@ -1253,7 +1260,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 				}
 			}
 		}
-		if isTeammateReply {
+		if isTeammateReply && !isNotice {
 			updates := map[string]any{
 				"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
 				"opened_by_user_id": teammate.UserID,
@@ -1297,10 +1304,10 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		return txErr
 	}
 
-	if !isTeammateReply {
+	if !isTeammateReply && !isNotice {
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, content, senderName)
 	}
-	if !isTeammateReply && s.supportInboxService != nil {
+	if !isTeammateReply && !isNotice && s.supportInboxService != nil {
 		s.supportInboxService.recordSupportEvent(SupportEventInput{
 			WorkspaceID: conv.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
 			ConversationID: &conv.ID, MessageID: &createdMsg.ID,
@@ -1321,7 +1328,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		actorID = *teammate.UserID
 	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, actorID))
-	if shouldReopenCustomerReply || isTeammateReply {
+	if shouldReopenCustomerReply || (isTeammateReply && !isNotice) {
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
 			Entity:      "support_conversation",
@@ -3337,7 +3344,12 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 	if err != nil {
 		return err
 	}
-	if conversation == nil {
+	projection := inboundPayloadProjection(payload)
+	metadata := inboundEmailAIMetadata("{}", payload, projection.VisibleText)
+	isNotice := inboundEmailHasAbsenceNotice(metadata)
+	// An autoresponder with no matching references must not attach to another
+	// active issue solely because the customer email happens to match.
+	if conversation == nil && !isNotice {
 		conversation, err = s.resolveInboundFallbackConversation(ctx, route, payload)
 		if err != nil {
 			return err
@@ -3568,10 +3580,16 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	if forwardedAttribution.Applied {
 		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
 	}
+	isNotice := inboundEmailHasAbsenceNotice(messageMetadata)
 	status := model.SupportConversationStatusOpen
 	var closedAt *time.Time
 	if spamSignals.shouldAutoSpamNewConversation() {
 		status = model.SupportConversationStatusSpam
+		closedAt = &now
+	}
+
+	if isNotice {
+		status = model.SupportConversationStatusResolved
 		closedAt = &now
 	}
 
@@ -3610,13 +3628,13 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		Source:                         "email",
 	}
 
-	if conversation.Status != model.SupportConversationStatusSpam && conversation.MailboxID == nil && s.supportInboxService != nil {
+	if !isNotice && conversation.Status != model.SupportConversationStatusSpam && conversation.MailboxID == nil && s.supportInboxService != nil {
 		if mailboxID, _, mailboxErr := s.supportInboxService.maybeApplyMailboxRoutingForChannel(ctx, route.WorkspaceID, nil, true, "email"); mailboxErr == nil {
 			conversation.MailboxID = mailboxID
 		}
 	}
 
-	if mailbox != nil {
+	if mailbox != nil && !isNotice {
 		ownerID, flowState, ownerErr := s.supportInboxService.determineMailboxOwner(ctx, route.WorkspaceID, mailbox, nil)
 		if ownerErr != nil {
 			return ownerErr
@@ -3635,6 +3653,13 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		MessageType:       "reply",
 		Metadata:          messageMetadata,
 		ViaChannel:        &viaEmail,
+	}
+
+	if isNotice {
+		// System closure is not an AI or human resolution. Do not stamp
+		// resolved_at or emit a resolution event used by performance metrics.
+		conversation.FlowState = nil
+		message.MessageType = model.SupportMessageTypeEmailNotice
 	}
 
 	rfcMessageID := inboundRFCMessageID(payload)
@@ -3721,6 +3746,19 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 			return err
 		}
 
+		if isNotice {
+			event := model.SystemEventClosed
+			if err := msgRepoTx.Create(ctx, &model.SupportMessage{
+				ID: uuid.NewString(), WorkspaceID: conversation.WorkspaceID,
+				ConversationID: conversation.ID, SenderType: "system",
+				MessageType: "system", SystemEventType: &event, IsInternal: true,
+				Content:  "Automatically closed: out-of-office reply.",
+				Metadata: `{"closure_reason":"out_of_office","closure_actor":"system"}`,
+			}); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
 	if txErr != nil {
@@ -3745,8 +3783,10 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		}
 	}
 
-	ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conversation, content, customerName)
-	if s.supportInboxService != nil {
+	if !isNotice {
+		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conversation, content, customerName)
+	}
+	if !isNotice && s.supportInboxService != nil {
 		s.supportInboxService.recordSupportEvent(SupportEventInput{
 			WorkspaceID: conversation.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
 			ConversationID: &conversation.ID, MessageID: &message.ID,
@@ -3770,7 +3810,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		"conversation_id", conversation.ID,
 		"route_key", route.RouteKey,
 	)
-	if s.supportInboxService != nil && s.supportInboxService.triageService != nil {
+	if !isNotice && s.supportInboxService != nil && s.supportInboxService.triageService != nil {
 		// Routing can assign a human. Complete it before reloading ownership for AI.
 		if _, err := s.supportInboxService.triageService.EvaluateAndRoute(ctx, conversation.WorkspaceID, conversation.ID, message.ID); err != nil {
 			s.logger.ErrorContext(ctx, "support triage failed for inbound email conversation", "error", err, "conversation_id", conversation.ID)

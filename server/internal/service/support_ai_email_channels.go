@@ -27,6 +27,9 @@ func inboundEmailAIMetadata(raw string, payload model.PostmarkInboundPayload, co
 			token := strings.TrimSpace(strings.SplitN(value, ";", 2)[0])
 			if token != "" && token != "no" {
 				reason = "automatic_reply"
+				if token != "auto-replied" {
+					reason = "automated_message"
+				}
 			}
 		case "x-autoreply", "x-autorespond", "x-auto-response", "x-loop":
 			if value != "" && value != "no" && value != "false" {
@@ -64,6 +67,13 @@ func inboundEmailAIMetadata(raw string, payload model.PostmarkInboundPayload, co
 	}
 	if postmarkInboundSpamSignalsFromHeaders(payload.Headers).shouldAutoSpamNewConversation() {
 		reason = "spam"
+	}
+	if isProviderForwardingConfirmation(payload) {
+		reason = "forwarding_confirmation"
+	}
+	// Attention requires a narrower decision than loop-prevention suppression.
+	if inboundEmailIsAbsenceNotice(payload, content, reason) {
+		metadata["email_notice_kind"] = "out_of_office"
 	}
 	metadata["email_auto_reply"] = reason == "automatic_reply"
 	metadata["email_ai_suppression_reason"] = reason

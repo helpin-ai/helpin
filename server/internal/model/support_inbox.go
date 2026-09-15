@@ -325,7 +325,7 @@ type SupportMessage struct {
 	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	ConversationID    string     `json:"conversation_id" gorm:"type:uuid;index"`
 	SenderType        string     `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
-	MessageType       string     `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system
+	MessageType       string     `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system, email_notice
 	SystemEventType   *string    `json:"system_event_type,omitempty" gorm:"size:40;index:idx_support_messages_system_event,where:system_event_type IS NOT NULL"`
 	SenderUserID      *string    `json:"sender_user_id" gorm:"type:uuid"`
 	SenderAgentID     *string    `json:"sender_agent_id" gorm:"type:uuid"`
@@ -965,7 +965,7 @@ type CreateMessageRequest struct {
 	ClientMessageID string   `json:"client_message_id,omitempty"`
 	IsInternal      bool     `json:"is_internal"`
 	AIAssisted      bool     `json:"ai_assisted,omitempty"`
-	MessageType     string   `json:"message_type"` // reply, csat_survey, system
+	MessageType     string   `json:"message_type"` // reply, csat_survey, system, email_notice
 	AttachmentIDs   []string `json:"attachment_ids,omitempty"`
 	Channels        []string `json:"channels,omitempty"`
 	DeliveryMode    string   `json:"delivery_mode,omitempty"`
