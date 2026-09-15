@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Collapsible } from 'radix-ui';
 import { buildSettingsHomePath } from '@/lib/settingsDiscovery';
 import { SETTINGS_HOME_LABEL } from '@/lib/settingsSections';
-import { Search01Icon, ArrowRight01Icon } from '@/lib/icons';
+import { ArrowRight01Icon } from '@/lib/icons';
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -80,9 +80,6 @@ export function SettingsRailNav({
       <div className="sticky top-0 z-10 space-y-1 border-b border-border/50 bg-sidebar pb-3 mb-3">
         <SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton asChild isActive={isActive(buildSettingsHomePath(workspaceSlug))}><a href={buildSettingsHomePath(workspaceSlug)} onClick={event => { event.preventDefault(); onNavigate(buildSettingsHomePath(workspaceSlug)); }}>{SETTINGS_HOME_LABEL}</a></SidebarMenuButton></SidebarMenuItem>
-          <SidebarMenuItem><SidebarMenuButton asChild><a href={`${buildSettingsHomePath(workspaceSlug)}?search=1`} onClick={event => { event.preventDefault();
-            const search = document.querySelector<HTMLInputElement>('input[data-settings-search]');
-            if (search) search.focus(); else onNavigate(`${buildSettingsHomePath(workspaceSlug)}?search=1`); }}><Search01Icon /><span>Search settings</span></a></SidebarMenuButton></SidebarMenuItem>
         </SidebarMenu>
       </div>
       {groups.map((group, index) => {

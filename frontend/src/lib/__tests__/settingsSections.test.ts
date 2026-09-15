@@ -19,7 +19,7 @@ describe('getSettingsSidebarGroups', () => {
   });
 
   it.skipIf(!billingEnabled)('keeps billing in the workspace settings group', () => {
-    const workspaceGroup = getSettingsSidebarGroups(false).find((group) => group.label === 'Workspace & access');
+    const workspaceGroup = getSettingsSidebarGroups(false).find((group) => group.label === 'Workspace');
 
     expect(workspaceGroup?.sections.map((section) => section.id)).toContain('billing');
   });
@@ -30,12 +30,12 @@ describe('getSettingsSidebarGroups', () => {
 
   it('groups MCP and repositories under Integrations', () => {
     const workspaceGroup = getSettingsSidebarGroups(true, new Set(['workspace.read', 'settings.read', 'module_access.manage']))
-      .find((group) => group.label === 'Integrations');
+      .find((group) => group.label === 'Integrations & data');
 
     const sections = workspaceGroup?.sections.map((section) => section.id) ?? [];
     expect(sections).toContain('mcp');
-    expect(sections.indexOf('external-mcp')).toBe(sections.indexOf('mcp') + 1);
-    expect(sections.indexOf('repositories')).toBe(sections.indexOf('external-mcp') + 1);
+    expect(sections.indexOf('external-mcp')).toBe(sections.indexOf('repositories') + 1);
+    expect(sections.indexOf('mcp')).toBe(sections.indexOf('external-mcp') + 1);
   });
 
   it('labels the inbound workspace surface MCP access', () => {
@@ -62,13 +62,13 @@ describe('getSettingsSidebarGroups', () => {
     expect(withSettingsRead).toContain('external-mcp');
   });
 
-  it('puts AI Assistant first in support settings', () => {
+  it('puts inbox and widget setup before AI assistant', () => {
     const supportGroup = getSettingsSidebarGroups(true).find((group) => group.label === 'Support');
 
     expect(supportGroup?.sections.map((section) => section.id).slice(0, 3)).toEqual([
-      'support-ai-assistant',
       'inboxes-routing',
       'chat-general',
+      'support-ai-assistant',
     ]);
   });
   it('gates the AI settings sections on their read permissions', () => {

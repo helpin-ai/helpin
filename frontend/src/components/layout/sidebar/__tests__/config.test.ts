@@ -77,7 +77,7 @@ describe('settings team navigation', () => {
       { id: 'team-platform', name: 'Platform' },
       { id: 'team-success', name: 'Customer Success' },
     ]);
-    const workspace = groups.settings.find((group) => group.label === 'Workspace & access');
+    const workspace = groups.settings.find((group) => group.label === 'Workspace');
     const teams = workspace?.items.find((item) => item.label === 'Teams');
 
     expect(teams?.children).toEqual([

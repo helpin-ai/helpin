@@ -24,7 +24,7 @@ export function saveExpandedTeams(workspaceId: string, teams: Set<string>) {
 
 export function getCollapsedSettingsGroups(): Set<string> {
   try {
-    const raw = localStorage.getItem('settings_sidebar_collapsed_v2');
+    const raw = localStorage.getItem('settings_sidebar_collapsed_v3');
     if (raw) {
       return new Set(JSON.parse(raw));
     }
@@ -35,7 +35,7 @@ export function getCollapsedSettingsGroups(): Set<string> {
 
 export function saveCollapsedSettingsGroups(groups: Set<string>) {
   try {
-    localStorage.setItem('settings_sidebar_collapsed_v2', JSON.stringify([...groups]));
+    localStorage.setItem('settings_sidebar_collapsed_v3', JSON.stringify([...groups]));
   } catch { /* local preference is best effort */ }
 }
 

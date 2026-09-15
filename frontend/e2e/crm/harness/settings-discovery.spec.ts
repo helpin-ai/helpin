@@ -14,11 +14,11 @@ for (const mode of ['light', 'dark', 'narrow']) test(`settings directory and sea
   if (mode === 'narrow') await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/e2e/crm/harness/settings-discovery.html${mode === 'dark' ? '?dark' : ''}`);
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Integrations', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Integrations & data', exact: true })).toBeVisible();
   await page.screenshot({ path: `/tmp/settings-home-${mode}.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const search = page.getByRole('searchbox', { name: 'Search settings', exact: true });
-  if (mode !== 'narrow') { await page.getByRole('link', { name: 'Search settings', exact: true }).click(); await expect(search).toBeFocused(); }
+  await expect(page.getByRole('link', { name: 'Search settings', exact: true })).toHaveCount(0);
   await search.fill('gmail signature');
   await expect(page.getByRole('link', { name: /Email signature/ })).toHaveAttribute('href', '/w/settings-test/settings/crm-email#email-signature');
   await search.press('Enter');

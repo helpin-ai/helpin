@@ -22,7 +22,7 @@ export function SettingsHomeView({ groups, slug, recent = [], autoFocus = false,
   } });
   return <div className="mx-auto w-full max-w-5xl space-y-8">
     <QuietPageHeader title="Settings" description="Find what you need to manage your account and workspace." />
-    <QuietSearchInput data-settings-search aria-label="Search settings" placeholder="Search settings… Try signature, invite, or domain" value={query} onChange={event => setQuery(event.target.value)} autoFocus={autoFocus} onKeyDown={event => {
+    <QuietSearchInput data-settings-search aria-label="Search settings" placeholder="Search settings… Try email, notifications, or members" value={query} onChange={event => setQuery(event.target.value)} autoFocus={autoFocus} onKeyDown={event => {
       if (event.key !== 'Enter' && event.key !== 'ArrowDown') return;
       const first = resultList.current?.querySelector<HTMLAnchorElement>('a');
       if (!first) return;
