@@ -198,28 +198,28 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		if h.WidgetRateLimit != nil {
 			r.Use(h.WidgetRateLimit)
 		}
-		r.Get("/config", h.SupportInboxWidget.GetConfig)
-		r.Post("/session", h.SupportInboxWidget.CreateSession)
-		r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
-		r.Post("/messages", h.SupportInboxWidget.SendMessage)
-		r.Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
-		r.Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
-		r.Post("/support/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
-		r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
-		r.Get("/messages", h.SupportInboxWidget.GetMessages)
-		r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/config", h.SupportInboxWidget.GetConfig)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/session", h.SupportInboxWidget.CreateSession)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/support/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/messages", h.SupportInboxWidget.GetMessages)
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
 		if h.SupportAttachment != nil {
-			r.Post("/support/attachments", h.SupportAttachment.WidgetCreate)
-			r.Patch("/support/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/support/attachments", h.SupportAttachment.WidgetCreate)
+			r.With(h.SupportInboxWidget.RequireOrigin).Patch("/support/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
 		}
 		// Help center routes (used by widget-core helpApi.ts)
-		r.Get("/support/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
-		r.Get("/support/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
-		r.Get("/support/help/search", h.SupportInboxWidget.SearchHelpArticles)
-		r.Get("/support/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
-		r.Post("/identify", h.SupportInboxWidget.Identify) // SDK identify/lead path
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/support/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/support/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/support/help/search", h.SupportInboxWidget.SearchHelpArticles)
+		r.With(h.SupportInboxWidget.RequireOrigin).Get("/support/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
+		r.With(h.SupportInboxWidget.RequireOrigin).Post("/identify", h.SupportInboxWidget.Identify) // SDK identify/lead path
 		if h.SupportAI != nil {
-			r.Post("/support/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/support/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
 		}
 	})
 
@@ -401,24 +401,24 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			if h.WidgetRateLimit != nil {
 				r.Use(h.WidgetRateLimit)
 			}
-			r.Get("/config", h.SupportInboxWidget.GetConfig)
-			r.Get("/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
-			r.Get("/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
-			r.Get("/help/search", h.SupportInboxWidget.SearchHelpArticles)
-			r.Get("/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
-			r.Post("/session", h.SupportInboxWidget.CreateSession)
-			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
-			r.Post("/messages", h.SupportInboxWidget.SendMessage)
-			r.Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
-			r.Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
-			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
-			r.Get("/messages", h.SupportInboxWidget.GetMessages)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/config", h.SupportInboxWidget.GetConfig)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/help/collections/{collectionSlug}/articles", h.SupportInboxWidget.GetHelpArticles)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/help/search", h.SupportInboxWidget.SearchHelpArticles)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/help/articles/{articleKey}", h.SupportInboxWidget.GetHelpArticle)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session", h.SupportInboxWidget.CreateSession)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/conversations/{conversationId}/transcript", h.SupportInboxWidget.SendTranscript)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/messages", h.SupportInboxWidget.GetMessages)
 			if h.SupportAI != nil {
-				r.Post("/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
+				r.With(h.SupportInboxWidget.RequireOrigin).Post("/{conversationId}/escalate", h.SupportAI.EscalateToHuman)
 			}
 			if h.SupportAttachment != nil {
-				r.Post("/attachments", h.SupportAttachment.WidgetCreate)
-				r.Patch("/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
+				r.With(h.SupportInboxWidget.RequireOrigin).Post("/attachments", h.SupportAttachment.WidgetCreate)
+				r.With(h.SupportInboxWidget.RequireOrigin).Patch("/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
 			}
 		})
 
@@ -431,7 +431,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
-			r.Get("/{id}", h.SupportInboxWidget.GetConfigByID)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/{id}", h.SupportInboxWidget.GetConfigByID)
 		})
 
 		// ---- Public widget routes for client.helpin.ai (no JWT, open CORS) ----
@@ -444,19 +444,19 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				AllowCredentials: false,
 				MaxAge:           3600,
 			}))
-			r.Get("/config", h.SupportInboxWidget.GetConfig)
-			r.Post("/session", h.SupportInboxWidget.CreateSession)
-			r.Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
-			r.Post("/messages", h.SupportInboxWidget.SendMessage)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/config", h.SupportInboxWidget.GetConfig)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session", h.SupportInboxWidget.CreateSession)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/session/revoke", h.SupportInboxWidget.RevokeSession)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages", h.SupportInboxWidget.SendMessage)
 			if h.WidgetRateLimit != nil {
-				r.With(h.WidgetRateLimit).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+				r.With(h.WidgetRateLimit, h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
 			} else {
-				r.Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
+				r.With(h.SupportInboxWidget.RequireOrigin).Post("/messages/{messageId}/feedback", h.SupportInboxWidget.SubmitAnswerFeedback)
 			}
-			r.Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
-			r.Get("/messages", h.SupportInboxWidget.GetMessages)
-			r.Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
-			r.Post("/identify", h.SupportInboxWidget.Identify) // Headless SDK identify/lead path
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/typing", h.SupportInboxWidget.TypingIndicator) // Deprecated: use WebSocket typing:start/typing:stop instead. Kept as HTTP fallback.
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/messages", h.SupportInboxWidget.GetMessages)
+			r.With(h.SupportInboxWidget.RequireOrigin).Get("/settings/{id}", h.SupportInboxWidget.GetConfigByID)
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/identify", h.SupportInboxWidget.Identify) // Headless SDK identify/lead path
 		})
 
 		// ---- Internal service-to-service routes (bearer token auth) ----

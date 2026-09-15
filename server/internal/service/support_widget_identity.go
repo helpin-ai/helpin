@@ -5,12 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/widgetorigin"
 )
 
 const (
@@ -122,19 +122,10 @@ func normalizeAllowedOrigins(origins []string) ([]string, error) {
 	normalized := make([]string, 0, len(origins))
 	seen := make(map[string]struct{}, len(origins))
 	for _, raw := range origins {
-		if strings.TrimSpace(raw) == "*" {
-			return nil, fmt.Errorf("wildcard origins are not allowed")
+		origin, err := widgetorigin.Normalize(strings.TrimSpace(raw))
+		if err != nil {
+			return nil, fmt.Errorf("invalid allowed origin: %w", err)
 		}
-		parsed, err := url.Parse(strings.TrimSpace(raw))
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil ||
-			strings.Contains(parsed.Host, "*") || parsed.Path != "" || parsed.RawQuery != "" ||
-			parsed.Fragment != "" {
-			return nil, fmt.Errorf("origin %q must contain only scheme and host", raw)
-		}
-		if parsed.Scheme != "https" && parsed.Scheme != "http" {
-			return nil, fmt.Errorf("origin %q has an unsupported scheme", raw)
-		}
-		origin := strings.ToLower(parsed.Scheme + "://" + parsed.Host)
 		if _, ok := seen[origin]; ok {
 			continue
 		}
