@@ -160,7 +160,15 @@ export function Sidebar() {
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() =>
     workspaceId ? getExpandedTeams(workspaceId) : new Set(),
   );
-  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(getCollapsedSettingsGroups);
+  const isSettingsHome = location.pathname.replace(/\/$/, '') === buildSettingsHomePath(wsSlug).replace(/\/$/, '');
+  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(() =>
+    isSettingsHome ? new Set(COLLAPSIBLE_SETTINGS_GROUPS) : getCollapsedSettingsGroups(),
+  );
+  const [settingsSidebarPath, setSettingsSidebarPath] = useState(location.pathname);
+  if (settingsSidebarPath !== location.pathname) {
+    setSettingsSidebarPath(location.pathname);
+    if (isSettingsHome) setCollapsedSettingsGroups(new Set(COLLAPSIBLE_SETTINGS_GROUPS));
+  }
   const [activeSetupJourney, setActiveSetupJourney] = useState<string>();
 
   useEffect(() => {
@@ -228,7 +236,11 @@ export function Sidebar() {
   }, [activeRail, location.pathname, workspaceId, wsSlug]);
 
   useEffect(() => {
-    if (activeRail !== 'settings') {
+    if (isSettingsHome) saveCollapsedSettingsGroups(new Set(COLLAPSIBLE_SETTINGS_GROUPS));
+  }, [location.pathname, isSettingsHome]);
+
+  useEffect(() => {
+    if (activeRail !== 'settings' || isSettingsHome) {
       return;
     }
 
