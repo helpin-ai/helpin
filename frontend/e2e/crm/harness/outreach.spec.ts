@@ -663,3 +663,27 @@ test(`activity shows mailbox capacity and saves owner sending limits ${mode}`, a
   await page.getByRole("button", { name: "Save limits", exact: true }).click();
   await expect.poll(() => limit).toBe(150);
 });
+
+for (const saved of [false, true]) {
+  test(`sequence preserves draft after empty save response (${saved ? 'existing' : 'new'})`, async ({ page }) => {
+    await setup(page);
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto('/e2e/crm/harness/outreach.html?tab=sequences');
+    await page.getByRole('button', { name: saved ? /Demo follow-up/ : 'New sequence' }).click();
+    await page.getByRole('textbox', { name: 'Sequence name', exact: true }).fill('Draft to preserve');
+    await page.getByRole('textbox', { name: 'Step 1 subject', exact: true }).fill('Keep this subject');
+    await page.route('**/api/crm/outreach/sequences**', async route => {
+      if (['POST', 'PUT'].includes(route.request().method())) {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
+      } else await route.fallback();
+    });
+    await page.getByRole('button', { name: saved ? 'Save changes' : 'Save draft', exact: true }).click();
+    await expect(page.getByText('Could not confirm the saved sequence. Your changes are still in the editor.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Sequence name', exact: true })).toHaveValue('Draft to preserve');
+    await expect(page.getByRole('textbox', { name: 'Step 1 subject', exact: true })).toHaveValue('Keep this subject');
+    await expect(page.getByRole('button', { name: saved ? 'Save changes' : 'Save draft', exact: true })).toBeEnabled();
+    expect(errors).toEqual([]);
+    await expect(page.getByText('Sequence saved', { exact: true })).toHaveCount(0);
+  });
+}
