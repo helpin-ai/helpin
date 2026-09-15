@@ -1,3 +1,4 @@
+import { WidgetOriginSettings } from './chat-widget/WidgetOriginSettings';
 import { brandingDescription } from '@edition';
 import { AIReplyChannelsSelect, getAIReplyChannels, type AIReplyChannels } from './chat-widget/AIReplyChannelsSelect';
 import { AIFollowUpSettings } from './chat-widget/AIFollowUpSettings';
@@ -1003,6 +1004,7 @@ function Dashboard() {
       <div className="flex flex-1 flex-col overflow-auto">
         <div className="flex-1 space-y-3 p-4">
         {saveIndicator}
+        {data && <WidgetOriginSettings key={workspaceId} workspaceId={workspaceId} installation={data} />}
         {/* Widget Installation */}
         <div className={supportSectionClass}>
           <button
@@ -1014,7 +1016,7 @@ function Dashboard() {
               <CodeIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Widget Installation</p>
+              <p className="text-sm font-medium">2. Install the widget</p>
               <p className="text-sm text-muted-foreground">Embed the chat widget on your website</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('widget-installation') && 'rotate-180')} />

@@ -1190,7 +1190,12 @@ export interface SupportRoutingUsageStatus {
   exhausted: boolean;
 }
 
-export interface SupportInstallationResponse {
+export interface WidgetOriginSettings {
+  allowed_origins: string[];
+  identity_verification_mode: 'report_only' | 'enforced';
+}
+
+export interface SupportInstallationResponse extends WidgetOriginSettings {
   id: string;
   workspace_id: string;
   widget_key: string;
