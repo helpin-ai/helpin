@@ -76,6 +76,7 @@ func main() {
 		cfg.AWSRegion,
 		cfg.AWSEndpointURL,
 		cfg.AWSPublicBaseURL,
+		cfg.AWSPresignEndpointURL,
 	)
 
 	db, err := gorm.Open(postgres.New(postgres.Config{

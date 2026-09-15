@@ -1,3 +1,4 @@
+import { helpinClient } from '@/lib/helpin';
 import { filterWorkspaceNav } from '@/lib/workspaceSurface';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -348,10 +349,10 @@ export function Sidebar() {
                 onProfile={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}
                 onSettings={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'general' } })}
                 onWorkspaces={() => handleNavigate('/workspaces')}
-                onGetHelp={() => {
+                onGetHelp={helpinClient ? () => {
                   showHelpin();
                   openHelpin();
-                }}
+                } : undefined}
                 onSignOut={signOut}
               />
             )}

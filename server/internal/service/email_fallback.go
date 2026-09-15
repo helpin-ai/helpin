@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/helpin-ai/helpin/server/internal/deployment"
 	"html"
 	"log/slog"
 	"net/mail"
@@ -586,7 +587,7 @@ func (s *EmailFallbackService) SetCRMContactRepository(contactRepo *repository.C
 // InboundDomain returns the domain used for reply and forwarding aliases.
 func (s *EmailFallbackService) InboundDomain() string {
 	if s == nil || strings.TrimSpace(s.replyDomain) == "" {
-		return "replies.helpin.email"
+		return deployment.DefaultReplyDomain
 	}
 	return strings.TrimSpace(s.replyDomain)
 }
@@ -1861,6 +1862,9 @@ type emailFallbackFireOptions struct {
 }
 
 func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationID string, messageIDs []string, opts emailFallbackFireOptions) error {
+	if len(messageIDs) > 0 && s.InboundDomain() == "" {
+		return fmt.Errorf("support email is not configured: set SUPPORT_EMAIL_REPLY_DOMAIN")
+	}
 	if len(messageIDs) == 0 {
 		s.logger.InfoContext(ctx, "email fallback cleaned up — no queued message ids",
 			"conversation_id", conversationID,
@@ -3155,7 +3159,10 @@ func (s *EmailFallbackService) ListQueue(ctx context.Context) (*model.EmailQueue
 func (s *EmailFallbackService) unsubscribeAddress(conversationID string) string {
 	domain := strings.TrimSpace(s.replyDomain)
 	if domain == "" {
-		domain = "replies.helpin.email"
+		domain = deployment.DefaultReplyDomain
+	}
+	if domain == "" {
+		return ""
 	}
 	return fmt.Sprintf("unsubscribe-%s@%s", conversationID, domain)
 }

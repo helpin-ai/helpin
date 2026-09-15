@@ -1,9 +1,11 @@
+import { APP_ANALYTICS_HOST, USERMAVEN_KEY, CUSTOMER_IO_WRITE_KEY } from '@edition/config';
+export { APP_ANALYTICS_HOST, USERMAVEN_KEY, CUSTOMER_IO_WRITE_KEY } from '@edition/config';
 import type { UsermavenOptions } from '@usermaven/sdk-js';
 import type { OrganizationWithRole, User, Workspace, WorkspaceAccess } from './types';
 
-export const APP_ANALYTICS_HOST = 'app.helpin.ai';
-export const USERMAVEN_KEY = 'UMpgKYZLxR';
-export const CUSTOMER_IO_WRITE_KEY = 'a3fced22111b6be05726';
+
+
+
 export const CUSTOMER_IO_WORKSPACE_OBJECT_TYPE_ID = '1';
 
 type UsermavenInitOptions = Pick<UsermavenOptions, 'key' | 'tracking_host' | 'autocapture' | 'cookie_domain'>;
@@ -160,7 +162,7 @@ export function getUsermavenAnonymousId() {
 }
 
 export function shouldEnableAppAnalytics(hostname = currentHostname()) {
-  return hostname === APP_ANALYTICS_HOST;
+  return APP_ANALYTICS_HOST !== "" && hostname === APP_ANALYTICS_HOST;
 }
 
 export function initializeAppAnalytics(options?: AnalyticsOptions) {

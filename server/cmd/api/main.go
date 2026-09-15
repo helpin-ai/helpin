@@ -553,6 +553,7 @@ func main() {
 		cfg.AWSRegion,
 		cfg.AWSEndpointURL,
 		cfg.AWSPublicBaseURL,
+		cfg.AWSPresignEndpointURL,
 	)
 	if s3Client != nil {
 		slog.Info("S3 storage configured")
@@ -1881,6 +1882,9 @@ func main() {
 		RouteInboundSecretSet:     strings.TrimSpace(cfg.PostmarkRouteInboundWebhookSecret) != "",
 	}
 
+	if appEmailClient != nil {
+		emailDiagnosticsConfig.AppFromEmail = appEmailClient.FromEmail()
+	}
 	var setupHandler *handler.SetupHandler
 	if setupSuccessEnabled {
 		setupHandler = handler.NewSetupHandler(setupService, authzService)
@@ -2033,6 +2037,7 @@ func main() {
 	handlers.Docs.SetSupportEventRecorder(supportEventRecorder)
 	handlers.Docs.SetImageEditService(docsImageEditService)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
+	handlers.AIConnection.SetKnowledgeConfiguration(cfg.OpenAIAPIKey != "", cfg.OpenAIEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
 	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)

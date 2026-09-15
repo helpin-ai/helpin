@@ -13,3 +13,6 @@ const AllowUnverifiedSignup = false
 
 const DefaultWidgetOrigin = "https://client.helpin.ai"
 const DefaultSDKLoaderURL = "https://cdn.helpin.ai/lib.js"
+
+const DefaultReplyDomain = "replies.helpin.email"
+const DefaultRouteDomain = "on.helpin.email"

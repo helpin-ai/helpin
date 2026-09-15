@@ -50,12 +50,13 @@ type Config struct {
 	AgentRuntimeLaunchEnabled bool
 
 	// S3 / object storage (optional — attachments disabled if not set)
-	AWSAccessKeyID     string
-	AWSSecretAccessKey string
-	AWSBucket          string
-	AWSRegion          string
-	AWSEndpointURL     string // S3-compatible API endpoint (MinIO / R2)
-	AWSPublicBaseURL   string // Optional public asset base URL (R2 custom domain / CDN)
+	AWSAccessKeyID        string
+	AWSSecretAccessKey    string
+	AWSBucket             string
+	AWSRegion             string
+	AWSEndpointURL        string // S3-compatible API endpoint (MinIO / R2)
+	AWSPresignEndpointURL string // Public S3 origin for browser-signed requests
+	AWSPublicBaseURL      string // Optional public asset base URL (R2 custom domain / CDN)
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
 	AnthropicAPIKey  string
@@ -367,6 +368,7 @@ func Load() (*Config, error) {
 		AgentRuntimeLaunchEnabled:              parseBoolEnv(os.Getenv("AGENT_RUNTIME_LAUNCH_ENABLED")),
 		AWSAccessKeyID:                         os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:                     os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AWSPresignEndpointURL:                  strings.TrimSpace(os.Getenv("AWS_S3_PRESIGN_ENDPOINT_URL")),
 		AWSBucket:                              os.Getenv("AWS_S3_BUCKET_NAME"),
 		AWSRegion:                              os.Getenv("AWS_REGION"),
 		AWSEndpointURL:                         os.Getenv("AWS_S3_ENDPOINT_URL"),
@@ -410,10 +412,10 @@ func Load() (*Config, error) {
 		PostmarkReplyServerToken:               strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
 		PostmarkReplyFromEmail:                 strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),
 		PostmarkReplyInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
-		SupportEmailReplyDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "replies.helpin.email")),
+		SupportEmailReplyDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), deployment.DefaultReplyDomain)),
 		PostmarkRouteServerToken:               strings.TrimSpace(os.Getenv("POSTMARK_ROUTE_SERVER_TOKEN")),
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
-		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
+		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), deployment.DefaultRouteDomain)),
 		AppBaseURL:                             appBaseURL,
 		MobileAppBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("MOBILE_APP_BASE_URL")), "/"),
 		CLIEnabled:                             parseBoolEnv(os.Getenv("CLI_ENABLED")),

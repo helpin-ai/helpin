@@ -24,7 +24,7 @@ type S3Client struct {
 
 // NewS3Client creates a new S3Client from the given configuration.
 // If accessKeyID is empty, S3 features are disabled and nil is returned.
-func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publicBaseURL string) *S3Client {
+func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publicBaseURL string, presignEndpoint ...string) *S3Client {
 	if accessKeyID == "" || bucket == "" {
 		return nil
 	}
@@ -44,6 +44,12 @@ func NewS3Client(accessKeyID, secretAccessKey, bucket, region, endpointURL, publ
 
 	client := s3.NewFromConfig(cfg, opts...)
 	presignClient := s3.NewPresignClient(client)
+	// Sign against the externally reachable S3 origin without changing the
+	// internal transport used for deletion, server uploads, and bucket setup.
+	if len(presignEndpoint) > 0 && presignEndpoint[0] != "" {
+		browserClient := s3.NewFromConfig(cfg, func(o *s3.Options) { o.BaseEndpoint = aws.String(presignEndpoint[0]); o.UsePathStyle = true })
+		presignClient = s3.NewPresignClient(browserClient)
+	}
 
 	return &S3Client{
 		client:        client,

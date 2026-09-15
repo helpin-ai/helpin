@@ -15,3 +15,6 @@ const AllowUnverifiedSignup = true
 
 const DefaultWidgetOrigin = ""
 const DefaultSDKLoaderURL = ""
+
+const DefaultReplyDomain = ""
+const DefaultRouteDomain = ""

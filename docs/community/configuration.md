@@ -42,3 +42,25 @@ still requires `token_env` referring to a populated callback secret. Callback
 redirects are never followed. Use HTTPS outside a trusted private network.
 These settings do not relax the separate policy for user-added MCP servers and
 do not remove Runtime's standalone/environment credential support.
+
+The prebuilt dashboard uses a same-origin `/api` base. Set `APP_BASE_URL` to the
+staff dashboard origin, `PUBLIC_WIDGET_URL` to the visitor API origin, and
+`PUBLIC_SDK_URL` to its `/sdk/lib.js` URL. These are server settings; rebuilding
+JavaScript or setting runtime `VITE_API_URL` is unnecessary. Add every website
+origin (including a staff preview or help-center origin) to its widget installation.
+
+Community has no default telemetry endpoint or hosted support widget. Explicitly
+setting `SENTRY_DSN` opts into error reporting to that endpoint. Optional Postmark
+support email also needs operator-owned `SUPPORT_EMAIL_REPLY_DOMAIN` and
+`SUPPORT_EMAIL_ROUTE_DOMAIN`; SMTP application mail does not configure these
+support channels.
+
+Agent profiles configure agent runs only. Knowledge embeddings still use the
+server's `OPENAI_API_KEY`, optional `OPENAI_BASE_URL` (an OpenAI-compatible API
+base including `/v1`), and `OPENAI_EMBEDDING_MODEL` (default
+`text-embedding-3-small`). The model must return 1,536 dimensions. Without this
+configuration, semantic retrieval is unavailable and keyword search remains.
+A local chat connection alone does not configure embeddings. Workspace AI
+settings reports this distinction; "configured" does not mean the endpoint
+has been contacted or verified. Help-center AI answers and automatic triage
+also retain server-level chat provider settings and their existing model routes.
