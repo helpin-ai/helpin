@@ -1,11 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HelpinClient } from '../../../src/core/client';
+import { HelpinClient, type HelpinWidgetController } from '../../../src/core/client';
 import { helpinClient } from '../../../src/esm-entry';
 import { widgetURL, widgetSocketURL } from '../../../src/core/urls';
 
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); document.head.innerHTML = ''; delete (window as any).helpin; delete (window as any).helpinQ; });
 
 describe('support-only distribution', () => {
+  it('keeps the widget on first identification and resets/reboots on a known-user switch', async () => {
+    const controller = { boot: vi.fn(), shutdown: vi.fn() } as unknown as HelpinWidgetController;
+    const client = new HelpinClient({ widgetKey: 'identity-transition', host: 'http://widget.example:8080', supportOnly: true }, controller);
+    client.boot();
+    await client.id({ id: 'first', email: 'first@example.test' });
+    expect(controller.shutdown).not.toHaveBeenCalled();
+    expect(controller.boot).toHaveBeenCalledTimes(1);
+    await client.id({ id: 'second', email: 'second@example.test' });
+    expect(controller.shutdown).toHaveBeenCalledOnce();
+    expect(controller.boot).toHaveBeenCalledTimes(2);
+    expect(controller.boot).toHaveBeenLastCalledWith(expect.objectContaining({ supportOnly: true, user: expect.objectContaining({ email: 'second@example.test' }) }));
+  });
   it('keeps identity working without collector transport, event persistence, capture or retries', async () => {
     vi.useFakeTimers();
     const client = new HelpinClient({ widgetKey: 'community-key', host: 'http://widget.example:8080', supportOnly: true, autoPageview: true, gaHook: true, segmentHook: true });

@@ -170,14 +170,6 @@ function initializeNamespacedClient(
       return;
     }
 
-    // identify() guard: shutdown widget if user email changes to prevent conversation leakage
-    if (method === 'id') {
-      const userData = args[1];
-      if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
-        client.shutdown();
-      }
-    }
-
     if (typeof client[method] === 'function') {
       return client[method].apply(client, args.slice(1));
     }
@@ -401,13 +393,6 @@ if (isWindowAvailable()) {
 
         // Analytics methods — forward to client if initialized
         if (analyticsClient && typeof (analyticsClient as any)[method] === 'function') {
-          // identify() guard: shutdown widget if user email changes
-          if (method === 'id') {
-            const userData = args[1];
-            if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
-              analyticsClient.shutdown();
-            }
-          }
           return (analyticsClient as any)[method].apply(analyticsClient, args.slice(1));
         }
 

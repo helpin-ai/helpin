@@ -20,7 +20,7 @@ import {
 import { RetryQueue } from '../utils/queue';
 import { isWindowAvailable } from '../utils/common';
 import { HttpsTransport } from '../transport/https';
-import { persistIdentity, clearIdentity, getStoredIdentity } from './identity';
+import { persistIdentity, clearIdentity, clearSession, getStoredIdentity } from './identity';
 import type { ShowArticleOptions, WidgetSettings } from './widget';
 import { ConfiguredCapture } from '../tracking/configured-capture';
 
@@ -458,14 +458,25 @@ export class HelpinClient {
       throw new Error('User ID must be a string');
     }
 
+    // group() may intentionally precede id(); preserve that explicit context.
     const inlineCompany = resolveCompanyPayload(userData.company);
     const persistedCompany = resolveCompanyPayload(this.persistence.get('companyProps'));
     const activeCompany = inlineCompany || persistedCompany;
+    const previousEmail = this.getWidgetUser()?.email;
+    const identityChanged = Boolean(previousEmail && userData.email && previousEmail !== userData.email);
+    const restartWidget = identityChanged && this.hasBootedWidget;
+    if (identityChanged) {
+      this.widgetController?.shutdown();
+      this.hasBootedWidget = false;
+      if (this.config.widgetKey) clearSession(this.config.widgetKey);
+      await this.reset(true);
+    }
+
     const userId = userData.id;
     this.persistence.set('userId', userId);
     this.persistence.set('userProps', userData);
-    if (inlineCompany) {
-      this.persistence.set('companyProps', inlineCompany);
+    if (activeCompany) {
+      this.persistence.set('companyProps', activeCompany);
     }
     this.syncWidgetSettings();
 
@@ -475,6 +486,7 @@ export class HelpinClient {
     if (identity.email && this.config.widgetKey) {
       persistIdentity(this.config.widgetKey, identity.email, identity.name, identity.firstName, identity.lastName);
     }
+    if (restartWidget) this.bootWidget();
 
     if (!doNotSendEvent) {
       const identifyPayload = {
