@@ -679,6 +679,13 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
             conversation_id: parentId,
             content: messageData.content,
             sender_type: messageData.sender_type,
+            // Live events use the widget projection; normalize its sender fields
+            // before storing a staff inbox message. Only user replies identify
+            // their author via actor_id (customer/AI actors are not teammates).
+            sender_display_name: messageData.sender_display_name ?? messageData.sender_name,
+            sender_avatar_url: messageData.sender_avatar_url ?? messageData.sender_avatar,
+            sender_user_id: messageData.sender_user_id
+              ?? (messageData.sender_type === 'user' ? event.actor_id : undefined),
             is_internal: Boolean(messageData.is_internal),
             created_at: createdAt,
             updated_at: typeof messageData.updated_at === 'string' ? messageData.updated_at : createdAt,

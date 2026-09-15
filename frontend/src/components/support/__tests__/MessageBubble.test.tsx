@@ -153,6 +153,22 @@ describe('MessageBubble', () => {
     })
   })
 
+  it.each([
+    { senderID: 'teammate-2', expectedName: 'Teammate' },
+    { senderID: undefined, expectedName: 'Teammate' },
+    { senderID: 'viewer-1', expectedName: 'Viewer' },
+  ])('only falls back to the viewer name for their own message ($senderID)', ({ senderID, expectedName }) => {
+    const rendered = renderBubble({
+      id: 'reply', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: 'user', sender_user_id: senderID,
+      sender_avatar_url: '/sender.png', content: 'Hello', is_internal: false,
+      created_at: '2026-09-15T09:00:00Z', updated_at: '2026-09-15T09:00:00Z',
+    })
+    try {
+      expect(rendered.container.querySelector('img[src="/sender.png"]')?.getAttribute('alt')).toBe(expectedName)
+    } finally { rendered.cleanup() }
+  })
+
   it('removes markdown hard-break escapes when seeding shortcut content', () => {
     expect(sanitizeSupportShortcutSeed('Hi Caleb,\\\n\\\nThank you for reaching out.')).toBe(
       'Hi Caleb,\n\nThank you for reaching out.',
