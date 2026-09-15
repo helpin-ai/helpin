@@ -81,6 +81,9 @@ it('explains why a profile cannot be created before a connection exists', async 
   expect(document.body.textContent).toContain('Add a connection first');
   const create = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Create profile');
   expect(create?.disabled).toBe(true);
+  expect(document.body.textContent).not.toContain('Add a connection before creating a profile.');
+  await act(async () => { create?.parentElement?.focus(); });
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Add a connection before creating a profile.');
 });
 
 it('says a shared profile is needed before a default can be chosen', async () => {

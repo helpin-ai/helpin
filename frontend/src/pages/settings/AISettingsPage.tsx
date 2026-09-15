@@ -18,6 +18,7 @@ import {
 import type { AIConnection } from "@/lib/services/aiConnectionService";
 import type { AIProfile } from "@/lib/services/aiProfileService";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -127,6 +128,7 @@ function AISettingsContent({
   const models = connections.data?.models ?? [];
   const defaultProfileId = settings.data?.default_profile_id ?? null;
   const canCreateProfile = canManage && ownConnections.length > 0;
+  const createProfileButton = <Button size="sm" variant="outline" disabled={!canCreateProfile} onClick={() => setEditing("new")}>Create profile</Button>;
 
   return (
     <div className="space-y-7">
@@ -231,21 +233,13 @@ function AISettingsContent({
           count={ownProfiles.length}
           action={
             canManage ? (
-              <span className="flex items-center gap-2">
-                {!canCreateProfile && (
-                  <span className="text-xs text-muted-foreground">
-                    Add a connection before creating a profile.
+              canCreateProfile ? createProfileButton : (
+                <QuickTooltip label="Add a connection before creating a profile.">
+                  <span className="inline-flex rounded-md focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0}>
+                    {createProfileButton}
                   </span>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!canCreateProfile}
-                  onClick={() => setEditing("new")}
-                >
-                  Create profile
-                </Button>
-              </span>
+                </QuickTooltip>
+              )
             ) : undefined
           }
         />
