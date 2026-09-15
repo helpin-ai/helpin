@@ -155,6 +155,7 @@ func newAgentKnowledgeSourceTestDB(t *testing.T) *gorm.DB {
 	}
 	statements := []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			name text NOT NULL,

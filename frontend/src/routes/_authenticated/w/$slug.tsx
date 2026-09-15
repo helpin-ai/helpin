@@ -1,92 +1,130 @@
-import { memo, useEffect, type CSSProperties } from 'react'
-import { createFileRoute, Link, Navigate, Outlet, useLocation } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { CalendarClock, CircleAlert } from 'lucide-react'
-import { useWorkspaceBySlug, useWorkspaces } from '@/hooks/queries/useWorkspaces'
-import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
-import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
-import { useWorkspaceBilling } from '@/hooks/queries/useBilling'
-import { useOrganizations } from '@/hooks/queries/useOrganizations'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
-import { useOrganizationStore } from '@/stores/organizationStore'
-import { useRealtimeSync } from '@/hooks/useRealtimeSync'
-import { Sidebar } from '@/components/layout/Sidebar'
-import { WorkspaceCommandSearch } from '@/components/layout/WorkspaceCommandSearch'
-import { WorkspaceMainContent } from '@/components/layout/WorkspaceSidebarToggle'
-import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
-import { GlobalEpicPanel } from '@/components/pm/GlobalEpicPanel'
-import { GlobalTaskPanel } from '@/components/pm/GlobalTaskPanel'
-import { GlobalDealPanel } from '@/components/crm/GlobalDealPanel'
-import { PageContextProvider } from '@/components/command-bar/pageContext'
-import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Button } from '@/components/ui/button'
-import { MFARequiredGate } from '@/components/auth/MFARequiredGate'
-import { queryKeys } from '@/lib/queryKeys'
-import { isWorkspaceSupportRoute } from '@/lib/workspaceRoutes'
-import { BILLING_CHOOSE_PLAN_SEARCH, BILLING_OVERVIEW_SEARCH } from '@/lib/billingNavigation'
-import { WORKSPACE_AUTH_VIEWPORT_CLASS_NAME } from '@/lib/authenticatedLayout'
-import { identifyAnalyticsOrganization, identifyAnalyticsWorkspace } from '@/lib/analytics'
-import { cn } from '@/lib/utils'
-import type { WorkspaceBillingSummary } from '@/lib/types'
-import { useAuthStore } from '@/stores/authStore'
+import { memo, useEffect, type CSSProperties } from "react";
+import { createFileRoute, Outlet, useLocation } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useWorkspaceBySlug,
+  useWorkspaces,
+} from "@/hooks/queries/useWorkspaces";
+import { useSession, useWorkspaceAccess } from "@/hooks/queries/useSession";
+import { useWorkspaceSettings } from "@/hooks/queries/useSettings";
+import {
+  useWorkspaceBilling,
+  WorkspaceBillingGate,
+  WorkspaceBillingNotice,
+} from "@edition";
+import { useOrganizations } from "@/hooks/queries/useOrganizations";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { useOrganizationStore } from "@/stores/organizationStore";
+import { useRealtimeSync } from "@/hooks/useRealtimeSync";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { WorkspaceCommandSearch } from "@/components/layout/WorkspaceCommandSearch";
+import { WorkspaceMainContent } from "@/components/layout/WorkspaceSidebarToggle";
+import { GlobalCreateModals } from "@/components/pm/GlobalCreateModals";
+import { GlobalEpicPanel } from "@/components/pm/GlobalEpicPanel";
+import { GlobalTaskPanel } from "@/components/pm/GlobalTaskPanel";
+import { GlobalDealPanel } from "@/components/crm/GlobalDealPanel";
+import { PageContextProvider } from "@/components/command-bar/pageContext";
+import { AskAgentsDock } from "@/components/agents/AskAgentsDock";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { MFARequiredGate } from "@/components/auth/MFARequiredGate";
+import { queryKeys } from "@/lib/queryKeys";
+import { isWorkspaceSupportRoute } from "@/lib/workspaceRoutes";
+import { WORKSPACE_AUTH_VIEWPORT_CLASS_NAME } from "@/lib/authenticatedLayout";
+import {
+  identifyAnalyticsOrganization,
+  identifyAnalyticsWorkspace,
+} from "@/lib/analytics";
+import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/authStore";
 
-export const Route = createFileRoute('/_authenticated/w/$slug')({
+export const Route = createFileRoute("/_authenticated/w/$slug")({
   component: WorkspaceLayout,
-})
+});
 
 function WorkspaceLayout() {
-  const { slug } = Route.useParams()
+  const { slug } = Route.useParams();
 
   // TanStack Query for all data fetching
-  const { data: workspace, isLoading: wsLoading } = useWorkspaceBySlug(slug)
-  const wsId = workspace?.id ?? ''
-  const { data: orgs, isLoading: orgsLoading } = useOrganizations()
-  const { data: access, isLoading: accessLoading } = useWorkspaceAccess(wsId)
-  const securityPolicy = access?.security_policy
-  const mfaBlocked = !!securityPolicy?.mfa_required
-  const canLoadWorkspaceData = !!access && !mfaBlocked
-  const { isLoading: sessionLoading } = useSession(wsId, { enabled: canLoadWorkspaceData })
-  const { isLoading: settingsLoading } = useWorkspaceSettings(wsId, { enabled: canLoadWorkspaceData })
-  const { data: billing, isLoading: billingLoading } = useWorkspaceBilling(wsId)
-  const queryClient = useQueryClient()
-  const location = useLocation()
-  const isOwner = access?.membership?.role === 'owner'
-  const user = useAuthStore((s) => s.user)
-  const currentOrganization = orgs?.find((org) => org.id === workspace?.organization_id) ?? null
-  const { data: organizationWorkspaces = [] } = useWorkspaces(currentOrganization?.id)
+  const { data: workspace, isLoading: wsLoading } = useWorkspaceBySlug(slug);
+  const wsId = workspace?.id ?? "";
+  const { data: orgs, isLoading: orgsLoading } = useOrganizations();
+  const { data: access, isLoading: accessLoading } = useWorkspaceAccess(wsId);
+  const securityPolicy = access?.security_policy;
+  const mfaBlocked = !!securityPolicy?.mfa_required;
+  const canLoadWorkspaceData = !!access && !mfaBlocked;
+  const { isLoading: sessionLoading } = useSession(wsId, {
+    enabled: canLoadWorkspaceData,
+  });
+  const { isLoading: settingsLoading } = useWorkspaceSettings(wsId, {
+    enabled: canLoadWorkspaceData,
+  });
+  const { data: billing, isLoading: billingLoading } =
+    useWorkspaceBilling(wsId);
+  const queryClient = useQueryClient();
+  const isOwner = access?.membership?.role === "owner";
+  const user = useAuthStore((s) => s.user);
+  const currentOrganization =
+    orgs?.find((org) => org.id === workspace?.organization_id) ?? null;
+  const { data: organizationWorkspaces = [] } = useWorkspaces(
+    currentOrganization?.id,
+  );
 
   // Selection stores (Zustand) — sync from query data
-  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
 
-  useRealtimeSync(wsId)
+  useRealtimeSync(wsId);
 
   // Sync workspace selection
   useEffect(() => {
-    if (workspace) useWorkspaceStore.getState().setCurrentWorkspace(workspace)
-  }, [workspace])
+    if (workspace) useWorkspaceStore.getState().setCurrentWorkspace(workspace);
+  }, [workspace]);
 
   useEffect(() => {
-    if (!workspace) return
-    identifyAnalyticsWorkspace({ ...workspace, billing: billing ?? workspace.billing }, access, currentOrganization)
-    identifyAnalyticsOrganization(currentOrganization, user, undefined, organizationWorkspaces)
-  }, [access, billing, currentOrganization, organizationWorkspaces, user, workspace])
-
+    if (!workspace) return;
+    identifyAnalyticsWorkspace(
+      { ...workspace, billing: billing ?? workspace.billing },
+      access,
+      currentOrganization,
+    );
+    identifyAnalyticsOrganization(
+      currentOrganization,
+      user,
+      undefined,
+      organizationWorkspaces,
+    );
+  }, [
+    access,
+    billing,
+    currentOrganization,
+    organizationWorkspaces,
+    user,
+    workspace,
+  ]);
 
   // Sync organization selection
   useEffect(() => {
-    if (currentOrganization) useOrganizationStore.getState().setCurrentOrganization(currentOrganization)
-  }, [currentOrganization])
+    if (currentOrganization)
+      useOrganizationStore
+        .getState()
+        .setCurrentOrganization(currentOrganization);
+  }, [currentOrganization]);
 
-  const loading = wsLoading || orgsLoading
-    || (!!wsId && (sessionLoading || accessLoading || settingsLoading))
-    || (!!wsId && billingLoading)
-    || (!!workspace && currentWorkspace?.id !== workspace.id)
+  const loading =
+    wsLoading ||
+    orgsLoading ||
+    (!!wsId && (sessionLoading || accessLoading || settingsLoading)) ||
+    (!!wsId && billingLoading) ||
+    (!!workspace && currentWorkspace?.id !== workspace.id);
 
   if (loading) {
     return (
-      <div className={cn(WORKSPACE_AUTH_VIEWPORT_CLASS_NAME, 'bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.9)_45%,rgba(187,210,229,0.55)_100%)]')}>
+      <div
+        className={cn(
+          WORKSPACE_AUTH_VIEWPORT_CLASS_NAME,
+          "bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.9)_45%,rgba(187,210,229,0.55)_100%)]",
+        )}
+      >
         <div className="h-full w-full overflow-hidden border border-border/70 bg-background/90 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
           <div className="flex h-full">
             <div className="w-72 border-r p-4 space-y-4">
@@ -109,7 +147,7 @@ function WorkspaceLayout() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   if (!currentWorkspace) {
@@ -117,7 +155,7 @@ function WorkspaceLayout() {
       <div className="flex items-center justify-center min-h-screen">
         <p className="text-muted-foreground">Workspace not found</p>
       </div>
-    )
+    );
   }
 
   if (mfaBlocked) {
@@ -126,110 +164,71 @@ function WorkspaceLayout() {
         workspaceName={currentWorkspace.name}
         mfaEnabled={!!securityPolicy?.mfa_enabled}
         onComplete={() => {
-          queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.access(wsId) })
-          queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.session(wsId) })
-          queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.settings(wsId) })
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.workspaces.access(wsId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.workspaces.session(wsId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.workspaces.settings(wsId),
+          });
         }}
       />
-    )
-  }
-
-  if (billing?.locked && !location.pathname.endsWith('/settings/billing')) {
-    return <Navigate to="/w/$slug/settings/billing" params={{ slug }} search={BILLING_OVERVIEW_SEARCH} replace />
+    );
   }
 
   return (
-    <div className={cn(WORKSPACE_AUTH_VIEWPORT_CLASS_NAME, 'bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.92)_45%,rgba(187,210,229,0.55)_100%)]')}>
-      <div className="h-full w-full overflow-hidden bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
-        <SidebarProvider
-          className="!min-h-0 h-full"
-          style={{ '--sidebar-width-icon': '3rem' } as CSSProperties}
-        >
-          <Sidebar />
-          <SidebarInset className="relative min-w-0 overflow-hidden bg-transparent before:absolute before:top-3 before:left-0 before:bottom-3 before:z-10 before:w-px before:bg-border/70 before:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:before:bg-border/60">
-            <PageContextProvider>
-              <WorkspaceCommandSearch />
-              <WorkspaceBillingNotice billing={billing} slug={slug} isOwner={isOwner} />
-              <div className="flex min-h-0 flex-1 overflow-hidden">
-                <WorkspaceMainContent>
-                  <Outlet />
-                  <RouteAwareAskAgentsDock />
-                </WorkspaceMainContent>
-              </div>
-              <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
-              <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
-              <MemoizedGlobalEpicPanel workspaceId={currentWorkspace.id} />
-              <MemoizedGlobalDealPanel workspaceId={currentWorkspace.id} />
-            </PageContextProvider>
-          </SidebarInset>
-        </SidebarProvider>
-      </div>
-    </div>
-  )
-}
-
-function WorkspaceBillingNotice({
-  billing,
-  slug,
-  isOwner,
-}: {
-  billing?: WorkspaceBillingSummary | null
-  slug: string
-  isOwner: boolean
-}) {
-  const location = useLocation()
-  if (!billing || location.pathname.endsWith('/settings/billing')) return null
-
-  const isPaymentIssue = billing.status === 'past_due' || billing.status === 'unpaid' || billing.billing_notice_type === 'payment_failed'
-  const isTrialEnding = billing.billing_notice_type === 'trial_will_end'
-  if (!isPaymentIssue && !isTrialEnding) return null
-
-  const Icon = isPaymentIssue ? CircleAlert : CalendarClock
-  const title = isPaymentIssue ? 'Payment needs attention' : 'Trial ending soon'
-  const message = isPaymentIssue
-    ? billing.billing_notice_message || 'Update your payment method to keep this workspace active.'
-    : billing.billing_notice_message || 'Choose a plan to keep this workspace active after the trial.'
-  const ownerCTA = isPaymentIssue ? 'Update' : 'Upgrade'
-  const bannerClassName = isPaymentIssue
-    ? 'border-red-200 bg-red-50 text-red-900 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200'
-    : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200'
-
-  return (
-    <div className={`border-b px-4 py-2 text-sm ${bannerClassName}`}>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-start gap-2">
-          <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-          <div className="min-w-0">
-            <p className="font-medium">{title}</p>
-            <p className="mt-0.5 text-xs sm:text-sm">{message}</p>
-          </div>
-        </div>
-        {isOwner ? (
-          <Button asChild size="sm" variant="destructive" className="h-7 shrink-0 px-3 text-xs">
-            <Link
-              to="/w/$slug/settings/billing"
-              params={{ slug }}
-              search={isPaymentIssue ? BILLING_OVERVIEW_SEARCH : BILLING_CHOOSE_PLAN_SEARCH}
-            >
-              {ownerCTA}
-            </Link>
-          </Button>
-        ) : (
-          <Button size="sm" variant="outline" className="h-7 shrink-0 bg-background px-3 text-xs" disabled>
-            Ask owner
-          </Button>
+    <WorkspaceBillingGate billing={billing} slug={slug}>
+      <div
+        className={cn(
+          WORKSPACE_AUTH_VIEWPORT_CLASS_NAME,
+          "bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.92)_45%,rgba(187,210,229,0.55)_100%)]",
         )}
+      >
+        <div className="h-full w-full overflow-hidden bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
+          <SidebarProvider
+            className="!min-h-0 h-full"
+            style={{ "--sidebar-width-icon": "3rem" } as CSSProperties}
+          >
+            <Sidebar />
+            <SidebarInset className="relative min-w-0 overflow-hidden bg-transparent before:absolute before:top-3 before:left-0 before:bottom-3 before:z-10 before:w-px before:bg-border/70 before:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:before:bg-border/60">
+              <PageContextProvider>
+                <WorkspaceCommandSearch />
+                <WorkspaceBillingNotice
+                  billing={billing}
+                  slug={slug}
+                  isOwner={isOwner}
+                />
+                <div className="flex min-h-0 flex-1 overflow-hidden">
+                  <WorkspaceMainContent>
+                    <Outlet />
+                    <RouteAwareAskAgentsDock />
+                  </WorkspaceMainContent>
+                </div>
+                <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
+                <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
+                <MemoizedGlobalEpicPanel workspaceId={currentWorkspace.id} />
+                <MemoizedGlobalDealPanel workspaceId={currentWorkspace.id} />
+              </PageContextProvider>
+            </SidebarInset>
+          </SidebarProvider>
+        </div>
       </div>
-    </div>
-  )
+    </WorkspaceBillingGate>
+  );
 }
 
 function RouteAwareAskAgentsDock() {
-  const location = useLocation()
-  return <AskAgentsDock hideCollapsedTrigger={isWorkspaceSupportRoute(location.pathname)} />
+  const location = useLocation();
+  return (
+    <AskAgentsDock
+      hideCollapsedTrigger={isWorkspaceSupportRoute(location.pathname)}
+    />
+  );
 }
 
-const MemoizedGlobalCreateModals = memo(GlobalCreateModals)
-const MemoizedGlobalTaskPanel = memo(GlobalTaskPanel)
-const MemoizedGlobalDealPanel = memo(GlobalDealPanel)
-const MemoizedGlobalEpicPanel = memo(GlobalEpicPanel)
+const MemoizedGlobalCreateModals = memo(GlobalCreateModals);
+const MemoizedGlobalTaskPanel = memo(GlobalTaskPanel);
+const MemoizedGlobalDealPanel = memo(GlobalDealPanel);
+const MemoizedGlobalEpicPanel = memo(GlobalEpicPanel);

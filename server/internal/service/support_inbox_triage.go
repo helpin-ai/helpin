@@ -36,7 +36,7 @@ type SupportInboxTriageService struct {
 	conversationRepo *repository.SupportConversationRepository
 	messageRepo      *repository.SupportMessageRepository
 	llmProvider      llm.Provider
-	entitlementSvc   *EntitlementService
+	entitlementSvc   EntitlementPolicy
 }
 
 type supportInboxTriageResult struct {
@@ -87,7 +87,7 @@ func NewSupportInboxTriageService(
 	}
 }
 
-func (s *SupportInboxTriageService) SetEntitlementService(entitlementSvc *EntitlementService) *SupportInboxTriageService {
+func (s *SupportInboxTriageService) SetEntitlementService(entitlementSvc EntitlementPolicy) *SupportInboxTriageService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

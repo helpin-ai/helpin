@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { MeetingPlatformLabel } from '@/components/crm/MeetingPlatform';
 import {
   QuietPrimaryAction,
@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useCreateCRMMeeting, useCRMMeetingSettings } from '@/hooks/queries/useCRMMeetings';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { associationsService } from '@/lib/services/associationsService';
 import type { CRMObjectType } from '@/lib/crmTypes';
 

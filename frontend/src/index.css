@@ -1650,3 +1650,33 @@
     cursor: not-allowed;
   }
 }
+
+/* ── Table column pinning ──────────────────────────────────────────────────
+   Pinned columns only make sense when the viewport is wider than the pinned
+   group. On phones the left group (checkbox + id + name) and the right actions
+   column together span most of the screen, so the remaining columns have
+   nowhere to scroll into and the name column appears to eat the row. Drop the
+   pinning below `md` and let the row scroll as one unit. `pinnedStyle()` writes
+   `position: sticky` inline, so these overrides need `!important` to win. */
+@media (max-width: 767px) {
+  .shared-table-pinned-left,
+  .shared-table-pinned-right,
+  .shared-table-group-inner {
+    position: static !important;
+  }
+}
+
+/* ── Support widget vs. the agent dock ─────────────────────────────────────
+   The support widget mounts a shadow host (`#helpin-widget-container`, from
+   @helpin-ai/sdk-js) as a fixed element at the very top of the stacking order.
+   On phones the open agent dock fills the screen and the launcher floats over
+   its panel. While the dock is open there, pull the host under the dock root
+   (z-60) — still above the app, just behind the panel and its scrim. Giving
+   the host its own z-index also contains the launcher's z-index inside it.
+   The inline style on the host means these need `!important`. */
+@media (max-width: 767px) {
+  body[data-helpin-dock-open] #helpin-widget-container {
+    position: fixed !important;
+    z-index: 55 !important;
+  }
+}

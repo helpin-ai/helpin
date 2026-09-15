@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const detailEditorClassName = 'min-h-[320px] [&_.tiptap]:min-h-[250px] [&_.tiptap]:p-0';
 const taskDetailBottomSpacer = '<div className="h-20 shrink-0 lg:h-40" aria-hidden="true" />';
-const epicDetailBottomSpacer = '<div className="h-40 shrink-0" aria-hidden="true" />';
+const epicDetailBottomSpacer = taskDetailBottomSpacer;
 
 describe('description editor style parity', () => {
   it('uses the create-modal divider editor when editing task and epic descriptions', () => {
@@ -42,8 +42,9 @@ describe('description editor style parity', () => {
     expect(taskDetail).toContain(taskDetailBottomSpacer);
     expect(epicDetail).toContain(epicDetailBottomSpacer);
 
-    expect(taskDetail).toContain('px-4 pt-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:px-10">');
-    expect(epicDetail).toContain('px-4 pt-5 sm:px-6 lg:overflow-y-auto lg:px-10">');
+    const detailScrollColumn = 'px-4 pt-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:px-10">';
+    expect(taskDetail).toContain(detailScrollColumn);
+    expect(epicDetail).toContain(detailScrollColumn);
 
     expect(detailActions).toContain('sticky bottom-0');
     expect(detailActions).toContain('group-focus-within/description-editor:border-foreground/70');

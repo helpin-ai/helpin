@@ -41,9 +41,9 @@ func boundHostFixture(t *testing.T, index int) (*gorm.DB, *AgentRuntimeHostServi
 	return boundHostDefinitionFixture(t, index, playbookDefinition(index))
 }
 
-func boundHostDefinitionFixture(t *testing.T, index int, definition model.CRMPlaybookDefinition) (*gorm.DB, *AgentRuntimeHostService, model.AutomationRunBinding, *playbookLiveTestAuthority) {
+func boundHostDefinitionFixture(t *testing.T, index int, definition model.CRMPlaybookDefinition, profiles ...*AIProfileService) (*gorm.DB, *AgentRuntimeHostService, model.AutomationRunBinding, *playbookLiveTestAuthority) {
 	t.Helper()
-	db, store, pb, work, connection := executionDefinitionFixture(t, index, definition)
+	db, store, pb, work, connection := executionDefinitionFixture(t, index, definition, profiles...)
 	ctx, now := context.Background(), time.Now().UTC().Truncate(time.Microsecond)
 	if _, err := store.Configure(ctx, f.Workspace, pb.ID, f.Sales, executionSettings(connection.ID), "enable", now); err != nil {
 		t.Fatal(err)

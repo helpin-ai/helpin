@@ -330,7 +330,7 @@ describe('CodingTranscriptPane', () => {
     });
 
     expect(container.textContent).not.toContain('Loading the approval details…');
-    expect(container.textContent).toContain('Authentication required');
+    expect(container.textContent).toContain('Reconnect the required provider');
   });
 
   it('does not label a human-input pause as awaiting approval', () => {

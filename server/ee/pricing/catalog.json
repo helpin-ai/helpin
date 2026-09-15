@@ -1,0 +1,79 @@
+{
+  "pricing_version": "2026-09-14",
+  "effective_date": "2026-09-14",
+  "reviewed_date": "2026-09-10",
+  "source_urls": [
+    "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+    "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+    "https://developers.openai.com/api/docs/models/gpt-5.5",
+    "https://api-docs.deepseek.com/quick_start/pricing/",
+    "https://openrouter.ai/deepseek/deepseek-v4-flash-0731",
+    "https://openrouter.ai/api/v1/models/deepseek/deepseek-v4.1-flash/endpoints",
+    "https://openrouter.ai/z-ai/glm-5.3-flash",
+    "https://openrouter.ai/google/gemini-3.7-flash",
+    "https://openrouter.ai/google/gemini-3.8-flash",
+    "https://openrouter.ai/api/v1/models/google/gemini-3.8-flash/endpoints",
+    "https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5"
+  ],
+  "tiers": [
+    {
+      "key": "small",
+      "label": "Small",
+      "description": "Fast, efficient models for routine and high-volume work",
+      "ceiling_rates": {"input_microusd_per_million": 300000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 250000, "output_microusd_per_million": 1200000},
+      "customer_rates": {"input_microusd_per_million": 330000, "cache_read_microusd_per_million": 33000, "cache_write_microusd_per_million": 275000, "output_microusd_per_million": 1320000}
+    },
+    {
+      "key": "medium",
+      "label": "Medium",
+      "description": "Strong general-purpose models for broader reasoning and generation",
+      "ceiling_rates": {"input_microusd_per_million": 400000, "cache_read_microusd_per_million": 40000, "cache_write_microusd_per_million": 500000, "output_microusd_per_million": 3200000},
+      "customer_rates": {"input_microusd_per_million": 440000, "cache_read_microusd_per_million": 44000, "cache_write_microusd_per_million": 550000, "output_microusd_per_million": 3520000}
+    },
+    {
+      "key": "large",
+      "label": "Large",
+      "description": "Advanced models for planning, coding, review, and complex agent work",
+      "ceiling_rates": {"input_microusd_per_million": 2000000, "cache_read_microusd_per_million": 200000, "cache_write_microusd_per_million": 2500000, "output_microusd_per_million": 12000000},
+      "customer_rates": {"input_microusd_per_million": 2200000, "cache_read_microusd_per_million": 220000, "cache_write_microusd_per_million": 2750000, "output_microusd_per_million": 13200000}
+    },
+    {
+      "key": "flagship",
+      "label": "Flagship",
+      "description": "Highest-capability models for the most demanding work",
+      "ceiling_rates": {"input_microusd_per_million": 10000000, "cache_read_microusd_per_million": 1000000, "cache_write_microusd_per_million": 12500000, "output_microusd_per_million": 45000000},
+      "customer_rates": {"input_microusd_per_million": 11000000, "cache_read_microusd_per_million": 1100000, "cache_write_microusd_per_million": 13750000, "output_microusd_per_million": 49500000}
+    }
+  ],
+  "plans": [
+    {"plan": "starter", "billing_interval": "monthly", "allowance_microusd": 99000000},
+    {"plan": "starter", "billing_interval": "annual", "allowance_microusd": 79000000},
+    {"plan": "growth", "billing_interval": "monthly", "allowance_microusd": 299000000},
+    {"plan": "growth", "billing_interval": "annual", "allowance_microusd": 239000000},
+    {"plan": "growth", "billing_interval": "trial", "allowance_microusd": 140000000},
+    {"plan": "founder", "billing_interval": "monthly", "allowance_microusd": 150000000, "soft": true}
+  ],
+  "routes": [
+    {"provider": "openrouter", "canonical_model": "gpt-5.6-luna", "route": "openai/gpt-5.6-luna", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 250000, "output_microusd_per_million": 1200000}, "enabled": true},
+    {"provider": "openai", "canonical_model": "gpt-5.6-luna", "route": "gpt-5.6-luna", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 250000, "output_microusd_per_million": 1200000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "glm-5.3-flash", "route": "z-ai/glm-5.3-flash:exacto", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 150000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 500000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "glm-5.3-flash", "route": "z-ai/glm-5.3-flash:nitro", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 150000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 500000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "deepseek-v4.1-flash", "route": "deepseek/deepseek-v4.1-flash", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 300000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "deepseek-v4.1-flash", "route": "deepseek/deepseek-v4.1-flash:nitro", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 300000, "cache_read_microusd_per_million": 30000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "deepseek-v4-flash-0731", "route": "deepseek/deepseek-v4-flash-0731", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "deepseek-v4-flash-0731", "route": "deepseek/deepseek-v4-flash-0731:nitro", "service_tier": "standard", "tier": "small", "maximum_cost_rates": {"input_microusd_per_million": 200000, "cache_read_microusd_per_million": 20000, "cache_write_microusd_per_million": 0, "output_microusd_per_million": 1200000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "gemini-3.7-flash", "route": "google/gemini-3.7-flash", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 375000, "cache_read_microusd_per_million": 37500, "cache_write_microusd_per_million": 20834, "output_microusd_per_million": 1875000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "gemini-3.8-flash", "route": "google/gemini-3.8-flash", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 375000, "cache_read_microusd_per_million": 37500, "cache_write_microusd_per_million": 20834, "output_microusd_per_million": 1875000}, "enabled": true},
+    {"provider": "openai", "canonical_model": "gpt-5-mini", "route": "gpt-5-mini", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 400000, "cache_read_microusd_per_million": 40000, "cache_write_microusd_per_million": 500000, "output_microusd_per_million": 3200000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "gpt-5-mini", "route": "openai/gpt-5-mini", "service_tier": "standard", "tier": "medium", "maximum_cost_rates": {"input_microusd_per_million": 400000, "cache_read_microusd_per_million": 40000, "cache_write_microusd_per_million": 500000, "output_microusd_per_million": 3200000}, "enabled": true},
+    {"provider": "anthropic", "canonical_model": "claude-haiku-4-5", "route": "claude-haiku-4-5", "service_tier": "standard", "tier": "large", "maximum_cost_rates": {"input_microusd_per_million": 2000000, "cache_read_microusd_per_million": 200000, "cache_write_microusd_per_million": 2500000, "output_microusd_per_million": 12000000}, "enabled": true},
+    {"provider": "openai", "canonical_model": "gpt-5.6-terra", "route": "gpt-5.6-terra", "service_tier": "standard", "tier": "large", "maximum_cost_rates": {"input_microusd_per_million": 2000000, "cache_read_microusd_per_million": 200000, "cache_write_microusd_per_million": 2500000, "output_microusd_per_million": 12000000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "gpt-5.6-terra", "route": "openai/gpt-5.6-terra", "service_tier": "standard", "tier": "large", "maximum_cost_rates": {"input_microusd_per_million": 2000000, "cache_read_microusd_per_million": 200000, "cache_write_microusd_per_million": 2500000, "output_microusd_per_million": 12000000}, "enabled": true},
+    {"provider": "openai", "canonical_model": "gpt-5.5", "route": "gpt-5.5", "service_tier": "standard", "tier": "flagship", "maximum_cost_rates": {"input_microusd_per_million": 10000000, "cache_read_microusd_per_million": 1000000, "cache_write_microusd_per_million": 12500000, "output_microusd_per_million": 45000000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "gpt-5.5", "route": "openai/gpt-5.5", "service_tier": "standard", "tier": "flagship", "maximum_cost_rates": {"input_microusd_per_million": 10000000, "cache_read_microusd_per_million": 1000000, "cache_write_microusd_per_million": 12500000, "output_microusd_per_million": 45000000}, "enabled": true},
+    {"provider": "anthropic", "canonical_model": "claude-sonnet-5", "route": "claude-sonnet-5", "service_tier": "standard", "tier": "flagship", "maximum_cost_rates": {"input_microusd_per_million": 3000000, "cache_read_microusd_per_million": 300000, "cache_write_microusd_per_million": 3750000, "output_microusd_per_million": 15000000}, "enabled": true},
+    {"provider": "openrouter", "canonical_model": "claude-sonnet-5", "route": "anthropic/claude-sonnet-5", "service_tier": "standard", "tier": "flagship", "maximum_cost_rates": {"input_microusd_per_million": 2200000, "cache_read_microusd_per_million": 220000, "cache_write_microusd_per_million": 2750000, "output_microusd_per_million": 11000000}, "enabled": true},
+    {"provider": "anthropic", "canonical_model": "claude-opus-4-8", "route": "claude-opus-4-8", "service_tier": "standard", "tier": "flagship", "maximum_cost_rates": {"input_microusd_per_million": 10000000, "cache_read_microusd_per_million": 1000000, "cache_write_microusd_per_million": 12500000, "output_microusd_per_million": 45000000}, "enabled": true}
+  ],
+  "tools": []
+}

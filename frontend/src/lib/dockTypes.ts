@@ -3,7 +3,6 @@ import type {
   AgentPresetKey,
   AgentRun,
   AgentRunMessage,
-  CodexAuthState,
   CodingSession,
   CodingSessionEventListResponse,
   CodingSessionInteraction,
@@ -43,6 +42,9 @@ export interface DockChatListResponse {
 }
 
 export interface SendDockChatMessageRequest {
+  ai_profile_id?: string;
+  model_connection_id?: string;
+  model_name?: string;
   client_message_id: string
   content: string
   page_context?: CommandBarPageContext
@@ -169,8 +171,6 @@ export interface DockRunAPI {
   sendMessage: (workspaceId: string, runId: string, content: string) => Promise<{ data: AgentRunMessage | null; error: string | null }>
   continueRun: (workspaceId: string, runId: string, content?: string) => Promise<{ data: AgentRun | null; error: string | null }>
   cancelRun: (workspaceId: string, runId: string) => Promise<{ data: AgentRun | null; error: string | null }>
-  startAuth: (workspaceId: string, runId: string) => Promise<{ data: CodexAuthState | null; error: string | null }>
-  cancelAuth: (workspaceId: string, runId: string) => Promise<{ data: CodexAuthState | null; error: string | null }>
 }
 
 /**

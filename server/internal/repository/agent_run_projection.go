@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -16,11 +17,11 @@ import (
 // committed by another worker between settlement and the final projection save.
 func (r *AgentRunRepository) UpdateRuntimeProjection(ctx context.Context, run *model.AgentRun) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		current, err := loadRunUsageWatermark(tx, run.WorkspaceID, run.ID)
+		current, err := LoadRunUsageWatermark(tx, run.WorkspaceID, run.ID)
 		if err != nil {
 			return err
 		}
-		next, err := parseRunUsageWatermark(run.OutputSummary)
+		next, err := ParseRunUsageWatermark(run.OutputSummary)
 		if err != nil {
 			return err
 		}
@@ -53,7 +54,8 @@ func (r *AgentRunRepository) UpdateRuntimeProjection(ctx context.Context, run *m
 	return nil
 }
 
-type runUsageWatermark struct {
+// RunUsageWatermark identifies the cumulative usage accepted with a run projection.
+type RunUsageWatermark struct {
 	Turn                  int `json:"turn"`
 	InputTokens           int `json:"input_tokens"`
 	OutputTokens          int `json:"output_tokens"`
@@ -61,19 +63,21 @@ type runUsageWatermark struct {
 	ReasoningOutputTokens int `json:"reasoning_output_tokens"`
 }
 
-func parseRunUsageWatermark(summary json.RawMessage) (runUsageWatermark, error) {
+// ParseRunUsageWatermark decodes the shared checkpoint carried in output summaries.
+func ParseRunUsageWatermark(summary json.RawMessage) (RunUsageWatermark, error) {
 	var body struct {
-		Checkpoint runUsageWatermark `json:"ai_usage_checkpoint"`
+		Checkpoint RunUsageWatermark `json:"ai_usage_checkpoint"`
 	}
 	if len(summary) > 0 {
 		if err := json.Unmarshal(summary, &body); err != nil {
-			return runUsageWatermark{}, fmt.Errorf("decode run usage watermark: %w", err)
+			return RunUsageWatermark{}, fmt.Errorf("decode run usage watermark: %w", err)
 		}
 	}
 	return body.Checkpoint, nil
 }
 
-func loadRunUsageWatermark(tx *gorm.DB, workspaceID, runID string) (runUsageWatermark, error) {
+// LoadRunUsageWatermark locks and reads a run checkpoint within the caller transaction.
+func LoadRunUsageWatermark(tx *gorm.DB, workspaceID, runID string) (RunUsageWatermark, error) {
 	var row struct {
 		OutputSummary model.JSONBlob
 	}
@@ -82,7 +86,10 @@ func loadRunUsageWatermark(tx *gorm.DB, workspaceID, runID string) (runUsageWate
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
 	if err := query.Take(&row).Error; err != nil {
-		return runUsageWatermark{}, fmt.Errorf("load run usage watermark: %w", err)
+		return RunUsageWatermark{}, fmt.Errorf("load run usage watermark: %w", err)
 	}
-	return parseRunUsageWatermark(json.RawMessage(row.OutputSummary))
+	return ParseRunUsageWatermark(json.RawMessage(row.OutputSummary))
 }
+
+// ErrAIUsageWatermarkChanged requires reloading the accepted run before retrying usage.
+var ErrAIUsageWatermarkChanged = errors.New("terminal usage watermark changed")

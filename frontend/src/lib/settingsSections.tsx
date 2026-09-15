@@ -1,3 +1,4 @@
+import { billingSettingsSections } from '@edition/settings';
 import type { FC, CSSProperties } from 'react';
 import type { Permission } from '@/lib/types';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -27,6 +28,8 @@ import {
   Shield01Icon,
   Shield02Icon,
   Globe02Icon,
+  Key01Icon,
+  AiNetworkIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -43,7 +46,6 @@ function hi(icon: HugeIconData): IconComponent {
 const Profile = hi(UserIcon);
 const Security = hi(Shield02Icon);
 const Account = hi(Settings02Icon);
-const Billing = Account;
 const Notifications = hi(Notification02Icon);
 const General = hi(Settings01Icon);
 const Members = hi(UserGroupIcon);
@@ -67,8 +69,11 @@ const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(Robot01Icon);
 const ExternalMCP = hi(Globe02Icon);
+const AIConnections = hi(Key01Icon);
+const WorkspaceAI = hi(AiNetworkIcon);
 
 export type SettingsSection =
+  | 'ai'
   | 'general'
   | 'members'
   | 'teams'
@@ -95,7 +100,7 @@ export type SettingsSection =
   | 'chat-general'
   | 'inboxes-routing';
 
-export type SettingsRouteSection = SettingsSection | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
+export type SettingsRouteSection = SettingsSection | 'ai-connections' | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
 
 export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSection> = {
   id: T;
@@ -108,7 +113,23 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
   sidebar?: boolean;
 };
 
-export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
+const allSettingsSections: SettingsSectionMeta[] = [
+  {
+    id: 'ai-connections',
+    label: 'AI connections',
+    description: 'Your API keys and ChatGPT login, plus the profiles that use them.',
+    icon: AIConnections,
+    group: 'Personal',
+    requiredPermission: 'workspace.read',
+  },
+  {
+    id: 'ai',
+    label: 'AI',
+    description: 'Shared connections, profiles, and the default profile agents inherit.',
+    icon: WorkspaceAI,
+    group: 'Workspace',
+    requiredPermission: 'settings.read',
+  },
   {
     id: 'profile',
     label: 'Profile',
@@ -151,13 +172,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     icon: General,
     group: 'Workspace',
   },
-  {
-    id: 'billing',
-    label: 'Billing',
-    description: 'Manage this workspace plan, AI usage, payment methods, and invoices.',
-    icon: Billing,
-    group: 'Workspace',
-  },
+  ...billingSettingsSections(Account),
   {
     id: 'members',
     label: 'Members',
@@ -324,6 +339,8 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'Data',
   },
 ];
+
+export const SETTINGS_ROUTE_SECTIONS = allSettingsSections;
 
 export const SETTINGS_SECTIONS = SETTINGS_ROUTE_SECTIONS.filter(
   (section): section is SettingsSectionMeta<SettingsSection> =>

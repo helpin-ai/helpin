@@ -33,7 +33,7 @@ export const TABLE_GROUP_ROW =
 
 /** Inner sticky wrapper for group row content – pins chevron/label to viewport left during horizontal scroll */
 export const TABLE_GROUP_ROW_INNER =
-  'sticky left-0 z-[1] flex items-center gap-2 px-3';
+  'shared-table-group-inner sticky left-0 z-[1] flex items-center gap-2 px-3';
 
 /** Column resize handle – always-visible 1px separator, expands on hover */
 export const TABLE_RESIZE_HANDLE =
@@ -85,6 +85,10 @@ export const TABLE_CHECKBOX_HOVER =
 
 /**
  * Returns inline style for pinned columns.
+ *
+ * Horizontal pinning is a wide-viewport affordance only: below `md` the
+ * `.shared-table-pinned-*` rule in index.css drops these back to static so the
+ * pinned group cannot swallow a narrow viewport.
  */
 export function pinnedStyle(
   position: 'left' | 'right',

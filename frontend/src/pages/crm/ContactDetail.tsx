@@ -27,7 +27,7 @@ import {
   ZapIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietPrimaryAction, QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, QuietTextAction, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
+import { QuietBreadcrumbs, QuietDetailAction, QuietDetailHeader, QuietEmptyState, QuietIconAction, QuietRelationshipDialogContent, QuietRelationshipResults, QuietSearchInput, QuietTextAction, quietRelationshipResultRowClassName } from '@/components/design-system/quiet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -74,7 +74,7 @@ import { SocialPlatformIcon } from '@/components/docs/helpcenter/SocialPlatformI
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { crmSearchService } from '@/lib/services/crmService';
 import { supportService } from '@/lib/services/supportService';
-import { BILLING_CHOOSE_PLAN_SEARCH } from '@/lib/billingNavigation';
+import { ContactLimitNotice, isContactLimitError } from '@edition';
 import { useTitle } from '@/hooks/useTitle';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { cn } from '@/lib/utils';
@@ -149,8 +149,6 @@ export const contactDetailExpandedFieldKeys = [
   'created_at',
   'updated_at',
 ] as const;
-const isContactLimitError = (error: unknown) =>
-  error instanceof Error && error.message.includes('5,000 contacts');
 type EnrichedDetailRow = {
   key: string;
   label: string;
@@ -946,11 +944,6 @@ export function ContactDetailPage({
     }
     setTimelinePreview(item);
   };
-  const goToBilling = () => navigate({
-    to: '/w/$slug/settings/billing',
-    params: { slug: wsSlug },
-    search: BILLING_CHOOSE_PLAN_SEARCH,
-  });
   const toggleExpandedSection = (section: ContactSidebarSection) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };
@@ -981,16 +974,7 @@ export function ContactDetailPage({
           title="Contact"
         />
         <div className="flex-1 overflow-auto p-4 sm:p-6">
-          <QuietEmptyState
-            title="Upgrade to view CRM contacts"
-            description="The Starter plan includes up to 5,000 contacts. Support can keep capturing new contacts, but viewing CRM contacts above that limit requires the Growth plan."
-            action={(
-              <div className="flex flex-wrap items-center gap-4">
-                <QuietTextAction onClick={goBack}><ArrowLeft02Icon className="h-3.5 w-3.5" />Back to contacts</QuietTextAction>
-                <QuietPrimaryAction onClick={goToBilling}>Upgrade</QuietPrimaryAction>
-              </div>
-            )}
-          />
+          <ContactLimitNotice workspaceSlug={wsSlug} onBack={goBack} />
         </div>
       </div>
     );

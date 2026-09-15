@@ -75,7 +75,6 @@ type Action struct {
 	RetryClass         RetryClass
 	Autonomy           Autonomy
 	DataClass          DataClass
-	FloorUnits         int
 	Chargeable         bool
 }
 

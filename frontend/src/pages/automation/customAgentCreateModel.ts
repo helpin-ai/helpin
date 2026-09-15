@@ -30,6 +30,7 @@ export function defaultModelForAgentProvider(
 }
 
 export interface CustomAgentFormData {
+ ai_profile_id?: string;
   name: string;
   icon_key: AgentIconKey;
   preset_key: AgentPresetKey;
@@ -64,7 +65,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     icon_key: 'violet_star',
     preset_key: 'code_builder',
     preset_version_key: 'code_builder_default',
-    runtime_kind: 'codex',
+    runtime_kind: 'native_sdk',
     model_tier: 'large',
     supported_modes: ['autonomous', 'interactive'],
     provider: 'openai',
@@ -126,7 +127,7 @@ export function buildCustomAgentCreatePayload(
     workspace_id: workspaceId,
     name: form.name.trim(),
     icon_key: form.icon_key,
-    model_tier: form.model_tier,
+    ai_profile_id: form.ai_profile_id || "",
     system_prompt: form.system_prompt.trim() || undefined,
     trigger_mode: 'manual',
     team_ids: teamIds,

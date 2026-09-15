@@ -73,7 +73,7 @@ type SupportInboxService struct {
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
 	supportEventRecorder    SupportEventRecorder
-	entitlementSvc          *EntitlementService
+	entitlementSvc          EntitlementPolicy
 	routeDomain             string
 }
 
@@ -271,7 +271,7 @@ func supportActorFromContext(ctx context.Context, workspaceID string) *authoriza
 	return actor
 }
 
-func (s *SupportInboxService) SetEntitlementService(entitlementSvc *EntitlementService) *SupportInboxService {
+func (s *SupportInboxService) SetEntitlementService(entitlementSvc EntitlementPolicy) *SupportInboxService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

@@ -41,11 +41,11 @@ import {
 } from "@/components/design-system/quiet";
 import { useCRMEmailAttachments } from "@/hooks/useCRMEmailAttachments";
 import { CRMEmailAttachmentStrip } from "./CRMEmailAttachmentStrip";
-import { UpgradeRequiredDialog } from "@/components/billing/UpgradeRequiredDialog";
+import { UpgradeRequiredDialog } from "@edition";
 import {
   getUpgradeRequiredReason,
   type UpgradeRequiredReason,
-} from "@/lib/upgradeRequired";
+} from "@edition/errors";
 
 export interface EmailDraft {
   title?: string;

@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
-import { SETTINGS_ROUTE_SECTIONS, type SettingsSection } from '@/lib/settingsSections';
+import { SETTINGS_ROUTE_SECTIONS, type SettingsRouteSection } from '@/lib/settingsSections';
 import type { WorkspaceSettings } from '@/lib/types';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
@@ -20,7 +20,7 @@ export type SettingsPageContext = {
 };
 
 type SettingsPageFrameProps = {
-  section: SettingsSection;
+  section: SettingsRouteSection;
   /** When true, the section title + description header is hidden.
    *  Useful when the child component renders its own header
    *  (e.g. TeamsTab showing a specific team's name). */

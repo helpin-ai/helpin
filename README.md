@@ -202,3 +202,16 @@ Custom-agent rules:
 - do not give custom agents `preset_key`; reproduce preset-like behavior with
   prompts, skills, allowed tools, allowed targets, runtime configuration, and
   approval policy
+
+
+## Community and SaaS AI configuration
+
+Community builds omit commercial billing and use workspace AI profiles with
+customer credentials or approved local models. SaaS builds explicitly select EE;
+managed profiles retain hosted pricing, while optional SaaS BYOK uses a configured
+flat token tariff and separate paid-tool charges.
+
+See [AI connections and profiles](docs/ai-connections.md) for installation,
+bootstrap, edition commands, and staged upgrade instructions. Agent Runtime's
+`docs/2026-09-14-helpin-deployment.md` supplies fresh host and Compose configuration.
+Existing installations must migrate/bootstrap before restarting into profile wiring.

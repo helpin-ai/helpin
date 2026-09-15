@@ -7,7 +7,7 @@ import { supportAttachmentService } from '@/lib/services/supportAttachmentServic
 import { agentService } from '@/lib/services/agentService';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { nextCursor, unwrap, unwrapRequired } from '@/lib/queryUtils';
-import { isUpgradeRequiredError } from '@/lib/upgradeRequired';
+import { isUpgradeRequiredError } from '@edition/errors';
 import {
   extractConversationListConversations,
   getNextConversationIdAfterRemoval,

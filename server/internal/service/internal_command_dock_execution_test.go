@@ -130,6 +130,7 @@ func TestDockMutationRequiresMatchingBoundedGrant(t *testing.T) {
 func TestRiskBasedDockMutationExecutesWithoutLegacyApprovalFailure(t *testing.T) {
 	svc, db, meta := setupDockExecutionGuardTest(t)
 	if err := db.Exec(`CREATE TABLE agents (
+ ai_profile_id TEXT,
 		id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, is_system BOOLEAN NOT NULL,
 		preset_key TEXT, preset_version_key TEXT, source_preset_key TEXT, source_preset_version_key TEXT,
 		status TEXT, runtime_kind TEXT, model_tier TEXT NOT NULL DEFAULT '', approval_mode TEXT, allowed_tools BLOB, allowed_commands BLOB,

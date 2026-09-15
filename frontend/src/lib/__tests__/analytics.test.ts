@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { OrganizationWithRole, User, Workspace, WorkspaceAccess } from '../types';
 import {
-  buildAnalyticsBillingEventProperties,
   buildAnalyticsOrganizationTraits,
   buildAnalyticsUserTraits,
   buildAnalyticsWorkspaceTraits,
@@ -330,21 +329,6 @@ describe('app analytics', () => {
     expect(clients.usermaven.id).toHaveBeenCalledTimes(2);
   });
 
-  it('builds billing lifecycle event properties for Usermaven', () => {
-    expect(buildAnalyticsBillingEventProperties('workspace_billing_checkout_confirmed', 'ws-1', baseWorkspace.billing!)).toMatchObject({
-      event_name: 'workspace_billing_checkout_confirmed',
-      workspace_id: 'ws-1',
-      plan: 'growth',
-      billing_status: 'trialing',
-      billing_interval: 'monthly',
-      trialing: true,
-      locked: false,
-      ai_usage_used_microusd: 71_760_000,
-      ai_usage_remaining_microusd: 227_240_000,
-      pricing_version: '2026-08-13',
-      seat_usage: 3,
-    });
-  });
 
   it('tracks events and resets only on app.helpin.ai', () => {
     const clients = makeClients();

@@ -669,3 +669,25 @@ Those do not change the current product direction:
 - `Activity` is the main operational surface
 - `Agents` manages executors
 - `Library` is reference only
+
+
+### Repository preview runs
+
+Task and manual run launch requests accept `delivery_mode: "preview"` or
+`"publish"` (default). The task Delivery panel and Run agent now dialog expose
+this as Preview changes / Publish changes. The saved run input is authoritative;
+resumes preserve it, continuations and server-created child runs inherit preview,
+and an active run cannot be silently reused with a different mode.
+
+Preview disables runtime repository finalization, `commit_and_push`, `open_pr`,
+and Helpin pull-request delivery. Direct Git commit/push and config/alias command
+forms are rejected by `run_command`. The checkout is retained with manual cleanup
+for inspection; operators must clean it up explicitly. Preview does not disable
+other host-app tool effects and does not provide a network or OS sandbox.
+Automatic coding handoff is hidden for previews because each run has a separate
+checkout; this feature does not transfer local changes to another run.
+
+Runtime-local `run_command` also accepts `working_directory`, an existing
+repository-relative directory. Omitting it keeps the workspace-root default.
+Absolute paths, traversal outside the workspace, symlinks, files, and unknown
+fields are rejected. No host callback or new credential type is involved.

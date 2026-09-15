@@ -57,11 +57,14 @@ type UpdateDockChatRequest struct {
 
 // SendDockChatMessageRequest is the payload for a user chat turn.
 type SendDockChatMessageRequest struct {
-	ClientMessageID string                 `json:"client_message_id"`
-	Content         string                 `json:"content"`
-	PageContext     map[string]interface{} `json:"page_context,omitempty"`
-	References      []DockEntityReference  `json:"references,omitempty"`
-	AttachmentIDs   []string               `json:"attachment_ids,omitempty"`
+	AIProfileID       string                 `json:"ai_profile_id,omitempty"`
+	ModelConnectionID string                 `json:"model_connection_id,omitempty"`
+	ModelName         string                 `json:"model_name,omitempty"`
+	ClientMessageID   string                 `json:"client_message_id"`
+	Content           string                 `json:"content"`
+	PageContext       map[string]interface{} `json:"page_context,omitempty"`
+	References        []DockEntityReference  `json:"references,omitempty"`
+	AttachmentIDs     []string               `json:"attachment_ids,omitempty"`
 }
 
 // DockEntityReference identifies supplemental workspace context attached to a dock turn.

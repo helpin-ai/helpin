@@ -353,7 +353,7 @@ describe('getVersionToolEditingState', () => {
 });
 
 describe('getAgentProviderConfigState', () => {
-  it('requires a compatible provider before Codex model config can be edited', () => {
+  it('allows configured providers for native model configuration', () => {
     const options = [
       {
         value: 'anthropic',
@@ -365,13 +365,13 @@ describe('getAgentProviderConfigState', () => {
       },
     ] satisfies AgentModelProviderOption[];
 
-    expect(getAgentProviderConfigState('codex', 'openai', options)).toEqual({
-      providerOptions: [],
+    expect(getAgentProviderConfigState('native_sdk', 'openai', options)).toEqual({
+      providerOptions: options,
       selectedProviderOption: undefined,
-      hasCompatibleProvider: false,
-      providerDisabled: true,
+      hasCompatibleProvider: true,
+      providerDisabled: false,
       modelDisabled: true,
-      providerMessage: 'Add OpenAI, OpenRouter, or enable Codex ChatGPT auth.',
+      providerMessage: '',
       modelMessage: 'Select a compatible AI provider first.',
     });
   });

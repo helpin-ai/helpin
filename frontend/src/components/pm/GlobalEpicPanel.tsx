@@ -20,9 +20,9 @@ import {
 } from '@/components/pm/epic-detail/epicRouteNavigation';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { useUpdateEpic } from '@/hooks/queries/useEpics';
 import { EpicColorControl } from './EpicColorControl';
 import { SaveIndicator } from './SaveIndicator';

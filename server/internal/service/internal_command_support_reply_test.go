@@ -11,12 +11,12 @@ import (
 func TestRuntimeSupportReplyDoesNotCreateSecondUsageCharge(t *testing.T) {
 	consumer := &recordingAIUsageConsumer{}
 	service := &InternalCommandService{
-		supportUsageMeter: NewAIUsageMeter(consumer),
+		supportUsageMeter: NewTokenPricedAIUsageMeter(consumer),
 	}
 
 	service.consumeSupportReplyBilling(context.Background(), "ws-1", "conversation-1", "message-1")
 
-	if consumer.input.WorkspaceID != "" {
+	if consumer.input.Context.WorkspaceID != "" {
 		t.Fatalf("runtime reply created usage charge %#v, want agent-run usage only", consumer.input)
 	}
 }

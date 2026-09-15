@@ -1,7 +1,5 @@
 package model
 
-import "time"
-
 const (
 	AgentRunArtifactTypeHumanInputRequest    = "human_input_request"
 	AgentRunArtifactTypeHumanApprovalRequest = "human_approval_request"
@@ -31,17 +29,4 @@ type HumanInputArtifactOption struct {
 	Value    string `json:"value"`
 	Label    string `json:"label"`
 	Freetext bool   `json:"freetext,omitempty"`
-}
-
-type CodexAuthState struct {
-	Provider        string    `json:"provider,omitempty"`
-	AuthMode        string    `json:"auth_mode,omitempty"`
-	State           string    `json:"state"`
-	LoginID         *string   `json:"login_id,omitempty"`
-	AuthURL         *string   `json:"auth_url,omitempty"`
-	VerificationURL *string   `json:"verification_url,omitempty"`
-	UserCode        *string   `json:"user_code,omitempty"`
-	PlanType        *string   `json:"plan_type,omitempty"`
-	Error           *string   `json:"error,omitempty"`
-	UpdatedAt       time.Time `json:"updated_at"`
 }

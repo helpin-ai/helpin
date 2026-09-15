@@ -67,10 +67,6 @@ type Config struct {
 	DocsImportAIConversionProvider     string
 	DocsImportAIConversionModel        string
 	DocsImportAIConversionArticleLimit int
-	CodexOpenAIAuthMode                string
-	CodexEnableChatGPTOAuth            bool
-	CodexChatGPTAccessToken            string
-	CodexChatGPTAccountID              string
 	CloudflareAccountID                string
 	CloudflareAPIToken                 string
 	CloudflareAPIBaseURL               string
@@ -111,6 +107,9 @@ type Config struct {
 	MCPCRMEnabled                     bool
 	MCPSupportEnabled                 bool
 	MCPPublicBaseURL                  string
+	AIConnectionEncryptionKey         string
+	ChatGPTConnectionsEnabled         bool
+	ChatGPTClientID                   string
 	ExternalMCPEnabled                bool
 	ExternalMCPEncryptionKey          string
 	ExternalMCPAllowedHosts           []string
@@ -346,10 +345,6 @@ func Load() (*Config, error) {
 		DocsImportAIConversionProvider:         strings.TrimSpace(firstNonEmpty(os.Getenv("DOCS_IMPORT_AI_CONVERSION_PROVIDER"), "openrouter")),
 		DocsImportAIConversionModel:            strings.TrimSpace(firstNonEmpty(os.Getenv("DOCS_IMPORT_AI_CONVERSION_MODEL"), "openai/gpt-5.6-luna")),
 		DocsImportAIConversionArticleLimit:     parsePositiveIntEnv(os.Getenv("DOCS_IMPORT_AI_CONVERSION_ARTICLE_LIMIT"), 0),
-		CodexOpenAIAuthMode:                    strings.TrimSpace(firstNonEmpty(os.Getenv("CODEX_OPENAI_AUTH_MODE"), "api_key")),
-		CodexEnableChatGPTOAuth:                parseBoolEnv(os.Getenv("CODEX_ENABLE_CHATGPT_OAUTH")),
-		CodexChatGPTAccessToken:                strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCESS_TOKEN")),
-		CodexChatGPTAccountID:                  strings.TrimSpace(os.Getenv("CODEX_CHATGPT_ACCOUNT_ID")),
 		CloudflareAccountID:                    strings.TrimSpace(os.Getenv("CLOUDFLARE_ACCOUNT_ID")),
 		CloudflareAPIToken:                     strings.TrimSpace(os.Getenv("CLOUDFLARE_API_TOKEN")),
 		CloudflareAPIBaseURL:                   strings.TrimSpace(os.Getenv("CLOUDFLARE_API_BASE_URL")),
@@ -381,6 +376,9 @@ func Load() (*Config, error) {
 		MCPCRMEnabled:                          parseBoolEnvDefaultTrue(os.Getenv("MCP_CRM_ENABLED")),
 		MCPSupportEnabled:                      parseBoolEnvDefaultTrue(os.Getenv("MCP_SUPPORT_ENABLED")),
 		MCPPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(firstNonEmpty(os.Getenv("MCP_PUBLIC_BASE_URL"), appBaseURL)), "/"),
+		AIConnectionEncryptionKey:              strings.TrimSpace(os.Getenv("AI_CONNECTION_ENCRYPTION_KEY")),
+		ChatGPTConnectionsEnabled:              parseBoolEnv(os.Getenv("CHATGPT_CONNECTIONS_ENABLED")),
+		ChatGPTClientID:                        strings.TrimSpace(os.Getenv("CHATGPT_OAUTH_CLIENT_ID")),
 		ExternalMCPEnabled:                     parseBoolEnv(os.Getenv("EXTERNAL_MCP_ENABLED")),
 		ExternalMCPEncryptionKey:               strings.TrimSpace(os.Getenv("EXTERNAL_MCP_ENCRYPTION_KEY")),
 		ExternalMCPAllowedHosts:                parseCSV(firstNonEmpty(os.Getenv("EXTERNAL_MCP_ALLOWED_HOSTS"), "*")),

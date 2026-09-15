@@ -506,7 +506,7 @@ func (s *AgentRunFinalizerService) finalizePlanningOutput(ctx context.Context, r
 // PR for the branch pair — with a marker on top so crash replays skip the
 // bookkeeping writes and activity log once delivery fully succeeded.
 func (s *AgentRunFinalizerService) finalizeRepositoryDelivery(ctx context.Context, run *model.AgentRun) error {
-	if s.repositoryDelivery == nil {
+	if s.repositoryDelivery == nil || agentRunIsPreview(run) {
 		return nil
 	}
 	switch run.TargetType {

@@ -76,6 +76,12 @@ func ResolveAgentProfile(agent *model.Agent, invocationMode ...string) ResolvedP
 
 	// Repo: required if agent has any filesystem or git tools
 	resolved.RequiresRepo = hasRepoTools(resolved.Tools)
+	for _, name := range resolved.Tools {
+		switch CanonicalToolName(name) {
+		case "run_command", "write_file", "edit_file", "apply_patch", "create_branch", "commit_and_push", "start_preview":
+			resolved.Queue = "agent-native-coding"
+		}
+	}
 
 	return resolved
 }
@@ -125,13 +131,6 @@ func QueueForRuntime(runtimeKind, invocationMode string) string {
 			return "agent-native-interactive"
 		}
 		return "agent-native-autonomous"
-	case "opencode":
-		return "agent-opencode-autonomous"
-	case "codex":
-		if invocationMode == model.InvocationModeInteractive {
-			return "agent-codex-interactive"
-		}
-		return "agent-codex-autonomous"
 	default:
 		return "automation-default"
 	}

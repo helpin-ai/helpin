@@ -82,6 +82,7 @@ func openAgentVersionColumnCompatDB(t *testing.T) *gorm.DB {
 	}
 	for _, stmt := range []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,

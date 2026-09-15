@@ -80,6 +80,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
@@ -454,6 +455,7 @@ func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
 	}
 	for _, stmt := range []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
@@ -658,6 +660,7 @@ func TestAutomationActivityResolvesTargetDisplayInfo(t *testing.T) {
 
 	stmts := []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,

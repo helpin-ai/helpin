@@ -535,6 +535,15 @@ export function AskAgentsDock({
     return () => observer.disconnect();
   }, []);
 
+  // The support widget mounts a shadow host pinned at the top of the stacking
+  // order, so on phones its launcher lands on top of the open dock panel. Flag
+  // the open dock for the stylesheet, which drops the host below it there.
+  useEffect(() => {
+    if (embedded || collapsed || hiddenByModal) return;
+    document.body.dataset.helpinDockOpen = 'true';
+    return () => { delete document.body.dataset.helpinDockOpen; };
+  }, [collapsed, embedded, hiddenByModal]);
+
   if (!workspaceId || typeof document === 'undefined') return null;
 
   if (embedded) {
