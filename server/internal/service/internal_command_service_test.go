@@ -1023,3 +1023,11 @@ func TestDeliveryMergeBranchCommandUpdatesDeliveryStatusAfterSuccessfulMerge(t *
 	}
 	assertMergedDeliveryStatus(t, db)
 }
+
+func TestCreateDocumentRejectsEntityOnlyTitle(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	_, err := svc.Execute(context.Background(), model.InternalCommandContext{WorkspaceID: "ws", ActorRole: model.RoleOwner}, "docs.create_document", json.RawMessage(`{"space_id":"space","title":"&nbsp;"}`))
+	if err == nil || !strings.Contains(err.Error(), "title is required") {
+		t.Fatalf("expected empty normalized title error, got %v", err)
+	}
+}

@@ -645,3 +645,46 @@ func TestMarkdownToJSON_PlainBlockquoteUnchanged(t *testing.T) {
 		t.Fatalf("expected blockquote, got %+v", doc.Content)
 	}
 }
+
+func TestMarkdownToJSON_Entities(t *testing.T) {
+	for _, tt := range []struct{ name, markdown, want string }{
+		{"heading", "## GTM &amp; Marketing", "GTM & Marketing"},
+		{"paragraph", "Sales &#38; growth &#x26; &quot;launch&quot;", "Sales & growth & \"launch\""},
+		{"list", "- Sales &amp; marketing", "Sales & marketing"},
+		{"table", "| Topic |\n| --- |\n| GTM &amp; marketing |", "TopicGTM & marketing"},
+		{"link label", "[Sales &amp; marketing](https://example.com)", "Sales & marketing"},
+		{"once", "&amp;amp;", "&amp;"},
+		{"unknown", "&unknown; &bare", "&unknown; &bare"},
+		{"escaped", `\&amp;`, "&amp;"},
+		{"code span", "`&amp; &#38;`", "&amp; &#38;"},
+		{"code block", "```html\n&amp; &#38;\n```", "&amp; &#38;"},
+		{"encoded markup", "&lt;script&gt;alert(1)&lt;/script&gt;", "<script>alert(1)</script>"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := MarkdownToJSON(tt.markdown)
+			var doc Node
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				t.Fatal(err)
+			}
+			var text strings.Builder
+			var walk func(Node)
+			walk = func(n Node) {
+				text.WriteString(n.Text)
+				for _, c := range n.Content {
+					walk(c)
+				}
+			}
+			walk(doc)
+			if got := text.String(); got != tt.want {
+				t.Fatalf("text = %q, want %q", got, tt.want)
+			}
+			rendered, err := RenderHTML(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(rendered, "<script>") {
+				t.Fatal("encoded markup became executable HTML")
+			}
+		})
+	}
+}

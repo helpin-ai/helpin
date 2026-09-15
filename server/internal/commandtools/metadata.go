@@ -856,7 +856,7 @@ var baseRuntimeTools = []RuntimeToolMetadata{
 				},
 				"title": map[string]any{
 					"type":        "string",
-					"description": "The document title",
+					"description": "Plain-text document title. Use literal characters such as & rather than HTML entities such as &amp;.",
 				},
 				"collection_id": map[string]any{
 					"type":        "string",
@@ -1736,7 +1736,7 @@ func deliveryTargetSchema(idField, branchField string) map[string]any {
 func updateDocumentMetadataSchema() map[string]any {
 	return closedObjectSchema(map[string]any{
 		"document_id":   optionalIDSchema("Existing document ID."),
-		"title":         map[string]any{"type": "string", "minLength": 1, "maxLength": 500},
+		"title":         map[string]any{"type": "string", "minLength": 1, "maxLength": 500, "description": "Plain-text document title. Use literal characters such as & rather than HTML entities such as &amp;."},
 		"owner_id":      optionalIDSchema("Workspace user ID that should own the document."),
 		"clear_owner":   map[string]any{"type": "boolean"},
 		"excerpt":       map[string]any{"type": "string", "maxLength": 5000},
