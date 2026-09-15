@@ -190,6 +190,14 @@ func extractPlainText(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &node); err != nil {
 		return ""
 	}
+	// The markdown endpoint stores an envelope until the editor converts it.
+	// Index it immediately; waiting for an editor visit silently skips retrieval.
+	if source, ok := node["_markdown_source"]; ok {
+		var markdown string
+		if json.Unmarshal(source, &markdown) == nil {
+			return strings.TrimSpace(markdown)
+		}
+	}
 	var sb strings.Builder
 	extractTextFromNode(node, &sb)
 	return sb.String()
