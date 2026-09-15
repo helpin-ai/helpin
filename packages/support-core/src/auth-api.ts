@@ -147,7 +147,11 @@ async function request<T>(
 
     if (!response.ok) {
       const errorPayload = await parseError(response)
-      return { data: null, error: errorPayload.error || response.statusText, status: response.status }
+      return {
+        data: null,
+        error: errorPayload?.error || response.statusText || `Request failed (HTTP ${response.status})`,
+        status: response.status,
+      }
     }
 
     if (response.status === 204) {
