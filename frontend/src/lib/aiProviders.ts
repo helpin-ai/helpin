@@ -73,7 +73,7 @@ export const providerMeta: Record<AIProviderKey, AIProviderMeta> = {
     key: "openai_compatible",
     label: "Compatible endpoint",
     shortLabel: "Compatible",
-    description: "Use a local or self-hosted server your administrator approved.",
+    description: "Connect to a compatible model endpoint available in Helpin.",
     needsApiKey: true,
     supportsControls: noControls,
     scopes: ["personal", "workspace"],

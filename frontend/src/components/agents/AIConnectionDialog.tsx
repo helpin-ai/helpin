@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import { helpinClient } from "@/lib/helpin";
 import { toast } from "sonner";
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import { ChatGPTDeviceLogin, useChatGPTDeviceLogin } from "./ChatGPTDeviceLogin";
@@ -133,8 +134,8 @@ export function AIConnectionDialog({
       if (!name.trim()) return "Name is required";
       if (provider === "openai_compatible" && !endpoint)
         return endpoints.data?.length
-          ? "Choose an approved endpoint"
-          : "Your administrator must approve an endpoint before you can connect.";
+          ? "Choose an endpoint"
+          : "No compatible endpoints are available. Contact Helpin support to request one.";
     }
     if (needsKey && !apiKey.trim()) return "API key is required";
     return null;
@@ -276,7 +277,7 @@ export function AIConnectionDialog({
 
               {provider === "openai_compatible" && !reconnecting && (
                 <div className="space-y-1.5">
-                  <Label htmlFor={`${id}-endpoint`}>Approved endpoint</Label>
+                  <Label htmlFor={`${id}-endpoint`}>Endpoint</Label>
                   {endpoints.isPending ? (
                     <Skeleton className="h-8 w-full" />
                   ) : (
@@ -312,7 +313,7 @@ export function AIConnectionDialog({
                   )}
                   {endpoints.isError ? (
                     <p className="flex items-center gap-2 text-xs text-destructive">
-                      Could not load approved endpoints.
+                      Could not load endpoints.
                       <button
                         type="button"
                         className="underline"
@@ -322,9 +323,14 @@ export function AIConnectionDialog({
                       </button>
                     </p>
                   ) : !endpoints.isPending && !endpoints.data?.length ? (
-                    <p className="text-xs text-muted-foreground">
-                      Your administrator must approve an endpoint before you can connect.
-                    </p>
+                    <div className="space-y-1 text-xs">
+                      <p className="text-muted-foreground">No compatible endpoints are available.</p>
+                      <button type="button" className="underline underline-offset-4" onClick={() => {
+                        onOpenChange(false);
+                        helpinClient?.show();
+                        helpinClient?.open();
+                      }}>Contact Helpin support to request one</button>
+                    </div>
                   ) : null}
                 </div>
               )}

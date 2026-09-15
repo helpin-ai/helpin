@@ -6,11 +6,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AIConnectionDialog } from '../AIConnectionDialog';
 import { aiConnectionService, type AIConnection } from '@/lib/services/aiConnectionService';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { helpinClient } from '@/lib/helpin';
 import { toast } from 'sonner';
 
 vi.mock('@/lib/services/aiConnectionService', () => ({
   aiConnectionService: { endpoints: vi.fn(), create: vi.fn(), reconnect: vi.fn(), poll: vi.fn() },
 }));
+vi.mock('@/lib/helpin', () => ({ helpinClient: { show: vi.fn(), open: vi.fn() } }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -147,4 +149,19 @@ it('reconnects an existing connection with a replacement key only', async () => 
   });
   await act(async () => document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
   expect(aiConnectionService.reconnect).toHaveBeenCalledWith('ws', 'c1', 'sk-new');
+});
+
+it('offers Helpin support when Cloud has no compatible endpoints', async () => {
+  vi.mocked(aiConnectionService.endpoints).mockResolvedValue({ data: [], error: null });
+  const close = vi.fn();
+  await render(<AIConnectionDialog workspaceId="ws" scope="personal" open mode={{ kind: 'add' }} models={[]} onOpenChange={close} />);
+  for (let i = 0; i < 20 && !document.body.textContent?.includes('No compatible endpoints'); i++) await flush();
+  expect(document.body.textContent).toContain('No compatible endpoints are available.');
+  expect(document.body.textContent).not.toContain('administrator must approve');
+  const contact = [...document.querySelectorAll('button')].find(button => button.textContent === 'Contact Helpin support to request one')!;
+  await act(async () => contact.click());
+  expect(close).toHaveBeenCalledWith(false);
+  expect(helpinClient.show).toHaveBeenCalledOnce();
+  expect(helpinClient.open).toHaveBeenCalledOnce();
+  expect(aiConnectionService.create).not.toHaveBeenCalled();
 });
