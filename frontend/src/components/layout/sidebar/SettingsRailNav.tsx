@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Collapsible } from 'radix-ui';
 import { buildSettingsHomePath } from '@/lib/settingsDiscovery';
-import { SETTINGS_HOME_LABEL } from '@/lib/settingsSections';
+import { SETTINGS_HOME_LABEL, SETTINGS_SIDEBAR_GROUP_LABELS } from '@/lib/settingsSections';
 import { ArrowRight01Icon } from '@/lib/icons';
 import {
   SidebarGroup,
@@ -84,6 +84,7 @@ export function SettingsRailNav({
       </div>
       {groups.map((group, index) => {
         const isCollapsible = COLLAPSIBLE_SETTINGS_GROUPS.has(group.label);
+        const groupLabel = SETTINGS_SIDEBAR_GROUP_LABELS[group.label] ?? group.label;
         const isOpen = !collapsedGroups.has(group.label);
 
         const menuItems = (
@@ -175,7 +176,7 @@ export function SettingsRailNav({
                 <SidebarGroupLabel asChild className="h-9 w-full gap-2.5 rounded-md px-2 text-sm font-medium normal-case tracking-normal text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring">
                   <Collapsible.Trigger type="button" className="cursor-pointer select-none text-left">
                     {group.icon && <group.icon className="size-4 shrink-0 text-sidebar-foreground/75" />}
-                    <span className="min-w-0 flex-1">{group.label}</span>
+                    <span className="min-w-0 flex-1">{groupLabel}</span>
                     <ArrowRight01Icon className={`size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 motion-reduce:transition-none ${isOpen ? 'rotate-90' : ''}`} />
                   </Collapsible.Trigger>
                 </SidebarGroupLabel>
@@ -191,7 +192,7 @@ export function SettingsRailNav({
           <SidebarGroup key={group.label || index} className="p-0 pb-1">
             {group.label && (
               <SidebarGroupLabel className="h-9 px-2 text-sm font-medium text-sidebar-foreground">
-                {group.label}
+                {groupLabel}
               </SidebarGroupLabel>
             )}
             {menuItems}
