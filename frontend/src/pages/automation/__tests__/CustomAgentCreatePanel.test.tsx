@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { queryKeys } from '@/lib/queryKeys'
 import React, { act } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
@@ -47,7 +48,7 @@ function renderPanel(overrides: Partial<{
   document.body.appendChild(container);
   root = createRoot(container);
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  queryClient.setQueryData(['ai-profiles', 'ws-1'], [{
+  queryClient.setQueryData(queryKeys.ai.profiles('ws-1'), [{
     id: 'shared', workspace_id: 'ws-1', user_id: null, scope: 'workspace', name: 'Workspace model', revision: 1,
     primary: { connection_id: 'connection', model: { provider: 'openai', model: 'custom-model', controls: {} } }, fallback: null,
   }]);
@@ -265,9 +266,8 @@ describe('CustomAgentCreatePanel', () => {
     renderPanel({ mode: 'edit', advancedOpen: true, form: { ...createDefaultCustomAgentForm(), name: 'Planner', ai_profile_id: 'shared' } });
     click('Advanced settings');
     expect(container?.textContent).toContain('Workspace model');
-    expect(container?.textContent).toContain('openai');
+    expect(container?.textContent).toContain('OpenAI');
     expect(container?.textContent).toContain('custom-model');
-    expect(container?.textContent).toContain('No fallback');
   });
 
   it('does not reveal legacy runtime-specific limits', () => {

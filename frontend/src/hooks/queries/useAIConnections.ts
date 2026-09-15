@@ -1,0 +1,66 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { aiConnectionService } from '@/lib/services/aiConnectionService'
+import { queryKeys } from '@/lib/queryKeys'
+import { unwrap } from '@/lib/queryUtils'
+
+function invalidateAI(queryClient: ReturnType<typeof useQueryClient>, workspaceId: string) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.ai.root(workspaceId) })
+}
+
+export function useAIConnections(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.ai.connections(workspaceId),
+    queryFn: async () => unwrap(await aiConnectionService.list(workspaceId)),
+    enabled: Boolean(workspaceId),
+    retry: false,
+  })
+}
+
+export function useAIModelEndpoints(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.ai.endpoints(workspaceId),
+    queryFn: async () => unwrap(await aiConnectionService.endpoints(workspaceId)) ?? [],
+    enabled: Boolean(workspaceId) && enabled,
+    staleTime: 60_000,
+    retry: false,
+  })
+}
+
+export function useCreateAIConnection(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (request: {
+      name: string
+      provider: string
+      api_key?: string
+      scope?: 'personal' | 'workspace'
+      endpoint_id?: string
+    }) => unwrap(await aiConnectionService.create(workspaceId, request)),
+    onSuccess: () => invalidateAI(queryClient, workspaceId),
+  })
+}
+
+export function useReconnectAIConnection(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, apiKey }: { id: string; apiKey?: string }) =>
+      unwrap(await aiConnectionService.reconnect(workspaceId, id, apiKey)),
+    onSuccess: () => invalidateAI(queryClient, workspaceId),
+  })
+}
+
+export function usePollAIConnection(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await aiConnectionService.poll(workspaceId, id)),
+    onSuccess: () => invalidateAI(queryClient, workspaceId),
+  })
+}
+
+export function useDisconnectAIConnection(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => unwrap(await aiConnectionService.disconnect(workspaceId, id)),
+    onSuccess: () => invalidateAI(queryClient, workspaceId),
+  })
+}

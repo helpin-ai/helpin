@@ -1,33 +1,21 @@
-import { AI_MODELS } from '@/generated/aiModels';
-import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import { useId, useState } from "react";
+import { toast } from "sonner";
+import { AIRouteFields } from "./AIRouteFields";
+import { AISectionLabel } from "@/components/settings/ai/AISectionLabel";
+import { useSaveAIProfile } from "@/hooks/queries/useAIProfiles";
 import type { AIConnection } from "@/lib/services/aiConnectionService";
-import {
-  aiProfileService,
-  type AIProfile,
-  type AIProfileRoute,
-} from "@/lib/services/aiProfileService";
+import type { AIProfile, AIProfileRoute } from "@/lib/services/aiProfileService";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  QuietPrimaryAction,
-  QuietTextAction,
-  QuietUnderlineInput,
-  QuietSection,
-} from "@/components/design-system/quiet";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/design-system/quiet-dropdown-select";
+import { QuietUnderlineInput } from "@/components/design-system/quiet";
 
 const emptyRoute = (): AIProfileRoute => ({
   connection_id: "",
@@ -40,61 +28,72 @@ export function AIProfileEditor({
   profile,
   connections,
   onClose,
-  onSaved,
 }: {
   workspaceId: string;
   scope: "personal" | "workspace";
   profile?: AIProfile;
   connections: AIConnection[];
   onClose: () => void;
-  onSaved: () => void;
 }) {
   const id = useId();
   const [name, setName] = useState(profile?.name ?? "");
   const [primary, setPrimary] = useState(profile?.primary ?? emptyRoute());
-  const [fallback, setFallback] = useState<AIProfileRoute | null>(
-    profile?.fallback ?? null,
+  const [fallback, setFallback] = useState<AIProfileRoute | null>(profile?.fallback ?? null);
+  const save = useSaveAIProfile(workspaceId);
+
+  // Both routes stay inside the page's scope; a shared profile must never point
+  // at someone's personal connection.
+  const scoped = connections.filter((connection) => connection.scope === scope);
+  const fallbackOptions = scoped.filter(
+    (connection) => connection.id !== primary.connection_id,
   );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const available = connections.filter(
-    (c) => scope === "personal" || c.scope === "workspace",
-  );
-  async function save() {
-    setBusy(true);
-    setError("");
+
+  function validate(): string | null {
+    if (!name.trim()) return "Name is required";
+    if (!primary.connection_id) return "Choose a primary connection";
+    if (!primary.model.model.trim()) return "Enter a primary model";
+    if (fallback) {
+      if (!fallback.connection_id) return "Choose a fallback connection";
+      if (!fallback.model.model.trim()) return "Enter a fallback model";
+      if (fallback.connection_id === primary.connection_id)
+        return "The fallback must use a different connection";
+    }
+    return null;
+  }
+
+  async function submit() {
+    const problem = validate();
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
     try {
-      const response = await aiProfileService.save(
-        workspaceId,
-        { name, scope, primary, fallback, revision: profile?.revision },
-        profile?.id,
-      );
-      if (response.error) {
-        setError(response.error);
-        return;
-      }
-      onSaved();
+      await save.mutateAsync({
+        value: { name: name.trim(), scope, primary, fallback, revision: profile?.revision },
+        id: profile?.id,
+      });
+      toast.success(profile ? "Profile updated" : "Profile created");
       onClose();
-    } catch {
-      setError(
-        "Unable to save this profile. Your edits are still here; please retry.",
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save the profile.";
+      toast.error(
+        message.toLowerCase().includes("revision")
+          ? "This profile changed elsewhere. Close and reopen it to edit the latest version."
+          : message,
       );
-    } finally {
-      setBusy(false);
     }
   }
+
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && !busy) onClose();
+        if (!open && !save.isPending) onClose();
       }}
     >
-      <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>
-            {profile ? "Edit AI profile" : "Create AI profile"}
-          </DialogTitle>
+      <DialogContent className="grid max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-xl">
+        <DialogHeader className="space-y-1.5 border-b border-border/60 px-6 py-4 text-left">
+          <DialogTitle>{profile ? `Edit “${profile.name}”` : "Create AI profile"}</DialogTitle>
           <DialogDescription>
             {scope === "personal"
               ? "For your manual runs in this workspace."
@@ -102,317 +101,95 @@ export function AIProfileEditor({
             Changes apply to new runs.
           </DialogDescription>
         </DialogHeader>
+
         <form
-          className="space-y-4"
+          className="min-h-0 max-h-[calc(88vh-8.5rem)] space-y-5 overflow-y-auto px-6 py-5"
           onSubmit={(event) => {
             event.preventDefault();
-            void save();
+            void submit();
           }}
         >
-          <div>
+          <div className="space-y-1.5">
             <Label htmlFor={`${id}-name`}>Name</Label>
             <QuietUnderlineInput
               id={`${id}-name`}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(event) => setName(event.target.value)}
               maxLength={100}
-              required
-              disabled={busy}
+              placeholder="Daily driver"
+              disabled={save.isPending}
             />
           </div>
-          <QuietSection title="Primary" className="px-0 sm:px-0 lg:px-0">
-            <ProfileRouteFields
+
+          <section>
+            <AISectionLabel label="Primary route" />
+            <AIRouteFields
               route={primary}
               onChange={setPrimary}
-              connections={available.filter((c) => c.scope === scope)}
-              disabled={busy}
-            />
-          </QuietSection>
-          <QuietSection
-            title="Fallback"
-            className="px-0 sm:px-0 lg:px-0"
-            action={
-              <QuietTextAction
-                type="button"
-                disabled={busy}
-                onClick={() => setFallback(fallback ? null : emptyRoute())}
-              >
-                {fallback ? "Remove fallback" : "Add fallback"}
-              </QuietTextAction>
-            }
-          >
-            <p className="mb-3 text-sm text-quiet-text-secondary">
-              Used only if the primary connection is unavailable before a run
-              starts. An accepted run keeps its selected route.
-            </p>
-            {fallback && (
-              <ProfileRouteFields
-                route={fallback}
-                onChange={setFallback}
-                connections={available.filter(
-                  (c) => c.id !== primary.connection_id,
-                )}
-                disabled={busy}
-              />
-            )}
-          </QuietSection>
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <div className="flex justify-end gap-2">
-            <QuietTextAction type="button" onClick={onClose} disabled={busy}>
-              Cancel
-            </QuietTextAction>
-            <QuietPrimaryAction
-              type="submit"
-              disabled={
-                busy ||
-                !name.trim() ||
-                !primary.connection_id ||
-                !primary.model.model.trim() ||
-                !!(
-                  fallback &&
-                  (!fallback.connection_id || !fallback.model.model.trim())
-                )
+              connections={scoped}
+              disabled={save.isPending}
+              emptyHint={
+                scope === "personal"
+                  ? "Add a personal connection before creating a profile."
+                  : "Add a shared connection before creating a profile."
               }
-            >
-              {busy ? "Saving…" : "Save profile"}
-            </QuietPrimaryAction>
-          </div>
+            />
+          </section>
+
+          <section>
+            <AISectionLabel
+              label="Fallback route"
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-auto p-0 text-xs"
+                  disabled={save.isPending}
+                  onClick={() => setFallback(fallback ? null : emptyRoute())}
+                >
+                  {fallback ? "Remove fallback" : "Add fallback"}
+                </Button>
+              }
+            />
+            <p className="mb-3 text-[13px] text-muted-foreground">
+              Used only if the primary connection is unavailable before a run starts. An accepted
+              run keeps its selected route.
+            </p>
+            {fallback &&
+              (primary.connection_id ? (
+                <AIRouteFields
+                  route={fallback}
+                  onChange={setFallback}
+                  connections={fallbackOptions}
+                  disabled={save.isPending}
+                  emptyHint="Add a second connection in this scope to use a fallback."
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">Choose a primary connection first.</p>
+              ))}
+          </section>
+
+          <button type="submit" className="sr-only">
+            {profile ? "Save changes" : "Create profile"}
+          </button>
         </form>
+
+        <DialogFooter className="border-t border-border/60 px-6 py-3">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onClose}
+            disabled={save.isPending}
+          >
+            Cancel
+          </Button>
+          <Button type="button" size="sm" disabled={save.isPending} onClick={() => void submit()}>
+            {save.isPending ? "Saving…" : profile ? "Save changes" : "Create profile"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function ProfileRouteFields({
-  route,
-  onChange,
-  connections,
-  disabled,
-}: {
-  route: AIProfileRoute;
-  onChange: (route: AIProfileRoute) => void;
-  connections: AIConnection[];
-  disabled: boolean;
-}) {
-  const id = useId();
-  const connection = connections.find((c) => c.id === route.connection_id);
-  const supportsReasoning = ["openai", "openai_chatgpt", "openrouter"].includes(
-    route.model.provider,
-  );
-  return (
-    <div className="space-y-3">
-      <div>
-        <Label htmlFor={`${id}-connection`}>Connection</Label>
-        <Select
-          value={route.connection_id}
-          disabled={disabled}
-          onValueChange={(value) => {
-            const connection = connections.find((c) => c.id === value);
-            if (connection)
-              onChange({
-                connection_id: value,
-                model: {
-                  provider: connection.provider,
-                  endpoint: connection.endpoint,
-                  model: "",
-                  controls: {},
-                },
-              });
-          }}
-        >
-          <SelectTrigger
-            id={`${id}-connection`}
-            variant="underline"
-            className="w-full px-0.5"
-          >
-            <SelectValue placeholder="Choose a connection" />
-          </SelectTrigger>
-          <SelectContent>
-            {connections.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name} · {c.scope === "workspace" ? "Workspace" : "Personal"}
-                {c.status !== "connected" ? " · Reconnect required" : ""}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <AIConnectionPolicyNotice policy={connection?.policy} />
-        {connection?.endpoint && (
-          <p className="text-xs text-quiet-text-secondary">
-            Endpoint: {connection.endpoint.id} ·{" "}
-            {connection.endpoint.auth_mode === "none"
-              ? "No authentication"
-              : "API key"}
-          </p>
-        )}
-        <Label htmlFor={`${id}-model`}>Model identifier</Label>
-        <QuietUnderlineInput
-          id={`${id}-model`}
-          value={route.model.model}
-          onChange={(e) =>
-            onChange({
-              ...route,
-              model: { ...route.model, model: e.target.value },
-            })
-          }
-          disabled={disabled}
-          required
-          maxLength={256}
-          placeholder="Exact model name from your provider"
-        />
-      </div>
-      {supportsReasoning && (
-        <div>
-          <Label htmlFor={`${id}-reasoning`}>Reasoning effort</Label>
-          <Select
-            value={route.model.controls.reasoning_effort ?? "default"}
-            disabled={disabled}
-            onValueChange={(value) =>
-              onChange({
-                ...route,
-                model: {
-                  ...route.model,
-                  controls: {
-                    ...route.model.controls,
-                    reasoning_effort: value === "default" ? undefined : value,
-                  },
-                },
-              })
-            }
-          >
-            <SelectTrigger
-              id={`${id}-reasoning`}
-              variant="underline"
-              className="w-full px-0.5"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {[
-                "default",
-                "none",
-                "minimal",
-                "low",
-                "medium",
-                "high",
-                "xhigh",
-              ].map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v === "default" ? "Provider default" : v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      {["openai", "openai_chatgpt"].includes(route.model.provider) && (
-        <div>
-          <Label htmlFor={`${id}-service`}>Service tier</Label>
-          <Select
-            value={route.model.controls.service_tier ?? "unset"}
-            disabled={disabled}
-            onValueChange={(value) =>
-              onChange({
-                ...route,
-                model: {
-                  ...route.model,
-                  controls: {
-                    ...route.model.controls,
-                    service_tier: value === "unset" ? undefined : value,
-                  },
-                },
-              })
-            }
-          >
-            <SelectTrigger
-              id={`${id}-service`}
-              variant="underline"
-              className="w-full px-0.5"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {[
-                "unset",
-                ...AI_MODELS.service_tiers,
-                ...(["default", "priority"].includes(route.model.controls.service_tier ?? "") ? [route.model.controls.service_tier!] : []),
-              ].map((v) => (
-                <SelectItem key={v} value={v}>
-                  {v === "unset" ? "Provider default" : v}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-      {route.model.provider === "openrouter" && (
-        <div>
-          <Label htmlFor={`${id}-quantizations`}>
-            Provider quantizations (optional)
-          </Label>
-          <QuantizationsInput
-            key={route.connection_id}
-            id={`${id}-quantizations`}
-            disabled={disabled}
-            initialValue={
-              route.model.controls.openrouter?.provider?.quantizations?.join(
-                ", ",
-              ) ?? ""
-            }
-            onChange={(quantizations) => {
-              onChange({
-                ...route,
-                model: {
-                  ...route.model,
-                  controls: {
-                    ...route.model.controls,
-                    openrouter: quantizations.length
-                      ? { provider: { quantizations } }
-                      : undefined,
-                  },
-                },
-              });
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function QuantizationsInput({
-  id,
-  disabled,
-  initialValue,
-  onChange,
-}: {
-  id: string;
-  disabled: boolean;
-  initialValue: string;
-  onChange: (values: string[]) => void;
-}) {
-  const [text, setText] = useState(initialValue);
-  return (
-    <QuietUnderlineInput
-      id={id}
-      disabled={disabled}
-      value={text}
-      placeholder="Comma-separated values"
-      onChange={(event) => {
-        setText(event.target.value);
-        onChange(
-          event.target.value
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean),
-        );
-      }}
-    />
   );
 }

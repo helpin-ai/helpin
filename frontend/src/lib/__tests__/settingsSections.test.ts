@@ -71,4 +71,27 @@ describe('getSettingsSidebarGroups', () => {
       'chat-general',
     ]);
   });
+  it('gates the AI settings sections on their read permissions', () => {
+    const none = getSettingsSidebarGroups(true, new Set())
+      .flatMap((group) => group.sections.map((section) => section.id));
+    const both = getSettingsSidebarGroups(true, new Set(['workspace.read', 'settings.read']))
+      .flatMap((group) => group.sections.map((section) => section.id));
+
+    expect(none).not.toContain('ai-connections');
+    expect(none).not.toContain('ai');
+    expect(both).toContain('ai-connections');
+    expect(both).toContain('ai');
+  });
+
+  it('gives each AI section its own icon', () => {
+    const sections = getSettingsSidebarGroups(true, new Set(['workspace.read', 'settings.read']))
+      .flatMap((group) => group.sections);
+    const personal = sections.find((section) => section.id === 'ai-connections');
+    const workspace = sections.find((section) => section.id === 'ai');
+    const profile = sections.find((section) => section.id === 'profile');
+
+    expect(personal?.icon).not.toBe(workspace?.icon);
+    expect(personal?.icon).not.toBe(profile?.icon);
+    expect(workspace?.icon).not.toBe(profile?.icon);
+  });
 });

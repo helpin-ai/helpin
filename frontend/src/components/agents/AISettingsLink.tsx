@@ -15,8 +15,8 @@ export function AISettingsLink({
   return (
     <Link
       className={className}
-      to="/w/$slug/settings/$section"
-      params={{ slug, section: shared ? "ai" : "ai-connections" }}
+      to={shared ? "/w/$slug/settings/ai" : "/w/$slug/settings/ai-connections"}
+      params={{ slug }}
     >
       {children}
     </Link>

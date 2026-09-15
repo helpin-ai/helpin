@@ -28,6 +28,8 @@ import {
   Shield01Icon,
   Shield02Icon,
   Globe02Icon,
+  Key01Icon,
+  AiNetworkIcon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -67,6 +69,8 @@ const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
 const MCP = hi(Robot01Icon);
 const ExternalMCP = hi(Globe02Icon);
+const AIConnections = hi(Key01Icon);
+const WorkspaceAI = hi(AiNetworkIcon);
 
 export type SettingsSection =
   | 'ai'
@@ -110,8 +114,22 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
 };
 
 const allSettingsSections: SettingsSectionMeta[] = [
- { id: 'ai-connections', label: 'AI connections', description: 'Your AI connections and profiles for this workspace.', icon: Automations, group: 'Personal' },
- { id: 'ai', label: 'AI', description: 'Shared connections, profiles, and the workspace default.', icon: Automations, group: 'Workspace' },
+  {
+    id: 'ai-connections',
+    label: 'AI connections',
+    description: 'Your API keys and ChatGPT login, plus the profiles that use them.',
+    icon: AIConnections,
+    group: 'Personal',
+    requiredPermission: 'workspace.read',
+  },
+  {
+    id: 'ai',
+    label: 'AI',
+    description: 'Shared connections, profiles, and the default profile agents inherit.',
+    icon: WorkspaceAI,
+    group: 'Workspace',
+    requiredPermission: 'settings.read',
+  },
   {
     id: 'profile',
     label: 'Profile',

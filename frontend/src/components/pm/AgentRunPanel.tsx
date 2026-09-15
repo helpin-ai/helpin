@@ -1,6 +1,6 @@
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { BotIcon, GitBranchIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
@@ -14,6 +14,7 @@ import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSession
 import { AgentRunDeliveryModePicker } from './AgentRunDeliveryMode';
 import { TaskDeliveryTimeline } from '@/components/pm/TaskDeliveryTimeline';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -450,6 +451,7 @@ export function AgentRunPanel({
   });
   const launchState = getTaskAgentRunLaunchState({ activeRun, triggering });
   const pickerLabel = getTaskAgentRunPickerLabel({ activeRun, suggestedAgent: selectedAgent });
+  const agentSelectId = useId();
   const agentSelectionDisabled = !!activeRun || triggering;
   const actionDisabledReason = primaryAction.kind === 'open'
     ? null
@@ -555,50 +557,56 @@ export function AgentRunPanel({
             <Button type="button" size="sm" onClick={handleRunAgent}>{primaryAction.label}</Button>
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-3 rounded-md bg-muted/35 px-4 py-3 ring-1 ring-inset ring-border/50">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <span className="shrink-0 text-sm text-muted-foreground">{pickerLabel}</span>
-              <Select
-                value={selectedAgentId || '__none__'}
-                onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
-                disabled={agentSelectionDisabled}
-              >
-                <SelectTrigger className="min-w-48 max-w-full">
-                  <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No agent selected</SelectItem>
-                  {taskRunnableAgents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      <div className="flex items-center gap-1.5">
-                        <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
-                        <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-4 rounded-md bg-muted/35 px-4 py-3 ring-1 ring-inset ring-border/50">
+            {/* One labelled column per choice. A wrapping row collapsed the agent
+                select below its own minimum width and overlapped its neighbour. */}
+            <div className="grid items-start gap-x-4 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="min-w-0 space-y-2">
+                <Label htmlFor={agentSelectId}>{pickerLabel}</Label>
+                <Select
+                  value={selectedAgentId || '__none__'}
+                  onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
+                  disabled={agentSelectionDisabled}
+                >
+                  <SelectTrigger id={agentSelectId} className="w-full">
+                    <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No agent selected</SelectItem>
+                    {taskRunnableAgents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <div className="flex items-center gap-1.5">
+                          <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
+                          <span>{agent.name}{agent.role ? ` · ${agent.role}` : ''}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <AIConnectionPicker workspaceId={workspaceId} defaultProfileId={selectedAgent?.ai_profile_id} value={aiConnection} onChange={setAIConnection} />
+              {delivery?.selectedRepository ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={setDeliveryMode} /> : null}
             </div>
-            <AIConnectionPicker workspaceId={workspaceId} defaultProfileId={selectedAgent?.ai_profile_id} value={aiConnection} onChange={setAIConnection} />
-            {delivery?.selectedRepository ? <AgentRunDeliveryModePicker value={deliveryMode} onChange={setDeliveryMode} /> : null}
-            {actionDisabledReason ? <p className="min-w-0 text-xs text-muted-foreground">{actionDisabledReason}</p> : null}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    onClick={handleRunAgent}
-                    disabled={loadingAgents || !selectedAgentId || launchState.disabled}
-                    title={primaryAction.status}
-                  >
-                    {triggering ? <Loading01Icon className="animate-spin" /> : <PlayIcon />}
-                    Run agent
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              {actionDisabledReason ? <TooltipContent side="top">{actionDisabledReason}</TooltipContent> : null}
-            </Tooltip>
-            <CodingCapacityNotice agent={selectedAgent} className="w-full" />
+            <div className="flex flex-wrap items-center gap-3">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      type="button"
+                      onClick={handleRunAgent}
+                      disabled={loadingAgents || !selectedAgentId || launchState.disabled}
+                      title={primaryAction.status}
+                    >
+                      {triggering ? <Loading01Icon className="animate-spin" /> : <PlayIcon />}
+                      Run agent
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {actionDisabledReason ? <TooltipContent side="top">{actionDisabledReason}</TooltipContent> : null}
+              </Tooltip>
+              {actionDisabledReason ? <p className="min-w-0 text-xs text-muted-foreground">{actionDisabledReason}</p> : null}
+            </div>
+            <CodingCapacityNotice agent={selectedAgent} />
           </div>
         )}
 

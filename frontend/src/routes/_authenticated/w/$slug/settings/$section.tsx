@@ -1,5 +1,4 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router'
-import { AISettingsPage } from '@/pages/settings/AISettingsPage'
 import Profile from '@/pages/Profile'
 import SecuritySettings from '@/pages/SecuritySettings'
 import AccountSettings from '@/pages/AccountSettings'
@@ -22,10 +21,6 @@ export const Route = createFileRoute('/_authenticated/w/$slug/settings/$section'
 
 function SettingsSectionRoute() {
   const { slug, section } = Route.useParams()
-
-  if (section === 'ai' || section === 'ai-connections') {
- return <SettingsRouteViewport><AISettingsPage scope={section === 'ai' ? 'workspace' : 'personal'} /></SettingsRouteViewport>
- }
 
   if (section === 'profile') {
     return (

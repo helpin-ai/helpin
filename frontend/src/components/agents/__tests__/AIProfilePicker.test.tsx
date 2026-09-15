@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { queryKeys } from "@/lib/queryKeys"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -81,9 +83,9 @@ async function openPicker() {
 it("offers only shared profiles for agent defaults", async () => {
   await act(async () =>
     root.render(
-      <QueryClientProvider client={client}>
+      <QueryClientProvider client={client}><TooltipProvider>
         <AIProfilePicker workspaceId="ws" sharedOnly onChange={() => {}} />
-      </QueryClientProvider>,
+      </TooltipProvider></QueryClientProvider>,
     ),
   );
   await openPicker();
@@ -93,20 +95,23 @@ it("offers only shared profiles for agent defaults", async () => {
   expect(
     document.querySelector('[cmdk-item][data-value="workspace"]'),
   ).not.toBeNull();
-  expect(document.body.textContent).toContain("Workspace default");
+  const row = document.querySelector('[cmdk-item][data-value="workspace"]');
+  expect(row?.textContent).toContain("workspace profile");
+  expect(row?.textContent).toContain("Default");
+  expect(document.querySelector('[cmdk-item][data-value="default"]')).toBeNull();
 });
 
 it("replaces legacy launch fields with one explicit profile selection", async () => {
   const onChange = vi.fn();
   await act(async () =>
     root.render(
-      <QueryClientProvider client={client}>
+      <QueryClientProvider client={client}><TooltipProvider>
         <AIConnectionPicker
           workspaceId="ws"
           value={{ model_connection_id: "old", model_name: "old-model" }}
           onChange={onChange}
         />
-      </QueryClientProvider>,
+      </TooltipProvider></QueryClientProvider>,
     ),
   );
   await openPicker();
@@ -121,9 +126,9 @@ it("replaces legacy launch fields with one explicit profile selection", async ()
 it("keeps the personal profile menu owned by and above the Ask Agent dock", async () => {
   const onChange = vi.fn();
   await act(async () => root.render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client}><TooltipProvider>
       <AIConnectionPicker workspaceId="ws" value={{}} inDock onChange={onChange} />
-    </QueryClientProvider>,
+    </TooltipProvider></QueryClientProvider>,
   ));
   await openPicker();
   const menu = document.querySelector('[data-dropdown-content]');
@@ -136,13 +141,13 @@ it("keeps the personal profile menu owned by and above the Ask Agent dock", asyn
 it("disables a policy-rejected primary even when its fallback is allowed", async () => {
   const denied = { ...profiles[0], primary_policy: { allowed: false, message: "BYOK is disabled" },
     fallback: profiles[1].primary, fallback_policy: { allowed: true } };
-  client.setQueryData(["ai-profiles", "ws"], [denied]);
+  client.setQueryData(queryKeys.ai.profiles("ws"), [denied]);
   vi.mocked(aiProfileService.list).mockResolvedValue({ data: [denied], error: null });
   const onChange = vi.fn();
-  await act(async () => root.render(<QueryClientProvider client={client}>
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>
     <AIProfilePicker workspaceId="ws" value="personal" onChange={onChange} />
-  </QueryClientProvider>));
-  expect(document.body.textContent).toContain("Primary: BYOK is disabled");
+  </TooltipProvider></QueryClientProvider>));
+  expect(document.body.textContent).toContain("BYOK is disabled");
   await openPicker();
   const item = document.querySelector<HTMLElement>('[cmdk-item][data-value="personal"]');
   expect(item?.getAttribute("aria-disabled")).toBe("true");
@@ -152,22 +157,24 @@ it("disables a policy-rejected primary even when its fallback is allowed", async
 
 it("discloses the inherited workspace route without selecting an override", async () => {
   const onChange = vi.fn();
-  await act(async () => root.render(<QueryClientProvider client={client}>
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>
     <AIProfilePicker workspaceId="ws" onChange={onChange} />
-  </QueryClientProvider>));
+  </TooltipProvider></QueryClientProvider>));
   for (let i = 0; i < 20 && !document.body.textContent?.includes("Workspace default: workspace profile"); i++) {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
   }
-  expect(document.body.textContent).toContain("Workspace default: workspace profile");
-  expect(document.body.textContent).toContain("openai · custom-model · No fallback");
+  expect(document.body.textContent).toContain("workspace profile");
+  expect(document.body.textContent).toContain("Default");
+  expect(document.body.textContent).toContain("OpenAI · custom-model");
   expect(onChange).not.toHaveBeenCalled();
 });
 
 it("uses the agent default before the workspace default", async () => {
-  await act(async () => root.render(<QueryClientProvider client={client}>
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>
     <AIProfilePicker workspaceId="ws" defaultProfileId="workspace" onChange={() => {}} />
-  </QueryClientProvider>));
+  </TooltipProvider></QueryClientProvider>));
   await openPicker();
-  expect(document.body.textContent).toContain("Agent default: workspace profile");
+  expect(document.body.textContent).toContain("workspace profile");
+  expect(document.body.textContent).toContain("Default");
   expect(aiProfileService.settings).not.toHaveBeenCalled();
 });

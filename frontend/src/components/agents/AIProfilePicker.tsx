@@ -1,8 +1,13 @@
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
+import { aiUsagePricingText } from "@edition/ai";
+import type { AIProfile } from "@/lib/services/aiProfileService";
+import { ProviderIcon } from "./ProviderIcon";
 import { useId } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { AISettingsLink } from "@/components/agents/AISettingsLink";
-import { aiProfileService } from "@/lib/services/aiProfileService";
+import { useAIProfiles, useAISettings } from "@/hooks/queries/useAIProfiles";
+import { catalogLabel, providerShortLabel } from "@/lib/aiProviders";
+import { QuickTooltip } from "@/components/ui/quick-tooltip";
+import { Badge } from "@/components/ui/badge";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { Label } from "@/components/ui/label";
 import { QuietTextAction } from "@/components/design-system/quiet";
@@ -13,6 +18,30 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/design-system/quiet-dropdown-select";
+
+function routeSummary(route: {
+  model: { provider: string; model: string };
+}): string {
+  return `${providerShortLabel(route.model.provider)} · ${route.model.model}`;
+}
+
+/** Everything the compact route line leaves to hover. */
+function routeDetail(
+  profile: AIProfile,
+  defaultSource: "Agent" | "Workspace" | null,
+): string {
+  const parts = [
+    defaultSource ? `${defaultSource} default: ${profile.name}` : profile.name,
+    `Primary: ${routeSummary(profile.primary)}`,
+    profile.fallback
+      ? `Fallback before execution: ${routeSummary(profile.fallback)}`
+      : "No fallback",
+  ];
+  const pricing = profile.primary_policy?.pricing;
+  const fee = pricing ? aiUsagePricingText(pricing) : null;
+  if (fee) parts.push(fee);
+  return parts.join(" · ");
+}
 
 export function AIProfilePicker({
   workspaceId,
@@ -33,27 +62,9 @@ export function AIProfilePicker({
 }) {
   const id = useId();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const query = useQuery({
-    queryKey: ["ai-profiles", workspaceId],
-    enabled: !!workspaceId,
-    queryFn: async () => {
-      const res = await aiProfileService.list(workspaceId);
-      if (res.error || !res.data)
-        throw new Error(res.error || "Unable to load AI profiles");
-      return res.data;
-    },
-  });
-  const settings = useQuery({
-    queryKey: ["ai-settings", workspaceId],
-    enabled:
-      !!workspaceId && !value && !defaultProfileId && !!query.data?.length,
-    queryFn: async () => {
-      const result = await aiProfileService.settings(workspaceId);
-      if (result.error || !result.data)
-        throw new Error(result.error || "Unable to load AI default");
-      return result.data;
-    },
-    retry: false,
+  const query = useAIProfiles(workspaceId);
+  const settings = useAISettings(workspaceId, {
+    enabled: !value && !defaultProfileId && !!query.data?.length,
   });
   if (query.isPending)
     return (
@@ -73,13 +84,20 @@ export function AIProfilePicker({
   const selectedId =
     value || defaultProfileId || settings.data?.default_profile_id;
   const selected = profiles.find((p) => p.id === selectedId);
+  const blockedPolicy = selected?.primary_policy?.allowed === false;
+  const inheritedId = defaultProfileId || settings.data?.default_profile_id;
+  const inherited = profiles.find((p) => p.id === inheritedId);
   return (
     <div className="min-w-0 space-y-2">
       <Label htmlFor={id}>AI profile</Label>
       <Select
-        value={value || "default"}
+        value={value || inherited?.id || "default"}
         disabled={disabled}
-        onValueChange={(next) => onChange(next === "default" ? null : next)}
+        onValueChange={(next) =>
+          // Choosing the profile the default points at keeps inheriting, so the
+          // agent follows a later change to the default.
+          onChange(next === "default" || next === inherited?.id ? null : next)
+        }
       >
         <SelectTrigger id={id} variant="underline" className="w-full px-0.5">
           <SelectValue
@@ -90,9 +108,11 @@ export function AIProfilePicker({
           data-helpin-dock-overlay={inDock || undefined}
           className={inDock ? "z-[70]" : undefined}
         >
-          <SelectItem value="default">
-            {sharedOnly ? "Workspace default" : "Agent default"}
-          </SelectItem>
+          {!inherited && (
+            <SelectItem value="default">
+              {sharedOnly ? "Workspace default" : "Agent default"}
+            </SelectItem>
+          )}
           {value && !selected && (
             <SelectItem value={value} disabled>
               Saved profile · unavailable for new runs
@@ -102,18 +122,32 @@ export function AIProfilePicker({
             <SelectItem
               key={p.id}
               value={p.id}
+              textValue={p.name}
               disabled={p.primary_policy?.allowed === false}
             >
-              {p.name} · {p.scope === "personal" ? "Personal" : "Workspace"}
+              <span className="flex items-center gap-2">
+                <ProviderIcon
+                  provider={p.primary.model.provider}
+                  className="h-3.5 w-3.5 shrink-0"
+                />
+                <span className="truncate">
+                  {p.name} · {p.scope === "personal" ? "Personal" : "Workspace"}
+                </span>
+                {p.id === inherited?.id && (
+                  <Badge variant="secondary" className="shrink-0 text-[10px]">
+                    Default
+                  </Badge>
+                )}
+              </span>
+              {p.primary_policy?.allowed === false && (
+                <span className="block text-[11px] text-quiet-text-tertiary">
+                  {p.primary_policy.message ?? "Unavailable for new runs"}
+                </span>
+              )}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      {!value && selected && (
-        <p className="text-xs text-quiet-text-secondary">
-          {defaultProfileId ? "Agent" : "Workspace"} default: {selected.name}
-        </p>
-      )}
       {!value && !defaultProfileId && settings.isError && (
         <QuietTextAction type="button" onClick={() => void settings.refetch()}>
           Retry loading the default route
@@ -126,28 +160,28 @@ export function AIProfilePicker({
         </p>
       )}
       {selected && (
-        <p className="text-xs text-quiet-text-secondary">
-          {selected.primary.model.provider} · {selected.primary.model.model}
-          {selected.fallback
-            ? ` · Fallback: ${selected.fallback.model.provider} / ${selected.fallback.model.model}, before execution only`
-            : " · No fallback"}
-        </p>
-      )}
-      {selected && (
-        <>
-          <AIConnectionPolicyNotice
-            policy={selected.primary_policy}
-            label="Primary"
-          />
-          {selected.fallback && (
-            <AIConnectionPolicyNotice
-              policy={selected.fallback_policy}
-              label="Fallback"
+        // One compact route line. The full detail (source, exact model,
+        // fallback, pricing) is on hover so the launch form stays scannable.
+        <QuickTooltip label={routeDetail(selected, value ? null : defaultProfileId ? "Agent" : "Workspace")}>
+          <p className="flex w-fit items-center gap-1.5 text-xs text-quiet-text-secondary">
+            <ProviderIcon
+              provider={selected.primary.model.provider}
+              className="h-3 w-3 shrink-0"
             />
-          )}
-        </>
+            <span className="truncate">
+              {providerShortLabel(selected.primary.model.provider)} ·{" "}
+              {catalogLabel(
+                selected.primary.model.provider,
+                selected.primary.model.model,
+              ) ?? selected.primary.model.model}
+            </span>
+          </p>
+        </QuickTooltip>
       )}
-      {workspace?.id === workspaceId && (
+      {blockedPolicy && (
+        <AIConnectionPolicyNotice policy={selected?.primary_policy} />
+      )}
+      {workspace?.id === workspaceId && (!selected || blockedPolicy) && (
         <AISettingsLink
           className="text-xs underline text-quiet-text-secondary"
           slug={workspace.slug}

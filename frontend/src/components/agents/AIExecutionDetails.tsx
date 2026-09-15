@@ -1,5 +1,6 @@
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import type { AIExecutionPolicySnapshot } from "@/lib/services/aiConnectionService";
+import { providerShortLabel } from "@/lib/aiProviders";
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -30,7 +31,7 @@ export function AIExecutionDetails({
   return (
     <details className="px-3.5 py-2 text-xs text-quiet-text-secondary">
       <summary className="cursor-pointer">
-        AI: {model.provider} · {model.model}
+        AI: {providerShortLabel(model.provider)} · {model.model}
       </summary>
       <div className="mt-1 space-y-1">
         <p>

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { queryKeys } from '@/lib/queryKeys'
 import React, { act } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
@@ -39,7 +40,7 @@ function render(node: React.ReactNode) {
   document.body.appendChild(container);
   root = createRoot(container);
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  queryClient.setQueryData(['ai-profiles', 'ws-1'], []);
+  queryClient.setQueryData(queryKeys.ai.profiles('ws-1'), []);
   act(() => root?.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>));
 }
 
