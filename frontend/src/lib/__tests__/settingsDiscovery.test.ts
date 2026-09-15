@@ -20,9 +20,9 @@ describe('settings discovery', () => {
   it('returns no false matches for an unknown query', () => {
     expect(searchSettings(groups, 'xyznotasetting')).toEqual([]);
   });
-  it('scopes recent settings per viewer and workspace, deduplicates and caps at four', () => {
-    for (const section of ['profile', 'members', 'teams', 'general', 'crm-email', 'members'] as const) rememberSetting('viewer:ws', section);
-    expect(readRecentSettings('viewer:ws')).toEqual(['members', 'crm-email', 'general', 'teams']);
+  it('scopes recent settings per viewer and workspace, deduplicates and caps at five', () => {
+    for (const section of ['profile', 'members', 'teams', 'general', 'crm-email', 'security', 'members'] as const) rememberSetting('viewer:ws', section);
+    expect(readRecentSettings('viewer:ws')).toEqual(['members', 'security', 'crm-email', 'general', 'teams']);
     expect(readRecentSettings('someone-else:ws')).toEqual([]);
   });
   it('opens collapsed ancestors of a search target without replacing form state', () => {

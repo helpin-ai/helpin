@@ -41,5 +41,6 @@ for (const mode of ['light', 'dark', 'narrow']) test(`settings directory and sea
   await page.goBack();
   await expect(page.getByRole('region', { name: 'Recently visited' })).toContainText('Email');
   await page.getByRole('searchbox', { name: 'Search settings', exact: true }).fill('nothing-matches-xyz');
+  await expect(page.getByRole('region', { name: 'Recently visited' })).toBeVisible();
   await expect(page.getByRole('status')).toContainText('No matching settings');
 });

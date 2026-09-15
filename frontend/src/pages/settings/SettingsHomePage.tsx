@@ -16,7 +16,7 @@ export function SettingsHomeView({ groups, slug, recent = [], autoFocus = false,
   const [query, setQuery] = useState('');
   const resultList = useRef<HTMLDivElement>(null);
   const sections = groups.flatMap(group => group.sections);
-  const recentSections = recent.map(id => sections.find(section => section.id === id)).filter(section => !!section);
+  const recentSections = recent.map(id => sections.find(section => section.id === id)).filter(section => !!section).slice(0, 5);
   const results = searchSettings(groups, query);
   const linkProps = (href: string) => ({ href, onClick: (event: React.MouseEvent<HTMLAnchorElement>) => {
     if (onNavigate && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0) { event.preventDefault(); onNavigate(href); }
@@ -30,6 +30,10 @@ export function SettingsHomeView({ groups, slug, recent = [], autoFocus = false,
       event.preventDefault();
       if (event.key === 'Enter') first.click(); else first.focus();
     }} containerClassName="w-full" className="h-11" />
+      {recentSections.length > 0 && <section aria-label="Recently visited">
+        <h2 className="text-sm font-semibold text-quiet-text-primary">Recently visited</h2>
+        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{recentSections.map(section => <QuietTextAction key={section.id} asChild><a {...linkProps(buildSettingsRoutePath(slug, section.id))}>{section.label}</a></QuietTextAction>)}</div>
+      </section>}
     {query.trim() ? <section aria-label="Search results">
       <p className="mb-3 text-xs text-muted-foreground" role="status">{results.length ? `${results.length} ${results.length === 1 ? 'result' : 'results'}` : 'No matching settings. Try a different name or keyword.'}</p>
       <div ref={resultList} className="divide-y divide-quiet-divider-light">
@@ -40,10 +44,6 @@ export function SettingsHomeView({ groups, slug, recent = [], autoFocus = false,
       </div>
       <QuietTextAction onClick={() => setQuery('')} className="mt-4">Clear search</QuietTextAction>
     </section> : <>
-      {recentSections.length > 0 && <section aria-label="Recently visited">
-        <h2 className="text-sm font-semibold text-quiet-text-primary">Recently visited</h2>
-        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{recentSections.map(section => <QuietTextAction key={section.id} asChild><a {...linkProps(buildSettingsRoutePath(slug, section.id))}>{section.label}</a></QuietTextAction>)}</div>
-      </section>}
       <div className="grid items-start gap-4 md:grid-cols-2">
         {groups.map(group => <Card key={group.label} className="gap-0 rounded-lg border-border/70 py-0 shadow-none">
           <section aria-label={group.label}>

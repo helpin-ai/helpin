@@ -21,11 +21,11 @@ const recentKey = (scope: string) => `settings_recent:${scope}`;
 export function readRecentSettings(scope: string): SettingsRouteSection[] {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(recentKey(scope)) ?? '[]');
-    return Array.isArray(stored) ? stored.filter((id): id is SettingsRouteSection => SETTINGS_ROUTE_SECTIONS.some(section => section.id === id)).slice(0, 4) : [];
+    return Array.isArray(stored) ? stored.filter((id): id is SettingsRouteSection => SETTINGS_ROUTE_SECTIONS.some(section => section.id === id)).slice(0, 5) : [];
   } catch { return []; }
 }
 export function rememberSetting(scope: string, section: SettingsRouteSection) {
-  try { localStorage.setItem(recentKey(scope), JSON.stringify([section, ...readRecentSettings(scope).filter(id => id !== section)].slice(0, 4))); } catch { /* Optional local history. */ }
+  try { localStorage.setItem(recentKey(scope), JSON.stringify([section, ...readRecentSettings(scope).filter(id => id !== section)].slice(0, 5))); } catch { /* Optional local history. */ }
 }
 export function revealSettingOption(optionId: string): boolean {
   if (!/^[a-z0-9-]+$/.test(optionId)) return false;
