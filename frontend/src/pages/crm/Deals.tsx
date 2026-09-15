@@ -328,17 +328,19 @@ export function DealsPage() {
       </header>
 
       {/* Content */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {showEmptyState ? (
-          <DealsEmptyState
-            stages={activeStages}
-            hasPipeline={!!activePipeline && activeStages.length > 0}
-            search={search}
-            onCreateClick={() => setShowCreate(true)}
-            onClearSearch={() => setSearch('')}
-            onImportClick={handleImportClick}
-            onPipelineSettingsClick={handlePipelineSettingsClick}
-          />
+          <div className="min-h-0 flex-1 overflow-auto">
+            <DealsEmptyState
+              stages={activeStages}
+              hasPipeline={!!activePipeline && activeStages.length > 0}
+              search={search}
+              onCreateClick={() => setShowCreate(true)}
+              onClearSearch={() => setSearch('')}
+              onImportClick={handleImportClick}
+              onPipelineSettingsClick={handlePipelineSettingsClick}
+            />
+          </div>
         ) : view === 'board' ? (
           <DealBoard
             deals={deals}
