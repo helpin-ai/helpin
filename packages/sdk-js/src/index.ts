@@ -16,6 +16,7 @@ function helpinClient(config: Partial<Config>): HelpinClient | null {
 
 function initFromScript(script: HTMLScriptElement): HelpinClient | null {
   const config: Partial<Config> = {
+    supportOnly: script.getAttribute('data-support-only') === 'true',
     widgetKey: script.getAttribute('data-widget-key') || script.getAttribute('data-key') || undefined,
     host:
       script.getAttribute('data-host') || script.getAttribute('data-tracking-host') || undefined,
@@ -367,7 +368,7 @@ if (isWindowAvailable()) {
 
         // Widget methods
         const widgetMethods: Record<string, Function> = {
-          boot: (settings: WidgetSettings) => widgetManager.boot(settings),
+          boot: (settings: WidgetSettings) => widgetManager.boot({ ...settings, ...(currentScript?.getAttribute('data-support-only') === 'true' ? { supportOnly: true } : {}) }),
           shutdown: () => analyticsClient ? analyticsClient.shutdown() : widgetManager.shutdown(),
           show: () => widgetManager.show(),
           hide: () => widgetManager.hide(),

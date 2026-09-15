@@ -1,3 +1,4 @@
+import { widgetURL } from '../core/urls';
 export interface AttachmentUploadOptions {
   signal?: AbortSignal;
   onProgress?: (percent: number) => void;
@@ -79,7 +80,7 @@ export async function uploadAttachment(
     options.onProgress?.(0);
     checkAborted(signal);
     const headers = { 'Content-Type': 'application/json', 'X-Session-Token': sessionToken };
-    const init = await fetch(`https://${host}/widget/support/attachments`, {
+    const init = await fetch(widgetURL(host, '/widget/support/attachments'), {
       method: 'POST', headers, signal,
       body: JSON.stringify({ file_name: file.name, file_size: file.size, content_type: file.type || 'application/octet-stream' }),
     });
@@ -96,7 +97,7 @@ export async function uploadAttachment(
     await uploadToStorage(data.upload_url, file, !!publicUrl, signal, options.onProgress);
     checkAborted(signal);
     stage = 'confirm the file upload';
-    const confirm = await fetch(`https://${host}/widget/support/attachments/${attachmentId}/confirm`, {
+    const confirm = await fetch(widgetURL(host, `/widget/support/attachments/${attachmentId}/confirm`), {
       method: 'PATCH', headers, signal,
     });
     checkAborted(signal);
