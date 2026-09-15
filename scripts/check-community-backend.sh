@@ -36,5 +36,6 @@ for item in set(paths):
 PY
 cd "$community_check_dir/server"
 test ! -e ee
-go build -buildvcs=false ./cmd/api ./cmd/temporal-worker ./cmd/migrate
-go test -buildvcs=false ./internal/... ./cmd/...
+# Keep the release build CGO-free, but enable CGO for SQLite-backed tests.
+CGO_ENABLED=0 go build -buildvcs=false ./cmd/api ./cmd/temporal-worker ./cmd/migrate
+CGO_ENABLED=1 go test -buildvcs=false ./internal/... ./cmd/...
