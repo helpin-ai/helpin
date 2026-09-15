@@ -32,7 +32,7 @@ export function isSidebarLinkActive(pathname: string, search: SidebarSearch, lin
     return true;
   }
 
-  if (link.endsWith('/docs') || link.endsWith('/pm') || link.endsWith('/support')) {
+  if (link.endsWith('/settings') || link.endsWith('/docs') || link.endsWith('/pm') || link.endsWith('/support')) {
     return false;
   }
 

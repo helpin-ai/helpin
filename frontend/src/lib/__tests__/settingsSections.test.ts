@@ -13,7 +13,7 @@ describe('getSettingsSidebarGroups', () => {
   });
 
   it('keeps billing in the workspace settings group', () => {
-    const workspaceGroup = getSettingsSidebarGroups(false).find((group) => group.label === 'Workspace');
+    const workspaceGroup = getSettingsSidebarGroups(false).find((group) => group.label === 'Workspace & access');
 
     expect(workspaceGroup?.sections.map((section) => section.id)).toContain('billing');
   });
@@ -22,12 +22,12 @@ describe('getSettingsSidebarGroups', () => {
     expect(visibleSectionIDs(false)).not.toContain('command-intents');
   });
 
-  it('places inbound and external MCP together after Access', () => {
+  it('groups MCP and repositories under Integrations', () => {
     const workspaceGroup = getSettingsSidebarGroups(true, new Set(['workspace.read', 'settings.read', 'module_access.manage']))
-      .find((group) => group.label === 'Workspace');
+      .find((group) => group.label === 'Integrations');
 
     const sections = workspaceGroup?.sections.map((section) => section.id) ?? [];
-    expect(sections.indexOf('mcp')).toBe(sections.indexOf('access') + 1);
+    expect(sections).toContain('mcp');
     expect(sections.indexOf('external-mcp')).toBe(sections.indexOf('mcp') + 1);
     expect(sections.indexOf('repositories')).toBe(sections.indexOf('external-mcp') + 1);
   });

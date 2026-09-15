@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
+import { buildSettingsHomePath } from '@/lib/settingsDiscovery';
 import { useTheme } from 'next-themes';
 import { useHelpin } from '@helpin-ai/react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -247,7 +248,7 @@ export function Sidebar() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, activeRail, currentNavGroups, collapsedSettingsGroups]);
+  }, [location.pathname, activeRail, currentNavGroups]);
 
   const activeTeamParam = useMemo(() => {
     const search = location.search as Record<string, string | undefined>;
@@ -345,7 +346,7 @@ export function Sidebar() {
                 selectedPresenceMode={selectedSupportPresenceMode}
                 onPresenceChange={(value) => updateMyPresence.mutate(value === 'auto' ? null : value)}
                 onProfile={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}
-                onSettings={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'general' } })}
+                onSettings={() => handleNavigate(buildSettingsHomePath(wsSlug))}
                 onWorkspaces={() => handleNavigate('/workspaces')}
                 onGetHelp={() => {
                   showHelpin();
@@ -379,6 +380,7 @@ export function Sidebar() {
 
             {activeRail === 'settings' ? (
               <SettingsRailNav
+                workspaceSlug={wsSlug}
                 groups={currentNavGroups}
                 isActive={isActive}
                 collapsedGroups={collapsedSettingsGroups}

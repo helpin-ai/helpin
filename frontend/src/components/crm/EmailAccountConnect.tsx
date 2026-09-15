@@ -250,7 +250,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                 </QuietTextAction>
               </div>
 
-              {account.member_id === memberId && <><CRMEmailSignatureSettings workspaceId={workspaceId} account={account} /><CRMEmailSettingsSection title="Sending limits"><MailboxCapacityPanel workspaceId={workspaceId} accountId={account.id} /></CRMEmailSettingsSection></>}
+              {account.member_id === memberId && <><CRMEmailSignatureSettings workspaceId={workspaceId} account={account} /><CRMEmailSettingsSection title="Sending limits" optionId="email-sending-limits"><MailboxCapacityPanel workspaceId={workspaceId} accountId={account.id} /></CRMEmailSettingsSection></>}
               <div
                 className={cn(
                   'flex items-start gap-2 rounded-lg border px-3 py-2.5',

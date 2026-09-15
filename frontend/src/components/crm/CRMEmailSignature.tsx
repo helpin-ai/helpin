@@ -13,7 +13,7 @@ export function CRMEmailSignatureSettings({ workspaceId, account }: { workspaceI
   const [signature, setSignature] = useState(account.signature ?? '');
   const [saved, setSaved] = useState(account.signature ?? '');
   const [saving, setSaving] = useState(false);
-  return <CRMEmailSettingsSection title="Email signature">
+  return <CRMEmailSettingsSection title="Email signature" optionId="email-signature">
     <div className="mt-3 space-y-2">
       <Textarea aria-label={`Signature for ${account.email_address}`} value={signature} onChange={(event) => setSignature(event.target.value)} placeholder="Your name\nRole · Company\nPhone or website" rows={4} maxLength={10000} disabled={saving} />
       <div className="flex justify-end"><QuietPrimaryAction disabled={saving || signature === saved} onClick={async () => {

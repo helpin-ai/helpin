@@ -106,78 +106,94 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
   requiresManageSettings?: boolean;
   requiredPermission?: Permission;
   sidebar?: boolean;
+  keywords?: string[];
+  scope?: 'organization';
+  options?: { id: string; label: string; keywords?: string[] }[];
 };
+
+const SETTINGS_GROUP_LABELS = ['Personal', 'Workspace & access', 'Integrations', 'Projects', 'CRM', 'Support'];
+export const SETTINGS_HOME_LABEL = 'Settings home';
 
 export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   {
     id: 'profile',
+    keywords: ["name", "avatar", "photo", "timezone"],
     label: 'Profile',
-    description: '',
+    description: "Your name, avatar, and personal details.",
     icon: Profile,
     group: 'Personal',
   },
   {
     id: 'security',
+    keywords: ["password", "login", "authentication", "2fa"],
     label: 'Security',
-    description: '',
+    description: "Password and account security.",
     icon: Security,
     group: 'Personal',
   },
   {
     id: 'notifications',
+    keywords: ["alerts", "email notifications", "desktop", "push"],
     label: 'Notifications',
-    description: '',
+    description: "Choose when and how Helpin notifies you.",
     icon: Notifications,
     group: 'Personal',
   },
   {
     id: 'account',
+    scope: 'organization',
+    keywords: ["organization name"],
     label: 'Organization',
-    description: '',
+    description: "Organization details and preferences.",
     icon: Account,
-    group: 'Organization',
+    group: 'Workspace & access',
   },
   {
     id: 'git-connections',
+    scope: 'organization',
     label: 'Git Connections',
     description: 'Manage organization-level GitHub and GitLab provider connections.',
     icon: Delivery,
-    group: 'Organization',
+    group: 'Integrations',
   },
   {
     id: 'general',
+    keywords: ["workspace name", "logo", "timezone"],
     label: 'General',
-    description: '',
+    description: "Workspace name and preferences.",
     icon: General,
-    group: 'Workspace',
+    group: 'Workspace & access',
   },
   {
     id: 'billing',
+    keywords: ["invoices", "payment", "subscription", "plan", "usage", "credits"],
     label: 'Billing',
     description: 'Manage this workspace plan, AI usage, payment methods, and invoices.',
     icon: Billing,
-    group: 'Workspace',
+    group: 'Workspace & access',
   },
   {
     id: 'members',
+    keywords: ["invite teammate", "invite user", "remove member", "roles"],
     label: 'Members',
-    description: '',
+    description: "Invite people and manage workspace membership.",
     icon: Members,
-    group: 'Workspace',
+    group: 'Workspace & access',
   },
   {
     id: 'teams',
+    keywords: ["team membership", "team settings"],
     label: 'Teams',
-    description: '',
+    description: "Organize people into teams.",
     icon: Teams,
-    group: 'Workspace',
+    group: 'Workspace & access',
   },
   {
     id: 'access',
     label: 'Module Access',
     description: 'Grant CRM and Support access by team or by direct workspace member exception.',
     icon: Access,
-    group: 'Workspace',
+    group: 'Workspace & access',
     requiredPermission: 'module_access.manage',
   },
   {
@@ -185,7 +201,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     label: 'MCP access',
     description: 'Connect outside MCP clients to Helpin and control their workspace access.',
     icon: MCP,
-    group: 'Workspace',
+    group: 'Integrations',
     requiredPermission: 'workspace.read',
   },
   {
@@ -193,7 +209,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     label: 'External MCP',
     description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
     icon: ExternalMCP,
-    group: 'Workspace',
+    group: 'Integrations',
     requiredPermission: 'settings.read',
   },
   {
@@ -201,14 +217,14 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     label: 'Repositories',
     description: 'Choose which synced Git repositories are available to this workspace.',
     icon: Delivery,
-    group: 'Workspace',
+    group: 'Integrations',
   },
   {
     id: 'knowledge',
     label: 'Knowledge',
     description: 'Manage help center docs and website content sources used across AI experiences.',
     icon: Knowledge,
-    group: 'Workspace',
+    group: 'Integrations',
   },
   {
     id: 'workflows',
@@ -248,8 +264,9 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'automations',
+    keywords: ["rules", "triggers"],
     label: 'Automations',
-    description: '',
+    description: "Configure rules for recurring actions.",
     icon: Automations,
     group: 'Projects',
   },
@@ -276,6 +293,8 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'helpcenter',
+    options: [{"id": "helpcenter-domain", "label": "Domain & SEO", "keywords": ["custom domain", "website address", "url", "seo"]}],
+    keywords: ["custom domain", "branding", "seo", "languages"],
     label: 'Help Center',
     description: 'Configure your public help center branding, domain, and SEO.',
     icon: HelpCenter,
@@ -290,6 +309,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'crm-pipelines',
+    keywords: ["deal stages", "sales pipeline"],
     label: 'Deal Pipelines',
     description: 'Configure deal pipelines and stages.',
     icon: Pipelines,
@@ -297,6 +317,8 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'crm-email',
+    options: [{"id": "email-signature", "label": "Email signature", "keywords": ["signature", "footer"]}, {"id": "email-sending-limits", "label": "Sending limits", "keywords": ["daily limit", "sending limit", "quota", "capacity", "pacing"]}, {"id": "email-sync", "label": "Sync preferences", "keywords": ["email history", "address filters", "blocklist", "allowlist"]}, {"id": "email-calendar", "label": "Calendar events", "keywords": ["private meetings", "solo meetings", "calendar sync"]}, {"id": "email-contacts", "label": "Contact creation", "keywords": ["automatic contacts", "blocked prefixes", "noreply"]}],
+    keywords: ["gmail", "email sync", "mailbox", "outlook"],
     label: 'Email',
     description: 'Manage mailboxes, sending limits, and CRM email preferences.',
     icon: EmailAccounts,
@@ -318,10 +340,11 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   },
   {
     id: 'import',
+    keywords: ["csv", "export", "migrate"],
     label: 'Import & Export',
     description: 'Import data from Shortcut and other project management tools.',
     icon: ImportExport,
-    group: 'Data',
+    group: 'Integrations',
   },
 ];
 
@@ -377,5 +400,5 @@ export function getSettingsSidebarGroups(canManageSettings: boolean, permissionS
     groups.push({ label: section.group, sections: [section] });
   }
 
-  return groups;
+  return groups.sort((a, b) => SETTINGS_GROUP_LABELS.indexOf(a.label) - SETTINGS_GROUP_LABELS.indexOf(b.label));
 }

@@ -209,7 +209,7 @@ function CRMEmailSettingsContent({
 
       <EmailAccountConnect workspaceId={workspaceId} memberId={user?.id ?? ''} showAll />
 
-      <CRMEmailSettingsSection title="Sync preferences" summary={`${historicalSyncDays} days of history · ${filterPatterns.length} filter patterns`}>
+      <CRMEmailSettingsSection title="Sync preferences" optionId="email-sync" summary={`${historicalSyncDays} days of history · ${filterPatterns.length} filter patterns`}>
         <div className="space-y-5">
           <SettingRow label="Email history" description="Used for the first import and recovery syncs.">
             <Select value={String(historicalSyncDays)} onValueChange={(value) => setHistoricalSyncDays(Number(value))}>
@@ -268,7 +268,7 @@ function CRMEmailSettingsContent({
         </div>
       </CRMEmailSettingsSection>
 
-      <CRMEmailSettingsSection title="Calendar events" summary={`${includePrivateMeetings ? 'Private meetings included' : 'Private meetings excluded'} · ${includeSoloMeetings ? 'Solo meetings included' : 'Solo meetings excluded'}`}>
+      <CRMEmailSettingsSection title="Calendar events" optionId="email-calendar" summary={`${includePrivateMeetings ? 'Private meetings included' : 'Private meetings excluded'} · ${includeSoloMeetings ? 'Solo meetings included' : 'Solo meetings excluded'}`}>
         <div className="space-y-5">
           <SettingRow label="Internal activity" description="Optionally ignore email and meetings where everyone uses your company domain.">
             <Select value={internalExclusion} onValueChange={(value) => setInternalExclusion(value as CRMInternalExclusion)}>
@@ -294,7 +294,7 @@ function CRMEmailSettingsContent({
         </div>
       </CRMEmailSettingsSection>
 
-      <CRMEmailSettingsSection title="Contact creation" summary={recordCreationMode === 'disabled' ? 'Manual only' : recordCreationMode === 'selective' ? 'Outbound email and meeting participants' : 'All email and meeting participants'}>
+      <CRMEmailSettingsSection title="Contact creation" optionId="email-contacts" summary={recordCreationMode === 'disabled' ? 'Manual only' : recordCreationMode === 'selective' ? 'Outbound email and meeting participants' : 'All email and meeting participants'}>
         <div className="space-y-5">
           <SettingRow
             label="Create contacts"
