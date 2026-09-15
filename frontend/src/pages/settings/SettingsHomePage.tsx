@@ -2,7 +2,6 @@ import { useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { QuietPageHeader, QuietSearchInput, QuietTextAction } from '@/components/design-system/quiet';
 import { Card } from '@/components/ui/card';
-import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ArrowRight01Icon } from '@/lib/icons';
 import { getSettingsSidebarGroups, buildSettingsRoutePath, type SettingsSidebarGroup, type SettingsRouteSection } from '@/lib/settingsSections';
 import { searchSettings, readRecentSettings } from '@/lib/settingsDiscovery';
@@ -49,13 +48,11 @@ export function SettingsHomeView({ groups, slug, recent = [], autoFocus = false,
         {groups.map(group => <Card key={group.label} className="gap-0 rounded-lg border-border/70 py-0 shadow-none">
           <section aria-label={group.label}>
             <h2 className="border-b border-quiet-divider-strong px-4 py-3 text-sm font-semibold text-quiet-text-primary">{group.label}</h2>
-            <div className="p-2">{group.sections.map(section => <QuickTooltip key={section.id} label={section.description}>
-              <a {...linkProps(buildSettingsRoutePath(slug, section.id))} className="group flex min-w-0 items-center gap-3 rounded-md px-2 py-3 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
+            <div className="p-2">{group.sections.map(section => <a key={section.id} {...linkProps(buildSettingsRoutePath(slug, section.id))} className="group flex min-w-0 items-center gap-3 rounded-md px-2 py-3 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
                 <section.icon className="h-4 w-4 shrink-0 text-quiet-text-secondary" />
-                <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-quiet-text-primary">{section.label}</span>{section.scope === 'organization' && <span className="block text-xs text-quiet-text-secondary">Organization-wide</span>}</span>
+                <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-quiet-text-primary">{section.label}</span>{section.scope === 'organization' && <span className="block text-xs text-quiet-text-secondary">Organization-wide</span>}<span className="mt-1 block text-xs leading-5 text-quiet-text-secondary">{section.description}</span></span>
                 <ArrowRight01Icon aria-hidden className="h-4 w-4 shrink-0 text-quiet-text-secondary opacity-50 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
-              </a>
-            </QuickTooltip>)}</div>
+              </a>)}</div>
           </section>
         </Card>)}
       </div>
