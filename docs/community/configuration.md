@@ -64,3 +64,15 @@ A local chat connection alone does not configure embeddings. Workspace AI
 settings reports this distinction; "configured" does not mean the endpoint
 has been contacted or verified. Help-center AI answers and automatic triage
 also retain server-level chat provider settings and their existing model routes.
+
+The installer provisions pgvector and pgcrypto before the Helpin migrator runs.
+With external Postgres, its administrator must install pgvector on the server and
+run `CREATE EXTENSION IF NOT EXISTS vector;` and
+`CREATE EXTENSION IF NOT EXISTS pgcrypto;` in the Helpin database first.
+The runtime uses its own database and GORM schema initialization; it has no Helpin
+ledger head. Record its image digest alongside the Helpin migration head.
+
+The core foundation migration runs only for an empty application database. It
+creates the tables previously supplied by GORM, then runs the existing SQL
+ledger normally. It does not rewrite historical SQL or existing checksums.
+Incomplete base schemas fail explicitly rather than being treated as new installs.
