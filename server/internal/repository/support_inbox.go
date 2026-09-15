@@ -2721,8 +2721,8 @@ func (r *SupportInboxSessionRepository) UpdateSessionsByAnonymousID(ctx context.
 	return nil
 }
 
-// UpgradeIdentityProvenanceByAnonymousID records stronger identity evidence without downgrading
-// an existing verified identity.
+// UpgradeIdentityProvenanceByAnonymousID records evidence for the identity just
+// applied to these sessions. Replacing identity also replaces its verification.
 func (r *SupportInboxSessionRepository) UpgradeIdentityProvenanceByAnonymousID(
 	ctx context.Context,
 	workspaceID, anonymousID, method, trust string,
@@ -2733,18 +2733,11 @@ func (r *SupportInboxSessionRepository) UpgradeIdentityProvenanceByAnonymousID(
 		"identity_method": method,
 		"identity_trust":  trust,
 	}
-	if verifiedAt != nil {
-		updates["identity_verified_at"] = *verifiedAt
-	}
-	if verifierVersion != nil {
-		updates["identity_verifier_version"] = *verifierVersion
-	}
+	updates["identity_verified_at"] = verifiedAt
+	updates["identity_verifier_version"] = verifierVersion
 
 	query := r.db.WithContext(ctx).Model(&model.SupportWidgetSession{}).
 		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID)
-	if trust != model.IdentityTrustVerified {
-		query = query.Where("identity_trust <> ?", model.IdentityTrustVerified)
-	}
 	if err := query.Updates(updates).Error; err != nil {
 		return fmt.Errorf("upgrade session identity provenance: %w", err)
 	}

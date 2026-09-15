@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/helpin-ai/helpin/server/internal/widgetorigin"
@@ -24,22 +26,33 @@ func (h *SupportInboxWidgetHandler) RequireOrigin(next http.Handler) http.Handle
 			writeError(w, http.StatusServiceUnavailable, "widget service is unavailable")
 		})
 	}
-	return requireWidgetOrigin(h.supportService, next)
+	return requireWidgetOrigin(h.supportService, next, h.publicOrigin)
 }
 
-func requireWidgetOrigin(authorizer widgetOriginAuthorizer, next http.Handler) http.Handler {
+func requireWidgetOrigin(authorizer widgetOriginAuthorizer, next http.Handler, publicOrigins ...string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ref, err := widgetOriginReference(w, r)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid widget request")
 			return
 		}
-		if len(r.Header.Values("Origin")) != 1 || authorizer.AuthorizeWidgetOrigin(r.Context(), r.Header.Get("Origin"), ref) != nil {
+		origin := r.Header.Get("Origin")
+		count := len(r.Header.Values("Origin"))
+		// Browsers omit Origin on same-origin GETs. Fetch Metadata is browser-
+		// owned; accept this narrow case only for the configured public host,
+		// and still require that origin in the installation's allow-list.
+		if count == 0 && len(publicOrigins) == 1 && r.Method == http.MethodGet && r.Header.Get("Sec-Fetch-Site") == "same-origin" && (r.Header.Get("Sec-Fetch-Mode") == "cors" || r.Header.Get("Sec-Fetch-Mode") == "same-origin") {
+			if u, e := url.Parse(publicOrigins[0]); e == nil && u.Host != "" && strings.EqualFold(u.Host, r.Host) {
+				origin = publicOrigins[0]
+				count = 1
+			}
+		}
+		if count != 1 || authorizer.AuthorizeWidgetOrigin(r.Context(), origin, ref) != nil {
 			writeError(w, http.StatusForbidden, "Widget access denied. Add your site's origin in widget settings.")
 			return
 		}
-		w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
-		w.Header().Add("Vary", "Origin")
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Add("Vary", "Origin, Sec-Fetch-Site, Sec-Fetch-Mode")
 		w.Header().Set("Cache-Control", "no-store")
 		next.ServeHTTP(w, r)
 	})
@@ -97,3 +110,5 @@ func widgetOriginReference(w http.ResponseWriter, r *http.Request) (widgetorigin
 	}
 	return ref, nil
 }
+
+func (h *SupportInboxWidgetHandler) SetPublicOrigin(origin string) { h.publicOrigin = origin }

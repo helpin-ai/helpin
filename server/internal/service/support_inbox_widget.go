@@ -169,12 +169,12 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 			session.CustomerName = &resolved.displayName
 		}
 		session.IsAnonymous = false
-		if session.IdentityTrust != model.IdentityTrustVerified || provenance.trust == model.IdentityTrustVerified {
-			session.IdentityMethod = provenance.method
-			session.IdentityTrust = provenance.trust
-			session.IdentityVerifiedAt = provenance.verifiedAt
-			session.IdentityVerifierVersion = provenance.verifierVersion
-		}
+		// Evidence belongs to this identity payload. A previous signature
+		// cannot verify a later unsigned claim (even in report-only mode).
+		session.IdentityMethod = provenance.method
+		session.IdentityTrust = provenance.trust
+		session.IdentityVerifiedAt = provenance.verifiedAt
+		session.IdentityVerifierVersion = provenance.verifierVersion
 		if err := sessionRepoTx.Update(ctx, session); err != nil {
 			return err
 		}

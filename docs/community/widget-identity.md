@@ -65,3 +65,12 @@ its UTF-8 string, not hex-decoded. The maximum validity is 15 minutes; issue tim
 allow at most one minute of forward clock skew. Use HTTPS and keep clocks in sync.
 Do not provide a signing endpoint that signs arbitrary visitor-supplied identities:
 derive them from the logged-in user on your own backend.
+
+Browsers omit `Origin` on same-origin GET requests (for example, a widget preview
+on the dashboard host). Only this case may use the configured public widget
+origin: the request host must match `PUBLIC_WIDGET_URL`, and browser-owned Fetch
+Metadata must say `same-origin` with a `cors` or `same-origin` mode. The resolved
+origin still must be explicitly allowed by the installation. Missing Origin
+without these checks, navigation requests, cross-site requests, and WebSockets
+without Origin are refused. This does not authenticate non-browser clients;
+like Origin itself, Fetch Metadata can be forged outside a browser.

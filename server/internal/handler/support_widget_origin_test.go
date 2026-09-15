@@ -76,3 +76,36 @@ func TestWidgetOriginMiddleware(t *testing.T) {
 		})
 	}
 }
+
+func TestWidgetOriginSameOriginGETStillRequiresInstallationAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name, site, mode, host string
+		allowed                bool
+		want                   int
+	}{
+		{"browser same origin", "same-origin", "cors", "widget.example.test", true, 200},
+		{"not allowed installation", "same-origin", "cors", "widget.example.test", false, 403},
+		{"cross site", "cross-site", "cors", "widget.example.test", true, 403},
+		{"navigation", "same-origin", "navigate", "widget.example.test", true, 403},
+		{"unknown host", "same-origin", "cors", "other.example.test", true, 403},
+		{"no metadata", "", "", "widget.example.test", true, 403},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			auth := testWidgetOriginAuthorizer(func(_ context.Context, origin string, _ widgetorigin.Reference) error {
+				if !tc.allowed || origin != "https://widget.example.test" {
+					return fmt.Errorf("denied")
+				}
+				return nil
+			})
+			h := requireWidgetOrigin(auth, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }), "https://widget.example.test")
+			r := httptest.NewRequest("GET", "https://"+tc.host+"/widget/config?widget_key=key", nil)
+			r.Header.Set("Sec-Fetch-Site", tc.site)
+			r.Header.Set("Sec-Fetch-Mode", tc.mode)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != tc.want {
+				t.Fatalf("status=%d want=%d", w.Code, tc.want)
+			}
+		})
+	}
+}
