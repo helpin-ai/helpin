@@ -104,7 +104,7 @@ expired-token refresh, reconnect, and revocation are separate release gates.
 ChatGPT strips the previous-response identifier and does not support lossless
 provider-state replay, although ordinary transcript continuation is supported.
 
-Helpin and Runtime pin the published SDK `v0.6.0-alpha.2`, verified without Go
+Helpin and Runtime pin the published SDK `v0.6.0`, verified without Go
 workspace substitution. Explicit empty model controls clear inherited controls
 while preserving execution limits. Chat Completions and the real local-model
 adapter validation are implemented; deployed Helpin canaries remain pending.
