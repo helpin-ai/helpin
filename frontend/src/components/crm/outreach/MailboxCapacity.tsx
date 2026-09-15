@@ -18,6 +18,7 @@ import {
 } from "@/hooks/queries/useCRMOutreach";
 import { crmOutreachService } from "@/lib/services/crmOutreachService";
 import { unwrap } from "@/lib/queryUtils";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type {
   MailboxCapacity,
   MailboxSendingPolicy,
@@ -56,6 +57,7 @@ export function MailboxCapacityPanel({
   const canEdit = usePermissions(access.data).has("crm.edit");
   const query = useMailboxCapacity(workspaceId, canEdit);
   const [editing, setEditing] = useState<MailboxCapacity>();
+  const slug = useWorkspaceStore((state) => state.currentWorkspace?.slug);
   if (!canEdit) return null;
   const rows = (query.data ?? []).filter(
     (row) => !accountId || row.account_id === accountId,
@@ -66,7 +68,17 @@ export function MailboxCapacityPanel({
         Couldn’t load sending capacity. Try again
       </Button>
     );
-  if (!rows.length) return null;
+  if (!rows.length) {
+    if (query.isPending || accountId || !slug) return null;
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-quiet-border-soft py-3 text-xs text-muted-foreground">
+        <span>Connect Gmail to view sending limits and capacity.</span>
+        <QuietTextAction asChild>
+          <a href={`/w/${slug}/settings/crm-email`}>Connect a sending mailbox</a>
+        </QuietTextAction>
+      </div>
+    );
+  }
   return (
     <div className="space-y-2">
       {rows.map((row) => (
