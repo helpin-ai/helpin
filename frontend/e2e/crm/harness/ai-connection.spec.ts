@@ -1,0 +1,24 @@
+import { test, expect } from '@playwright/test';
+for (const mode of ['light', 'dark', 'narrow']) test(`compact AI connection modal ${mode}`, async ({ page }) => {
+  if (mode === 'narrow') await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/e2e/crm/harness/ai-connection.html${mode === 'dark' ? '?dark' : ''}`);
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Add connection' })).toBeVisible();
+  await expect(dialog.getByRole('combobox', { name: 'Provider', exact: true })).toHaveText('OpenAI API key');
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'About this provider' }).focus();
+  await expect(page.getByRole('tooltip', { name: /billed to your OpenAI account/ })).toContainText('billed to your OpenAI account');
+  await page.keyboard.press('Escape');
+  await dialog.getByRole('combobox', { name: 'Provider', exact: true }).click();
+  await expect(page.getByRole('option', { name: 'OpenAI API key, selected', exact: true })).toBeVisible();
+  await page.screenshot({ path: `/tmp/ai-connection-menu-${mode}.png`, fullPage: true });
+  await page.getByRole('option', { name: 'Anthropic API key', exact: true }).click();
+  await expect(dialog.getByRole('combobox', { name: 'Provider', exact: true })).toHaveText('Anthropic API key');
+  await expect(dialog.getByLabel('Connection name', { exact: true })).toHaveValue('Anthropic');
+  await dialog.getByRole('button', { name: 'About API key storage' }).focus();
+  await expect(page.getByRole('tooltip', { name: /Stored encrypted/ })).toContainText('Stored encrypted');
+  await page.keyboard.press('Escape');
+  await dialog.getByLabel('API key', { exact: true }).focus();
+  await page.screenshot({ path: `/tmp/ai-connection-${mode}.png`, fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

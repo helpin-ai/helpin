@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AIConnectionDialog } from '../AIConnectionDialog';
 import { aiConnectionService, type AIConnection } from '@/lib/services/aiConnectionService';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 
 vi.mock('@/lib/services/aiConnectionService', () => ({
@@ -44,7 +45,7 @@ async function flush() {
 }
 
 function render(ui: React.ReactNode) {
-  return act(async () => root.render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>));
+  return act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>{ui}</TooltipProvider></QueryClientProvider>));
 }
 
 it('saves an approved no-auth endpoint without a key or browser-supplied URL', async () => {
