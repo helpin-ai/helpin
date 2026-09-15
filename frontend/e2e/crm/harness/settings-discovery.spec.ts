@@ -17,6 +17,18 @@ for (const mode of ['light', 'dark', 'narrow']) test(`settings directory and sea
   await expect(page.getByRole('region', { name: 'Integrations & data', exact: true })).toBeVisible();
   await page.screenshot({ path: `/tmp/settings-home-${mode}.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  if (mode !== 'narrow') {
+    const sidebar = page.locator('aside');
+    const workspace = sidebar.getByRole('button', { name: 'Workspace', exact: true });
+    await expect(workspace).toHaveAttribute('aria-expanded', 'false');
+    await workspace.focus();
+    await workspace.press('Enter');
+    await expect(workspace).toHaveAttribute('aria-expanded', 'true');
+    await expect(sidebar.getByRole('link', { name: 'Members', exact: true })).toBeVisible();
+    await page.screenshot({ path: `/tmp/settings-sidebar-expanded-${mode}.png`, fullPage: true });
+    await workspace.press('Space');
+    await expect(workspace).toHaveAttribute('aria-expanded', 'false');
+  }
   const search = page.getByRole('searchbox', { name: 'Search settings', exact: true });
   await expect(page.getByRole('link', { name: 'Search settings', exact: true })).toHaveCount(0);
   await search.fill('gmail signature');

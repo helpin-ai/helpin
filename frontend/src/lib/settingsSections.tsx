@@ -117,6 +117,16 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
 };
 
 const SETTINGS_GROUP_LABELS = ['Personal', 'Organization', 'Workspace', 'AI & knowledge', 'Integrations & data', 'Projects', 'Support', 'CRM'];
+const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
+  Personal: Profile,
+  Organization: Members,
+  Workspace: General,
+  'AI & knowledge': WorkspaceAI,
+  'Integrations & data': ExternalMCP,
+  Projects: Pipelines,
+  Support: ChatWidget,
+  CRM: Autonomy,
+};
 export const SETTINGS_HOME_LABEL = 'Settings home';
 
 const allSettingsSections: SettingsSectionMeta[] = [
@@ -390,6 +400,7 @@ export function buildSettingsRoutePath(workspaceSlug: string, section: SettingsR
 
 export type SettingsSidebarGroup = {
   label: string;
+  icon?: IconComponent;
   sections: SettingsSectionMeta[];
 };
 
@@ -413,7 +424,7 @@ export function getSettingsSidebarGroups(canManageSettings: boolean, permissionS
       continue;
     }
 
-    groups.push({ label: section.group, sections: [section] });
+    groups.push({ label: section.group, icon: SETTINGS_GROUP_ICONS[section.group], sections: [section] });
   }
 
   return groups.sort((a, b) => SETTINGS_GROUP_LABELS.indexOf(a.label) - SETTINGS_GROUP_LABELS.indexOf(b.label));

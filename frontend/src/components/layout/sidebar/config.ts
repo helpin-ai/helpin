@@ -152,6 +152,7 @@ export function buildPanelNavGroups(
     docs: [],
     settings: getSettingsSidebarGroups(canManageSettings, permissionSet).map((group) => ({
       label: group.label,
+      icon: group.icon,
       items: group.sections.map((section) => ({
         link: buildSettingsRoutePath(wsSlug, section.id),
         label: section.label,
