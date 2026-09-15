@@ -15,7 +15,7 @@ import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportLinkSecurity, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { findSupportLinkSecurity, formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, getExplicitEmailDeliveryState, HELPIN_AI_DISPLAY_NAME, isExternalSupportEmailReply, parseAIMessageMetadata, parseSupportLinkPreviews, parseSupportLinkSecurity, type SupportReceiptStatus } from './helpers';
-import { getReplyDeliveryMode, REPLY_DELIVERY_LABELS } from './replyDelivery';
+import { getReplyEmailSubject, getReplyDeliveryMode, REPLY_DELIVERY_LABELS } from './replyDelivery';
 import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -340,6 +340,15 @@ export const MessageBubble = memo(function MessageBubble({
   const isAI = effectiveSenderType === 'ai';
   const isAgent = effectiveSenderType === 'agent';
   const isInternal = message.is_internal;
+  const visitorFeedback = useMemo<boolean | undefined>(() => {
+    if (!isAI || isInternal) return undefined;
+    try {
+      const metadata = JSON.parse(message.metadata || '{}');
+      return typeof metadata.visitor_feedback?.helpful === 'boolean'
+        ? metadata.visitor_feedback.helpful : undefined;
+    } catch { return undefined; }
+  }, [isAI, isInternal, message.metadata]);
+  const feedbackLabel = visitorFeedback ? 'Visitor marked helpful' : 'Visitor marked unhelpful';
   const deliveryMode = !isCustomer && !isInternal ? getReplyDeliveryMode(message.metadata) : undefined;
   const explicitEmailState = deliveryMode && deliveryMode !== 'chat_only' ? getExplicitEmailDeliveryState(message) : undefined;
   const chatSeen = receiptStatus === 'read' || (source === 'widget' && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
@@ -349,7 +358,21 @@ export const MessageBubble = memo(function MessageBubble({
   const resolvedSenderName = isAI ? HELPIN_AI_DISPLAY_NAME : senderName;
   const showAvatar = isLastInGroup;
   const fullTimestamp = formatTimestamp(message.created_at);
-  const sourceLabel = deliveryMode ? REPLY_DELIVERY_LABELS[deliveryMode] : source ? SOURCE_LABELS[source] ?? source : null;
+  const bubbleTime = new Date(message.created_at).toLocaleTimeString(undefined, {
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+  const renderBubbleTime = (className = '') => (
+    <time
+      dateTime={message.created_at}
+      title={fullTimestamp}
+      className={`select-none whitespace-nowrap text-[10px] leading-4 tabular-nums ${className}`}
+    >
+      {bubbleTime}
+    </time>
+  );
+  const messageSource = message.via_channel ?? source;
+  const sourceLabel = isInternal ? null : deliveryMode ? REPLY_DELIVERY_LABELS[deliveryMode]
+    : messageSource ? SOURCE_LABELS[messageSource] ?? messageSource : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
   // Only strip if the JSON parses as an AI contract (has can_answer + content keys)
@@ -407,7 +430,7 @@ export const MessageBubble = memo(function MessageBubble({
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
   const hasDisplayContent = visibleContent.trim().length > 0;
-  const showBubble = !!visibleContent || fileAttachments.length > 0 || linkPreviews.length > 0;
+  const showBubble = !!visibleContent || fileAttachments.length > 0 || imageAttachments.length > 0 || linkPreviews.length > 0;
   const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
   const renderEmailBodyAsForwardedText = hasEmailBody && !!forwardedDisplayContent;
 
@@ -434,9 +457,9 @@ export const MessageBubble = memo(function MessageBubble({
 
   const restoreComposerDraft = useCallback((markdown: string) => {
     window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-      detail: { conversationId: message.conversation_id, markdown, attachments: message.attachments ?? [], deliveryMode },
+      detail: { conversationId: message.conversation_id, markdown, attachments: message.attachments ?? [], deliveryMode, emailSubject: getReplyEmailSubject(message.metadata) },
     }));
-  }, [message.attachments, message.conversation_id, deliveryMode]);
+  }, [message.attachments, message.conversation_id, message.metadata, deliveryMode]);
 
   const handleUndoOrEdit = useCallback(async () => {
     const result = await deleteMutation.mutateAsync({ messageId: message.id, undo: true });
@@ -676,7 +699,7 @@ export const MessageBubble = memo(function MessageBubble({
           <div className="max-w-[85%]">
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
+                <div className="flow-root rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
                   <div className="mb-1.5 flex items-center gap-1.5">
                     <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
                     <span className="text-[11px] text-amber-600 dark:text-amber-400">
@@ -685,7 +708,7 @@ export const MessageBubble = memo(function MessageBubble({
                     </span>
                   </div>
                   {hasDisplayContent && (
-                    <div className="prose-chat text-sm leading-relaxed text-amber-900 dark:text-amber-200">
+                    <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
                       {mentionParts ? (
                         <p className="whitespace-pre-wrap">{mentionParts}</p>
                       ) : (
@@ -695,6 +718,7 @@ export const MessageBubble = memo(function MessageBubble({
                   )}
                   {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
                   {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
+                  {renderBubbleTime('float-right ml-2 mt-1 text-amber-700/70 dark:text-amber-300/70')}
                 </div>
               </TooltipTrigger>
               <TooltipContent side="top">{tooltipContent}</TooltipContent>
@@ -795,7 +819,7 @@ export const MessageBubble = memo(function MessageBubble({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
-                    className={`rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                    className={`flow-root rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                       isCustomer
                         ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                         : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
@@ -808,7 +832,7 @@ export const MessageBubble = memo(function MessageBubble({
                     ) : (
                       visibleContent && (
                         <div
-                          className="prose-chat"
+                          className="prose-chat inline [&>p:last-child]:inline"
                           data-chat-tone={isCustomer ? 'customer' : 'agent'}
                           data-has-table={hasTableContent ? 'true' : 'false'}
                         >
@@ -830,6 +854,8 @@ export const MessageBubble = memo(function MessageBubble({
                         ))}
                       </div>
                     )}
+                    {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 || linkPreviews.length > 0 ? 'mt-2' : '')}
+                    {renderBubbleTime('float-right ml-2 mt-1 text-muted-foreground')}
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="top">
@@ -840,17 +866,25 @@ export const MessageBubble = memo(function MessageBubble({
           ) : (
             messageActionsMenu
           )}
-
-          {/* Image attachments: outside the bubble, clickable for preview */}
-          {imageAttachments.length > 0 && (
-            renderImageAttachments(showBubble ? 'mt-1.5' : '')
+          {visitorFeedback !== undefined && (
+            <div data-slot="support-answer-feedback" className="mt-1 flex h-5 justify-start">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span role="img" tabIndex={0} aria-label={feedbackLabel}
+                    className="inline-flex h-5 min-w-6 items-center justify-center rounded-full border border-border/60 bg-background px-1 text-sm leading-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    {visitorFeedback ? '👍' : '👎'}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{feedbackLabel}</TooltipContent>
+              </Tooltip>
+            </div>
           )}
         </div>
         </MessageActionsContextMenu>
 
         {/* Right side: avatar or spacer (agent/user messages) */}
         {!isCustomer && (
-          <div className="ml-2 flex w-7 shrink-0 flex-col justify-end">
+          <div className={`ml-2 flex w-7 shrink-0 flex-col justify-end ${visitorFeedback !== undefined ? 'pb-6' : ''}`}>
             {showAvatar && avatarEl}
           </div>
         )}

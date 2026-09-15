@@ -85,3 +85,14 @@ func TestEnsureScheduledEventsStableIdentity(t *testing.T) {
 		t.Fatal("missing engine reported success")
 	}
 }
+
+func TestScheduledEventsAdditionalDispatcherStillRunsAfterPrimaryFailure(t *testing.T) {
+	primaryErr := errors.New("primary unavailable")
+	additionalErr := errors.New("outreach unavailable")
+	primary := &scheduledEventsTestDispatcher{err: primaryErr}
+	additional := &scheduledEventsTestDispatcher{err: additionalErr}
+	err := NewScheduledEventsActivities(primary).SetAdditionalDispatcher(additional).DispatchDue(context.Background())
+	if primary.calls != 1 || additional.calls != 1 || !errors.Is(err, primaryErr) || !errors.Is(err, additionalErr) {
+		t.Fatalf("dispatchers did not run independently: primary=%d additional=%d error=%v", primary.calls, additional.calls, err)
+	}
+}

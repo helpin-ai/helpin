@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"nhooyr.io/websocket"
 )
 
@@ -30,13 +31,14 @@ type Event struct {
 
 // Client represents a single WebSocket connection.
 type Client struct {
-	Conn           *websocket.Conn
-	ConnID         string // unique per connection, generated at accept time
-	UserID         string
-	WorkspaceID    string
-	IsWidget       bool    // true for widget clients, false for internal (agent) clients
-	ConversationID *string // set for widget clients, scopes which events they receive
-	AnonymousID    string  // set for widget clients, used for visitor online tracking
+	Conn              *websocket.Conn
+	ConnID            string // unique per connection, generated at accept time
+	UserID            string
+	WorkspaceID       string
+	IsWidget          bool            // true for widget clients, false for internal (agent) clients
+	ConversationID    *string         // set for widget clients, scopes which events they receive
+	PublicTeammateIDs map[string]bool // protected by Hub.mu; identities already public to this visitor
+	AnonymousID       string          // set for widget clients, used for visitor online tracking
 }
 
 // Hub manages all active WebSocket clients grouped by workspace.
@@ -265,16 +267,19 @@ func (h *Hub) Broadcast(event Event) {
 	widgetEventData := event.Data
 	if event.Entity == "support_conversation_message" {
 		widgetEventData = widgetSafeSupportMessageEventData(event.Data)
-		widgetEvent := event
-		widgetEvent.Data = widgetEventData
-		widgetAgentData, _ = json.Marshal(widgetEvent)
+		widgetAgentData, _ = json.Marshal(map[string]any{
+			"action": event.Action, "entity": event.Entity, "entity_id": event.EntityID,
+			"parent_type": event.ParentType, "parent_id": event.ParentID, "data": widgetEventData,
+		})
 	}
 	switch {
 	case event.Entity == "support_conversation_message" && event.Action == "created" && len(event.Data) > 0:
 		wm := widgetMessage{Type: "message:received", Data: widgetEventData}
 		widgetData, _ = json.Marshal(wm)
+	case event.Entity == "support_conversation_message" && event.Action == "updated" && len(widgetEventData) > 0:
+		widgetData, _ = json.Marshal(widgetMessage{Type: "message:updated", Data: widgetEventData})
 	case event.Entity == "support_conversation" && event.Action == "typing_started":
-		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start", Data: event.Data})
+		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:start", Data: widgetTypingData(event.Data)})
 	case event.Entity == "support_conversation" && event.Action == "typing_stopped":
 		widgetData, _ = json.Marshal(widgetMessage{Type: "typing:stop"})
 	case event.Entity == "support_conversation" && event.Action == "ai_thinking_started":
@@ -292,9 +297,14 @@ func (h *Hub) Broadcast(event Event) {
 	case event.Entity == "support_widget" && event.Action == "config_updated" && len(event.Data) > 0:
 		widgetData, _ = json.Marshal(widgetMessage{Type: "config:updated", Data: event.Data})
 	case event.Entity == "support_visitor_conversations" && event.Action == "updated" && len(event.Data) > 0:
-		widgetData, _ = json.Marshal(widgetMessage{Type: "conversations:listed", Data: event.Data})
+		widgetData, _ = json.Marshal(widgetMessage{Type: "conversations:listed", Data: widgetConversationsData(event.Data)})
 	case event.Entity == "support_teammate_presence" && event.Action == "updated" && len(event.Data) > 0:
-		widgetData, _ = json.Marshal(widgetMessage{Type: "teammate:presence", Data: event.Data})
+		widgetData, _ = json.Marshal(widgetMessage{Type: "teammate:presence", Data: widgetTeammatePresenceData(event.Data)})
+	}
+
+	// Generic staff conversation events are invalidations, never visitor data payloads.
+	if event.Entity == "support_conversation" && widgetData == nil {
+		widgetAgentData, _ = json.Marshal(map[string]string{"action": event.Action, "entity": event.Entity, "entity_id": event.EntityID})
 	}
 
 	// Copy targets under read lock.
@@ -314,12 +324,35 @@ func (h *Hub) Broadcast(event Event) {
 	}
 
 	for _, c := range targets {
+		if c.IsWidget && event.Entity == "support_conversation_message" && len(widgetEventData) == 0 {
+			continue
+		}
 		if !h.shouldReceive(c, event) {
 			if isTyping {
 				slog.Debug("[ws] typing event filtered out",
 					"client_user", c.UserID, "is_widget", c.IsWidget)
 			}
 			continue
+		}
+		if c.IsWidget && event.Entity == "support_visitor_conversations" {
+			var list struct {
+				Conversations []model.WidgetConversation `json:"conversations"`
+			}
+			if json.Unmarshal(event.Data, &list) == nil {
+				for _, conversation := range list.Conversations {
+					if conversation.OpenedByUserID != nil {
+						h.rememberWidgetTeammates(c, *conversation.OpenedByUserID)
+					}
+				}
+			}
+		}
+		if c.IsWidget && event.Entity == "support_widget" && event.Action == "config_updated" {
+			var config model.WidgetConfigResponse
+			if json.Unmarshal(event.Data, &config) == nil {
+				for _, teammate := range config.AvailableTeammates {
+					h.rememberWidgetTeammates(c, teammate.UserID)
+				}
+			}
 		}
 		payload := agentData
 		if c.IsWidget {
@@ -367,7 +400,10 @@ func (h *Hub) shouldReceive(client *Client, event Event) bool {
 	}
 
 	if event.Entity == "support_teammate_presence" && event.Action == "updated" {
-		return client.IsWidget
+		h.mu.RLock()
+		allowed := client.PublicTeammateIDs[event.EntityID]
+		h.mu.RUnlock()
+		return client.IsWidget && allowed
 	}
 
 	// Customer-safe AI stream events are transient and widget-only. Internal

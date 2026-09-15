@@ -753,6 +753,17 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 		settings = parseSettings(inst.Settings)
 	}
 
+	if !model.SupportAIChannelEnabled(settings, "chat") {
+		conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+		if err == nil && conv != nil && (conv.AssignedAgentID != nil || derefString(conv.AIState) == "pending") {
+			flow := supportEmailReopenFlowState(conv)
+			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{"assigned_agent_id": nil, "ai_state": "escalated", "human_takeover": true, "flow_state": flow}); err != nil {
+				slog.ErrorContext(ctx, "release disabled chat AI ownership", "error", err)
+			}
+		}
+		return
+	}
+
 	if shouldAutomaticallyProcessSupportAI(settings) && s.supportAIService != nil {
 		conv, convErr := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 		if convErr != nil || conv == nil || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman {
@@ -841,7 +852,7 @@ func (s *SupportInboxService) maybeAutoRunConversationAgent(ctx context.Context,
 	}
 
 	settings := parseSettings(inst.Settings)
-	if !shouldAutomaticallyProcessSupportAI(settings) {
+	if !shouldAutomaticallyProcessSupportAI(settings) || !model.SupportAIChannelEnabled(settings, "chat") {
 		return
 	}
 
@@ -1081,6 +1092,7 @@ func widgetActiveTeammateFromConversation(conversation *model.SupportConversatio
 // shape expected by the widget-core TypeScript interface.
 func (s *SupportInboxService) buildWidgetConfigResponse(ctx context.Context, inst *model.SupportWidgetInstallation) (*model.WidgetConfigResponse, error) {
 	settings := parseSettings(inst.Settings)
+	settings.AIEnabled = settings.AIEnabled && model.SupportAIChannelEnabled(settings, "chat")
 
 	position := settings.LauncherPosition
 	if position == "" || position == "bottom_right" {

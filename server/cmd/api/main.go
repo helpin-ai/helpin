@@ -383,6 +383,7 @@ func main() {
 			&model.CRMMeetingProviderEvent{},
 			// CRM Phase 3: Email & Calendar
 			&model.CRMEmailAccount{},
+			&model.CRMMailboxSendingPolicy{}, &model.CRMEmailSendReservation{}, &model.CRMEmailTemplate{}, &model.CRMEmailSequence{}, &model.CRMSequenceEnrollment{}, &model.CRMSequenceDelivery{}, &model.CRMEmailSuppression{},
 			&model.CRMEmailThread{},
 			&model.CRMEmailMessage{},
 			&model.CRMEmailMessageContact{},
@@ -1747,8 +1748,8 @@ func main() {
 	inviteService.SetBillingService(editionServices.Seats)
 	inviteService.SetCustomerIOIdentityService(customerIOIdentityService)
 	inviteService.SetProductAnalyticsService(productAnalytics)
-	// Initialize authorization service.
 	aiConnectionService.SetAuthorizationService(authzService)
+	crmOutreachService := service.NewCRMOutreachService(repository.NewCRMOutreachRepository(db), crmEmailService, crmEmailRepo, authzService, pmTaskService, cfg.AppBaseURL)
 	crmSituationService := service.NewCRMSituationService(crmSituationRepo, authzService)
 	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), authzService, crmSituationService).SetAIProfileService(aiProfileService)
 	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
@@ -1967,6 +1968,7 @@ func main() {
 		CRMMeeting:          handler.NewCRMMeetingHandler(crmMeetingService),
 		CRMImport:           handler.NewCRMImportHandler(crmImportService),
 		CRMEmail:            handler.NewCRMEmailHandler(crmEmailService, cfg.AppBaseURL),
+		CRMOutreach:         handler.NewCRMOutreachHandler(crmOutreachService),
 		CRMCalendar:         handler.NewCRMCalendarHandler(crmCalendarService),
 		CRMEnrichment:       handler.NewCRMEnrichmentHandler(crmEnrichmentService),
 		CRMSignal:           handler.NewCRMSignalHandler(crmSignalService),

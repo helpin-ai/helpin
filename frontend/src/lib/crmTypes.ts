@@ -175,6 +175,7 @@ export interface UpdateCRMCompanyRequest {
 }
 
 export interface CRMPipelineStage {
+  color?: string;
   deal_count?: number;
   id: string;
   pipeline_id: string;
@@ -205,6 +206,7 @@ export interface CreateCRMPipelineRequest {
   is_default?: boolean;
   default_commercial_motion?: CRMDealCommercialMotion;
   stages?: {
+    color?: string;
     name: string;
     stage_type: PipelineStageType;
     position: number;
@@ -219,6 +221,7 @@ export interface UpdateCRMPipelineRequest {
   is_default?: boolean;
   default_commercial_motion?: CRMDealCommercialMotion;
   stages?: {
+    color?: string;
     id?: string;
     name: string;
     stage_type: PipelineStageType;
@@ -228,6 +231,7 @@ export interface UpdateCRMPipelineRequest {
 }
 
 export interface CRMDeal {
+  revenue_type?: 'one_time' | 'monthly' | 'annual';
   id: string;
   workspace_id: string;
   display_id: string;
@@ -248,6 +252,8 @@ export interface CRMDeal {
 }
 
 export interface CreateCRMDealRequest {
+  contact_ids?: string[];
+  revenue_type?: 'one_time' | 'monthly' | 'annual';
   workspace_id: string;
   name: string;
   contact_id?: string;
@@ -276,6 +282,8 @@ export interface CRMDealCustomer {
 }
 
 export interface UpdateCRMDealRequest {
+  clear_probability?: boolean;
+  revenue_type?: 'one_time' | 'monthly' | 'annual';
   name?: string;
   pipeline_id?: string;
   stage_id?: string;
@@ -468,6 +476,7 @@ export type CRMEmailAccountStatus =
   | "error";
 
 export interface CRMEmailAccount {
+  signature?: string;
   id: string;
   workspace_id: string;
   member_id: string;
@@ -571,6 +580,7 @@ export interface CRMEmailThread {
 }
 
 export interface CRMEmailMessage {
+  association_warning?: string;
   id: string;
   workspace_id: string;
   email_account_id: string;

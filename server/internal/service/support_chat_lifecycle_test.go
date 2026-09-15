@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -53,4 +54,27 @@ func TestSupportChatRunClosureDecision(t *testing.T) {
 			t.Fatal("manual support run must not be closed by chat lifecycle")
 		}
 	})
+}
+
+func TestSupportChatRejectsEmailBeforeStartingTurn(t *testing.T) {
+	settings := model.DefaultSupportInboxSettings()
+	settings.AIEnabled = true
+	settings.AIAgentID = strPtr("agent")
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+	conv := &model.SupportConversation{ID: "conv", WorkspaceID: "11111111-1111-1111-1111-111111111111", Channel: "email", Status: "open"}
+	if err := env.convRepo.Create(context.Background(), conv); err != nil {
+		t.Fatal(err)
+	}
+	svc := &SupportChatService{supportAIService: &SupportAIService{installationRepo: env.installRepo}, conversationRepo: env.convRepo}
+	if err := svc.HandleVisitorMessage(context.Background(), conv.WorkspaceID, conv.ID, &model.SupportMessage{SenderType: "customer", ViaChannel: strPtr("email")}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSupportChatClosesEmailRuns(t *testing.T) {
+	now := time.Now()
+	closeRun, reason := supportChatRunClosureDecision(supportChatLifecycleRun(now), &model.SupportConversation{Channel: "email"}, now)
+	if !closeRun || reason != "unsupported_channel" {
+		t.Fatalf("decision=%v/%q", closeRun, reason)
+	}
 }

@@ -1,3 +1,4 @@
+import { serializeRecordMutation } from '../recordMutationQueue';
 import { api } from '../api';
 import type { SupportConversation } from '../pmTypes';
 import type {
@@ -150,6 +151,7 @@ export const crmDealService = {
   list: (
     workspaceId: string,
     filters?: {
+      filters?: string;
       pipeline_id?: string;
       stage_id?: string;
       owner_member_id?: string;
@@ -161,7 +163,7 @@ export const crmDealService = {
   ) => api.get<CRMPaginatedResponse<CRMDeal[]>>(`/crm/deals${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   get: (workspaceId: string, id: string) => api.get<CRMDeal>(`/crm/deals/${id}${qs(workspaceId)}`),
   create: (payload: CreateCRMDealRequest) => api.post<CRMDeal>(`/crm/deals${qs(payload.workspace_id)}`, payload),
-  update: (workspaceId: string, id: string, payload: UpdateCRMDealRequest) => api.put<CRMDeal>(`/crm/deals/${id}${qs(workspaceId)}`, payload),
+  update: (workspaceId: string, id: string, payload: UpdateCRMDealRequest) => serializeRecordMutation(`crm-deal:${workspaceId}:${id}`, () => api.put<CRMDeal>(`/crm/deals/${id}${qs(workspaceId)}`, payload)),
   setCustomer: (workspaceId: string, id: string, payload: SetCRMDealCustomerRequest) => api.put<CRMDealCustomer>(`/crm/deals/${id}/customer${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/crm/deals/${id}${qs(workspaceId)}`),
   listActivities: (workspaceId: string, dealId: string, page?: number) =>
@@ -229,10 +231,12 @@ export const crmEmailService = {
   getAccountDiagnostics: (workspaceId: string, id: string) => api.get<CRMEmailAccountDiagnostics>(`/crm/email/accounts/${id}/diagnostics${qs(workspaceId)}`),
   syncAccount: (workspaceId: string, id: string, mode: 'incremental' | 'historical') => api.post<CRMEmailAccount>(`/crm/email/accounts/${id}/sync${qs(workspaceId)}`, { mode }),
   initiateOAuth: (workspaceId: string, provider: 'gmail' | 'microsoft' = 'gmail') => api.get<{ redirect_url: string }>(`/crm/email/oauth/initiate${qs(workspaceId)}&provider=${provider}`),
+  updateSignature: (workspaceId: string, accountId: string, signature: string) => api.put(`/crm/email/accounts/${accountId}/signature${qs(workspaceId)}`, { signature }),
   sendEmail: (
     workspaceId: string,
     payload: {
       account_id: string;
+      deal_id?: string;
       to: string[];
       cc?: string[];
       subject: string;

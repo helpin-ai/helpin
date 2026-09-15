@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -90,6 +91,7 @@ func (s *SupportAIService) publishAIReply(
 	progressState string,
 	customerEmail *string,
 	customerPhone *string,
+	processingID ...string,
 ) (*model.SupportMessage, error) {
 	metadata := AIMessageMetadata{
 		AIAutoReply:     true,
@@ -118,19 +120,21 @@ func (s *SupportAIService) publishAIReply(
 	if s.linkPreviewService != nil {
 		s.linkPreviewService.EnrichMessage(ctx, aiMsg)
 	}
-	if err := s.messageRepo.Create(ctx, aiMsg); err != nil {
+	if err := s.createSupportAIReply(ctx, aiMsg, processingID); err != nil {
 		return nil, fmt.Errorf("create AI message: %w", err)
 	}
 
 	publishSupportAIMessageStream(s.wsPublisher, workspaceID, aiMsg, "ai:"+agentID)
 
-	pending := "pending"
-	_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
-		"ai_state":          &pending,
-		"assigned_agent_id": &agentID,
-		"ai_turn_count":     gorm.Expr("ai_turn_count + 1"),
-		"flow_state":        model.SupportConversationFlowStateAIHandling,
-	})
+	if len(processingID) == 0 {
+		pending := "pending"
+		_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+			"ai_state":          &pending,
+			"assigned_agent_id": &agentID,
+			"ai_turn_count":     gorm.Expr("ai_turn_count + 1"),
+			"flow_state":        model.SupportConversationFlowStateAIHandling,
+		})
+	}
 
 	return aiMsg, nil
 }
@@ -147,6 +151,7 @@ func (s *SupportAIService) publishAIInternalNote(
 	progressState string,
 	customerEmail *string,
 	customerPhone *string,
+	processingID ...string,
 ) (*model.SupportMessage, error) {
 	metadata := AIMessageMetadata{
 		AIAutoReply:     false,
@@ -173,7 +178,7 @@ func (s *SupportAIService) publishAIInternalNote(
 		MessageType:       "reply",
 		Metadata:          string(metadataJSON),
 	}
-	if err := s.messageRepo.Create(ctx, note); err != nil {
+	if err := s.createSupportAIReply(ctx, note, processingID); err != nil {
 		return nil, fmt.Errorf("create AI internal note: %w", err)
 	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, note, "ai:"+agentID))
@@ -288,4 +293,25 @@ RESPONSE FORMAT (respond with valid JSON only):
 	}
 
 	return sb.String()
+}
+
+var errSupportTurnSettled = errors.New("support customer turn already settled")
+
+// An optional processing ID makes runtime publication and turn settlement atomic.
+// Other publishers (such as human handoff notices) have their own lifecycle.
+func (s *SupportAIService) createSupportAIReply(ctx context.Context, message *model.SupportMessage, processingID []string) error {
+	if len(processingID) == 0 {
+		return s.messageRepo.Create(ctx, message)
+	}
+	if s.processingRepo == nil {
+		return fmt.Errorf("support processing repository is not configured")
+	}
+	created, err := s.processingRepo.CreateReply(ctx, processingID[0], message)
+	if err != nil {
+		return err
+	}
+	if !created {
+		return errSupportTurnSettled
+	}
+	return nil
 }

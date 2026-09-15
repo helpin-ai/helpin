@@ -1101,25 +1101,12 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 
 	viaEmail := "email"
 	spamSignals := postmarkInboundSpamSignalsFromHeaders(payload.Headers)
-	messageMetadata := spamSignals.messageMetadata()
+	messageMetadata := inboundEmailAIMetadata(spamSignals.messageMetadata(), payload, content)
 	if forwardedAttribution.Applied {
 		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
 	}
 	if isTeammateReply {
 		messageMetadata = mergeExternalEmailReplyMetadata(messageMetadata)
-	} else if !isProviderForwardingConfirmation(payload) {
-		metadata := map[string]any{}
-		if err := json.Unmarshal([]byte(messageMetadata), &metadata); err != nil && messageMetadata != "" {
-			return fmt.Errorf("decode inbound email metadata: %w", err)
-		}
-		// Persist dispatch intent so webhook retries can recover a failed publish
-		// without recreating the customer message or rerouting the conversation.
-		metadata["email_ai_request"] = true
-		encoded, err := json.Marshal(metadata)
-		if err != nil {
-			return fmt.Errorf("encode inbound email metadata: %w", err)
-		}
-		messageMetadata = string(encoded)
 	}
 	senderType := "customer"
 	var senderUserID *string
@@ -1222,8 +1209,26 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			return err
 		}
 
+		// Email replies belong to the human inbox. Cancel AI ownership silently:
+		// sending a handoff email here can itself feed an autoresponder loop.
+		if !isTeammateReply && (!model.SupportAIReplyAllowed(settings, conv, msg) || !shouldAutomaticallyProcessSupportAI(settings)) && (derefString(conv.AssignedAgentID) != "" || derefString(conv.AIState) == "pending" || derefString(conv.AIActiveRunID) != "") {
+			flow := supportEmailReopenFlowState(conv)
+			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
+				"assigned_agent_id": nil, "human_takeover": true, "ai_state": "escalated", "flow_state": flow,
+			}); err != nil {
+				return err
+			}
+			conv.AssignedAgentID = nil
+			conv.HumanTakeover = boolPtr(true)
+			conv.AIState = strPtr("escalated")
+			conv.FlowState = &flow
+		}
+
 		if shouldReopenCustomerReply {
 			reopenFlowState := supportEmailReopenFlowState(conv)
+			if model.SupportAIReplyAllowed(settings, conv, msg) && shouldAutomaticallyProcessSupportAI(settings) && !supportConversationHumanOwned(conv) && conv.CustomerRequestedHumanAt == nil && derefString(conv.AIState) != "escalated" {
+				reopenFlowState = model.SupportConversationFlowStateAIHandling
+			}
 			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
 				"status":             model.SupportConversationStatusOpen,
 				"flow_state":         reopenFlowState,
@@ -1359,7 +1364,7 @@ func (s *EmailFallbackService) publishInboundCustomerAIRequest(ctx context.Conte
 	var metadata struct {
 		AIRequest bool `json:"email_ai_request"`
 	}
-	if msg == nil || msg.SenderType != "customer" || msg.IsInternal || json.Unmarshal([]byte(msg.Metadata), &metadata) != nil || !metadata.AIRequest {
+	if !supportAIMessageEligible(msg) || json.Unmarshal([]byte(msg.Metadata), &metadata) != nil || !metadata.AIRequest {
 		return nil
 	}
 	if s.supportInboxService == nil || s.supportInboxService.supportAIService == nil || s.installRepo == nil {
@@ -1369,7 +1374,7 @@ func (s *EmailFallbackService) publishInboundCustomerAIRequest(ctx context.Conte
 	if err != nil {
 		return fmt.Errorf("%w: load inbound email AI settings: %w", ErrInboundEmailAIDispatchRetry, err)
 	}
-	if inst == nil || !shouldAutomaticallyProcessSupportAI(parseSettings(inst.Settings)) {
+	if inst == nil || !shouldAutomaticallyProcessSupportAI(parseSettings(inst.Settings)) || !model.SupportAIReplyAllowed(parseSettings(inst.Settings), nil, msg) {
 		return nil
 	}
 	conv, err := s.convRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
@@ -2038,6 +2043,18 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 	if err != nil {
 		return err
 	}
+	// Tell other mail systems this batch was generated automatically so their
+	// autoresponders can decline it as well (RFC 3834).
+	aiOnly := len(pending) > 0
+	for _, message := range pending {
+		if message.SenderType != "ai" {
+			aiOnly = false
+			break
+		}
+	}
+	if aiOnly {
+		headers = append(headers, email.EmailHeader{Name: "Auto-Submitted", Value: "auto-replied"})
+	}
 	replyTo := s.resolveConversationReplyTo(ctx, conv, workspaceName)
 	unsubscribeEmail := s.unsubscribeAddress(conversationID)
 
@@ -2688,6 +2705,11 @@ func (s *EmailFallbackService) buildThreadHeaders(ctx context.Context, workspace
 }
 
 func (s *EmailFallbackService) buildSubject(ctx context.Context, conv *model.SupportConversation, pending []model.SupportMessage) (string, error) {
+	if len(pending) > 0 && pending[0].ExplicitEmailDelivery() {
+		if subject := explicitDeliveryMetadata(pending[0]).Subject; subject != "" {
+			return subject, nil
+		}
+	}
 	base := strings.TrimSpace(conv.Subject)
 	if base == "" {
 		if len(pending) > 0 {
@@ -3542,7 +3564,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	viaEmail := "email"
 	now := s.now()
 	spamSignals := postmarkInboundSpamSignalsFromHeaders(payload.Headers)
-	messageMetadata := spamSignals.messageMetadata()
+	messageMetadata := inboundEmailAIMetadata(spamSignals.messageMetadata(), payload, content)
 	if forwardedAttribution.Applied {
 		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
 	}
@@ -3749,13 +3771,13 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		"route_key", route.RouteKey,
 	)
 	if s.supportInboxService != nil && s.supportInboxService.triageService != nil {
-		go func(workspaceID, conversationID, messageID string) {
-			if _, err := s.supportInboxService.triageService.EvaluateAndRoute(context.Background(), workspaceID, conversationID, messageID); err != nil {
-				s.logger.ErrorContext(context.Background(), "support triage failed for inbound email conversation", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", err)
-			}
-		}(conversation.WorkspaceID, conversation.ID, message.ID)
+		// Routing can assign a human. Complete it before reloading ownership for AI.
+		if _, err := s.supportInboxService.triageService.EvaluateAndRoute(ctx, conversation.WorkspaceID, conversation.ID, message.ID); err != nil {
+			s.logger.ErrorContext(ctx, "support triage failed for inbound email conversation", "error", err, "conversation_id", conversation.ID)
+		}
 	}
-	return nil
+
+	return s.publishInboundCustomerAIRequest(ctx, conversation.WorkspaceID, conversation.ID, message)
 }
 
 func (s *EmailFallbackService) storeRouteConfirmationConversation(ctx context.Context, route *model.SupportEmailRoute, conversationID string) error {
@@ -4131,16 +4153,10 @@ func supportEmailReopenFlowState(conv *model.SupportConversation) string {
 	if conv == nil {
 		return model.SupportConversationFlowStateWaitingForHuman
 	}
-	if supportConversationHumanOwned(conv) || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman {
+	if conv.AssignedUserID != nil || conv.OpenedByUserID != nil || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman {
 		return model.SupportConversationFlowStateAssignedToHuman
 	}
-	if conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" {
-		return model.SupportConversationFlowStateWaitingForHuman
-	}
-	if strings.TrimSpace(derefString(conv.AssignedAgentID)) != "" || derefString(conv.FlowState) == model.SupportConversationFlowStateAIHandling {
-		return model.SupportConversationFlowStateAIHandling
-	}
-	return defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID)
+	return model.SupportConversationFlowStateWaitingForHuman
 }
 
 // createEmailReopenedSystemMessage records an internal system event marking

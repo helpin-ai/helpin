@@ -14,6 +14,10 @@ const (
 type QueryFilterOperator string
 
 const (
+	QueryFilterOpGT          QueryFilterOperator = "gt"
+	QueryFilterOpGTE         QueryFilterOperator = "gte"
+	QueryFilterOpLT          QueryFilterOperator = "lt"
+	QueryFilterOpLTE         QueryFilterOperator = "lte"
 	QueryFilterOpIs          QueryFilterOperator = "is"
 	QueryFilterOpIsNot       QueryFilterOperator = "is_not"
 	QueryFilterOpContains    QueryFilterOperator = "contains"

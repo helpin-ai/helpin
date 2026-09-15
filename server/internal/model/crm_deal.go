@@ -32,6 +32,7 @@ func (CRMPipeline) TableName() string { return "crm_pipelines" }
 
 // CRMPipelineStage represents a stage within a pipeline.
 type CRMPipelineStage struct {
+	Color       string    `json:"color" gorm:"not null;default:'#788596'"`
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	PipelineID  string    `json:"pipeline_id" gorm:"type:uuid;not null;index"`
 	Name        string    `json:"name" gorm:"not null"`
@@ -47,6 +48,7 @@ func (CRMPipelineStage) TableName() string { return "crm_pipeline_stages" }
 
 // CRMDeal represents a sales deal/opportunity.
 type CRMDeal struct {
+	RevenueType      string            `json:"revenue_type" gorm:"not null;default:'one_time'"`
 	ID               string            `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID      string            `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	DisplayID        string            `json:"display_id" gorm:"not null"`
@@ -79,6 +81,7 @@ type CreateCRMPipelineRequest struct {
 
 // CreateCRMPipelineStageItem is a stage within a pipeline create request.
 type CreateCRMPipelineStageItem struct {
+	Color       string `json:"color"`
 	Name        string `json:"name"`
 	StageType   string `json:"stage_type"`
 	Position    int    `json:"position"`
@@ -97,6 +100,7 @@ type UpdateCRMPipelineRequest struct {
 
 // UpdateCRMPipelineStageItem is a stage within a pipeline update request.
 type UpdateCRMPipelineStageItem struct {
+	Color       *string `json:"color"`
 	ID          *string `json:"id"`
 	Name        string  `json:"name"`
 	StageType   string  `json:"stage_type"`
@@ -106,6 +110,8 @@ type UpdateCRMPipelineStageItem struct {
 
 // CreateCRMDealRequest is the payload for creating a deal.
 type CreateCRMDealRequest struct {
+	RevenueType      string                 `json:"revenue_type"`
+	ContactIDs       []string               `json:"contact_ids"`
 	WorkspaceID      string                 `json:"workspace_id"`
 	Name             string                 `json:"name"`
 	ContactID        string                 `json:"contact_id"`
@@ -139,6 +145,7 @@ type CRMDealCustomer struct {
 
 // UpdateCRMDealRequest is the payload for updating a deal.
 type UpdateCRMDealRequest struct {
+	RevenueType           *string                `json:"revenue_type"`
 	Name                  *string                `json:"name"`
 	PipelineID            *string                `json:"pipeline_id"`
 	StageID               *string                `json:"stage_id"`
@@ -158,6 +165,7 @@ type UpdateCRMDealRequest struct {
 
 // CRMDealListFilters applies filters when listing deals.
 type CRMDealListFilters struct {
+	Query         *QueryFilterGroup
 	PipelineID    *string
 	StageID       *string
 	OwnerMemberID *string

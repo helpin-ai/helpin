@@ -160,6 +160,7 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsP
   useEffect(() => {
     if (!workspaceId) return
 
+    let lastPresenceRefreshAt = -Infinity
     const markActivity = () => {
       activityDirtyRef.current = true
       lastActivitySampleAtRef.current = Date.now()
@@ -169,26 +170,34 @@ export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsP
       if (now - lastActivitySampleAtRef.current < 15_000) return
       markActivity()
     }
-    const handleVisibilityChange = () => {
+    const handleReturnToTab = () => {
       if (document.visibilityState === 'visible') {
         markActivity()
+        const ws = wsRef.current
+        const now = Date.now()
+        // Browsers can emit focus and visibilitychange together on return.
+        if (ws?.readyState === WebSocket.OPEN && now - lastPresenceRefreshAt >= 1000) {
+          ws.send(JSON.stringify({ type: 'support:ping', data: { active: true } }))
+          lastPresenceRefreshAt = now
+          activityDirtyRef.current = false
+        }
       }
     }
 
     window.addEventListener('pointerdown', markActivity, { passive: true })
     window.addEventListener('keydown', markActivity)
-    window.addEventListener('focus', markActivity)
+    window.addEventListener('focus', handleReturnToTab)
     window.addEventListener('wheel', sampleActivity, { passive: true })
     window.addEventListener('pointermove', sampleActivity, { passive: true })
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    document.addEventListener('visibilitychange', handleReturnToTab)
 
     return () => {
       window.removeEventListener('pointerdown', markActivity)
       window.removeEventListener('keydown', markActivity)
-      window.removeEventListener('focus', markActivity)
+      window.removeEventListener('focus', handleReturnToTab)
       window.removeEventListener('wheel', sampleActivity)
       window.removeEventListener('pointermove', sampleActivity)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('visibilitychange', handleReturnToTab)
     }
   }, [workspaceId])
 

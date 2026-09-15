@@ -3,6 +3,7 @@ import type {
   AssignableMember,
   MemberWithUser,
   Workspace,
+  WorkspaceModule,
   WorkspaceAccess,
   WorkspaceMember,
   WorkspaceMemberPresenceStatus,
@@ -28,7 +29,7 @@ export const workspacesService = {
     api.put(`/workspaces/${id}/members/${memberId}`, data),
   removeMember: (id: string, memberId: string) =>
     api.del(`/workspaces/${id}/members/${memberId}`),
-  listAssignableMembers: (id: string) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members`),
+  listAssignableMembers: (id: string, module?: WorkspaceModule) => api.get<AssignableMember[]>(`/workspaces/${id}/assignable-members${module ? `?module=${module}` : ''}`),
   getKeyHistory: (id: string) => api.get<{ id: string; workspace_id: string; old_key: string; new_key: string; changed_at: string; changed_by: string }[]>(`/workspaces/${id}/key-history`),
 
   uploadLogo: async (id: string, file: File): Promise<{ data: Workspace | null; error: string | null }> => {

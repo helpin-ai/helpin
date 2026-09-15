@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/querybuilder"
 )
 
 // CRMDealRepository handles DB operations for CRM deals and pipelines.
@@ -79,6 +80,13 @@ func (r *CRMDealRepository) List(ctx context.Context, workspaceID string, filter
 		query = query.Where("LOWER(name) LIKE ?", search)
 	}
 
+	if filters.Query != nil {
+		var err error
+		query, err = querybuilder.ApplyGORM(query, filters.Query, crmDealFilterDefinitions)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count deals: %w", err)
@@ -179,7 +187,7 @@ func (r *CRMDealRepository) GetPrimaryCompanyIDForContact(ctx context.Context, w
 }
 
 // CreateWithCustomer creates a deal and its canonical customer relationships atomically.
-func (r *CRMDealRepository) CreateWithCustomer(ctx context.Context, deal *model.CRMDeal, customer model.CRMDealCustomer) error {
+func (r *CRMDealRepository) CreateWithCustomer(ctx context.Context, deal *model.CRMDeal, customer model.CRMDealCustomer, participantIDs ...string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(deal).Error; err != nil {
 			return fmt.Errorf("create deal: %w", err)
@@ -189,6 +197,21 @@ func (r *CRMDealRepository) CreateWithCustomer(ctx context.Context, deal *model.
 		}
 		if customer.CustomerType == model.CRMObjectCompany && customer.PrimaryContactID != "" {
 			if err := ensureDealAssociation(tx, deal.WorkspaceID, deal.ID, model.CRMObjectContact, customer.PrimaryContactID, model.CRMAssociationLabelDealPrimaryContact); err != nil {
+				return err
+			}
+		}
+		for _, id := range participantIDs {
+			if id == customer.PrimaryContactID || (customer.CustomerType == model.CRMObjectContact && id == customer.CustomerID) {
+				continue
+			}
+			var count int64
+			if err := tx.Table("crm_contacts").Where("id = ? AND workspace_id = ?", id, deal.WorkspaceID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count != 1 {
+				return fmt.Errorf("participant not found in workspace")
+			}
+			if err := ensureDealAssociation(tx, deal.WorkspaceID, deal.ID, model.CRMObjectContact, id, ""); err != nil {
 				return err
 			}
 		}
@@ -301,7 +324,7 @@ func (r *CRMDealRepository) Delete(ctx context.Context, id string) error {
 	})
 }
 
-// SeedDefaultPipeline creates a default "Sales Pipeline" with HubSpot-standard stages
+// SeedDefaultPipeline creates a default "Sales Pipeline" with simple sales stages
 // if the workspace has no pipelines yet.
 func (r *CRMDealRepository) SeedDefaultPipeline(ctx context.Context, workspaceID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -322,16 +345,17 @@ func (r *CRMDealRepository) SeedDefaultPipeline(ctx context.Context, workspaceID
 			IsDefault:               true,
 			DefaultCommercialMotion: model.CRMDealMotionNewBusiness,
 			Stages: []model.CRMPipelineStage{
-				{Name: "Appointment Scheduled", StageType: "open", Position: 0, Probability: 20},
-				{Name: "Qualified to Buy", StageType: "open", Position: 1, Probability: 40},
-				{Name: "Presentation Scheduled", StageType: "open", Position: 2, Probability: 60},
-				{Name: "Decision Maker Bought-In", StageType: "open", Position: 3, Probability: 80},
-				{Name: "Contract Sent", StageType: "open", Position: 4, Probability: 90},
-				{Name: "Closed Won", StageType: "won", Position: 5, Probability: 100},
-				{Name: "Closed Lost", StageType: "lost", Position: 6, Probability: 0},
+				{Name: "Lead", StageType: "open", Position: 0, Probability: 20},
+				{Name: "In Discussion", StageType: "open", Position: 1, Probability: 50},
+				{Name: "Proposal Sent", StageType: "open", Position: 2, Probability: 80},
+				{Name: "Won", StageType: "won", Position: 3, Probability: 100},
+				{Name: "Lost", StageType: "lost", Position: 4, Probability: 0},
 			},
 		}
 
+		if err := model.ValidateCRMPipelineStages(pipeline.Stages); err != nil {
+			return err
+		}
 		if err := tx.Create(pipeline).Error; err != nil {
 			return fmt.Errorf("seed default pipeline: %w", err)
 		}

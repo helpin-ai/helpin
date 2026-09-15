@@ -104,6 +104,7 @@ type SendMessagePayload = {
   is_internal?: boolean;
   ai_assisted?: boolean;
   delivery_mode?: SupportReplyDeliveryMode;
+  email_subject?: string;
   channels?: Array<'chat' | 'email'>;
   attachment_ids?: string[];
   cc_emails?: string[];
@@ -145,7 +146,7 @@ export function buildOptimisticSupportMessage({
     message_type: 'reply',
     is_internal: Boolean(payload.is_internal),
     via_channel: payload.delivery_mode ? (payload.delivery_mode === 'email_only' ? 'email' : 'widget') : payload.channels?.includes('email') ? 'email' : 'widget',
-    ...(payload.delivery_mode && !payload.is_internal ? { metadata: JSON.stringify({ delivery_mode: payload.delivery_mode }) } : {}),
+    ...(payload.delivery_mode && !payload.is_internal ? { metadata: JSON.stringify({ delivery_mode: payload.delivery_mode, ...(payload.email_subject !== undefined ? { email_subject: payload.email_subject } : {}) }) } : {}),
     created_at: now,
     updated_at: now,
   };

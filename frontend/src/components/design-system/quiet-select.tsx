@@ -18,6 +18,7 @@ export interface QuietSelectOption {
 
 export interface QuietSelectProps {
   label: string;
+  placeholder?: string;
   value: string;
   options: QuietSelectOption[];
   onChange: (value: string) => void;
@@ -26,11 +27,11 @@ export interface QuietSelectProps {
 }
 
 /** Compact single-value form control. Use QuietFilterDropdown for searchable list filters. */
-export function QuietSelect({ label, value, options, onChange, disabled, id }: QuietSelectProps) {
+export function QuietSelect({ label, placeholder, value, options, onChange, disabled, id }: QuietSelectProps) {
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled} size="ui">
       <SelectTrigger id={id} aria-label={label} variant="ghost" className={quietSelectTriggerClassName}>
-        <SelectValue />
+        <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (

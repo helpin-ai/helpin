@@ -50,6 +50,87 @@ function renderBubble(
 }
 
 describe('MessageBubble', () => {
+  it.each([true, false])('shows saved visitor feedback below the AI bubble (%s)', async (helpful) => {
+    const message: SupportMessage = {
+      id: 'feedback-answer', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: 'ai', content: 'A useful answer', message_type: 'reply', is_internal: false,
+      metadata: JSON.stringify({ visitor_feedback: { helpful, submitted_at: '2026-09-13T12:00:00Z' } }),
+      created_at: '2026-09-13T11:59:00Z', updated_at: '2026-09-13T12:00:00Z',
+    }
+    const rendered = renderBubble(message)
+    try {
+      const row = rendered.container.querySelector('[data-slot="support-answer-feedback"]')
+      const frame = rendered.container.querySelector('[data-slot="support-message-bubble-frame"]')
+      const label = helpful ? 'Visitor marked helpful' : 'Visitor marked unhelpful'
+      const badge = row?.querySelector('[role="img"]')
+      expect(badge?.getAttribute('aria-label')).toBe(label)
+      expect(frame?.contains(row)).toBe(false)
+      expect(row?.className).toContain('justify-start')
+      await act(async () => { badge!.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(label)
+    } finally { rendered.cleanup() }
+  })
+
+  it.each([
+    { sender: 'customer', via: 'email', source: 'widget', expected: 'via Email' },
+    { sender: 'customer', via: 'widget', source: 'email', expected: 'via Chat' },
+    { sender: 'user', via: 'email', source: 'widget', expected: 'via Email' },
+    { sender: 'user', via: 'email', source: 'widget', mode: 'chat_and_email', expected: 'via Chat + email' },
+    { sender: 'user', via: 'email', source: 'email', internal: true, expected: null },
+  ] as const)('uses the message channel in the time tooltip: $sender/$via/$source/$expected', async ({ sender, via, source, expected, ...options }) => {
+    const message: SupportMessage = {
+      id: 'channel-message', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: sender, content: 'Message channel', message_type: 'reply',
+      is_internal: 'internal' in options && options.internal,
+      via_channel: via,
+      metadata: 'mode' in options ? JSON.stringify({ delivery_mode: options.mode }) : undefined,
+      created_at: '2026-09-13T09:04:00Z', updated_at: '2026-09-13T09:04:00Z',
+    }
+    const rendered = renderBubble(message, undefined, { source })
+    try {
+      const trigger = rendered.container.querySelector('time')?.closest('[data-slot="tooltip-trigger"]')
+      expect(trigger).toBeTruthy()
+      await act(async () => { trigger!.dispatchEvent(new FocusEvent('focusin', { bubbles: true })) })
+      const tooltip = document.querySelector('[role="tooltip"]')
+      expect(tooltip).toBeTruthy()
+      if (expected) expect(tooltip?.textContent).toContain(expected)
+      else expect(tooltip?.textContent).not.toContain('via ')
+    } finally { rendered.cleanup() }
+  })
+
+  it.each([
+    ['customer', false],
+    ['user', false],
+    ['ai', false],
+    ['agent', false],
+    ['user', true],
+  ] as const)('shows a clock time on grouped %s messages (note: %s)', (senderType, isInternal) => {
+    const createdAt = '2026-09-13T09:04:00.000Z'
+    const message: SupportMessage = {
+      id: 'timed-message', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: senderType, content: 'Yes', message_type: 'reply',
+      is_internal: isInternal, created_at: createdAt, updated_at: createdAt,
+    }
+    const rendered = renderBubble(message, null, { isConsecutive: true, isLastInGroup: false })
+    const time = rendered.container.querySelector('time')
+    expect(time?.getAttribute('datetime')).toBe(createdAt)
+    expect(time?.textContent).toBe(new Date(createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }))
+    expect(time?.getAttribute('title')).toBeTruthy()
+    rendered.cleanup()
+  })
+
+  it('shows one timestamp for an image-only message', () => {
+    const message: SupportMessage = {
+      id: 'timed-image', workspace_id: 'ws-1', conversation_id: 'conv-1',
+      sender_type: 'customer', content: '', message_type: 'reply', is_internal: false,
+      created_at: '2026-09-13T09:04:00.000Z', updated_at: '2026-09-13T09:04:00.000Z',
+      attachments: [{ id: 'image-1', file_name: 'photo.png', file_type: 'image/png', file_size: 100, file_key: 'photo.png' }],
+    }
+    const rendered = renderBubble(message)
+    expect(rendered.container.querySelectorAll('time')).toHaveLength(1)
+    rendered.cleanup()
+  })
+
   beforeEach(() => {
     if (!globalThis.ResizeObserver) {
       globalThis.ResizeObserver = class ResizeObserver {
@@ -826,7 +907,7 @@ Can I export my data?`,
     rendered.cleanup()
   })
 
-  it('anchors message actions to the text bubble instead of image attachments', () => {
+  it('keeps text and image attachments together in the bubble with message actions', () => {
     const message: SupportMessage = {
       id: 'msg-with-image-attachment',
       workspace_id: 'ws-1',
@@ -861,7 +942,7 @@ Can I export my data?`,
     expect(actions).toBeTruthy()
     expect(attachment).toBeTruthy()
     expect(bubbleFrame?.contains(actions)).toBe(true)
-    expect(bubbleFrame?.contains(attachment)).toBe(false)
+    expect(bubbleFrame?.contains(attachment)).toBe(true)
 
     cleanup()
   })

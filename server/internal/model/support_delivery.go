@@ -26,7 +26,18 @@ func (m SupportMessage) ExplicitEmailDelivery() bool {
 	return mode == SupportDeliveryEmailOnly || mode == SupportDeliveryChatAndEmail
 }
 
-// WidgetVisible excludes internal notes and explicitly email-only replies.
+// WidgetVisible excludes private notes, internal system events and email-only replies.
 func (m SupportMessage) WidgetVisible() bool {
-	return !m.IsInternal && m.DeliveryMode() != SupportDeliveryEmailOnly
+	if m.IsInternal || m.DeliveryMode() == SupportDeliveryEmailOnly {
+		return false
+	}
+	// Internal routing events stay private even if a producer forgets is_internal.
+	if m.SystemEventType != nil {
+		switch *m.SystemEventType {
+		case SystemEventTeammateJoined, SystemEventDelayedTeamReply:
+		default:
+			return false
+		}
+	}
+	return true
 }

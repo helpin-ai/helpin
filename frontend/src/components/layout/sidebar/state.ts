@@ -1,5 +1,5 @@
 const COLLAPSIBLE_SETTINGS_GROUP_LABELS = ['Project Settings', 'Support & Docs', 'CRM Settings', 'AI & Automations', 'Data'];
-const CRM_SECTIONS = new Set(['overview', 'contacts', 'companies', 'deals', 'meetings', 'review', 'insights']);
+const CRM_SECTIONS = new Set(['overview', 'contacts', 'companies', 'deals', 'meetings', 'emails', 'review', 'insights']);
 
 const crmLastPathKey = (workspaceId: string) => `crm_sidebar_last_path_${workspaceId}`;
 

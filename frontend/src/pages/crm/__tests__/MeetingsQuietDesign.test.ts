@@ -43,7 +43,7 @@ describe('CRM meetings Quiet Hairline composition', () => {
     expect(meetingDetailSource).toContain('Change destination');
     expect(meetingDetailSource).toContain('View transcript evidence');
     expect(meetingDetailSource).toContain('rounded-lg border border-border/70 bg-card');
-    expect(meetingDetailSource).toContain("!recordingPlayer && 'md:grid-cols-2'");
+    expect(meetingDetailSource).toContain('className="mt-4 grid gap-3 md:grid-cols-2"');
   });
 
   it('retains the compact speaker-and-transcript row design', () => {

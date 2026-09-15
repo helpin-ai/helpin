@@ -86,7 +86,11 @@ func Up(ctx context.Context, db *sql.DB, sources ...Source) error {
 			return err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		if err := relocateLegacyMigrationVersions(ctx, conn, migrations); err != nil {
+			return err
+		}
+
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return err
 		}
@@ -118,7 +122,7 @@ func Status(ctx context.Context, db *sql.DB, sources ...Source) ([]StatusRow, er
 			return nil, err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +187,11 @@ func Repair(ctx context.Context, db *sql.DB, sources ...Source) (int, error) {
 			return 0, err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		if err := relocateLegacyMigrationVersions(ctx, conn, migrations); err != nil {
+			return 0, err
+		}
+
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return 0, err
 		}
@@ -228,7 +236,7 @@ func Validate(ctx context.Context, db *sql.DB, sources ...Source) ([]ValidationI
 			return nil, err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +277,7 @@ func Pending(ctx context.Context, db *sql.DB, sources ...Source) ([]StatusRow, e
 			return nil, err
 		}
 
-		applied, err := loadAppliedMigrations(ctx, conn)
+		applied, err := loadResolvedAppliedMigrations(ctx, conn, migrations)
 		if err != nil {
 			return nil, err
 		}

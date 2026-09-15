@@ -963,6 +963,7 @@ export class WidgetManager {
       flowState: raw.flow_state || undefined,
       aiState: raw.ai_state || undefined,
       handoffState: raw.handoff_state || undefined,
+      handoffStartedAt: raw.handoff_started_at || undefined,
       lastMessage: raw.last_message,
       lastMessageAt: raw.updated_at || raw.created_at,
       unreadCount: raw.unread_count ?? 0,
@@ -1029,6 +1030,7 @@ export class WidgetManager {
     if (parsedMeta) {
       message.delayedTeamReply = parsedMeta.delayed_team_reply === true;
       message.captureEmail = parsedMeta.capture_email === true;
+      if (typeof parsedMeta.visitor_feedback?.helpful === 'boolean') message.answerFeedback = parsedMeta.visitor_feedback.helpful;
       if (parsedMeta.ai_sources) message.sources = parsedMeta.ai_sources;
       if (parsedMeta.ai_confidence !== undefined) message.aiConfidence = parsedMeta.ai_confidence;
       if (['answer', 'clarify', 'conversational', 'confirmation', 'greeting'].includes(parsedMeta.ai_reply_kind)) {
@@ -1040,8 +1042,17 @@ export class WidgetManager {
     return message;
   }
 
+  private isPublicMessage(msg: any): boolean {
+    if (!msg || msg.is_internal) return false;
+    if (msg.system_event_type && !['teammate_joined', 'delayed_team_reply'].includes(msg.system_event_type)) return false;
+    try {
+      const metadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+      return metadata?.delivery_mode !== 'email_only';
+    } catch { return true; }
+  }
+
   private handleReceivedMessage(msg: any): void {
-    if (!msg) return;
+    if (!this.isPublicMessage(msg)) return;
 
     const responseId = typeof msg.id === 'string' ? msg.id : '';
     const stream = responseId ? this.aiResponseStreams.get(responseId) : undefined;
@@ -1055,6 +1066,7 @@ export class WidgetManager {
   }
 
   private commitReceivedMessage(msg: any): void {
+    if (!this.isPublicMessage(msg)) return;
     const newMsg = this.mapSupportMessage(msg);
     const existingIdx = this.messages.findIndex((message) => message.id === newMsg.id);
 
@@ -1481,15 +1493,20 @@ export class WidgetManager {
     }
   }
 
-  private handleAnswerFeedback(messageId: string, helpful: boolean): void {
-    const track = (globalThis as any).helpin?.track;
-    if (typeof track === 'function') {
-      track('support_ai_answer_feedback', {
-        message_id: messageId,
-        conversation_id: this.activeConversationId || undefined,
-        helpful,
-      });
-    }
+  private async handleAnswerFeedback(messageId: string, helpful: boolean): Promise<boolean> {
+    if (!this.sessionToken) throw new Error('Please reconnect to save feedback.');
+    const response = await fetch(`https://${this.host}/widget/messages/${encodeURIComponent(messageId)}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_token: this.sessionToken, helpful }),
+    });
+    if (!response.ok) throw new Error('Could not save feedback.');
+    const payload = await response.json();
+    if (typeof payload.feedback?.helpful !== 'boolean') throw new Error('Invalid feedback response.');
+    const saved = payload.feedback.helpful as boolean;
+    this.messages = this.messages.map(message => message.id === messageId ? { ...message, answerFeedback: saved } : message);
+    this.render();
+    return saved;
   }
 
   private csatStorageKey(conversationId: string): string | null {
@@ -1899,11 +1916,12 @@ export class WidgetManager {
           this.currentView = 'conversation';
         }
 
-        // Load conversation history from server
-        if (payload.messages && payload.messages.length > 0) {
-          this.messages = payload.messages.map((m: any) => this.mapSupportMessage(m));
-        }
-        this.reconcilePendingMessagesWithHistory(payload.messages || []);
+        // Reconnect history is authoritative, including an empty public history.
+        const history = Array.isArray(payload.messages)
+          ? payload.messages.filter((message: any) => this.isPublicMessage(message))
+          : [];
+        this.messages = history.map((message: any) => this.mapSupportMessage(message));
+        this.reconcilePendingMessagesWithHistory(history);
         this.restorePendingMessagesIntoThread();
 
         const hashConversationId = this.getConversationIdFromHash();
@@ -1996,6 +2014,17 @@ export class WidgetManager {
       case 'session:revoked':
         // Server confirmed revoke — cleanup handled by shutdown()
         break;
+
+      case 'message:updated': {
+        const raw = data.data;
+        if (!this.isPublicMessage(raw)) break;
+        const updated = this.mapSupportMessage(raw);
+        this.messages = this.messages.map(message => message.id === updated.id
+          ? { ...message, ...updated, attachments: updated.attachments ?? message.attachments, answerFeedback: updated.answerFeedback ?? message.answerFeedback }
+          : message);
+        this.render();
+        break;
+      }
 
       case 'message:received': {
         this.handleReceivedMessage(data.data);
@@ -2116,7 +2145,7 @@ export class WidgetManager {
           this.clearAIResponseStreams();
           this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate)
             || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
-          this.messages = msgs.map((m: any) => this.mapSupportMessage(m));
+          this.messages = msgs.filter((m: any) => this.isPublicMessage(m)).map((m: any) => this.mapSupportMessage(m));
           this.isTyping = false;
           this.isAIThinking = false;
           this.render();
@@ -2138,6 +2167,7 @@ export class WidgetManager {
               aiState: 'escalated',
               flowState: data.data?.flow_state || conversation.flowState,
               handoffState: data.data?.handoff_state || conversation.handoffState,
+              handoffStartedAt: data.data?.handoff_started_at || conversation.handoffStartedAt,
               activeTeammate: this.activeTeammate || conversation.activeTeammate,
             };
           });

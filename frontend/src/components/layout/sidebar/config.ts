@@ -117,6 +117,7 @@ export function buildPanelNavGroups(
           { link: `/w/${wsSlug}/crm/contacts`, label: 'Contacts', icon: UserGroupIcon },
           { link: `/w/${wsSlug}/crm/companies`, label: 'Companies', icon: Building03Icon },
           { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarCircleIcon },
+          { link: `/w/${wsSlug}/crm/emails`, label: 'Emails', icon: InboxIcon },
           { link: `/w/${wsSlug}/crm/meetings`, label: 'Meetings', icon: Camera01Icon },
           { link: `/w/${wsSlug}/crm/playbooks`, label: 'Playbooks', icon: BookOpen01Icon, separatorBefore: true },
           { link: `/w/${wsSlug}/crm/insights`, label: 'Signals', icon: BulbIcon },

@@ -1,3 +1,5 @@
+import { MailboxCapacityPanel } from "./outreach/MailboxCapacity";
+import { CRMEmailSignatureSettings } from './CRMEmailSignature';
 import { useEffect, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
@@ -248,6 +250,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                 </Button>
               </div>
 
+              {account.member_id === memberId && <><CRMEmailSignatureSettings workspaceId={workspaceId} account={account} /><MailboxCapacityPanel workspaceId={workspaceId} accountId={account.id} /></>}
               <div
                 className={cn(
                   'flex items-start gap-2 rounded-lg border px-3 py-2.5',

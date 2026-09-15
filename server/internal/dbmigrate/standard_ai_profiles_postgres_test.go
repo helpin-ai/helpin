@@ -55,7 +55,7 @@ func testStandardAIProfileResetPostgres(t *testing.T, afterReset func(context.Co
 	if _, err := db.ExecContext(ctx, fixture); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"202609120002_personal_ai_connections.sql", "202609140002_shared_ai_connections.sql", "202609140003_ai_profiles.sql", "202609140004_agent_ai_profiles.sql", "202609140005_ai_connection_funding.sql", "202609140009_agent_ai_profile_liveness.sql", "202609140010_ai_profile_bootstrap_completion.sql"} {
+	for _, name := range []string{"20260912000201_personal_ai_connections.sql", "20260914000201_shared_ai_connections.sql", "202609140003_ai_profiles.sql", "202609140004_agent_ai_profiles.sql", "202609140005_ai_connection_funding.sql", "202609140009_agent_ai_profile_liveness.sql", "202609140010_ai_profile_bootstrap_completion.sql"} {
 		data, err := migrationFiles.ReadFile("sql/" + name)
 		if err != nil {
 			t.Fatal(err)

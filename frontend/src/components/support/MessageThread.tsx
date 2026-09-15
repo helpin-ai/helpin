@@ -1,3 +1,4 @@
+import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -180,16 +181,16 @@ function DaySeparator({
 }) {
   return (
     <div ref={separatorRef} className="sticky top-0 z-[1] my-5 flex items-center gap-3">
-      <div className="h-px flex-1 bg-border/60" aria-hidden />
+      <div className="h-px flex-1 bg-border" aria-hidden />
       <span
-        className={`shrink-0 rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
+        className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-foreground/75 ${
           isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
         }`}
         style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
       >
         {label}
       </span>
-      <div className="h-px flex-1 bg-border/60" aria-hidden />
+      <div className="h-px flex-1 bg-border" aria-hidden />
     </div>
   );
 }
@@ -307,7 +308,12 @@ export function MessageThread({
     isFetchingNextPage,
     isFetchNextPageError,
   } = useConversationMessages(workspaceId, conversationId);
-  const messages = useMemo(() => flattenSupportMessagePages(messagePages), [messagePages]);
+  const messages = useMemo(
+    () => flattenSupportMessagePages(messagePages).filter(
+      message => !(message.message_type === 'system' && message.system_event_type === 'teammate_joined'),
+    ),
+    [messagePages],
+  );
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
   useSupportTeammatePresence(workspaceId);
@@ -440,22 +446,6 @@ export function MessageThread({
     };
   }, [workspaceId, conversationId, assignedAgentId]);
 
-  const isVisitorOnline = useSupportPresenceStore((s) =>
-    conversation?.anonymous_id ? !!s.onlineVisitors[conversation.anonymous_id] : false
-  );
-
-  const emailFallbackHint = useMemo(() => {
-    const settings = installation?.settings;
-    const email = conversation?.customer_email?.trim();
-    if (!conversation || !settings?.email_fallback_enabled || !email) return null;
-    if (conversation.email_unsubscribed) return null;
-    if (conversation.status === 'resolved' || conversation.status === 'spam') return null;
-    if (conversation.anonymous_id && isVisitorOnline) return null;
-
-    return {
-      email,
-    };
-  }, [conversation, installation, isVisitorOnline]);
 
   useEffect(() => {
     const handleAgentRunEvent = (event: Event) => {
@@ -493,6 +483,8 @@ export function MessageThread({
 
   useEffect(() => {
     const handleKeyDown = async (event: KeyboardEvent) => {
+      // Desktop and mobile threads can both be mounted; only one owns Undo.
+      if (event.defaultPrevented) return;
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || event.shiftKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest('input, textarea, [contenteditable="true"]')) return;
@@ -510,7 +502,7 @@ export function MessageThread({
       const result = await deleteMessage.mutateAsync({ messageId: latest.id, undo: true });
       if (result.markdown) {
         window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [] },
+          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [], deliveryMode: getReplyDeliveryMode(latest.metadata), emailSubject: getReplyEmailSubject(latest.metadata) },
         }));
       }
     };
@@ -1215,7 +1207,6 @@ export function MessageThread({
             key={`${workspaceId}:${conversationId}`}
             workspaceId={workspaceId}
             conversationId={conversationId}
-            emailFallbackHint={emailFallbackHint}
             emailDeliveryEnabled={installation?.settings.email_fallback_enabled}
             onUpgradeRequired={setUpgradeDialogReason}
           />

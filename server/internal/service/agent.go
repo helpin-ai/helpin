@@ -6884,7 +6884,7 @@ func (s *AgentService) pushVisitorConversationRefresh(ctx context.Context, works
 	if conversations == nil {
 		conversations = []model.SupportConversation{}
 	}
-	listJSON, _ := json.Marshal(map[string]any{"conversations": conversations})
+	listJSON, _ := json.Marshal(map[string]any{"conversations": model.PublicWidgetConversations(conversations)})
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "updated",
 		Entity:      "support_visitor_conversations",

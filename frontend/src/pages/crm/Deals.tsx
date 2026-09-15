@@ -1,13 +1,13 @@
+import { DealsFilterBar, DealsActiveFilterBar } from '@/components/crm/DealsFilterBar';
+import { buildCRMDealQueryFields } from '@/lib/crmDealQueryBuilder';
+import { parseQueryFilterGroup, serializeQueryFilterGroup, type QueryFilterGroup } from '@/lib/queryBuilder';
+import { BoardListViewToggle } from '@/components/design-system/board-list-view-toggle';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate, useSearch } from '@tanstack/react-router';
 import {
   Activity01Icon,
   ChartIncreaseIcon,
-  Clock03Icon,
   DollarCircleIcon,
-  FavouriteIcon,
-  LayoutTwoColumnIcon,
-  LayoutTable01Icon,
   PlusSignIcon,
   Search01Icon,
   Settings02Icon,
@@ -16,11 +16,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { QuietPageHeader, QuietPrimaryAction, QuietSearchInput } from '@/components/design-system/quiet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useDealDisplayStore } from '@/stores/dealDisplayStore';
 import { useDeals, usePipelines } from '@/hooks/queries';
-import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
+import { useCRMOwnerMembers } from '@/hooks/useCRMOwnerMembers';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { DealsTable } from '@/components/crm/DealsTable';
 import { DealBoard } from '@/components/crm/DealBoard';
@@ -29,87 +28,24 @@ import { CreateDealDialog } from '@/components/crm/CreateDealDialog';
 import { useTitle } from '@/hooks/useTitle';
 import { openDealRoute } from '@/components/crm/deal-detail/dealRouteNavigation';
 
-function DealPipelinePreview({ stages }: { stages: Array<{ id: string; name: string }> }) {
-  const previewStages = stages.length > 0
-    ? stages.slice(0, 4)
-    : [
-        { id: 'lead', name: 'New' },
-        { id: 'qualified', name: 'Qualified' },
-        { id: 'proposal', name: 'Proposal' },
-        { id: 'won', name: 'Won' },
-      ];
-  const previewDeals = [
-    { title: 'Acme expansion', amount: '$18.4k', stageIndex: 0, icon: DollarCircleIcon },
-    { title: 'Northstar pilot', amount: '$7.2k', stageIndex: 1, icon: FavouriteIcon },
-    { title: 'Renewal risk', amount: '$24k', stageIndex: 2, icon: Clock03Icon },
-  ];
-
-  return (
-    <div className="rounded-lg border bg-muted/20 p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium">Pipeline preview</p>
-          <p className="text-xs text-muted-foreground">Example layout, not workspace data</p>
-        </div>
-        <div className="text-xs text-muted-foreground">Board</div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {previewStages.map((stage, index) => {
-          const deal = previewDeals.find((item) => item.stageIndex === index);
-          const DealIcon = deal?.icon ?? DollarCircleIcon;
-          return (
-            <div key={stage.id} className="min-h-40 rounded-lg border bg-background p-3">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="truncate text-xs font-semibold">{stage.name}</p>
-                <span className="text-[11px] text-muted-foreground">{deal ? '1' : '0'}</span>
-              </div>
-              {deal ? (
-                <div className="rounded-md border bg-card p-3 shadow-sm">
-                  <div className="flex items-start gap-2">
-                    <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-muted/40">
-                      <DealIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    </div>
-                    <p className="min-w-0 truncate text-xs font-medium">{deal.title}</p>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold">{deal.amount}</span>
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  </div>
-                  <div className="mt-3 h-1.5 rounded-full bg-muted">
-                    <div className="h-full w-2/3 rounded-full bg-foreground/30" />
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed border-border/80 px-2 py-9 text-center text-[11px] text-muted-foreground">
-                  Empty stage
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function DealsEmptyState({
-  stages,
   hasPipeline,
+  hasFilters,
   search,
   onCreateClick,
   onClearSearch,
   onImportClick,
   onPipelineSettingsClick,
 }: {
-  stages: Array<{ id: string; name: string }>;
   hasPipeline: boolean;
+  hasFilters?: boolean;
   search: string;
   onCreateClick: () => void;
   onClearSearch: () => void;
   onImportClick: () => void;
   onPipelineSettingsClick: () => void;
 }) {
-  if (search.trim()) {
+  if (search.trim() || hasFilters) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <div className="max-w-md text-center">
@@ -118,10 +54,10 @@ function DealsEmptyState({
           </div>
           <h2 className="mt-4 text-base font-semibold">No matching deals</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            No deals match “{search}”. Clear the search to return to the full pipeline.
+            {hasFilters ? 'No deals match your search and filters.' : `No deals match “${search}”.`}
           </p>
           <Button size="sm" variant="outline" className="mt-4" onClick={onClearSearch}>
-            Clear search
+            {hasFilters ? 'Clear filters' : 'Clear search'}
           </Button>
         </div>
       </div>
@@ -138,7 +74,6 @@ function DealsEmptyState({
           <h2 className="mt-4 text-lg font-semibold">{hasPipeline ? 'No deals in this pipeline yet' : 'Set up your sales pipeline'}</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
             Deals give sales work a home: stage, owner, amount, close date, linked contacts, CRM signals, and AI review suggestions.
-            The preview shows how the board starts to look once opportunities are flowing.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             {hasPipeline ? (
@@ -158,8 +93,6 @@ function DealsEmptyState({
           </div>
         </div>
       </div>
-
-      <DealPipelinePreview stages={stages} />
 
       <div className="grid gap-3 md:grid-cols-3">
         <div className="rounded-lg border bg-card p-4">
@@ -201,8 +134,14 @@ export function DealsPage() {
   const wsSlug = currentWorkspace?.slug ?? '';
   const navigate = useNavigate();
   const location = useLocation();
+  const routeSearch = useSearch({strict:false}) as {filters?:string};
+  const filterGroup = parseQueryFilterGroup(routeSearch.filters);
+  const setFilterGroup = (group?:QueryFilterGroup) => void navigate({search:(previous:Record<string,unknown>)=>({...previous,filters:serializeQueryFilterGroup(group)}),replace:true} as never);
+
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [createStageId, setCreateStageId] = useState<string | undefined>();
+  const openCreate = (stageId?: string) => { setCreateStageId(stageId); setShowCreate(true); };
 
   // Display store init
   const initDisplay = useDealDisplayStore((s) => s.init);
@@ -225,21 +164,22 @@ export function DealsPage() {
   // Pipeline selector
   const { data: pipelines } = usePipelines(wsId);
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | undefined>();
-  const activePipelineId = selectedPipelineId ?? pipelines?.[0]?.id;
+  const activePipelineId = selectedPipelineId ?? pipelines?.find(p => p.is_default)?.id ?? pipelines?.[0]?.id;
   const activePipeline = pipelines?.find((p) => p.id === activePipelineId);
-  const activeStages = useMemo(
-    () => [...(activePipeline?.stages ?? [])].sort((a, b) => a.position - b.position).map((stage) => ({ id: stage.id, name: stage.name })),
-    [activePipeline?.stages],
-  );
 
   // Deals
   const { data, isLoading, refetch } = useDeals(wsId, {
     search: search || undefined,
+    filters: routeSearch.filters || undefined,
     pipeline_id: activePipelineId,
   });
 
+  // Unfiltered existence check keeps controls available for empty search/pipeline results.
+  const { data: workspaceDeals } = useDeals(wsId, { per_page: 1 });
+  const hasWorkspaceDeals = (workspaceDeals?.total ?? workspaceDeals?.data.length ?? 0) > 0;
+
   // Assignable members
-  const { members: assignableMembers } = useAssignableWorkspaceMembers(wsId);
+  const { members: assignableMembers } = useCRMOwnerMembers(wsId);
   const ownerNameMap = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
     [assignableMembers],
@@ -258,6 +198,7 @@ export function DealsPage() {
     void navigate({ to: '/w/$slug/settings/crm-pipelines', params: { slug: wsSlug } });
   }, [navigate, wsSlug]);
 
+  const filterFields = useMemo(() => buildCRMDealQueryFields(assignableMembers, activePipeline?.stages ?? []), [assignableMembers,activePipeline]);
   const deals = data?.data ?? [];
   const showEmptyState = !isLoading && deals.length === 0;
 
@@ -267,7 +208,7 @@ export function DealsPage() {
         variant="shell"
         title="Deals"
         actions={(
-          <QuietPrimaryAction className="gap-1.5" onClick={() => setShowCreate(true)}>
+          <QuietPrimaryAction className="gap-1.5" onClick={() => openCreate()}>
             <PlusSignIcon className="h-4 w-4" />
             Add deal
           </QuietPrimaryAction>
@@ -275,7 +216,7 @@ export function DealsPage() {
       />
 
       {/* View controls */}
-      <header className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
+      {hasWorkspaceDeals && <header aria-label="Deal view controls" className="ui-divider-bottom-fade flex flex-wrap items-center gap-2 px-3 py-2">
         {/* Pipeline selector */}
         {pipelines && pipelines.length > 1 && (
           <Select
@@ -302,41 +243,25 @@ export function DealsPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
 
+        <DealsFilterBar fields={filterFields} value={filterGroup} onChange={setFilterGroup} />
         <div className="ml-auto flex items-center gap-1">
+          <BoardListViewToggle value={view} onChange={setView} />
           <DealDisplayMenu mode={view} />
-          <QuickTooltip label="Board view">
-            <Button
-              variant={view === 'board' ? 'default' : 'ghost'}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setView('board')}
-            >
-              <LayoutTwoColumnIcon className="h-4 w-4" />
-            </Button>
-          </QuickTooltip>
-          <QuickTooltip label="List view">
-            <Button
-              variant={view === 'list' ? 'default' : 'ghost'}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setView('list')}
-            >
-              <LayoutTable01Icon className="h-4 w-4" />
-            </Button>
-          </QuickTooltip>
         </div>
-      </header>
+      </header>}
+
+      <DealsActiveFilterBar fields={filterFields} value={filterGroup} onChange={setFilterGroup} />
 
       {/* Content */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {showEmptyState ? (
           <div className="min-h-0 flex-1 overflow-auto">
             <DealsEmptyState
-              stages={activeStages}
-              hasPipeline={!!activePipeline && activeStages.length > 0}
+              hasPipeline={!!activePipeline?.stages?.length}
+              hasFilters={!!filterGroup?.rules.length}
               search={search}
-              onCreateClick={() => setShowCreate(true)}
-              onClearSearch={() => setSearch('')}
+              onCreateClick={openCreate}
+              onClearSearch={() => { setSearch(''); setFilterGroup(undefined); }}
               onImportClick={handleImportClick}
               onPipelineSettingsClick={handlePipelineSettingsClick}
             />
@@ -349,7 +274,7 @@ export function DealsPage() {
             assignableMembers={assignableMembers}
             ownerNameMap={ownerNameMap}
             onDealClick={handleDealClick}
-            onCreateClick={() => setShowCreate(true)}
+            onCreateClick={openCreate}
             onDealUpdated={() => refetch()}
             showEmptyStages={showEmptyStages}
           />
@@ -362,14 +287,14 @@ export function DealsPage() {
             ownerNameMap={ownerNameMap}
             isLoading={isLoading}
             onDealClick={handleDealClick}
-            onCreateClick={() => setShowCreate(true)}
+            onCreateClick={openCreate}
             onDealUpdated={() => refetch()}
             onDealDeleted={() => refetch()}
           />
         )}
       </div>
 
-      <CreateDealDialog open={showCreate} onOpenChange={setShowCreate} />
+      <CreateDealDialog open={showCreate} onOpenChange={setShowCreate} initialPipelineId={activePipelineId} initialStageId={createStageId} />
     </div>
   );
 }

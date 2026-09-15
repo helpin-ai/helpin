@@ -47,7 +47,7 @@ func TestNativeCutoverPreservesHistoryAndGatesPausedRuns(t *testing.T) {
 	if _, err = tx.ExecContext(ctx, fixture); err != nil {
 		t.Fatal(err)
 	}
-	migration, err := migrationFiles.ReadFile("sql/202609120001_native_only_agents.sql")
+	migration, err := migrationFiles.ReadFile("sql/20260912000101_native_only_agents.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

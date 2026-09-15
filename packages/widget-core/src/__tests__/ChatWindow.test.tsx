@@ -603,7 +603,7 @@ describe('ChatWindow', () => {
 
     fireEvent.click(getByText('Talk to a person'));
 
-    expect(getByText('Finding the right teammate…')).toBeTruthy();
+    expect(queryByText('Waiting for a teammate')).toBeNull();
     expect(getByText('We typically reply in a few minutes')).toBeTruthy();
     expect(queryByText('Talk to a person')).toBeNull();
   });
@@ -706,12 +706,12 @@ describe('ChatWindow', () => {
     );
 
     expect(getByText('Let me connect you with a team member who can help further.')).toBeTruthy();
-    expect(getByText('You’re in the support queue')).toBeTruthy();
-    expect(getByText('Replies will also go to visitor@example.com')).toBeTruthy();
+    expect(getByText('Waiting for a teammate')).toBeTruthy();
+    expect(container.textContent).not.toContain('Replies will also go to');
     expect(container.querySelectorAll('.helpin-waiting-teammate-avatar').length).toBe(2);
   });
 
-  it('hides talk to human once an escalation message is already in the thread', () => {
+  it('does not infer a current queue from a historical escalation event', () => {
     const { getByText, queryByText } = render(
       <ChatWindow
         config={{
@@ -750,8 +750,8 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('A teammate will join shortly.')).toBeTruthy();
-    expect(getByText('You’re in the support queue')).toBeTruthy();
+    expect(queryByText('A teammate will join shortly.')).toBeNull();
+    expect(queryByText('Waiting for a teammate')).toBeNull();
     expect(queryByText('Talk to a person')).toBeNull();
   });
 
@@ -802,8 +802,8 @@ describe('ChatWindow', () => {
     expect(senderLabels).toHaveLength(1);
   });
 
-  it('shows the active teammate in conversation header before a human reply is sent', () => {
-    const { getByText, container } = render(
+  it('keeps the assigned teammate private before a human reply is sent', () => {
+    const { container } = render(
       <ChatWindow
         config={baseConfig}
         messages={[]}
@@ -818,9 +818,9 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(getByText('CS Azhar')).toBeTruthy();
-    expect(getByText('from Acme')).toBeTruthy();
-    expect(container.querySelector('.helpin-presence-dot--away')).toBeTruthy();
+    expect(container.textContent).not.toContain('CS Azhar');
+    expect(container.querySelector('.helpin-conversation-title')?.textContent).toBe('Acme');
+    expect(container.querySelector('.helpin-presence-dot--away')).toBeNull();
   });
 
   it('hides talk to human while AI is thinking', () => {

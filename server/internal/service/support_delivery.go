@@ -7,6 +7,8 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -16,6 +18,9 @@ import (
 )
 
 func validateSupportDeliveryMode(req *model.CreateMessageRequest, senderType string) error {
+	if err := validateSupportEmailSubject(req, senderType); err != nil {
+		return err
+	}
 	if req.DeliveryMode == "" {
 		return nil
 	}
@@ -32,6 +37,25 @@ func validateSupportDeliveryMode(req *model.CreateMessageRequest, senderType str
 	default:
 		return fmt.Errorf("delivery mode must be chat_only, chat_and_email, or email_only")
 	}
+	return nil
+}
+
+func validateSupportEmailSubject(req *model.CreateMessageRequest, senderType string) error {
+	if req.EmailSubject == nil {
+		return nil
+	}
+	if senderType != "user" || req.IsInternal || (req.MessageType != "" && req.MessageType != "reply") ||
+		(req.DeliveryMode != model.SupportDeliveryEmailOnly && req.DeliveryMode != model.SupportDeliveryChatAndEmail) {
+		return fmt.Errorf("email subject is only available for public teammate email replies")
+	}
+	if strings.ContainsFunc(*req.EmailSubject, unicode.IsControl) {
+		return fmt.Errorf("email subject must not contain line breaks or control characters")
+	}
+	subject := strings.TrimSpace(*req.EmailSubject)
+	if subject == "" || utf8.RuneCountInString(subject) > 500 {
+		return fmt.Errorf("email subject must be between 1 and 500 characters")
+	}
+	req.EmailSubject = &subject
 	return nil
 }
 
@@ -111,12 +135,20 @@ func (s *EmailFallbackService) queueExplicitEmail(ctx context.Context, msg *mode
 	return nil
 }
 
-func (s *SupportInboxService) createExplicitEmailMessage(ctx context.Context, msg *model.SupportMessage, conv *model.SupportConversation, delaySecs int) error {
+func (s *SupportInboxService) createExplicitEmailMessage(ctx context.Context, msg *model.SupportMessage, conv *model.SupportConversation, delaySecs int, emailSubject *string) error {
 	values := map[string]any{}
 	if err := json.Unmarshal([]byte(msg.Metadata), &values); err != nil {
 		return fmt.Errorf("unable to prepare email delivery; try again")
 	}
 	values["delivery_to_email"] = strings.TrimSpace(derefString(conv.CustomerEmail))
+	subject := strings.TrimSpace(conv.Subject)
+	if emailSubject != nil {
+		subject = *emailSubject
+	}
+	if subject == "" {
+		subject = "Support conversation"
+	}
+	values["email_subject"] = subject
 	recipients := supportMessageEmailRecipientsFromMetadata(msg.Metadata)
 	if len(recipients.CC) == 0 {
 		recipients.CC = normalizeSupportEmailListExcluding(conv.EmailCC, derefString(conv.CustomerEmail))

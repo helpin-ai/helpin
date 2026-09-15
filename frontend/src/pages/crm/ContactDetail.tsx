@@ -1,3 +1,4 @@
+import { SequenceEnrollmentDialog } from '@/components/crm/outreach/SequenceEnrollmentDialog';
 import { memo, useEffect, useMemo, useState, type JSX, type SVGProps } from 'react';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -604,6 +605,7 @@ export function ContactDetailPage({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [sequenceOpen, setSequenceOpen] = useState(false);
   const [createDealOpen, setCreateDealOpen] = useState(false);
   const [timelinePreview, setTimelinePreview] = useState<CRMTimelineItem | null>(null);
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false);
@@ -1017,6 +1019,8 @@ export function ContactDetailPage({
         state={<SaveIndicator saving={saving} error={saveError} presentation="quiet" />}
         actions={(
           <>
+            <QuietDetailAction
+              icon={<PlusSignIcon className="h-3.5 w-3.5" />} label="Add to sequence" onClick={() => setSequenceOpen(true)} />
             <QuietDetailAction
               tone="danger"
               icon={<Delete01Icon className="h-3.5 w-3.5" />}
@@ -1978,6 +1982,7 @@ export function ContactDetailPage({
         </QuietRelationshipDialogContent>
       </Dialog>
 
+      {sequenceOpen && <SequenceEnrollmentDialog workspaceId={wsId} contactIds={[contactId]} onClose={() => setSequenceOpen(false)} />}
       {/* ── Delete contact confirm ── */}
       <ConfirmDialog
         open={deleteConfirmOpen}

@@ -6,14 +6,16 @@ import { ReplyComposer } from '../ReplyComposer';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Editor } from '@tiptap/core';
+import { clearReplyDeliveryDraft, loadReplyDelivery, saveReplyDelivery, saveReplySubject } from '../replyDelivery';
 
 const mocks = vi.hoisted(() => ({
   rewrite: vi.fn(), send: vi.fn(), empty: [], mutation: { isPending: false, mutateAsync: vi.fn() },
+  conversation: null as Record<string, unknown> | null,
 }));
 vi.mock('@/hooks/queries/useSupport', () => ({
   useRewriteSupportDraft: () => ({ isPending: false, mutateAsync: mocks.rewrite }),
   useSendMessage: () => ({ isPending: false, mutateAsync: mocks.send }),
-  useConversation: () => ({ data: null }),
+  useConversation: () => ({ data: mocks.conversation }),
   useCannedResponses: () => ({ data: mocks.empty }),
   useCreateCannedResponse: () => mocks.mutation,
   useUpdateCannedResponse: () => mocks.mutation,
@@ -43,13 +45,15 @@ vi.mock('@/components/ui/dropdown-menu', () => {
 describe('ReplyComposer AI loading state', () => {
   let container: HTMLDivElement;
   let root: Root;
-  function setup() {
+  function setup(emailConversation = false, widgetConversation = false) {
     mocks.send.mockReset();
+    mocks.conversation = emailConversation ? { source: 'email', customer_email: 'customer@example.com', subject: 'Invoice question' }
+      : widgetConversation ? { source: 'widget', anonymous_id: 'visitor-1', customer_email: 'customer@example.com' } : null;
     useSupportInboxStore.setState({ replyMode: 'reply', drafts: { 'conv-1': '**Original** draft' } });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" /></TooltipProvider>); });
+    act(() => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-1" emailDeliveryEnabled /></TooltipProvider>); });
   }
   function button(label: string) {
     const found = [...container.querySelectorAll('button')].find((element) => element.textContent === label);
@@ -60,6 +64,27 @@ describe('ReplyComposer AI loading state', () => {
     act(() => { root?.unmount(); });
     container?.remove();
     vi.useRealTimers();
+    saveReplySubject('ws-1', 'conv-1');
+    clearReplyDeliveryDraft('ws-1', 'conv-1');
+  });
+
+  it('sends email without a subject editor or a stale draft subject override', async () => {
+    saveReplySubject('ws-1', 'conv-1', 'Old edited subject');
+    setup(true);
+    expect([...container.querySelectorAll('label')].some((label) => label.textContent?.includes('Subject'))).toBe(false);
+    await act(async () => { button('Send').click(); });
+    expect(mocks.send).toHaveBeenCalledOnce();
+    expect(mocks.send.mock.calls[0][0]).toMatchObject({ delivery_mode: 'email_only', channels: ['email'] });
+    expect(mocks.send.mock.calls[0][0]).not.toHaveProperty('email_subject');
+  });
+
+  it('uses the chosen email destination for this chat reply and resets after sending', async () => {
+    saveReplyDelivery('ws-1', 'conv-1', 'email_only');
+    setup(false, true);
+    await act(async () => { button('Send').click(); });
+    expect(mocks.send.mock.calls[0][0]).toMatchObject({ delivery_mode: 'email_only', channels: ['email'] });
+    expect(loadReplyDelivery('ws-1', 'conv-1')).toBeUndefined();
+    expect(container.querySelector('[aria-label="Sending options: Chat only"]')).not.toBeNull();
   });
 
   it('blocks button and keyboard sending for the full upload batch and failed attachments', async () => {

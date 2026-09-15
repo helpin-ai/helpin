@@ -606,17 +606,10 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                         <MarkdownContent content={data.intelligence.summary_markdown} className="max-w-[760px] text-sm leading-[1.7] text-quiet-text-secondary [text-wrap:pretty]" />
                       </section>
                       {recordingPlayer || data.action_items.length > 0 ? (
-                        <div className={cn(
-                          'border-t border-quiet-divider-light',
-                          recordingPlayer && data.action_items.length > 0 && 'lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]',
-                        )}>
-                          {recordingPlayer ? (
-                            <div className={cn(data.action_items.length > 0 && 'lg:border-r lg:border-quiet-divider-light lg:pr-6')}>
-                              {recordingPlayer}
-                            </div>
-                          ) : null}
+                        <div className="border-t border-quiet-divider-light">
+                          {recordingPlayer}
                           {data.action_items.length > 0 ? (
-                            <section className={cn('border-b border-quiet-divider-strong py-5', recordingPlayer && 'lg:pl-6')}>
+                            <section className="border-b border-quiet-divider-strong py-5">
                               <div className="flex items-baseline gap-2">
                                 <h3 className="text-[20px] font-semibold leading-tight tracking-[-0.018em] text-quiet-text-primary">Action items</h3>
                                 <span className="text-[11.5px] tabular-nums text-quiet-muted">{data.action_items.length}</span>
@@ -624,7 +617,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                               <p className="mt-1.5 max-w-[680px] text-[12.5px] leading-5 text-quiet-text-tertiary">
                                 Follow-up work captured from the transcript. Create a task directly, or change its destination first.
                               </p>
-                              <div className={cn('mt-4 grid gap-3', !recordingPlayer && 'md:grid-cols-2')}>
+                              <div className="mt-4 grid gap-3 md:grid-cols-2">
                                 {data.action_items.map((item) => (
                                   <ActionItemRow
                                     key={item.id}

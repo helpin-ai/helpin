@@ -33,11 +33,20 @@ type ScheduledEventsDispatcher interface {
 }
 
 // ScheduledEventsActivities hosts the existing product scheduler's event dispatcher.
-type ScheduledEventsActivities struct{ dispatcher ScheduledEventsDispatcher }
+type ScheduledEventsActivities struct {
+	dispatcher ScheduledEventsDispatcher
+	additional ScheduledEventsDispatcher
+}
 
 // NewScheduledEventsActivities binds explicit product-event handlers through the dispatcher.
 func NewScheduledEventsActivities(dispatcher ScheduledEventsDispatcher) *ScheduledEventsActivities {
 	return &ScheduledEventsActivities{dispatcher: dispatcher}
+}
+
+// SetAdditionalDispatcher adds a bounded product dispatcher to each scheduler tick.
+func (a *ScheduledEventsActivities) SetAdditionalDispatcher(dispatcher ScheduledEventsDispatcher) *ScheduledEventsActivities {
+	a.additional = dispatcher
+	return a
 }
 
 // DispatchDue fails visibly if the dispatcher is missing instead of claiming success.
@@ -45,7 +54,11 @@ func (a *ScheduledEventsActivities) DispatchDue(ctx context.Context) error {
 	if a == nil || a.dispatcher == nil {
 		return temporal.NewNonRetryableApplicationError("scheduled event dispatcher is not configured", "scheduled_events_unavailable", nil)
 	}
-	return a.dispatcher.DispatchDue(ctx)
+	err := a.dispatcher.DispatchDue(ctx)
+	if a.additional != nil {
+		err = errors.Join(err, a.additional.DispatchDue(ctx))
+	}
+	return err
 }
 
 // EnsureScheduledEvents starts a stable shared schedule without modifying user Flows.
