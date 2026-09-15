@@ -1,0 +1,45 @@
+import { test, expect } from '@playwright/test';
+for (const mode of ['light', 'dark', 'narrow']) test(`notification preferences ${mode}`, async ({ page }) => {
+  if (mode === 'narrow') await page.setViewportSize({ width: 390, height: 844 });
+  let account = { user_id: 'me', email_enabled: true, email_digest_frequency: 'daily', email_digest_time: '09:00', email_digest_day: 1, timezone: 'Asia/Karachi', do_not_disturb: false, dnd_until: null, badge_mode: 'all' };
+  let workspace = { workspace_id: 'ws-settings', user_id: 'me', mute_workspace: false, channel_preferences: { comments: { in_app: false, email: true } } };
+  await page.route('**/api/user/notification-settings', async route => {
+    if (route.request().method() === 'PUT') account = { ...account, ...route.request().postDataJSON() };
+    await route.fulfill({ json: account });
+  });
+  await page.route('**/api/notifications/preferences?*', async route => {
+    if (route.request().method() === 'PUT') workspace = { ...workspace, ...route.request().postDataJSON() };
+    await route.fulfill({ json: workspace });
+  });
+  await page.goto(`/e2e/crm/harness/notification-settings.html${mode === 'dark' ? '?dark' : ''}`);
+  await expect(page.getByRole('switch', { name: 'Email notifications', exact: true })).toBeChecked();
+  await expect(page.getByRole('switch', { name: 'Comments and replies: in-app', exact: true })).not.toBeChecked();
+  await expect(page.getByLabel('Delivery day', { exact: true })).toHaveCount(0);
+  await page.screenshot({ path: `/tmp/notification-settings-${mode}.png`, fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'About customer replies', exact: true }).focus();
+  await expect(page.getByRole('tooltip')).toContainText('after 3 minutes');
+  await page.keyboard.press('Escape');
+  await page.getByLabel('Email frequency', { exact: true }).click();
+  await page.getByRole('option', { name: 'Weekly digest', exact: true }).click();
+  await expect(page.getByLabel('Delivery day', { exact: true })).toBeVisible();
+  await page.getByLabel('Delivery day', { exact: true }).click();
+  await page.getByRole('option', { name: 'Friday', exact: true }).click();
+  await expect.poll(() => account.email_digest_day).toBe(5);
+  await page.getByRole('combobox', { name: 'Timezone', exact: true }).click();
+  await page.getByPlaceholder('Search timezones…').fill('London');
+  await page.getByRole('option', { name: /Europe\/London/ }).click();
+  await expect.poll(() => account.timezone).toBe('Europe/London');
+  await page.getByRole('switch', { name: 'Email notifications', exact: true }).click();
+  await expect(page.getByLabel('Email frequency', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('status')).toHaveCount(1);
+  await expect(page.getByRole('status')).toContainText('Email notifications are off');
+  await page.getByRole('switch', { name: 'Mute this workspace', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveCount(1);
+  await expect(page.getByRole('status')).toContainText('This workspace is muted');
+  await page.getByRole('switch', { name: 'Assignments: email', exact: true }).click();
+  await expect(page.getByRole('switch', { name: 'Assignments: email', exact: true })).not.toBeChecked();
+  expect(workspace.channel_preferences.comments).toEqual({ in_app: false, email: true });
+  await page.getByRole('switch', { name: 'Pause all notifications', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('All notifications are paused');
+});
