@@ -162,7 +162,7 @@ export function getUsermavenAnonymousId() {
 }
 
 export function shouldEnableAppAnalytics(hostname = currentHostname()) {
-  return APP_ANALYTICS_HOST !== "" && hostname === APP_ANALYTICS_HOST;
+  return Boolean(APP_ANALYTICS_HOST) && hostname === APP_ANALYTICS_HOST;
 }
 
 export function initializeAppAnalytics(options?: AnalyticsOptions) {
