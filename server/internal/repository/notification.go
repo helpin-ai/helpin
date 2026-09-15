@@ -49,6 +49,7 @@ type NotificationRepository struct {
 // PendingDigestDelivery is a pending delivery joined with the current notification state.
 type PendingDigestDelivery struct {
 	DeliveryID         string
+	Channel            string
 	RecipientID        string
 	NotificationID     string
 	WorkspaceID        string
@@ -188,21 +189,21 @@ func (r *NotificationRepository) UnreadCount(ctx context.Context, recipientID, w
 }
 
 // ListPendingDigestDeliveries returns pending digest deliveries joined with the current notification state.
-func (r *NotificationRepository) ListPendingDigestDeliveries(ctx context.Context) ([]PendingDigestDelivery, error) {
-	return r.listPendingDeliveriesByChannel(ctx, "digest")
+func (r *NotificationRepository) ListPendingDigestDeliveries(ctx context.Context, recipientID ...string) ([]PendingDigestDelivery, error) {
+	return r.listPendingDeliveriesByChannel(ctx, []string{"digest", "email_overflow"}, recipientID...)
 }
 
 // ListPendingSupportReplyEmailDeliveries returns pending delayed support reply email deliveries.
-func (r *NotificationRepository) ListPendingSupportReplyEmailDeliveries(ctx context.Context) ([]PendingDigestDelivery, error) {
-	return r.listPendingDeliveriesByChannel(ctx, "support_reply_email")
+func (r *NotificationRepository) ListPendingSupportReplyEmailDeliveries(ctx context.Context, recipientID ...string) ([]PendingDigestDelivery, error) {
+	return r.listPendingDeliveriesByChannel(ctx, []string{"support_reply_email"}, recipientID...)
 }
 
-func (r *NotificationRepository) listPendingDeliveriesByChannel(ctx context.Context, channel string) ([]PendingDigestDelivery, error) {
+func (r *NotificationRepository) listPendingDeliveriesByChannel(ctx context.Context, channels []string, recipientID ...string) ([]PendingDigestDelivery, error) {
 	var deliveries []PendingDigestDelivery
-	err := r.db.WithContext(ctx).
+	q := r.db.WithContext(ctx).
 		Table("notification_deliveries nd").
 		Select(`
-			nd.id AS delivery_id,
+			nd.id AS delivery_id, nd.channel,
 			n.recipient_id,
 			n.id AS notification_id,
 			n.workspace_id,
@@ -215,11 +216,13 @@ func (r *NotificationRepository) listPendingDeliveriesByChannel(ctx context.Cont
 		`).
 		Joins("JOIN notification_events ne ON ne.id = nd.notification_event_id").
 		Joins("JOIN notifications n ON n.id = ne.notification_id").
-		Where("nd.channel = ? AND nd.status = ?", channel, "pending").
-		Order("nd.created_at ASC").
-		Scan(&deliveries).Error
+		Where("nd.channel IN ? AND nd.status = ?", channels, "pending")
+	if len(recipientID) > 0 {
+		q = q.Where("n.recipient_id = ?", recipientID[0])
+	}
+	err := q.Order("nd.created_at ASC").Scan(&deliveries).Error
 	if err != nil {
-		return nil, fmt.Errorf("list pending deliveries for channel %s: %w", channel, err)
+		return nil, fmt.Errorf("list pending deliveries for channels %v: %w", channels, err)
 	}
 	return deliveries, nil
 }

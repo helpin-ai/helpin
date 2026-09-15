@@ -430,6 +430,14 @@ func (s *NotificationService) createEventAndDeliveries(
 	priority string,
 	now time.Time,
 ) error {
+	return s.notifRepo.WithRecipientEmailLock(ctx, recipientID, func(repo *repository.NotificationRepository) error {
+		locked := *s
+		locked.notifRepo = repo
+		return locked.createEventAndDeliveriesLocked(ctx, log, notificationID, recipientID, actorID, event, priority, now)
+	})
+}
+
+func (s *NotificationService) createEventAndDeliveriesLocked(ctx context.Context, log *slog.Logger, notificationID, recipientID string, actorID *string, event model.NotificationEventInput, priority string, now time.Time) error {
 	notifEvent := &model.NotificationEvent{
 		NotificationID: notificationID,
 		ActorID:        actorID,
@@ -518,7 +526,7 @@ func (s *NotificationService) buildDeliveryPlans(
 		return plans, nil
 	}
 
-	emailChannel := selectEmailDeliveryChannel(priority, userSettings.EmailDigestFrequency)
+	emailChannel := selectEmailDeliveryChannel(event.EventType, userSettings.EmailDigestFrequency)
 	if emailChannel == "" {
 		return plans, nil
 	}
@@ -572,6 +580,15 @@ func (s *NotificationService) buildDeliveryPlans(
 		return append(plans, emailPlan), nil
 	}
 
+	allowed, err := s.notifRepo.CanSendIndividualEmail(ctx, recipientID, event.WorkspaceID, event.EntityType, event.EntityID, now)
+	if err != nil {
+		return plans, err
+	}
+	if !allowed {
+		reason := "grouped to limit notification email volume"
+		return append(plans, notificationDeliveryPlan{Channel: "email_overflow", Status: "pending", Error: &reason}), nil
+	}
+
 	subject, htmlBody, textBody := s.renderImmediateEmail(ctx, event)
 	if err := s.emailClient.SendEmail(recipient.Email, subject, htmlBody, textBody); err != nil {
 		msg := err.Error()
@@ -585,9 +602,9 @@ func (s *NotificationService) buildDeliveryPlans(
 	return append(plans, emailPlan), nil
 }
 
-func selectEmailDeliveryChannel(priority, digestFrequency string) string {
-	switch priority {
-	case "urgent", "high":
+func selectEmailDeliveryChannel(eventType, digestFrequency string) string {
+	switch model.EventTypeToCategory[eventType] {
+	case model.NotifCategoryMentions, model.NotifCategorySupportMentions, model.NotifCategoryAgentAttention:
 		return "email"
 	}
 
@@ -844,6 +861,27 @@ func (s *NotificationService) processPendingSupportReplyEmailGroup(
 		return nil
 	}
 
+	return s.notifRepo.WithRecipientEmailLock(ctx, deliveries[0].RecipientID, func(repo *repository.NotificationRepository) error {
+		pending, err := repo.ListPendingSupportReplyEmailDeliveries(ctx, deliveries[0].RecipientID)
+		if err != nil {
+			return err
+		}
+		current := make([]repository.PendingDigestDelivery, 0)
+		for _, delivery := range pending {
+			if delivery.NotificationID == notificationID {
+				current = append(current, delivery)
+			}
+		}
+		if len(current) == 0 {
+			return nil
+		}
+		locked := *s
+		locked.notifRepo = repo
+		return locked.sendPendingSupportReplyEmailGroup(ctx, notificationID, current, cutoff, now)
+	})
+}
+
+func (s *NotificationService) sendPendingSupportReplyEmailGroup(ctx context.Context, notificationID string, deliveries []repository.PendingDigestDelivery, cutoff, now time.Time) error {
 	sort.Slice(deliveries, func(i, j int) bool {
 		return deliveries[i].CreatedAt.Before(deliveries[j].CreatedAt)
 	})
@@ -900,7 +938,7 @@ func (s *NotificationService) processPendingSupportReplyEmailGroup(
 		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
 	}
 
-	shouldEmail, err := s.prefRepo.ShouldNotify(ctx, notification.RecipientID, notification.WorkspaceID, notification.EventType, "email", notificationTeam(latest.EventMetadata))
+	shouldEmail, err := s.prefRepo.ShouldNotify(ctx, notification.RecipientID, notification.WorkspaceID, latest.EventType, "email", notificationTeam(latest.EventMetadata))
 	if err != nil {
 		return err
 	}
@@ -917,6 +955,14 @@ func (s *NotificationService) processPendingSupportReplyEmailGroup(
 	if recipient == nil || strings.TrimSpace(recipient.Email) == "" {
 		msg := "recipient email unavailable"
 		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &msg)
+	}
+
+	canSend, err := s.notifRepo.CanSendIndividualEmail(ctx, notification.RecipientID, notification.WorkspaceID, notification.EntityType, notification.EntityID, now)
+	if err != nil {
+		return err
+	}
+	if !canSend {
+		return s.notifRepo.MoveDeliveryToOverflow(ctx, latest.DeliveryID)
 	}
 
 	event := model.NotificationEventInput{
@@ -977,6 +1023,21 @@ func (s *NotificationService) processRecipientDigests(
 	deliveries []repository.PendingDigestDelivery,
 	now time.Time,
 ) error {
+	return s.notifRepo.WithRecipientEmailLock(ctx, recipientID, func(repo *repository.NotificationRepository) error {
+		pending, err := repo.ListPendingDigestDeliveries(ctx, recipientID)
+		if err != nil {
+			return err
+		}
+		if len(pending) == 0 {
+			return nil
+		}
+		locked := *s
+		locked.notifRepo = repo
+		return locked.sendRecipientDigest(ctx, recipientID, pending, now)
+	})
+}
+
+func (s *NotificationService) sendRecipientDigest(ctx context.Context, recipientID string, deliveries []repository.PendingDigestDelivery, now time.Time) error {
 	userSettings, err := s.userSettingsRepo.Get(ctx, recipientID)
 	if err != nil {
 		return fmt.Errorf("load user settings: %w", err)
@@ -994,11 +1055,33 @@ func (s *NotificationService) processRecipientDigests(
 
 	digestFrequency := normalizeEmailDigestFrequency(userSettings.EmailDigestFrequency)
 	if digestFrequency != "daily" && digestFrequency != "weekly" {
-		reason := "digest delivery disabled by account settings"
-		return s.notifRepo.UpdateDeliveryStatus(ctx, deliveryIDs(deliveries), "skipped", nil, &reason)
+		overflow := make([]repository.PendingDigestDelivery, 0)
+		disabled := make([]string, 0)
+		for _, delivery := range deliveries {
+			if delivery.Channel == "email_overflow" {
+				overflow = append(overflow, delivery)
+			} else {
+				disabled = append(disabled, delivery.DeliveryID)
+			}
+		}
+		reason := "routine digest delivery disabled by account settings"
+		if err := s.notifRepo.UpdateDeliveryStatus(ctx, disabled, "skipped", nil, &reason); err != nil {
+			return err
+		}
+		deliveries = overflow
+		if len(deliveries) == 0 {
+			return nil
+		}
 	}
 
 	cutoff := latestDigestCutoff(now, userSettings)
+	sent, err := s.notifRepo.HasDigestSince(ctx, recipientID, cutoff)
+	if err != nil {
+		return err
+	}
+	if sent {
+		return nil
+	}
 	dueDeliveries := make([]repository.PendingDigestDelivery, 0, len(deliveries))
 	for _, delivery := range deliveries {
 		if !delivery.CreatedAt.After(cutoff) {
@@ -1072,6 +1155,11 @@ func (s *NotificationService) filterDigestDeliveriesByCurrentPreferences(
 		return deliveries, nil, nil
 	}
 
+	settings, err := s.userSettingsRepo.Get(ctx, recipientID)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	allowed := make([]repository.PendingDigestDelivery, 0, len(deliveries))
 	skipped := make([]string, 0)
 	for _, delivery := range deliveries {
@@ -1086,6 +1174,9 @@ func (s *NotificationService) filterDigestDeliveriesByCurrentPreferences(
 		shouldEmail, err := s.prefRepo.ShouldNotify(ctx, recipientID, delivery.WorkspaceID, delivery.EventType, "email", notificationTeam(delivery.EventMetadata))
 		if err != nil {
 			return nil, nil, fmt.Errorf("check digest preferences: %w", err)
+		}
+		if normalizeEmailDigestFrequency(settings.EmailDigestFrequency) == "none" && selectEmailDeliveryChannel(delivery.EventType, "never") == "" && delivery.EventType != "support_conversation.customer_reply" {
+			shouldEmail = false
 		}
 		if !shouldEmail {
 			skipped = append(skipped, delivery.DeliveryID)

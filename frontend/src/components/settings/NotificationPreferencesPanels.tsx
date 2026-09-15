@@ -179,14 +179,14 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
       {emailEnabled ? (
         <div className="grid gap-x-6 gap-y-4 border-b border-quiet-divider-strong pb-5 pt-2 sm:grid-cols-2">
           <div className="space-y-2">
-            <div className="flex items-center gap-1"><Label htmlFor="email-delivery">Email frequency</Label><PreferenceHelp title="Email frequency">Daily and weekly digests group routine updates. High-priority alerts can still arrive immediately.</PreferenceHelp></div>
+            <div className="flex items-center gap-1"><Label htmlFor="email-delivery">Email frequency</Label><PreferenceHelp title="Email frequency">Digests group routine updates. Direct mentions, agent requests and unread customer replies can arrive sooner. Individual emails are limited to five per hour and one per item every 15 minutes. Extra alerts join a daily digest, or weekly if selected.</PreferenceHelp></div>
             <Select value={digestFrequency} disabled={updateSettings.isPending} onValueChange={(value) => handleSelect('email_digest_frequency', value)}>
               <SelectTrigger id="email-delivery" variant="underline" className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="immediate">Immediately</SelectItem>
-                <SelectItem value="daily">Daily digest</SelectItem>
+                <SelectItem value="daily">Daily digest (recommended)</SelectItem>
                 <SelectItem value="weekly">Weekly digest</SelectItem>
-                <SelectItem value="never">High-priority only</SelectItem>
+                <SelectItem value="never">Direct alerts only</SelectItem>
               </SelectContent>
             </Select>
           </div>

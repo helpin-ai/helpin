@@ -18,6 +18,10 @@ for (const mode of ['light', 'dark', 'narrow']) test(`notification preferences $
   await expect(page.getByLabel('Delivery day', { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `/tmp/notification-settings-${mode}.png`, fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'About email frequency', exact: true }).focus();
+  await expect(page.getByRole('tooltip')).toContainText('five per hour');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('tooltip')).toHaveCount(0);
   await page.getByRole('button', { name: 'About customer replies', exact: true }).focus();
   await expect(page.getByRole('tooltip')).toContainText('after 3 minutes');
   await page.keyboard.press('Escape');
