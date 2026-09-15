@@ -96,6 +96,9 @@ func Up(ctx context.Context, db *sql.DB, sources ...Source) error {
 		}
 
 		for _, migration := range migrations {
+			if skipSupersededPipeline(migration, applied) {
+				continue
+			}
 			if existing, ok := applied[migration.Version]; ok {
 				if existing.Checksum != migration.Checksum {
 					return fmt.Errorf("migration %s checksum mismatch for %s", migration.Version, migration.Path)
@@ -129,6 +132,9 @@ func Status(ctx context.Context, db *sql.DB, sources ...Source) ([]StatusRow, er
 
 		rows := make([]StatusRow, 0, len(migrations))
 		for _, migration := range migrations {
+			if skipSupersededPipeline(migration, applied) {
+				continue
+			}
 			row := StatusRow{
 				Version: migration.Version,
 				Name:    migration.Name,
@@ -243,6 +249,9 @@ func Validate(ctx context.Context, db *sql.DB, sources ...Source) ([]ValidationI
 
 		var issues []ValidationIssue
 		for _, migration := range migrations {
+			if skipSupersededPipeline(migration, applied) {
+				continue
+			}
 			existing, ok := applied[migration.Version]
 			if !ok {
 				issues = append(issues, ValidationIssue{
@@ -284,6 +293,9 @@ func Pending(ctx context.Context, db *sql.DB, sources ...Source) ([]StatusRow, e
 
 		var pending []StatusRow
 		for _, migration := range migrations {
+			if skipSupersededPipeline(migration, applied) {
+				continue
+			}
 			if _, ok := applied[migration.Version]; !ok {
 				pending = append(pending, StatusRow{
 					Version: migration.Version,

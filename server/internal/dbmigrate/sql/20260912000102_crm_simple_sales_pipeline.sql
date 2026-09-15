@@ -22,8 +22,8 @@ BEGIN
             'Appointment Scheduled', 'Qualified to Buy', 'Presentation Scheduled',
             'Decision Maker Bought-In', 'Contract Sent', 'Closed Won', 'Closed Lost']::text[]
            AND array_agg(s.stage_type ORDER BY s.position) = ARRAY['open','open','open','open','open','won','lost']::text[]
-           AND array_agg(s.position ORDER BY s.position) = ARRAY[0,1,2,3,4,5,6]
-           AND array_agg(s.probability ORDER BY s.position) = ARRAY[20,40,60,80,90,100,0]
+           AND array_agg(s.position::bigint ORDER BY s.position) = ARRAY[0,1,2,3,4,5,6]::bigint[]
+           AND array_agg(s.probability::bigint ORDER BY s.position) = ARRAY[20,40,60,80,90,100,0]::bigint[]
     LOOP
         SELECT array_agg(id ORDER BY position) INTO stage_ids
         FROM crm_pipeline_stages WHERE pipeline_id = pipeline.id;

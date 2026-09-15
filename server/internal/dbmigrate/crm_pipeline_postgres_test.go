@@ -23,7 +23,7 @@ func TestSimpleSalesPipelineIntegerWidthsPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parts := strings.Split(string(fixture), "\\ir ../sql/202609120001_crm_simple_sales_pipeline.sql")
+	parts := strings.Split(string(fixture), "\\ir ../sql/20260912000102_crm_simple_sales_pipeline.sql")
 	if len(parts) != 3 {
 		t.Fatal("expected fixture setup, two migration invocations, and assertions")
 	}
@@ -68,7 +68,7 @@ func TestSimpleSalesPipelineIntegerWidthsPostgres(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, migration := range core {
-					if migration.Version == "202609120001" {
+					if migration.Version == "202609120001" || migration.Version == "20260912000102" {
 						continue
 					}
 					if _, err := db.ExecContext(ctx, "INSERT INTO schema_migrations(version,name,checksum) VALUES ($1,$2,$3)", migration.Version, migration.Name, migration.Checksum); err != nil {

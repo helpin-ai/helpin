@@ -11,7 +11,11 @@ func TestLegacyVersionMoves(t *testing.T) {
 	for _, migration := range core {
 		byVersion[migration.Version] = migration
 	}
+	versions := map[string]string{correctedPipelineVersion: originalPipelineVersion}
 	for current, legacy := range legacyNativeVersions {
+		versions[current] = legacy
+	}
+	for current, legacy := range versions {
 		t.Run(current, func(t *testing.T) {
 			native, crm := byVersion[current], byVersion[legacy]
 			if native.Checksum == "" || crm.Checksum == "" || native.Checksum == crm.Checksum {

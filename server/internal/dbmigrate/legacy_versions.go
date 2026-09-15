@@ -26,6 +26,12 @@ func legacyVersionMoves(migrations []Migration, applied map[string]appliedMigrat
 	var moves []migrationVersionMove
 	for _, migration := range migrations {
 		oldVersion, known := legacyNativeVersions[migration.Version]
+		// The local pre-release fix briefly occupied the original CRM version.
+		// Its unchanged SQL now has its own version; preserve that applied row
+		// just like the native-runtime rows, without accepting arbitrary hashes.
+		if migration.Version == correctedPipelineVersion {
+			oldVersion, known = originalPipelineVersion, true
+		}
 		if !known {
 			continue
 		}
@@ -39,6 +45,18 @@ func legacyVersionMoves(migrations []Migration, applied map[string]appliedMigrat
 		moves = append(moves, migrationVersionMove{from: oldVersion, to: migration})
 	}
 	return moves, nil
+}
+
+const originalPipelineVersion = "202609120001"
+const correctedPipelineVersion = "20260912000102"
+
+// Keep the released SQL/checksum available for historical validation, but never
+// execute its integer-array comparison on a database where it is still pending.
+// The corrected migration runs in the same position before later CRM changes.
+// Status omits this unapplied historical entry, as do Pending and Validate.
+func skipSupersededPipeline(migration Migration, applied map[string]appliedMigration) bool {
+	_, exists := applied[migration.Version]
+	return migration.Version == originalPipelineVersion && !exists
 }
 
 // Read-only commands present the same effective versions that Up will persist.

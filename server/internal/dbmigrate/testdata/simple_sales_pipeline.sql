@@ -25,8 +25,8 @@ INSERT INTO crm_suggestions VALUES
  (1,'10000000-0000-0000-0000-000000000001','deal_advance','pending','{"target_stage_id":"20000000-0000-0000-0000-000000000012"}',now()),
  (2,'10000000-0000-0000-0000-000000000001','deal_advance','accepted','{"target_stage_id":"20000000-0000-0000-0000-000000000012"}',now());
 INSERT INTO automation_rules VALUES (1,'10000000-0000-0000-0000-000000000001','{"filters":[{"value":"20000000-0000-0000-0000-000000000012"}]}','{"stage_id":"20000000-0000-0000-0000-000000000013"}');
-\ir ../sql/202609120001_crm_simple_sales_pipeline.sql
-\ir ../sql/202609120001_crm_simple_sales_pipeline.sql
+\ir ../sql/20260912000102_crm_simple_sales_pipeline.sql
+\ir ../sql/20260912000102_crm_simple_sales_pipeline.sql
 DO $$
 BEGIN
  IF (SELECT count(*) FROM crm_pipeline_stages) <> 17 THEN RAISE EXCEPTION 'stage count or idempotency failed'; END IF;

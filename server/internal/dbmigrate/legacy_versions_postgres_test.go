@@ -69,7 +69,7 @@ CREATE TABLE crm_email_messages(id uuid, email_account_id uuid, message_external
 	}
 	stamp := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
 	for _, migration := range core {
-		if oldVersions[migration.Version] {
+		if oldVersions[migration.Version] || migration.Version == correctedPipelineVersion {
 			continue
 		}
 		version := migration.Version
@@ -85,7 +85,7 @@ CREATE TABLE crm_email_messages(id uuid, email_account_id uuid, message_external
 		t.Fatalf("pre-upgrade validation: %v %v", issues, err)
 	}
 	for _, issue := range issues {
-		if issue.Kind != "pending" || !oldVersions[issue.Version] {
+		if issue.Kind != "pending" || (!oldVersions[issue.Version] && issue.Version != correctedPipelineVersion) {
 			t.Fatalf("wrong pending migration: %+v", issue)
 		}
 	}
@@ -125,8 +125,17 @@ CREATE TABLE crm_email_messages(id uuid, email_account_id uuid, message_external
 	// Now represent Develop's history: CRM is applied at the original versions,
 	// while the four native migrations are pending. The native SQL must run, and
 	// the CRM ledger rows must retain their timestamps and checksums.
+	for _, migration := range core {
+		if migration.Version != originalPipelineVersion {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, "INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES ($1,$2,$3,$4)", migration.Version, migration.Name, migration.Checksum, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := db.ExecContext(ctx, `
 CREATE TEMP TABLE crm_ledger_before AS SELECT * FROM schema_migrations WHERE version IN ('202609120001','202609120002','202609140001','202609140002');
+DELETE FROM schema_migrations WHERE version='20260912000102';
 DELETE FROM schema_migrations WHERE version IN ('20260912000101','20260912000201','20260914000101','20260914000201');
 CREATE TABLE workspaces(id uuid PRIMARY KEY);
 CREATE TABLE users(id uuid PRIMARY KEY);
@@ -161,5 +170,26 @@ CREATE TABLE workspace_agent_preset_versions(id text PRIMARY KEY, runtime_kind t
 	}
 	if err := Up(ctx, db); err == nil || !strings.Contains(err.Error(), "occupied version") {
 		t.Fatalf("occupied destination accepted: %v", err)
+	}
+	// The temporary local SQL correction was recorded at the original version.
+	// Move that exact checksum to its permanent replacement version automatically.
+	if _, err := db.ExecContext(ctx, `
+UPDATE schema_migrations SET checksum=(SELECT checksum FROM schema_migrations WHERE version='20260912000102') WHERE version='202609120001';
+DELETE FROM schema_migrations WHERE version='20260912000102';
+`); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := Up(ctx, db); err != nil {
+			t.Fatalf("locally corrected upgrade: %v", err)
+		}
+	}
+	issues, err = Validate(ctx, db)
+	if err != nil || len(issues) != 0 {
+		t.Fatalf("locally corrected validation: %v %v", issues, err)
+	}
+	var correctedAt time.Time
+	if err := db.QueryRowContext(ctx, "SELECT applied_at FROM schema_migrations WHERE version='20260912000102'").Scan(&correctedAt); err != nil || !correctedAt.Equal(stamp) {
+		t.Fatalf("locally corrected history changed: %v %v", correctedAt, err)
 	}
 }
