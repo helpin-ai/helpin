@@ -19,6 +19,11 @@ type widgetOriginAuthorizer interface {
 // RequireOrigin protects visitor endpoints after routing has resolved path IDs.
 // CORS preflights are transport checks; every actual request is authorized here.
 func (h *SupportInboxWidgetHandler) RequireOrigin(next http.Handler) http.Handler {
+	if h == nil || h.supportService == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeError(w, http.StatusServiceUnavailable, "widget service is unavailable")
+		})
+	}
 	return requireWidgetOrigin(h.supportService, next)
 }
 

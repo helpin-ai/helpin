@@ -128,7 +128,7 @@ func (c *Client) SendEmail(to, subject, htmlBody, textBody string) error {
 }
 
 // SendVerificationEmail sends an account email verification message.
-func (c *Client) SendVerificationEmail(to, fullName, verificationURL string) error {
+func sendVerificationEmail(sender appMessageSender, to, fullName, verificationURL string) error {
 	name := strings.TrimSpace(fullName)
 	if name == "" {
 		name = "there"
@@ -136,7 +136,7 @@ func (c *Client) SendVerificationEmail(to, fullName, verificationURL string) err
 	subject := "Verify your Helpin email"
 	textBody := fmt.Sprintf("Hi %s,\n\nVerify your email address to secure your Helpin account:\n%s\n\nIf you did not create a Helpin account, you can ignore this email.", name, verificationURL)
 	htmlBody := fmt.Sprintf(`<p>Hi %s,</p><p>Verify your email address to secure your Helpin account:</p><p><a href="%s">Verify email</a></p><p>If you did not create a Helpin account, you can ignore this email.</p>`, html.EscapeString(name), html.EscapeString(verificationURL))
-	return c.SendEmail(to, subject, htmlBody, textBody)
+	return sender.SendEmail(to, subject, htmlBody, textBody)
 }
 
 // FromEmail returns the configured Postmark sender address.
@@ -241,11 +241,14 @@ func (c *Client) send(payload postmarkRequest) (string, error) {
 }
 
 // SendInviteEmail sends a workspace invitation email.
-func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string) error {
+func sendInviteEmail(sender appMessageSender, to, inviterName, workspaceName, joinURL string) error {
 	subject := fmt.Sprintf("%s invited you to join %s on Helpin", inviterName, workspaceName)
 
 	// Get the first letter of workspace name for the avatar.
-	wsInitial := string([]rune(workspaceName)[0])
+	wsInitial := "W"
+	if runes := []rune(workspaceName); len(runes) > 0 {
+		wsInitial = string(runes[0])
+	}
 
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -358,7 +361,7 @@ func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string)
     </tr>
 	  </table>
 </body>
-</html>`, BrandHeaderCSS(), inviterName, workspaceName, BrandHeaderHTML(), wsInitial, workspaceName, inviterName, joinURL)
+</html>`, BrandHeaderCSS(), html.EscapeString(inviterName), html.EscapeString(workspaceName), BrandHeaderHTML(), html.EscapeString(wsInitial), html.EscapeString(workspaceName), html.EscapeString(inviterName), html.EscapeString(joinURL))
 
 	textBody := fmt.Sprintf(`%s invited you to join %s on Helpin.
 
@@ -367,11 +370,11 @@ Click the link below to join:
 
 This invitation expires in 7 days.`, inviterName, workspaceName, joinURL)
 
-	return c.SendEmail(to, subject, htmlBody, textBody)
+	return sender.SendEmail(to, subject, htmlBody, textBody)
 }
 
 // SendPasswordResetEmail sends a password reset email with a single-use link.
-func (c *Client) SendPasswordResetEmail(to, fullName, resetURL string) error {
+func sendPasswordResetEmail(sender appMessageSender, to, fullName, resetURL string) error {
 	firstName := fullName
 	if parts := strings.Fields(strings.TrimSpace(fullName)); len(parts) > 0 {
 		firstName = parts[0]
@@ -494,7 +497,7 @@ func (c *Client) SendPasswordResetEmail(to, fullName, resetURL string) error {
     </tr>
 	  </table>
 </body>
-</html>`, BrandHeaderCSS(), BrandHeaderHTML(), initial, firstName, resetURL)
+</html>`, BrandHeaderCSS(), BrandHeaderHTML(), html.EscapeString(initial), html.EscapeString(firstName), html.EscapeString(resetURL))
 
 	textBody := fmt.Sprintf(`Hi %s,
 
@@ -507,5 +510,5 @@ This link expires in 1 hour and can only be used once.
 
 If you didn't request this, you can ignore this email.`, firstName, resetURL)
 
-	return c.SendEmail(to, subject, htmlBody, textBody)
+	return sender.SendEmail(to, subject, htmlBody, textBody)
 }

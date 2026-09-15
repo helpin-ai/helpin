@@ -3,6 +3,8 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/helpin-ai/helpin/server/internal/deployment"
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"net/url"
 	"os"
 	"strconv"
@@ -17,18 +19,26 @@ const (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
-	DatabaseURL           string
-	JWTSecret             string
-	Port                  string
-	LogLevel              string
-	RunAutoMigrate        bool
-	CORSOrigins           []string
-	TemporalAddress       string
-	TemporalNamespace     string
-	TemporalAPIKey        string
-	TemporalTLSEnabled    bool
-	TemporalTLSServerName string
-	NatsURL               string
+	SMTPHost                  string
+	SMTPPort                  int
+	SMTPUsername              string
+	SMTPPassword              string
+	SMTPFrom                  string
+	SMTPTLSMode               string
+	EmailVerificationRequired bool
+	EnabledModules            []model.ModuleID
+	DatabaseURL               string
+	JWTSecret                 string
+	Port                      string
+	LogLevel                  string
+	RunAutoMigrate            bool
+	CORSOrigins               []string
+	TemporalAddress           string
+	TemporalNamespace         string
+	TemporalAPIKey            string
+	TemporalTLSEnabled        bool
+	TemporalTLSServerName     string
+	NatsURL                   string
 
 	// Agent Runtime sidecar/service integration (optional; disabled when base URL is empty).
 	AgentRuntimeBaseURL       string
@@ -237,7 +247,23 @@ func Load() (*Config, error) {
 		port = "8080"
 	}
 
+	smtpPort := 587
+	if raw := os.Getenv("SMTP_PORT"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 65535 {
+			return nil, fmt.Errorf("SMTP_PORT must be between 1 and 65535")
+		}
+		smtpPort = parsed
+	}
+	emailVerificationRequired, err := deployment.EmailVerificationPolicy(os.Getenv("AUTH_EMAIL_VERIFICATION_REQUIRED"))
+	if err != nil {
+		return nil, err
+	}
 	corsOrigins := parseCORSOrigins(os.Getenv("CORS_ORIGINS"))
+	enabledModules, err := deployment.ParseModules(os.Getenv("HELPIN_ENABLED_MODULES"))
+	if err != nil {
+		return nil, err
+	}
 
 	appBaseURL := os.Getenv("APP_BASE_URL")
 	if appBaseURL == "" {
@@ -314,6 +340,8 @@ func Load() (*Config, error) {
 		LogLevel:                               strings.TrimSpace(firstNonEmpty(os.Getenv("LOG_LEVEL"), "info")),
 		RunAutoMigrate:                         parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
 		CORSOrigins:                            corsOrigins,
+		EnabledModules:                         enabledModules,
+		EmailVerificationRequired:              emailVerificationRequired,
 		TemporalAddress:                        temporalAddress,
 		TemporalNamespace:                      temporalNamespace,
 		TemporalAPIKey:                         temporalAPIKey,
@@ -358,6 +386,12 @@ func Load() (*Config, error) {
 		GitHubAppSlug:                          os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:                    os.Getenv("GITHUB_APP_PRIVATE_KEY"),
 		GitOAuthEncryptionKey:                  strings.TrimSpace(os.Getenv("GIT_OAUTH_ENCRYPTION_KEY")),
+		SMTPHost:                               strings.TrimSpace(os.Getenv("SMTP_HOST")),
+		SMTPPort:                               smtpPort,
+		SMTPUsername:                           os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:                           os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:                               strings.TrimSpace(os.Getenv("SMTP_FROM")),
+		SMTPTLSMode:                            strings.TrimSpace(os.Getenv("SMTP_TLS_MODE")),
 		PostmarkAccountToken:                   strings.TrimSpace(os.Getenv("POSTMARK_ACCOUNT_TOKEN")),
 		PostmarkAppServerToken:                 strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
 		PostmarkAppFromEmail:                   strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),

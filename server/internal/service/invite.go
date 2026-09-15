@@ -10,10 +10,13 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/auth"
-	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
+
+type inviteEmailSender interface {
+	SendInviteEmail(to, inviterName, workspaceName, joinURL string) error
+}
 
 // InviteService handles invitation business logic.
 type InviteService struct {
@@ -23,7 +26,7 @@ type InviteService struct {
 	organizationRepo *repository.OrganizationRepository
 	userRepo         *repository.UserRepository
 	settingsRepo     *repository.SettingsRepository
-	emailClient      *email.Client
+	emailClient      inviteEmailSender
 	appBaseURL       string
 	jwtManager       *auth.JWTManager
 	logger           *slog.Logger
@@ -38,7 +41,7 @@ func NewInviteService(
 	organizationRepo *repository.OrganizationRepository,
 	userRepo *repository.UserRepository,
 	settingsRepo *repository.SettingsRepository,
-	emailClient *email.Client,
+	emailClient inviteEmailSender,
 	appBaseURL string,
 	jwtManager *auth.JWTManager,
 ) *InviteService {
@@ -73,6 +76,9 @@ func generateToken() (string, error) {
 
 // CreateInvitation creates a new invitation and sends an email.
 func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateInvitationRequest, inviterUserID string) (*model.InvitationResponse, error) {
+	if s.emailClient == nil {
+		return nil, fmt.Errorf("invitations are unavailable: application email is not configured")
+	}
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 
 	// Validate role
@@ -160,6 +166,7 @@ func (s *InviteService) CreateInvitation(ctx context.Context, req model.CreateIn
 				"workspace_id", req.WorkspaceID,
 				"email", req.Email,
 			)
+			return nil, fmt.Errorf("invitation saved, but email delivery failed; check mail configuration and resend")
 		}
 	}
 
@@ -429,6 +436,9 @@ func (s *InviteService) ListInvitations(ctx context.Context, workspaceID, userID
 
 // ResendInvitation resends an invitation email with a new token.
 func (s *InviteService) ResendInvitation(ctx context.Context, invitationID, userID string) error {
+	if s.emailClient == nil {
+		return fmt.Errorf("invitations are unavailable: application email is not configured")
+	}
 	inv, err := s.invitationRepo.GetByID(ctx, invitationID)
 	if err != nil {
 		return err
@@ -497,6 +507,7 @@ func (s *InviteService) ResendInvitation(ctx context.Context, invitationID, user
 				"workspace_id", inv.WorkspaceID,
 				"email", inv.Email,
 			)
+			return fmt.Errorf("invitation email delivery failed; check mail configuration and resend")
 		}
 	}
 

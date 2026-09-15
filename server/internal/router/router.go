@@ -151,7 +151,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		return authorization.RequireAnyPermission(authz, authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit, authorization.PermSupportEdit)
 	}
 	requireModule := func(module model.ModuleID) func(http.Handler) http.Handler {
-		return authorization.RequireModuleAccess(authz, module)
+		return authorization.RequireProductModule(authz, module)
 	}
 	wsAccess := authorization.RequireWorkspaceAccess(authz)
 	wsActive := wsAccess
@@ -277,6 +277,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		}
 
 		// ---- Public routes ----
+		r.Get("/auth/config", h.Auth.GetConfig)
 		r.Post("/auth/signup", h.Auth.Signup)
 		r.Post("/auth/verify-email", h.Auth.VerifyEmail)
 		r.Get("/auth/google/start", h.Auth.GoogleStart)
@@ -496,6 +497,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
+			r.Use(authorization.RequireDeploymentAccess(authz))
 			if h.AIConnection != nil {
 				r.Route("/ai-connections", func(r chi.Router) {
 					r.Use(middleware.RequireWorkspaceID)

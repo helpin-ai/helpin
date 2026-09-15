@@ -1,3 +1,4 @@
+import { filterWorkspaceNav } from '@/lib/workspaceSurface';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useTheme } from 'next-themes';
@@ -210,14 +211,14 @@ export function Sidebar() {
     () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams),
     [wsSlug, canManageSettings, permissionSet, agentAttentionCount, teams],
   );
-  const currentNavGroups = panelNavGroups[activeRail];
+  const currentNavGroups = panelNavGroups[activeRail].map(group => ({ ...group, items: filterWorkspaceNav(group.items, modules) })).filter(group => group.items.length > 0);
   const setupProgress = setup?.total_count ? Math.round((setup.completed_count / setup.total_count) * 100) : 0;
   const crmDefaultLink = activeRail === 'crm'
     ? normalizeCRMSectionPath(wsSlug, location.pathname)
     : getLastCRMPath(workspaceId ?? '', wsSlug);
   const railItems = useMemo(
-    () => buildRailItems(wsSlug, totalSupportUnread, isSetupSuccessEnabled() ? setupProgress : undefined, crmDefaultLink),
-    [wsSlug, totalSupportUnread, setupProgress, crmDefaultLink],
+    () => buildRailItems(wsSlug, totalSupportUnread, isSetupSuccessEnabled() ? setupProgress : undefined, crmDefaultLink).map(item => item.id === 'automation' && !modules.includes('automation') ? { ...item, label: 'Agents', defaultLink: `/w/${wsSlug}/automation/agents` } : item),
+    [wsSlug, totalSupportUnread, setupProgress, crmDefaultLink, modules],
   );
 
   useEffect(() => {

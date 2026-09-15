@@ -703,3 +703,12 @@ func (h *AuthHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Req
 
 	writeJSON(w, http.StatusOK, resp)
 }
+
+// GetConfig exposes non-secret authentication capabilities to prebuilt clients.
+func (h *AuthHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{
+		"email_verification_required": h.authService.EmailVerificationRequired(),
+		"app_email_configured":        h.authService.AppEmailConfigured(),
+		"google_login_enabled":        h.googleOAuth != nil,
+	})
+}

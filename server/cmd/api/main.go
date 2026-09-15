@@ -523,13 +523,16 @@ func main() {
 	slog.Info("startup: all migrations complete")
 
 	// Initialize email clients (nil if not configured).
-	appEmailClient := email.NewClient(cfg.PostmarkAppServerToken, cfg.PostmarkAppFromEmail)
+	appEmailClient, err := email.NewAppSender(email.SMTPConfig{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.SMTPFrom, TLSMode: cfg.SMTPTLSMode}, cfg.PostmarkAppServerToken, cfg.PostmarkAppFromEmail)
+	if err != nil {
+		fatalWithSentry("configure application email", err)
+	}
 	replyEmailClient := email.NewClient(cfg.PostmarkReplyServerToken, cfg.PostmarkReplyFromEmail)
 	postmarkDomainClient := email.NewDomainClient(cfg.PostmarkAccountToken)
 	if appEmailClient != nil {
-		slog.Info("Postmark app email configured")
+		slog.Info("Application email configured")
 	} else {
-		slog.Info("Postmark app email not configured — product emails will be logged only")
+		slog.Info("Application email is not configured; invitations and password reset are unavailable")
 	}
 	if replyEmailClient != nil {
 		slog.Info("Postmark support reply email configured")
@@ -716,6 +719,7 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
+	authzService.SetDeploymentModules(cfg.EnabledModules)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
 	editionServices, err := newEditionServices(db, cfg, workspaceRepo, orgService, authzService, productAnalytics, customerIOOutboxRepo)
 	if err != nil {
@@ -859,6 +863,7 @@ func main() {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService.SetEmailVerificationRequired(cfg.EmailVerificationRequired)
 	authService.SetOAuthMobileHandoffRepository(oauthMobileHandoffRepo)
 	authService.SetCustomerIOIdentityService(customerIOIdentityService)
 	authService.SetProductAnalyticsService(productAnalytics)

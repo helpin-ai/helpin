@@ -58,20 +58,21 @@ type GoogleIdentity struct {
 
 // AuthService handles authentication business logic.
 type AuthService struct {
-	userRepo               *repository.UserRepository
-	passwordResetRepo      *repository.PasswordResetTokenRepository
-	emailVerificationRepo  *repository.EmailVerificationTokenRepository
-	oauthMobileHandoffRepo *repository.OAuthMobileHandoffRepository
-	organizationRepo       *repository.OrganizationRepository
-	workspaceRepo          *repository.WorkspaceRepository
-	jwtManager             *auth.JWTManager
-	s3Client               *storage.S3Client
-	emailClient            authEmailSender
-	customerIOIdentity     *CustomerIOIdentityService
-	productAnalytics       *ProductAnalyticsService
-	appBaseURL             string
-	encryptionKey          []byte
-	logger                 *slog.Logger
+	requireEmailVerification bool
+	userRepo                 *repository.UserRepository
+	passwordResetRepo        *repository.PasswordResetTokenRepository
+	emailVerificationRepo    *repository.EmailVerificationTokenRepository
+	oauthMobileHandoffRepo   *repository.OAuthMobileHandoffRepository
+	organizationRepo         *repository.OrganizationRepository
+	workspaceRepo            *repository.WorkspaceRepository
+	jwtManager               *auth.JWTManager
+	s3Client                 *storage.S3Client
+	emailClient              authEmailSender
+	customerIOIdentity       *CustomerIOIdentityService
+	productAnalytics         *ProductAnalyticsService
+	appBaseURL               string
+	encryptionKey            []byte
+	logger                   *slog.Logger
 }
 
 // NewAuthService creates a new AuthService.
@@ -88,19 +89,28 @@ func NewAuthService(
 	encryptionKey []byte,
 ) *AuthService {
 	return &AuthService{
-		userRepo:              userRepo,
-		passwordResetRepo:     passwordResetRepo,
-		emailVerificationRepo: emailVerificationRepo,
-		organizationRepo:      organizationRepo,
-		workspaceRepo:         workspaceRepo,
-		jwtManager:            jwtManager,
-		s3Client:              s3Client,
-		emailClient:           emailClient,
-		appBaseURL:            strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
-		encryptionKey:         append([]byte(nil), encryptionKey...),
-		logger:                slog.Default().With("service", "auth"),
+		requireEmailVerification: true,
+		userRepo:                 userRepo,
+		passwordResetRepo:        passwordResetRepo,
+		emailVerificationRepo:    emailVerificationRepo,
+		organizationRepo:         organizationRepo,
+		workspaceRepo:            workspaceRepo,
+		jwtManager:               jwtManager,
+		s3Client:                 s3Client,
+		emailClient:              emailClient,
+		appBaseURL:               strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
+		encryptionKey:            append([]byte(nil), encryptionKey...),
+		logger:                   slog.Default().With("service", "auth"),
 	}
 }
+
+// SetEmailVerificationRequired applies trusted edition/operator policy without
+// claiming that an unverified address has been verified.
+func (s *AuthService) SetEmailVerificationRequired(required bool) {
+	s.requireEmailVerification = required
+}
+func (s *AuthService) EmailVerificationRequired() bool { return s.requireEmailVerification }
+func (s *AuthService) AppEmailConfigured() bool        { return s.emailClient != nil }
 
 func (s *AuthService) SetCustomerIOIdentityService(identity *CustomerIOIdentityService) {
 	s.customerIOIdentity = identity
@@ -481,6 +491,12 @@ func (s *AuthService) VerifyEmail(ctx context.Context, rawToken string) (*model.
 
 // ResendEmailVerification sends a fresh verification email for an unverified user.
 func (s *AuthService) ResendEmailVerification(ctx context.Context, userID string) error {
+	if !s.requireEmailVerification {
+		return fmt.Errorf("email verification is disabled for this installation")
+	}
+	if s.emailClient == nil {
+		return fmt.Errorf("application email is not configured")
+	}
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return err
@@ -1052,6 +1068,9 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID string, req mod
 
 // ForgotPassword creates a single-use reset token and emails a reset link when the user exists.
 func (s *AuthService) ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error {
+	if s.emailClient == nil {
+		return fmt.Errorf("password reset is unavailable: application email is not configured")
+	}
 	emailAddr := strings.ToLower(strings.TrimSpace(req.Email))
 	if emailAddr == "" {
 		return fmt.Errorf("email is required")
@@ -1336,7 +1355,7 @@ func buildEmailVerificationURL(appBaseURL, token string) string {
 }
 
 func (s *AuthService) sendEmailVerification(ctx context.Context, user *model.User) error {
-	if user == nil || user.EmailVerifiedAt != nil || s.emailVerificationRepo == nil {
+	if !s.requireEmailVerification || user == nil || user.EmailVerifiedAt != nil || s.emailVerificationRepo == nil {
 		return nil
 	}
 	rawToken, tokenHash, err := generateEmailVerificationToken()

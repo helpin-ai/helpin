@@ -9,7 +9,10 @@ import type {
   User,
 } from '../types';
 
+export type AuthConfig = { email_verification_required: boolean; app_email_configured: boolean; google_login_enabled: boolean };
+
 export const authService = {
+  config: () => api.get<AuthConfig>('/auth/config'),
   signup: (email: string, password: string, fullName: string) =>
     api.post<AuthResponse>('/auth/signup', { email, password, full_name: fullName, anonymous_id: getUsermavenAnonymousId() }),
   signin: (email: string, password: string, rememberMe = true) =>
