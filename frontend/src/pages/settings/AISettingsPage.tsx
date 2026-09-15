@@ -127,7 +127,7 @@ function AISettingsContent({
   const models = connections.data?.models ?? [];
   const defaultProfileId = settings.data?.default_profile_id ?? null;
   const canCreateProfile = canManage && ownConnections.length > 0;
-  const createProfileButton = <Button size="sm" variant="outline" disabled={!canCreateProfile} onClick={() => setEditing("new")}>Create profile</Button>;
+  const createProfileButton = <Button size="sm" className="gap-1.5" disabled={!canCreateProfile} onClick={() => setEditing("new")}><PlusSignIcon className="h-4 w-4" />Create profile</Button>;
 
   return (
     <div className="space-y-7">
@@ -248,11 +248,7 @@ function AISettingsContent({
             title="No profiles yet"
             description="A profile combines a connection, a model, and an optional fallback."
             action={
-              canCreateProfile ? (
-                <Button size="sm" onClick={() => setEditing("new")}>
-                  Create profile
-                </Button>
-              ) : canManage ? (
+              canCreateProfile ? createProfileButton : canManage ? (
                 <Button size="sm" variant="outline" onClick={() => setDialog({ kind: "add" })}>
                   Add a connection first
                 </Button>
