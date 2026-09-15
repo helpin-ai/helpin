@@ -1,6 +1,7 @@
 import { useAskAgentDefaults } from "@/hooks/queries/useAskAgentDefaults";
-import { AIExecutionDetails } from "../AIExecutionDetails";
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
+import { AISettingsLink } from '@/components/agents/AISettingsLink';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -166,7 +167,11 @@ export function ChatView({
     return () => window.clearTimeout(timer);
   }, [initialDraft, onDraftConsumed, setValue]);
 
+  const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.id === workspaceId ? state.currentWorkspace.slug : undefined);
   const run = detail?.run ?? null;
+  const acceptedSelection = run?.input?.ai_selection;
+  const acceptedProfileId = acceptedSelection && typeof acceptedSelection === 'object' && 'profile_id' in acceptedSelection && typeof acceptedSelection.profile_id === 'string'
+    ? acceptedSelection.profile_id : typeof run?.input?.ai_profile_id === 'string' ? run.input.ai_profile_id : undefined;
   const agentDefaults = useAskAgentDefaults(!run && active ? workspaceId : "");
   const askAgentDefault = agentDefaults.data?.ai_profile_id;
   const agentDefaultUnavailable = !run && !aiConnection.ai_profile_id && (agentDefaults.isPending || agentDefaults.isError);
@@ -962,15 +967,9 @@ export function ChatView({
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}
-      {run && <AIExecutionDetails input={run.input} />}
-      {run?.status === 'paused' && run.pause_reason === 'authentication' && typeof run.input?.model_connection_id === 'string' && <div className="px-3.5 py-2"><AIConnectionPicker workspaceId={workspaceId} inDock locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} /></div>}
-      {!run && <div className="px-3.5 py-2">
-        {!aiConnection.ai_profile_id && agentDefaults.isPending
-          ? <p role="status" className="text-xs text-quiet-text-secondary">Loading the agent’s AI default…</p>
-          : !aiConnection.ai_profile_id && agentDefaults.isError
-            ? <button type="button" className="text-xs underline" onClick={() => void agentDefaults.refetch()}>Retry loading the agent’s AI default</button>
-            : <AIConnectionPicker workspaceId={workspaceId} inDock defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} />}
-      </div>}
+      {run?.status === 'paused' && run.pause_reason === 'authentication' && workspaceSlug && (
+        <div className="px-3.5 py-2"><AISettingsLink slug={workspaceSlug} className="text-xs underline text-quiet-text-secondary">Review AI access to continue</AISettingsLink></div>
+      )}
       {composer.visible && (
         <div className="border-t border-border/60">
           {starterSuggestions.length > 0 && composer.enabled && (
@@ -995,6 +994,14 @@ export function ChatView({
           <div className="p-2">
               <DockInput
                 mode="conversation"
+                profilePicker={run ? (
+                  acceptedProfileId ? <AIConnectionPicker workspaceId={workspaceId} inDock compact locked value={{ ai_profile_id: acceptedProfileId }} onChange={() => {}} />
+                    : <span className="text-xs text-quiet-text-secondary" title="This conversation keeps its saved AI configuration">Saved profile</span>
+                ) : !aiConnection.ai_profile_id && agentDefaults.isPending ? (
+                  <span role="status" className="text-xs text-quiet-text-secondary">Loading…</span>
+                ) : !aiConnection.ai_profile_id && agentDefaults.isError ? (
+                  <button type="button" className="text-xs text-quiet-text-secondary hover:text-foreground" title="Retry loading the agent’s default profile" onClick={() => void agentDefaults.refetch()}>Retry default</button>
+                ) : <AIConnectionPicker workspaceId={workspaceId} inDock compact defaultProfileId={askAgentDefault} value={aiConnection} onChange={setAIConnection} disabled={sending} />}
                 value={value}
                 onChange={setValue}
                 onSubmit={() => void submit()}

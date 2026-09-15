@@ -1,34 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canClearDockContext, composerPlaceholderForContext, composerTextareaHeight, contextChipMaxWidth, sendControlClassName, shouldUseExpandedComposerLayout, usesSeparateComposerActionRow } from '../DockInput';
-
-describe('shouldUseExpandedComposerLayout', () => {
-  it('moves wrapped text above the composer actions', () => {
-    expect(shouldUseExpandedComposerLayout({
-      value: 'A message that wraps',
-      scrollHeight: 48,
-      singleLineHeight: 28,
-      currentlyExpanded: false,
-    })).toBe(true);
-  });
-
-  it('keeps the expanded layout stable while the user edits', () => {
-    expect(shouldUseExpandedComposerLayout({
-      value: 'Shortened message',
-      scrollHeight: 28,
-      singleLineHeight: 28,
-      currentlyExpanded: true,
-    })).toBe(true);
-  });
-
-  it('returns to the inline layout after the composer is cleared', () => {
-    expect(shouldUseExpandedComposerLayout({
-      value: '   ',
-      scrollHeight: 28,
-      singleLineHeight: 28,
-      currentlyExpanded: true,
-    })).toBe(false);
-  });
-});
+import { canClearDockContext, composerPlaceholderForContext, composerTextareaHeight, contextChipMaxWidth, sendControlClassName, usesSeparateComposerActionRow } from '../DockInput';
 
 describe('composerTextareaHeight', () => {
   it('keeps an empty composer to one line even when its placeholder measures taller', () => {
@@ -41,8 +12,8 @@ describe('composerTextareaHeight', () => {
 });
 
 describe('composerPlaceholderForContext', () => {
-  it('describes both asking and delegating in a general chat', () => {
-    expect(composerPlaceholderForContext()).toBe('Ask a question or delegate work to agents…');
+  it('uses a concise prompt in a general chat', () => {
+    expect(composerPlaceholderForContext()).toBe('Message agent…');
   });
 
   it('uses the attached conversation as the support prompt', () => {
@@ -71,10 +42,9 @@ describe('contextChipMaxWidth', () => {
 });
 
 describe('usesSeparateComposerActionRow', () => {
-  it('separates attachment and send controls only for multiline chat input', () => {
-    expect(usesSeparateComposerActionRow('conversation', true)).toBe(true);
-    expect(usesSeparateComposerActionRow('conversation', false)).toBe(false);
-    expect(usesSeparateComposerActionRow('list', true)).toBe(false);
+  it('keeps conversation actions below even an empty message', () => {
+    expect(usesSeparateComposerActionRow('conversation')).toBe(true);
+    expect(usesSeparateComposerActionRow('list')).toBe(false);
   });
 });
 

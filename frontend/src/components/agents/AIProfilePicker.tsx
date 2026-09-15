@@ -51,6 +51,7 @@ export function AIProfilePicker({
   sharedOnly = false,
   inDock = false,
   defaultProfileId,
+  compact = false,
 }: {
   workspaceId: string;
   value?: string | null;
@@ -59,23 +60,24 @@ export function AIProfilePicker({
   sharedOnly?: boolean;
   inDock?: boolean;
   defaultProfileId?: string | null;
+  compact?: boolean;
 }) {
   const id = useId();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const query = useAIProfiles(workspaceId);
   const settings = useAISettings(workspaceId, {
-    enabled: !value && !defaultProfileId && !!query.data?.length,
+    enabled: !defaultProfileId && !!query.data?.length,
   });
   if (query.isPending)
     return (
       <p role="status" className="text-xs text-quiet-text-secondary">
-        Loading AI profiles…
+        {compact ? "Loading…" : "Loading AI profiles…"}
       </p>
     );
   if (query.isError)
     return (
       <QuietTextAction type="button" onClick={() => void query.refetch()}>
-        Retry loading AI profiles
+        {compact ? "Retry profiles" : "Retry loading AI profiles"}
       </QuietTextAction>
     );
   const profiles = query.data.filter(
@@ -87,9 +89,23 @@ export function AIProfilePicker({
   const blockedPolicy = selected?.primary_policy?.allowed === false;
   const inheritedId = defaultProfileId || settings.data?.default_profile_id;
   const inherited = profiles.find((p) => p.id === inheritedId);
+  profiles.sort((a, b) =>
+    Number(b.id === inheritedId) - Number(a.id === inheritedId)
+    || Number(a.scope === "personal") - Number(b.scope === "personal")
+    || a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    || a.id.localeCompare(b.id),
+  );
+  if (compact && !value && !defaultProfileId && settings.isError) {
+    return <QuietTextAction type="button" title="Retry loading the workspace default" onClick={() => void settings.refetch()}>Retry default</QuietTextAction>;
+  }
+  if (compact && !value && !disabled && profiles.length === 0 && workspace?.id === workspaceId) {
+    return <AISettingsLink slug={workspace.slug} className="whitespace-nowrap text-xs text-quiet-text-secondary">Set up AI</AISettingsLink>;
+  }
+  const compactName = selected?.name ?? (value ? disabled ? "Saved profile" : "Profile unavailable" : settings.isFetching && !defaultProfileId ? "Loading…" : "Choose profile");
+
   return (
-    <div className="min-w-0 space-y-2">
-      <Label htmlFor={id}>AI profile</Label>
+    <div className={compact ? "min-w-0 max-w-full" : "min-w-0 space-y-2"}>
+      {!compact && <Label htmlFor={id}>AI profile</Label>}
       <Select
         value={value || inherited?.id || "default"}
         disabled={disabled}
@@ -99,18 +115,23 @@ export function AIProfilePicker({
           onChange(next === "default" || next === inherited?.id ? null : next)
         }
       >
-        <SelectTrigger id={id} variant="underline" className="w-full px-0.5">
-          <SelectValue
-            placeholder={sharedOnly ? "Workspace default" : "Agent default"}
-          />
+        <SelectTrigger id={id} variant={compact ? "ghost" : "underline"} size={compact ? "sm" : "default"}
+          aria-label={compact ? `Change AI profile: ${compactName}` : "AI profile"}
+          title={compact ? disabled ? "This conversation keeps its saved AI profile" : "Change AI profile" : undefined}
+          className={compact ? "max-w-[180px] h-7 gap-1 rounded-md px-2 text-xs text-quiet-text-secondary hover:text-quiet-text-primary" : "w-full px-0.5"}>
+          <SelectValue placeholder={sharedOnly ? "Workspace default" : "Agent default"}>
+            {compact ? compactName : undefined}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent
           data-helpin-dock-overlay={inDock || undefined}
-          className={inDock ? "z-[70]" : undefined}
+          align={compact ? "end" : "start"}
+          side={compact ? "top" : undefined}
+          className={`${inDock ? "z-[70] " : ""}${compact ? "w-[300px] max-w-[calc(100vw-24px)]" : ""}`}
         >
-          {!inherited && (
-            <SelectItem value="default">
-              {sharedOnly ? "Workspace default" : "Agent default"}
+          {!inherited && !compact && (
+            <SelectItem value="default" disabled={compact}>
+              {compact ? "Choose profile" : sharedOnly ? "Workspace default" : "Agent default"}
             </SelectItem>
           )}
           {value && !selected && (
@@ -125,19 +146,15 @@ export function AIProfilePicker({
               textValue={p.name}
               disabled={p.primary_policy?.allowed === false}
             >
-              <span className="flex items-center gap-2">
-                <ProviderIcon
-                  provider={p.primary.model.provider}
-                  className="h-3.5 w-3.5 shrink-0"
-                />
-                <span className="truncate">
-                  {p.name} · {p.scope === "personal" ? "Personal" : "Workspace"}
-                </span>
+              <span className="flex min-w-0 w-full items-center gap-2">
+                {!compact && <ProviderIcon provider={p.primary.model.provider} className="h-3.5 w-3.5 shrink-0" />}
+                <span className="truncate">{p.name}</span>
                 {p.id === inherited?.id && (
                   <Badge variant="secondary" className="shrink-0 text-[10px]">
                     Default
                   </Badge>
                 )}
+                <span className="ml-auto shrink-0 text-[11px] text-quiet-text-secondary">{p.scope === "personal" ? "Personal" : "Workspace"}</span>
               </span>
               {p.primary_policy?.allowed === false && (
                 <span className="block text-[11px] text-quiet-text-tertiary">
@@ -148,18 +165,18 @@ export function AIProfilePicker({
           ))}
         </SelectContent>
       </Select>
-      {!value && !defaultProfileId && settings.isError && (
+      {!compact && !value && !defaultProfileId && settings.isError && (
         <QuietTextAction type="button" onClick={() => void settings.refetch()}>
           Retry loading the default route
         </QuietTextAction>
       )}
-      {!value && !selected && !settings.isError && !settings.isFetching && (
+      {!compact && !value && !selected && !settings.isError && !settings.isFetching && (
         <p role="status" className="text-xs text-quiet-text-secondary">
           No available default profile. Select a profile or configure the
           workspace default.
         </p>
       )}
-      {selected && (
+      {!compact && selected && (
         // One compact route line. The full detail (source, exact model,
         // fallback, pricing) is on hover so the launch form stays scannable.
         <QuickTooltip label={routeDetail(selected, value ? null : defaultProfileId ? "Agent" : "Workspace")}>
@@ -178,10 +195,10 @@ export function AIProfilePicker({
           </p>
         </QuickTooltip>
       )}
-      {blockedPolicy && (
+      {!compact && blockedPolicy && (
         <AIConnectionPolicyNotice policy={selected?.primary_policy} />
       )}
-      {workspace?.id === workspaceId && (!selected || blockedPolicy) && (
+      {!compact && workspace?.id === workspaceId && (!selected || blockedPolicy) && (
         <AISettingsLink
           className="text-xs underline text-quiet-text-secondary"
           slug={workspace.slug}

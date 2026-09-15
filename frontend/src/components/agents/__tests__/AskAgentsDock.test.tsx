@@ -2528,7 +2528,7 @@ describe('inherited AI route disclosure', () => {
   it('waits for the agent default instead of presenting a workspace fallback', async () => {
     mocks.useAskAgentDefaults.mockReturnValue({ data: undefined, isPending: true, isError: false });
     await renderDock();
-    expect(document.body.textContent).toContain('Loading the agent’s AI default');
+    expect(document.body.textContent).toContain('Loading…');
     expect(mocks.aiPicker).not.toHaveBeenCalled();
   });
 });
