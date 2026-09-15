@@ -40,12 +40,12 @@ export function SettingsHomeView({ groups, slug, recent = [], autoFocus = false,
       <QuietTextAction onClick={() => setQuery('')} className="mt-4">Clear search</QuietTextAction>
     </section> : <>
       {recentSections.length > 0 && <section aria-label="Recently visited">
-        <QuietSectionHeader title="Recently visited" />
+        <QuietSectionHeader title="Recently visited" className="[&>div]:text-quiet-text-primary" />
         <div className="mt-3 flex flex-wrap gap-x-6 gap-y-3">{recentSections.map(section => <QuietTextAction key={section.id} asChild><a {...linkProps(buildSettingsRoutePath(slug, section.id))}>{section.label}</a></QuietTextAction>)}</div>
       </section>}
       <div className="grid gap-x-12 gap-y-8 md:grid-cols-2">
         {groups.map(group => <section key={group.label} aria-label={group.label}>
-          <QuietSectionHeader title={group.label} className="mb-2" />
+          <QuietSectionHeader title={group.label} className="mb-2 [&>div]:text-quiet-text-primary" />
           <div className="divide-y divide-quiet-divider-light">{group.sections.map(section => <a key={section.id} {...linkProps(buildSettingsRoutePath(slug, section.id))} className="group flex items-start gap-3 rounded-sm py-2 focus-visible:outline-2 focus-visible:outline-quiet-field">
             <section.icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0"><span className="text-sm font-medium group-hover:underline">{section.label}</span>{section.scope === 'organization' && <span className="ml-2 text-[11px] text-muted-foreground">Organization-wide</span>}<span className="mt-1 block truncate text-xs leading-5 text-muted-foreground" title={section.description}>{section.description}</span></span>

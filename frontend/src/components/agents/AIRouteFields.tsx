@@ -1,9 +1,11 @@
 import { useId, useState } from "react";
+import { AISetupHelp } from "./AISetupHelp";
+import { ArrowRight01Icon } from "@/lib/icons";
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import { AIModelCombobox } from "./AIModelCombobox";
 import { ProviderIcon } from "./ProviderIcon";
 import { AI_MODELS } from "@/generated/aiModels";
-import { connectionStatusInfo, providerControls, providerLabel } from "@/lib/aiProviders";
+import { connectionStatusInfo, providerControls, providerShortLabel } from "@/lib/aiProviders";
 import type { AIConnection } from "@/lib/services/aiConnectionService";
 import type { AIProfileRoute } from "@/lib/services/aiProfileService";
 import { Label } from "@/components/ui/label";
@@ -80,13 +82,13 @@ export function AIRouteFields({
                   textValue={entry.name}
                   disabled={entry.policy?.allowed === false}
                 >
-                  <span className="flex items-center gap-2">
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
                     <ProviderIcon provider={entry.provider} className="h-3.5 w-3.5 shrink-0" />
-                    <span>{entry.name}</span>
-                  </span>
-                  <span className="block text-[11px] text-muted-foreground">
-                    {providerLabel(entry.provider)}
-                    {reason ? ` · ${reason}` : ""}
+                    <span className="min-w-0">
+                      <span className="block">{entry.name}</span>
+                      {reason && <span className="block text-xs text-muted-foreground">{reason}</span>}
+                    </span>
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">{providerShortLabel(entry.provider)}</span>
                   </span>
                 </SelectItem>
               );
@@ -117,10 +119,16 @@ export function AIRouteFields({
       </div>
 
       {(controls.reasoningEffort || controls.serviceTier || controls.openrouterQuantizations) && (
-        <div className={showTwoColumns ? "grid gap-4 sm:grid-cols-2" : "space-y-4"}>
+        <details key={route.connection_id} className="group/advanced">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+            <ArrowRight01Icon className="size-3.5 transition-transform group-open/advanced:rotate-90" />
+            Advanced settings
+            {Object.values(route.model.controls).some(value => value !== undefined) && <span className="ml-auto text-xs">Customized</span>}
+          </summary>
+          <div className={showTwoColumns ? "mt-4 grid gap-4 sm:grid-cols-2" : "mt-4 space-y-4"}>
           {controls.reasoningEffort && (
             <div className="space-y-1.5">
-              <Label htmlFor={`${id}-reasoning`}>Reasoning effort</Label>
+              <div className="flex items-center gap-1"><Label htmlFor={`${id}-reasoning`}>Reasoning effort</Label><AISetupHelp label="About reasoning effort" description="Choose a reasoning level, or leave it at the provider default." /></div>
               <Select
                 value={route.model.controls.reasoning_effort ?? "default"}
                 disabled={disabled}
@@ -157,7 +165,7 @@ export function AIRouteFields({
 
           {controls.serviceTier && (
             <div className="space-y-1.5">
-              <Label htmlFor={`${id}-service`}>Service tier</Label>
+              <div className="flex items-center gap-1"><Label htmlFor={`${id}-service`}>Service tier</Label><AISetupHelp label="About service tier" description="Use the provider default unless you need a specific processing tier. Availability and billing depend on the provider." /></div>
               <Select
                 value={route.model.controls.service_tier ?? "unset"}
                 disabled={disabled}
@@ -196,7 +204,7 @@ export function AIRouteFields({
 
           {controls.openrouterQuantizations && (
             <div className="space-y-1.5">
-              <Label htmlFor={`${id}-quantizations`}>Provider quantizations (optional)</Label>
+              <div className="flex items-center gap-1"><Label htmlFor={`${id}-quantizations`}>Provider quantizations</Label><AISetupHelp label="About provider quantizations" description="Optional. Restrict OpenRouter to providers using these quantizations. Enter comma-separated values; leave blank for no restriction." /></div>
               <QuantizationsInput
                 key={route.connection_id}
                 id={`${id}-quantizations`}
@@ -221,7 +229,8 @@ export function AIRouteFields({
               />
             </div>
           )}
-        </div>
+          </div>
+        </details>
       )}
     </div>
   );

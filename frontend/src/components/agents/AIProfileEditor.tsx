@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { AIRouteFields } from "./AIRouteFields";
-import { AISectionLabel } from "@/components/settings/ai/AISectionLabel";
+import { AISetupHelp } from "./AISetupHelp";
 import { useSaveAIProfile } from "@/hooks/queries/useAIProfiles";
 import type { AIConnection } from "@/lib/services/aiConnectionService";
 import type { AIProfile, AIProfileRoute } from "@/lib/services/aiProfileService";
@@ -91,15 +91,16 @@ export function AIProfileEditor({
         if (!open && !save.isPending) onClose();
       }}
     >
-      <DialogContent className="grid max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent className="grid max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-lg" onOpenAutoFocus={(event) => {
+        const nameField = document.getElementById(`${id}-name`);
+        if (nameField) { event.preventDefault(); nameField.focus(); }
+      }}>
         <DialogHeader className="space-y-1.5 border-b border-border/60 px-6 py-4 text-left">
           <DialogTitle>{profile ? `Edit “${profile.name}”` : "Create AI profile"}</DialogTitle>
-          <DialogDescription>
-            {scope === "personal"
-              ? "For your manual runs in this workspace."
-              : "For workspace members and automation."}{" "}
-            Changes apply to new runs.
-          </DialogDescription>
+          <div className="flex items-center gap-1">
+            <DialogDescription>{scope === "personal" ? "Personal profile · Only you" : "Workspace profile · Shared with members"}</DialogDescription>
+            <AISetupHelp label="About this profile" description={scope === "personal" ? "For your manual runs in this workspace. Changes apply to new runs." : "For workspace members and automation. Changes apply to new runs."} />
+          </div>
         </DialogHeader>
 
         <form
@@ -110,19 +111,19 @@ export function AIProfileEditor({
           }}
         >
           <div className="space-y-1.5">
-            <Label htmlFor={`${id}-name`}>Name</Label>
+            <Label htmlFor={`${id}-name`}>Profile name</Label>
             <QuietUnderlineInput
               id={`${id}-name`}
               value={name}
               onChange={(event) => setName(event.target.value)}
               maxLength={100}
-              placeholder="Daily driver"
+              placeholder="e.g. Everyday tasks"
               disabled={save.isPending}
             />
           </div>
 
           <section>
-            <AISectionLabel label="Primary route" />
+            {fallback && <h3 className="mb-3 text-sm font-medium">Primary model</h3>}
             <AIRouteFields
               route={primary}
               onChange={setPrimary}
@@ -137,25 +138,12 @@ export function AIProfileEditor({
           </section>
 
           <section>
-            <AISectionLabel
-              label="Fallback route"
-              action={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-auto p-0 text-xs"
-                  disabled={save.isPending}
-                  onClick={() => setFallback(fallback ? null : emptyRoute())}
-                >
-                  {fallback ? "Remove fallback" : "Add fallback"}
-                </Button>
-              }
-            />
-            <p className="mb-3 text-[13px] text-muted-foreground">
-              Used only if the primary connection is unavailable before a run starts. An accepted
-              run keeps its selected route.
-            </p>
+            <div className="mb-3 flex items-center gap-1">
+              {fallback && <h3 className="text-sm font-medium">Fallback model</h3>}
+              {!fallback && <Button type="button" size="sm" variant="ghost" className="h-auto p-0 text-sm" disabled={save.isPending} onClick={() => setFallback(emptyRoute())}>Add fallback</Button>}
+              <AISetupHelp label="About fallback" description="Optional. Uses a different connection only if the primary is unavailable before a run starts. An accepted run keeps its selected model and connection." />
+              {fallback && <Button type="button" size="sm" variant="ghost" className="ml-auto h-auto p-0 text-xs" disabled={save.isPending} onClick={() => setFallback(null)}>Remove fallback</Button>}
+            </div>
             {fallback &&
               (primary.connection_id ? (
                 <AIRouteFields
@@ -179,7 +167,7 @@ export function AIProfileEditor({
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant="ghost"
             onClick={onClose}
             disabled={save.isPending}
           >
