@@ -1,4 +1,4 @@
-import type { AI_MODELS } from '@/generated/aiModels';
+import type { AI_MODELS } from '../../generated/aiModels';
 import type { SpecClarification } from './project';
 import type { AgentSkillRef } from './skills';
 import type { AutomationRule } from './automations';
