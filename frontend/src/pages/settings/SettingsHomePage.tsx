@@ -45,11 +45,11 @@ export function SettingsHomeView({ groups, slug, recent = [], autoFocus = false,
         <h2 className="text-sm font-semibold text-quiet-text-primary">Recently visited</h2>
         <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">{recentSections.map(section => <QuietTextAction key={section.id} asChild><a {...linkProps(buildSettingsRoutePath(slug, section.id))}>{section.label}</a></QuietTextAction>)}</div>
       </section>}
-      <div className="space-y-4">
+      <div className="grid items-start gap-4 md:grid-cols-2">
         {groups.map(group => <Card key={group.label} className="gap-0 rounded-lg border-border/70 py-0 shadow-none">
           <section aria-label={group.label}>
             <h2 className="border-b border-quiet-divider-strong px-4 py-3 text-sm font-semibold text-quiet-text-primary">{group.label}</h2>
-            <div className="grid gap-x-4 p-2 sm:grid-cols-2">{group.sections.map(section => <QuickTooltip key={section.id} label={section.description}>
+            <div className="p-2">{group.sections.map(section => <QuickTooltip key={section.id} label={section.description}>
               <a {...linkProps(buildSettingsRoutePath(slug, section.id))} className="group flex min-w-0 items-center gap-3 rounded-md px-2 py-3 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
                 <section.icon className="h-4 w-4 shrink-0 text-quiet-text-secondary" />
                 <span className="min-w-0 flex-1"><span className="block text-sm font-medium text-quiet-text-primary">{section.label}</span>{section.scope === 'organization' && <span className="block text-xs text-quiet-text-secondary">Organization-wide</span>}</span>
