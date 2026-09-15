@@ -33,6 +33,18 @@ func TestFreshCommunityFoundationPostgres(t *testing.T) {
 	if tables != 0 {
 		t.Fatal("refusing non-empty Community test database")
 	}
+	// Refuse partial/foreign schemas instead of creating a mixed foundation.
+	for _, table := range []string{"users", "unexpected_existing_table"} {
+		if _, err := db.ExecContext(ctx, "CREATE TABLE "+table+"(id integer)"); err != nil {
+			t.Fatal(err)
+		}
+		if err := Up(ctx, db); err == nil {
+			t.Fatal("foundation accepted an incomplete existing schema")
+		}
+		if _, err := db.ExecContext(ctx, "DROP TABLE "+table); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := Up(ctx, db); err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +57,11 @@ func TestFreshCommunityFoundationPostgres(t *testing.T) {
 	}
 	// Prove a populated retry preserves application data and the original ledger.
 	if _, err := db.ExecContext(ctx, "CREATE TABLE community_restore_probe(id integer PRIMARY KEY, value text NOT NULL); INSERT INTO community_restore_probe VALUES (1,'preserve me')"); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate an existing pre-foundation installation adopting this new ledger
+	// entry. Its tables and application data must remain untouched.
+	if _, err := db.ExecContext(ctx, "DELETE FROM schema_migrations WHERE version='000000000001'"); err != nil {
 		t.Fatal(err)
 	}
 	if err := Up(ctx, db); err != nil {
