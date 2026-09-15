@@ -1650,3 +1650,18 @@
     cursor: not-allowed;
   }
 }
+
+/* ── Table column pinning ──────────────────────────────────────────────────
+   Pinned columns only make sense when the viewport is wider than the pinned
+   group. On phones the left group (checkbox + id + name) and the right actions
+   column together span most of the screen, so the remaining columns have
+   nowhere to scroll into and the name column appears to eat the row. Drop the
+   pinning below `md` and let the row scroll as one unit. `pinnedStyle()` writes
+   `position: sticky` inline, so these overrides need `!important` to win. */
+@media (max-width: 767px) {
+  .shared-table-pinned-left,
+  .shared-table-pinned-right,
+  .shared-table-group-inner {
+    position: static !important;
+  }
+}
