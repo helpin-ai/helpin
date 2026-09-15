@@ -93,7 +93,7 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 		IsSystem:        true,
 		Name:            "Forge",
 		PresetKey:       model.AgentPresetCodeBuilder,
-		RuntimeKind:     "codex",
+		RuntimeKind:     "native_sdk",
 		ExecutionConfig: []byte(`{"reasoning_effort":"high"}`),
 	}
 	out := runtimeAgentFromHelpinAgent(codeBuilder, "helpin")
@@ -120,7 +120,7 @@ func TestRuntimeAgentFromHelpinAgentInjectsRepositoryWorkspaceMode(t *testing.T)
 		IsSystem:    true,
 		Name:        "Mira",
 		PresetKey:   model.AgentPresetMarketer,
-		RuntimeKind: "codex",
+		RuntimeKind: "native_sdk",
 	}
 	if config := runtimeAgentFromHelpinAgent(marketer, "helpin").ExecutionConfig; len(config) > 0 {
 		nonRepoValues := map[string]interface{}{}
@@ -213,7 +213,7 @@ func TestRuntimeAgentFromHelpinAgentRegistersManagedCommandAgentSkills(t *testin
 		Name:             "Sub-agent",
 		PresetKey:        model.AgentPresetCommandAgent,
 		PresetVersionKey: "command_agent_default",
-		RuntimeKind:      "codex",
+		RuntimeKind:      "native_sdk",
 		AllowedTools: mustJSONStringSlice([]string{
 			agentcontract.ToolFindSkills,
 			agentcontract.ToolReadSkill,
@@ -272,7 +272,7 @@ func TestRuntimeAgentFromHelpinAgentSendsScribeAsOnePromptWithoutCoreSkillRefs(t
 		Name:             "Scribe",
 		PresetKey:        model.AgentPresetTaskPlanner,
 		PresetVersionKey: "task_planner_default",
-		RuntimeKind:      "codex",
+		RuntimeKind:      "native_sdk",
 		SystemPrompt:     defaultSystemPromptForPreset(model.AgentPresetTaskPlanner),
 		// Reproduce a persisted partial selection from before the approval
 		// skill became a required Scribe core skill.
@@ -309,7 +309,7 @@ func TestRuntimeAgentFromHelpinAgentSendsAtlasAsOnePromptWithOnlyToolSkillReload
 		Name:             "Atlas",
 		PresetKey:        model.AgentPresetEpicPlanner,
 		PresetVersionKey: "epic_planner_default",
-		RuntimeKind:      "codex",
+		RuntimeKind:      "native_sdk",
 		SystemPrompt:     defaultSystemPromptForPreset(model.AgentPresetEpicPlanner),
 		AllowedTools: mustJSONStringSlice([]string{
 			agentcontract.ToolPublishTaskPlan,
@@ -473,7 +473,7 @@ func TestRuntimeAgentFromHelpinAgentRequiresScribePlanDocument(t *testing.T) {
 		ID:          "agent-scribe",
 		IsSystem:    true,
 		PresetKey:   model.AgentPresetTaskPlanner,
-		RuntimeKind: "codex",
+		RuntimeKind: "native_sdk",
 	}
 	var config map[string]interface{}
 	if err := json.Unmarshal(runtimeAgentFromHelpinAgent(scribe, "helpin").ExecutionConfig, &config); err != nil {
@@ -652,7 +652,7 @@ func seedCodingDelegationAgent(t *testing.T, db *gorm.DB, presetKey, invocationM
 		skills, trigger_mode, provider, execution_config, allowed_tools, allowed_commands, allowed_targets, approval_mode,
 		max_concurrent_runs, default_invocation_mode, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"agent-1", "ws-1", true, "Forge", presetKey, "Code Builder", "idle", "codex",
+		"agent-1", "ws-1", true, "Forge", presetKey, "Code Builder", "idle", "native_sdk",
 		[]byte("[]"), "manual", "openai", []byte(`{"reasoning_effort":"high"}`), []byte("[]"), []byte("[]"), []byte("[]"), "never",
 		1, invocationMode, now, now,
 	)

@@ -82,6 +82,14 @@ export const queryKeys = {
     externalServers: (wsId: string) => ['mcp', wsId, 'external', 'servers'] as const,
   },
 
+  ai: {
+    root: (wsId: string) => ['ai', wsId] as const,
+    connections: (wsId: string) => ['ai', wsId, 'connections'] as const,
+    endpoints: (wsId: string) => ['ai', wsId, 'endpoints'] as const,
+    profiles: (wsId: string) => ['ai', wsId, 'profiles'] as const,
+    settings: (wsId: string) => ['ai', wsId, 'settings'] as const,
+  },
+
   pm: {
     workflows: (wsId: string) => ['pm', wsId, 'workflows'] as const,
     teamWorkflow: (wsId: string, teamId: string) => ['pm', wsId, 'workflows', 'team', teamId] as const,

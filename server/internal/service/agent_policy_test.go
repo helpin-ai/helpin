@@ -103,8 +103,8 @@ func TestNormalizeAgentRecordDefaultsToPreset(t *testing.T) {
 	if agent.SourcePresetVersionKey != "" {
 		t.Fatalf("expected blank custom agent source preset version to remain empty, got %q", agent.SourcePresetVersionKey)
 	}
-	if agent.RuntimeKind != "codex" {
-		t.Fatalf("expected default runtime codex, got %q", agent.RuntimeKind)
+	if agent.RuntimeKind != "native_sdk" {
+		t.Fatalf("expected default runtime native_sdk, got %q", agent.RuntimeKind)
 	}
 }
 
@@ -115,8 +115,8 @@ func TestAgentDefaultsDerivedFromPreset(t *testing.T) {
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetEpicPlanner); got != "native_sdk" {
 		t.Fatalf("expected planner runtime default native_sdk, got %q", got)
 	}
-	if got := defaultRuntimeKindForPresetKey(model.AgentPresetTaskPlanner); got != "codex" {
-		t.Fatalf("expected Scribe runtime default codex, got %q", got)
+	if got := defaultRuntimeKindForPresetKey(model.AgentPresetTaskPlanner); got != "native_sdk" {
+		t.Fatalf("expected Scribe runtime default native_sdk, got %q", got)
 	}
 	if got := defaultRuntimeKindForPresetKey(model.AgentPresetSupportAgent); got != "native_sdk" {
 		t.Fatalf("expected support runtime default native_sdk, got %q", got)
@@ -259,8 +259,8 @@ func TestListAgentPresetsUseProductDefaultRouting(t *testing.T) {
 			continue
 		}
 		if preset.Key == model.AgentPresetTaskPlanner {
-			if preset.RuntimeKind != "codex" {
-				t.Errorf("preset %q runtime = %q, want codex", preset.Key, preset.RuntimeKind)
+			if preset.RuntimeKind != "native_sdk" {
+				t.Errorf("preset %q runtime = %q, want native_sdk", preset.Key, preset.RuntimeKind)
 			}
 			if preset.Provider == nil || *preset.Provider != model.AgentModelProviderOpenAI {
 				t.Errorf("preset %q provider = %+v, want openai", preset.Key, preset.Provider)
@@ -329,8 +329,8 @@ func TestListAgentPresetsIncludesInteractiveReviewAgent(t *testing.T) {
 		if preset.Key != model.AgentPresetReviewAgent {
 			continue
 		}
-		if preset.RuntimeKind != "codex" {
-			t.Fatalf("expected review agent runtime codex, got %q", preset.RuntimeKind)
+		if preset.RuntimeKind != "native_sdk" {
+			t.Fatalf("expected review agent runtime native_sdk, got %q", preset.RuntimeKind)
 		}
 		if preset.DefaultInvocationMode != model.InvocationModeInteractive {
 			t.Fatalf("expected review agent default mode interactive, got %q", preset.DefaultInvocationMode)
@@ -810,14 +810,14 @@ func TestCommandAgentPresetPMToolTargets(t *testing.T) {
 }
 
 func TestValidateRuntimeKindAllowsOnlyImplementedRuntimes(t *testing.T) {
-	valid := []string{"opencode", "codex", "native_sdk"}
+	valid := []string{"native_sdk"}
 	for _, runtimeKind := range valid {
 		if err := validateRuntimeKind(runtimeKind); err != nil {
 			t.Fatalf("expected runtime %q to be valid, got %v", runtimeKind, err)
 		}
 	}
 
-	invalid := []string{"native_claude", "claude_code", "openclaw", "zeroclaw"}
+	invalid := []string{"codex", "opencode", "native_claude", "claude_code", "openclaw", "zeroclaw"}
 	for _, runtimeKind := range invalid {
 		if err := validateRuntimeKind(runtimeKind); err == nil {
 			t.Fatalf("expected runtime %q to be rejected", runtimeKind)
@@ -850,22 +850,22 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 			supported: true,
 		},
 		{
-			name: "codex code builder supports interactive",
+			name: "native_sdk code builder supports interactive",
 			agent: model.Agent{
 				IsSystem:    true,
 				PresetKey:   model.AgentPresetCodeBuilder,
-				RuntimeKind: "codex",
+				RuntimeKind: "native_sdk",
 			},
 			supported: true,
 		},
 		{
-			name: "opencode does not support interactive",
+			name: "legacy preset reconciles to native interactive",
 			agent: model.Agent{
 				IsSystem:    true,
 				PresetKey:   model.AgentPresetCodeBuilder,
 				RuntimeKind: "opencode",
 			},
-			supported: false,
+			supported: true,
 		},
 	}
 
@@ -880,74 +880,17 @@ func TestAgentSupportsInteractiveRequiresNativeSDK(t *testing.T) {
 	}
 }
 
-func TestValidateRuntimeProviderCompatibilityRejectsAnthropicForCodex(t *testing.T) {
+func TestValidateRuntimeProviderCompatibilityAllowsNativeAnthropic(t *testing.T) {
 	anthropic := model.AgentModelProviderAnthropic
 	agent := &model.Agent{
 		PresetKey:   model.AgentPresetCodeBuilder,
-		RuntimeKind: "codex",
+		RuntimeKind: "native_sdk",
 		Provider:    &anthropic,
 	}
 
 	svc := &AgentService{}
-	if err := svc.validateRuntimeProviderCompatibility(agent); err == nil {
-		t.Fatal("expected codex anthropic provider to be rejected")
-	}
-}
-
-func TestValidateRuntimeProviderCompatibilityAllowsCodexOpenAIWithManagedOAuth(t *testing.T) {
-	openAI := model.AgentModelProviderOpenAI
-	agent := &model.Agent{
-		PresetKey:   model.AgentPresetCodeBuilder,
-		RuntimeKind: "codex",
-		Provider:    &openAI,
-	}
-
-	svc := &AgentService{
-		codexOpenAIAuthMode:      "chatgpt_oauth",
-		codexChatGPTOAuthEnabled: true,
-		codexChatGPTAccessToken:  "token",
-		codexChatGPTAccountID:    "account-123",
-	}
 	if err := svc.validateRuntimeProviderCompatibility(agent); err != nil {
-		t.Fatalf("expected managed OAuth to satisfy Codex OpenAI runtime validation, got %v", err)
-	}
-	if err := svc.validateModelRouting(agent); err != nil {
-		t.Fatalf("expected managed OAuth to satisfy Codex OpenAI model routing validation, got %v", err)
-	}
-}
-
-func TestValidateRuntimeProviderCompatibilityAllowsCodexOpenAIWithoutManagedOAuth(t *testing.T) {
-	openAI := model.AgentModelProviderOpenAI
-	agent := &model.Agent{
-		PresetKey:   model.AgentPresetCodeBuilder,
-		RuntimeKind: "codex",
-		Provider:    &openAI,
-	}
-
-	svc := &AgentService{
-		codexOpenAIAuthMode:      "chatgpt_oauth",
-		codexChatGPTOAuthEnabled: false,
-	}
-	if err := svc.validateRuntimeProviderCompatibility(agent); err != nil {
-		t.Fatalf("expected codex openai provider to be accepted without backend OAuth preflight, got %v", err)
-	}
-}
-
-func TestListModelProvidersIncludesOpenAIForCodexDeviceCodeMode(t *testing.T) {
-	svc := &AgentService{
-		codexOpenAIAuthMode: "chatgpt_device_code",
-	}
-
-	options := svc.ListModelProviders()
-	foundOpenAI := false
-	for _, option := range options {
-		if option.Value == model.AgentModelProviderOpenAI {
-			foundOpenAI = true
-			break
-		}
-	}
-	if !foundOpenAI {
-		t.Fatalf("expected openai provider option when codex device-code mode is enabled, got %#v", options)
+		t.Fatalf("native supports Anthropic: %v", err)
 	}
 }
 
@@ -983,26 +926,26 @@ func TestListModelProvidersIncludesExecutionCapabilities(t *testing.T) {
 	}
 }
 
-func TestValidateModelRoutingRejectsCodexServiceTierForOpenRouter(t *testing.T) {
+func TestValidateModelRoutingRejectsNativeServiceTierForOpenRouter(t *testing.T) {
 	openRouter := model.AgentModelProviderOpenRouter
 	agent := &model.Agent{
 		PresetKey:       model.AgentPresetCodeBuilder,
-		RuntimeKind:     "codex",
+		RuntimeKind:     "native_sdk",
 		Provider:        &openRouter,
 		ExecutionConfig: model.JSONBlob(`{"service_tier":"fast"}`),
 	}
 
 	svc := &AgentService{openRouterAPIKey: "openrouter-secret"}
 	if err := svc.validateModelRouting(agent); err == nil {
-		t.Fatal("expected openrouter codex service tier to be rejected")
+		t.Fatal("expected openrouter native_sdk service tier to be rejected")
 	}
 }
 
-func TestValidateModelRoutingAllowsCodexReasoningConfig(t *testing.T) {
+func TestValidateModelRoutingAllowsNativeReasoningConfig(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{
 		PresetKey:       model.AgentPresetCodeBuilder,
-		RuntimeKind:     "codex",
+		RuntimeKind:     "native_sdk",
 		Provider:        &openAI,
 		ExecutionConfig: model.JSONBlob(`{"reasoning_effort":"high","service_tier":"fast"}`),
 	}
@@ -1011,7 +954,7 @@ func TestValidateModelRoutingAllowsCodexReasoningConfig(t *testing.T) {
 		openAIAPIKey: "openai-secret",
 	}
 	if err := svc.validateModelRouting(agent); err != nil {
-		t.Fatalf("expected codex openai execution config to validate, got %v", err)
+		t.Fatalf("expected native_sdk openai execution config to validate, got %v", err)
 	}
 	if strings.TrimSpace(string(agent.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
 		t.Fatalf("expected normalized execution config to persist, got %s", agent.ExecutionConfig)
@@ -1092,16 +1035,16 @@ func TestParseAndValidateExecutionConfigRejectsInvalidNativeToolStepLimit(t *tes
 			wantError:   "must be between 1 and 2000",
 		},
 		{
-			name:        "codex runtime",
+			name:        "retired runtime",
 			runtimeKind: "codex",
 			config:      model.JSONBlob(`{"max_tool_steps":500}`),
 			wantError:   "only supported for runtime_kind native_sdk",
 		},
 		{
-			name:        "native model control",
-			runtimeKind: "native_sdk",
+			name:        "retired model control",
+			runtimeKind: "codex",
 			config:      model.JSONBlob(`{"reasoning_effort":"high"}`),
-			wantError:   "model controls are only supported for runtime_kind codex",
+			wantError:   "model controls are only supported for runtime_kind native_sdk",
 		},
 	}
 
@@ -1116,12 +1059,12 @@ func TestParseAndValidateExecutionConfigRejectsInvalidNativeToolStepLimit(t *tes
 	}
 }
 
-func TestValidateRuntimeForAgentAllowsReviewAgentCodexPreset(t *testing.T) {
+func TestValidateRuntimeForAgentAllowsReviewAgentNativePreset(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{
 		IsSystem:              true,
 		PresetKey:             model.AgentPresetReviewAgent,
-		RuntimeKind:           "codex",
+		RuntimeKind:           "native_sdk",
 		Provider:              &openAI,
 		ApprovalMode:          "never",
 		DefaultInvocationMode: model.InvocationModeAutonomous,
@@ -1129,16 +1072,16 @@ func TestValidateRuntimeForAgentAllowsReviewAgentCodexPreset(t *testing.T) {
 	normalizeAgentRecord(agent)
 
 	if err := validateRuntimeForAgent(agent); err != nil {
-		t.Fatalf("expected review_agent codex runtime to be allowed, got %v", err)
+		t.Fatalf("expected review_agent native_sdk runtime to be allowed, got %v", err)
 	}
 }
 
-func TestValidateRuntimeForAgentAllowsCustomCodexPolicy(t *testing.T) {
+func TestValidateRuntimeForAgentAllowsCustomNativePolicy(t *testing.T) {
 	openAI := model.AgentModelProviderOpenAI
 	agent := &model.Agent{
 		IsSystem:              true,
 		PresetKey:             model.AgentPresetCodeBuilder,
-		RuntimeKind:           "codex",
+		RuntimeKind:           "native_sdk",
 		Provider:              &openAI,
 		AllowedTools:          mustJSONStringSlice([]string{"read_file"}),
 		AllowedCommands:       mustJSONStringSlice([]string{"go"}),
@@ -1148,7 +1091,7 @@ func TestValidateRuntimeForAgentAllowsCustomCodexPolicy(t *testing.T) {
 	}
 
 	if err := validateRuntimeForAgent(agent); err != nil {
-		t.Fatalf("expected custom codex tool policy to be allowed, got %v", err)
+		t.Fatalf("expected custom native_sdk tool policy to be allowed, got %v", err)
 	}
 }
 
@@ -1157,14 +1100,14 @@ func TestNormalizeAgentRecordResetsInvalidRuntimeForPreset(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:    true,
 		PresetKey:   model.AgentPresetReviewAgent,
-		RuntimeKind: "codex",
+		RuntimeKind: "native_sdk",
 		Provider:    &openAI,
 	}
 
 	normalizeAgentRecord(agent)
 
-	if agent.RuntimeKind != "codex" {
-		t.Fatalf("expected review agent runtime to preserve codex, got %q", agent.RuntimeKind)
+	if agent.RuntimeKind != "native_sdk" {
+		t.Fatalf("expected review agent runtime to preserve native_sdk, got %q", agent.RuntimeKind)
 	}
 }
 
@@ -1188,7 +1131,7 @@ func TestNormalizeAgentRecordRefreshesLegacyCodeBuilderPrompt(t *testing.T) {
 	agent := &model.Agent{
 		IsSystem:     true,
 		PresetKey:    model.AgentPresetCodeBuilder,
-		RuntimeKind:  "codex",
+		RuntimeKind:  "native_sdk",
 		SystemPrompt: &legacyPrompt,
 	}
 

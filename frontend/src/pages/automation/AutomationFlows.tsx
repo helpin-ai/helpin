@@ -12,7 +12,7 @@ import {
   SourceCodeIcon,
 } from '@/lib/icons';
 import { toast } from 'sonner';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { AutomationShell } from '@/components/automation/AutomationShell';
 import {
   QuietEmptyState,
@@ -57,7 +57,7 @@ import type { Agent, AgentApprovalMode, AgentRuntimeKind, AgentSkillRef, AgentTa
 import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
 import { buildAutomationActivityPath, type FlowTargetMode } from '@/lib/automationUi';
 import { getAgentTeamIds, isAgentVisibleToActor } from '@/lib/agentAccess';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { cn } from '@/lib/utils';
 import { AGENT_APPROVAL_OPTIONS, agentApprovalDescription } from '@/lib/agentApproval';
 import { useWorkspaceStore } from '@/stores/workspaceStore';

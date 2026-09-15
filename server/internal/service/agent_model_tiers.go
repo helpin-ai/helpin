@@ -6,22 +6,22 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-var selectableAgentTierRoutes = map[aiusage.Tier]AICompletionRoute{
-	aiusage.TierSmall: {
+var selectableAgentTierRoutes = map[aimodel.Tier]AICompletionRoute{
+	aimodel.TierSmall: {
 		Provider: "openrouter", Model: defaultFastOpenRouterAgentModel, ServiceTier: defaultAICompletionServiceTier,
 	},
-	aiusage.TierMedium: {
-		Provider: "openrouter", Model: "google/gemini-3.7-flash", ServiceTier: defaultAICompletionServiceTier,
+	aimodel.TierMedium: {
+		Provider: "openrouter", Model: "google/gemini-3.8-flash", ServiceTier: defaultAICompletionServiceTier,
 	},
-	aiusage.TierLarge: {
-		Provider: "openrouter", Model: "openai/gpt-5.6-terra", ServiceTier: defaultAICompletionServiceTier,
+	aimodel.TierLarge: {
+		Provider: "openai", Model: "gpt-5.6-terra", ServiceTier: defaultAICompletionServiceTier,
 	},
-	aiusage.TierFlagship: {
-		Provider: "openrouter", Model: "anthropic/claude-sonnet-5", ServiceTier: defaultAICompletionServiceTier,
+	aimodel.TierFlagship: {
+		Provider: "anthropic", Model: "claude-sonnet-5", ServiceTier: defaultAICompletionServiceTier,
 	},
 }
 
@@ -37,22 +37,22 @@ type AgentModelTierSnapshot struct {
 
 // AgentModelTierResolver owns the public-tier to internal-route policy.
 type AgentModelTierResolver struct {
-	catalog     *aiusage.Catalog
+	catalog     *aimodel.Catalog
 	hasProvider func(string) bool
 }
 
-func NewAgentModelTierResolver(catalog *aiusage.Catalog, hasProvider func(string) bool) *AgentModelTierResolver {
+func NewAgentModelTierResolver(catalog *aimodel.Catalog, hasProvider func(string) bool) *AgentModelTierResolver {
 	return &AgentModelTierResolver{catalog: catalog, hasProvider: hasProvider}
 }
 
 // ValidateSelectable verifies every public tier before the process starts serving traffic.
 func (r *AgentModelTierResolver) ValidateSelectable() []error {
-	ordered := []aiusage.Tier{aiusage.TierSmall, aiusage.TierMedium, aiusage.TierLarge, aiusage.TierFlagship}
+	ordered := []aimodel.Tier{aimodel.TierSmall, aimodel.TierMedium, aimodel.TierLarge, aimodel.TierFlagship}
 	var issues []error
 	for _, tier := range ordered {
 		route := selectableAgentTierRoutes[tier]
 		if r == nil || r.catalog == nil {
-			issues = append(issues, fmt.Errorf("agent model tier %q has no pricing catalog", tier))
+			issues = append(issues, fmt.Errorf("agent model tier %q has no model catalog", tier))
 			continue
 		}
 		if r.hasProvider != nil && !r.hasProvider(route.Provider) {
@@ -72,7 +72,7 @@ func (r *AgentModelTierResolver) ValidateSelectable() []error {
 }
 
 // ResolveCustom validates a selectable tier and returns its immutable execution snapshot.
-func (r *AgentModelTierResolver) ResolveCustom(tier aiusage.Tier, allowedTargets, allowedTools []string, preserveRuntime string) (AgentModelTierSnapshot, error) {
+func (r *AgentModelTierResolver) ResolveCustom(tier aimodel.Tier) (AgentModelTierSnapshot, error) {
 	route, ok := selectableAgentTierRoutes[tier]
 	if !ok || r == nil || r.catalog == nil {
 		return AgentModelTierSnapshot{}, fmt.Errorf("model size temporarily unavailable")
@@ -84,13 +84,9 @@ func (r *AgentModelTierResolver) ResolveCustom(tier aiusage.Tier, allowedTargets
 	if err != nil || resolved.Tier != tier {
 		return AgentModelTierSnapshot{}, fmt.Errorf("model size temporarily unavailable")
 	}
-	runtimeKind := strings.TrimSpace(preserveRuntime)
-	if runtimeKind == "" {
-		runtimeKind = runtimeForCustomAgentCapabilities(allowedTargets, allowedTools)
-	}
 	return AgentModelTierSnapshot{
 		ModelTier: string(tier), Provider: route.Provider, Model: route.Model,
-		ServiceTier: route.ServiceTier, RuntimeKind: runtimeKind,
+		ServiceTier: route.ServiceTier, RuntimeKind: "native_sdk",
 		ProviderQuantizations: providerQuantizationsForAgentRoute(route),
 	}, nil
 }
@@ -104,7 +100,7 @@ func providerQuantizationsForAgentRoute(route AICompletionRoute) []string {
 }
 
 // Derive returns the public tier for an existing exact execution route.
-func (r *AgentModelTierResolver) Derive(provider, model, serviceTier string) (aiusage.Tier, error) {
+func (r *AgentModelTierResolver) Derive(provider, model, serviceTier string) (aimodel.Tier, error) {
 	if r == nil || r.catalog == nil {
 		return "", fmt.Errorf("model size temporarily unavailable")
 	}
@@ -118,22 +114,6 @@ func (r *AgentModelTierResolver) Derive(provider, model, serviceTier string) (ai
 	return resolved.Tier, nil
 }
 
-func runtimeForCustomAgentCapabilities(targets, tools []string) string {
-	for _, target := range targets {
-		switch strings.ToLower(strings.TrimSpace(target)) {
-		case "repository", "pull_request", "git_repository", "github_pull_request":
-			return "codex"
-		}
-	}
-	for _, tool := range tools {
-		switch strings.ToLower(strings.TrimSpace(tool)) {
-		case "shell", "bash", "apply_patch", "git", "write_file", "edit_file":
-			return "codex"
-		}
-	}
-	return "native_sdk"
-}
-
 var (
 	defaultAgentTierResolverOnce sync.Once
 	defaultAgentTierResolver     *AgentModelTierResolver
@@ -141,7 +121,7 @@ var (
 
 func loadDefaultAgentModelTierResolver() *AgentModelTierResolver {
 	defaultAgentTierResolverOnce.Do(func() {
-		catalog, err := aiusage.LoadCatalog()
+		catalog, err := aimodel.LoadCatalog()
 		if err == nil {
 			defaultAgentTierResolver = NewAgentModelTierResolver(catalog, nil)
 		}

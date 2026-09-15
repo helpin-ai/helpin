@@ -20,7 +20,7 @@ type CRMContactService struct {
 	contactRepo    *repository.CRMContactRepository
 	activityRepo   *repository.CRMActivityRepository
 	timelineRepo   *repository.CRMCompanyTimelineRepository
-	entitlementSvc *EntitlementService
+	entitlementSvc EntitlementPolicy
 	wsPublisher    websocket.EventPublisher
 	summaryRefresh CompanySummaryRefreshRequester
 	motionSignals  interface {
@@ -66,7 +66,7 @@ func (s *CRMContactService) SetTimelineRepository(repo *repository.CRMCompanyTim
 	return s
 }
 
-func (s *CRMContactService) SetEntitlementService(entitlementSvc *EntitlementService) *CRMContactService {
+func (s *CRMContactService) SetEntitlementService(entitlementSvc EntitlementPolicy) *CRMContactService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

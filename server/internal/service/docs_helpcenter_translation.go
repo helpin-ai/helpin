@@ -30,7 +30,7 @@ type DocsHelpcenterTranslationService struct {
 	artifactRepo    publicationArtifactRepository
 	artifactStore   publicationArtifactStore
 	llmProvider     llm.Provider
-	entitlementSvc  *EntitlementService
+	entitlementSvc  EntitlementPolicy
 }
 
 // NewDocsHelpcenterTranslationService creates a new multilingual help-center service.
@@ -58,7 +58,7 @@ func NewDocsHelpcenterTranslationService(
 	}
 }
 
-func (s *DocsHelpcenterTranslationService) SetEntitlementService(entitlementSvc *EntitlementService) *DocsHelpcenterTranslationService {
+func (s *DocsHelpcenterTranslationService) SetEntitlementService(entitlementSvc EntitlementPolicy) *DocsHelpcenterTranslationService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

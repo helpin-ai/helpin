@@ -75,10 +75,10 @@ jobs:
           MOBILE=false
           EVENTPIPELINE=false
 
-          if echo "$CHANGED" | grep -qE '^server/|^scripts/check-task-canonical\.sh$|^\.github/workflows/ci\.yml$'; then
+          if echo "$CHANGED" | grep -qE '^server/|^scripts/check-(task-canonical|community-backend)\.sh$|^\.github/workflows/ci\.yml$'; then
             SERVER=true
           fi
-          if echo "$CHANGED" | grep -qE '^frontend/|^packages/(shared|widget-core)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
+          if echo "$CHANGED" | grep -qE '^scripts/check-community-frontend\.sh$|^frontend/|^packages/(shared|widget-core)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
             FRONTEND=true
           fi
           if echo "$CHANGED" | grep -qE '^apps/admin/|^frontend/src/index\.css$|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
@@ -173,7 +173,9 @@ jobs:
 
       - name: Vet
         working-directory: server
-        run: go vet ./...
+        run: |
+          go vet ./...
+          go vet -tags ee ./...
 
       - name: Build
         working-directory: server
@@ -182,6 +184,62 @@ jobs:
           go build ./cmd/temporal-worker
           go build ./cmd/migrate
           go build ./cmd/clickhouse-migrate
+          go build -tags ee ./cmd/api ./cmd/temporal-worker ./cmd/migrate
+
+  community-backend:
+    name: Community without EE source
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install CGO test dependencies
+        run: |
+          if ! command -v gcc >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends build-essential
+            else
+              apt-get update
+              apt-get install -y --no-install-recommends build-essential
+            fi
+          fi
+          gcc --version
+      - name: Build and test community distribution
+        run: bash scripts/check-community-backend.sh
+
+  ai-profile-postgres:
+    name: AI profile migration PostgreSQL regression
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: integration-fixture
+          POSTGRES_DB: ai_profiles_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: server/go.sum
+      - name: Check real migration transactions and edition ledger compatibility
+        working-directory: server
+        env:
+          AI_PROFILES_TEST_DATABASE_URL: postgres://postgres:integration-fixture@127.0.0.1:5432/ai_profiles_test?sslmode=disable
+        run: go test -tags integration ./internal/dbmigrate -count=1
 
   server-tests:
     name: Server Tests
@@ -198,7 +256,7 @@ jobs:
     # action once the runner story is sorted.
     env:
       # mattn/go-sqlite3 (used by gorm.io/driver/sqlite) requires CGO.
-      # Without this, codex/auth/tool tests fail with "Binary was compiled
+      # Without this, database/tool tests fail with "Binary was compiled
       # with 'CGO_ENABLED=0'". The runner image must have gcc installed.
       CGO_ENABLED: '1'
     steps:
@@ -217,7 +275,7 @@ jobs:
           gcc --version || true
       - name: Test
         working-directory: server
-        run: go test ./...
+        run: go test -tags ee ./...
 
   # ------------------------ Frontend ------------------------
   frontend:
@@ -225,9 +283,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: arc-runners-helpin-ai
-    # Plan budget: ≤ 4 min build. Tsc -b alone can stretch to 3-4m on
-    # cold cache; allow headroom.
-    timeout-minutes: 10
+    # Compile both editions, including cold TypeScript caches.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -237,7 +294,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build frontend
-        run: pnpm --dir frontend run build
+        run: |
+          pnpm --dir frontend run build
+          pnpm --dir frontend run build:ee
 
   frontend-tests:
     name: Frontend Vitest
@@ -256,7 +315,26 @@ jobs:
       - name: Build widget-core (frontend imports compiled output)
         run: pnpm --filter @helpin-ai/widget-core build
       - name: Frontend Vitest
-        run: pnpm --dir frontend run test
+        run: pnpm --dir frontend run test:ee
+
+  community-frontend:
+    name: Community frontend without EE source
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build shared widget code
+        run: pnpm --filter @helpin-ai/widget-core build
+      - name: Build and test community distribution
+        run: bash scripts/check-community-frontend.sh
 
   # ------------------------ Packages ------------------------
   packages-tests:

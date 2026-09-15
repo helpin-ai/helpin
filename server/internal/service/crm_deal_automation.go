@@ -21,7 +21,7 @@ type DealAutomationService struct {
 	contactRepo    *repository.CRMContactRepository
 	assocRepo      *repository.CRMAssociationRepository
 	autonomyRepo   *repository.CRMAutonomyRepository
-	entitlementSvc *EntitlementService
+	entitlementSvc EntitlementPolicy
 	dealService    *CRMDealService
 }
 
@@ -52,7 +52,7 @@ func NewDealAutomationService(
 	}
 }
 
-func (s *DealAutomationService) SetEntitlementService(entitlementSvc *EntitlementService) *DealAutomationService {
+func (s *DealAutomationService) SetEntitlementService(entitlementSvc EntitlementPolicy) *DealAutomationService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

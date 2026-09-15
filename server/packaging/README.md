@@ -19,18 +19,7 @@ The environment file is shipped as `config|noreplace`, so local edits survive pa
 
 ## Runtime Assumptions
 
-The default config enables both autonomous queues:
-
-```env
-TEMPORAL_WORKER_QUEUES=agent-opencode-autonomous,agent-codex-autonomous
-```
-
-That means the target host must provide both runtimes:
-
-- `codex`
-- `opencode`
-
-If a host only supports one runtime, narrow `TEMPORAL_WORKER_QUEUES` in `/etc/helpin/temporal-worker.conf`.
+Agent execution belongs to the separate agent-runtime workers. Leave `TEMPORAL_WORKER_QUEUES` unset for the Helpin worker defaults; use only registered product queues when narrowing this worker.
 
 ## Local Package Build
 
@@ -68,7 +57,6 @@ Default package config:
 ```env
 DOPPLER_PROJECT=backend
 DOPPLER_CONFIG=prd
-TEMPORAL_WORKER_QUEUES=agent-opencode-autonomous,agent-codex-autonomous
 ```
 
 Recommended `systemctl edit` override for hosts running the service with the `prov` user's home directory:

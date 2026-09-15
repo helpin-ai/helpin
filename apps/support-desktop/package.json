@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5175",
-    "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 tsc -b && cross-env NODE_OPTIONS=--max-old-space-size=4096 vite build",
+    "build": "node scripts/build.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "typecheck": "tsc -b tsconfig.app.json tsconfig.node.json",
+    "typecheck:ee": "tsc -b tsconfig.ee.json tsconfig.node.json"
   },
   "dependencies": {
     "@helpin-ai/support-core": "workspace:*",

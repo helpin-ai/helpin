@@ -116,6 +116,10 @@ export function Select(props: ComponentProps<typeof Legacy.Select>) {
     if (!controlled) setLocalValue(next);
     onValueChange?.(next);
   };
+  // Portaled content keeps ownership markers supplied by its host surface.
+  const contentDataAttributes = Object.fromEntries(
+    Object.entries(content.props).filter(([key]) => key.startsWith('data-')),
+  );
   return (
     <Context.Provider value={{ selected, value, disabled, size, setOpen }}>
       <QuietDropdown
@@ -132,6 +136,7 @@ export function Select(props: ComponentProps<typeof Legacy.Select>) {
           content.props.className,
         )}
         contentProps={{
+          ...contentDataAttributes,
           align: content.props.align ?? 'start',
           side: content.props.side,
           sideOffset: content.props.sideOffset,

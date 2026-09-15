@@ -713,7 +713,18 @@ func (s *AgentRuntimeHostService) ResolveRepositorySpec(ctx context.Context, req
 		return nil, err
 	}
 	target := runtimeRepositorySpecTarget(req, contextData, contextTargetMetadata)
-	return s.gitService.ResolveAgentRuntimeRepositorySpec(ctx, workspaceID, target, req.RunID, helpinRunID)
+	spec, err := s.gitService.ResolveAgentRuntimeRepositorySpec(ctx, workspaceID, target, req.RunID, helpinRunID)
+	if err != nil {
+		return nil, err
+	}
+	if spec != nil && agentRunIsPreview(run) {
+		spec.FinalizePolicy = agentruntime.RepositoryFinalizeNone
+		if spec.Metadata == nil {
+			spec.Metadata = map[string]interface{}{}
+		}
+		spec.Metadata["delivery_mode"] = "preview"
+	}
+	return spec, nil
 }
 
 // runtimeRepositorySpecTarget restores the concrete repository target for a

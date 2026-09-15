@@ -316,7 +316,7 @@ export function DealDetailPage({ dealId, onRequestClose, registerBeforeClose }: 
 
 			<QuietDetailLayout
 				className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden"
-				main={<main className="min-h-0 lg:overflow-y-auto">
+				main={<main className="min-h-0 lg:h-full lg:overflow-y-auto">
 					<QuietSection title="Summary" className="lg:px-10"><EntitySummaryCard workspaceId={wsId} dealId={dealId} presentation="compact" /></QuietSection>
 					<QuietSection title="Signals" action={<DealHealthScore workspaceId={wsId} dealId={dealId} compact />} className="lg:px-10">
 						<EntitySignals workspaceId={wsId} dealId={dealId} presentation="compact" onOpenSource={(signal) => {

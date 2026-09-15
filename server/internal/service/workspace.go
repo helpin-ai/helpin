@@ -31,7 +31,7 @@ type WorkspaceService struct {
 	defaultsInitializer WorkspaceDefaultsInitializer
 	presence            websocket.PresenceProvider
 	statusOverrideRepo  *repository.SupportTeammateStatusOverrideRepository
-	billingService      *BillingService
+	billingService      WorkspaceLifecyclePolicy
 	contextLLM          workspaceContextLLM
 	contextFetcher      WorkspaceContextFetcher
 	customerIOIdentity  *CustomerIOIdentityService
@@ -71,7 +71,7 @@ func (s *WorkspaceService) SetStatusOverrideRepo(repo *repository.SupportTeammat
 	s.statusOverrideRepo = repo
 }
 
-func (s *WorkspaceService) SetBillingService(billingService *BillingService) {
+func (s *WorkspaceService) SetBillingService(billingService WorkspaceLifecyclePolicy) {
 	s.billingService = billingService
 }
 
@@ -214,7 +214,7 @@ func (s *WorkspaceService) Create(ctx context.Context, req model.CreateWorkspace
 	}
 
 	if s.billingService != nil {
-		if _, err := s.billingService.EnsureTrialForWorkspace(ctx, ws.ID); err != nil {
+		if err := s.billingService.WorkspaceCreated(ctx, ws.ID); err != nil {
 			s.logger.ErrorContext(ctx, "failed to initialize workspace billing", "error", err, "workspace_id", ws.ID)
 			return nil, fmt.Errorf("initialize workspace billing: %w", err)
 		}
@@ -399,7 +399,7 @@ func (s *WorkspaceService) DeleteLogo(ctx context.Context, id string) (*model.Wo
 // Delete removes a workspace and all associated data including S3 attachments.
 func (s *WorkspaceService) Delete(ctx context.Context, id string) error {
 	if s.billingService != nil {
-		if err := s.billingService.CancelWorkspaceSubscriptionImmediately(ctx, id); err != nil {
+		if err := s.billingService.WorkspaceDeleting(ctx, id); err != nil {
 			s.logger.ErrorContext(ctx, "failed to cancel workspace subscription before delete", "error", err, "workspace_id", id)
 			return fmt.Errorf("cancel workspace subscription before delete: %w", err)
 		}

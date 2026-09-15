@@ -38,7 +38,7 @@ type AICompletionRequest struct {
 // AICompletionService routes, meters, executes, and reconciles direct completions.
 type AICompletionService struct {
 	provider llm.Provider
-	usage    *AIUsageService
+	usage    AIUsageLifecycle
 	routes   AICompletionRouteRegistry
 	policy   *aipolicy.Registry
 	audit    aipolicy.ExecutionAudit
@@ -57,7 +57,7 @@ func (s *AICompletionService) SetGovernance(registry *aipolicy.Registry, audit a
 // NewAICompletionService creates the single direct-completion execution boundary.
 func NewAICompletionService(
 	provider llm.Provider,
-	usage *AIUsageService,
+	usage AIUsageLifecycle,
 	routes AICompletionRouteRegistry,
 ) *AICompletionService {
 	return &AICompletionService{provider: provider, usage: usage, routes: routes}

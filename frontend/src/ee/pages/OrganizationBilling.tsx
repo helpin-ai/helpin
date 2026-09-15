@@ -1,0 +1,140 @@
+import { useState } from 'react';
+import { useTitle } from '@/hooks/useTitle';
+import { useOrganizationStore } from '@/stores/organizationStore';
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { QuietSearchInput } from '@/components/design-system/quiet';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useOrgBilling, useBillingCards, useBillingInvoices } from '@/ee/hooks/queries/useBilling';
+import type { PaymentMethod, WorkspaceBillingCard as WSCard } from '@/ee/lib/billingTypes';
+import { BillingSummaryHeader } from '@/ee/components/billing/BillingSummaryHeader';
+import { WorkspaceBillingCard } from '@/ee/components/billing/WorkspaceBillingCard';
+import { PaymentMethodCard } from '@/ee/components/billing/PaymentMethodCard';
+import { InvoicesTable } from '@/ee/components/billing/InvoicesTable';
+import { UsageDetail } from '@/ee/components/billing/UsageDetail';
+import { PlanChangeModal } from '@/ee/components/billing/PlanChangeModal';
+
+export default function OrganizationBilling() {
+  useTitle('Billing');
+  const orgId = useOrganizationStore((s) => s.currentOrganization?.id);
+
+  const { data: billing, isLoading } = useOrgBilling(orgId);
+  const { data: cards = [] } = useBillingCards(orgId);
+  const { data: invoices = [] } = useBillingInvoices(orgId);
+
+  const [manageCard, setManageCard] = useState<WSCard | null>(null);
+  const [planCard, setPlanCard] = useState<WSCard | null>(null);
+  const [search, setSearch] = useState('');
+
+  if (isLoading || !billing) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  const workspaces = billing.workspaces.filter((w) =>
+    search ? w.workspace_name.toLowerCase().includes(search.toLowerCase()) : true,
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-lg font-semibold">Billing</h1>
+        <p className="text-sm text-muted-foreground">
+          Manage plans, cards, and usage across all workspaces in this organization.
+        </p>
+      </div>
+
+      <BillingSummaryHeader summary={billing} />
+
+      <Tabs defaultValue="plans">
+        <TabsList>
+          <TabsTrigger value="plans">Plans &amp; Subscriptions</TabsTrigger>
+          <TabsTrigger value="cards">Cards</TabsTrigger>
+          <TabsTrigger value="invoices">Invoices</TabsTrigger>
+        </TabsList>
+
+        {/* Plans & Subscriptions */}
+        <TabsContent value="plans" className="space-y-4">
+          {billing.workspaces.length > 12 && (
+            <QuietSearchInput
+              containerClassName="max-w-xs"
+              placeholder="Search workspaces…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          )}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {workspaces.map((card) => (
+              <WorkspaceBillingCard
+                key={card.workspace_id}
+                orgId={orgId!}
+                card={card}
+                cards={cards}
+                onManage={setManageCard}
+                onChangePlan={setPlanCard}
+              />
+            ))}
+          </div>
+          {workspaces.length === 0 && (
+            <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+              No workspaces found.
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Cards */}
+        <TabsContent value="cards" className="space-y-3">
+          {cards.length === 0 ? (
+            <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+              Saved cards appear here after a workspace is upgraded through Stripe Checkout.
+            </div>
+          ) : (
+            cards.map((card: PaymentMethod) => (
+              <PaymentMethodCard key={card.id} orgId={orgId!} card={card} />
+            ))
+          )}
+        </TabsContent>
+
+        {/* Invoices */}
+        <TabsContent value="invoices">
+          <InvoicesTable invoices={invoices} />
+        </TabsContent>
+      </Tabs>
+
+      {/* Usage detail dialog */}
+      <Dialog open={!!manageCard} onOpenChange={(o) => !o && setManageCard(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{manageCard?.workspace_name} · Usage</DialogTitle>
+          </DialogHeader>
+          {manageCard && <UsageDetail workspaceId={manageCard.workspace_id} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Plan change modal */}
+      {planCard && (
+        <PlanChangeModal
+          open={!!planCard}
+          onOpenChange={(o) => !o && setPlanCard(null)}
+          workspaceId={planCard.workspace_id}
+          workspaceName={planCard.workspace_name}
+          currentPlan={planCard.plan}
+        />
+      )}
+    </div>
+  );
+}

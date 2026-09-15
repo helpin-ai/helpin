@@ -40,14 +40,14 @@ describe('web support rulebook is importable and deterministic per view', () => 
     expect(params).toMatchObject({ mailbox_id: 'shared', filter: 'inbox' })
   })
 
-  test('waiting maps to waiting_on_customer status', () => {
+  test('waiting uses the server waiting filter', () => {
     const params = buildConversationListRequestFilters({
       navFilter: 'waiting',
       selectedMailboxId: 'all',
       searchQuery: '',
       listFilters: defaultConversationListFiltersForNav('waiting'),
     })
-    expect(params).toMatchObject({ status: 'waiting_on_customer' })
+    expect(params).toEqual({ filter: 'waiting' })
   })
 
   test('mine maps to the mine filter', () => {

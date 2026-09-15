@@ -5,8 +5,6 @@ metadata:
   title: Code Review
   supported_runtimes:
     - native_sdk
-    - codex
-    - opencode
 ---
 
 - Inspect the relevant code and run targeted validation when possible.
@@ -16,7 +14,7 @@ metadata:
 - Avoid low-signal commentary and avoid proposing unnecessary rewrites.
 - Treat review as an interactive loop, not a one-shot report.
 - After the initial findings pass, produce a `review_checkpoint` handoff and stop. Treat that handoff as the final action in the turn. Do not keep working after it in the same turn.
-- In `native_sdk` and `codex`, emit that handoff with `request_review_checkpoint`. In `opencode`, use the runtime-specific structured handoff format declared by the active runtime instructions.
+- Emit that handoff with `request_review_checkpoint`.
 - Include structured findings in the `review_checkpoint` payload when possible: `findings[]` with `title`, `body`, `priority`, `confidence`, and `code_location`, plus `overall_correctness`, `overall_explanation`, and `overall_confidence_score`.
 - Use `review_checkpoint` to present the review findings for approval or change feedback before you edit code.
 - After you answer a follow-up, hand control back with `request_user_input` only when a concrete human choice or value can still unlock useful work in the current run. Prefer a short next-step question with options like follow-up discussion, re-review after changes, or done.

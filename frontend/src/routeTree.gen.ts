@@ -70,7 +70,9 @@ import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './rou
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
 import { Route as AuthenticatedWSlugSettingsBillingRouteImport } from './routes/_authenticated/w/$slug/settings/billing'
 import { Route as AuthenticatedWSlugSettingsAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/automations'
+import { Route as AuthenticatedWSlugSettingsAiConnectionsRouteImport } from './routes/_authenticated/w/$slug/settings/ai-connections'
 import { Route as AuthenticatedWSlugSettingsAiAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/ai-automations'
+import { Route as AuthenticatedWSlugSettingsAiRouteImport } from './routes/_authenticated/w/$slug/settings/ai'
 import { Route as AuthenticatedWSlugSettingsAccessRouteImport } from './routes/_authenticated/w/$slug/settings/access'
 import { Route as AuthenticatedWSlugSettingsSectionRouteImport } from './routes/_authenticated/w/$slug/settings/$section'
 import { Route as AuthenticatedWSlugPmToolCatalogRouteImport } from './routes/_authenticated/w/$slug/pm/tool-catalog'
@@ -468,10 +470,22 @@ const AuthenticatedWSlugSettingsAutomationsRoute =
     path: '/settings/automations',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
+const AuthenticatedWSlugSettingsAiConnectionsRoute =
+  AuthenticatedWSlugSettingsAiConnectionsRouteImport.update({
+    id: '/settings/ai-connections',
+    path: '/settings/ai-connections',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
 const AuthenticatedWSlugSettingsAiAutomationsRoute =
   AuthenticatedWSlugSettingsAiAutomationsRouteImport.update({
     id: '/settings/ai-automations',
     path: '/settings/ai-automations',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsAiRoute =
+  AuthenticatedWSlugSettingsAiRouteImport.update({
+    id: '/settings/ai',
+    path: '/settings/ai',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsAccessRoute =
@@ -847,7 +861,9 @@ export interface FileRoutesByFullPath {
   '/w/$slug/pm/tool-catalog': typeof AuthenticatedWSlugPmToolCatalogRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
+  '/w/$slug/settings/ai': typeof AuthenticatedWSlugSettingsAiRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
+  '/w/$slug/settings/ai-connections': typeof AuthenticatedWSlugSettingsAiConnectionsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
@@ -957,7 +973,9 @@ export interface FileRoutesByTo {
   '/w/$slug/pm/tool-catalog': typeof AuthenticatedWSlugPmToolCatalogRoute
   '/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
+  '/w/$slug/settings/ai': typeof AuthenticatedWSlugSettingsAiRoute
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
+  '/w/$slug/settings/ai-connections': typeof AuthenticatedWSlugSettingsAiConnectionsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
@@ -1073,7 +1091,9 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/pm/tool-catalog': typeof AuthenticatedWSlugPmToolCatalogRoute
   '/_authenticated/w/$slug/settings/$section': typeof AuthenticatedWSlugSettingsSectionRoute
   '/_authenticated/w/$slug/settings/access': typeof AuthenticatedWSlugSettingsAccessRoute
+  '/_authenticated/w/$slug/settings/ai': typeof AuthenticatedWSlugSettingsAiRoute
   '/_authenticated/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
+  '/_authenticated/w/$slug/settings/ai-connections': typeof AuthenticatedWSlugSettingsAiConnectionsRoute
   '/_authenticated/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/_authenticated/w/$slug/settings/billing': typeof AuthenticatedWSlugSettingsBillingRoute
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
@@ -1191,7 +1211,9 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/tool-catalog'
     | '/w/$slug/settings/$section'
     | '/w/$slug/settings/access'
+    | '/w/$slug/settings/ai'
     | '/w/$slug/settings/ai-automations'
+    | '/w/$slug/settings/ai-connections'
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
@@ -1301,7 +1323,9 @@ export interface FileRouteTypes {
     | '/w/$slug/pm/tool-catalog'
     | '/w/$slug/settings/$section'
     | '/w/$slug/settings/access'
+    | '/w/$slug/settings/ai'
     | '/w/$slug/settings/ai-automations'
+    | '/w/$slug/settings/ai-connections'
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/billing'
     | '/w/$slug/settings/chat-general'
@@ -1416,7 +1440,9 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/pm/tool-catalog'
     | '/_authenticated/w/$slug/settings/$section'
     | '/_authenticated/w/$slug/settings/access'
+    | '/_authenticated/w/$slug/settings/ai'
     | '/_authenticated/w/$slug/settings/ai-automations'
+    | '/_authenticated/w/$slug/settings/ai-connections'
     | '/_authenticated/w/$slug/settings/automations'
     | '/_authenticated/w/$slug/settings/billing'
     | '/_authenticated/w/$slug/settings/chat-general'
@@ -1923,11 +1949,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugSettingsAutomationsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
+    '/_authenticated/w/$slug/settings/ai-connections': {
+      id: '/_authenticated/w/$slug/settings/ai-connections'
+      path: '/settings/ai-connections'
+      fullPath: '/w/$slug/settings/ai-connections'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsAiConnectionsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
     '/_authenticated/w/$slug/settings/ai-automations': {
       id: '/_authenticated/w/$slug/settings/ai-automations'
       path: '/settings/ai-automations'
       fullPath: '/w/$slug/settings/ai-automations'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsAiAutomationsRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/ai': {
+      id: '/_authenticated/w/$slug/settings/ai'
+      path: '/settings/ai'
+      fullPath: '/w/$slug/settings/ai'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsAiRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/access': {
@@ -2498,7 +2538,9 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugPmToolCatalogRoute: typeof AuthenticatedWSlugPmToolCatalogRoute
   AuthenticatedWSlugSettingsSectionRoute: typeof AuthenticatedWSlugSettingsSectionRoute
   AuthenticatedWSlugSettingsAccessRoute: typeof AuthenticatedWSlugSettingsAccessRoute
+  AuthenticatedWSlugSettingsAiRoute: typeof AuthenticatedWSlugSettingsAiRoute
   AuthenticatedWSlugSettingsAiAutomationsRoute: typeof AuthenticatedWSlugSettingsAiAutomationsRoute
+  AuthenticatedWSlugSettingsAiConnectionsRoute: typeof AuthenticatedWSlugSettingsAiConnectionsRoute
   AuthenticatedWSlugSettingsAutomationsRoute: typeof AuthenticatedWSlugSettingsAutomationsRoute
   AuthenticatedWSlugSettingsBillingRoute: typeof AuthenticatedWSlugSettingsBillingRoute
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
@@ -2564,8 +2606,11 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
   AuthenticatedWSlugSettingsSectionRoute:
     AuthenticatedWSlugSettingsSectionRoute,
   AuthenticatedWSlugSettingsAccessRoute: AuthenticatedWSlugSettingsAccessRoute,
+  AuthenticatedWSlugSettingsAiRoute: AuthenticatedWSlugSettingsAiRoute,
   AuthenticatedWSlugSettingsAiAutomationsRoute:
     AuthenticatedWSlugSettingsAiAutomationsRoute,
+  AuthenticatedWSlugSettingsAiConnectionsRoute:
+    AuthenticatedWSlugSettingsAiConnectionsRoute,
   AuthenticatedWSlugSettingsAutomationsRoute:
     AuthenticatedWSlugSettingsAutomationsRoute,
   AuthenticatedWSlugSettingsBillingRoute:

@@ -3888,6 +3888,16 @@
             "description": "Deprecated compatibility field. Plain commands only; shell operators are rejected.",
             "type": "string"
           },
+          "working_directory": {
+            "type": "string",
+            "description": "Existing directory relative to the workspace root; defaults to the root. Absolute paths, traversal, and symlinks are rejected."
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 900,
+            "description": "Execution timeout in seconds; defaults to 120."
+          },
           "program": {
             "description": "The executable name (for example: go, npm, git)",
             "type": "string"

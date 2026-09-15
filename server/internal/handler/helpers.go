@@ -68,3 +68,12 @@ func NoStoreOnWrites(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// WriteJSON shares the host response envelope with optional edition handlers.
+func WriteJSON(w http.ResponseWriter, status int, data any) { writeJSON(w, status, data) }
+
+// WriteError shares the host error envelope with optional edition handlers.
+func WriteError(w http.ResponseWriter, status int, message string) { writeError(w, status, message) }
+
+// DecodeJSON shares host request decoding with optional edition handlers.
+func DecodeJSON(r *http.Request, target any) error { return decodeJSON(r, target) }

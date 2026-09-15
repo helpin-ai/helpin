@@ -3,12 +3,10 @@ package service
 import (
 	"context"
 	"errors"
-	"testing"
-
-	"gorm.io/gorm"
-
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/gorm"
+	"testing"
 )
 
 // createDeleteStubTables creates the extra tables referenced by the workspace
@@ -70,7 +68,8 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 		)`,
 		`CREATE TABLE IF NOT EXISTS agent_run_artifacts (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, cached_input_tokens INTEGER NOT NULL DEFAULT 0, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0)`,
-		`CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS agents (
+ ai_profile_id TEXT,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS agent_handoffs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS workspace_key_history (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS team_workspace_memberships (
@@ -146,6 +145,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 	db := newTestDB(t)
 	for _, stmt := range []string{
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
@@ -206,7 +206,7 @@ func newWorkspaceDefaultsTestHarness(t *testing.T) (*gorm.DB, *WorkspaceService,
 		activitySvc: NewPMActivityService(repository.NewPMActivityRepository(db)),
 		wsPublisher: nil,
 	}
-	agentService.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key", "", false, "", "")
+	agentService.SetModelProviderConfig("", "test-openai-key", "test-openrouter-key")
 	defaults := NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, agentService)
 	svc := NewWorkspaceService(wsRepo, attachRepo, nil, defaults)
 
@@ -389,8 +389,7 @@ func TestWorkspaceService_Create_SeedsSystemPresetAgents(t *testing.T) {
 	if planner.Name != defaultSystemEpicPlannerName {
 		t.Fatalf("name = %q, want %q", planner.Name, defaultSystemEpicPlannerName)
 	}
-	// Managed system agents store SystemPrompt as nil; it's materialized on read via materializeAgentSystemPrompt.
-	// Verify the instruction template version is set, indicating the prompt is managed.
+
 	if planner.InstructionTemplateVersion == "" {
 		t.Fatal("expected seeded planner to have an instruction template version")
 	}
@@ -588,7 +587,6 @@ func TestWorkspaceService_Update(t *testing.T) {
 		t.Errorf("updated Name = %q, want %q", updated.Name, "After")
 	}
 
-	// Verify the change persisted via GetByID
 	ws, err := svc.GetByID(ctx, created.ID)
 	if err != nil {
 		t.Fatalf("GetByID after update: %v", err)
@@ -687,13 +685,11 @@ func TestWorkspaceService_Delete(t *testing.T) {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	// Verify workspace is gone
 	_, err = svc.GetByID(ctx, created.ID)
 	if err == nil {
 		t.Fatal("expected error after delete, got nil")
 	}
 
-	// Verify it no longer appears in list
 	list, err := svc.List(ctx, "owner-1", "")
 	if err != nil {
 		t.Fatalf("List after delete: %v", err)
@@ -703,88 +699,11 @@ func TestWorkspaceService_Delete(t *testing.T) {
 	}
 }
 
-func TestWorkspaceService_DeleteCancelsActiveSubscriptionImmediately(t *testing.T) {
-	db, svc := newWorkspaceTestHarness(t)
-	createDeleteStubTables(t, db)
-	ctx := context.Background()
-	gateway := &fakeBillingGateway{}
-	billingRepo := repository.NewBillingRepository(db)
-	billingSvc := NewBillingService(billingRepo, gateway, nil)
-	svc.SetBillingService(billingSvc)
-
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Paid Delete", Slug: "paid-delete", WorkspaceKey: "PDL"}, "owner-1")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if err := billingRepo.UpsertWorkspaceBilling(ctx, &model.WorkspaceBilling{
-		WorkspaceID:          created.ID,
-		Plan:                 model.BillingPlanStarter,
-		Status:               model.BillingStatusActive,
-		StripeCustomerID:     billingStringPtr("cus_paid"),
-		StripeSubscriptionID: billingStringPtr("sub_paid"),
-		BillingInterval:      "monthly",
-		IncludedCredits:      5000,
-	}); err != nil {
-		t.Fatalf("seed billing: %v", err)
-	}
-
-	if err := svc.Delete(ctx, created.ID); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-
-	if len(gateway.immediateCancels) != 1 || gateway.immediateCancels[0].SubscriptionID != "sub_paid" {
-		t.Fatalf("unexpected immediate cancels: %#v", gateway.immediateCancels)
-	}
-	var count int64
-	if err := db.Model(&model.WorkspaceBilling{}).Where("workspace_id = ?", created.ID).Count(&count).Error; err != nil {
-		t.Fatalf("count workspace billing: %v", err)
-	}
-	if count != 0 {
-		t.Fatalf("workspace billing rows after delete = %d, want 0", count)
-	}
-}
-
-func TestWorkspaceService_DeleteStopsWhenSubscriptionCancellationFails(t *testing.T) {
-	db, svc := newWorkspaceTestHarness(t)
-	createDeleteStubTables(t, db)
-	ctx := context.Background()
-	gateway := &fakeBillingGateway{cancelErr: errors.New("stripe unavailable")}
-	billingRepo := repository.NewBillingRepository(db)
-	billingSvc := NewBillingService(billingRepo, gateway, nil)
-	svc.SetBillingService(billingSvc)
-
-	created, err := svc.Create(ctx, model.CreateWorkspaceRequest{Name: "Paid Delete Fail", Slug: "paid-delete-fail", WorkspaceKey: "PDF"}, "owner-1")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if err := billingRepo.UpsertWorkspaceBilling(ctx, &model.WorkspaceBilling{
-		WorkspaceID:          created.ID,
-		Plan:                 model.BillingPlanGrowth,
-		Status:               model.BillingStatusActive,
-		StripeCustomerID:     billingStringPtr("cus_paid"),
-		StripeSubscriptionID: billingStringPtr("sub_paid"),
-		BillingInterval:      "monthly",
-		IncludedCredits:      25000,
-	}); err != nil {
-		t.Fatalf("seed billing: %v", err)
-	}
-
-	err = svc.Delete(ctx, created.ID)
-	if err == nil {
-		t.Fatal("expected delete to fail when subscription cancellation fails")
-	}
-	if _, getErr := svc.GetByID(ctx, created.ID); getErr != nil {
-		t.Fatalf("workspace should remain after failed billing cancellation: %v", getErr)
-	}
-}
-
 func TestWorkspaceService_Delete_NonexistentDoesNotError(t *testing.T) {
 	db, svc := newWorkspaceTestHarness(t)
 	createDeleteStubTables(t, db)
 	ctx := context.Background()
 
-	// Deleting a workspace that doesn't exist should not return an error
-	// because the DELETE statements simply affect zero rows.
 	err := svc.Delete(ctx, "does-not-exist")
 	if err != nil {
 		t.Fatalf("Delete nonexistent: %v", err)

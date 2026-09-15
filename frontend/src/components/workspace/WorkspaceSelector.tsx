@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/authStore';
 import { authService } from '@/lib/services/authService';
 import { workspacesService } from '@/lib/services/workspacesService';
-import type { MemberWithUser, Workspace, WorkspaceBillingSummary } from '@/lib/types';
+import type { MemberWithUser, Workspace } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -11,7 +11,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Favicon } from '@/components/ui/favicon';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useSupportUnreadByWorkspace } from '@/hooks/queries/useSupport';
-import { daysUntil, PLAN_LABEL } from '@/lib/billingUtils';
+import { workspaceBillingBadge as billingBadge } from '@edition';
+import { billingEnabled } from '@edition/config';
 import { MoreHorizontalIcon, Settings02Icon, StarIcon, UserGroupIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -20,53 +21,6 @@ const MAX_VISIBLE_AVATARS = 5;
 
 interface WorkspaceSelectorProps {
   workspaces: Workspace[];
-}
-
-function planDisplayName(plan: string): string {
-  return /\bplan\b/i.test(plan) ? plan : `${plan} plan`;
-}
-
-function billingBadge(billing?: WorkspaceBillingSummary | null): {
-  label: string;
-  className: string;
-} {
-  if (!billing) {
-    return {
-      label: 'Trial pending',
-      className: 'bg-muted text-muted-foreground border-transparent',
-    };
-  }
-
-  if (billing.status === 'past_due') {
-    return {
-      label: 'Past due',
-      className: 'bg-destructive/10 text-destructive border-destructive/20',
-    };
-  }
-
-  if (billing.locked || billing.status === 'trial_expired' || billing.status === 'canceled') {
-    return {
-      label: billing.status === 'trial_expired' ? 'Trial ended' : 'Locked',
-      className: 'bg-destructive/10 text-destructive border-destructive/20',
-    };
-  }
-
-  const plan = PLAN_LABEL[billing.plan] ?? billing.plan;
-  const planName = planDisplayName(plan);
-  if (billing.trialing) {
-    const days = daysUntil(billing.trial_ends_at);
-    return {
-      label: days > 0 ? `${planName} trial · ${days}d left` : `${planName} trial`,
-      className: 'bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-300',
-    };
-  }
-
-  return {
-    label: planName,
-    className: billing.locked
-      ? 'bg-destructive/10 text-destructive border-destructive/20'
-      : 'bg-primary/10 text-primary border-primary/15',
-  };
 }
 
 function canManageBilling(ws: Workspace): boolean {
@@ -153,14 +107,14 @@ function WorkspaceCard({
   const navigate = useNavigate();
   const billing = ws.billing;
   const plan = billingBadge(billing);
-  const canManage = canManageBilling(ws);
+  const canManage = billingEnabled && canManageBilling(ws);
   const visibleMembers = members.slice(0, MAX_VISIBLE_AVATARS);
   const overflowMembers = members.slice(MAX_VISIBLE_AVATARS);
   const overflowCount = members.length - MAX_VISIBLE_AVATARS;
 
   const openWorkspace = () =>
     navigate({
-      to: billing?.locked ? `/w/${ws.slug}/settings/billing` : `/w/${ws.slug}/pm/my-work`,
+      to: billingEnabled && billing?.locked ? `/w/${ws.slug}/settings/billing` : `/w/${ws.slug}/pm/my-work`,
     });
   const openBilling = (event: { stopPropagation: () => void }) => {
     event.stopPropagation();
@@ -310,9 +264,9 @@ function WorkspaceCard({
               </Tooltip>
             )}
           </div>
-          <Badge variant="outline" className={getWorkspaceBillingBadgeClasses(plan.className)}>
+          {plan && <Badge variant="outline" className={getWorkspaceBillingBadgeClasses(plan.className)}>
             {plan.label}
-          </Badge>
+          </Badge>}
         </div>
       </CardContent>
 

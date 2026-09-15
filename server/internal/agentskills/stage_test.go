@@ -34,7 +34,7 @@ func (s *stageTestStore) GetObject(_ context.Context, key string) ([]byte, error
 
 func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	agent := &model.Agent{
-		RuntimeKind: "codex",
+		RuntimeKind: "native_sdk",
 		Skills:      model.AgentSkillRefs{{Key: "prd_task_plan_approval"}},
 	}
 	destRoot := filepath.Join(t.TempDir(), "skills")

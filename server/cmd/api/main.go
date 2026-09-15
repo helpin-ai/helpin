@@ -28,11 +28,10 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/helpin-ai/helpin/server/internal/aimodel"
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
-	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
-	"github.com/helpin-ai/helpin/server/internal/billingstripe"
 	"github.com/helpin-ai/helpin/server/internal/cache"
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/coordination"
@@ -202,10 +201,6 @@ func main() {
 			&model.SetupAchievement{},
 			&model.SetupActionIntent{},
 			&model.MemberSetupPreference{},
-			&model.WorkspaceBilling{},
-			&model.StripeWebhookEvent{},
-			&model.OrganizationBilling{},
-			&model.BillingPaymentMethod{},
 			&model.WorkspaceTeam{},
 			&model.TeamWorkspaceMembership{},
 			&model.WorkspaceManager{},
@@ -269,7 +264,6 @@ func main() {
 			&model.SupportRunEvidence{},
 			&model.HelpcenterAnswer{},
 			&model.CodingSessionStateSnapshot{},
-			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
 			&model.SupportConversation{},
 			&model.SupportConversationTriage{},
@@ -440,6 +434,9 @@ func main() {
 			&model.CuratedGuidance{},
 		); err != nil {
 			fatalWithSentry("failed to auto-migrate", err)
+		}
+		if err := autoMigrateEdition(db); err != nil {
+			fatalWithSentry("failed to auto-migrate edition", err)
 		}
 		slog.Info("startup: AutoMigrate complete")
 	} else {
@@ -708,7 +705,6 @@ func main() {
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
 	customerIOOutboxRepo := repository.NewCustomerIOLifecycleOutboxRepository(db)
 	productAnalyticsOutboxRepo := repository.NewProductAnalyticsOutboxRepository(db)
 	supportTagRepo := repository.NewSupportTagRepository(db)
@@ -716,6 +712,20 @@ func main() {
 	supportInstallRepo := repository.NewSupportInboxInstallationRepository(db)
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
+	orgService := service.NewOrganizationService(orgRepo)
+	authzMemberRepo := authorization.NewGORMMemberRepository(db)
+	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
+	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	editionServices, err := newEditionServices(db, cfg, workspaceRepo, orgService, authzService, productAnalytics, customerIOOutboxRepo)
+	if err != nil {
+		fatalWithSentry("configure edition", err)
+	}
+	if editionServices.InitializeAIProfiles != nil {
+		if err := editionServices.InitializeAIProfiles(context.Background()); err != nil {
+			fatalWithSentry("failed to initialize standard AI profiles", err)
+		}
+	}
+	aiUsageService := editionServices.Usage
 	customerIOIdentityService := service.NewCustomerIOIdentityService(
 		service.NewCustomerIOTrackClient(service.CustomerIOTrackConfig{
 			SiteID:                   cfg.CustomerIOSiteID,
@@ -727,53 +737,16 @@ func main() {
 		userRepo,
 		workspaceRepo,
 		orgRepo,
-		billingRepo,
+		editionServices.BillingInsights,
 	)
-	pricingCatalog, pricingCatalogErr := aiusage.LoadCatalog()
-	if pricingCatalogErr != nil {
-		log.Fatalf("load AI pricing catalog: %v", pricingCatalogErr)
+	if editionServices.AttachIdentity != nil {
+		editionServices.AttachIdentity(customerIOIdentityService)
 	}
-	aiUsageRepo := repository.NewAIUsageRepository(db)
-	aiUsageService := service.NewAIUsageService(pricingCatalog, aiUsageRepo, nil)
-	stripeGateway := billingstripe.New(cfg.StripeSecretKey)
-	settlementCtx, settlementCancel := context.WithCancel(context.Background())
-	settlementDone := make(chan struct{})
-	if stripeGateway != nil {
-		settlementWorker := service.NewAIUsageSettlementWorker(aiUsageRepo, stripeGateway)
-		go func() {
-			defer close(settlementDone)
-			settlementWorker.Run(settlementCtx, time.Minute)
-		}()
-	} else {
-		close(settlementDone)
+	modelCatalog, modelCatalogErr := aimodel.LoadCatalog()
+	if modelCatalogErr != nil {
+		log.Fatalf("load model catalog: %v", modelCatalogErr)
 	}
-	billingService := service.NewBillingService(billingRepo, stripeGateway, time.Now)
-	periodCtx, periodCancel := context.WithCancel(context.Background())
-	periodDone := make(chan struct{})
-	periodWorker := service.NewAIUsagePeriodWorker(aiUsageRepo, billingService.NextAIUsagePeriodSchedule)
-	go func() {
-		defer close(periodDone)
-		periodWorker.Run(periodCtx, time.Minute)
-	}()
-	reservationCtx, reservationCancel := context.WithCancel(context.Background())
-	reservationDone := make(chan struct{})
-	reservationSweeper := service.NewAIUsageReservationSweeper(aiUsageRepo)
-	go func() {
-		defer close(reservationDone)
-		reservationSweeper.Run(reservationCtx, time.Minute, 15*time.Minute)
-	}()
-	billingTestScenarioService := service.NewBillingTestScenarioService(db, billingService, time.Now)
-	billingService.SetPriceConfig(service.BillingPriceConfig{
-		StarterMonthly: cfg.StripeStarterMonthlyPriceID,
-		StarterAnnual:  cfg.StripeStarterAnnualPriceID,
-		GrowthMonthly:  cfg.StripeGrowthMonthlyPriceID,
-		GrowthAnnual:   cfg.StripeGrowthAnnualPriceID,
-	})
-	billingService.SetWorkspaceRepository(workspaceRepo)
-	billingService.SetCustomerIOIdentityService(customerIOIdentityService)
-	billingService.SetCustomerIOLifecycleOutboxRepository(customerIOOutboxRepo)
 	customerIOOutboxWorker := service.NewCustomerIOLifecycleOutboxWorker(customerIOOutboxRepo, workspaceRepo, customerIOIdentityService)
-	billingService.SetProductAnalyticsService(productAnalytics)
 	customerIOOutboxCtx, customerIOOutboxCancel := context.WithCancel(context.Background())
 	customerIOOutboxDone := make(chan struct{})
 	go func() {
@@ -785,7 +758,7 @@ func main() {
 		userRepo,
 		workspaceRepo,
 		orgRepo,
-		billingRepo,
+		editionServices.BillingMetadata,
 		service.NewUsermavenClient(service.UsermavenConfig{
 			APIKey:      cfg.UsermavenAPIKey,
 			ServerToken: cfg.UsermavenServerToken,
@@ -1024,14 +997,17 @@ func main() {
 			OpenRouterProvider: cfg.CRMMeetingFallbackOpenRouterProvider,
 		},
 	})
-	if issues := completionRoutes.Validate(pricingCatalog); len(issues) != 0 {
-		fatalWithSentry("validate AI completion pricing routes", errors.Join(issues...))
+	if issues := completionRoutes.Validate(modelCatalog); len(issues) != 0 {
+		fatalWithSentry("validate AI completion model routes", errors.Join(issues...))
 	}
-	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); len(issues) != 0 {
+	if issues := completionRoutes.ValidateAvailability(editionServices.ValidateCompletionRoute); len(issues) != 0 {
+		fatalWithSentry("validate edition completion routes", errors.Join(issues...))
+	}
+	if issues := completionRoutes.ValidateProviders(supportLLMRouter.HasChatProvider); editionServices.RequireConfiguredProviders && len(issues) != 0 {
 		fatalWithSentry("validate AI completion providers", errors.Join(issues...))
 	}
-	agentTierResolver := service.NewAgentModelTierResolver(pricingCatalog, supportLLMRouter.HasChatProvider)
-	if issues := agentTierResolver.ValidateSelectable(); len(issues) != 0 {
+	agentTierResolver := service.NewAgentModelTierResolver(modelCatalog, supportLLMRouter.HasChatProvider)
+	if issues := agentTierResolver.ValidateSelectable(); editionServices.RequireConfiguredProviders && len(issues) != 0 {
 		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
 	}
 	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes).
@@ -1091,6 +1067,13 @@ func main() {
 			fatalWithSentry("failed to initialize agent runtime client", err)
 		}
 	}
+	aiConnectionService, err := service.NewAIConnectionService(repository.NewAIConnectionRepository(db), modelCatalog, agentRuntimeClient, service.AIConnectionConfig{
+		EncryptionKey: cfg.AIConnectionEncryptionKey, ChatGPTEnabled: cfg.ChatGPTConnectionsEnabled, ChatGPTClientID: cfg.ChatGPTClientID, AppID: cfg.AgentRuntimeAppID,
+	})
+	if err != nil {
+		fatalWithSentry("failed to initialize AI connections", err)
+	}
+	aiProfileService := service.NewAIProfileService(repository.NewAIProfileRepository(db), aiConnectionService).SetAdmissionPolicy(editionServices.ConnectionPolicy).CheckRuntimeReadiness()
 	externalMCPService, err := service.NewExternalMCPService(
 		externalMCPRepo,
 		notificationService,
@@ -1138,17 +1121,13 @@ func main() {
 	).SetModelProviderConfig(
 		cfg.AnthropicAPIKey,
 		cfg.OpenAIAPIKey,
-		cfg.OpenRouterAPIKey,
-		cfg.CodexOpenAIAuthMode,
-		cfg.CodexEnableChatGPTOAuth,
-		cfg.CodexChatGPTAccessToken,
-		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
+		cfg.OpenRouterAPIKey).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetWorkspaceRepository(workspaceRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmCompanyRepo, crmDealRepo).SetAgentDraftLLM(supportLLMProvider).SetModelTierResolver(agentTierResolver).SetAIUsageMeter(aiUsageMeter).SetAgentRuntimeLaunchEnabled(cfg.AgentRuntimeLaunchEnabled)
 	agentService.SetProductAnalyticsService(productAnalytics)
 	if agentRuntimeClient != nil {
 		agentService.SetAgentRuntimeClient(agentRuntimeClient)
 	}
 	agentService.SetExternalMCPService(externalMCPService)
+	agentService.SetAIConnectionService(aiConnectionService).SetAIProfileService(aiProfileService)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarPlanDismissalRepo).
 		SetWebsocketPublisher(wsPublisher)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
@@ -1723,7 +1702,6 @@ func main() {
 		}()
 	}
 
-	orgService := service.NewOrganizationService(orgRepo)
 	orgService.SetCustomerIOIdentityService(customerIOIdentityService)
 	compositeDefaults := service.NewCompositeDefaultsInitializer(pmWorkflowService, pmAutomationService, crmDealService, supportInboxService, agentService)
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
@@ -1734,8 +1712,7 @@ func main() {
 		workspaceService.SetSetupInitializer(setupService)
 	}
 	workspaceService.SetContextGeneratorDependencies(supportLLMProvider, nil)
-	billingService.SetOrgRoleResolver(orgService)
-	entitlementService := service.NewEntitlementService(billingService)
+	entitlementService := editionServices.Entitlements
 	setupService.SetEntitlementService(entitlementService)
 	pmImportService.SetEntitlementService(entitlementService)
 	supportInboxService.SetEntitlementService(entitlementService)
@@ -1747,7 +1724,7 @@ func main() {
 	crmContactService.SetEntitlementService(entitlementService)
 	crmImportService.SetEntitlementService(entitlementService)
 	dealAutomationService.SetEntitlementService(entitlementService)
-	workspaceService.SetBillingService(billingService)
+	workspaceService.SetBillingService(editionServices.WorkspaceLifecycle)
 	workspaceService.SetCustomerIOIdentityService(customerIOIdentityService)
 	workspaceService.SetPresenceProvider(wsHub.Presence)
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
@@ -1768,16 +1745,13 @@ func main() {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
 	inviteService := service.NewInviteService(invitationRepo, workspaceRepo, orgRepo, userRepo, settingsRepo, appEmailClient, cfg.AppBaseURL, jwtManager)
-	inviteService.SetBillingService(billingService)
+	inviteService.SetBillingService(editionServices.Seats)
 	inviteService.SetCustomerIOIdentityService(customerIOIdentityService)
 	inviteService.SetProductAnalyticsService(productAnalytics)
-	// Initialize authorization service.
-	authzMemberRepo := authorization.NewGORMMemberRepository(db)
-	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
-	authzService.SetWorkspaceMFARepository(workspaceRepo)
+	aiConnectionService.SetAuthorizationService(authzService)
 	crmOutreachService := service.NewCRMOutreachService(repository.NewCRMOutreachRepository(db), crmEmailService, crmEmailRepo, authzService, pmTaskService, cfg.AppBaseURL)
 	crmSituationService := service.NewCRMSituationService(crmSituationRepo, authzService)
-	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), authzService, crmSituationService)
+	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), authzService, crmSituationService).SetAIProfileService(aiProfileService)
 	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)
 	crmPlaybookLauncher := service.NewCRMPlaybookAgentLauncher(agentService, crmPlaybookExecutionRepo, aiUsageMeter)
 	crmPlaybookExecution := service.NewCRMPlaybookExecutionService(crmPlaybookExecutionRepo, crmPlaybookService, crmPlaybookLauncher, authzService, workspaceRepo).SetEntitlements(entitlementService)
@@ -1938,8 +1912,7 @@ func main() {
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Setup:               setupHandler,
-		Billing:             handler.NewBillingHandler(billingService, cfg.StripeWebhookSecret, cfg.AppBaseURL, billingTestScenarioService, strings.EqualFold(os.Getenv("BILLING_TEST_SCENARIOS_ENABLED"), "true")),
-		AIUsage:             handler.NewAIUsageHandler(pricingCatalog),
+		Edition:             editionServices.Routes,
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
 		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
 		Invite:              handler.NewInviteHandler(inviteService),
@@ -1967,6 +1940,8 @@ func main() {
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
+		AIConnection:        handler.NewAIConnectionHandler(aiConnectionService),
+		AIProfile:           handler.NewAIProfileHandler(aiProfileService),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
 		MCP:                 handler.NewMCPHandler(mcpService),
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
@@ -2237,33 +2212,8 @@ func main() {
 		}
 	}()
 
-	// Start background ticker for Helpin-managed trial expiry (daily).
-	billingTrialExpiryDone := make(chan struct{})
-	go func() {
-		runBillingTrialExpirySweep := func() {
-			count, err := billingService.ExpireOverdueTrials(context.Background())
-			if err != nil {
-				slog.Error("billing trial expiry sweep failed", "error", err)
-				return
-			}
-			if count > 0 {
-				slog.Info("billing trial expiry sweep complete", "expired_count", count)
-			}
-		}
-
-		runBillingTrialExpirySweep()
-
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				runBillingTrialExpirySweep()
-			case <-billingTrialExpiryDone:
-				return
-			}
-		}
-	}()
+	editionCtx, editionCancel := context.WithCancel(context.Background())
+	editionDone := editionServices.StartWorkers(editionCtx)
 
 	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
@@ -2366,9 +2316,7 @@ func main() {
 	signalRuleCancel()
 	commercialStateCancel()
 	usageBaselineCancel()
-	settlementCancel()
-	periodCancel()
-	reservationCancel()
+	editionCancel()
 	select {
 	case <-customerIOOutboxDone:
 	case <-time.After(6 * time.Second):
@@ -2380,19 +2328,9 @@ func main() {
 		slog.Warn("product analytics outbox worker did not stop before shutdown timeout")
 	}
 	select {
-	case <-settlementDone:
+	case <-editionDone:
 	case <-time.After(6 * time.Second):
-		slog.Warn("AI usage settlement worker did not stop before shutdown timeout")
-	}
-	select {
-	case <-periodDone:
-	case <-time.After(6 * time.Second):
-		slog.Warn("AI usage period worker did not stop before shutdown timeout")
-	}
-	select {
-	case <-reservationDone:
-	case <-time.After(6 * time.Second):
-		slog.Warn("AI usage reservation sweeper did not stop before shutdown timeout")
+		slog.Warn("edition workers did not stop before shutdown timeout")
 	}
 	select {
 	case <-signalRuleDone:
@@ -2416,7 +2354,6 @@ func main() {
 	close(healthScoreDone)
 	close(signalRouteDone)
 	close(supportReplyEmailDone)
-	close(billingTrialExpiryDone)
 	close(cleanupDone)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

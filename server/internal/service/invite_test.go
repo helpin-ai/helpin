@@ -2,14 +2,13 @@ package service
 
 import (
 	"context"
-	"strings"
-	"testing"
-	"time"
-
 	"github.com/helpin-ai/helpin/server/internal/auth"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/gorm"
+	"strings"
+	"testing"
+	"time"
 )
 
 // newInviteService is a test helper that wires up InviteService with real
@@ -27,10 +26,10 @@ func newInviteService(t *testing.T) (*InviteService, *repository.InvitationRepos
 	svc := NewInviteService(
 		invitationRepo,
 		workspaceRepo,
-		nil, // organizationRepo — not needed for tests
+		nil,
 		userRepo,
 		settingsRepo,
-		nil, // emailClient — not needed for tests
+		nil,
 		"http://localhost:3000",
 		jwtManager,
 	)
@@ -41,9 +40,7 @@ func newInviteService(t *testing.T) (*InviteService, *repository.InvitationRepos
 // into the test DB and returns their IDs.
 func setupInviteTestData(t *testing.T, svc *InviteService) (ownerID, wsID string) {
 	t.Helper()
-	// We need the underlying DB; extract it from the workspace repo via a
-	// small trick: create the DB independently and pass it in.  Instead,
-	// let's just use the helper at test-call sites.
+
 	return "", ""
 }
 
@@ -144,85 +141,6 @@ func TestCreateInvitation(t *testing.T) {
 	}
 }
 
-func TestCreateInvitation_LockedWorkspaceBlocksNewInvite(t *testing.T) {
-	db := newTestDB(t)
-	invitationRepo := repository.NewInvitationRepository(db)
-	workspaceRepo := repository.NewWorkspaceRepository(db)
-	userRepo := repository.NewUserRepository(db)
-	settingsRepo := repository.NewSettingsRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
-	jwtManager := auth.NewJWTManager("test-secret")
-
-	createInviteBillingTable(t, db)
-
-	billingService := NewBillingService(billingRepo, nil, nil)
-	billingService.SetWorkspaceRepository(workspaceRepo)
-	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
-	svc.SetBillingService(billingService)
-
-	ownerID := "owner-001"
-	memberID := "member-001"
-	wsID := "ws-001"
-
-	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hashed")
-	seedUser(t, db, memberID, "member@example.com", "Member User", "hashed")
-	seedWorkspace(t, db, wsID, "Test Workspace", "test-ws", ownerID)
-	seedWorkspaceMember(t, db, "wm-001", wsID, ownerID, "owner@example.com", "Owner User", "owner")
-	seedWorkspaceMember(t, db, "wm-002", wsID, memberID, "member@example.com", "Member User", "member")
-	mustExec(t, db, `INSERT INTO workspace_billing (id, workspace_id, plan, status, billing_interval, included_credits, credits_used, current_period_start, current_period_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, datetime('now', '+1 month'), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		"billing-001", wsID, model.BillingPlanGrowth, model.BillingStatusTrialExpired, "monthly", 25000, 0)
-
-	_, err := svc.CreateInvitation(context.Background(), model.CreateInvitationRequest{
-		WorkspaceID: wsID,
-		Email:       "third@example.com",
-		Role:        "member",
-	}, ownerID)
-	if err == nil || !strings.Contains(err.Error(), "workspace is locked") {
-		t.Fatalf("CreateInvitation() error = %v, want locked workspace error", err)
-	}
-}
-
-func TestCreateInvitation_ActivePaidPlanAllowsAdditionalSeats(t *testing.T) {
-	db := newTestDB(t)
-	invitationRepo := repository.NewInvitationRepository(db)
-	workspaceRepo := repository.NewWorkspaceRepository(db)
-	userRepo := repository.NewUserRepository(db)
-	settingsRepo := repository.NewSettingsRepository(db)
-	billingRepo := repository.NewBillingRepository(db)
-	jwtManager := auth.NewJWTManager("test-secret")
-
-	createInviteBillingTable(t, db)
-
-	billingService := NewBillingService(billingRepo, nil, nil)
-	billingService.SetWorkspaceRepository(workspaceRepo)
-	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
-	svc.SetBillingService(billingService)
-
-	ownerID := "owner-001"
-	memberID := "member-001"
-	wsID := "ws-001"
-
-	seedUser(t, db, ownerID, "owner@example.com", "Owner User", "hashed")
-	seedUser(t, db, memberID, "member@example.com", "Member User", "hashed")
-	seedWorkspace(t, db, wsID, "Test Workspace", "test-ws", ownerID)
-	seedWorkspaceMember(t, db, "wm-001", wsID, ownerID, "owner@example.com", "Owner User", "owner")
-	seedWorkspaceMember(t, db, "wm-002", wsID, memberID, "member@example.com", "Member User", "member")
-	mustExec(t, db, `INSERT INTO workspace_billing (id, workspace_id, plan, status, billing_interval, included_credits, credits_used, current_period_start, current_period_end, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, datetime('now', '+1 month'), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		"billing-001", wsID, model.BillingPlanStarter, model.BillingStatusActive, "monthly", 5000, 0)
-
-	resp, err := svc.CreateInvitation(context.Background(), model.CreateInvitationRequest{
-		WorkspaceID: wsID,
-		Email:       "third@example.com",
-		Role:        "member",
-	}, ownerID)
-	if err != nil {
-		t.Fatalf("CreateInvitation() error = %v", err)
-	}
-	if resp.Email != "third@example.com" {
-		t.Fatalf("Email = %q, want third@example.com", resp.Email)
-	}
-}
-
 func TestCreateInvitation_InvalidRole(t *testing.T) {
 	db := newTestDB(t)
 	invitationRepo := repository.NewInvitationRepository(db)
@@ -244,7 +162,7 @@ func TestCreateInvitation_InvalidRole(t *testing.T) {
 	req := model.CreateInvitationRequest{
 		WorkspaceID: wsID,
 		Email:       "invitee@example.com",
-		Role:        "superadmin", // invalid
+		Role:        "superadmin",
 	}
 
 	_, err := svc.CreateInvitation(ctx, req, ownerID)
@@ -280,13 +198,11 @@ func TestCreateInvitation_DuplicateEmail(t *testing.T) {
 		Role:        "member",
 	}
 
-	// First invitation succeeds
 	_, err := svc.CreateInvitation(ctx, req, ownerID)
 	if err != nil {
 		t.Fatalf("first CreateInvitation() error = %v", err)
 	}
 
-	// Second invitation for same email should fail
 	_, err = svc.CreateInvitation(ctx, req, ownerID)
 	if err == nil {
 		t.Fatal("expected error for duplicate invitation, got nil")
@@ -384,7 +300,6 @@ func TestListInvitations(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create two invitations
 	_, err := svc.CreateInvitation(ctx, model.CreateInvitationRequest{
 		WorkspaceID: wsID,
 		Email:       "alice@example.com",
@@ -403,7 +318,6 @@ func TestListInvitations(t *testing.T) {
 		t.Fatalf("CreateInvitation(bob) error = %v", err)
 	}
 
-	// List as owner (should succeed)
 	list, err := svc.ListInvitations(ctx, wsID, ownerID)
 	if err != nil {
 		t.Fatalf("ListInvitations() error = %v", err)
@@ -412,7 +326,6 @@ func TestListInvitations(t *testing.T) {
 		t.Fatalf("ListInvitations() returned %d invitations, want 2", len(list))
 	}
 
-	// Verify both emails are present
 	emails := map[string]bool{}
 	for _, inv := range list {
 		emails[inv.Email] = true
@@ -478,7 +391,6 @@ func TestListInvitations_AdminAllowed(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Admin should be able to list invitations
 	list, err := svc.ListInvitations(ctx, wsID, adminID)
 	if err != nil {
 		t.Fatalf("ListInvitations() as admin error = %v", err)
@@ -509,7 +421,6 @@ func TestAcceptInvitation(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create an invitation
 	resp, err := svc.CreateInvitation(ctx, model.CreateInvitationRequest{
 		WorkspaceID: wsID,
 		Email:       "invitee@example.com",
@@ -519,19 +430,16 @@ func TestAcceptInvitation(t *testing.T) {
 		t.Fatalf("CreateInvitation() error = %v", err)
 	}
 
-	// Extract token from JoinURL
 	token := strings.TrimPrefix(resp.JoinURL, "http://localhost:3000/join/")
 	if token == "" || token == resp.JoinURL {
 		t.Fatalf("could not extract token from JoinURL %q", resp.JoinURL)
 	}
 
-	// Accept the invitation
 	err = svc.AcceptInvitation(ctx, token, inviteeID)
 	if err != nil {
 		t.Fatalf("AcceptInvitation() error = %v", err)
 	}
 
-	// Verify the invitation status is now "accepted"
 	inv, err := invitationRepo.GetByToken(ctx, token)
 	if err != nil {
 		t.Fatalf("GetByToken() error = %v", err)
@@ -653,7 +561,6 @@ func TestAcceptInvitation_EmailMismatch(t *testing.T) {
 
 	token := strings.TrimPrefix(resp.JoinURL, "http://localhost:3000/join/")
 
-	// Try to accept with a user whose email doesn't match
 	err = svc.AcceptInvitation(ctx, token, wrongUserID)
 	if err == nil {
 		t.Fatal("expected error for email mismatch, got nil")
@@ -695,13 +602,11 @@ func TestAcceptInvitation_AlreadyAccepted(t *testing.T) {
 
 	token := strings.TrimPrefix(resp.JoinURL, "http://localhost:3000/join/")
 
-	// Accept once
 	err = svc.AcceptInvitation(ctx, token, inviteeID)
 	if err != nil {
 		t.Fatalf("first AcceptInvitation() error = %v", err)
 	}
 
-	// Accept again should fail
 	err = svc.AcceptInvitation(ctx, token, inviteeID)
 	if err == nil {
 		t.Fatal("expected error for already-accepted invitation, got nil")
@@ -751,7 +656,6 @@ func TestRevokeInvitation(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create an invitation
 	resp, err := svc.CreateInvitation(ctx, model.CreateInvitationRequest{
 		WorkspaceID: wsID,
 		Email:       "revokee@example.com",
@@ -761,13 +665,11 @@ func TestRevokeInvitation(t *testing.T) {
 		t.Fatalf("CreateInvitation() error = %v", err)
 	}
 
-	// Revoke it
 	err = svc.RevokeInvitation(ctx, resp.ID, ownerID)
 	if err != nil {
 		t.Fatalf("RevokeInvitation() error = %v", err)
 	}
 
-	// Verify the invitation status is "revoked"
 	inv, err := invitationRepo.GetByID(ctx, resp.ID)
 	if err != nil {
 		t.Fatalf("GetByID() error = %v", err)
@@ -779,7 +681,6 @@ func TestRevokeInvitation(t *testing.T) {
 		t.Errorf("Status = %q, want %q", inv.Status, "revoked")
 	}
 
-	// Verify it no longer appears as pending in a list
 	list, err := svc.ListInvitations(ctx, wsID, ownerID)
 	if err != nil {
 		t.Fatalf("ListInvitations() error = %v", err)
@@ -813,7 +714,6 @@ func TestRevokeInvitation_NonAdminForbidden(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create invitation as owner
 	resp, err := svc.CreateInvitation(ctx, model.CreateInvitationRequest{
 		WorkspaceID: wsID,
 		Email:       "revokee@example.com",
@@ -823,7 +723,6 @@ func TestRevokeInvitation_NonAdminForbidden(t *testing.T) {
 		t.Fatalf("CreateInvitation() error = %v", err)
 	}
 
-	// Try to revoke as non-admin member
 	err = svc.RevokeInvitation(ctx, resp.ID, memberID)
 	if err == nil {
 		t.Fatal("expected error for non-admin revoking invitation, got nil")
@@ -861,13 +760,11 @@ func TestRevokeInvitation_AlreadyRevoked(t *testing.T) {
 		t.Fatalf("CreateInvitation() error = %v", err)
 	}
 
-	// Revoke once
 	err = svc.RevokeInvitation(ctx, resp.ID, ownerID)
 	if err != nil {
 		t.Fatalf("first RevokeInvitation() error = %v", err)
 	}
 
-	// Revoke again should fail
 	err = svc.RevokeInvitation(ctx, resp.ID, ownerID)
 	if err == nil {
 		t.Fatal("expected error for revoking already-revoked invitation, got nil")
@@ -909,13 +806,11 @@ func TestRevokeInvitation_ThenCannotAccept(t *testing.T) {
 
 	token := strings.TrimPrefix(resp.JoinURL, "http://localhost:3000/join/")
 
-	// Revoke
 	err = svc.RevokeInvitation(ctx, resp.ID, ownerID)
 	if err != nil {
 		t.Fatalf("RevokeInvitation() error = %v", err)
 	}
 
-	// Try to accept the revoked invitation
 	err = svc.AcceptInvitation(ctx, token, inviteeID)
 	if err == nil {
 		t.Fatal("expected error for accepting revoked invitation, got nil")
@@ -944,7 +839,6 @@ func TestResendInvitation(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create an invitation
 	resp, err := svc.CreateInvitation(ctx, model.CreateInvitationRequest{
 		WorkspaceID: wsID,
 		Email:       "resend@example.com",
@@ -956,13 +850,11 @@ func TestResendInvitation(t *testing.T) {
 
 	originalToken := strings.TrimPrefix(resp.JoinURL, "http://localhost:3000/join/")
 
-	// Resend
 	err = svc.ResendInvitation(ctx, resp.ID, ownerID)
 	if err != nil {
 		t.Fatalf("ResendInvitation() error = %v", err)
 	}
 
-	// The token should have changed
 	inv, err := invitationRepo.GetByID(ctx, resp.ID)
 	if err != nil {
 		t.Fatalf("GetByID() error = %v", err)
@@ -1118,7 +1010,6 @@ func TestAcceptInvitationWithSignup(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create invitation for a brand new user
 	resp, err := svc.CreateInvitation(ctx, model.CreateInvitationRequest{
 		WorkspaceID: wsID,
 		Email:       "newuser@example.com",
@@ -1130,7 +1021,6 @@ func TestAcceptInvitationWithSignup(t *testing.T) {
 
 	token := strings.TrimPrefix(resp.JoinURL, "http://localhost:3000/join/")
 
-	// Accept with signup
 	signupResp, err := svc.AcceptInvitationWithSignup(ctx, model.AcceptInvitationWithSignupRequest{
 		Token:    token,
 		Password: "securepassword123",
@@ -1156,7 +1046,6 @@ func TestAcceptInvitationWithSignup(t *testing.T) {
 		t.Errorf("WorkspaceSlug = %q, want %q", signupResp.WorkspaceSlug, "test-ws")
 	}
 
-	// Verify the invitation was marked as accepted
 	inv, err := invitationRepo.GetByToken(ctx, token)
 	if err != nil {
 		t.Fatalf("GetByToken() error = %v", err)
@@ -1272,7 +1161,6 @@ func TestAcceptInvitationWithSignup_ExistingUser(t *testing.T) {
 
 	token := strings.TrimPrefix(resp.JoinURL, "http://localhost:3000/join/")
 
-	// Try to sign up with an email that already has an account
 	_, err = svc.AcceptInvitationWithSignup(ctx, model.AcceptInvitationWithSignupRequest{
 		Token:    token,
 		Password: "securepassword123",

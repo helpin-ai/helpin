@@ -20,7 +20,7 @@ type SettingsService struct {
 	gitRepo           *repository.GitRepositoryRepository
 	pmWorkflowService *PMWorkflowService
 	wsPublisher       *websocket.Publisher
-	entitlementSvc    *EntitlementService
+	entitlementSvc    EntitlementPolicy
 	logger            *slog.Logger
 }
 
@@ -68,7 +68,7 @@ func (s *SettingsService) SetGitRepositoryRepository(gitRepo *repository.GitRepo
 	return s
 }
 
-func (s *SettingsService) SetEntitlementService(entitlementSvc *EntitlementService) *SettingsService {
+func (s *SettingsService) SetEntitlementService(entitlementSvc EntitlementPolicy) *SettingsService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

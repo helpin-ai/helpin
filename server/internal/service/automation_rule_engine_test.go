@@ -229,6 +229,7 @@ func TestCreateRuleForActorAttributesCreator(t *testing.T) {
 func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 	db := setupRuleEngineTestDB(t)
 	if err := db.Exec(`CREATE TABLE agents (
+ ai_profile_id TEXT,
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		name TEXT NOT NULL DEFAULT '',

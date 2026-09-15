@@ -21,7 +21,6 @@ import type {
   CodingSessionInteraction,
   ResolveCodingSessionInteractionRequest,
   AgentRunMessage,
-  CodexAuthState,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -124,8 +123,4 @@ export const dockChatService = {
     api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/continue${qs(workspaceId)}`, content ? { content } : {}),
   cancelRun: (workspaceId: string, runId: string) =>
     api.post<AgentRun>(`/dock/runs/${encodeURIComponent(runId)}/cancel${qs(workspaceId)}`, {}),
-  startRunAuth: (workspaceId: string, runId: string) =>
-    api.post<CodexAuthState>(`/dock/runs/${encodeURIComponent(runId)}/auth/device-code/start${qs(workspaceId)}`, {}),
-  cancelRunAuth: (workspaceId: string, runId: string) =>
-    api.post<CodexAuthState>(`/dock/runs/${encodeURIComponent(runId)}/auth/device-code/cancel${qs(workspaceId)}`, {}),
 };

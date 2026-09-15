@@ -13,7 +13,7 @@ const (
 	defaultAnthropicAgentModel      = "claude-opus-4-8"
 	defaultOpenAIAgentModel         = "gpt-5.6-terra"
 	defaultOpenRouterAgentModel     = "openai/gpt-5.6-terra"
-	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4-flash-0731:nitro"
+	defaultFastOpenRouterAgentModel = "deepseek/deepseek-v4.1-flash:nitro"
 	// defaultAtlasAgentModel keeps interactive epic planning on the product's
 	// preferred fast OpenRouter model.
 	defaultAtlasAgentModel = defaultFastOpenRouterAgentModel
@@ -25,7 +25,7 @@ const (
 	defaultQuillAgentModel = defaultFastOpenRouterAgentModel
 	// defaultAskAgentModel keeps dock chat turns fast and cheap; the chat
 	// agent mostly routes tools and summarizes, so a flash-tier model fits.
-	defaultAskAgentModel = "deepseek/deepseek-v4.1-flash:nitro"
+	defaultAskAgentModel = defaultFastOpenRouterAgentModel
 	// defaultCommandAgentModel uses the same native route for delegated work.
 	defaultCommandAgentModel = defaultAskAgentModel
 	// managedAssistantMaxToolSteps gives Ask Agent and Sub-agent enough room
@@ -59,7 +59,7 @@ func defaultManagedAssistantExecutionConfig() model.JSONBlob {
 
 func isLegacyDeepSeekFlashModel(modelName string) bool {
 	switch strings.TrimSpace(modelName) {
-	case "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-flash-0731":
+	case "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-flash-0731", "deepseek/deepseek-v4-flash-0731:nitro":
 		return true
 	default:
 		return false
@@ -404,34 +404,14 @@ func allowedTriggerModesForPresetKey(presetKey string) []string {
 
 func supportedModesForRuntime(runtimeKind string) []string {
 	switch strings.TrimSpace(runtimeKind) {
-	case "native_sdk", "codex":
+	case "native_sdk":
 		return []string{model.InvocationModeAutonomous, model.InvocationModeInteractive}
 	default:
 		return []string{model.InvocationModeAutonomous}
 	}
 }
 
-func allowedRuntimeKindsForPresetKey(presetKey string) []string {
-	switch normalizePresetKey(presetKey) {
-	case model.AgentPresetCodeBuilder:
-		// native_sdk remains available for compatibility with existing agents.
-		return []string{"opencode", "codex", "native_sdk"}
-	case model.AgentPresetReviewAgent:
-		// native_sdk remains available for compatibility with existing agents.
-		return []string{"opencode", "codex", "native_sdk"}
-	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent, model.AgentPresetDocumentationAgent, model.AgentPresetMarketer:
-		return []string{"codex", "native_sdk"}
-	case model.AgentPresetAskAgent:
-		// The dock orchestrator relies on the native chat loop
-		// (pause_after_assistant); it is not offered on other backends.
-		return []string{"native_sdk"}
-	default:
-		if preset, ok := agentPresetDefinition(presetKey); ok && strings.TrimSpace(preset.RuntimeKind) != "" {
-			return []string{"codex", preset.RuntimeKind}
-		}
-		return []string{"codex"}
-	}
-}
+func allowedRuntimeKindsForPresetKey(presetKey string) []string { return []string{"native_sdk"} }
 
 func runtimeAllowedForPreset(presetKey, runtimeKind string) bool {
 	return slices.Contains(allowedRuntimeKindsForPresetKey(presetKey), strings.TrimSpace(runtimeKind))
@@ -447,7 +427,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	openAIPresetModel := defaultOpenAIAgentModel
 	highReasoning := "high"
 	standardServiceTier := defaultAICompletionServiceTier
-	codexOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
+	nativeOpenAIDefaultExecutionConfig := model.MarshalAgentExecutionConfig(model.AgentExecutionConfig{
 		ReasoningEffort: &highReasoning,
 		ServiceTier:     &standardServiceTier,
 	})
@@ -530,7 +510,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "Coding Task Planner",
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
 			DefaultRole:           "Coding Task Planner",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			Provider:              &openAIPresetProvider,
 			Model:                 &scribeDefaultModel,
 			DefaultTriggerMode:    "manual",
@@ -540,7 +520,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"task", "epic", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          taskPlannerPrompt,
 		},
 		{
@@ -552,7 +532,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:                 "CRM Operator",
 			Description:           "Cross-app CRM execution with deal, contact, support, and doc context.",
 			DefaultRole:           "CRM Operator",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			Provider:              &openAIPresetProvider,
 			Model:                 &openAIPresetModel,
 			DefaultTriggerMode:    "manual",
@@ -562,7 +542,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "crm_company", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          crmOperatorPrompt,
 		},
 		{
@@ -620,7 +600,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Label:               "Mira",
 			Description:         "Marketing agent for growth plans, campaigns, copy, lifecycle messaging, content strategy, launches, and customer-signal synthesis.",
 			DefaultRole:         "Marketer",
-			RuntimeKind:         "codex",
+			RuntimeKind:         "native_sdk",
 			Provider:            &openAIPresetProvider,
 			Model:               &openAIPresetModel,
 			DefaultTriggerMode:  "manual",
@@ -671,7 +651,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "crm_deal", "crm_contact", "crm_company"},
 			ApprovalMode:          "always",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          agentcontract.BuiltInPresetPrompt(model.AgentPresetMarketer),
 		},
 		{
@@ -682,11 +662,11 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			IsDefaultVersion:      true,
 			Provider:              &openAIPresetProvider,
 			Model:                 &openAIPresetModel,
-			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
+			ExecutionConfig:       nativeOpenAIDefaultExecutionConfig,
 			Label:                 "Code Builder",
 			Description:           "Repository-writing implementation agent for task execution.",
 			DefaultRole:           "Code Builder",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual", "auto_on_assignment", "auto_on_event"},
 			AllowedTools:          slices.Clone(engineerProfile.AllowedTools),
@@ -694,7 +674,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(engineerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeAutonomous,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          codeBuilderPrompt,
 		},
 		{
@@ -705,11 +685,11 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			IsDefaultVersion:      true,
 			Provider:              &openAIPresetProvider,
 			Model:                 &openAIPresetModel,
-			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
+			ExecutionConfig:       nativeOpenAIDefaultExecutionConfig,
 			Label:                 "QA & Code Reviewer",
 			Description:           "Review-first agent for validation, follow-up discussion, and agreed fixes in the same branch.",
 			DefaultRole:           "QA & Code Reviewer",
-			RuntimeKind:           "codex",
+			RuntimeKind:           "native_sdk",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual", "auto_on_assignment", "auto_on_event"},
 			AllowedTools:          slices.Clone(reviewerProfile.AllowedTools),
@@ -717,7 +697,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			AllowedTargetTypes:    slices.Clone(reviewerProfile.AllowedTargetTypes),
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
-			SupportedModes:        supportedModesForRuntime("codex"),
+			SupportedModes:        supportedModesForRuntime("native_sdk"),
 			SystemPrompt:          reviewPrompt,
 		},
 		{
@@ -732,6 +712,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &commandAgentDefaultModel,
+			ModelTier:             "medium",
 			ExecutionConfig:       managedAssistantExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
@@ -756,6 +737,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           "native_sdk",
 			Provider:              &openRouterPresetProvider,
 			Model:                 &askAgentDefaultModel,
+			ModelTier:             "small",
 			ExecutionConfig:       managedAssistantExecutionConfig,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},

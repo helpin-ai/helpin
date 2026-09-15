@@ -42,7 +42,7 @@ type AgentRunRepositoryDeliveryResult struct {
 // duplicate. Returns (nil, nil) when the run resolves to nothing deliverable
 // (no branch, branch equals base, or a provider without PR semantics).
 func (s *GitService) FinalizeDelegatedRunDelivery(ctx context.Context, run *model.AgentRun, delivery AgentRunRepositoryDelivery) (*AgentRunRepositoryDeliveryResult, error) {
-	if s == nil || run == nil {
+	if s == nil || run == nil || agentRunIsPreview(run) {
 		return nil, nil
 	}
 	taskTarget, epicTarget, err := s.delegatedRunDeliveryTargets(ctx, run)

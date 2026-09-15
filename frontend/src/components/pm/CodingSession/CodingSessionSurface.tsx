@@ -9,7 +9,7 @@ import { CodingReviewHistoryPanel } from '@/components/pm/CodingSession/CodingRe
 import { CodingSessionHeader } from '@/components/pm/CodingSession/CodingSessionHeader';
 import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTranscriptPane';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
 import {
@@ -38,7 +38,7 @@ import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { Button } from '@/components/ui/button';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 
 const STATUS_ICON = {
   queued: <Clock01Icon className="h-3.5 w-3.5" />,
@@ -481,7 +481,7 @@ export function CodingSessionSurface({
 
   const startHandoffRun = useCallback(async (agent: Agent) => {
     if (!session) return;
-    const res = await agentService.runTask(workspaceId, session.target_id, { agent_id: agent.id });
+    const res = await agentService.runTask(workspaceId, session.target_id, { agent_id: agent.id, delivery_mode: session.delivery_mode });
     if (res.error) {
       const reason = getUpgradeRequiredReason(res.error);
       if (reason) {
@@ -503,6 +503,7 @@ export function CodingSessionSurface({
         ? 'h-full min-h-0 overflow-hidden p-4'
         : 'min-h-full overflow-y-auto p-4 md:p-6 xl:h-full xl:min-h-0 xl:overflow-hidden xl:p-6',
     )}>
+      {session?.delivery_mode === 'preview' ? <p className="border-b px-4 py-2 text-sm text-muted-foreground">Preview run · Repository changes stay local; automatic publishing is disabled.</p> : null}
       <CodingSessionHeader
         session={session}
         statusIcon={STATUS_ICON[session?.status ?? 'queued'] ?? <Clock01Icon className="h-3.5 w-3.5" />}
@@ -513,7 +514,7 @@ export function CodingSessionSurface({
         onCancelRun={() => void runAction('cancel', () => codingSessionService.cancel(workspaceId, activeSessionId))}
       />
 
-      {canSuggestHandoff && completedSessionAgent && completedPersonaKeys ? (
+      {canSuggestHandoff && session?.delivery_mode !== 'preview' && completedSessionAgent && completedPersonaKeys ? (
         <NextAgentHint
           completedAgent={completedSessionAgent}
           candidates={handoffCandidates}
@@ -597,8 +598,6 @@ export function CodingSessionSurface({
           availablePreviewPanelKey={approvalPreviewPanelKey}
           attachedPreview={approvalPreview}
           onViewPreview={handleViewPreview}
-          onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
-          onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, activeSessionId))}
           onApproveRun={() => void approveRunGate()}
           onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
         />

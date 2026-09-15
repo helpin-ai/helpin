@@ -277,13 +277,13 @@ func TestAgentRuntimeHostBuiltInSkillKeyIgnoresStalePersistedPackage(t *testing.
 	}
 }
 
-func TestRuntimeSkillRefsFromHelpinAllowsNativeAuthoredSkillsOnCodex(t *testing.T) {
+func TestRuntimeSkillRefsOnlyEnableNativeSkillsOnNative(t *testing.T) {
 	refs := model.AgentSkillRefs{{Key: "marketing_context_setup"}}
 	if got := runtimeSkillRefsFromHelpin(refs, "native_sdk"); len(got) != 1 || got[0].Key != "marketing_context_setup" {
 		t.Fatalf("expected native runtime to keep marketing_context_setup, got %#v", got)
 	}
-	if got := runtimeSkillRefsFromHelpin(refs, "codex"); len(got) != 1 || got[0].Key != "marketing_context_setup" {
-		t.Fatalf("expected Codex compatibility to keep native-authored marketing_context_setup, got %#v", got)
+	if got := runtimeSkillRefsFromHelpin(refs, "codex"); len(got) != 0 {
+		t.Fatalf("expected retired Codex to have no native skills, got %#v", got)
 	}
 	if got := runtimeSkillRefsFromHelpin(refs, "opencode"); len(got) != 0 {
 		t.Fatalf("expected unsupported OpenCode runtime to drop marketing_context_setup, got %#v", got)

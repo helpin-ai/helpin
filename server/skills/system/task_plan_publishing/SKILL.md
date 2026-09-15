@@ -8,7 +8,6 @@ metadata:
     - request_approval
     - create_task_batch
   supported_runtimes:
-    - codex
     - native_sdk
 ---
 

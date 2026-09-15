@@ -760,7 +760,8 @@ func TestAddTaskCommentCommandConvertsMarkdownToRichTextHTML(t *testing.T) {
 
 func TestAddTaskCommentCommandPersistsAgentAttribution(t *testing.T) {
 	db := newTestDB(t)
-	mustExec(t, db, `CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, icon_key TEXT, preset_key TEXT)`)
+	mustExec(t, db, `CREATE TABLE agents (
+ ai_profile_id TEXT,id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, icon_key TEXT, preset_key TEXT)`)
 	mustExec(t, db, `CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, external_runtime TEXT, external_runtime_id TEXT)`)
 	seedUser(t, db, "actor-1", "actor@example.com", "Waqar Azeem", "hash")
 	seedWorkspace(t, db, "ws-1", "Workspace", "workspace", "actor-1")
