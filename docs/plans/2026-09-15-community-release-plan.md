@@ -1,10 +1,10 @@
 # Community Edition distribution and release plan
 
-Status: planned. This plan covers the first supported self-hosted Community Edition release for Helpin and Agent Runtime. It does not change the SaaS/EE deployment path, production secrets, or existing databases until the release gates below pass.
+Status: planned; revised September 15 to consolidate infrastructure while preserving the existing product experience. This plan covers the first supported self-hosted Community Edition release for Helpin and Agent Runtime. It does not change the SaaS/EE deployment path, production secrets, or existing databases until the release gates below pass.
 
 ## Problem and outcome
 
-Community code is already separated at compile time, but there is no supported clean-machine installation. Helpin's current Compose file is development infrastructure with the API and frontend commented out, and Agent Runtime's Compose examples assume that the host already provides the application and infrastructure services. Source-level community checks therefore prove that commercial code is absent, but they do not prove that a user can install, configure, upgrade, and run the product.
+Community code is already separated at compile time, but there is no supported clean-machine installation. Helpin's current Compose file is development infrastructure with the API and frontend commented out, and Agent Runtime's Compose examples assume that the host already provides the application and infrastructure services. Source-level community checks exercise commercial-code separation, but they do not prove that a user can install, configure, upgrade, and run the product.
 
 The release should provide one documented command path:
 
@@ -19,12 +19,29 @@ The result is a working community Helpin instance with its own Agent Runtime, du
 - Community is the default build in both repositories. EE is selected explicitly by Go build tags and the EE frontend build command.
 - Community releases use prebuilt, versioned images. The first release supports Docker Compose on Linux amd64; arm64 is either added with a tested multi-architecture build or explicitly listed as unsupported. Do not advertise an architecture that has not passed the full Compose gate.
 - The bundle pins image tags or digests. It never uses `latest` for application images. Infrastructure image updates are reviewed separately.
-- The community stack owns Postgres, Redis, NATS, Temporal, Helpin API, Helpin Temporal worker, Helpin migrator, frontend, Runtime API, Runtime normal worker, and the Runtime coding worker behind an opt-in Compose profile. S3-compatible storage uses MinIO by default, with documented external S3-compatible storage support.
+- Keep NATS, Temporal, and Redis in the supported bundle. Use one Postgres server with separate databases and database users for Helpin, Runtime, and Temporal (including Temporal visibility). Keep the Helpin worker and Runtime normal worker on the existing durable execution path. Runtime coding is an opt-in worker; Temporal UI and database admin UIs are optional. S3-compatible storage uses MinIO by default, with an external storage option.
 - Runtime remains a separate service and remains useful standalone. Helpin supplies tenant context, tools, credentials, and events through its configured app entry.
 - Community has no Stripe, subscription entitlement, paid-tool charge, SaaS token tariff, or commercial settings route. Users can configure provider API keys and personal/workspace connections, but the community meter records normalized usage without a Helpin token charge.
-- ChatGPT subscription access stays optional. The installer must not require ChatGPT flags, OAuth registration, a model-credential callback, or a BYOK tariff for a normal API-key installation.
+- ChatGPT subscription access stays optional. Normal API-key installation requires neither ChatGPT flags nor OAuth registration nor a BYOK tariff. Verify callback requirements for API-key credential refresh/reconnection and provide the authenticated callback wiring where required.
 - The coding worker is opt-in because it runs repository commands. It uses one retained workspace volume and must not mount the Docker socket or arbitrary host repositories.
 - Existing SaaS Kubernetes workflows, app-config entries, database ledgers, and deployment secret names remain unchanged.
+
+## Minimum supported setup: preserve features, consolidate services
+
+The goal is the smallest supported installation that preserves the existing Helpin experience. Retain the services that current product behavior depends on instead of introducing a new local scheduler or disabling features to reduce container count.
+
+- **NATS stays:** Helpin's event integration and Runtime's v2 event publisher require it. Use JetStream with persistent storage.
+- **Temporal stays:** Helpin uses it for product workflows, and its central agent launcher currently requests durable Runtime execution. Retain the existing API/worker split, run recovery, approvals, and coding queue behavior.
+- **Redis stays:** Helpin can start without Redis, and single-instance WebSockets and some caches have local fallbacks. However, support email fallback workers require Redis, explicit support email delivery can reject without it, widget/help-center rate limits and help-center answer budgets fail open, and the help-center auto-index backfill trigger skips execution. It is not merely a scaling cache. Keep it for the supported full experience.
+- **One Postgres server:** provision independent Helpin, Runtime, Temporal, and Temporal visibility databases/users. Preserve database boundaries; do not combine their schemas or migration ledgers. Initialize and migrate each through its own supported tooling, including on an existing volume.
+- **Optional admin UIs and coding:** Temporal UI and pgAdmin are not required for operation. Start the coding worker only when repository execution is enabled.
+- **Object storage:** keep MinIO for complete local attachments/artifacts, or use an external S3-compatible service. Do not silently disable uploads merely to remove its container.
+
+Runtime supports SQLite in code, but its current Docker binaries use CGO-disabled builds while the SQLite driver requires CGO. SQLite also does not remove the Postgres server Helpin already needs. Do not add SQLite packaging, lightweight launch configuration, in-process coding admission, or lightweight crash reconciliation to this distribution plan. Those remain possible standalone Runtime work.
+
+Redis-free operation may be documented later as a reduced feature configuration after a complete audit. It is not the default release acceptance target.
+
+Evidence: Helpin `server/cmd/api/main.go` (optional Redis connection and conditional email fallback workers), `server/internal/service/support_delivery.go` (email validation), `server/internal/middleware/widget_rate_limit.go`, `server/internal/middleware/helpcenter_rate_limit.go`, `server/internal/service/helpcenter_ai_search.go`, and `server/internal/service/agent.go` (durable launch mode); Runtime `cmd/agent-runtime/main.go`, `internal/engine/execution_policy.go`, `internal/store/gorm.go`, and `Dockerfile`.
 
 ## Release layout
 
@@ -63,12 +80,11 @@ The Compose file should use YAML anchors for shared environment and health setti
 
 | Service | Image/build | Responsibility | Persistent data |
 | --- | --- | --- | --- |
-| `helpin-db` | Postgres with pgvector | Helpin database | `helpin_db_data` |
-| `runtime-db` | Postgres | Runtime database | `runtime_db_data` |
-| `redis` | Redis/Valkey | Helpin queues/cache | `redis_data` |
+| `postgres` | Postgres with required extensions, including pgvector | Separate Helpin, Runtime, Temporal, and visibility databases/users | `postgres_data` |
+| `redis` | Pinned Redis | Helpin support delivery, limits, caches, and realtime coordination | `redis_data` |
 | `nats` | Pinned NATS | Runtime/Helpin events | `nats_data` |
-| `temporal` | Pinned Temporal auto-setup | Durable workflows | `temporal_data` |
-| `temporal-ui` | Matching Temporal UI | Local operator visibility | none |
+| `temporal` | Pinned Temporal with validated schema initialization | Durable workflows | Separate databases in `postgres_data` |
+| `temporal-ui` (optional) | Matching Temporal UI | Local operator visibility | none |
 | `minio` | Pinned MinIO | Default S3-compatible storage | `minio_data` |
 | `helpin-migrate` | Helpin community image | Core migration runner | none |
 | `helpin-api` | Helpin community image | HTTP API | logs volume optional |
@@ -77,6 +93,8 @@ The Compose file should use YAML anchors for shared environment and health setti
 | `agent-runtime` | Runtime default image | Runtime API | logs volume optional |
 | `agent-runtime-worker` | Runtime default image | Normal native worker | logs volume optional |
 | `agent-runtime-coding-worker` | Runtime coding image | Optional repository execution | `coding_workspaces` |
+
+Use a single Temporal server for Helpin and Runtime with explicit namespaces and task queues. Validate its schema/visibility setup against the shared Postgres version. Run Helpin migrations as a one-shot service; retain Runtime's own schema initialization. Backups cover every database. Do not place PostgreSQL, NATS, or Redis on public host ports by default.
 
 The coding service belongs behind `profiles: [coding]`. Its image must match the Runtime API/worker release. Its mounted root is `/tmp/agent-runtime-workspaces`; use one named volume and one replica. The normal worker must never accept the coding queue.
 
@@ -122,7 +140,7 @@ Runtime variables:
 
 | Variable | Community behavior |
 | --- | --- |
-| `DATABASE_URL` | Runtime Postgres URL, separate from Helpin's database. |
+| `DATABASE_URL` | Runtime database/user in the shared Postgres server, separate from Helpin's database. |
 | `AGENT_RUNTIME_STORE_DRIVER` | `postgres`. |
 | `AGENT_RUNTIME_SERVICE_TOKEN` | Same value as Helpin's client token. |
 | `AGENT_RUNTIME_MODEL_CREDENTIAL_ENCRYPTION_KEY` | Stable separate 32-byte raw/base64 key, generated once and shared by Runtime API and all workers. |
@@ -147,7 +165,7 @@ For the private Compose network, use the selected callback policy from the depen
 {
   "app_id": "helpin",
   "event_protocol": "v2",
-  "require_run_model_credentials": false,
+  "require_run_model_credentials": true,
   "context_endpoint": "https://<helpin-host>/api/internal/agent-runtime/target-context",
   "context_token_env": "HELPIN_INTERNAL_API_SECRET",
   "model_credential_callback": {
@@ -222,13 +240,13 @@ The test must:
 
 1. Generate an environment file with deterministic test secrets and no provider API keys.
 2. Run `setup.sh install` or the equivalent noninteractive installer mode.
-3. Start the full default stack and wait for health/readiness of Postgres, Redis, NATS, Temporal, Helpin, Runtime, and frontend.
+3. Start the supported default stack with one Postgres server and without admin UIs or the coding worker; wait for health/readiness of Postgres, Redis, NATS, Temporal, Helpin, Runtime, and frontend.
 4. Confirm Helpin's core schema migrations complete and Runtime's Postgres schema migration completes.
 5. Create a workspace and owner through the supported API/bootstrap path.
 6. Verify the community settings surface has no billing route, upgrade dialog, or commercial price asset.
 7. Add a test provider connection using a deterministic mock provider or a local compatible endpoint; do not make the basic CI gate depend on a paid external API.
 8. Start Ask Agent, confirm the request reaches Runtime, and verify normalized usage is recorded without a Helpin credit/tariff requirement.
-9. Exercise a product background workflow through Helpin's Temporal worker.
+9. Exercise a product background workflow through Helpin's Temporal worker, Redis-backed support delivery using a test email transport, public rate limits, and an attachment/artifact round trip.
 10. Restart Runtime API and normal worker and verify a durable run can resume.
 11. Start the optional coding profile, run a disposable repository task, pause/resume it, restart the coding worker, and verify the named workspace volume is reused.
 12. Assert no service logs secret values, and assert the default Runtime worker rejects coding queue work.
@@ -301,7 +319,7 @@ The operator guide should use the same Compose bundle tested by CI. Do not copy 
 
 ## Delivery sequence
 
-1. Add/fix the community Compose stack and generated `.env.example`.
+1. Add/fix the community Compose stack and generated `.env.example`, consolidating Postgres and keeping NATS, Temporal, and Redis. Verify separate database/user initialization on empty and existing volumes.
 2. Add the Runtime service to the community stack and settle the private callback transport policy.
 3. Add the setup/upgrade script and public operator documentation.
 4. Add image builds and a bundle artifact to CI without changing EE deployment workflows.
@@ -328,7 +346,7 @@ The change is ready for publication when:
 - a previous release upgrades while preserving encrypted credentials and durable history;
 - community source, binaries, images, frontend assets, and routes contain no EE/billing code;
 - external provider keys are optional at startup and configuration errors are actionable at use time;
-- the default stack has documented backups, stable key handling, and safe upgrade behavior;
+- the default stack shares one Postgres server, retains NATS/Temporal/Redis, makes admin UIs and coding optional, and has documented backups, stable key handling, and safe upgrade behavior;
 - the EE staging/production workflows remain unchanged and continue to build EE explicitly.
 
 ## Reference implementation patterns
