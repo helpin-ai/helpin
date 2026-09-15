@@ -9,8 +9,11 @@ Community code is already separated at compile time, but there is no supported c
 The release should provide one documented command path:
 
 ```text
-download a versioned release bundle → create/edit one environment file → start
+local evaluation: download bundle → configure → start → sign up
+public support: configure DNS → start with HTTPS → install widget → receive/reply to a customer conversation
 ```
+
+The primary release journey is self-hosted customer support: an operator installs Helpin, serves the widget/pixel from their own domain, embeds it on a customer-facing website, receives a conversation in the inbox, replies, and publishes a help-center article. Agent execution supports this journey; it is not the only release acceptance target.
 
 The result is a working community Helpin instance with its own Agent Runtime, durable storage, migrations, health checks, backups, and an optional coding worker. Users supply their own AI provider keys. Community usage recording remains zero-cost and does not require SaaS billing or a BYOK tariff.
 
@@ -43,11 +46,69 @@ Redis-free operation may be documented later as a reduced feature configuration 
 
 Evidence: Helpin `server/cmd/api/main.go` (optional Redis connection and conditional email fallback workers), `server/internal/service/support_delivery.go` (email validation), `server/internal/middleware/widget_rate_limit.go`, `server/internal/middleware/helpcenter_rate_limit.go`, `server/internal/service/helpcenter_ai_search.go`, and `server/internal/service/agent.go` (durable launch mode); Runtime `cmd/agent-runtime/main.go`, `internal/engine/execution_policy.go`, `internal/store/gorm.go`, and `Dockerfile`.
 
+## Public support deployment: DNS, HTTPS, and the widget
+
+Local evaluation and an internet-facing support installation use the same versioned images. Public deployment is a first-class release path, with explicit public origins, HTTPS, visitor endpoints, and operator-controlled DNS. Passing localhost health checks is not enough.
+
+### Reference patterns
+
+Use Plane Community's versioned setup/Compose/environment bundle and explicit public URL configuration as packaging inspiration. Its documentation covers multiple editions; use the Community section and [Community Compose source](https://github.com/makeplane/plane/blob/preview/deployments/cli/community/docker-compose.yml), not assumptions taken from the Commercial installer. See [Plane installation](https://developers.plane.so/self-hosting/methods/docker-compose).
+
+Use Sentry self-hosted's separation between the staff dashboard and public SDK endpoints, plus its treatment of public URL, TLS termination, and forwarded client addresses. Helpin's exact routes differ; copy the principle rather than Sentry's route patterns or topology. See [Sentry's reverse-proxy guidance](https://github.com/getsentry/develop/blob/master/src/docs/self-hosted/reverse-proxy.mdx).
+
+### Public address contract
+
+Document these example hostnames and generate concrete installation URLs from operator-owned configuration. They can all resolve to one server; a hostname does not require another application process.
+
+| Public origin | Purpose | Upstream |
+| --- | --- | --- |
+| `https://inbox.example.com` | Staff dashboard, same-origin `/api`, authenticated WebSockets | Frontend proxy and Helpin API |
+| `https://widget.example.com` | Public widget API/WebSocket and `/sdk/lib.js` plus SDK assets | Explicit public API routes and packaged SDK assets |
+| `https://help.example.com` | Public help-center and its browser API | Help-center Node server |
+| `https://files.example.com` (when required) | Browser-reachable signed object upload/download endpoint | Bundled object store or external S3 |
+
+A separate CDN hostname is optional. The default widget host serves both the loader/assets and visitor API; no CDN account or DNS-provider API token is required. A documented single-host configuration may share dashboard and widget routes when operators do not need access separation. Do not require a wildcard domain for first use.
+
+Record canonical public origins in deployment configuration. Keep internal service addresses separate. In particular, `APP_BASE_URL` drives staff links, while generated widget snippets need the public widget origin and loader URL. Names for additional public-origin fields are established in implementation and marked as new; do not pretend `VITE_*` values can configure prebuilt images at runtime.
+
+### DNS and TLS procedure
+
+1. Choose the public hostnames and create A records to the server's public IPv4 address; publish AAAA only with working IPv6 routing. Optional aliases may use CNAME records to a hostname, never a URL with a scheme/path.
+2. Point customer-site installation snippets to the public widget URL. The customer's website does not need to move to the Helpin server. An optional first-party alias, such as `support.customer.example`, needs its own DNS record, configured host routing, and certificate.
+3. Ship a pinned Caddy public-deployment override with explicit host entries and persistent certificate storage. It exposes ports 80/443, routes HTTPS to private Compose services, and renews certificates. Operators with an existing reverse proxy can omit this service and use the documented equivalent routes. Follow [Caddy's DNS, port, and storage prerequisites](https://caddyserver.com/docs/automatic-https).
+4. Keep databases, NATS, Redis, Temporal, Runtime service APIs, storage admin consoles, and internal callback routes off the public ingress. The visitor hostname exposes only the required public paths. The staff dashboard can remain behind an operator access gateway without putting widget traffic behind that login.
+5. Preserve trusted host/protocol/client-address information through the proxy. Verify secure cookies, auth redirects, customer-domain resolution, WebSocket upgrades, streaming timeouts, upload limits, and client-IP rate limiting. Do not trust arbitrary forwarded headers from untrusted clients.
+6. Verify DNS resolution, certificate validity, public origins, and a visitor conversation from outside the Docker host. Test wrong DNS, broken AAAA, blocked ports, missing certificates, and unavailable upstreams with specific diagnostics.
+
+V1 uses explicit operator-configured hostnames. No automatic DNS provisioning, unrestricted on-demand certificates, or mandatory Cloudflare account. Audit the existing help-center custom-domain and TLS-ask paths so DNS instructions and host checks work with self-hosted origins rather than SaaS suffixes. If dynamic customer domains are enabled later, retain domain authorization before certificate issuance; a DNS CNAME alone is not application authorization.
+
+Public TLS terminates at the edge. The narrowly allowed internal model-credential HTTP callback remains a separate concern and does not justify exposing internal routes.
+
+### Widget/pixel packaging and installation
+
+The current support installation snippet in `ChatGeneralTab.tsx` hardcodes `client.helpin.ai` and `cdn.helpin.ai/lib.js`. SDK defaults in `packages/sdk-js/src/core/config.ts`, `core/hosted-widget.ts`, and `loader.ts` also reference SaaS. Inventory and fix every generated HTML, React, and framework snippet, preview, and help-center embed to use the configured self-hosted URLs.
+
+Reuse the existing `/sdk/*` asset handler with the complete pinned SDK distribution copied into the serving image and `SDK_DIST_DIR` set, or an equivalent static location in the frontend image. Choose one authoritative serving path during implementation; the public contract is `/sdk/lib.js` and adjacent hashed assets. The current Go image's fallback to a source-tree directory is not release packaging.
+
+Build the SDK and required widget packages as part of the Community artifact. Include hashed JavaScript, CSS, lazy chunks, and other required assets together. The loader resolves its full SDK relative to its own URL. Cross-origin module assets need the correct CORS/MIME headers. Keep the mutable loader on a short cache and immutable hashed assets on long caches; test an upgrade with an older cached loader and retain the referenced assets for the supported cache overlap.
+
+The widget's HTTP and WebSocket traffic uses `/widget/*`, including `/widget/ws`; simply proxying `/api/*` will not work. Preserve the existing public visitor-session authentication and route-scoped CORS. Do not broaden dashboard CORS globally or require a staff cookie in a customer browser.
+
+Generated snippets contain the public widget installation key and public URLs, never service tokens or provider secrets. Document script/module and connect-src CSP requirements, customer website placement, identity/lead calls, attachment URLs, session restore, and optional first-party DNS aliases. Turning off staff email verification does not disable signed widget identity checks or change the meaning of a visitor-supplied email.
+
+### Pixel scope and the event collector
+
+The SDK currently combines support interactions with analytics capture. Chat/session/identity endpoints are in Helpin's Go API, while the production client ingress sends analytics routes to the events pipeline. Serving `lib.js` alone does not provide an analytics collector.
+
+Proposed first-release scope, pending the user's pixel clarification: chat, visitor identification/lead capture, conversation history, uploads, and help-center integration work without ClickHouse. Do not advertise pageview/custom-event analytics under that scope. Add or reuse an explicit SDK capture mode that suppresses unsupported analytics transport/queues while preserving support identification and sessions; `autoPageview=false` alone is insufficient if identification or other calls still emit events. Verify the real network trace rather than accepting repeated failed collection requests.
+
+If pageviews/custom-event collection is required for the first release, revise the events-pipeline/ClickHouse exclusion and service/data-retention plan before implementation. Do not install a dummy collector that silently discards events while reporting success.
+
 ## First-install prerequisites
 
 ### Frontend uses the operator's origin
 
-Build the Community frontend with a relative `/api` base. Its nginx routes `/api/` to `http://helpin-api:8080/api/` and preserves WebSocket upgrades and streaming responses. This is the selected solution; do not introduce runtime JavaScript configuration injection.
+Build the Community frontend with a relative `/api` base. The public edge routes visitor `/widget/*` and SDK `/sdk/*` separately from this staff API path. Its nginx routes `/api/` to `http://helpin-api:8080/api/` and preserves WebSocket upgrades and streaming responses. This is the selected solution; do not introduce runtime JavaScript configuration injection.
 
 `VITE_API_URL` is a build-time variable today, not an operator runtime setting. Remove it from the installation environment contract. Audit every absolute-host derivation, including `ChatGeneralTab.tsx`, widget installation snippets, WebSocket URL construction, redirects, and shared support-core clients. Resolve a relative API base against the browser origin when an absolute URL is required. Test access from a different hostname without rebuilding the image.
 
@@ -94,7 +155,9 @@ Keep the release bundle in the Helpin repository under `community/`. The Helpin 
 
 ```text
 community/
-  compose.yaml                 # complete pinned stack
+  compose.yaml                 # complete pinned application stack
+  compose.public.yaml          # optional bundled HTTPS edge for public deployment
+  Caddyfile.example            # explicit public hostnames and route boundaries
   .env.example                 # documented variables and safe defaults
   apps.example.json            # generated Runtime app configuration template
   setup.sh                     # install/start/stop/logs/status
@@ -122,6 +185,7 @@ The Compose file should use YAML anchors for shared environment and health setti
 
 | Service | Image/build | Responsibility | Persistent data |
 | --- | --- | --- | --- |
+| `edge` (public override) | Pinned Caddy, or operator's existing proxy | Public HTTPS and host/path routing | Certificate/config volume |
 | `postgres` | Postgres with required extensions, including pgvector | Separate Helpin, Runtime, Temporal, and visibility databases/users | `postgres_data` |
 | `redis` | Pinned Redis | Helpin support delivery, limits, caches, and realtime coordination | `redis_data` |
 | `nats` | Pinned NATS | Runtime/Helpin events | `nats_data` |
@@ -180,10 +244,15 @@ Helpin variables:
 | `REDIS_URL` | Compose Redis URL. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | MinIO defaults or external S3 credentials. |
 | `AWS_S3_ENDPOINT_URL`, `AWS_S3_BUCKET_NAME`, `AWS_REGION` | MinIO defaults or external S3 settings. |
+| `APP_BASE_URL` | Canonical staff application origin, used for generated links and redirects. |
 | `CORS_ORIGINS` | Backend origin validation uses the operator's public origin; the main UI calls same-origin `/api`. |
+| `SDK_DIST_DIR` | Packaged SDK asset directory in the chosen serving image; no source-tree dependency. |
+| `AWS_S3_PUBLIC_BASE_URL` | Public asset base where supported; does not by itself prove presigned upload/download URLs use a browser-reachable endpoint. |
 | `POSTMARK_APP_SERVER_TOKEN`, `POSTMARK_APP_FROM_EMAIL` | Optional product email configuration; not required for local signup/login. |
 | `POSTMARK_REPLY_SERVER_TOKEN`, `POSTMARK_REPLY_FROM_EMAIL` | Optional support outbound email configuration; document any additional sender/domain prerequisites. |
 | `GOOGLE_AUTH_CLIENT_ID`, `GOOGLE_AUTH_CLIENT_SECRET` | Optional Google login; document redirect configuration and hide the login option when unconfigured. |
+
+Define the public widget/loader/help-center origins and edge hostname configuration in the bundle; add backend configuration only where the existing origin settings cannot represent them. Document MinIO/S3 signing versus public addressing, and preserve the signed host/path through the proxy. Browser upload URLs must not contain Compose-only hostnames.
 
 Add the new explicit local verification policy variable after implementation; disabled in the local bundle and required under existing SaaS defaults. `VITE_API_URL=/api` belongs to the Community image build, not this runtime environment file.
 
@@ -315,7 +384,11 @@ The test must:
 15. Restart Runtime API and normal worker and verify a durable run can resume.
 16. Start the optional coding profile, run a disposable repository task, pause/resume it, restart the coding worker, and verify the named workspace volume is reused.
 17. Assert no service logs secret values, and assert the default Runtime worker rejects coding queue work.
-18. Tear down containers while retaining sanitized status, Helpin ledger head, Runtime image digest, Temporal schema versions, and failure logs.
+18. Serve a separate customer-site fixture on a different HTTPS origin. Paste the exact generated installation snippet and verify loader, module/CSS assets, visitor session, identification, customer message, staff inbox reply, AI reply with a test provider, reconnect, history, and attachment delivery.
+19. Assert the customer browser uses only the configured self-hosted origins for Helpin traffic: no SaaS/CDN fallback, mixed content, unsupported collector retries, or staff authentication dependency. Verify framework/hosted-runtime snippets as well as the script loader. Account for the loader's bot/headless detection in the test harness without weakening production behavior.
+20. Exercise the public/private proxy route boundary, forwarded-address rate limits, CSP/CORS, same-host and split-host routing, and signed storage URLs. API keys and callback secrets must not enter snippets or browser responses.
+21. Test the public override with a test certificate authority/ACME fixture in CI, and real DNS/trusted TLS on an operator-approved public release-candidate host before stable release. Test certificate persistence/renewal behavior and an SDK upgrade with cached loader assets.
+22. Tear down containers while retaining sanitized status, Helpin ledger head, Runtime image digest, Temporal schema versions, and failure logs.
 
 Use a separate pre-release smoke with real provider API keys for OpenAI, Anthropic, and OpenRouter. The real-provider test verifies the four standard profiles and actual credential routing; it is not the deterministic pull-request gate.
 
@@ -361,7 +434,11 @@ Keep the existing Runtime Go tests, Helpin community backend check, community fr
 
 Add a public Community Edition section to Helpin's README and a dedicated `docs/community/` guide covering:
 
-- supported architecture and resource requirements;
+- supported architecture and measured resource requirements;
+- separate local-evaluation and public-support installation paths;
+- DNS A/AAAA/CNAME examples, canonical origins, HTTPS issuance/renewal, and existing-proxy integration;
+- customer-site pixel/widget installation, CSP/CORS, identity, and an outside-host conversation check;
+- staff-only versus public visitor endpoints, internal service boundaries, and browser-reachable storage URLs;
 - installation and first login without email verification in the local bundle;
 - optional Postmark/Google login configuration and email-dependent feature limits;
 - public help-center host mapping and publication;
@@ -391,11 +468,11 @@ The operator guide should use the same Compose bundle tested by CI. Do not copy 
 ## Delivery sequence
 
 0. Record the owner's license choices and add root licenses/EE boundaries in both repositories before public publication; local packaging work need not wait.
-1. Implement the Community relative API base/proxy and audit absolute URL consumers. Add explicit local email-verification policy and normal first-owner onboarding with no mail service. These are first-install blockers.
-2. Assemble the shared-Postgres Compose stack, including public help-center, NATS, Temporal, Redis, and storage. Ensure extensions and all schemas initialize in order on empty and existing volumes. Add the narrowly gated model-callback HTTP allowance.
+1. Define the public address/ingress contract and confirm support-pixel versus analytics scope. Implement the Community relative API base/proxy and self-hosted SDK/snippet packaging; audit absolute URL consumers. Add explicit local email-verification policy and normal first-owner onboarding with no mail service. These are first-install blockers.
+2. Assemble the shared-Postgres Compose stack, including public help-center, NATS, Temporal, Redis, and storage. Ensure extensions and all schemas initialize in order on empty and existing volumes. Add the public HTTPS override and narrowly gated internal model-callback HTTP allowance. Verify browser-facing object URLs and explicit help-center domains.
 3. Add the five-command installer and operator documentation for manual upgrade/backup/restore, optional email/OAuth, LAN MCP servers, and excluded services. Add the small Postmark test seam.
 4. Add Community image builds and a bundle workflow in Helpin with a pinned Runtime version input, explicit amd64 builds, and final-image content checks. Multi-architecture publication requires TARGETARCH plumbing and matching acceptance.
-5. Add clean-install acceptance, including browser host portability, email-free signup, help-center publication, separate workflow/delivery/limits/storage checks, and coding.
+5. Add clean-install acceptance, including browser host portability, email-free signup, help-center publication, separate workflow/delivery/limits/storage checks, and coding. Make the outside-origin widget-to-inbox conversation the primary support acceptance journey.
 6. Add upgrade and backup/restore gates using Helpin ledger state, Runtime image/schema verification, and Temporal schema versions.
 7. Run real-provider and optional real-Postmark pre-release smoke tests; the default installation still needs no email provider.
 8. Publish a release candidate after the licensing gate and test it on a clean host outside CI.
@@ -416,6 +493,9 @@ The change is ready for publication when:
 - a clean host can install with one environment file and no private registry access, rebuild, or email provider;
 - local signup has no verification gate; SaaS verification remains enforced;
 - the main frontend and included public help-center work on the operator hostname;
+- public DNS/HTTPS setup is documented and tested, and the exact generated widget snippet delivers a complete customer-to-inbox conversation from another origin;
+- SDK assets and required visitor traffic stay on configured self-hosted endpoints, with analytics scope explicit;
+- public visitor access works independently of staff login and internal services remain private;
 - both repositories have owner-selected distribution licenses before publication;
 - the exact published bundle passes health, migration, product, AI, restart, and optional coding checks;
 - a previous release upgrades while preserving encrypted credentials and durable history;
@@ -426,4 +506,8 @@ The change is ready for publication when:
 
 ## Reference implementation patterns
 
-Plane's Community distribution is a useful packaging reference: its release provides a setup script, Compose file, environment file, install/start/stop/upgrade/backup actions, and versioned prebuilt images. It preserves the operator environment file while presenting new upgrade variables for review. See the [Docker Compose installation guide](https://developers.plane.so/self-hosting/methods/docker-compose) and [community upgrade guide](https://developers.plane.so/self-hosting/manage/upgrade-plane).
+Plane Community provides a useful versioned release-bundle pattern: [installation guide, Community section](https://developers.plane.so/self-hosting/methods/docker-compose) and [Community Compose source](https://github.com/makeplane/plane/blob/preview/deployments/cli/community/docker-compose.yml). Use its packaging and configuration ideas without adopting Commercial-only requirements.
+
+Sentry self-hosted documents a public SDK ingress alongside an optionally private dashboard, external TLS termination, canonical public URLs, and proxy configuration: [official reverse-proxy guide](https://github.com/getsentry/develop/blob/master/src/docs/self-hosted/reverse-proxy.mdx). These are the relevant support-deployment patterns; its analytics infrastructure is not Helpin's default service list.
+
+Caddy documents the prerequisites and lifecycle of automatic certificates: [automatic HTTPS](https://caddyserver.com/docs/automatic-https). The release guide must connect those requirements to the exact shipped proxy configuration.
