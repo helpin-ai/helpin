@@ -18,6 +18,8 @@ Build Helpin product surfaces in the Quiet Hairline language: a warm, document-l
 - Quiet Hairline is the visual authority. Generic frontend-design advice yields when it conflicts.
 - Existing Helpin components remain the authority for behavior, accessibility, routing, permissions, data flow, and domain logic.
 - Prefer the centralized Quiet components and established domain components over copying Tailwind class strings into pages.
+- Settings forms use the explicit [settings section composition](references/helpin-components.md#settings-section-composition). Preserve their visible grouping; the general preference for divider-led pages does not override this pattern.
+- Show information once unless repetition is necessary for the current task or decision. Put secondary explanations in accessible tooltips; keep essential labels, scope, errors, and required instructions visible. Follow [Content and progressive disclosure](references/quiet-hairline.md#content-and-progressive-disclosure).
 - For option-selection dropdowns, use `QuietDropdown` or an existing adapter built on it. For list filters, show the shared editable applied-filter pills below the toolbar, as Tasks and Epics do. Read [Dropdowns and applied filters](references/helpin-components.md#dropdowns-and-applied-filters) for component selection and behavior.
 - For PM detail surfaces, follow the Epic detail composition for the back breadcrumb, bounded title underline, property labels, colored options, and description editor. Read [PM detail composition](references/helpin-components.md#pm-detail-composition); using a shared component alone does not guarantee matching presentation.
 - Preserve functional progress bars and their calculations during redesigns. Objective epic-completion and target-date elapsed-time bars remain visible alongside their values.
@@ -32,5 +34,7 @@ Build Helpin product surfaces in the Quiet Hairline language: a warm, document-l
 ## Completion check
 
 Verify populated, empty, loading, error, disabled, overflow, narrow-width, keyboard, light-mode, and dark-mode states. Remove decorative containers, chips, metrics, and icons that do not help the user understand or act.
+
+For settings changes, compare the rendered page with the canonical settings references, including section boundaries, heading contrast, padding, and expanded/collapsed states. Check that no necessary grouping was removed, no information is repeated without a purpose, and secondary help is available by keyboard and touch as well as hover. Type checks alone do not verify this visual contract.
 
 For detail-page changes, compare the actual rendered header, rail, dropdown options, and description editor against the canonical reference. Check the title’s hover/focus underline width, the back arrow, and that mobile properties follow the main content without overlapping it. Preserve visual indicators that communicate progress or time.
