@@ -9,7 +9,7 @@ import type {
   User,
 } from '../types';
 
-export type AuthConfig = { email_verification_required: boolean; app_email_configured: boolean; google_login_enabled: boolean };
+export type AuthConfig = { public_widget_url?: string; public_sdk_url?: string; email_verification_required: boolean; app_email_configured: boolean; google_login_enabled: boolean };
 
 export const authService = {
   config: () => api.get<AuthConfig>('/auth/config'),

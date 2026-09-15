@@ -12,3 +12,6 @@ const DefaultModules = "support,docs,agents"
 
 // AllowUnverifiedSignup permits an explicit local/operator auth policy.
 const AllowUnverifiedSignup = true
+
+const DefaultWidgetOrigin = ""
+const DefaultSDKLoaderURL = ""

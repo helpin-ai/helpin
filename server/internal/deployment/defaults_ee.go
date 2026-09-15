@@ -10,3 +10,6 @@ const DefaultModules = "pm,docs,crm,support,automation,agents"
 
 // AllowUnverifiedSignup permits an explicit local/operator auth policy.
 const AllowUnverifiedSignup = false
+
+const DefaultWidgetOrigin = "https://client.helpin.ai"
+const DefaultSDKLoaderURL = "https://cdn.helpin.ai/lib.js"

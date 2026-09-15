@@ -23,6 +23,8 @@ import (
 
 // AuthHandler handles authentication HTTP requests.
 type AuthHandler struct {
+	publicWidgetURL  string
+	publicSDKURL     string
 	authService      *service.AuthService
 	googleOAuth      *oauth2.Config
 	appBaseURL       string
@@ -706,9 +708,16 @@ func (h *AuthHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Req
 
 // GetConfig exposes non-secret authentication capabilities to prebuilt clients.
 func (h *AuthHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{
+	writeJSON(w, http.StatusOK, map[string]any{
+		"public_widget_url":           h.publicWidgetURL,
+		"public_sdk_url":              h.publicSDKURL,
 		"email_verification_required": h.authService.EmailVerificationRequired(),
 		"app_email_configured":        h.authService.AppEmailConfigured(),
 		"google_login_enabled":        h.googleOAuth != nil,
 	})
+}
+
+func (h *AuthHandler) SetPublicWidgetURLs(widget, sdk string) {
+	h.publicWidgetURL = widget
+	h.publicSDKURL = sdk
 }

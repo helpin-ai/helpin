@@ -27,6 +27,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { WidgetPreview } from './WidgetPreview';
 import { CodeBlock } from '@/components/ui/code-block';
 import { BrandColorPicker } from '@/components/pm/ColorPicker';
+import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
@@ -59,13 +60,16 @@ import { CuratedGuidanceField } from './CuratedGuidanceField';
 /* ── Main component ──────────────────────────────────────────────────── */
 
 type ChatGeneralTabMode = 'chat-widget' | 'ai-assistant';
-const HELPIN_WIDGET_HOST = 'https://client.helpin.ai';
+
 
 export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspaceId: string; mode?: ChatGeneralTabMode }) {
   return <ChatGeneralSettings key={`${workspaceId}:${mode}`} workspaceId={workspaceId} mode={mode} />;
 }
 
 function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode: ChatGeneralTabMode }) {
+  const publicConfig = useAuthStore((s) => s.configuration);
+  const widgetHost = publicConfig?.public_widget_url || window.location.origin;
+  const sdkURL = publicConfig?.public_sdk_url || `${widgetHost}/sdk/lib.js`;
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const isAIAssistantPage = mode === 'ai-assistant';
   const { data, isLoading } = useChatSettings(workspaceId);
@@ -410,8 +414,9 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-widget-key', '${widgetKey}');
-    t.setAttribute('data-host', '${HELPIN_WIDGET_HOST}');
-    t.src = 'https://cdn.helpin.ai/lib.js';
+    t.setAttribute('data-host', '${widgetHost}');
+    t.setAttribute('data-support-only', 'true');
+    t.src = '${sdkURL}';
     s.parentNode.insertBefore(t, s);
   })();
 </script>
@@ -453,9 +458,9 @@ import { createClient, HelpinProvider } from '@helpin-ai/react';
 
 const client = createClient({
   widgetKey: '${widgetKey}',
-  host: '${HELPIN_WIDGET_HOST}',
-  // The React package loads the live widget runtime from Helpin's CDN.
-  // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
+  host: '${widgetHost}',
+  widgetRuntimeUrl: '${sdkURL}',
+  supportOnly: true,
 });
 
 function App() {
@@ -511,7 +516,9 @@ import App from './App.vue';
 
 const client = createClient({
   widgetKey: '${widgetKey}',
-  host: '${HELPIN_WIDGET_HOST}',
+  host: '${widgetHost}',
+  widgetRuntimeUrl: '${sdkURL}',
+  supportOnly: true,
 });
 
 createApp(App)
@@ -547,7 +554,9 @@ import { createClient, HelpinProvider } from '@helpin-ai/nextjs';
 export function Providers({ children }) {
   const client = useMemo(() => createClient({
     widgetKey: '${widgetKey}',
-    host: '${HELPIN_WIDGET_HOST}',
+    host: '${widgetHost}',
+  widgetRuntimeUrl: '${sdkURL}',
+  supportOnly: true,
   }), []);
 
   return <HelpinProvider client={client}>{children}</HelpinProvider>;
@@ -590,7 +599,8 @@ function Dashboard() {
   const installPrompt = buildWidgetInstallPrompt({
     framework: snippetTab,
     widgetKey,
-    host: HELPIN_WIDGET_HOST,
+    host: widgetHost,
+    runtimeURL: sdkURL,
   });
 
   // Derive help spaces for the widget preview
@@ -598,7 +608,7 @@ function Dashboard() {
     .filter(space => widgetHelpSpaceIds.includes(space.id))
     .map(space => ({ id: space.id, name: space.name, slug: space.slug }));
 
-  const previewHost = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').replace(/\/api\/?$/, '');
+  const previewHost = widgetHost;
   const previewAvailability = buildPreviewAvailability({
     businessHoursEnabled,
     timezone,

@@ -19,6 +19,8 @@ const (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
+	PublicWidgetURL           string
+	PublicSDKURL              string
 	SMTPHost                  string
 	SMTPPort                  int
 	SMTPUsername              string
@@ -270,6 +272,14 @@ func Load() (*Config, error) {
 		appBaseURL = "http://localhost:5173"
 	}
 
+	publicWidgetURL, err := publicURL(firstNonEmpty(os.Getenv("PUBLIC_WIDGET_URL"), deployment.DefaultWidgetOrigin, appBaseURL), true)
+	if err != nil {
+		return nil, fmt.Errorf("PUBLIC_WIDGET_URL: %w", err)
+	}
+	publicSDKURL, err := publicURL(firstNonEmpty(os.Getenv("PUBLIC_SDK_URL"), deployment.DefaultSDKLoaderURL, publicWidgetURL+"/sdk/lib.js"), false)
+	if err != nil {
+		return nil, fmt.Errorf("PUBLIC_SDK_URL: %w", err)
+	}
 	webAuthnRPID := strings.TrimSpace(os.Getenv("WEBAUTHN_RP_ID"))
 	if webAuthnRPID == "" {
 		webAuthnRPID = originHost(appBaseURL)
@@ -341,6 +351,8 @@ func Load() (*Config, error) {
 		RunAutoMigrate:                         parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
 		CORSOrigins:                            corsOrigins,
 		EnabledModules:                         enabledModules,
+		PublicWidgetURL:                        publicWidgetURL,
+		PublicSDKURL:                           publicSDKURL,
 		EmailVerificationRequired:              emailVerificationRequired,
 		TemporalAddress:                        temporalAddress,
 		TemporalNamespace:                      temporalNamespace,

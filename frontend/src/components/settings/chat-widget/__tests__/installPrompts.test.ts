@@ -11,12 +11,13 @@ describe('buildWidgetInstallPrompt', () => {
     const prompt = buildWidgetInstallPrompt({
       framework,
       widgetKey: 'widget-public-key',
-      host: 'https://client.helpin.ai',
+      host: 'http://support.example.test:8080',
+      runtimeURL: 'http://assets.example.test/sdk/lib.js',
     });
 
     expect(prompt).toContain('Public widget key: widget-public-key');
-    expect(prompt).toContain('Helpin host: https://client.helpin.ai');
-    expect(prompt).toContain('https://cdn.helpin.ai/lib.js');
+    expect(prompt).toContain('Helpin host: http://support.example.test:8080');
+    expect(prompt).toContain('http://assets.example.test/sdk/lib.js');
     expect(prompt).toContain('openArticle(articleKey, options?)');
     expect(prompt).toContain('production build passes');
     expect(prompt).not.toContain('{{WIDGET_KEY}}');
@@ -26,7 +27,8 @@ describe('buildWidgetInstallPrompt', () => {
     const prompt = buildWidgetInstallPrompt({
       framework: 'vue',
       widgetKey: 'vue-key',
-      host: 'https://client.helpin.ai',
+      host: 'http://support.example.test:8080',
+      runtimeURL: 'http://assets.example.test/sdk/lib.js',
     });
 
     expect(prompt).toContain('@helpin-ai/vue');
@@ -38,7 +40,8 @@ describe('buildWidgetInstallPrompt', () => {
     const prompt = buildWidgetInstallPrompt({
       framework: 'nextjs',
       widgetKey: 'next-key',
-      host: 'https://client.helpin.ai',
+      host: 'http://support.example.test:8080',
+      runtimeURL: 'http://assets.example.test/sdk/lib.js',
     });
 
     expect(prompt).toContain('Client Component');
@@ -50,7 +53,8 @@ describe('buildWidgetInstallPrompt', () => {
     const prompt = buildWidgetInstallPrompt({
       framework: 'html',
       widgetKey: 'html-key',
-      host: 'https://client.helpin.ai',
+      host: 'http://support.example.test:8080',
+      runtimeURL: 'http://assets.example.test/sdk/lib.js',
     });
 
     expect(prompt).toContain('Content Security Policy');
