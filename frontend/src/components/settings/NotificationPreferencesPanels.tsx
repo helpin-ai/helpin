@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import { SettingsSection } from './SettingsSection';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowDown01Icon, InformationCircleIcon } from '@/lib/icons';
+import { InformationCircleIcon } from '@/lib/icons';
 import { toast } from 'sonner';
 
 import {
@@ -19,9 +19,7 @@ import {
 } from '@/lib/notificationTypes';
 import { cn } from '@/lib/utils';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { pickerTriggerVariants } from '@/components/ui/picker-trigger';
 import { QuietUnderlineInput } from '@/components/design-system/quiet';
-import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
 import { Button } from '@/components/ui/button';
@@ -32,18 +30,6 @@ type CardClassNameProps = {
   cardClassName?: string;
 };
 
-const TIMEZONE_LIST: { id: string; offset: string; searchKey: string }[] = (() => {
-  const names = Intl.supportedValuesOf('timeZone');
-  const now = new Date();
-  return names.map((tz) => {
-    const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' });
-    const parts = fmt.formatToParts(now);
-    const gmtStr = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
-    const offset = gmtStr === 'GMT' ? 'UTC+00:00' : gmtStr.replace('GMT', 'UTC');
-    return { id: tz, offset, searchKey: `${tz} ${offset}`.toLowerCase() };
-  });
-})();
-
 const WEEKDAY_OPTIONS = [
   { value: '0', label: 'Sunday' },
   { value: '1', label: 'Monday' },
@@ -53,8 +39,6 @@ const WEEKDAY_OPTIONS = [
   { value: '5', label: 'Friday' },
   { value: '6', label: 'Saturday' },
 ];
-
-const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 function PreferenceHelp({ title, children }: { title: string; children: string }) {
   return (
@@ -86,32 +70,6 @@ function isActiveDnd(doNotDisturb?: boolean, dndUntil?: string | null) {
     }
   }
   return Boolean(doNotDisturb);
-}
-
-function TimezonePicker({
-  value,
-  disabled,
-  onSelect,
-}: {
-  value: string;
-  disabled?: boolean;
-  onSelect: (timezone: string) => void;
-}) {
-  return (
-    <QuietDropdown
-      label="Timezone"
-      selected={[value]}
-      disabled={disabled}
-      onSelect={onSelect}
-      searchPlaceholder="Search timezones…"
-      trigger={
-        <button type="button" role="combobox" aria-label="Timezone" disabled={disabled} className={cn('flex h-9 w-full items-center justify-between gap-2 px-3 text-sm', pickerTriggerVariants({ variant: 'underline' }))}>
-          <span className="truncate">{value}</span><ArrowDown01Icon className="size-3.5 shrink-0 text-quiet-text-tertiary" />
-        </button>
-      }
-      groups={[{ id: 'timezones', options: TIMEZONE_LIST.map((tz) => ({ value: tz.id, label: tz.id, keywords: [tz.offset], content: <span className="flex w-full justify-between gap-3"><span>{tz.id}</span><span className="text-quiet-text-secondary">{tz.offset}</span></span> })) }]}
-    />
-  );
 }
 
 export function AccountNotificationPreferences({ cardClassName }: CardClassNameProps) {
@@ -152,10 +110,6 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
     handleSettingsUpdate({ email_digest_time: value });
   };
 
-  const handleTimezoneChange = (value: string) => {
-    handleSettingsUpdate({ timezone: value });
-  };
-
   const digestFrequency = settings?.email_digest_frequency ?? 'daily';
   const emailEnabled = settings?.email_enabled ?? true;
   const dndActive = isActiveDnd(settings?.do_not_disturb, settings?.dnd_until);
@@ -171,7 +125,7 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
   return (
     <div className={cardClassName}>
       <div className="divide-y divide-quiet-divider-strong">
-        <PreferenceRow title="Pause all notifications" description="Pause in-app and email updates across all workspaces.">
+        <PreferenceRow title="Pause all notifications">
           <Switch aria-label="Pause all notifications" checked={dndActive} disabled={updateSettings.isPending} onCheckedChange={handleDndToggle} />
         </PreferenceRow>
         <PreferenceRow title="Email notifications">
@@ -194,7 +148,7 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
           </div>
           {usesDigestSchedule ? <>
             <div className="space-y-2">
-              <Label htmlFor="digest-time">Delivery time</Label>
+              <div className="flex items-center gap-1"><Label htmlFor="digest-time">Delivery time</Label><PreferenceHelp title="Delivery time">{`Uses your saved timezone: ${settings?.timezone || 'UTC'}.`}</PreferenceHelp></div>
               <QuietUnderlineInput id="digest-time" type="time" className="dark:[color-scheme:dark]" value={settings?.email_digest_time ?? '09:00'} disabled={updateSettings.isPending} onChange={(event) => handleDigestTimeChange(event.target.value)} />
             </div>
             {digestFrequency === 'weekly' ? (
@@ -206,15 +160,11 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
                 </Select>
               </div>
             ) : null}
-            <div className="space-y-2">
-              <Label>Timezone</Label>
-              <TimezonePicker value={settings?.timezone ?? DEFAULT_TIMEZONE} disabled={updateSettings.isPending} onSelect={handleTimezoneChange} />
-            </div>
           </> : null}
         </div>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
-        <div className="flex items-center gap-1"><Label htmlFor="unread-badge">Unread badge</Label><PreferenceHelp title="Unread badge">Choose which notifications count toward the unread badge.</PreferenceHelp></div>
+        <div className="flex items-center gap-1"><Label htmlFor="unread-badge">Unread notification count</Label><PreferenceHelp title="Unread notification count">Choose what counts toward the number on the notification bell.</PreferenceHelp></div>
         <Select value={settings?.badge_mode ?? 'all'} disabled={updateSettings.isPending} onValueChange={(value) => handleSelect('badge_mode', value)}>
           <SelectTrigger id="unread-badge" variant="underline" className="w-48"><SelectValue /></SelectTrigger>
           <SelectContent>
