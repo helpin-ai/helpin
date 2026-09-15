@@ -9,7 +9,6 @@ metadata:
     - edit_document
   supported_runtimes:
     - native_sdk
-    - codex
 ---
 
 # Read once, edit once

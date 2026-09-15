@@ -7,8 +7,6 @@ metadata:
     - request_approval
   supported_runtimes:
     - native_sdk
-    - codex
-    - opencode
 ---
 
 Approval requests happen inline in the same chat.

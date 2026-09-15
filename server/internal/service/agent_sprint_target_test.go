@@ -108,6 +108,7 @@ func TestStartTargetRunSprintActorlessPropagatesAgentVersionCreatorForAudit(t *t
 	createAgentRunActivityTables(t, db)
 	if err := db.Exec(`
 		CREATE TABLE agent_versions (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,

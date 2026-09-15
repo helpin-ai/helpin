@@ -42,6 +42,7 @@ type CRMPlaybookConnectionSource struct {
 // Agent retains host-owned limits/access selectors; RuntimeAgent is the existing
 // runtime projection. These private settings exclude counters and active run state.
 type CRMPlaybookConnectionSnapshot struct {
+	AISelection       *AIExecutionSelection     `json:"ai_selection,omitempty"`
 	SchemaVersion     int                       `json:"schema_version"`
 	WorkspaceID       string                    `json:"workspace_id"`
 	PlaybookID        string                    `json:"playbook_id"`

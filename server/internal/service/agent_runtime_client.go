@@ -224,40 +224,6 @@ func (c *AgentRuntimeClient) CancelRun(ctx context.Context, runtimeRunID string)
 	return c.client.CancelRun(ctx, runtimeRunID)
 }
 
-func (c *AgentRuntimeClient) StartCodexDeviceCodeAuth(ctx context.Context, runtimeRunID string) (*model.CodexAuthState, error) {
-	state, err := c.client.StartCodexDeviceCodeAuth(ctx, runtimeRunID)
-	if err != nil {
-		return nil, err
-	}
-	return modelCodexAuthStateFromRuntime(state), nil
-}
-
-func (c *AgentRuntimeClient) CancelCodexDeviceCodeAuth(ctx context.Context, runtimeRunID string) (*model.CodexAuthState, error) {
-	state, err := c.client.CancelCodexDeviceCodeAuth(ctx, runtimeRunID)
-	if err != nil {
-		return nil, err
-	}
-	return modelCodexAuthStateFromRuntime(state), nil
-}
-
-func modelCodexAuthStateFromRuntime(state *agentruntime.CodexAuthState) *model.CodexAuthState {
-	if state == nil {
-		return nil
-	}
-	return &model.CodexAuthState{
-		Provider:        state.Provider,
-		AuthMode:        state.AuthMode,
-		State:           state.State,
-		LoginID:         state.LoginID,
-		AuthURL:         state.AuthURL,
-		VerificationURL: state.VerificationURL,
-		UserCode:        state.UserCode,
-		PlanType:        state.PlanType,
-		Error:           state.Error,
-		UpdatedAt:       state.UpdatedAt,
-	}
-}
-
 func firstOptionalString(values []string) string {
 	if len(values) == 0 {
 		return ""

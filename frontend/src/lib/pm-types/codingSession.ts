@@ -1,4 +1,4 @@
-import type { AgentApprovalState, AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind, CodexAuthState } from './agents';
+import type { AgentRunDeliveryMode, AgentApprovalState, AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRuntimeKind } from './agents';
 
 export type CodingSessionInteractionKind =
   | 'request_user_input'
@@ -109,6 +109,7 @@ export interface CodingSessionDiff {
 }
 
 export interface CodingSession {
+  delivery_mode?: AgentRunDeliveryMode;
   id: string;
   run_id: string;
   parent_run_id?: string;
@@ -134,7 +135,6 @@ export interface CodingSession {
   input_tokens: number;
   output_tokens: number;
   tokens_used: number;
-  auth_state?: CodexAuthState;
   stream_state_snapshot?: CodingSessionStreamSnapshot;
   triggered_by_user?: CodingSessionActor;
   created_at: string;

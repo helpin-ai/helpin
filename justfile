@@ -88,3 +88,17 @@ events-e2e:
 
 events-browser-smoke:
     ./events-pipeline/scripts/browser-smoke.sh
+
+# Explicit SaaS development; default recipes remain Community.
+backend-ee:
+    cd server && go run -tags ee ./cmd/api
+
+worker-ee:
+    cd server && go run -tags ee ./cmd/temporal-worker
+
+frontend-ee:
+    cd frontend && pnpm dev:ee
+
+build-server-ee:
+    cd server && go build -tags ee -o bin/api ./cmd/api
+    cd server && go build -tags ee -o bin/temporal-worker ./cmd/temporal-worker

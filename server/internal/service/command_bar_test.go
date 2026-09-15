@@ -435,7 +435,7 @@ func TestCreateRunPreflightsAICreditsBeforeQueueingRun(t *testing.T) {
 	runRepo := repository.NewAgentRunRepository(db)
 	agentRepo := repository.NewAgentRepository(db)
 	consumer := &recordingAIUsageConsumer{preflightErr: fmt.Errorf("AI usage exhausted")}
-	service := (&AgentService{runRepo: runRepo, agentRepo: agentRepo}).SetAIUsageMeter(NewAIUsageMeter(consumer))
+	service := (&AgentService{runRepo: runRepo, agentRepo: agentRepo}).SetAIUsageMeter(NewTokenPricedAIUsageMeter(consumer))
 
 	ctx := context.Background()
 	workspaceID := "11111111-1111-1111-1111-111111111111"
@@ -464,7 +464,7 @@ func TestCreateRunPreflightsAICreditsBeforeQueueingRun(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "AI usage exhausted") {
 		t.Fatalf("createRun() error = %v, want AI usage exhausted", err)
 	}
-	if consumer.preflight.WorkspaceID != workspaceID || consumer.preflight.FeatureKey != BillingFeatureForgeRun || consumer.preflight.Credits != 100 {
+	if consumer.preflight.WorkspaceID != workspaceID || consumer.preflight.FeatureKey != BillingFeatureForgeRun {
 		t.Fatalf("preflight = %#v, want Forge run preflight", consumer.preflight)
 	}
 	runs, total, err := runRepo.ListByWorkspace(ctx, workspaceID, model.PMPagination{Page: 1, PerPage: 10})
@@ -1512,6 +1512,7 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME
 		)`,
 		`CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			is_system BOOLEAN NOT NULL DEFAULT 0,

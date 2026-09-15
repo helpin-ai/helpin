@@ -253,17 +253,19 @@ export function DealsPage() {
       <DealsActiveFilterBar fields={filterFields} value={filterGroup} onChange={setFilterGroup} />
 
       {/* Content */}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {showEmptyState ? (
-          <DealsEmptyState
-            hasPipeline={!!activePipeline?.stages?.length}
-            hasFilters={!!filterGroup?.rules.length}
-            search={search}
-            onCreateClick={openCreate}
-            onClearSearch={() => { setSearch(''); setFilterGroup(undefined); }}
-            onImportClick={handleImportClick}
-            onPipelineSettingsClick={handlePipelineSettingsClick}
-          />
+          <div className="min-h-0 flex-1 overflow-auto">
+            <DealsEmptyState
+              hasPipeline={!!activePipeline?.stages?.length}
+              hasFilters={!!filterGroup?.rules.length}
+              search={search}
+              onCreateClick={openCreate}
+              onClearSearch={() => { setSearch(''); setFilterGroup(undefined); }}
+              onImportClick={handleImportClick}
+              onPipelineSettingsClick={handlePipelineSettingsClick}
+            />
+          </div>
         ) : view === 'board' ? (
           <DealBoard
             deals={deals}

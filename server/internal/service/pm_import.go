@@ -31,7 +31,7 @@ type PMImportService struct {
 	docsContentSvc    *DocsContentService
 	publisher         *websocket.Publisher
 	temporalClient    tclient.Client
-	entitlementSvc    *EntitlementService
+	entitlementSvc    EntitlementPolicy
 	encryptionKey     []byte
 }
 
@@ -80,7 +80,7 @@ func (s *PMImportService) SetTemporalClient(client tclient.Client) {
 	s.temporalClient = client
 }
 
-func (s *PMImportService) SetEntitlementService(entitlementSvc *EntitlementService) *PMImportService {
+func (s *PMImportService) SetEntitlementService(entitlementSvc EntitlementPolicy) *PMImportService {
 	s.entitlementSvc = entitlementSvc
 	return s
 }

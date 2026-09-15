@@ -20,6 +20,7 @@ func setupAgentSchemaTestDB(t *testing.T) *gorm.DB {
 
 	if err := db.Exec(`
 		CREATE TABLE agents (
+ ai_profile_id TEXT,
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			name TEXT NOT NULL,

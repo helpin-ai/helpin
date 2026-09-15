@@ -754,6 +754,9 @@ func materializeCreateAgentRequestFromTemplate(workspaceID string, template *mod
 		DefaultInvocationMode: &defaultInvocationMode,
 	}
 	if req.Overrides != nil {
+		if req.Overrides.AIProfileID != nil {
+			createReq.AIProfileID = trimPtr(req.Overrides.AIProfileID)
+		}
 		if req.Overrides.IconKey != nil {
 			createReq.IconKey = trimPtr(req.Overrides.IconKey)
 		}

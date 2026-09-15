@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
+import { queryKeys } from '@/lib/queryKeys'
 import React, { act } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { draftFromRule, FlowComposer, serializeDraft, validateDraft } from '../AutomationFlows';
@@ -24,18 +26,22 @@ const baseRule: AutomationRule = {
 };
 let container: HTMLDivElement | undefined;
 let root: Root | undefined;
+let queryClient: QueryClient;
 
 afterEach(() => {
   act(() => root?.unmount());
   container?.remove();
   root = undefined;
+  queryClient?.clear();
 });
 
 function render(node: React.ReactNode) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root?.render(node));
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  queryClient.setQueryData(queryKeys.ai.profiles('ws-1'), []);
+  act(() => root?.render(<QueryClientProvider client={queryClient}>{node}</QueryClientProvider>));
 }
 
 describe('CRM records in existing automation builders', () => {
@@ -79,6 +85,7 @@ describe('CRM records in existing automation builders', () => {
   it.each(CRM_AGENT_TARGET_OPTIONS)('uses record search, not a raw ID input, for Run now on $label', ({ value, label }) => {
     const onTargetIdChange = vi.fn();
     render(<AgentRunNowDialog
+      aiConnection={{}} onAIConnectionChange={vi.fn()} deliveryMode="preview" onDeliveryModeChange={vi.fn()}
       open onOpenChange={vi.fn()} agent={null} targets={[value]} targetLabel={() => label}
       targetType={value} onTargetTypeChange={vi.fn()} workspaceName="Acme" workspaceId="ws-1"
       repositories={[]} runnableRepositories={[]} repositoriesLoading={false}

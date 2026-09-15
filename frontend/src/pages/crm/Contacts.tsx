@@ -11,7 +11,7 @@ import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMem
 import { useContactsSearchParams } from '@/hooks/useContactsSearchParams';
 import { useInfiniteContacts } from '@/hooks/useInfiniteContacts';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
-import { BILLING_CHOOSE_PLAN_SEARCH } from '@/lib/billingNavigation';
+import { ContactLimitNotice, isContactLimitError } from '@edition';
 import { queryKeys } from '@/lib/queryKeys';
 import { crmContactService } from '@/lib/services/crmService';
 import { ContactsTable } from '@/components/crm/ContactsTable';
@@ -20,8 +20,6 @@ import { CRMDataEmptyState } from '@/components/crm/CRMDataEmptyState';
 import { useTitle } from '@/hooks/useTitle';
 import { toast } from 'sonner';
 
-const isContactLimitError = (error: unknown) =>
-  error instanceof Error && error.message.includes('5,000 contacts');
 
 export function ContactsPage() {
   useTitle('Contacts');
@@ -72,15 +70,6 @@ export function ContactsPage() {
     if (!wsSlug) return;
     void navigate({ to: '/w/$slug/settings/import', params: { slug: wsSlug } });
   };
-  const handleUpgradeClick = () => {
-    if (!wsSlug) return;
-    void navigate({
-      to: '/w/$slug/settings/billing',
-      params: { slug: wsSlug },
-      search: BILLING_CHOOSE_PLAN_SEARCH,
-    });
-  };
-
   const handleSeedContacts = async () => {
     if (!wsId || isSeeding) return;
     setIsSeeding(true);
@@ -155,15 +144,7 @@ export function ContactsPage() {
       {/* Content */}
       <div className="min-h-0 flex-1 overflow-hidden p-3">
         {isContactLimitError(error) ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <div>
-              <h2 className="text-sm font-medium">Upgrade to view CRM contacts</h2>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                The Starter plan includes up to 5,000 contacts. Support can keep capturing new contacts, but CRM contact viewing requires the Growth plan once you exceed that limit.
-              </p>
-            </div>
-            <Button size="sm" onClick={handleUpgradeClick}>Upgrade</Button>
-          </div>
+          <ContactLimitNotice workspaceSlug={wsSlug} />
         ) : showContactsEmptyState ? (
           <CRMDataEmptyState
             kind="contacts"

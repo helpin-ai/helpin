@@ -435,22 +435,22 @@ func customerIOOrganizationAttributes(input CustomerIOOrganizationIdentity) map[
 }
 
 type CustomerIOIdentityService struct {
-	client        *CustomerIOTrackClient
-	userRepo      *repository.UserRepository
-	workspaceRepo *repository.WorkspaceRepository
-	orgRepo       *repository.OrganizationRepository
-	billingRepo   *repository.BillingRepository
-	logger        *slog.Logger
+	client          *CustomerIOTrackClient
+	userRepo        *repository.UserRepository
+	workspaceRepo   *repository.WorkspaceRepository
+	orgRepo         *repository.OrganizationRepository
+	billingInsights CustomerIOBillingInsights
+	logger          *slog.Logger
 }
 
-func NewCustomerIOIdentityService(client *CustomerIOTrackClient, userRepo *repository.UserRepository, workspaceRepo *repository.WorkspaceRepository, orgRepo *repository.OrganizationRepository, billingRepo *repository.BillingRepository) *CustomerIOIdentityService {
+func NewCustomerIOIdentityService(client *CustomerIOTrackClient, userRepo *repository.UserRepository, workspaceRepo *repository.WorkspaceRepository, orgRepo *repository.OrganizationRepository, billingInsights CustomerIOBillingInsights) *CustomerIOIdentityService {
 	return &CustomerIOIdentityService{
-		client:        client,
-		userRepo:      userRepo,
-		workspaceRepo: workspaceRepo,
-		orgRepo:       orgRepo,
-		billingRepo:   billingRepo,
-		logger:        slog.Default().With("service", "customer_io_identity"),
+		client:          client,
+		userRepo:        userRepo,
+		workspaceRepo:   workspaceRepo,
+		orgRepo:         orgRepo,
+		billingInsights: billingInsights,
+		logger:          slog.Default().With("service", "customer_io_identity"),
 	}
 }
 
@@ -694,27 +694,13 @@ func (s *CustomerIOIdentityService) RefreshWorkspaceForOutbox(ctx context.Contex
 }
 
 func (s *CustomerIOIdentityService) workspaceBillingSummary(ctx context.Context, workspaceID string) *BillingSummary {
-	if s.billingRepo == nil {
+	if s.billingInsights == nil {
 		return nil
 	}
-	billing, err := s.billingRepo.GetByWorkspaceID(ctx, workspaceID)
+	summary, err := s.billingInsights.WorkspaceSummary(ctx, workspaceID)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to load billing for customer.io sync", "error", err, "workspace_id", workspaceID)
+		s.logger.ErrorContext(ctx, "load billing identity context", "error", err, "workspace_id", workspaceID)
 		return nil
-	}
-	if billing == nil {
-		return nil
-	}
-	summary := customerIOBillingSummary(ctx, billing, s.workspaceRepo)
-	if period, periodErr := s.billingRepo.GetOpenAIUsagePeriod(ctx, workspaceID); periodErr == nil && period != nil {
-		summary.AIUsageAllowanceMicrousd = period.AllowanceMicrousd
-		summary.AIUsageUsedMicrousd = period.UsedMicrousd
-		summary.AIUsageReservedMicrousd = period.ReservedMicrousd
-		summary.AIUsageOverageMicrousd = period.OverageMicrousd
-		summary.AIUsageRemainingMicrousd = max(period.AllowanceMicrousd-period.UsedMicrousd-period.ReservedMicrousd, 0)
-		summary.ExtraAIUsageEnabled = period.EnforcementMode == model.AIUsageEnforcementExtra
-		summary.ExtraAIUsageAvailable = billingCanUseOnDemand(billing)
-		summary.PricingVersion = period.PricingVersion
 	}
 	return summary
 }
@@ -815,58 +801,22 @@ func (s *CustomerIOIdentityService) SyncOrganizationMembers(ctx context.Context,
 	}
 }
 
-type customerIOOrganizationSummary struct {
-	MemberCount        int
-	WorkspaceCount     int
-	TrialingWorkspaces int
-	ActiveWorkspaces   int
-	LockedWorkspaces   int
-	HighestPlan        string
-	HasTrialWorkspace  bool
-	HasPaidWorkspace   bool
-	PaidWorkspaceCount int
-	MonthlyDueCents    int
-}
+type customerIOOrganizationSummary = model.CustomerIOOrganizationSummary
 
 func (s *CustomerIOIdentityService) organizationSummary(ctx context.Context, orgID string) customerIOOrganizationSummary {
 	var summary customerIOOrganizationSummary
+	if s.billingInsights != nil {
+		var err error
+		summary, err = s.billingInsights.OrganizationSummary(ctx, orgID)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "load organization billing identity context", "error", err, "organization_id", orgID)
+		}
+	}
 	if s.orgRepo != nil {
 		if members, err := s.orgRepo.ListMembers(ctx, orgID); err == nil {
 			summary.MemberCount = len(members)
 		} else {
 			s.logger.ErrorContext(ctx, "failed to count organization members for customer.io sync", "error", err, "organization_id", orgID)
-		}
-	}
-	if s.billingRepo == nil {
-		return summary
-	}
-	rows, err := s.billingRepo.ListWorkspaceBillingsForOrg(ctx, orgID)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to load organization billing rollup for customer.io sync", "error", err, "organization_id", orgID)
-		return summary
-	}
-	summary.WorkspaceCount = len(rows)
-	for _, row := range rows {
-		billing := row.Billing
-		if billing.Status == model.BillingStatusTrialing {
-			summary.TrialingWorkspaces++
-			summary.HasTrialWorkspace = true
-		}
-		if billing.Status == model.BillingStatusActive {
-			summary.ActiveWorkspaces++
-			if billing.StripeSubscriptionID != nil || billing.Plan == model.BillingPlanFounder {
-				summary.HasPaidWorkspace = true
-				summary.PaidWorkspaceCount++
-			}
-		}
-		if billingStatusLocked(billing.Status) || billing.Status == model.BillingStatusPastDue || billing.Status == model.BillingStatusUnpaid {
-			summary.LockedWorkspaces++
-		}
-		if billingPlanRank(billing.Plan) > billingPlanRank(summary.HighestPlan) {
-			summary.HighestPlan = billing.Plan
-		}
-		if billing.Status == model.BillingStatusActive {
-			summary.MonthlyDueCents += monthlyDueCentsForCustomerIO(billing.Plan, billing.BillingInterval)
 		}
 	}
 	return summary
@@ -881,62 +831,6 @@ func (s *CustomerIOIdentityService) relationshipDetails(ctx context.Context, wor
 		return "owner", model.WorkspaceMemberStatusActive, 0
 	}
 	return member.Role, member.Status, 0
-}
-
-func customerIOBillingSummary(ctx context.Context, billing *model.WorkspaceBilling, workspaceRepo *repository.WorkspaceRepository) *BillingSummary {
-	if billing == nil {
-		return nil
-	}
-	includedCredits := includedCreditsForPlan(billing.Plan)
-	if billing.IncludedCredits > 0 {
-		includedCredits = billing.IncludedCredits
-	}
-	remaining := includedCredits - billing.CreditsUsed
-	if remaining < 0 {
-		remaining = 0
-	}
-	summary := &BillingSummary{
-		WorkspaceID:            billing.WorkspaceID,
-		Plan:                   billing.Plan,
-		Status:                 billing.Status,
-		BillingInterval:        billing.BillingInterval,
-		Trialing:               billing.Status == model.BillingStatusTrialing,
-		TrialEndsAt:            billing.TrialEndsAt,
-		CurrentPeriodStart:     billing.CurrentPeriodStart,
-		CurrentPeriodEnd:       billing.CurrentPeriodEnd,
-		IncludedCredits:        includedCredits,
-		CreditsUsed:            billing.CreditsUsed,
-		CreditsRemaining:       remaining,
-		OnDemandEnabled:        billing.OnDemandEnabled,
-		OnDemandAvailable:      billingCanUseOnDemand(billing),
-		StripeCustomerID:       billing.StripeCustomerID,
-		StripeSubscriptionID:   billing.StripeSubscriptionID,
-		PendingPlan:            billing.PendingPlan,
-		PendingBillingInterval: billing.PendingBillingInterval,
-		PendingChangeAt:        billing.PendingChangeAt,
-		CancelAtPeriodEnd:      billing.CancelAtPeriodEnd,
-		CanceledAt:             billing.CanceledAt,
-		Locked:                 billingStatusLocked(billing.Status),
-		ManageBillingEnabled:   billing.StripeCustomerID != nil,
-		OnDemandBlocksInvoiced: billing.OnDemandBlocksInvoiced,
-	}
-	if workspaceRepo != nil {
-		if count, err := workspaceRepo.CountBillableSeats(ctx, billing.WorkspaceID); err == nil {
-			summary.SeatUsage = int(count)
-		}
-	}
-	return summary
-}
-
-func monthlyDueCentsForCustomerIO(plan, interval string) int {
-	if plan == model.BillingPlanFounder {
-		return 0
-	}
-	cents := PriceCentsForPlan(plan, interval)
-	if strings.EqualFold(interval, "annual") {
-		return cents / 12
-	}
-	return cents
 }
 
 func compactAttributes(attrs map[string]any) map[string]any {

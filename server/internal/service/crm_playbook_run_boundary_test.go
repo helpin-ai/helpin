@@ -176,7 +176,7 @@ func TestCRMPlaybookRuntimeCallbacksCannotDropTheirStoredScope(t *testing.T) {
 }
 
 func TestCRMPlaybookRunCannotContinueHandoffOrResumeThroughAuthentication(t *testing.T) {
-	for _, action := range []string{"continue", "handoff", "authentication", "runtime resume"} {
+	for _, action := range []string{"continue", "handoff", "runtime resume"} {
 		t.Run(action, func(t *testing.T) {
 			db, repo, run := playbookRunBoundaryFixture(t)
 			if action == "continue" {
@@ -191,8 +191,6 @@ func TestCRMPlaybookRunCannotContinueHandoffOrResumeThroughAuthentication(t *tes
 				_, err = svc.ContinueTerminalRun(ctx, run.WorkspaceID, run.ID, f.SalesUser, model.ContinueAgentRunRequest{})
 			case "handoff":
 				_, err = svc.HandoffRun(ctx, run.WorkspaceID, run.ID, f.SalesUser, model.HandoffAgentRunRequest{Reason: "Please finish this"})
-			case "authentication":
-				_, _, err = svc.loadRunAndAgentForCodexAuth(ctx, run.WorkspaceID, run.ID)
 			case "runtime resume":
 				_, _, err = svc.resumeAgentRuntimeRunWithIntent(ctx, run.WorkspaceID, &run, *run.ExternalRuntimeID, f.SalesUser, model.ResumeAgentRunRequest{}, model.AgentRunResumeIntentAuthCompleted)
 			}

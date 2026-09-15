@@ -33,7 +33,6 @@ const (
 	agentRuntimeV2ReplayThroughSummaryKey         = "agent_runtime_v2_replay_through"
 	agentRuntimeLatestUsageSummaryKey             = "agent_runtime_latest_usage"
 	agentRuntimeV2ReplayPageSize                  = 250
-	agentRuntimeEventCodexAuthStateChanged        = "codex_auth.state_changed"
 	agentRuntimeExecutionStageAuthCompleted       = "auth_completed"
 	agentRuntimeExecutionStageAwaitingAuth        = "awaiting_auth"
 	agentRuntimeCoverageCompletionError           = "the agent finished without a durable support coverage disposition; create or update review-ready documentation, record a routed or blocked finding, then call complete_support_coverage_gap"
@@ -818,12 +817,7 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 		if err := s.mirrorRuntimePlanUpdated(ctx, run, event); err != nil {
 			return err
 		}
-	case agentRuntimeEventCodexAuthStateChanged:
-		authChanged, err := s.applyCodexAuthStateChanged(ctx, run, event)
-		if err != nil {
-			return err
-		}
-		changed = authChanged || changed
+
 	default:
 		return nil
 	}
@@ -1335,42 +1329,22 @@ func (s *AgentRuntimeProjectionService) maybeCancelOverage(ctx context.Context, 
 	if !ok {
 		return false, nil
 	}
-	agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
+	if s.usageMeter.usage == nil {
+		return false, errors.New("AI usage lifecycle is required")
+	}
+	if metering, ok := agentRunMeteringContext(run); ok {
+		if err := s.usageMeter.usage.Heartbeat(ctx, metering); err != nil {
+			return false, err
+		}
+	}
+	exceeded, err := s.usageMeter.agentRunUsageExceedsBudget(run, usage)
 	if err != nil {
 		return false, err
 	}
-	if s.usageMeter.usage != nil {
-		if metering, ok := agentRunMeteringContext(run); ok {
-			if heartbeatErr := s.usageMeter.usage.Heartbeat(ctx, metering); heartbeatErr != nil {
-				return false, heartbeatErr
-			}
-		}
-		if !agentRunUsageExceedsBudget(run, usage) {
-			return false, nil
-		}
-		err = model.ErrAIUsageExhausted
-	} else {
-		err = s.usageMeter.PreflightUsage(ctx, AIUsageMeterInput{
-			WorkspaceID:       run.WorkspaceID,
-			FeatureKey:        AgentRunAIUsageFeature(agent),
-			InputTokens:       usage.InputTokens,
-			OutputTokens:      int(agentRunTokenTelemetry(run, usage).OutputTokens),
-			ReasoningTokens:   usage.ReasoningOutputTokens,
-			CachedInputTokens: usage.CachedInputTokens,
-			Metadata: map[string]interface{}{
-				"run_id":         run.ID,
-				"runtime_run_id": runtimeRunID,
-				"agent_id":       run.AgentID,
-				"checkpoint":     true,
-			},
-		})
-	}
-	if err == nil {
+	if !exceeded {
 		return false, nil
 	}
-	if !isAIUsageCreditLimitError(err) {
-		return false, err
-	}
+
 	if _, cancelErr := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID); cancelErr != nil {
 		return false, fmt.Errorf("cancel over-budget agent runtime run: %w", cancelErr)
 	}
@@ -1683,60 +1657,6 @@ func (s *AgentRuntimeProjectionService) mirrorRuntimePlanUpdated(ctx context.Con
 		Metadata:      agentRuntimeProjectionMustJSON(map[string]any{"source": "agent-runtime-event", "runtime_event_type": event.Type}),
 		CreatedAt:     s.eventTime(event),
 	})
-}
-
-func (s *AgentRuntimeProjectionService) applyCodexAuthStateChanged(ctx context.Context, run *model.AgentRun, event AgentRuntimeEventEnvelope) (bool, error) {
-	if err := s.createRuntimeArtifact(ctx, run, AgentRuntimeArtifact{
-		ID:            runtimeEventIdentity(event),
-		ArtifactType:  model.AgentRunArtifactTypeCodexAuthState,
-		Format:        "json",
-		StorageMode:   "inline",
-		InlineContent: eventDataJSON(event.Data),
-		Metadata: agentRuntimeProjectionMustJSON(map[string]any{
-			"source":             "agent-runtime-event",
-			"runtime_event_type": event.Type,
-		}),
-		CreatedAt: s.eventTime(event),
-	}); err != nil {
-		return false, err
-	}
-
-	state := strings.TrimSpace(eventDataString(event.Data, "state"))
-	switch state {
-	case model.CodexAuthStateRequired, model.CodexAuthStatePending:
-		if run.ExecutionStage == nil || strings.TrimSpace(*run.ExecutionStage) != agentRuntimeExecutionStageAwaitingAuth {
-			run.ExecutionStage = strPtr(agentRuntimeExecutionStageAwaitingAuth)
-			return true, nil
-		}
-		return false, nil
-	case model.CodexAuthStateConnected:
-		if run.ExecutionStage != nil && strings.TrimSpace(*run.ExecutionStage) == agentRuntimeExecutionStageAuthCompleted {
-			return false, nil
-		}
-		if strings.TrimSpace(run.Status) != model.AgentRunStatusPaused || strings.TrimSpace(run.PauseReason) != model.AgentRunPauseReasonAuthentication {
-			return false, nil
-		}
-		runtimeRunID := strings.TrimSpace(event.RunID)
-		if runtimeRunID == "" {
-			runtimeRunID = strings.TrimSpace(derefString(run.ExternalRuntimeID))
-		}
-		if runtimeRunID == "" {
-			return false, fmt.Errorf("agent runtime auth connected event missing run id")
-		}
-		if s.agentRuntimeClient == nil {
-			return false, fmt.Errorf("agent runtime client is not configured")
-		}
-		if _, err := s.agentRuntimeClient.ResumeRun(ctx, runtimeRunID, AgentRuntimeResumeRunRequest{
-			Intent:     model.AgentRunResumeIntentAuthCompleted,
-			TurnPolicy: runtimeResumeTurnPolicy(run),
-		}); err != nil {
-			return false, err
-		}
-		run.ExecutionStage = strPtr(agentRuntimeExecutionStageAuthCompleted)
-		return true, nil
-	default:
-		return false, nil
-	}
 }
 
 func (s *AgentRuntimeProjectionService) reconcileRuntimeTranscript(ctx context.Context, run *model.AgentRun, runtimeRunID string) error {

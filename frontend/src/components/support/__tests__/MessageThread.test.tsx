@@ -20,6 +20,8 @@ function createTestQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } })
 }
 
+// This transcript fixture must not start the live widget's pageview timer.
+vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }))
 vi.mock('@/stores/authStore', () => ({ useAuthStore: (selector: (state: { user: { id: string } | null }) => unknown) => selector({ user: supportHooks.currentUser }) }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -65,7 +67,7 @@ vi.mock('@/lib/services/agentService', () => ({
   },
 }))
 
-vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
+vi.mock('@edition', () => ({
   UpgradeRequiredDialog: () => null,
 }))
 

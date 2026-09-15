@@ -126,7 +126,7 @@ vi.mock('@/components/ui/date-picker', () => ({
   ),
 }))
 
-vi.mock('@/components/billing/UpgradeRequiredDialog', () => ({
+vi.mock('@edition', () => ({
   UpgradeRequiredDialog: () => null,
 }))
 

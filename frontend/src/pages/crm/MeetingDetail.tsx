@@ -1,3 +1,4 @@
+import { meetingProcessingRecovery } from '@edition/config';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -20,7 +21,7 @@ import {
 } from '@/lib/meetingPresentation';
 import { MeetingProcessingState } from '@/components/crm/MeetingProcessingState';
 import { MeetingStatusText } from '@/components/crm/MeetingStatusText';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
+import { UpgradeRequiredDialog } from '@edition';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import {
   QuietDetailLayout,
@@ -53,7 +54,7 @@ import { useTeamWorkflow } from '@/hooks/queries/useWorkflows';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
-import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { resolveMeetingActionStateId } from '@/lib/meetingActionTaskTarget';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -586,7 +587,7 @@ export function MeetingDetailPage({ meetingId }: { meetingId: string }) {
                 <QuietSection title="Processing paused">
                   <QuietStatusText tone="blocker" className="text-quiet-accent">AI capacity required</QuietStatusText>
                   <p className="mt-1 max-w-[680px] text-sm leading-[1.6] text-quiet-text-tertiary">
-                    The transcript is safe. Upgrade or add AI capacity, then retry processing to create meeting notes.
+                    {meetingProcessingRecovery}
                   </p>
                 </QuietSection>
               ) : null}

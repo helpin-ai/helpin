@@ -7,6 +7,7 @@ import (
 )
 
 type CodingSession struct {
+	DeliveryMode        string                       `json:"delivery_mode"`
 	ID                  string                       `json:"id"`
 	RunID               string                       `json:"run_id"`
 	ParentRunID         *string                      `json:"parent_run_id,omitempty"`
@@ -32,7 +33,6 @@ type CodingSession struct {
 	InputTokens         int                          `json:"input_tokens"`
 	OutputTokens        int                          `json:"output_tokens"`
 	TokensUsed          int                          `json:"tokens_used"`
-	AuthState           *CodexAuthState              `json:"auth_state,omitempty"`
 	StreamStateSnapshot *CodingSessionStreamSnapshot `json:"stream_state_snapshot,omitempty"`
 	TriggeredByUser     *CodingSessionActor          `json:"triggered_by_user,omitempty"`
 	CreatedAt           time.Time                    `json:"created_at"`

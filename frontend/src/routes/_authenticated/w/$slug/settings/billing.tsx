@@ -1,12 +1,12 @@
 import { useCallback } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { BillingSettingsPage } from '@/pages/settings/BillingSettingsPage';
+import { BillingSettingsPage } from '@edition';
 import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport';
 import {
   BILLING_CHOOSE_PLAN_SEARCH,
   BILLING_OVERVIEW_SEARCH,
   shouldOpenBillingPlanChooser,
-} from '@/lib/billingNavigation';
+} from '@edition';
 
 export const Route = createFileRoute('/_authenticated/w/$slug/settings/billing')({
   validateSearch: (search) => ({

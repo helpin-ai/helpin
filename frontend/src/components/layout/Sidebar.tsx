@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/sidebar';
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher';
 import { SidebarHeaderToggle } from '@/components/layout/WorkspaceSidebarToggle';
-import { TrialBanner } from '@/components/layout/TrialBanner';
+import { TrialBanner } from '@edition';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
 import { useSupportTeammatePresence, useUpdateMySupportTeammatePresence } from '@/hooks/queries/useSupport';
 import { DocsRailNav } from './sidebar/DocsRailNav';

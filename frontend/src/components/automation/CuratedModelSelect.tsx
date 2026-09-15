@@ -1,4 +1,4 @@
-import { AI_PRICING } from '@/generated/aiPricing';
+import { AI_MODELS } from '@/generated/aiModels';
 import {
   Select,
   SelectContent,
@@ -21,7 +21,7 @@ interface CuratedModelSelectProps {
 
 export function CuratedModelSelect({ id, provider, value, disabled, onValueChange }: CuratedModelSelectProps) {
   const normalizedProvider = provider === 'openrouter-responses' ? 'openrouter' : provider;
-  const models = AI_PRICING.models.filter((model) => model.provider === normalizedProvider && model.enabled);
+  const models = AI_MODELS.models.filter((model) => model.provider === normalizedProvider && model.enabled);
   const known = models.some((model) => model.selection_model === value || model.canonical_model === value);
 
   return (

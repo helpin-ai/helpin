@@ -22,6 +22,8 @@ Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn
 Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 
 const mocks = vi.hoisted(() => ({
+  useAgents: vi.fn(),
+  aiPicker: vi.fn(() => null),
 	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
   listChats: vi.fn(),
@@ -54,6 +56,11 @@ const mocks = vi.hoisted(() => ({
   searchEntities: vi.fn(),
   uploadEditorFile: vi.fn(),
 }));
+
+// Profile queries have their own provider-backed tests; keep these dock tests
+// focused on transcript, message correlation, and composer behavior.
+vi.mock('@/components/agents/AIConnectionPicker', () => ({ AIConnectionPicker: mocks.aiPicker }));
+vi.mock('@/hooks/queries/useAgents', () => ({ useAgents: mocks.useAgents }));
 
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
@@ -169,6 +176,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  mocks.useAgents.mockReturnValue({ data: [{ preset_key: 'ask_agent', ai_profile_id: 'ask-default' }], isPending: false, isError: false, refetch: vi.fn() });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -2496,5 +2504,31 @@ describe('follow-up message correlation', () => {
       expect([...scroll.querySelectorAll('p')].find((node) => node.textContent === content)).toBe(originalRow);
       expect(scroll.textContent).not.toContain('Sending…');
     }
+  });
+});
+
+
+describe('inherited AI route disclosure', () => {
+  it('submits an explicitly selected profile with the first chat message', async () => {
+    mocks.sendMessage.mockResolvedValue({ data: chatDetail(), error: null });
+    await renderDock();
+    const props = mocks.aiPicker.mock.calls.at(-1)?.[0] as unknown as { onChange: (value: { ai_profile_id: string }) => void };
+    await act(async () => { props.onChange({ ai_profile_id: 'personal-profile' }); });
+    const textarea = dockTextarea();
+    await act(async () => { setTextareaValue(textarea, 'Review the current task'); });
+    await act(async () => { textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    await flush();
+    expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-1', expect.objectContaining({ ai_profile_id: 'personal-profile', content: 'Review the current task' }));
+    expect(mocks.sendMessage.mock.calls[0]?.[2]?.model_connection_id).toBeUndefined();
+  });
+  it('passes Ask Agent’s saved profile to the launch picker', async () => {
+    await renderDock();
+    expect(mocks.aiPicker).toHaveBeenCalledWith(expect.objectContaining({ defaultProfileId: 'ask-default', workspaceId: 'ws-1', inDock: true }), undefined);
+  });
+  it('waits for the agent default instead of presenting a workspace fallback', async () => {
+    mocks.useAgents.mockReturnValue({ data: undefined, isPending: true, isError: false });
+    await renderDock();
+    expect(document.body.textContent).toContain('Loading the agent’s AI default');
+    expect(mocks.aiPicker).not.toHaveBeenCalled();
   });
 });

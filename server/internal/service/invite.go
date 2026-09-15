@@ -27,7 +27,7 @@ type InviteService struct {
 	appBaseURL       string
 	jwtManager       *auth.JWTManager
 	logger           *slog.Logger
-	billingService   *BillingService
+	billingService   WorkspaceSeatPolicy
 	customerIO       *CustomerIOIdentityService
 }
 
@@ -55,7 +55,7 @@ func NewInviteService(
 	}
 }
 
-func (s *InviteService) SetBillingService(billingService *BillingService) {
+func (s *InviteService) SetBillingService(billingService WorkspaceSeatPolicy) {
 	s.billingService = billingService
 }
 

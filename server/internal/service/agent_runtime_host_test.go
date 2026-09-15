@@ -710,3 +710,45 @@ func ensureAgentRuntimeHostRunTable(t *testing.T, db *gorm.DB) {
 		t.Fatalf("create agent_runs table: %v", err)
 	}
 }
+
+func TestAgentRuntimeHostPreviewRepositorySpecUsesSavedRunPolicy(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	ensureAgentRuntimeHostRunTable(t, db)
+	mustExec(t, db, `ALTER TABLE agent_runs ADD COLUMN input TEXT`)
+	mustExec(t, db, `INSERT INTO agent_runs (
+		id, workspace_id, agent_id, target_type, target_id, runtime_kind, status, external_runtime, external_runtime_id, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"run-helpin-1", "ws-1", "agent-1", "task", "task-1", "native_sdk", "running", agentRuntimeName, "run-runtime-1")
+
+	mustExec(t, db, `UPDATE agent_runs SET input = ? WHERE id = ?`, []byte(`{"delivery_mode":"preview"}`), "run-helpin-1")
+
+	host := NewAgentRuntimeHostService(
+		"helpin",
+		repository.NewAgentRunRepository(db),
+		nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		newGitDeliveryStatusService(db, &fakeGitHubAppClient{}),
+	)
+
+	spec, err := host.ResolveRepositorySpec(context.Background(), agentruntime.PrepareWorkspaceRequest{
+		AppID:         "helpin",
+		RunID:         "run-runtime-1",
+		AgentID:       "agent-1",
+		RuntimeKind:   "native_sdk",
+		Target:        agentruntime.TargetRef{Type: "task", ID: "task-1"},
+		WorkspaceMode: agentruntime.WorkspaceModeRepository,
+	})
+	if err != nil {
+		t.Fatalf("ResolveRepositorySpec returned error: %v", err)
+	}
+	if spec.WorkBranch != "hel-31-fix-merge-status" || spec.Metadata["workspace_id"] != "ws-1" {
+		t.Fatalf("unexpected repository spec: %#v", spec)
+	}
+	if spec.Auth == nil || spec.Auth.Type != "github" || spec.Auth.Token != "github-installation-token" {
+		t.Fatalf("repository spec did not include GitHub installation authentication: %#v", spec.Auth)
+	}
+	if spec.FinalizePolicy != agentruntime.RepositoryFinalizeNone || spec.Metadata["delivery_mode"] != "preview" {
+		t.Fatal("host did not enforce persisted preview policy")
+	}
+
+}

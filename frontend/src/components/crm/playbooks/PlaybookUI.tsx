@@ -4,8 +4,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Textarea } from '@/components/ui/textarea';
 import { InformationCircleIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
-import { UpgradeRequiredDialog } from '@/components/billing/UpgradeRequiredDialog';
-import { getUpgradeRequiredReason } from '@/lib/upgradeRequired';
+import { UpgradeRequiredDialog } from '@edition';
+import { getUpgradeRequiredReason } from '@edition/errors';
 
 export function PlaybookHelp({ label, children }: { label: string; children: string }) {
   const [open, setOpen] = useState(false);
