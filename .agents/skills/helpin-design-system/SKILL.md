@@ -35,6 +35,4 @@ Build Helpin product surfaces in the Quiet Hairline language: a warm, document-l
 
 Verify populated, empty, loading, error, disabled, overflow, narrow-width, keyboard, light-mode, and dark-mode states. Remove decorative containers, chips, metrics, and icons that do not help the user understand or act.
 
-For settings changes, compare the rendered page with the canonical settings references, including section boundaries, heading contrast, padding, and expanded/collapsed states. Check that no necessary grouping was removed, no information is repeated without a purpose, and secondary help is available by keyboard and touch as well as hover. Type checks alone do not verify this visual contract.
-
 For detail-page changes, compare the actual rendered header, rail, dropdown options, and description editor against the canonical reference. Check the title’s hover/focus underline width, the back arrow, and that mobile properties follow the main content without overlapping it. Preserve visual indicators that communicate progress or time.
