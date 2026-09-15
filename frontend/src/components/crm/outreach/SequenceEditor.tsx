@@ -115,6 +115,11 @@ export function SequenceEditor({
       const row = unwrap(
         await crmOutreachService.saveSequence(workspaceId, { ...form, status }),
       );
+      if (!row?.id) {
+        throw new Error(
+          "Could not confirm the saved sequence. Your changes are still in the editor.",
+        );
+      }
       setForm(row);
       setDirty(false);
       await refresh();
