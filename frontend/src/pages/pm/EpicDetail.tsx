@@ -925,9 +925,9 @@ export function EpicDetailPage() {
       />
 
       {/* ── Two-column layout ───────────────────────────────────── */}
-      <div className="relative grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
+      <div className="relative grid min-h-0 min-w-0 flex-1 grid-cols-1 overflow-x-hidden overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px] lg:overflow-hidden">
         {/* ── Left column ────────────────────────────────────────── */}
-        <div className="flex min-h-0 min-w-0 flex-col lg:overflow-hidden">
+        <div className="flex min-w-0 flex-col lg:min-h-0 lg:overflow-hidden">
           <Tabs value={activeView} onValueChange={(value) => selectView(value as 'overview' | 'delivery')} className="gap-0">
             <TabsList variant="quiet" aria-label="Epic detail views" className="w-full justify-start px-4 sm:px-6 lg:px-10">
             {(['overview', 'delivery'] as const).map((view) => (
@@ -942,7 +942,7 @@ export function EpicDetailPage() {
             </TabsList>
           </Tabs>
 
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden px-4 pt-5 sm:px-6 lg:overflow-y-auto lg:px-10">
+          <div className="min-w-0 flex-1 overflow-x-hidden px-4 pt-5 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:px-10">
           {activeView === 'overview' ? (
           <>
           {/* Description */}
@@ -1160,12 +1160,12 @@ export function EpicDetailPage() {
             ) : null}
           </div>
           )}
-          <div className="h-40 shrink-0" aria-hidden="true" />
+          <div className="h-20 shrink-0 lg:h-40" aria-hidden="true" />
           </div>
         </div>
 
         {/* ── Right column — metadata sidebar ────────────────────── */}
-        <aside className="min-h-0 border-t border-border/60 px-5 py-5 pb-40 lg:overflow-y-auto lg:border-t-0 lg:border-l">
+        <aside className="border-t border-border/60 px-4 py-5 pb-16 sm:px-6 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0 lg:px-5 lg:pb-40">
           {delivery.plan ? (
             <EpicDeliveryStatusChip
               plan={delivery.plan}
