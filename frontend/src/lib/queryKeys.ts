@@ -21,6 +21,7 @@ export const queryKeys = {
   },
 
   dock: {
+    aiDefaults: (wsId: string) => ['dock', wsId, 'ai-defaults'] as const,
     root: (wsId: string) => ['dock', wsId] as const,
     runs: (wsId: string) => ['dock', wsId, 'runs'] as const,
     chats: (wsId: string) => ['dock', wsId, 'chats'] as const,

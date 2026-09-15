@@ -1,4 +1,4 @@
-import { useAgents } from "@/hooks/queries/useAgents";
+import { useAskAgentDefaults } from "@/hooks/queries/useAskAgentDefaults";
 import { AIExecutionDetails } from "../AIExecutionDetails";
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
@@ -167,8 +167,8 @@ export function ChatView({
   }, [initialDraft, onDraftConsumed, setValue]);
 
   const run = detail?.run ?? null;
-  const agentDefaults = useAgents(!run && active ? workspaceId : "");
-  const askAgentDefault = agentDefaults.data?.find(agent => agent.preset_key === "ask_agent")?.ai_profile_id;
+  const agentDefaults = useAskAgentDefaults(!run && active ? workspaceId : "");
+  const askAgentDefault = agentDefaults.data?.ai_profile_id;
   const agentDefaultUnavailable = !run && !aiConnection.ai_profile_id && (agentDefaults.isPending || agentDefaults.isError);
   const runActive = !!run && ACTIVE_RUN_STATUSES.has(run.status);
   useEffect(() => {

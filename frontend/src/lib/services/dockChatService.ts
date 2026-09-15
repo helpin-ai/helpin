@@ -26,6 +26,8 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const dockChatService = {
+  getAIDefaults: (workspaceId: string) =>
+    api.get<{ ai_profile_id: string | null }>(`/dock/ai-defaults${qs(workspaceId)}`),
 	getPublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>
 		api.get<PublicShareLink | null>(`/dock/shares/${resourceType}/${encodeURIComponent(resourceId)}${qs(workspaceId)}`),
 	createPublicShare: (workspaceId: string, resourceType: PublicShareResourceType, resourceId: string) =>

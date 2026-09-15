@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +24,17 @@ type DockChatHandler struct {
 // NewDockChatHandler creates a DockChatHandler.
 func NewDockChatHandler(dockChatService *service.DockChatService, agentService *service.AgentService) *DockChatHandler {
 	return &DockChatHandler{dockChatService: dockChatService, agentService: agentService}
+}
+
+// AIDefaults exposes the Ask Agent launch default to workspace members.
+func (h *DockChatHandler) AIDefaults(w http.ResponseWriter, r *http.Request) {
+	defaults, err := h.agentService.AskAgentDefaults(r.Context(), getWorkspaceID(r))
+	if err != nil {
+		slog.ErrorContext(r.Context(), "failed to load Ask Agent default", "error", err)
+		writeError(w, http.StatusInternalServerError, "Unable to load the agent's AI default")
+		return
+	}
+	writeJSON(w, http.StatusOK, defaults)
 }
 
 // ListChats handles GET /api/dock/chats.
