@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -88,7 +89,7 @@ func selectSupportConversationRecipient(
 			return nil, err
 		}
 		mailboxCandidates := append(mailboxUserIDs, adminIDs...)
-		if ownerID != "" {
+		if ownerID != "" && slices.Contains(mailboxCandidates, ownerID) {
 			if selection, err := buildSupportRecipientSelection(ctx, prefRepo, availability, input, statusByUserID, []string{ownerID}, "", "owner"); err != nil || selection != nil {
 				return selection, err
 			}
@@ -173,7 +174,14 @@ func buildSupportRecipientSelection(
 			if prefRepo == nil || input.Channel == "" || input.EventType == "" {
 				continue
 			}
-			shouldNotify, err := prefRepo.ShouldNotify(ctx, userID, input.WorkspaceID, input.EventType, input.Channel, teamID)
+			channel := input.Channel
+			if channel == "any" {
+				channel = "in_app"
+			}
+			shouldNotify, err := prefRepo.ShouldNotify(ctx, userID, input.WorkspaceID, input.EventType, channel, teamID)
+			if err == nil && !shouldNotify && input.Channel == "any" {
+				shouldNotify, err = prefRepo.ShouldNotify(ctx, userID, input.WorkspaceID, input.EventType, "email", teamID)
+			}
 			if err != nil {
 				return nil, err
 			}

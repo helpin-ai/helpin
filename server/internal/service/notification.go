@@ -73,6 +73,7 @@ type NotificationService struct {
 	emailClient        emailSender
 	appBaseURL         string
 	logger             *slog.Logger
+	accessChecker      NotificationAccessChecker
 }
 
 type emailSender interface {
@@ -157,6 +158,12 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 		"category", event.Category,
 		"priority", event.Priority,
 	)
+
+	// Keep routing scope on each event so delayed delivery can recheck team preferences.
+	event.Metadata = cloneNotificationMetadata(event.Metadata)
+	if event.TeamID != "" {
+		event.Metadata[notificationTeamKey] = event.TeamID
+	}
 
 	// 1. Resolve recipients: followers + explicit recipients
 	followers := []string{}
@@ -250,15 +257,30 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 	for recipientID := range recipientSet {
 		log := s.logger.With("recipient_id", recipientID, "entity_id", event.EntityID)
 
-		// Check user preferences
+		allowed, err := s.canReceive(ctx, recipientID, event)
+		if err != nil {
+			log.ErrorContext(ctx, "check notification access", "error", err)
+			continue
+		}
+		if !allowed {
+			continue
+		}
+
+		// Check channels independently. email_only rows retain delivery history without appearing in the inbox.
 		shouldNotify, err := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "in_app", event.TeamID)
 		if err != nil {
 			log.ErrorContext(ctx, "failed to check preferences", "error", err)
 			continue
 		}
 		if !shouldNotify {
-			log.DebugContext(ctx, "skipped by user preferences", "event_type", event.EventType)
-			continue
+			shouldEmail, emailErr := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "email", event.TeamID)
+			if emailErr != nil {
+				log.ErrorContext(ctx, "check email preferences", "error", emailErr)
+				continue
+			}
+			if !shouldEmail || event.SkipEmailDelivery {
+				continue
+			}
 		}
 
 		// Check existing notification for this entity+recipient
@@ -294,6 +316,11 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 			existing.EventCount = existing.EventCount + 1
 			existing.LastEventAt = now
 			existing.Status = newStatus
+			if !shouldNotify {
+				existing.Status = notificationEmailOnly
+			} else if existing.Status == notificationEmailOnly {
+				existing.Status = "unread"
+			}
 			existing.Priority = newPriority
 			existing.ReadAt = newReadAt
 			existing.SnoozedUntil = newSnoozedUntil
@@ -315,15 +342,17 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 				log.ErrorContext(ctx, "failed to record event deliveries", "error", err)
 			}
 
-			// Push via WebSocket
-			s.wsPublisher.Publish(ws.Event{
-				Action:      "updated",
-				Entity:      "notification",
-				EntityID:    existing.ID,
-				WorkspaceID: event.WorkspaceID,
-				ActorID:     event.ActorID,
-				Data:        buildNotificationWSData(recipientID, event, priority),
-			})
+			// Push only notifications visible in the inbox.
+			if shouldNotify {
+				s.wsPublisher.Publish(ws.Event{
+					Action:      "updated",
+					Entity:      "notification",
+					EntityID:    existing.ID,
+					WorkspaceID: event.WorkspaceID,
+					ActorID:     event.ActorID,
+					Data:        buildNotificationWSData(recipientID, event, priority),
+				})
+			}
 		} else {
 			// Create new notification
 			notif := &model.Notification{
@@ -346,6 +375,10 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 				Priority:             priority,
 			}
 
+			if !shouldNotify {
+				notif.Status = notificationEmailOnly
+			}
+
 			if err := s.notifRepo.Upsert(ctx, notif); err != nil {
 				log.ErrorContext(ctx, "failed to create notification", "error", err)
 				continue
@@ -361,15 +394,17 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 				log.ErrorContext(ctx, "failed to record event deliveries", "error", err)
 			}
 
-			// Push via WebSocket
-			s.wsPublisher.Publish(ws.Event{
-				Action:      "created",
-				Entity:      "notification",
-				EntityID:    notif.ID,
-				WorkspaceID: event.WorkspaceID,
-				ActorID:     event.ActorID,
-				Data:        buildNotificationWSData(recipientID, event, priority),
-			})
+			// Push only notifications visible in the inbox.
+			if shouldNotify {
+				s.wsPublisher.Publish(ws.Event{
+					Action:      "created",
+					Entity:      "notification",
+					EntityID:    notif.ID,
+					WorkspaceID: event.WorkspaceID,
+					ActorID:     event.ActorID,
+					Data:        buildNotificationWSData(recipientID, event, priority),
+				})
+			}
 		}
 	}
 
@@ -437,13 +472,16 @@ func (s *NotificationService) buildDeliveryPlans(
 	priority string,
 	now time.Time,
 ) ([]notificationDeliveryPlan, error) {
-	plans := []notificationDeliveryPlan{
-		{
-			Channel:     "in_app",
-			Status:      "delivered",
-			DeliveredAt: &now,
-		},
+	inApp, err := s.prefRepo.ShouldNotify(ctx, recipientID, event.WorkspaceID, event.EventType, "in_app", event.TeamID)
+	if err != nil {
+		return nil, err
 	}
+	plan := notificationDeliveryPlan{Channel: "in_app", Status: "skipped"}
+	if inApp {
+		plan.Status = "delivered"
+		plan.DeliveredAt = &now
+	}
+	plans := []notificationDeliveryPlan{plan}
 
 	userSettings, err := s.userSettingsRepo.Get(ctx, recipientID)
 	if err != nil {
@@ -835,7 +873,7 @@ func (s *NotificationService) processPendingSupportReplyEmailGroup(
 		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "failed", nil, &reason)
 	}
 
-	if notification.Status != "unread" {
+	if notification.Status != "unread" && notification.Status != notificationEmailOnly {
 		reason := "support reply already handled before delay elapsed"
 		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
 	}
@@ -853,7 +891,16 @@ func (s *NotificationService) processPendingSupportReplyEmailGroup(
 		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "failed", nil, &reason)
 	}
 
-	shouldEmail, err := s.prefRepo.ShouldNotify(ctx, notification.RecipientID, notification.WorkspaceID, notification.EventType, "email", "")
+	allowed, err := s.canReceive(ctx, notification.RecipientID, eventFromNotification(*notification))
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		reason := "recipient no longer has access"
+		return s.notifRepo.UpdateDeliveryStatus(ctx, []string{latest.DeliveryID}, "skipped", nil, &reason)
+	}
+
+	shouldEmail, err := s.prefRepo.ShouldNotify(ctx, notification.RecipientID, notification.WorkspaceID, notification.EventType, "email", notificationTeam(latest.EventMetadata))
 	if err != nil {
 		return err
 	}
@@ -1028,7 +1075,15 @@ func (s *NotificationService) filterDigestDeliveriesByCurrentPreferences(
 	allowed := make([]repository.PendingDigestDelivery, 0, len(deliveries))
 	skipped := make([]string, 0)
 	for _, delivery := range deliveries {
-		shouldEmail, err := s.prefRepo.ShouldNotify(ctx, recipientID, delivery.WorkspaceID, delivery.EventType, "email", "")
+		canReceive, err := s.canReceive(ctx, recipientID, model.NotificationEventInput{WorkspaceID: delivery.WorkspaceID, EntityType: delivery.EntityType, EntityID: delivery.EntityID, EventType: delivery.EventType, Metadata: delivery.EventMetadata, TeamID: notificationTeam(delivery.EventMetadata)})
+		if err != nil {
+			return nil, nil, err
+		}
+		if !canReceive {
+			skipped = append(skipped, delivery.DeliveryID)
+			continue
+		}
+		shouldEmail, err := s.prefRepo.ShouldNotify(ctx, recipientID, delivery.WorkspaceID, delivery.EventType, "email", notificationTeam(delivery.EventMetadata))
 		if err != nil {
 			return nil, nil, fmt.Errorf("check digest preferences: %w", err)
 		}
@@ -1053,7 +1108,7 @@ func buildDigestItems(deliveries []repository.PendingDigestDelivery, now time.Ti
 	skippedIDs := make([]string, 0)
 
 	for _, delivery := range deliveries {
-		if delivery.NotificationStatus != "unread" {
+		if delivery.NotificationStatus != "unread" && delivery.NotificationStatus != notificationEmailOnly {
 			skippedIDs = append(skippedIDs, delivery.DeliveryID)
 			continue
 		}
@@ -1410,9 +1465,35 @@ func (s *NotificationService) CleanupArchivedNotifications(ctx context.Context, 
 
 // List returns paginated notifications for a user.
 func (s *NotificationService) List(ctx context.Context, recipientID, workspaceID, status, filter string, limit int, cursor *time.Time) (*model.NotificationListResponse, error) {
-	notifs, err := s.notifRepo.List(ctx, recipientID, workspaceID, status, filter, limit, cursor)
-	if err != nil {
-		return nil, err
+	ctx = withNotificationAccessCache(ctx)
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	notifs := []model.Notification{}
+	for offset := 0; len(notifs) <= limit; offset += 50 {
+		candidates, err := s.notifRepo.ListAccessCandidates(ctx, recipientID, workspaceID, status, filter, 50, cursor, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range candidates {
+			allowed, err := s.canReceive(ctx, recipientID, eventFromNotification(n))
+			if err != nil {
+				return nil, err
+			}
+			if allowed {
+				notifs = append(notifs, n)
+			}
+			if len(notifs) > limit {
+				break
+			}
+		}
+		if len(candidates) < 50 {
+			break
+		}
+	}
+	hasMore := len(notifs) > limit
+	if hasMore {
+		notifs = notifs[:limit]
 	}
 
 	unreadCount, err := s.UnreadCount(ctx, recipientID, workspaceID)
@@ -1421,7 +1502,7 @@ func (s *NotificationService) List(ctx context.Context, recipientID, workspaceID
 	}
 
 	var nextCursor *string
-	if len(notifs) == limit {
+	if hasMore {
 		last := notifs[len(notifs)-1].LastEventAt.Format(time.RFC3339Nano)
 		nextCursor = &last
 	}
@@ -1434,12 +1515,42 @@ func (s *NotificationService) List(ctx context.Context, recipientID, workspaceID
 }
 
 // UnreadCount returns the number of unread notifications.
-func (s *NotificationService) UnreadCount(ctx context.Context, recipientID, workspaceID string) (int, error) {
-	userSettings, err := s.userSettingsRepo.Get(ctx, recipientID)
+func (s *NotificationService) UnreadCount(ctx context.Context, recipientID, workspaceID string, timezoneHint ...string) (int, error) {
+	ctx = withNotificationAccessCache(ctx)
+	userSettings, err := NewUserNotificationSettingsService(s.userSettingsRepo).Get(ctx, recipientID, timezoneHint...)
 	if err != nil {
 		return 0, err
 	}
-	return s.notifRepo.UnreadCount(ctx, recipientID, workspaceID, userSettings.BadgeMode)
+	if s.accessChecker == nil {
+		return s.notifRepo.UnreadCount(ctx, recipientID, workspaceID, userSettings.BadgeMode)
+	}
+	if userSettings.BadgeMode == "none" {
+		return 0, nil
+	}
+	filter := ""
+	if userSettings.BadgeMode == "mentions_only" {
+		filter = "mentions"
+	}
+	count := 0
+	for offset := 0; ; offset += 50 {
+		candidates, err := s.notifRepo.ListAccessCandidates(ctx, recipientID, workspaceID, "unread", filter, 50, nil, offset)
+		if err != nil {
+			return 0, err
+		}
+		for _, n := range candidates {
+			allowed, err := s.canReceive(ctx, recipientID, eventFromNotification(n))
+			if err != nil {
+				return 0, err
+			}
+			if allowed {
+				count++
+			}
+		}
+		if len(candidates) < 50 {
+			break
+		}
+	}
+	return count, nil
 }
 
 // Update updates a notification's status.

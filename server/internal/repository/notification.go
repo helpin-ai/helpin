@@ -56,6 +56,9 @@ type PendingDigestDelivery struct {
 	SnoozedUntil       *time.Time
 	EventType          string
 	EventTitle         string
+	EntityType         string
+	EntityID           string
+	EventMetadata      model.JSONB
 	CreatedAt          time.Time
 }
 
@@ -112,8 +115,13 @@ func (r *NotificationRepository) GetExisting(ctx context.Context, recipientID, e
 
 // List fetches paginated notifications for a user in a workspace.
 func (r *NotificationRepository) List(ctx context.Context, recipientID, workspaceID string, status string, filter string, limit int, cursor *time.Time) ([]model.Notification, error) {
+	return r.ListAccessCandidates(ctx, recipientID, workspaceID, status, filter, limit, cursor, 0)
+}
+
+// ListAccessCandidates supports scanning beyond inaccessible rows without short pages.
+func (r *NotificationRepository) ListAccessCandidates(ctx context.Context, recipientID, workspaceID, status, filter string, limit int, cursor *time.Time, offset int) ([]model.Notification, error) {
 	q := r.db.WithContext(ctx).
-		Where("recipient_id = ? AND workspace_id = ?", recipientID, workspaceID)
+		Where("recipient_id = ? AND workspace_id = ? AND status NOT IN ?", recipientID, workspaceID, []string{"email_only", "email_only_handled"})
 
 	if status != "" {
 		q = q.Where("status = ?", status)
@@ -147,7 +155,7 @@ func (r *NotificationRepository) List(ctx context.Context, recipientID, workspac
 	}
 
 	var notifs []model.Notification
-	if err := q.Order("last_event_at DESC").Limit(limit).Find(&notifs).Error; err != nil {
+	if err := q.Order("last_event_at DESC, id DESC").Offset(offset).Limit(limit).Find(&notifs).Error; err != nil {
 		return nil, fmt.Errorf("list notifications: %w", err)
 	}
 	return notifs, nil
@@ -202,6 +210,7 @@ func (r *NotificationRepository) listPendingDeliveriesByChannel(ctx context.Cont
 			n.snoozed_until,
 			ne.event_type,
 			ne.title AS event_title,
+ n.entity_type, n.entity_id, ne.metadata AS event_metadata,
 			nd.created_at
 		`).
 		Joins("JOIN notification_events ne ON ne.id = nd.notification_event_id").
@@ -255,10 +264,10 @@ func (r *NotificationRepository) MarkAsRead(ctx context.Context, id, recipientID
 func (r *NotificationRepository) MarkEntityCategoryAsRead(ctx context.Context, recipientID, workspaceID, entityType, entityID, category string) error {
 	now := time.Now()
 	return r.db.WithContext(ctx).Model(&model.Notification{}).
-		Where("recipient_id = ? AND workspace_id = ? AND entity_type = ? AND entity_id = ? AND latest_event_category = ? AND status = 'unread'",
+		Where("recipient_id = ? AND workspace_id = ? AND entity_type = ? AND entity_id = ? AND latest_event_category = ? AND status IN ('unread', 'email_only')",
 			recipientID, workspaceID, entityType, entityID, category).
 		Updates(map[string]interface{}{
-			"status":  "read",
+			"status":  gorm.Expr("CASE WHEN status = ? THEN ? ELSE ? END", "email_only", "email_only_handled", "read"),
 			"read_at": now,
 		}).Error
 }
@@ -268,10 +277,10 @@ func (r *NotificationRepository) MarkEntityCategoryAsRead(ctx context.Context, r
 func (r *NotificationRepository) MarkEntityEventTypeAsReadForWorkspace(ctx context.Context, workspaceID, entityType, entityID, eventType string) error {
 	now := time.Now()
 	return r.db.WithContext(ctx).Model(&model.Notification{}).
-		Where("workspace_id = ? AND entity_type = ? AND entity_id = ? AND event_type = ? AND status = 'unread'",
+		Where("workspace_id = ? AND entity_type = ? AND entity_id = ? AND event_type = ? AND status IN ('unread', 'email_only')",
 			workspaceID, entityType, entityID, eventType).
 		Updates(map[string]interface{}{
-			"status":  "read",
+			"status":  gorm.Expr("CASE WHEN status = ? THEN ? ELSE ? END", "email_only", "email_only_handled", "read"),
 			"read_at": now,
 		}).Error
 }

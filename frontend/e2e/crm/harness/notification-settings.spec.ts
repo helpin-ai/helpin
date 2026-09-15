@@ -3,7 +3,7 @@ for (const mode of ['light', 'dark', 'narrow']) test(`notification preferences $
   if (mode === 'narrow') await page.setViewportSize({ width: 390, height: 844 });
   let account = { user_id: 'me', email_enabled: true, email_digest_frequency: 'daily', email_digest_time: '09:00', email_digest_day: 1, timezone: 'Asia/Karachi', do_not_disturb: false, dnd_until: null, badge_mode: 'all' };
   let workspace = { workspace_id: 'ws-settings', user_id: 'me', mute_workspace: false, channel_preferences: { comments: { in_app: false, email: true } } };
-  await page.route('**/api/user/notification-settings', async route => {
+  await page.route('**/api/user/notification-settings*', async route => {
     if (route.request().method() === 'PUT') account = { ...account, ...route.request().postDataJSON() };
     await route.fulfill({ json: account });
   });
@@ -11,6 +11,7 @@ for (const mode of ['light', 'dark', 'narrow']) test(`notification preferences $
     if (route.request().method() === 'PUT') workspace = { ...workspace, ...route.request().postDataJSON() };
     await route.fulfill({ json: workspace });
   });
+  await page.route('**/api/workspaces/ws-settings/me', route => route.fulfill({ json: { modules: ['pm', 'docs', 'support', 'crm'], permissions: ['settings.read'], membership: { role: 'member' }, team_memberships: [] } }));
   await page.goto(`/e2e/crm/harness/notification-settings.html${mode === 'dark' ? '?dark' : ''}`);
   await expect(page.getByRole('switch', { name: 'Email notifications', exact: true })).toBeChecked();
   await expect(page.getByRole('switch', { name: 'Comments and replies: in-app', exact: true })).not.toBeChecked();
@@ -42,4 +43,20 @@ for (const mode of ['light', 'dark', 'narrow']) test(`notification preferences $
   expect(workspace.channel_preferences.comments).toEqual({ in_app: false, email: true });
   await page.getByRole('switch', { name: 'Pause all notifications', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('All notifications are paused');
+});
+
+test('module access controls visible categories without resetting preferences', async ({ page }) => {
+  let modules = ['pm', 'docs'];
+  await page.route('**/api/workspaces/ws-settings/me', route => route.fulfill({ json: { modules, permissions: [], membership: { role: 'member' }, team_memberships: [] } }));
+  await page.route('**/api/user/notification-settings*', route => route.fulfill({ json: { email_enabled: true, timezone: 'UTC', email_digest_frequency: 'daily' } }));
+  await page.route('**/api/notifications/preferences?*', route => route.fulfill({ json: { mute_workspace: false, channel_preferences: { support_replies: { email: false } } } }));
+  await page.goto('/e2e/crm/harness/notification-settings.html');
+  await expect(page.getByRole('heading', { name: 'Projects & docs' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Support inbox', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'CRM', exact: true })).toHaveCount(0);
+  modules = ['pm', 'docs', 'support', 'crm'];
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Support inbox', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'CRM', exact: true })).toBeVisible();
+  await expect(page.getByRole('switch', { name: 'Customer replies: email', exact: true })).not.toBeChecked();
 });

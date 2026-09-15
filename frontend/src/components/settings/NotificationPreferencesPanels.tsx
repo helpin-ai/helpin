@@ -22,6 +22,7 @@ import { QuietUnderlineInput } from '@/components/design-system/quiet';
 import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/design-system/quiet-dropdown-select';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 
@@ -112,7 +113,7 @@ function TimezonePicker({
 }
 
 export function AccountNotificationPreferences({ cardClassName }: CardClassNameProps) {
-  const { data: settings, isLoading } = useUserNotificationSettings();
+  const { data: settings, isLoading, isError, refetch } = useUserNotificationSettings();
   const updateSettings = useUpdateUserNotificationSettings();
 
   const handleSettingsUpdate = (payload: UpdateUserNotificationSettingsRequest) => {
@@ -160,6 +161,9 @@ export function AccountNotificationPreferences({ cardClassName }: CardClassNameP
 
   if (isLoading) {
     return <Skeleton className="h-[420px] w-full" />;
+  }
+  if (isError) {
+    return <div role="alert" className="text-sm text-quiet-text-secondary">Couldn’t load notification settings. <Button variant="ghost" onClick={() => refetch()}>Try again</Button></div>;
   }
 
   return (
@@ -343,7 +347,7 @@ export function WorkspaceNotificationCategoriesCard({
     <NotificationCategoriesCard
       workspaceId={workspaceId}
       cardClassName={cardClassName}
-      title="Projects & activity"
+      title="Projects & docs"
       categories={WORKSPACE_NOTIFICATION_CATEGORIES}
     />
   );
@@ -361,4 +365,12 @@ export function SupportNotificationCategoriesCard({
       categories={SUPPORT_NOTIFICATION_CATEGORIES}
     />
   );
+}
+
+export function CRMNotificationCategoriesCard({ workspaceId }: { workspaceId: string }) {
+  return <NotificationCategoriesCard workspaceId={workspaceId} title="CRM" categories={[{ key: 'crm_signals', label: 'Signals ready for review', description: 'Signals routed to you or your team' }]} />;
+}
+
+export function IntegrationNotificationCategoriesCard({ workspaceId }: { workspaceId: string }) {
+  return <NotificationCategoriesCard workspaceId={workspaceId} title="Integrations" categories={[{ key: 'integrations', label: 'Connection issues', description: 'External tools that need you to reconnect', supportsEmail: false }]} />;
 }
