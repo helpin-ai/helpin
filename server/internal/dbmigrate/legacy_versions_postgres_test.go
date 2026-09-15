@@ -50,7 +50,7 @@ func TestLegacyNativeVersionUpgradePostgres(t *testing.T) {
 	// deliberately absent: replaying already-applied native SQL must fail.
 	if _, err := db.ExecContext(ctx, `
 CREATE TABLE crm_pipelines(id uuid, workspace_id uuid, is_default bool, name text, default_commercial_motion text);
-CREATE TABLE crm_pipeline_stages(id uuid, pipeline_id uuid, name text, position int, probability int, stage_type text);
+CREATE TABLE crm_pipeline_stages(id uuid, pipeline_id uuid, name text, position bigint, probability bigint, stage_type text);
 CREATE TABLE crm_deals(id uuid, stage_id uuid);
 CREATE TABLE crm_suggestions(id uuid);
 CREATE TABLE automation_rules(id uuid);

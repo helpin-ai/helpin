@@ -31,7 +31,7 @@ DO $$
 BEGIN
  IF (SELECT count(*) FROM crm_pipeline_stages) <> 17 THEN RAISE EXCEPTION 'stage count or idempotency failed'; END IF;
  IF (SELECT array_agg(name ORDER BY position) FROM crm_pipeline_stages WHERE pipeline_id='00000000-0000-0000-0000-000000000001') <> ARRAY['Lead','In Discussion','Proposal Sent','Won','Lost'] THEN RAISE EXCEPTION 'wrong stages'; END IF;
- IF (SELECT array_agg(probability ORDER BY position) FROM crm_pipeline_stages WHERE pipeline_id='00000000-0000-0000-0000-000000000002') <> ARRAY[20,50,80,100,0] THEN RAISE EXCEPTION 'wrong probabilities'; END IF;
+ IF (SELECT array_agg(probability::bigint ORDER BY position) FROM crm_pipeline_stages WHERE pipeline_id='00000000-0000-0000-0000-000000000002') <> ARRAY[20,50,80,100,0]::bigint[] THEN RAISE EXCEPTION 'wrong probabilities'; END IF;
  IF (SELECT name FROM crm_pipeline_stages WHERE id='20000000-0000-0000-0000-000000000030') <> 'Consultation' THEN RAISE EXCEPTION 'custom pipeline changed'; END IF;
  IF (SELECT count(*) FROM crm_deals) <> 7 OR EXISTS (SELECT 1 FROM crm_deals WHERE probability<>37 OR updated_at<>'2026-01-01'::timestamptz) THEN RAISE EXCEPTION 'deal data changed'; END IF;
  IF EXISTS (SELECT 1 FROM crm_deals WHERE id IN (11,12,13) AND stage_id<>'20000000-0000-0000-0000-000000000011') THEN RAISE EXCEPTION 'discussion mapping failed'; END IF;
