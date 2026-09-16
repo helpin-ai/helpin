@@ -272,6 +272,11 @@ func runtimeAgentFromHelpinAgent(agent *model.Agent, appID string) AgentRuntimeA
 	if normalizePresetKey(agent.EffectivePresetKey()) == model.AgentPresetAskAgent {
 		out.AllowedTools = appendPresetTools(out.AllowedTools, askAgentPresetTools())
 	}
+	// Preview uses an isolated host target, while retaining the saved agent prompt.
+	if slices.Contains(out.AllowedTargets, "support_conversation") && !slices.Contains(out.AllowedTargets, supportPreviewTarget) {
+		out.AllowedTargets = append(out.AllowedTargets, supportPreviewTarget)
+	}
+
 	// Ask Agent owns skill discovery as a managed Dock capability. Keep those
 	// tools registered even before a workspace assigns optional skills; an
 	// empty discovery result is valid and the run contract must still match.
@@ -561,6 +566,23 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 		}
 		allowedTools = filtered
 	}
+	if run.TargetType == supportPreviewTarget {
+		if _, err := supportPreviewSnapshot(run); err != nil {
+			return AgentRuntimeStartRunRequest{}, err
+		}
+		for _, name := range allowedTools {
+			if !slices.Contains(supportPreviewTools, name) {
+				return AgentRuntimeStartRunRequest{}, fmt.Errorf("unsafe support preview tool %s", name)
+			}
+		}
+		for _, name := range []string{"search_knowledge", "send_support_reply", "escalate_to_human"} {
+			if !slices.Contains(allowedTools, name) {
+				return AgentRuntimeStartRunRequest{}, fmt.Errorf("preview requires executable tool %s", name)
+			}
+		}
+		instructions += "\nThis is an isolated support preview. Use the supplied conversation snapshot as the customer context. Use the normal search_knowledge and send_support_reply or escalate_to_human tools; the host captures the outcome without contacting a customer. Other tools are unavailable in preview. After the outcome, end your turn."
+	}
+
 	if err := validateScheduledSupportFollowUpTools(run, allowedTools); err != nil {
 		return AgentRuntimeStartRunRequest{}, err
 	}
@@ -4121,6 +4143,10 @@ func (s *AgentService) GetAgentRun(ctx context.Context, workspaceID, runID strin
 	if run == nil {
 		return nil, fmt.Errorf("agent run not found")
 	}
+	if err := requireSupportPreviewReader(ctx, run); err != nil {
+		return nil, err
+	}
+
 	if updated := s.reconcileStuckRun(ctx, run); updated != nil {
 		run = updated
 	}
@@ -4137,6 +4163,10 @@ func (s *AgentService) ListRunArtifacts(ctx context.Context, workspaceID, runID 
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
+	if err := s.requireSupportPreviewReader(ctx, workspaceID, runID); err != nil {
+		return nil, err
+	}
+
 	artifacts, err := s.artifactRepo.ListByRun(ctx, workspaceID, runID)
 	if err != nil {
 		return nil, err
@@ -5262,6 +5292,10 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	if run == nil {
 		return nil, fmt.Errorf("agent run not found")
 	}
+	if run.TargetType == supportPreviewTarget && actorID != derefString(run.TriggeredByUserID) {
+		return nil, ErrSupportPreviewConversationNotFound
+	}
+
 	if !model.IsAgentRunActiveStatus(run.Status) {
 		return nil, fmt.Errorf("only queued, running, or paused runs can be cancelled")
 	}
@@ -6274,6 +6308,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		if err != nil {
 			return nil, err
 		}
+		if parent != nil && parent.TargetType == supportPreviewTarget {
+			return nil, fmt.Errorf("support previews cannot launch child runs")
+		}
 		if agentRunIsPreview(parent) {
 			params.deliveryMode = "preview"
 		}
@@ -6537,6 +6574,9 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			selectedExternalTools = append(selectedExternalTools, tool)
 		}
 	}
+	if params.targetType == supportPreviewTarget {
+		selectedExternalTools = nil
+	}
 	if len(selectedExternalTools) > 0 {
 		if s.externalMCPService == nil {
 			err := fmt.Errorf("agent has external MCP tools but external MCP is not configured")
@@ -6777,6 +6817,10 @@ func (s *AgentService) publishRunEvent(run *model.AgentRun, actorID string) {
 }
 
 func (s *AgentService) publishRunMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s.wsPublisher == nil || run == nil || message == nil {
 		return
 	}
@@ -7100,6 +7144,12 @@ func requiresPostRunReconciliation(runtimeKind string) bool {
 
 func (s *AgentService) normalizeRunCollection(runs []model.AgentRun) []model.AgentRun {
 	for idx := range runs {
+		if runs[idx].TargetType == supportPreviewTarget {
+			runs[idx].Input = nil
+			runs[idx].OutputSummary = nil
+			runs[idx].ErrorMessage = nil
+		}
+
 		model.NormalizeAgentRunPauseState(&runs[idx])
 	}
 	return runs

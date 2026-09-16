@@ -426,6 +426,45 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 	}
 	workspaceID := requestedWorkspaceID
 
+	previewRun, err := s.helpinRunForRuntimeRun(ctx, req.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if previewRun != nil && previewRun.TargetType == supportPreviewTarget && (target.Type != supportPreviewTarget || target.ID != previewRun.TargetID) {
+		return nil, ErrAgentRuntimeHostForbidden
+	}
+	if target.Type == supportPreviewTarget {
+		if previewRun == nil && s.runRepo != nil {
+			previewRun, err = s.runRepo.GetByID(ctx, workspaceID, target.ID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if previewRun == nil || previewRun.TargetType != supportPreviewTarget || previewRun.TargetID != target.ID || previewRun.AgentID != req.AgentID || previewRun.WorkspaceID != workspaceID {
+			return nil, ErrAgentRuntimeHostForbidden
+		}
+		snapshot, err := supportPreviewSnapshot(previewRun)
+		if err != nil {
+			return nil, err
+		}
+		resp.Summary = "Support preview"
+		resp.Data = previewConversationData(previewRun)
+		resp.Data["messages"] = previewMessages(snapshot)
+		resp.Data["required_confidence"] = snapshot.ConfidenceThreshold
+		if s.workspaceRepo != nil {
+			workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+			if err != nil {
+				return nil, err
+			}
+			if workspace != nil {
+				resp.Summary = runtimeSupportConversationSummary(&model.SupportConversation{Subject: "Support preview"}, workspace)
+				resp.Data["workspace"] = runtimeWorkspaceContextData(workspace)
+				resp.Data["product_context"] = map[string]interface{}{"name": workspace.Name, "website_url": agentRuntimeHostString(workspace.WebsiteURL), "summary": agentRuntimeHostString(workspace.Description), "is_current_website_product": true, "resolve_generic_product_references": true}
+			}
+		}
+		return resp, nil
+	}
+
 	switch target.Type {
 	case "workspace":
 		workspace, err := s.workspaceRepo.GetByID(ctx, target.ID)

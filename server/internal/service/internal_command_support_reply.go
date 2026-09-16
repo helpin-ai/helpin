@@ -169,7 +169,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		return nil, fmt.Errorf("support reply service is not configured")
 	}
 	conversationID := commandConversationTargetID(meta)
-	if conversationID == "" {
+	if conversationID == "" && meta.TargetType != supportPreviewTarget {
 		return nil, fmt.Errorf("send_reply requires a support conversation target")
 	}
 	var req struct {
@@ -194,6 +194,10 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 			"violations":  disclosures,
 			"next_action": "Rewrite once as a direct customer-facing answer without mentioning searches, evidence, tools, agents, repositories, confidence machinery, or other internal process; then call send_support_reply again.",
 		}), nil
+	}
+
+	if meta.TargetType == supportPreviewTarget {
+		return s.captureSupportPreviewReply(ctx, meta, req.ReplyKind, &AIResponseContract{Content: content, CanAnswer: true, SourceDocIDs: req.SourceDocIDs, Confidence: req.Confidence, Claims: req.Claims})
 	}
 
 	conv, err := supportAI.conversationRepo.GetByID(ctx, meta.WorkspaceID, conversationID, "", model.RoleOwner)
@@ -272,22 +276,7 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		if listErr != nil {
 			slog.WarnContext(ctx, "send_reply: load run evidence failed", "error", listErr, "run_id", run.ID)
 		}
-		for _, row := range rows {
-			evidence = append(evidence, KnowledgeSearchResult{
-				ID:            row.EvidenceID,
-				ReferenceID:   row.ReferenceID,
-				SourceType:    row.SourceType,
-				SourceID:      row.SourceID,
-				DocumentID:    row.DocumentID,
-				Title:         row.Title,
-				URL:           row.URL,
-				IsInternal:    row.IsInternal,
-				Content:       row.Content,
-				LexicalScore:  row.LexicalScore,
-				VectorScore:   row.VectorScore,
-				CombinedScore: row.CombinedScore,
-			})
-		}
+		evidence = supportEvidenceFromRows(rows)
 	}
 
 	history, err := supportAI.messageRepo.ListByConversation(ctx, meta.WorkspaceID, conversationID, false)

@@ -2,6 +2,8 @@ import { api } from '../api';
 import { automationService } from './automationService';
 import type {
   Agent,
+  SupportAIPreviewRequest,
+  SupportAIPreviewResponse,
   AgentRun,
   CodingSession,
   CodingSessionEventListResponse,
@@ -27,6 +29,12 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const agentService = {
+  previewSupportReply: (workspaceId: string, agentId: string, payload: SupportAIPreviewRequest) =>
+    api.post<SupportAIPreviewResponse>(`/pm/agents/${agentId}/support-preview${qs(workspaceId)}`, payload),
+  getSupportPreview: (workspaceId: string, agentId: string, runId: string) =>
+    api.get<SupportAIPreviewResponse>(`/pm/agents/${agentId}/support-preview/${runId}${qs(workspaceId)}`),
+  cancelSupportPreview: (workspaceId: string, agentId: string, runId: string) =>
+    api.del(`/pm/agents/${agentId}/support-preview/${runId}${qs(workspaceId)}`),
   list: (workspaceId: string) =>
     api.get<Agent[]>(`/pm/agents${qs(workspaceId)}`),
   get: (workspaceId: string, id: string) =>

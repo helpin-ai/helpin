@@ -580,27 +580,34 @@ func (s *SupportAIService) SearchKnowledgeForConversation(ctx context.Context, w
 		return nil, fmt.Errorf("no support AI agent is configured for this workspace")
 	}
 	agentID := strings.TrimSpace(*settings.AIAgentID)
-	effectiveQueries := cloneStringSlice(queries)
+	var messages []model.SupportMessage
 	if s.messageRepo != nil {
-		messages, listErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
-		if listErr != nil {
-			slog.WarnContext(ctx, "support knowledge tool: list messages for exact query failed", "error", listErr, "conversation_id", conversationID)
-		} else {
-			effectiveQueries = prependVisitorKnowledgeQuery(messages, effectiveQueries)
+		messages, err = s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+		if err != nil {
+			slog.WarnContext(ctx, "support knowledge tool: list messages for exact query failed", "error", err, "conversation_id", conversationID)
 		}
 	}
-	effectiveQueries = dedupeQueries(effectiveQueries)
-	if len(effectiveQueries) > 4 {
-		effectiveQueries = effectiveQueries[:4]
-	}
-
-	results, err := s.loadKnowledgeChunks(ctx, workspaceID, agentID, language, effectiveQueries)
+	effectiveQueries := supportKnowledgeQueries(messages, queries)
+	results, err := s.searchSupportKnowledge(ctx, workspaceID, agentID, language, messages, queries)
 	if err != nil {
 		return nil, err
 	}
 
 	s.recordToolRetrievalTrace(ctx, workspaceID, conversationID, effectiveQueries, results)
 	return &SupportKnowledgeSearchOutcome{AgentID: agentID, Results: results}, nil
+}
+
+// Both production and previews prepend the exact visitor message and use the
+// same scoped retrieval/reranking pipeline. Only live turns emit coverage events.
+func supportKnowledgeQueries(messages []model.SupportMessage, queries []string) []string {
+	queries = dedupeQueries(prependVisitorKnowledgeQuery(messages, cloneStringSlice(queries)))
+	if len(queries) > 4 {
+		queries = queries[:4]
+	}
+	return queries
+}
+func (s *SupportAIService) searchSupportKnowledge(ctx context.Context, workspaceID, agentID, language string, messages []model.SupportMessage, queries []string) ([]KnowledgeSearchResult, error) {
+	return s.loadKnowledgeChunks(ctx, workspaceID, agentID, language, supportKnowledgeQueries(messages, queries))
 }
 
 func prependVisitorKnowledgeQuery(messages []model.SupportMessage, queries []string) []string {

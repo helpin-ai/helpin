@@ -69,7 +69,7 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 				return nil, fmt.Errorf("support knowledge search is not configured")
 			}
 			conversationID := commandConversationTargetID(meta)
-			if conversationID == "" {
+			if conversationID == "" && meta.TargetType != supportPreviewTarget {
 				return nil, fmt.Errorf("search_knowledge requires a support conversation target")
 			}
 			var req struct {
@@ -93,15 +93,38 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 				return nil, fmt.Errorf("at least one non-empty query is required")
 			}
 
-			if s.supportAIService != nil {
-				s.supportAIService.publishProgress(meta.WorkspaceID, conversationID, supportAIProgressChecking)
-			}
-			outcome, err := s.supportKnowledgeSearcher.SearchKnowledgeForConversation(ctx, meta.WorkspaceID, conversationID, strings.TrimSpace(req.Language), queries)
-			if err != nil {
-				return nil, err
-			}
-			if s.supportAIService != nil {
-				s.supportAIService.publishProgress(meta.WorkspaceID, conversationID, supportAIProgressComposing)
+			var previewSnapshot *model.SupportPreviewSnapshot
+			var outcome *SupportKnowledgeSearchOutcome
+			var err error
+			if meta.TargetType == supportPreviewTarget {
+				run, runErr := s.resolveCommandRun(ctx, meta)
+				if runErr != nil {
+					return nil, runErr
+				}
+				snapshot, snapshotErr := supportPreviewSnapshot(run)
+				if snapshotErr != nil {
+					return nil, snapshotErr
+				}
+				previewSnapshot = snapshot
+				if snapshot == nil || s.supportAIService == nil {
+					return nil, fmt.Errorf("preview context unavailable")
+				}
+				results, searchErr := s.supportAIService.searchSupportKnowledge(ctx, meta.WorkspaceID, run.AgentID, strings.TrimSpace(req.Language), previewMessages(snapshot), queries)
+				if searchErr != nil {
+					return nil, searchErr
+				}
+				outcome = &SupportKnowledgeSearchOutcome{AgentID: run.AgentID, Results: results}
+			} else {
+				if s.supportAIService != nil {
+					s.supportAIService.publishProgress(meta.WorkspaceID, conversationID, supportAIProgressChecking)
+				}
+				outcome, err = s.supportKnowledgeSearcher.SearchKnowledgeForConversation(ctx, meta.WorkspaceID, conversationID, strings.TrimSpace(req.Language), queries)
+				if err != nil {
+					return nil, err
+				}
+				if s.supportAIService != nil {
+					s.supportAIService.publishProgress(meta.WorkspaceID, conversationID, supportAIProgressComposing)
+				}
 			}
 			results := outcome.Results
 			maxResults := req.MaxResults
@@ -118,6 +141,9 @@ func (s *InternalCommandService) registerSupportKnowledgeCommands() {
 				if settings, settingsErr := s.supportAIService.loadSettings(ctx, meta.WorkspaceID); settingsErr == nil && settings != nil && settings.AIConfidenceThreshold >= 0 && settings.AIConfidenceThreshold <= 1 {
 					requiredConfidence = settings.AIConfidenceThreshold
 				}
+			}
+			if previewSnapshot != nil {
+				requiredConfidence = previewSnapshot.ConfidenceThreshold
 			}
 			confidenceCeiling := supportEvidenceConfidenceCeiling(results)
 

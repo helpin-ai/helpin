@@ -1176,6 +1176,10 @@ func (s *AgentService) publishCodingSessionModelEvent(
 	event model.CodingSessionEvent,
 	actorID string,
 ) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s.wsPublisher == nil || run == nil || strings.TrimSpace(event.ID) == "" {
 		return
 	}
@@ -1193,6 +1197,10 @@ func (s *AgentService) publishCodingSessionModelEvent(
 }
 
 func (s *AgentService) publishCodingSessionMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s.wsPublisher == nil || run == nil || message == nil {
 		return
 	}
@@ -1290,6 +1298,10 @@ func (s *AgentService) ListRunInteractions(ctx context.Context, workspaceID, run
 	if s == nil || s.interactionRepo == nil {
 		return nil, fmt.Errorf("interaction repository is not configured")
 	}
+	if err := s.requireSupportPreviewReader(ctx, workspaceID, runID); err != nil {
+		return nil, err
+	}
+
 	return s.interactionRepo.ListByRun(ctx, workspaceID, runID)
 }
 

@@ -1,3 +1,4 @@
+import { SupportAIPreview } from "./SupportAIPreview";
 import { WidgetOriginSettings } from './chat-widget/WidgetOriginSettings';
 import { brandingDescription } from '@edition';
 import { AIReplyChannelsSelect, getAIReplyChannels, type AIReplyChannels } from './chat-widget/AIReplyChannelsSelect';
@@ -998,6 +999,7 @@ function Dashboard() {
       <div className="space-y-4">
         {saveIndicator}
         {aiAssistantSection}
+        {data?.settings.ai_agent_id && <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />}
         <CuratedGuidanceField
           key={aiAgentId}
           workspaceId={workspaceId}

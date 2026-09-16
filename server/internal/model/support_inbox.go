@@ -1573,7 +1573,24 @@ type SupportAIPreviewHistoryTurn struct {
 }
 
 // SupportAIPreviewResponse is the structured dry-run response for support AI previewing.
+// SupportPreviewSnapshot contains only the immutable text context of a test run.
+// It is created by the host, never accepted as a runtime/model-supplied flag.
+type SupportPreviewSnapshot struct {
+	ExcludedTools       []string         `json:"excluded_tools,omitempty"`
+	History             []SupportMessage `json:"history"`
+	Message             string           `json:"message"`
+	ConversationSource  string           `json:"conversation_source"`
+	ConfidenceThreshold float64          `json:"confidence_threshold"`
+	MaxResults          int              `json:"max_results"`
+}
+
 type SupportAIPreviewResponse struct {
+	RunID               string                    `json:"run_id,omitempty"`
+	Status              string                    `json:"status,omitempty"`
+	Provider            string                    `json:"provider,omitempty"`
+	Model               string                    `json:"model,omitempty"`
+	ProfileID           string                    `json:"profile_id,omitempty"`
+	ExcludedTools       []string                  `json:"excluded_tools,omitempty"`
 	ConversationSource  string                    `json:"conversation_source"`
 	ConfidenceThreshold float64                   `json:"confidence_threshold"`
 	TotalTokensUsed     int                       `json:"total_tokens_used"`
