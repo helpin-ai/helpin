@@ -1,6 +1,6 @@
 # Community Edition distribution and release plan
 
-Status: planned; revised September 15 to consolidate infrastructure while preserving the existing product experience. This plan covers the first supported self-hosted Community Edition release for Helpin and Agent Runtime. It does not change the SaaS/EE deployment path, production secrets, or existing databases until the release gates below pass.
+Status: implemented locally as a release candidate; publication, native arm64 execution, and the real DNS/TLS host gate remain pending. See [implementation evidence](../community/implementation-status.md). This plan covers the first supported self-hosted Community Edition release for Helpin and Agent Runtime. Existing SaaS/EE deployments, production secrets, and databases have not been changed.
 
 ## v0.1 scope — authoritative first-tag checklist
 

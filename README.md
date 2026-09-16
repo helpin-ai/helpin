@@ -2,6 +2,16 @@
 
 Monorepo for the Helpin app, embedded widget SDK, shared widget components, and the standalone widget bundle.
 
+## Community 0.1 beta
+
+The self-hosted support beta includes visitor identification and chat, a staff
+inbox, public help-center articles, and agents using your own AI connections.
+Start with the [Community installation guide](community/README.md), including
+public DNS/HTTPS setup, application SMTP, backups, and [known limitations](ROADMAP.md).
+The release candidate is local and unpublished until its
+[publication and architecture gates](community/PUBLICATION.md) pass.
+There is no telemetry endpoint or Helpin account requirement by default.
+
 Engineering documentation starts at [docs/README.md](docs/README.md). The
 canonical CRM signals reference is
 [docs/crm-signals.md](docs/crm-signals.md).
