@@ -138,11 +138,19 @@ export type AIModelSuggestionGroup = {
   models: Array<{ selectionModel: string; canonicalModel: string; label: string }>;
 };
 
+const CHATGPT_MODELS = [
+  { selectionModel: "gpt-6-astra", canonicalModel: "gpt-6-astra", label: "GPT-6 Astra" },
+  { selectionModel: "gpt-5.6-sol", canonicalModel: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+  { selectionModel: "gpt-5.6-terra", canonicalModel: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+  { selectionModel: "gpt-5.6-luna", canonicalModel: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
+];
+
 /**
- * Suggested models for a provider, grouped in catalog tier order. ChatGPT runs on
- * the OpenAI catalog; compatible endpoints have no catalog and rely on free text.
+ * Suggested models for each connection type. ChatGPT suggestions are separate
+ * from the API billing catalog; compatible endpoints rely on free text.
  */
 export function modelCatalogFor(provider: string): AIModelSuggestionGroup[] {
+  if (provider === "openai_chatgpt") return [{ key: "chatgpt", label: "", description: "", models: CHATGPT_MODELS }];
   const catalogProvider = provider === "openai_chatgpt" ? "openai" : provider;
   if (catalogProvider === "openai_compatible") return [];
   return AI_MODELS.tiers
@@ -163,6 +171,10 @@ export function modelCatalogFor(provider: string): AIModelSuggestionGroup[] {
 
 /** Catalog display name for a model identifier, when the catalog knows it. */
 export function catalogLabel(provider: string, model: string): string | undefined {
+  if (provider === "openai_chatgpt") {
+    const suggested = CHATGPT_MODELS.find(entry => entry.selectionModel === model);
+    if (suggested) return suggested.label;
+  }
   const catalogProvider = provider === "openai_chatgpt" ? "openai" : provider;
   return AI_MODELS.models.find(
     (entry) => entry.provider === catalogProvider && entry.selection_model === model,

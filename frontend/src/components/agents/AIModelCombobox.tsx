@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { QuietDropdown } from "@/components/design-system/quiet-dropdown";
 import { quietUnderlineControlClassName } from "@/components/design-system/quiet";
-import { catalogTier, modelCatalogFor } from "@/lib/aiProviders";
+import { catalogLabel, catalogTier, modelCatalogFor } from "@/lib/aiProviders";
 import { ArrowUpDownIcon } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +50,7 @@ export function AIModelCombobox({
         ),
       })),
     }));
-    if (!trimmed || known) return catalogGroups;
+    if (!trimmed || known || provider === "openai_chatgpt") return catalogGroups;
     return [
       {
         id: "custom",
@@ -65,9 +65,9 @@ export function AIModelCombobox({
       },
       ...catalogGroups,
     ];
-  }, [catalog, trimmed, known]);
+  }, [catalog, trimmed, known, provider]);
 
-  const tier = catalogTier(provider, value);
+  const tier = provider === "openai_chatgpt" ? undefined : catalogTier(provider, value);
 
   return (
     <div className="space-y-1">
@@ -76,11 +76,11 @@ export function AIModelCombobox({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          setQuery(next ? value : "");
+          setQuery("");
         }}
         disabled={disabled}
         searchMode="always"
-        searchPlaceholder="Search or type a model id"
+        searchPlaceholder={provider === "openai_chatgpt" ? "Search models" : "Search or type a model id"}
         query={query}
         onQueryChange={setQuery}
         groups={groups}
@@ -92,7 +92,7 @@ export function AIModelCombobox({
           setOpen(false);
         }}
         empty={
-          trimmed ? (
+          provider === "openai_chatgpt" ? <span className="px-2 py-1.5 text-xs text-muted-foreground">No matching models.</span> : trimmed ? (
             <span className="px-2 py-1.5 text-xs text-muted-foreground">
               Press Enter to use “{trimmed}”.
             </span>
@@ -116,7 +116,7 @@ export function AIModelCombobox({
             )}
           >
             <span className={cn("truncate", !value && "text-muted-foreground")}>
-              {value || "Model identifier"}
+              {catalogLabel(provider, value) || value || "Choose model"}
             </span>
             <ArrowUpDownIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
@@ -130,7 +130,7 @@ export function AIModelCombobox({
         <p className="text-xs text-muted-foreground">
           {tier.label} · {tier.description}
         </p>
-      ) : value ? (
+      ) : value && provider !== "openai_chatgpt" ? (
         <p className="text-xs text-muted-foreground">
           Custom model. Make sure your provider accepts this id.
         </p>

@@ -28,8 +28,9 @@ it('groups suggested models by catalog tier and hides disabled entries', () => {
   for (const model of disabled) expect(suggested).not.toContain(model.selection_model)
 })
 
-it('reuses the OpenAI catalog for ChatGPT and leaves compatible endpoints free text', () => {
-  expect(modelCatalogFor('openai_chatgpt')).toEqual(modelCatalogFor('openai'))
+it('suggests only the four requested ChatGPT models and leaves compatible endpoints free text', () => {
+  expect(modelCatalogFor('openai_chatgpt').flatMap(group => group.models.map(model => model.selectionModel))).toEqual(['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+  expect(catalogLabel('openai_chatgpt', 'gpt-6-astra')).toBe('GPT-6 Astra')
   expect(modelCatalogFor('openai_compatible')).toEqual([])
 })
 

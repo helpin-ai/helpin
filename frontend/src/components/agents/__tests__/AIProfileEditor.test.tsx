@@ -170,3 +170,31 @@ it('saves the resolved route for a catalog model', async () => {
     undefined,
   );
 });
+
+
+it('shows thinking level outside Advanced settings for a ChatGPT connection', async () => {
+  await render(<AIProfileEditor workspaceId="ws" scope="personal" connections={[connection({ id: 'chatgpt', name: 'My ChatGPT', provider: 'openai_chatgpt', scope: 'personal', user_id: 'owner' })]} onClose={() => {}} />);
+  await openConnectionPicker(0);
+  await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="chatgpt"]')!.click());
+  const thinking = document.querySelector<HTMLButtonElement>('button[id$="-reasoning"]');
+  expect(thinking).not.toBeNull();
+  expect(thinking?.closest('details')).toBeNull();
+  expect(document.querySelector(`label[for="${thinking?.id}"]`)?.textContent).toBe('Thinking level');
+  await act(async () => thinking!.click());
+  await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="high"]')!.click());
+  expect(thinking?.textContent).toContain('High');
+  const name = document.querySelector<HTMLInputElement>('input[id$="-name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'My Astra');
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector<HTMLButtonElement>('button[id$="-model"]')!.click();
+  });
+  expect(Array.from(document.querySelectorAll('[cmdk-item]')).map(item => item.getAttribute('data-value'))).toEqual(['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+  await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="gpt-6-astra"]')!.click());
+  await act(async () => document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await act(async () => document.querySelector<HTMLButtonElement>('button[id$="-model"]')!.click());
+  expect(document.querySelectorAll('[cmdk-item]').length).toBe(4);
+  expect(aiProfileService.save).toHaveBeenCalledWith('ws', expect.objectContaining({
+    primary: expect.objectContaining({ connection_id: 'chatgpt', model: expect.objectContaining({ provider: 'openai_chatgpt', model: 'gpt-6-astra', controls: expect.objectContaining({ reasoning_effort: 'high' }) }) }),
+  }), undefined);
+});
