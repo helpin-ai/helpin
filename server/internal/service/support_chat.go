@@ -343,7 +343,7 @@ func (s *SupportChatService) buildCarryForward(ctx context.Context, workspaceID,
 
 // Email delivery of a widget reply does not authorize AI to answer inbound email.
 func supportAIMessageEligible(message *model.SupportMessage) bool {
-	if message == nil || message.SenderType != "customer" || message.IsInternal {
+	if message == nil || message.SenderType != "customer" || message.IsInternal || model.IsSupportEmailNotice(message) {
 		return false
 	}
 	channel := strings.ToLower(strings.TrimSpace(derefString(message.ViaChannel)))

@@ -36,6 +36,7 @@ func TestSupportAIRejectsAutomaticEmailOnBothChannels(t *testing.T) {
 		{SenderType: "customer", ViaChannel: &email, Content: "I am currently away from the office without access to email, returning Wednesday."},
 		{SenderType: "customer", ViaChannel: &email, Content: "Received", Metadata: `{"email_auto_reply":true}`},
 		{SenderType: "customer", ViaChannel: &email, Content: "Hello", IsInternal: true},
+		{SenderType: "customer", ViaChannel: &email, Content: "Notice", MessageType: SupportMessageTypeEmailNotice},
 	} {
 		if SupportAIReplyAllowed(settings, &SupportConversation{Channel: "email"}, &msg) {
 			t.Fatalf("accepted automatic/internal message: %+v", msg)
