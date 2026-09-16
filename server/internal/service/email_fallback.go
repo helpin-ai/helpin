@@ -23,6 +23,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	gmhtml "github.com/yuin/goldmark/renderer/html"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
@@ -902,6 +903,26 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		rawPayload = string(rawPayloadBytes)
 	}
 
+	if existing, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, strings.TrimSpace(payload.MessageID)); err != nil {
+		return err
+	} else if existing != nil {
+		conv, err := s.findConversationByID(ctx, existing.ConversationID)
+		if err != nil {
+			return err
+		}
+		if conv == nil || conv.AnonymizedAt != nil {
+			return nil
+		}
+		// Link duplicate receipts too; never retain an unowned copy of identity.
+		s.recordWebhookEvent(ctx, "inbound", strings.TrimSpace(payload.MessageID), strings.TrimSpace(payload.MessageStream), rawPayload, conv, existing, parseInboundWebhookReceivedAt(payload))
+		s.logger.InfoContext(ctx, "postmark inbound duplicate ignored",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"conversation_id", strings.TrimSpace(existing.ConversationID),
+			"email_log_id", existing.ID,
+		)
+		return s.retryInboundCustomerAIRequest(ctx, existing)
+	}
+
 	resolvedConversationID := inboundConversationID(payload)
 	var resolvedConversation *model.SupportConversation
 	if resolvedConversationID != "" {
@@ -912,17 +933,6 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 		resolvedConversation = conv
 	}
 	s.recordWebhookEvent(ctx, "inbound", strings.TrimSpace(payload.MessageID), strings.TrimSpace(payload.MessageStream), rawPayload, resolvedConversation, nil, parseInboundWebhookReceivedAt(payload))
-
-	if existing, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, strings.TrimSpace(payload.MessageID)); err != nil {
-		return err
-	} else if existing != nil {
-		s.logger.InfoContext(ctx, "postmark inbound duplicate ignored",
-			"message_id", strings.TrimSpace(payload.MessageID),
-			"conversation_id", strings.TrimSpace(existing.ConversationID),
-			"email_log_id", existing.ID,
-		)
-		return s.retryInboundCustomerAIRequest(ctx, existing)
-	}
 
 	mailboxHash := mailboxHashFromInboundPayload(payload)
 	if strings.HasPrefix(mailboxHash, "unsubscribe-") {
@@ -1389,7 +1399,7 @@ func (s *EmailFallbackService) publishInboundCustomerAIRequest(ctx context.Conte
 	if err != nil {
 		return fmt.Errorf("%w: load inbound email AI ownership: %w", ErrInboundEmailAIDispatchRetry, err)
 	}
-	if conv == nil || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman || conv.PrimaryRecipientState == model.SupportPrimaryRecipientStateUnconfirmed || isEmailFallbackInboundTerminalStatus(conv.Status) {
+	if conv == nil || conv.AnonymizedAt != nil || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || derefString(conv.AIState) == "escalated" || derefString(conv.FlowState) == model.SupportConversationFlowStateAssignedToHuman || conv.PrimaryRecipientState == model.SupportPrimaryRecipientStateUnconfirmed || isEmailFallbackInboundTerminalStatus(conv.Status) {
 		return nil
 	}
 	if err := s.supportInboxService.supportAIService.PublishAIRequest(ctx, workspaceID, conversationID, msg.ID, msg.Content); err != nil {
@@ -2091,80 +2101,91 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)
 	htmlBody, textBody := s.renderBodies(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail)
 
-	s.logger.InfoContext(ctx, "email fallback sending via postmark",
-		"workspace_id", conv.WorkspaceID,
-		"conversation_id", conversationID,
-		"from_email", fromAddress,
-		"reply_to", replyTo,
-		"message_count", len(pending),
-		"attachment_count", len(emailAttachments),
-	)
-	postmarkMessageID, sentFromAddress, fromFallbackReason, err := s.sendFallbackEmailWithSenderFallback(
-		ctx,
-		conv.WorkspaceID,
-		conversationID,
-		from,
-		fromAddress,
-		fromDisplayName,
-		strings.TrimSpace(*conv.CustomerEmail),
-		subject,
-		htmlBody,
-		textBody,
-		replyTo,
-		headers,
-		emailAttachments,
-		emailRecipients,
-	)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "email fallback send failed",
-			"error", err,
-			"workspace_id", conv.WorkspaceID,
-			"conversation_id", conversationID,
-			"from_email", fromAddress,
-			"to_email", strings.TrimSpace(*conv.CustomerEmail),
-			"message_count", len(pending),
-		)
-		if opts.explicitEmail {
-			if statusErr := s.setExplicitEmailStatus(ctx, conv, messageIDs, "failed", "Email delivery failed; we will retry."); statusErr != nil {
-				return statusErr
-			}
-		}
-		return fmt.Errorf("send fallback email: %w", err)
-	}
-	fromSource := outboundFrom.Source
-	if strings.TrimSpace(fromFallbackReason) != "" {
-		fromSource = "verified_fallback_sender"
-	}
+	var postmarkMessageID, sentFromAddress, fromFallbackReason, fromSource string
+	var sendErr error
+	skipped := false
 
-	inReplyTo := headerValue(headers, "In-Reply-To")
-	notifiedAt := s.now()
 	messageIDValues := make([]string, 0, len(pending))
 	for _, msg := range pending {
 		messageIDValues = append(messageIDValues, msg.ID)
 	}
-	logRow := &model.SupportEmailLog{
-		ID:                 logID,
-		WorkspaceID:        conv.WorkspaceID,
-		ConversationID:     conversationID,
-		Direction:          "outbound",
-		MessageIDs:         model.DocsStringArray(messageIDValues),
-		FromEmail:          sentFromAddress,
-		FromDisplayName:    fromDisplayName,
-		FromSource:         fromSource,
-		FromFallbackReason: fromFallbackReason,
-		ToEmail:            strings.TrimSpace(*conv.CustomerEmail),
-		CCEmails:           model.DocsStringArray(emailRecipients.CC),
-		BCCEmails:          model.DocsStringArray(emailRecipients.BCC),
-		ReplyTo:            replyTo,
-		Subject:            subject,
-		RFCMessageID:       rfcMessageID,
-		InReplyTo:          inReplyTo,
-		PostmarkMessageID:  strPtr(strings.TrimSpace(postmarkMessageID)),
-		StrippedText:       textBody,
-		Status:             "sent",
-	}
-
+	// Hold the same row lock as deletion through the external send and its receipt.
+	// Attachment fetching/rendering above remains outside this critical section.
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current model.SupportConversation
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", conv.ID, conv.WorkspaceID).First(&current).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			skipped = true
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if current.AnonymizedAt != nil || current.EmailUnsubscribed {
+			skipped = true
+			return nil
+		}
+		if derefString(current.CustomerEmail) != derefString(conv.CustomerEmail) {
+			return fmt.Errorf("email recipient changed during preparation; retry batch")
+		}
+
+		s.logger.InfoContext(ctx, "email fallback sending via postmark",
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+			"from_email", fromAddress,
+			"reply_to", replyTo,
+			"message_count", len(pending),
+			"attachment_count", len(emailAttachments),
+		)
+		postmarkMessageID, sentFromAddress, fromFallbackReason, sendErr = s.sendFallbackEmailWithSenderFallback(
+			ctx,
+			conv.WorkspaceID,
+			conversationID,
+			from,
+			fromAddress,
+			fromDisplayName,
+			strings.TrimSpace(*conv.CustomerEmail),
+			subject,
+			htmlBody,
+			textBody,
+			replyTo,
+			headers,
+			emailAttachments,
+			emailRecipients,
+		)
+		if sendErr != nil {
+			return nil // Handle retry status after releasing the conversation lock.
+		}
+
+		fromSource = outboundFrom.Source
+		if strings.TrimSpace(fromFallbackReason) != "" {
+			fromSource = "verified_fallback_sender"
+		}
+
+		inReplyTo := headerValue(headers, "In-Reply-To")
+		notifiedAt := s.now()
+		logRow := &model.SupportEmailLog{
+			ID:                 logID,
+			WorkspaceID:        conv.WorkspaceID,
+			ConversationID:     conversationID,
+			Direction:          "outbound",
+			MessageIDs:         model.DocsStringArray(messageIDValues),
+			FromEmail:          sentFromAddress,
+			FromDisplayName:    fromDisplayName,
+			FromSource:         fromSource,
+			FromFallbackReason: fromFallbackReason,
+			ToEmail:            strings.TrimSpace(*conv.CustomerEmail),
+			CCEmails:           model.DocsStringArray(emailRecipients.CC),
+			BCCEmails:          model.DocsStringArray(emailRecipients.BCC),
+			ReplyTo:            replyTo,
+			Subject:            subject,
+			RFCMessageID:       rfcMessageID,
+			InReplyTo:          inReplyTo,
+			PostmarkMessageID:  strPtr(strings.TrimSpace(postmarkMessageID)),
+			StrippedText:       textBody,
+			Status:             "sent",
+		}
+
 		if err := s.emailLogRepo.WithTx(tx).Create(ctx, logRow); err != nil {
 			return err
 		}
@@ -2178,14 +2199,32 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 		return nil
 	})
 	if txErr != nil {
-		s.logger.ErrorContext(ctx, "email fallback sent but failed to persist email log",
-			"error", txErr,
+		if postmarkMessageID != "" && sendErr == nil {
+			s.logger.ErrorContext(ctx, "email fallback sent but failed to persist email log",
+				"error", txErr, "workspace_id", conv.WorkspaceID,
+				"conversation_id", conversationID, "postmark_message_id", postmarkMessageID)
+		}
+		return txErr
+	}
+	if skipped {
+		return s.finishEmailBatch(ctx, conversationID, messageIDs, opts.cleanupRedis)
+	}
+
+	if sendErr != nil {
+		s.logger.ErrorContext(ctx, "email fallback send failed",
+			"error", sendErr,
 			"workspace_id", conv.WorkspaceID,
 			"conversation_id", conversationID,
-			"postmark_message_id", strings.TrimSpace(postmarkMessageID),
-			"message_count", len(messageIDValues),
+			"from_email", fromAddress,
+			"to_email", strings.TrimSpace(*conv.CustomerEmail),
+			"message_count", len(pending),
 		)
-		return txErr
+		if opts.explicitEmail {
+			if statusErr := s.setExplicitEmailStatus(ctx, conv, messageIDs, "failed", "Email delivery failed; we will retry."); statusErr != nil {
+				return statusErr
+			}
+		}
+		return fmt.Errorf("send fallback email: %w", sendErr)
 	}
 
 	s.logger.InfoContext(ctx, "email fallback accepted by postmark",
@@ -2309,7 +2348,13 @@ func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload mod
 	}
 	var conv *model.SupportConversation
 	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
-		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+		conv, err = s.findConversationByID(ctx, logRow.ConversationID)
+		if err != nil {
+			return err
+		}
+		if conv != nil && conv.AnonymizedAt != nil {
+			return nil
+		}
 	}
 	s.recordWebhookEvent(ctx, "open", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, parsePostmarkTimestamp(payload.ReceivedAt))
 	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
@@ -2380,7 +2425,13 @@ func (s *EmailFallbackService) ProcessDeliveryEvent(ctx context.Context, payload
 	}
 	var conv *model.SupportConversation
 	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
-		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+		conv, err = s.findConversationByID(ctx, logRow.ConversationID)
+		if err != nil {
+			return err
+		}
+		if conv != nil && conv.AnonymizedAt != nil {
+			return nil
+		}
 	}
 	s.recordWebhookEvent(ctx, "delivery", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, receivedAt)
 	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
@@ -2451,7 +2502,13 @@ func (s *EmailFallbackService) ProcessBounceEvent(ctx context.Context, payload m
 	}
 	var conv *model.SupportConversation
 	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
-		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+		conv, err = s.findConversationByID(ctx, logRow.ConversationID)
+		if err != nil {
+			return err
+		}
+		if conv != nil && conv.AnonymizedAt != nil {
+			return nil
+		}
 	}
 	s.recordWebhookEvent(ctx, "bounce", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, receivedAt)
 	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
@@ -2567,7 +2624,13 @@ func (s *EmailFallbackService) ProcessSpamComplaintEvent(ctx context.Context, pa
 	}
 	var conv *model.SupportConversation
 	if logRow != nil && strings.TrimSpace(logRow.ConversationID) != "" {
-		conv, _ = s.findConversationByID(ctx, logRow.ConversationID)
+		conv, err = s.findConversationByID(ctx, logRow.ConversationID)
+		if err != nil {
+			return err
+		}
+		if conv != nil && conv.AnonymizedAt != nil {
+			return nil
+		}
 	}
 	s.recordWebhookEvent(ctx, "spam_complaint", postmarkMessageID, strings.TrimSpace(payload.MessageStream), rawPayload, conv, logRow, receivedAt)
 	if logRow == nil || logRow.Direction != "outbound" || len(logRow.MessageIDs) == 0 {
@@ -3195,7 +3258,7 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 	recipients supportMessageEmailRecipients,
 ) (string, string, string, error) {
 	options := email.SendEmailOptions{CC: recipients.CC, BCC: recipients.BCC}
-	postmarkMessageID, err := s.emailClient.SendEmailWithHeadersAttachmentsAndOptions(from, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
+	postmarkMessageID, err := s.emailClient.SendEmailWithHeadersAttachmentsAndOptionsContext(ctx, from, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
 	if err == nil {
 		return postmarkMessageID, fromAddress, "", nil
 	}
@@ -3216,7 +3279,7 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 		"fallback_from_email", fallbackFromAddress,
 		"reply_to", replyTo,
 	)
-	postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeadersAttachmentsAndOptions(fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
+	postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeadersAttachmentsAndOptionsContext(ctx, fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
 	if fallbackErr != nil {
 		return "", fallbackFromAddress, "postmark_sender_signature_rejected", fmt.Errorf("retry with verified sender after branded sender rejection: %w", fallbackErr)
 	}

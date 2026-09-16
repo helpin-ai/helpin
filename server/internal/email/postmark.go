@@ -2,12 +2,14 @@ package email
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Client is a lightweight Postmark email client.
@@ -39,7 +41,8 @@ func NewClient(serverToken, fromEmail string) *Client {
 	return &Client{
 		serverToken: serverToken,
 		fromEmail:   fromEmail,
-		httpClient:  &http.Client{},
+		// Bound network calls, including sends serialized with contact deletion.
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -167,6 +170,12 @@ func (c *Client) SendEmailWithHeadersAndAttachments(from, to, subject, htmlBody,
 }
 
 func (c *Client) SendEmailWithHeadersAttachmentsAndOptions(from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader, attachments []Attachment, options SendEmailOptions) (string, error) {
+	return c.SendEmailWithHeadersAttachmentsAndOptionsContext(context.Background(), from, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
+}
+
+// SendEmailWithHeadersAttachmentsAndOptionsContext cancels the HTTP request when
+// its caller loses admission (for example, its database transaction is cancelled).
+func (c *Client) SendEmailWithHeadersAttachmentsAndOptionsContext(ctx context.Context, from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader, attachments []Attachment, options SendEmailOptions) (string, error) {
 	payload := postmarkRequest{
 		From:        from,
 		To:          to,
@@ -180,7 +189,7 @@ func (c *Client) SendEmailWithHeadersAttachmentsAndOptions(from, to, subject, ht
 		TrackOpens:  true,
 		Attachments: attachments,
 	}
-	return c.send(payload)
+	return c.sendContext(ctx, payload)
 }
 
 func normalizeEmailList(values []string) []string {
@@ -201,6 +210,10 @@ func normalizeEmailList(values []string) []string {
 }
 
 func (c *Client) send(payload postmarkRequest) (string, error) {
+	return c.sendContext(context.Background(), payload)
+}
+
+func (c *Client) sendContext(ctx context.Context, payload postmarkRequest) (string, error) {
 	if c == nil {
 		return "", fmt.Errorf("postmark client not configured")
 	}
@@ -209,7 +222,7 @@ func (c *Client) send(payload postmarkRequest) (string, error) {
 		return "", fmt.Errorf("marshal email request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", "https://api.postmarkapp.com/email", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.postmarkapp.com/email", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("create email request: %w", err)
 	}

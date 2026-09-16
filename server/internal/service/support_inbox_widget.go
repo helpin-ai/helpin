@@ -558,6 +558,98 @@ func (s *SupportInboxService) sendConversationTranscript(ctx context.Context, wo
 	return nil
 }
 
+// createWidgetConversation commits contact, conversation, session and first message
+// together. Re-read the token after admission: a request may have loaded it before
+// deletion revoked it. No identity writes or realtime events escape a rollback.
+func (s *SupportInboxService) createWidgetConversation(ctx context.Context, session *model.SupportWidgetSession, subject, content string) (*model.SupportWidgetSession, *model.SupportMessage, error) {
+	// Routing may consult services on the base connection; prepare it before
+	// opening admission so even a single-connection pool remains usable.
+	mailboxID, mailbox, err := s.maybeApplyMailboxRoutingForChannel(ctx, session.WorkspaceID, nil, true, "widget")
+	if err != nil {
+		return nil, nil, err
+	}
+	var ownerID *string
+	flowState := model.SupportConversationFlowStateWaitingForHuman
+	if mailbox != nil {
+		ownerID, flowState, err = s.determineMailboxOwner(ctx, session.WorkspaceID, mailbox, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	var message *model.SupportMessage
+	err = s.conversationRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := repository.LockContactAnonymization(tx, session.WorkspaceID); err != nil {
+			return err
+		}
+		sessionRepo := s.sessionRepo.WithTx(tx)
+		current, err := sessionRepo.GetByToken(ctx, session.SessionToken)
+		if err != nil {
+			return err
+		}
+		if current == nil || current.RevokedAt != nil || !time.Now().UTC().Before(current.ExpiresAt) {
+			return fmt.Errorf("widget session is unavailable or expired")
+		}
+		session = current
+		// Another first message may have attached this session while we waited.
+		if session.ConversationID != nil {
+			conv, err := s.conversationRepo.WithTx(tx).GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner)
+			if err != nil {
+				return err
+			}
+			if conv != nil {
+				return nil
+			}
+			session.ConversationID = nil
+		}
+		ticket := &model.SupportConversation{
+			WorkspaceID:   session.WorkspaceID,
+			Subject:       subject,
+			Status:        "open",
+			FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
+			Priority:      "medium",
+			Channel:       "widget",
+			CustomerName:  session.CustomerName,
+			CustomerEmail: session.CustomerEmail,
+			AnonymousID:   &session.AnonymousID,
+			CRMCompanyID:  session.CRMCompanyID,
+			Source:        "widget",
+		}
+
+		ticket.MailboxID = mailboxID
+		ticket.AssignedUserID = ownerID
+		ticket.FlowState = strPtr(flowState)
+
+		if s.contactRepo != nil {
+			if contactID := s.matchOrCreateCRMContactTx(ctx, s.contactRepo.WithTx(tx), session.WorkspaceID, session.CustomerEmail, session.CustomerName, "widget_prechat"); contactID != nil {
+				ticket.CRMContactID = contactID
+			}
+		}
+		if err := s.conversationRepo.WithTx(tx).Create(ctx, ticket); err != nil {
+			return err
+		}
+		session.ConversationID = &ticket.ID
+		if err := sessionRepo.Update(ctx, session); err != nil {
+			return err
+		}
+		message = widgetCustomerMessage(session, content)
+		return s.messageRepo.WithTx(tx).Create(ctx, message)
+	})
+	return session, message, err
+}
+
+func widgetCustomerMessage(session *model.SupportWidgetSession, content string) *model.SupportMessage {
+	displayName := "Customer"
+	if session.CustomerName != nil && *session.CustomerName != "" {
+		displayName = *session.CustomerName
+	}
+	return &model.SupportMessage{
+		WorkspaceID: session.WorkspaceID, ConversationID: *session.ConversationID,
+		SenderType: "customer", SenderDisplayName: &displayName,
+		Content: strings.TrimSpace(content), IsInternal: false,
+		MessageType: "reply", ViaChannel: strPtr("widget"),
+	}
+}
+
 // WidgetCreateMessage creates a message from an external widget user.
 func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionToken, content string, attachmentIDs []string) (*model.SupportMessage, error) {
 	session, err := s.GetWidgetSession(ctx, sessionToken)
@@ -572,7 +664,6 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 			return nil, err
 		}
 	}
-	createdConversationID := ""
 	conversationSubject := truncate(strings.TrimSpace(content), 100)
 	if conversationSubject == "" && len(attachmentIDs) > 0 {
 		conversationSubject = "Attachment"
@@ -593,92 +684,26 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 		}
 	}
 
-	// If no conversation yet, create one.
+	var msg *model.SupportMessage
 	if session.ConversationID == nil {
-		ticket := &model.SupportConversation{
-			WorkspaceID:   session.WorkspaceID,
-			Subject:       conversationSubject,
-			Status:        "open",
-			FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
-			Priority:      "medium",
-			Channel:       "widget",
-			CustomerName:  session.CustomerName,
-			CustomerEmail: session.CustomerEmail,
-			AnonymousID:   &session.AnonymousID,
-			CRMCompanyID:  session.CRMCompanyID,
-			Source:        "widget",
-		}
-
-		mailboxID, mailbox, mailboxErr := s.maybeApplyMailboxRoutingForChannel(ctx, session.WorkspaceID, nil, true, "widget")
-		if mailboxErr != nil {
-			return nil, mailboxErr
-		}
-		ticket.MailboxID = mailboxID
-		if mailbox != nil {
-			ownerID, flowState, ownerErr := s.determineMailboxOwner(ctx, session.WorkspaceID, mailbox, nil)
-			if ownerErr != nil {
-				return nil, ownerErr
-			}
-			ticket.AssignedUserID = ownerID
-			ticket.FlowState = strPtr(flowState)
-		}
-
-		// Auto-match or create CRM contact by email.
-		if contactID := s.matchOrCreateCRMContact(ctx, session.WorkspaceID, session.CustomerEmail, session.CustomerName); contactID != nil {
-			ticket.CRMContactID = contactID
-		}
-
-		if err := s.conversationRepo.Create(ctx, ticket); err != nil {
+		session, msg, err = s.createWidgetConversation(ctx, session, conversationSubject, content)
+		if err != nil {
 			return nil, err
 		}
-		session.ConversationID = &ticket.ID
-		if err := s.sessionRepo.Update(ctx, session); err != nil {
-			if cleanupErr := s.conversationRepo.Delete(ctx, session.WorkspaceID, ticket.ID); cleanupErr != nil {
-				slog.ErrorContext(ctx, "clean up widget conversation after session update failure", "error", cleanupErr, "conversation_id", ticket.ID)
-			}
+		if msg != nil {
+			s.wsPublisher.Publish(websocket.Event{
+				Action: "created", Entity: "support_conversation",
+				EntityID: *session.ConversationID, WorkspaceID: session.WorkspaceID,
+			})
+		}
+	}
+	if msg == nil {
+		msg = widgetCustomerMessage(session, content)
+		if err := s.messageRepo.Create(ctx, msg); err != nil {
 			return nil, err
 		}
-		createdConversationID = ticket.ID
-
-		s.wsPublisher.Publish(websocket.Event{
-			Action:      "created",
-			Entity:      "support_conversation",
-			EntityID:    ticket.ID,
-			WorkspaceID: session.WorkspaceID,
-		})
 	}
-
-	displayName := "Customer"
-	if session.CustomerName != nil && *session.CustomerName != "" {
-		displayName = *session.CustomerName
-	}
-
-	msg := &model.SupportMessage{
-		WorkspaceID:       session.WorkspaceID,
-		ConversationID:    *session.ConversationID,
-		SenderType:        "customer",
-		SenderDisplayName: &displayName,
-		Content:           strings.TrimSpace(content),
-		IsInternal:        false,
-		MessageType:       "reply",
-		ViaChannel:        strPtr("widget"),
-	}
-	if err := s.messageRepo.Create(ctx, msg); err != nil {
-		if createdConversationID != "" {
-			session.ConversationID = nil
-			if cleanupErr := s.sessionRepo.Update(ctx, session); cleanupErr != nil {
-				slog.ErrorContext(ctx, "clear widget session after first-message failure", "error", cleanupErr, "conversation_id", createdConversationID)
-			}
-			if cleanupErr := s.conversationRepo.Delete(ctx, session.WorkspaceID, createdConversationID); cleanupErr != nil {
-				slog.ErrorContext(ctx, "clean up widget conversation after first-message failure", "error", cleanupErr, "conversation_id", createdConversationID)
-			} else {
-				s.wsPublisher.Publish(websocket.Event{
-					Action: "deleted", Entity: "support_conversation", EntityID: createdConversationID, WorkspaceID: session.WorkspaceID,
-				})
-			}
-		}
-		return nil, err
-	}
+	displayName := derefString(msg.SenderDisplayName)
 
 	// Link pre-uploaded attachments to this message.
 	if s.attachmentService != nil && len(attachmentIDs) > 0 {

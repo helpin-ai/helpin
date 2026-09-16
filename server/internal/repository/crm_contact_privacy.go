@@ -21,6 +21,9 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 	}
 	var conversationIDs []string
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := LockContactAnonymization(tx, workspaceID); err != nil {
+			return err
+		}
 		var contact model.CRMContact
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, contactID).First(&contact).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -107,9 +110,10 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 			}).Error; err != nil {
 				return err
 			}
+			// Preserve the opaque provider receipt: retries must not recreate this customer.
 			if err := tx.Model(&model.SupportEmailLog{}).Where("workspace_id = ? AND conversation_id IN ?", workspaceID, conversationIDs).Updates(map[string]any{
 				"from_email": "", "from_display_name": "", "to_email": "", "reply_to": "", "recipient_address": "", "cc_emails": nil, "bcc_emails": nil,
-				"rfc_message_id": "", "in_reply_to": "", "references_header": "", "postmark_message_id": nil, "error_message": "",
+				"rfc_message_id": "", "in_reply_to": "", "references_header": "", "error_message": "",
 			}).Error; err != nil {
 				return err
 			}
@@ -177,4 +181,14 @@ func exclusiveContactAnonymousIDs(tx *gorm.DB, workspaceID, contactID string, id
 		}
 	}
 	return filtered, nil
+}
+
+// LockContactAnonymization coordinates widget conversation admission with contact
+// deletion across processes. Call inside a transaction, before any row locks.
+// A workspace lock also covers anonymous sessions with no contact/email yet.
+func LockContactAnonymization(tx *gorm.DB, workspaceID string) error {
+	if tx.Dialector.Name() != "postgres" {
+		return nil // SQLite is used only by isolated unit tests.
+	}
+	return tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "support-contact-anonymization:"+workspaceID).Error
 }
