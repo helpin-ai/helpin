@@ -6,8 +6,9 @@ builders, and coding are outside the default Community surface.
 
 Known limitations to address:
 
-- Retrieved content does not yet have complete prompt-injection trust marking.
-  Review agent tools and permissions before using untrusted knowledge sources.
+- Retrieved knowledge is marked as untrusted reference data. Prompt-injection
+  defenses remain layered: keep tools scoped and approvals enabled; trust marking
+  is not a guarantee of model resistance.
 - Contact deletion is not a complete personal-data erasure workflow across all
   messages, imports, logs, and backups.
 - Agent profiles do not configure every AI feature. Knowledge embeddings need

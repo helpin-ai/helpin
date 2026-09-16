@@ -237,52 +237,41 @@ func buildKnowledgeContext(results []KnowledgeSearchResult) string {
 		return ""
 	}
 
-	var sb strings.Builder
+	// JSON escapes source-supplied delimiters, newlines, and role-like markup.
+	// Source text stays intact for citation checking; no destructive keyword filter.
+	type chunk struct {
+		EvidenceID  string `json:"EVIDENCE_ID"`
+		Visibility  string `json:"VISIBILITY"`
+		DocID       string `json:"DOC_ID,omitempty"`
+		SourceType  string `json:"SOURCE_TYPE"`
+		Authority   string `json:"AUTHORITY"`
+		Title       string `json:"TITLE"`
+		HeadingPath string `json:"HEADING_PATH"`
+		URL         string `json:"URL,omitempty"`
+		ChunkIndex  int    `json:"CHUNK_INDEX"`
+		Content     string `json:"CONTENT"`
+	}
+	chunks := make([]chunk, 0, min(8, len(results)))
 	for idx, result := range results {
 		if idx >= 8 {
 			break
 		}
+		row := chunk{EvidenceID: result.ID, Visibility: "PUBLIC", DocID: result.ReferenceID,
+			SourceType: result.SourceType, Authority: knowledgeResultAuthority(result), Title: result.Title,
+			HeadingPath: result.HeadingPath, URL: result.URL, ChunkIndex: result.ChunkIndex, Content: result.Content}
 		if result.IsInternal {
-			authority := "standard"
-			if result.SourceType == knowledgeSourceTypeGuidance {
-				authority = "maximum_applicable"
-			}
-			sb.WriteString(fmt.Sprintf(
-				"---\nEVIDENCE_ID: %s\nVISIBILITY: INTERNAL\nSOURCE_TYPE: %s\nAUTHORITY: %s\nTITLE: Internal guidance\nHEADING_PATH: Internal section\nCHUNK_INDEX: %d\nCONTENT:\n%s\n",
-				result.ID,
-				result.SourceType,
-				authority,
-				result.ChunkIndex,
-				result.Content,
-			))
-			continue
+			row.Visibility = "INTERNAL"
+			row.DocID = ""
+			row.URL = ""
+			row.Title = "Internal guidance"
+			row.HeadingPath = "Internal section"
 		}
-		if strings.TrimSpace(result.URL) != "" {
-			sb.WriteString(fmt.Sprintf(
-				"---\nEVIDENCE_ID: %s\nVISIBILITY: PUBLIC\nDOC_ID: %s\nSOURCE_TYPE: %s\nTITLE: %s\nHEADING_PATH: %s\nURL: %s\nCHUNK_INDEX: %d\nCONTENT:\n%s\n",
-				result.ID,
-				result.ReferenceID,
-				result.SourceType,
-				result.Title,
-				result.HeadingPath,
-				result.URL,
-				result.ChunkIndex,
-				result.Content,
-			))
-		} else {
-			sb.WriteString(fmt.Sprintf(
-				"---\nEVIDENCE_ID: %s\nVISIBILITY: PUBLIC\nDOC_ID: %s\nSOURCE_TYPE: %s\nTITLE: %s\nHEADING_PATH: %s\nCHUNK_INDEX: %d\nCONTENT:\n%s\n",
-				result.ID,
-				result.ReferenceID,
-				result.SourceType,
-				result.Title,
-				result.HeadingPath,
-				result.ChunkIndex,
-				result.Content,
-			))
-		}
+		chunks = append(chunks, row)
 	}
-	return sb.String()
+	return string(mustJSON(struct {
+		Trust  string  `json:"content_trust"`
+		Chunks []chunk `json:"chunks"`
+	}{Trust: "untrusted_reference", Chunks: chunks}))
 }
 
 func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult) []AISource {

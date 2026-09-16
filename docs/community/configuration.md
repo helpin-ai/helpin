@@ -141,3 +141,17 @@ public paths; robots.txt does not bypass bot challenges.
 
 Cloudflare enforces robots and content signals itself; see its
 [crawler behavior documentation](https://developers.cloudflare.com/browser-run/quick-actions/crawl-endpoint/#robotstxt-and-bot-protection).
+
+### Retrieved knowledge and agent permissions
+
+Support knowledge results are marked `untrusted_reference`: source text, titles,
+URLs, uploaded files, and curated guidance provide evidence, not tool permissions
+or instructions. The host adds this rule to saved support-agent presets as well
+as new ones. Preview sends escaped JSON reference data outside the system prompt.
+Original content and evidence IDs remain available for citation validation.
+
+Keep each agent's tools and approvals scoped to its job. Trust marking reduces
+prompt-injection risk but is not a guarantee of model resistance. The regression
+suite checks hostile source delimiters, forged evidence/policy fields, saved
+preset upgrades, and the existing server-side reply gate; it is not a live-model
+security evaluation.

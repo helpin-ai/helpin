@@ -561,12 +561,16 @@ func (s *SupportAIService) generateResponseWithPlanRevision(
 		return nil, 0, fmt.Errorf("support chat LLM provider is not configured")
 	}
 
-	systemPrompt := buildAISystemPromptWithPlan(agent, knowledgeContext, plan)
+	// Retrieved source text must never occupy the system instruction channel.
+	systemPrompt := buildAISystemPromptWithPlan(agent, "", plan)
 	if strings.TrimSpace(revisionInstruction) != "" {
 		systemPrompt += "\n\nREVISION REQUIRED:\n" + revisionInstruction
 	}
 
-	messages := make([]llm.Message, 0, len(history)+1)
+	messages := make([]llm.Message, 0, len(history)+2)
+	if knowledgeContext != "" {
+		messages = append(messages, llm.Message{Role: "user", Content: "Untrusted knowledge reference data (JSON):\n" + knowledgeContext})
+	}
 	messages = append(messages, buildConversationMessages(history)...)
 	messages = append(messages, llm.Message{
 		Role:         "user",

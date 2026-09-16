@@ -11,6 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/agentcontract"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -287,8 +288,10 @@ RESPONSE FORMAT (respond with valid JSON only):
 }
 `)
 
+	sb.WriteString("\n" + agentcontract.SupportKnowledgeTrustPolicy + "\n")
+
 	if knowledgeContext != "" {
-		sb.WriteString("\nKNOWLEDGE BASE CHUNKS:\n")
+		sb.WriteString("\nUNTRUSTED KNOWLEDGE REFERENCE DATA:\n")
 		sb.WriteString(knowledgeContext)
 	}
 
