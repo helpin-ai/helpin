@@ -64,6 +64,10 @@ func TestExpensiveAPIRequest(t *testing.T) {
 		method, path string
 		want         bool
 	}{
+		{"POST", "/api/pm/content-sources", true}, {"PUT", "/api/pm/content-sources/1", true},
+		{"PATCH", "/api/pm/content-sources/1/file/confirm", true}, {"GET", "/api/pm/content-sources/1/pages", false},
+		{"DELETE", "/api/pm/content-sources/1", false}, {"POST", "/api/workspaces/context/generate-description", true},
+		{"POST", "/api/command-bar/plans/1/retry", true},
 		{"POST", "/api/pm/agent-runs", true}, {"POST", "/api/dock/chats/1/messages", true},
 		{"POST", "/api/pm/content-sources/1/reindex", true}, {"POST", "/api/support/inbox/rewrite-draft", true},
 		{"GET", "/api/pm/agent-runs", false}, {"POST", "/api/dock/runs/1/cancel", false},
