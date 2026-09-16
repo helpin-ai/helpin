@@ -4,7 +4,21 @@ import { mkdtemp, cp, mkdir, writeFile, readFile, stat, rm } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { waitForAPI } from './readiness.mjs';
 const root = new URL('../', import.meta.url);
+
+test('public readiness waits for the expected installation and configuration', async t => {
+  const states = [new Response('', { status: 401 }),
+    Response.json({ public_widget_url: 'http://test', app_email_configured: false }),
+    Response.json({ public_widget_url: 'http://test', app_email_configured: true })];
+  t.mock.method(globalThis, 'fetch', async () => states.shift());
+  assert.equal((await waitForAPI('http://test', true, 2000)).app_email_configured, true);
+});
+
+test('public readiness fails closed on another installation', async t => {
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ public_widget_url: 'http://other', app_email_configured: true }));
+  await assert.rejects(waitForAPI('http://test', true, 0), /expected configuration/);
+});
 
 test('install generates independent stable secrets and never executes dotenv contents', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'community-installer-'));

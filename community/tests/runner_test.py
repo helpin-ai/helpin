@@ -1,4 +1,6 @@
 import importlib.util
+import os
+import time
 from pathlib import Path
 import subprocess
 import tempfile
@@ -68,6 +70,33 @@ class RunnerTest(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 runner.execute(['fixture'], runner.SOURCE, {})
             kill.assert_called_once_with(123, runner.signal.SIGTERM)
+
+    def test_cli_cancellation_stops_child_and_cleans_owned_projects(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            docker = root / 'docker'
+            calls = root / 'calls'
+            ready = root / 'ready'
+            docker.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CI_TEST_CALLS\"\ncase \" $* \" in *\" up \"*) touch \"$CI_TEST_READY\"; sleep 60;; esac\n")
+            docker.chmod(0o755)
+            env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'],
+                   'CI_TEST_CALLS': str(calls), 'CI_TEST_READY': str(ready)}
+            with (root / 'output').open('w') as output:
+                process = subprocess.Popen(['bash', str(runner.SOURCE / 'tests/run.sh'), 'smoke'], env=env, stdout=output, stderr=output)
+                try:
+                    deadline = time.monotonic() + 10
+                    while not ready.exists() and time.monotonic() < deadline and process.poll() is None:
+                        time.sleep(0.05)
+                    self.assertTrue(ready.exists(), 'fixture did not reach startup')
+                    process.terminate()
+                    self.assertEqual(process.wait(timeout=15), 143)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait()
+            cleanups = [line for line in calls.read_text().splitlines() if ' down ' in line]
+            self.assertEqual(len(cleanups), 2)
+            self.assertTrue(all('-p community-test-' in line for line in cleanups))
 
     def test_failed_install_does_not_call_compose(self):
         with patch.object(runner, 'execute', side_effect=subprocess.CalledProcessError(1, 'install')) as invoke:

@@ -1,6 +1,7 @@
 // Creates test data through public APIs. Run only against a disposable install.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { waitForAPI } from './readiness.mjs';
 
 const base = process.env.COMMUNITY_URL || 'http://localhost:8085';
 const origin = process.env.COMMUNITY_VISITOR_ORIGIN || 'http://localhost:8098';
@@ -17,7 +18,7 @@ async function request(path, { method = 'GET', body, visitorOrigin, status = 200
   if (status === 403 || status === 404) return;
   return response.json();
 }
-const config = await request('/api/auth/config');
+const config = await waitForAPI(base, process.env.COMMUNITY_TEST_AI === 'yes');
 assert.equal(config.email_verification_required, false);
 assert.equal(config.app_email_configured, process.env.COMMUNITY_TEST_AI === 'yes');
 const suffix = randomUUID().slice(0, 8);

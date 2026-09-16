@@ -2,8 +2,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { waitForAPI } from './readiness.mjs';
 const proof = JSON.parse(await readFile(process.env.COMMUNITY_TEST_PROOF_FILE, 'utf8'));
 const base = process.env.COMMUNITY_URL || 'http://localhost:8085';
+await waitForAPI(base, true);
 async function request(path, body) {
   const response = await fetch(`${base}${path}?workspace_id=${proof.workspace_id}`, {
     method: body ? 'POST' : 'GET',
