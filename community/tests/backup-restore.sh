@@ -3,13 +3,14 @@
 # Requires an explicitly disposable source stack because its writers are stopped.
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
-[[ ${COMMUNITY_TEST_DISPOSABLE:-} == yes ]] || { echo 'Set COMMUNITY_TEST_DISPOSABLE=yes only for a disposable test installation.' >&2; exit 1; }
+[[ ${COMMUNITY_TEST_ROOT:-} == "$PWD" && -f .acceptance-project ]] || { echo 'Run tests/run.sh full; restore is restricted to its temporary project.' >&2; exit 1; }
+[[ ${COMPOSE_PROJECT_NAME:-} == "$(cat .acceptance-project)" && $COMPOSE_PROJECT_NAME == community-test-* ]] || exit 1
 umask 077
 source_container=$(docker compose ps -q postgres)
 [[ -n $source_container ]] || { echo 'Start the test stack first.' >&2; exit 1; }
 source_project=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$source_container")
-[[ $source_project == *community* ]] || { echo 'Refusing a non-Community source project.' >&2; exit 1; }
-restore_project="community-restore-$(date +%s)-$$"
+[[ $source_project == "$COMPOSE_PROJECT_NAME" ]] || { echo 'Refusing a different source project.' >&2; exit 1; }
+restore_project="${source_project}-restore"
 snapshot=$(mktemp -d)
 cleanup() {
   docker compose -p "$restore_project" down -v --remove-orphans >/dev/null 2>&1 || true

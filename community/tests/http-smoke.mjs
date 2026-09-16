@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 
 const base = process.env.COMMUNITY_URL || 'http://localhost:8085';
-const origin = 'http://localhost:8098';
+const origin = process.env.COMMUNITY_VISITOR_ORIGIN || 'http://localhost:8098';
 let token, workspace;
 async function request(path, { method = 'GET', body, visitorOrigin, status = 200, sessionToken } = {}) {
   const headers = { 'Content-Type': 'application/json' };

@@ -6,7 +6,8 @@ test('packaged support-only loader: outside-origin visitor, reply, reload and re
   const { installation, request, base, origin, auth, ws, session, ownerPassword } = fixture;
   const servers: Server[] = [];
   try {
-    for (const port of [8098, 8099]) {
+    const rejectedOrigin = process.env.COMMUNITY_REJECTED_ORIGIN || 'http://localhost:8099';
+    for (const port of [Number(new URL(origin).port), Number(new URL(rejectedOrigin).port)]) {
       const server = createServer((_req, res) => {
         res.setHeader('Content-Type', 'text/html');
         res.end(`<!doctype html><html><body><h1>Customer website</h1><script>
@@ -62,10 +63,10 @@ window.helpin = function () { (window.helpinQ = window.helpinQ || []).push(argum
     await page.locator('.helpin-launcher').click();
     await expect(page.locator('.helpin-chat-window')).toContainText('Packaged inbox reply');
     expect(unexpected).toEqual([]);
-    const forbidden = await page.request.get(`${base}/widget/config?widget_key=${installation.widget_key}`, { headers: { Origin: 'http://localhost:8099' } });
+    const forbidden = await page.request.get(`${base}/widget/config?widget_key=${installation.widget_key}`, { headers: { Origin: rejectedOrigin } });
     expect(forbidden.status()).toBe(403);
     const otherSite = await browser.newPage();
-    await otherSite.goto('http://localhost:8099', { waitUntil: 'domcontentloaded' });
+    await otherSite.goto(rejectedOrigin, { waitUntil: 'domcontentloaded' });
     for (const query of [`key=${installation.widget_key}`, `session_token=${session.session_token}`]) {
       const rejected = await otherSite.evaluate(url => new Promise<boolean>(resolve => {
         const socket = new WebSocket(url);
