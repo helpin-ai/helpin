@@ -1,0 +1,158 @@
+name: Community acceptance
+on:
+  workflow_call:
+    inputs:
+      level:
+        type: string
+        default: smoke
+      architecture:
+        type: string
+        default: amd64
+      export-images:
+        type: boolean
+        default: false
+    secrets:
+      runtime_read_token:
+        required: false
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    env:
+      GOWORK: off
+      COMMUNITY_ARCH: ${{ inputs.architecture }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: helpin
+      - name: Validate request and Runtime access
+        id: runtime
+        env:
+          LEVEL: ${{ inputs.level }}
+          EXPORT_IMAGES: ${{ inputs.export-images }}
+          GH_TOKEN: ${{ secrets.runtime_read_token || github.token }}
+        run: |
+          [[ "$LEVEL" == smoke || "$LEVEL" == full ]]
+          [[ "$COMMUNITY_ARCH" == amd64 || "$COMMUNITY_ARCH" == arm64 ]]
+          [[ "$EXPORT_IMAGES" != true || "$LEVEL" == full ]]
+          revision=$(cat helpin/community/runtime-revision.txt)
+          [[ $revision =~ ^[a-f0-9]{40}$ ]]
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          if ! gh api repos/helpin-ai/agent-runtime --silent >/dev/null 2>&1; then
+            echo '::error::Runtime source is unavailable. Internal runs need COMMUNITY_RUNTIME_READ_TOKEN with Contents: read on agent-runtime. Fork runs require the pinned Runtime source to be public; no private token is exposed to forks.'
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: helpin-ai/agent-runtime
+          ref: ${{ steps.runtime.outputs.revision }}
+          path: agent-runtime
+          token: ${{ secrets.runtime_read_token || github.token }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: helpin/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: helpin/.node-version
+          cache: pnpm
+          cache-dependency-path: helpin/pnpm-lock.yaml
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: helpin/.go-version
+          cache-dependency-path: |
+            helpin/server/go.sum
+            agent-runtime/go.sum
+      - name: Check installer, runner and packaging contracts
+        working-directory: helpin
+        run: |
+          node --test community/tests/installer.test.mjs
+          python3 -m unittest discover -s community/tests -p '*_test.py'
+      - name: Prepare browser and source acceptance
+        if: inputs.level == 'full'
+        working-directory: helpin
+        env:
+          EXPORT_IMAGES: ${{ inputs.export-images }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir packages/sdk-js exec playwright install --with-deps chromium
+          if [[ "$EXPORT_IMAGES" == true && "$COMMUNITY_ARCH" == amd64 ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+            scripts/check-community-backend.sh
+            scripts/check-community-frontend.sh
+            (cd ../agent-runtime && go test ./...)
+          fi
+      - uses: docker/setup-buildx-action@v3
+      - name: Prepare build-only configuration and cache scopes
+        id: build
+        env:
+          TRUSTED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          directory=$(mktemp -d "$RUNNER_TEMP/community-build.XXXXXX")
+          cp helpin/community/{setup.sh,.env.example,apps.example.json} "$directory/"
+          "$directory/setup.sh" install
+          echo "COMMUNITY_ENV_FILE=$directory/.env" >> "$GITHUB_ENV"
+          echo "COMMUNITY_SOURCE_REVISION=$(git -C helpin rev-parse HEAD)" >> "$GITHUB_ENV"
+          export COMMUNITY_SOURCE_REVISION=$(git -C helpin rev-parse HEAD)
+          export COMMUNITY_RUNTIME_REVISION=$(cat helpin/community/runtime-revision.txt)
+          docker compose --env-file "$directory/.env" -f helpin/community/compose.yaml -f helpin/community/compose.build.yaml build --print > "$RUNNER_TEMP/community-bake.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          build = json.loads((Path(os.environ['RUNNER_TEMP']) / 'community-bake.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('cache<<CACHE\n')
+              for target in build['target']:
+                  scope = f"community-{os.environ['COMMUNITY_ARCH']}-{target}"
+                  output.write(f'{target}.cache-from=type=gha,scope={scope}\n')
+                  if os.environ['TRUSTED'] == 'true':
+                      output.write(f'{target}.cache-to=type=gha,scope={scope},mode=max\n')
+              output.write('CACHE\n')
+          PY
+      - uses: docker/bake-action@v6
+        with:
+          source: .
+          files: ${{ runner.temp }}/community-bake.json
+          load: true
+          set: ${{ steps.build.outputs.cache }}
+      - name: Run isolated acceptance
+        working-directory: helpin
+        env:
+          LEVEL: ${{ inputs.level }}
+        run: community/tests/run.sh "$LEVEL"
+      - name: Record image identities
+        working-directory: helpin/community
+        run: |
+          mkdir -p release-artifacts
+          docker compose --env-file "$COMMUNITY_ENV_FILE" config --images | sort -u > release-artifacts/images-local.txt
+          xargs docker image inspect --format '{{.Id}} {{.Architecture}}' < release-artifacts/images-local.txt > release-artifacts/tested-images.txt
+      - uses: aquasecurity/setup-trivy@e07451d2e059ed86c2870430ea286b3a9e0bf241
+        if: inputs.export-images
+        with:
+          version: v0.69.3
+      - name: Scan and export tested application images
+        if: inputs.export-images
+        working-directory: helpin/community
+        run: |
+          ./check-images.sh
+          sed -n '/^ghcr.io\/helpin-ai\//p' release-artifacts/images-local.txt > release-artifacts/application-images.txt
+          mapfile -t images < release-artifacts/application-images.txt
+          docker save "${images[@]}" | gzip > release-artifacts/tested-images.tar.gz
+          cp runtime-revision.txt release-artifacts/
+          git rev-parse HEAD > release-artifacts/source-revision.txt
+          (cd release-artifacts && sha256sum tested-images.tar.gz > tested-images.tar.gz.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: community-tested-${{ inputs.architecture }}
+          path: helpin/community/release-artifacts/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove generated build configuration
+        if: always()
+        run: |
+          if [[ -n ${COMMUNITY_ENV_FILE:-} ]]; then
+            rm -rf -- "$(dirname -- "$COMMUNITY_ENV_FILE")"
+          fi

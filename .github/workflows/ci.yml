@@ -1,15 +1,15 @@
 name: CI
 
-# PR-required CI gates. Mirrors the rollout in
-# `docs/test-suite-ci-email-plan.md`. Suites that haven't met the promotion
-# criteria (5 consecutive green nightlies + flake rate < 2% + p95 within
-# budget) run as `continue-on-error: true` so they're visible without
-# blocking PRs. Promoting one to required is a single-line edit.
+# Required edition checks and dependency-aware selection. Community acceptance
+# shares its read-only workflow with scheduled and release-candidate validation.
 
 on:
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   # Cancel in-progress runs for the same PR/branch when a new push lands.
@@ -22,8 +22,9 @@ env:
 jobs:
   changes:
     name: Detect Changes
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     outputs:
+      community: ${{ steps.filter.outputs.community }}
       server: ${{ steps.filter.outputs.server }}
       frontend: ${{ steps.filter.outputs.frontend }}
       admin: ${{ steps.filter.outputs.admin }}
@@ -46,84 +47,51 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "server=true" >> "$GITHUB_OUTPUT"
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
-            echo "admin=true" >> "$GITHUB_OUTPUT"
-            echo "packages=true" >> "$GITHUB_OUTPUT"
-            echo "helpcenter=true" >> "$GITHUB_OUTPUT"
-            echo "desktop=true" >> "$GITHUB_OUTPUT"
-            echo "mobile=true" >> "$GITHUB_OUTPUT"
-            echo "eventpipeline=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ]; then
-            CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+            python3 scripts/ci/checks.py changes --all </dev/null
           else
-            CHANGED=$(git diff --name-only HEAD~1 HEAD)
+            git diff --name-only "$BASE_SHA...$HEAD_SHA" | python3 scripts/ci/checks.py changes
           fi
 
-          echo "Changed files:"
-          echo "$CHANGED"
+  workflow-checks:
+    name: Workflow validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: .go-version
+          cache: false
+      - name: Validate CI policy and workflows
+        run: |
+          python3 -m unittest discover -s scripts/ci -p '*_test.py'
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          "$(go env GOPATH)/bin/actionlint" -shellcheck= .github/workflows/ci.yml .github/workflows/community-*.yml .github/workflows/postgres-check.yml .github/workflows/nightly.yml
+          shellcheck -S error community/*.sh community/postgres/*.sh community/tests/*.sh scripts/check-community-*.sh
 
-          SERVER=false
-          FRONTEND=false
-          ADMIN=false
-          PACKAGES=false
-          HELPCENTER=false
-          DESKTOP=false
-          MOBILE=false
-          EVENTPIPELINE=false
+  community:
+    name: Community bundle
+    needs: changes
+    if: needs.changes.outputs.community == 'true'
+    uses: ./.github/workflows/community-test.yml
+    with:
+      level: smoke
+    secrets:
+      runtime_read_token: ${{ secrets.COMMUNITY_RUNTIME_READ_TOKEN }}
 
-          if echo "$CHANGED" | grep -qE '^server/|^scripts/check-(task-canonical|community-backend)\.sh$|^\.github/workflows/ci\.yml$'; then
-            SERVER=true
-          fi
-          if echo "$CHANGED" | grep -qE '^scripts/check-community-frontend\.sh$|^frontend/|^packages/(shared|widget-core)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
-            FRONTEND=true
-          fi
-          if echo "$CHANGED" | grep -qE '^apps/admin/|^frontend/src/index\.css$|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
-            ADMIN=true
-          fi
-          if echo "$CHANGED" | grep -qE '^packages/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
-            PACKAGES=true
-          fi
-          if echo "$CHANGED" | grep -qE '^help-center/|^packages/shared/src/docs-blocks\.css$|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/ci\.yml$'; then
-            HELPCENTER=true
-          fi
-          # Desktop reuses frontend/src via the `@` alias and depends on the
-          # workspace packages, so web/package changes can break it — gate on all
-          # of those, the desktop app itself, and root/workspace config.
-          if echo "$CHANGED" | grep -qE '^apps/support-desktop/|^frontend/|^packages/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
-            DESKTOP=true
-          fi
-          # Mobile depends on its own app dir plus packages/support-core and
-          # packages/shared directly (no frontend/ dependency, unlike
-          # desktop) — gate on those, not all of packages/*, so an unrelated
-          # package change doesn't force a mobile run. Root/workspace config
-          # changes still gate everything, same as the other jobs.
-          if echo "$CHANGED" | grep -qE '^apps/support-mobile/|^packages/support-core/|^packages/shared/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
-            MOBILE=true
-          fi
-          if echo "$CHANGED" | grep -qE '^events-pipeline/|^\.github/workflows/(ci|eventpipeline-(staging|prod))\.yml$'; then
-            EVENTPIPELINE=true
-          fi
-
-          echo "server=$SERVER" >> "$GITHUB_OUTPUT"
-          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
-          echo "admin=$ADMIN" >> "$GITHUB_OUTPUT"
-          echo "packages=$PACKAGES" >> "$GITHUB_OUTPUT"
-          echo "helpcenter=$HELPCENTER" >> "$GITHUB_OUTPUT"
-          echo "desktop=$DESKTOP" >> "$GITHUB_OUTPUT"
-          echo "mobile=$MOBILE" >> "$GITHUB_OUTPUT"
-          echo "eventpipeline=$EVENTPIPELINE" >> "$GITHUB_OUTPUT"
-          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER desktop=$DESKTOP mobile=$MOBILE eventpipeline=$EVENTPIPELINE"
+  schema:
+    name: fresh-ledger-matches-api
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    uses: ./.github/workflows/postgres-check.yml
+    with:
+      suite: schema
 
   # --------------------- Events Pipeline --------------------
   eventpipeline:
     name: Events Pipeline CI
     needs: changes
     if: needs.changes.outputs.eventpipeline == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -152,7 +120,7 @@ jobs:
     name: Server CI
     needs: changes
     if: needs.changes.outputs.server == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # Plan budget: ≤ 6 min for vet+build. Generous timeout so transient
     # network blips don't fail the run for the wrong reason.
     timeout-minutes: 12
@@ -162,14 +130,8 @@ jobs:
         run: bash scripts/check-task-canonical.sh
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26.7'
-
-      - name: Migration status (informational)
-        # `migrate validate` exits 1 on pending migrations, which is normal
-        # for any PR that adds one — so we print status only here. A real
-        # PR-safe lint will land in a follow-up `cmd/migrate lint`.
-        working-directory: server
-        run: go run ./cmd/migrate status || true
+          go-version-file: .go-version
+          cache-dependency-path: server/go.sum
 
       - name: Vet
         working-directory: server
@@ -180,9 +142,6 @@ jobs:
       - name: Build
         working-directory: server
         run: |
-          go build ./cmd/api
-          go build ./cmd/temporal-worker
-          go build ./cmd/migrate
           go build ./cmd/clickhouse-migrate
           go build -tags ee ./cmd/api ./cmd/temporal-worker ./cmd/migrate
 
@@ -190,13 +149,14 @@ jobs:
     name: Community without EE source
     needs: changes
     if: needs.changes.outputs.server == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26.7'
+          go-version-file: .go-version
+          cache-dependency-path: server/go.sum
       - name: Install CGO test dependencies
         run: |
           if ! command -v gcc >/dev/null 2>&1; then
@@ -216,39 +176,16 @@ jobs:
     name: AI profile migration PostgreSQL regression
     needs: changes
     if: needs.changes.outputs.server == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: integration-fixture
-          POSTGRES_DB: ai_profiles_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.7'
-          cache-dependency-path: server/go.sum
-      - name: Check real migration transactions and edition ledger compatibility
-        working-directory: server
-        env:
-          AI_PROFILES_TEST_DATABASE_URL: postgres://postgres:integration-fixture@127.0.0.1:5432/ai_profiles_test?sslmode=disable
-        run: go test -tags integration ./internal/dbmigrate -count=1
+    uses: ./.github/workflows/postgres-check.yml
+    with:
+      suite: migrations
 
   server-tests:
     name: Server Tests
     needs: changes
     if: needs.changes.outputs.server == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 20
-    # Informational until promoted per the plan's promotion criteria.
-    continue-on-error: true
     # Existing test suite uses in-memory SQLite (see server/CLAUDE.md).
     # `services: postgres` is aspirational and currently breaks on our
     # ARC runners (k8s API unreachable when spinning up the sidecar pod).
@@ -263,7 +200,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26.7'
+          go-version-file: .go-version
+          cache-dependency-path: server/go.sum
       - name: Verify gcc available (CGO requires it)
         run: |
           if ! command -v gcc >/dev/null 2>&1; then
@@ -282,7 +220,7 @@ jobs:
     name: Frontend CI
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # Compile both editions, including cold TypeScript caches.
     timeout-minutes: 15
     steps:
@@ -290,26 +228,29 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build frontend
         run: |
-          pnpm --dir frontend run build
           pnpm --dir frontend run build:ee
 
   frontend-tests:
     name: Frontend Vitest
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build widget-core (frontend imports compiled output)
@@ -321,14 +262,16 @@ jobs:
     name: Community frontend without EE source
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build shared widget code
@@ -341,7 +284,7 @@ jobs:
     name: Package Vitest
     needs: changes
     if: needs.changes.outputs.packages == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # Plan budget: ≤ 3 min for all packages combined.
     timeout-minutes: 8
     steps:
@@ -349,7 +292,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # widget-core's reply-time-parity.test imports from @helpin-ai/shared;
@@ -373,7 +318,7 @@ jobs:
     name: Help Center CI
     needs: changes
     if: needs.changes.outputs.helpcenter == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # Plan budget: ≤ 3 min build + test.
     timeout-minutes: 8
     steps:
@@ -383,9 +328,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: help-center/pnpm-lock.yaml
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install
         working-directory: help-center
         run: pnpm install --frozen-lockfile
@@ -404,14 +349,16 @@ jobs:
     name: Admin CI
     needs: changes
     if: needs.changes.outputs.admin == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build admin
@@ -427,14 +374,16 @@ jobs:
     name: Support Desktop CI
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # widget-core is resolved from its compiled dist for type-checking; build
@@ -462,7 +411,7 @@ jobs:
     name: Support Mobile CI
     needs: changes
     if: needs.changes.outputs.mobile == 'true'
-    runs-on: arc-runners-helpin-ai
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # cargo check of the tauri stack is heavy on a cold cache (rust-cache
     # keeps warm runs fast); generous timeout so a cache miss doesn't fail
     # the run for the wrong reason.
@@ -472,7 +421,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Typecheck support-mobile
@@ -501,3 +452,15 @@ jobs:
         run: pnpm --dir apps/support-mobile run build
       - name: Cargo check (desktop target — see job comment)
         run: cargo check --manifest-path apps/support-mobile/src-tauri/Cargo.toml
+
+  required:
+    name: CI required
+    if: always()
+    needs: [changes, workflow-checks, server, server-tests, community-backend, ai-profile-postgres, schema, frontend, frontend-tests, community-frontend, admin, packages-tests, helpcenter, desktop, mobile-check, eventpipeline, community]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require every selected check
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci/checks.py required
