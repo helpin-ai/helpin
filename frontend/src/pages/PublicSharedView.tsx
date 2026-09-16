@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { PublicShareOpenButton } from '@/components/agents/PublicShareOpenButton';
 import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import { dockChatService } from '@/lib/services/dockChatService';
 import type { PublicSharedResource } from '@/lib/dockTypes';
@@ -46,7 +47,7 @@ export function PublicSharedView() {
 				</a>
 				<div className="ml-auto flex items-center gap-2 sm:gap-3">
 					<a href="/login" className="shrink-0 whitespace-nowrap rounded-full border border-[#dedad1] px-3 py-2 text-sm font-medium hover:bg-[#f4f2ee] sm:px-4 dark:border-[#47443e] dark:hover:bg-[#302f2b]">Sign in</a>
-					{user && openPath ? <a href={openPath} target="_blank" rel="noopener noreferrer" className="shrink-0 whitespace-nowrap rounded-full bg-[#1c1b19] px-3 py-2 text-sm font-medium text-white sm:px-4 dark:bg-[#eeeae1] dark:text-[#1c1b19]">Open in Helpin</a> : null}
+					{openPath && !missing ? <PublicShareOpenButton key={`${user?.id ?? 'anonymous'}:${openPath}`} openPath={openPath} signedIn={!!user} /> : null}
 				</div>
 			</header>
 			<main className="mx-auto w-full max-w-3xl px-5 py-12 sm:px-8">
