@@ -4,26 +4,57 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/url"
+	"os"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
+	"github.com/helpin-ai/helpin/server/internal/dbmigrate"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"os"
-	"path/filepath"
-	"runtime"
-	"testing"
-	"time"
 )
 
+// Use the actual ledger, including inbox projection and snapshot triggers.
+// GORM-only fixtures do not exercise the production deletion transaction.
 func contactPrivacyDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("CONTACT_PRIVACY_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("set CONTACT_PRIVACY_TEST_DATABASE_URL to disposable PostgreSQL")
+		t.Skip("set CONTACT_PRIVACY_TEST_DATABASE_URL to disposable PostgreSQL with vector and CREATEDB privileges")
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminSQL, err := admin.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := adminSQL.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	database := fmt.Sprintf("contact_privacy_%d", time.Now().UnixNano())
+	privacyExec(t, admin, "CREATE DATABASE "+database)
+	t.Cleanup(func() {
+		if err := admin.Exec("DROP DATABASE " + database + " WITH (FORCE)").Error; err != nil {
+			t.Error(err)
+		}
+	})
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.Path = "/" + database
+	db, err := gorm.Open(postgres.Open(parsed.String()), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,31 +62,30 @@ func contactPrivacyDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sqlDB.SetMaxOpenConns(1)
-	schema := fmt.Sprintf("contact_privacy_%d", time.Now().UnixNano())
-	privacyExec(t, db, "CREATE SCHEMA "+schema)
 	t.Cleanup(func() {
-		if err := db.Exec("DROP SCHEMA " + schema + " CASCADE").Error; err != nil {
-			t.Error(err)
-		}
 		if err := sqlDB.Close(); err != nil {
 			t.Error(err)
 		}
 	})
-	privacyExec(t, db, "SET search_path TO "+schema)
-	if err := db.AutoMigrate(&model.CRMContact{}, &model.CRMIdentityLink{}, &model.CRMActivity{}, &model.SupportConversation{}, &model.SupportMessage{}, &model.SupportWidgetSession{}, &model.SupportEmailLog{}, &model.SupportEmailWebhookEvent{}, &model.SupportEvent{}, &model.SupportConversationTriage{}, &model.SupportConversationTriageEvent{}, &model.SupportAIFollowUp{}, &model.SupportAttachment{}); err != nil {
+	privacyExec(t, db, "CREATE EXTENSION vector; CREATE EXTENSION pgcrypto")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := dbmigrate.Up(ctx, sqlDB); err != nil {
 		t.Fatal(err)
 	}
-	privacyExec(t, db, "ALTER TABLE support_conversations DROP COLUMN anonymized_at")
-	_, file, _, _ := runtime.Caller(0)
-	migration, err := os.ReadFile(filepath.Join(filepath.Dir(file), "../dbmigrate/sql/202609160003_support_contact_anonymization.sql"))
-	if err != nil {
+	if err := dbmigrate.Up(ctx, sqlDB); err != nil {
 		t.Fatal(err)
 	}
-	privacyExec(t, db, string(migration))
-	privacyExec(t, db, string(migration))
+
 	return db
 }
+func seedContactPrivacyWorkspace(t *testing.T, db *gorm.DB, workspaceID string) {
+	t.Helper()
+	owner := uuid.NewString()
+	privacyExec(t, db, `INSERT INTO users (id,email,full_name,password_hash) VALUES (?,?,'Test owner','test-only')`, owner, owner+"@example.invalid")
+	privacyExec(t, db, `INSERT INTO workspaces (id,name,slug,workspace_key,owner_id) VALUES (?,'Test workspace',?,'TEST',?)`, workspaceID, workspaceID, owner)
+}
+
 func privacyExec(t *testing.T, db *gorm.DB, sql string, args ...any) {
 	t.Helper()
 	if err := db.Exec(sql, args...).Error; err != nil {
@@ -77,6 +107,8 @@ func TestContactAnonymizationPostgres(t *testing.T) {
 	db := contactPrivacyDB(t)
 	ctx := context.Background()
 	ws, otherWS, contact, other, conv, legacy, protected, foreign, session, message, note, hidden, activity := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	seedContactPrivacyWorkspace(t, db, otherWS)
+	seedContactPrivacyWorkspace(t, db, ws)
 	privacyExec(t, db, `INSERT INTO crm_contacts (id,workspace_id,display_id,first_name,email) VALUES (?,?,1,'Alice','alice@example.com'), (?,?,2,'Other',NULL)`, contact, ws, other, ws)
 	privacyExec(t, db, `INSERT INTO crm_identity_links (workspace_id,anonymous_id,contact_id,external_user_id,identity_method,identity_trust) VALUES (?,'browser-alice',?,'alice-user','hmac','verified')`, ws, contact)
 	privacyExec(t, db, `INSERT INTO support_conversations (id,workspace_id,display_id,subject,status,customer_name,customer_email,anonymous_id,crm_contact_id,created_at) VALUES (?,?,1,'Alice question','resolved','Alice','alice@example.com','browser-alice',?,'2026-01-01'), (?, ?,2,'Legacy','open','Alice','ALICE@example.com',NULL,NULL,'2026-01-01'), (?, ?,3,'Other contact','open','Other','alice@example.com',NULL,?,'2026-01-01'), (?, ?,1,'Other workspace','open','Other','alice@example.com','browser-alice',NULL,'2026-01-01')`, conv, ws, contact, legacy, ws, protected, ws, other, foreign, otherWS)
@@ -95,9 +127,16 @@ func TestContactAnonymizationPostgres(t *testing.T) {
 	}
 	ids, err := repo.DeleteAnonymizingSupport(ctx, ws, contact)
 	if err != nil || len(ids) != 2 {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			t.Logf("database context: %s; changes: %s", pgErr.Where, pgErr.Detail)
+		}
 		t.Fatalf("delete: %v %v", ids, err)
 	}
 	privacyCheck(t, db, `SELECT anonymized_at IS NOT NULL AND customer_email IS NULL AND customer_name='Deleted customer' AND crm_contact_id IS NULL AND anonymous_id IS NULL AND subject='Alice question' AND status='resolved' AND created_at='2026-01-01' FROM support_conversations WHERE id=?`, conv)
+	privacyCheck(t, db, `SELECT view_search_document='alice question deleted customer' FROM support_conversations WHERE id=?`, conv)
+	privacyCheck(t, db, `SELECT count(*) > 0 AND bool_and(NOT jsonb_exists(old_values,'customer_email') AND NOT jsonb_exists(old_values,'customer_name') AND NOT jsonb_exists(old_values,'view_search_document') AND NOT jsonb_exists(old_values,'search_vector') AND NOT jsonb_exists(new_values,'customer_email')) FROM support_inbox_conversation_changes WHERE conversation_id=?`, conv)
+
 	privacyCheck(t, db, `SELECT content='I am Alice, alice@example.com' AND sender_display_name IS NULL AND metadata='{"rating":5}'::jsonb FROM support_messages WHERE id=?`, message)
 	privacyCheck(t, db, `SELECT content='Comment about Alice' AND sender_display_name='Teammate' AND is_internal FROM support_messages WHERE id=?`, note)
 	privacyCheck(t, db, `SELECT content='Hidden Alice comment' AND sender_display_name IS NULL AND deleted_at IS NOT NULL FROM support_messages WHERE id=?`, hidden)
@@ -127,11 +166,16 @@ func TestContactAnonymizationPostgres(t *testing.T) {
 		t.Fatal("session restored")
 	}
 	privacyExec(t, db, `UPDATE support_conversations SET team_last_seen_at=now() WHERE id=?`, conv)
+	if err := NewSupportConversationRepository(db).Delete(ctx, ws, conv); err != nil {
+		t.Fatalf("delete anonymized conversation: %v", err)
+	}
+	privacyCheck(t, db, `SELECT count(*)=0 FROM support_conversations WHERE id=?`, conv)
 }
 
 func TestContactAnonymizationRollbackPostgres(t *testing.T) {
 	db := contactPrivacyDB(t)
 	ws, contact, conv := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	seedContactPrivacyWorkspace(t, db, ws)
 	privacyExec(t, db, `INSERT INTO crm_contacts (id,workspace_id,display_id,first_name) VALUES (?,?,1,'Alice')`, contact, ws)
 	privacyExec(t, db, `INSERT INTO support_conversations (id,workspace_id,display_id,subject,crm_contact_id,customer_name) VALUES (?, ?, 1,'Keep',?,'Alice')`, conv, ws, contact)
 	privacyExec(t, db, `INSERT INTO support_widget_sessions (workspace_id,conversation_id,anonymous_id,session_token,expires_at) VALUES (?,?,'alice','still-valid',now()+interval '1 hour')`, ws, conv)
@@ -141,4 +185,87 @@ func TestContactAnonymizationRollbackPostgres(t *testing.T) {
 	}
 	privacyCheck(t, db, `SELECT anonymized_at IS NULL AND customer_name='Alice' FROM support_conversations WHERE id=?`, conv)
 	privacyCheck(t, db, `SELECT session_token='still-valid' AND revoked_at IS NULL FROM support_widget_sessions WHERE conversation_id=?`, conv)
+}
+
+func TestContactAnonymizationSharedIdentityPostgres(t *testing.T) {
+	db := contactPrivacyDB(t)
+	ws, deleted, other, explicit, legacy := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	seedContactPrivacyWorkspace(t, db, ws)
+	privacyExec(t, db, `INSERT INTO crm_contacts (id,workspace_id,display_id,first_name,email) VALUES (?, ?, 'CON-1','Deleted','shared@example.com'), (?, ?, 'CON-2','Other','SHARED@example.com')`, deleted, ws, other, ws)
+	privacyExec(t, db, `INSERT INTO crm_identity_links (workspace_id,contact_id,anonymous_id,identity_method,identity_trust) VALUES (?,?,'shared-browser','browser_claim','untrusted'), (?,?,'shared-browser','browser_claim','untrusted')`, ws, deleted, ws, other)
+	privacyExec(t, db, `INSERT INTO support_conversations (id,workspace_id,display_id,subject,crm_contact_id,customer_email,anonymous_id) VALUES (?, ?,1,'Explicit',?,'shared@example.com','shared-browser'), (?, ?,2,'Unattributed',NULL,'shared@example.com','shared-browser')`, explicit, ws, deleted, legacy, ws)
+	privacyExec(t, db, `INSERT INTO support_widget_sessions (workspace_id,anonymous_id,session_token,customer_email,expires_at) VALUES (?,'shared-browser','unattributed-token','shared@example.com',now()+interval '1 hour')`, ws)
+	ids, err := NewCRMContactRepository(db).DeleteAnonymizingSupport(context.Background(), ws, deleted)
+	if err != nil || len(ids) != 1 || ids[0] != explicit {
+		t.Fatalf("ambiguous histories attributed: %v %v", ids, err)
+	}
+	privacyCheck(t, db, `SELECT anonymized_at IS NULL AND customer_email='shared@example.com' FROM support_conversations WHERE id=?`, legacy)
+	privacyCheck(t, db, `SELECT revoked_at IS NULL AND customer_email='shared@example.com' FROM support_widget_sessions WHERE session_token='unattributed-token'`)
+}
+
+func TestContactAnonymizationWaitsForInFlightMessagePostgres(t *testing.T) {
+	db := contactPrivacyDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ws, contact, conv, message := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
+	seedContactPrivacyWorkspace(t, db, ws)
+	privacyExec(t, db, `INSERT INTO crm_contacts (id,workspace_id,display_id,first_name) VALUES (?,?,'CON-1','Alice')`, contact, ws)
+	privacyExec(t, db, `INSERT INTO support_conversations (id,workspace_id,display_id,subject,crm_contact_id) VALUES (?, ?,1,'Question',?)`, conv, ws, contact)
+	writer := db.WithContext(ctx).Begin()
+	if writer.Error != nil {
+		t.Fatal(writer.Error)
+	}
+	defer writer.Rollback()
+	privacyExec(t, writer, `INSERT INTO support_messages (id,workspace_id,conversation_id,sender_type,sender_display_name,content,metadata,created_at) VALUES (?, ?, ?,'customer','Alice','Retain in-flight text','{"customer_email":"alice@example.com"}',now())`, message, ws, conv)
+	deletion := db.WithContext(ctx).Begin()
+	if deletion.Error != nil {
+		t.Fatal(deletion.Error)
+	}
+	defer deletion.Rollback()
+	var pid int
+	if err := deletion.Raw("SELECT pg_backend_pid()").Scan(&pid).Error; err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	var group sync.WaitGroup
+	group.Add(1)
+	go func() {
+		defer group.Done()
+		_, err := NewCRMContactRepository(deletion).DeleteAnonymizingSupport(ctx, ws, contact)
+		if err == nil {
+			err = deletion.Commit().Error
+		}
+		done <- err
+	}()
+	defer func() { cancel(); writer.Rollback(); group.Wait() }()
+	// Observe actual database blocking; a sleep alone would not prove the race.
+	for {
+		var waiting bool
+		if err := db.WithContext(ctx).Raw("SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=? AND NOT granted)", pid).Scan(&waiting).Error; err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("deletion did not wait for writer: %v", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if err := writer.Commit().Error; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	privacyCheck(t, db, `SELECT content='Retain in-flight text' AND sender_display_name IS NULL AND metadata='{}'::jsonb FROM support_messages WHERE id=?`, message)
+	privacyCheck(t, db, `SELECT anonymized_at IS NOT NULL FROM support_conversations WHERE id=?`, conv)
 }

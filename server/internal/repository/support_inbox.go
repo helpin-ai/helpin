@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -2316,6 +2317,19 @@ func (r *SupportConversationRepository) MarkUnread(ctx context.Context, conversa
 // Delete permanently removes a conversation and its messages.
 func (r *SupportConversationRepository) Delete(ctx context.Context, workspaceID, conversationID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Explicit conversation deletion remains available after anonymization.
+		// Remove the parent first so message cleanup cannot resurrect projections
+		// on a read-only conversation. Everything still commits atomically.
+		var conversation model.SupportConversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, conversationID).Find(&conversation).Error; err != nil {
+			return err
+		}
+		if conversation.AnonymizedAt != nil {
+			if err := tx.Where("workspace_id = ? AND id = ?", workspaceID, conversationID).Delete(&model.SupportConversation{}).Error; err != nil {
+				return fmt.Errorf("delete anonymized conversation: %w", err)
+			}
+		}
+
 		if err := tx.Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID).Delete(&model.SupportMessage{}).Error; err != nil {
 			return fmt.Errorf("delete conversation messages: %w", err)
 		}
