@@ -1,4 +1,4 @@
-vi.mock('../SupportAIControl', () => ({ SupportAIControl: () => null }));
+vi.mock('../SupportAIControl', () => ({ SupportAIControl: ({ compact }: { compact?: boolean }) => <button data-testid="ai-control" data-compact={Boolean(compact)}>AI control</button> }));
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -197,6 +197,10 @@ describe('MessageThread', () => {
     try {
       await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
       expect(container.querySelector('[data-testid="ai-run-approvals"]')?.getAttribute('data-enabled')).toBe(String(enabled))
+      const control = container.querySelector('[data-testid="ai-control"]')!
+      expect(control.closest('[data-slot="support-inbox-panel-header"]')).toBeTruthy()
+      expect(control.getAttribute('data-compact')).toBe('false')
+      expect(container.querySelectorAll('[data-testid="ai-control"]')).toHaveLength(1)
     } finally {
       act(() => root.unmount())
       client.clear()
@@ -460,6 +464,10 @@ describe('MessageThread', () => {
     expect(container.querySelector('[aria-label="Resolve conversation"]')).toBeTruthy()
     expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
     expect(container.textContent).not.toContain('Create Task')
+    const control = container.querySelector('[data-testid="ai-control"]')!
+    expect(control.closest('[data-slot="support-inbox-panel-header"]')).toBeTruthy()
+    expect(control.getAttribute('data-compact')).toBe('true')
+    expect(container.querySelectorAll('[data-testid="ai-control"]')).toHaveLength(1)
 
     act(() => {
       returnButton?.click()

@@ -922,6 +922,8 @@ export function MessageThread({
             {createTaskFromConversation.isPending ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
           </Button>
 
+          <SupportAIControl key={conversation.id} conversation={conversation} compact />
+
           <Button
             type="button"
             variant="ghost"
@@ -979,6 +981,8 @@ export function MessageThread({
               Create Task
             </Button>
 
+            <SupportAIControl key={conversation.id} conversation={conversation} />
+
             {/* Resolve / Unresolve */}
             {conversation.status === 'resolved' ? (
               <Button
@@ -1021,7 +1025,6 @@ export function MessageThread({
           </div>
         </SupportInboxPanelHeader>
       ))}
-      {conversation && <SupportAIControl key={conversation.id} conversation={conversation} />}
       {!conversation && isThreadLoading && (
         <ThreadHeaderSkeleton presentation={presentation} onBackToInbox={onBackToInbox} />
       )}
