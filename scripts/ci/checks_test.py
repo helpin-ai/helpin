@@ -16,14 +16,15 @@ class ChecksTest(unittest.TestCase):
             'packages/shared/src/types.ts': ('packages', 'mobile', 'frontend', 'helpcenter', 'community'),
             'packages/widget-core/src/index.ts': ('mobile', 'frontend', 'helpcenter', 'community'),
             'server/internal/model/user.go': ('server', 'community'),
+            'server/skills/support.md': ('server', 'community'),
             'community/compose.yaml': ('community',),
         }.items():
             with self.subTest(path=path):
                 selected = select([path])
                 for group in groups:
                     self.assertTrue(selected[group], group)
-        self.assertFalse(any(select(['docs/design.md']).values()))
-        for path in ('pnpm-lock.yaml', 'tsconfig.base.json', '.github/workflows/community-test.yml', 'scripts/ci/checks.py'):
+        self.assertFalse(any(select(['docs/design.md', 'community/README.md', '.github/ISSUE_TEMPLATE/bug.yml']).values()))
+        for path in ('pnpm-lock.yaml', 'tsconfig.base.json', '.dockerignore', '.npmrc', '.github/workflows/community-test.yml', 'scripts/ci/checks.py'):
             self.assertTrue(all(select([path]).values()))
         self.assertTrue(all(select([], all_checks=True).values()))
 

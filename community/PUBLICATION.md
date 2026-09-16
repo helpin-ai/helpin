@@ -32,6 +32,9 @@ while any item below is unresolved.
   Current review found widget-embed references in both existing SaaS deployment
   workflows; those packages are not safe to delete as unused. Neither legacy
   widget distribution is included in the Community images.
+- [ ] Verify fork PRs use isolated hosted runners. Restrict ARC runner-group
+  access to trusted workflows/refs; workflow YAML routing alone is not an
+  authorization boundary for public contributions.
 - [ ] Enable GitHub private vulnerability reporting and verify SECURITY.md's link.
 - [ ] Native amd64 and arm64 core install/restore gates pass on exact image digests.
 - [ ] Complete the outside-origin support journey on an approved real DNS/TLS host.

@@ -61,9 +61,14 @@ jobs:
         with:
           go-version-file: .go-version
           cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
       - name: Validate CI policy and workflows
         run: |
           python3 -m unittest discover -s scripts/ci -p '*_test.py'
+          python3 -m unittest discover -s community/tests -p '*_test.py'
+          node --test community/tests/installer.test.mjs
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           "$(go env GOPATH)/bin/actionlint" -shellcheck= .github/workflows/ci.yml .github/workflows/community-*.yml .github/workflows/postgres-check.yml .github/workflows/nightly.yml
           shellcheck -S error community/*.sh community/postgres/*.sh community/tests/*.sh scripts/check-community-*.sh

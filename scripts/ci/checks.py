@@ -13,14 +13,16 @@ JOBS = {
     'desktop': ('desktop',), 'mobile': ('mobile-check',), 'eventpipeline': ('eventpipeline',),
     'community': ('community',),
 }
-ROOT_CONFIG = {'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'turbo.json', 'tsconfig.base.json', '.node-version', '.go-version'}
+ROOT_CONFIG = {'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'turbo.json', 'tsconfig.base.json', '.node-version', '.go-version', '.dockerignore', '.npmrc', '.pnpmfile.cjs', '.github/actionlint.yaml'}
 
 
 def select(paths, all_checks=False):
     result = dict.fromkeys(GROUPS, all_checks)
     for path in paths:
-        if path in ROOT_CONFIG or path.startswith(('.github/', 'scripts/ci/')):
+        if path in ROOT_CONFIG or path.startswith(('.github/workflows/', '.github/actions/', 'scripts/ci/')):
             return dict.fromkeys(GROUPS, True)
+        if path.endswith('.md') and path.startswith(('docs/', 'community/')):
+            continue
         server = path.startswith(('server/', 'scripts/check-task-canonical.sh', 'scripts/check-community-backend.sh'))
         frontend = path.startswith(('frontend/', 'packages/shared/', 'packages/widget-core/', 'scripts/check-community-frontend.sh'))
         matches = {

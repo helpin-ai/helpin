@@ -34,7 +34,8 @@ remove their own resources. They do not upload raw logs or credential-bearing tr
 ## CI ownership
 
 - Main CI selects jobs through `scripts/ci/checks.py`. Mobile includes frontend
-  changes; root configuration and workflow changes select all checks.
+  changes; root configuration and workflow changes select all checks. Documentation
+  changes run lightweight contract/link checks without rebuilding the stack.
 - Community jobs own builds/tests with EE source absent. EE jobs own EE builds/tests.
 - PostgreSQL 16 checks historical migrations; PostgreSQL 17/pgvector checks the
   fresh ledger against API models and verifies contact anonymization.
@@ -47,7 +48,9 @@ remove their own resources. They do not upload raw logs or credential-bearing tr
   only after observing a passing run and reviewing existing protection rules.
 
 Fork PR jobs use GitHub-hosted runners without private credentials. Internal
-jobs retain ARC runners where already configured. While Runtime is private,
+jobs retain ARC runners where already configured. Before making the repository
+public, restrict ARC runner-group access to trusted workflows/refs: a contributor
+can edit workflow YAML, so the runner selector alone is not an authorization boundary. While Runtime is private,
 internal acceptance requires `COMMUNITY_RUNTIME_READ_TOKEN` with Contents: read
 on that repository. Fork acceptance reports this dependency as blocked; do not
 supply private credentials or use `pull_request_target` to bypass that boundary.
