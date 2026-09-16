@@ -886,9 +886,9 @@ function DockPaneHeader({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="z-[70]">
 			<PublicShareMenuActions
-				workspaceId={run?.run.workspace_id ?? chat?.workspace_id ?? ''}
+				workspaceId={(tab === 'agents' ? run?.run.workspace_id : chat?.workspace_id) ?? ''}
 				resourceType={tab === 'agents' ? 'agent_run' : 'dock_chat'}
-				resourceId={run?.run.id ?? chat?.id ?? ''}
+				resourceId={(tab === 'agents' ? run?.run.id : chat?.id) ?? ''}
 			/>
 			{tab === 'chats' && chat?.user_id === currentUserId ? <>
 				<DropdownMenuSeparator />

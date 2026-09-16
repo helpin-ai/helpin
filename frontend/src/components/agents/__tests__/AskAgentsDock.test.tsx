@@ -1694,7 +1694,11 @@ describe('AskAgentsDock', () => {
     expect(header?.querySelector('[aria-label="Conversation actions"]')).not.toBeNull();
   });
 
-	it('creates and copies a public Ask chat link from the header menu', async () => {
+	it.each([false, true])('shares the displayed chat with a background agent run selected: %s', async (hasBackgroundRun) => {
+		if (hasBackgroundRun) {
+			useDockStore.setState({ tab: 'chats', activeRunId: 'agent-run-1' });
+			mocks.listRuns.mockResolvedValue({ data: { runs: [DOCK_RUN], attention_count: 1 }, error: null });
+		}
 		await renderDock();
 		await waitForText('Sprint questions');
 		const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Conversation actions"]');
@@ -1704,6 +1708,7 @@ describe('AskAgentsDock', () => {
 			.find((item) => item.textContent === 'Share publicly');
 		await act(async () => share?.click());
 		await flush();
+		expect(mocks.getPublicShare).toHaveBeenCalledWith('ws-1', 'dock_chat', 'chat-1');
 		expect(mocks.createPublicShare).toHaveBeenCalledWith('ws-1', 'dock_chat', 'chat-1');
 		expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://helpin.ai/shared/share-token');
 	});
@@ -1732,6 +1737,12 @@ describe('AskAgentsDock', () => {
 		expect(trigger).not.toBeNull();
 		await act(async () => trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })));
 		await waitForText('Share publicly');
+		expect(mocks.getPublicShare).toHaveBeenCalledWith('ws-1', 'agent_run', 'agent-run-1');
+		const share = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+			.find((item) => item.textContent === 'Share publicly');
+		await act(async () => share?.click());
+		await flush();
+		expect(mocks.createPublicShare).toHaveBeenCalledWith('ws-1', 'agent_run', 'agent-run-1');
 	});
 
   it('presents the dock close control as a minimized action with a tooltip', async () => {
