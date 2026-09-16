@@ -51,5 +51,7 @@ it('puts Open in Helpin after Sign in in the header, without repeating it by the
   const links = Array.from(container.querySelectorAll('header a'));
   expect(links.slice(-2).map(link => link.textContent)).toEqual(['Sign in', 'Open in Helpin']);
   expect(links.at(-1)?.getAttribute('href')).toBe(openPath);
+  expect(links.at(-1)?.getAttribute('target')).toBe('_blank');
+  expect(links.at(-1)?.getAttribute('rel')).toContain('noopener');
   expect(container.querySelector('main')?.textContent).not.toContain('Open in Helpin');
 });

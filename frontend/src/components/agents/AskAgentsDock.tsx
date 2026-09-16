@@ -32,6 +32,7 @@ import { AnimatedDockChatTitle } from './dock/AnimatedDockChatTitle';
 import { usePageContext } from '@/components/command-bar/pageContext';
 import { PublicShareMenuActions } from './PublicShareMenuActions';
 import { useDockRoster } from './dock/useDockRoster';
+import { useSharedChatLink } from './dock/useSharedChatLink';
 
 type AskAgentsEventDetail = {
   query?: string;
@@ -110,22 +111,12 @@ export function AskAgentsDock({
     if (!embedded) setGlobalActiveRunId(runId);
   }, [embedded, setGlobalActiveRunId]);
   const workspaceId = workspace?.id;
-  useEffect(() => {
-    if (embedded || !workspaceId || typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    const sharedChatID = url.searchParams.get('ask_chat')?.trim();
-    if (!sharedChatID) return;
-    setTab('chats');
-    setActiveChatId(sharedChatID);
-    setCollapsed(false);
-    url.searchParams.delete('ask_chat');
-    window.history.replaceState(window.history.state, '', url);
-  }, [embedded, setActiveChatId, setCollapsed, setTab, workspaceId]);
   const {
     runs, runsLoading, chatsLoading, runsError, chatsError,
     nextChatCursor, loadingMoreChats, nextRunCursor, loadingMoreRuns,
     refreshRuns, refreshChats, loadMoreRuns, loadMoreChats, updateChatRunStatus, invalidateChats,
   } = useDockRoster(workspaceId, currentUserId, active, active && (embedded || !collapsed));
+  const sharedChatLink = useSharedChatLink(workspaceId, !embedded, !chatsLoading);
   const [hiddenByModal, setHiddenByModal] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [chatScrollRequest, setChatScrollRequest] = useState(0);
@@ -181,10 +172,12 @@ export function AskAgentsDock({
   // Keep untouched drafts out of the global roster. An empty support-linked
   // row can still be selected from its support conversation, but it should not
   // appear as an "Untitled chat" in the user's general Ask history.
-  const visibleChats = useMemo(() => chats.filter((chat) => (
-    chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null
-  )), [activeChatId, chats]);
-  const activeChat = visibleChats.find((chat) => chat.id === activeChatId) ?? null;
+  const visibleChats = useMemo(() => {
+    const linked = sharedChatLink.chat;
+    const available = linked && linked.id === activeChatId && !chats.some(chat => chat.id === linked.id) ? [...chats, linked] : chats;
+    return available.filter(chat => chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null);
+  }, [activeChatId, chats, sharedChatLink.chat]);
+  const activeChat = sharedChatLink.pending || sharedChatLink.error ? null : visibleChats.find((chat) => chat.id === activeChatId) ?? null;
   const chatViewKey = draftChat
     ? embedded
       ? `support:${associatedSupportConversationId ?? 'unknown'}:draft`
@@ -277,11 +270,11 @@ export function AskAgentsDock({
   }, [orderedRuns, runsLoading, setActiveRunId]);
 
   useEffect(() => {
-    if (embedded || chatsLoading || draftChat) return;
+    if (embedded || chatsLoading || draftChat || sharedChatLink.pending || sharedChatLink.error) return;
     const current = useDockStore.getState().activeChatId;
     if (current && visibleChats.some((chat) => chat.id === current)) return;
     setActiveChatId(visibleChats[0]?.id ?? null);
-  }, [chatsLoading, draftChat, embedded, setActiveChatId, visibleChats]);
+  }, [chatsLoading, draftChat, embedded, setActiveChatId, visibleChats, sharedChatLink.pending, sharedChatLink.error]);
 
   useEffect(() => {
     if (!embedded) return;
@@ -702,7 +695,7 @@ export function AskAgentsDock({
                 onArchiveChat={archiveChat}
                 onUpdateVisibility={updateChatVisibility}
               />
-              {tab === 'agents' ? (
+              {sharedChatLink.pending ? <SupportChatLoadingPane /> : sharedChatLink.error ? <SupportChatErrorPane message={sharedChatLink.error} onRetry={sharedChatLink.retry} /> : tab === 'agents' ? (
                 activeRun ? (
                   <DockRunView
                     key={activeRun.run.id}
