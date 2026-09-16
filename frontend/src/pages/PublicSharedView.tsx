@@ -9,6 +9,8 @@ export function PublicSharedView() {
 	const token = decodeURIComponent(window.location.pathname.split('/').filter(Boolean).at(-1) ?? '');
 	const [resource, setResource] = useState<PublicSharedResource | null>(null);
 	const [missing, setMissing] = useState(false);
+	const user = useAuthStore((state) => state.user);
+	const openPath = resource?.dock_chat?.open_path ?? resource?.agent_run?.open_path;
 
 	useEffect(() => {
 		const robots = document.createElement('meta');
@@ -42,7 +44,10 @@ export function PublicSharedView() {
 					<img src="/brand/helpin-icon-black.svg" alt="" className="h-7 w-7 dark:invert" />
 					Helpin
 				</a>
-				<a href="/login" className="ml-auto rounded-full border border-[#dedad1] px-4 py-2 text-sm font-medium hover:bg-[#f4f2ee] dark:border-[#47443e] dark:hover:bg-[#302f2b]">Sign in</a>
+				<div className="ml-auto flex items-center gap-2 sm:gap-3">
+					<a href="/login" className="shrink-0 whitespace-nowrap rounded-full border border-[#dedad1] px-3 py-2 text-sm font-medium hover:bg-[#f4f2ee] sm:px-4 dark:border-[#47443e] dark:hover:bg-[#302f2b]">Sign in</a>
+					{user && openPath ? <a href={openPath} className="shrink-0 whitespace-nowrap rounded-full bg-[#1c1b19] px-3 py-2 text-sm font-medium text-white sm:px-4 dark:bg-[#eeeae1] dark:text-[#1c1b19]">Open in Helpin</a> : null}
+				</div>
 			</header>
 			<main className="mx-auto w-full max-w-3xl px-5 py-12 sm:px-8">
 				{resource ? <PublicSharedContent resource={resource} /> : missing ? (
@@ -54,11 +59,9 @@ export function PublicSharedView() {
 }
 
 export function PublicSharedContent({ resource }: { resource: PublicSharedResource }) {
-	const user = useAuthStore((state) => state.user);
-	const openPath = resource.dock_chat?.open_path ?? resource.agent_run?.open_path;
 	if (resource.dock_chat) {
 		return <section aria-label="Shared Ask conversation">
-			<div className="mb-10 flex items-start gap-4"><h1 className="min-w-0 flex-1 text-2xl font-semibold tracking-tight">{resource.dock_chat.title || 'Shared Ask conversation'}</h1>{user && openPath ? <a href={openPath} className="shrink-0 rounded-full bg-[#1c1b19] px-4 py-2 text-sm font-medium text-white dark:bg-[#eeeae1] dark:text-[#1c1b19]">Open in Helpin</a> : null}</div>
+			<div className="mb-10 flex items-start gap-4"><h1 className="min-w-0 flex-1 text-2xl font-semibold tracking-tight">{resource.dock_chat.title || 'Shared Ask conversation'}</h1></div>
 			<div className="space-y-8">
 				{resource.dock_chat.messages.map((message) => message.role === 'user' ? (
 					<div key={message.id} className="ml-auto w-fit max-w-[85%] rounded-2xl border border-[#e4e0d8] bg-[#f7f5f1] px-4 py-2.5 text-sm dark:border-[#45423c] dark:bg-[#302f2b]">
@@ -76,7 +79,7 @@ export function PublicSharedContent({ resource }: { resource: PublicSharedResour
 	return <section aria-label="Shared agent run">
 		<div className="mb-8 border-b border-[#ece9e2] pb-6 dark:border-[#37352f]">
 			<p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Agent run</p>
-			<div className="mt-2 flex items-start gap-4"><h1 className="min-w-0 flex-1 text-2xl font-semibold tracking-tight">{run.title || 'Shared agent run'}</h1>{user && openPath ? <a href={openPath} className="shrink-0 rounded-full bg-[#1c1b19] px-4 py-2 text-sm font-medium text-white dark:bg-[#eeeae1] dark:text-[#1c1b19]">Open in Helpin</a> : null}</div>
+			<div className="mt-2 flex items-start gap-4"><h1 className="min-w-0 flex-1 text-2xl font-semibold tracking-tight">{run.title || 'Shared agent run'}</h1></div>
 			{run.session ? <p className="mt-2 text-sm text-muted-foreground">{run.session.status}</p> : null}
 		</div>
 		<div className="space-y-5">
