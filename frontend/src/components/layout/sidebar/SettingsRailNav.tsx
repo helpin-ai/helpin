@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Collapsible } from 'radix-ui';
 import { buildSettingsHomePath } from '@/lib/settingsDiscovery';
-import { SETTINGS_HOME_LABEL, SETTINGS_SIDEBAR_GROUP_LABELS } from '@/lib/settingsSections';
+import { SETTINGS_HOME_LABEL, SETTINGS_SIDEBAR_GROUP_LABELS, SETTINGS_TOP_LEVEL_GROUPS } from '@/lib/settingsSections';
 import { ArrowRight01Icon } from '@/lib/icons';
 import {
   SidebarGroup,
@@ -80,9 +80,16 @@ export function SettingsRailNav({
       <div className="sticky top-0 z-10 space-y-1 border-b border-border/50 bg-sidebar pb-3 mb-3">
         <SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton asChild isActive={isActive(buildSettingsHomePath(workspaceSlug))}><a href={buildSettingsHomePath(workspaceSlug)} onClick={event => { event.preventDefault(); onNavigate(buildSettingsHomePath(workspaceSlug)); }}>{SETTINGS_HOME_LABEL}</a></SidebarMenuButton></SidebarMenuItem>
+          {groups.filter(group => SETTINGS_TOP_LEVEL_GROUPS.has(group.label)).flatMap(group => group.items).map(item => (
+            <SidebarMenuItem key={item.link}>
+              <SidebarMenuButton asChild isActive={isActive(item.link)}>
+                <a href={item.link} onClick={event => { event.preventDefault(); onNavigate(item.link); }}>{item.label}</a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
         </SidebarMenu>
       </div>
-      {groups.map((group, index) => {
+      {groups.filter(group => !SETTINGS_TOP_LEVEL_GROUPS.has(group.label)).map((group, index) => {
         const isCollapsible = COLLAPSIBLE_SETTINGS_GROUPS.has(group.label);
         const groupLabel = SETTINGS_SIDEBAR_GROUP_LABELS[group.label] ?? group.label;
         const isOpen = !collapsedGroups.has(group.label);

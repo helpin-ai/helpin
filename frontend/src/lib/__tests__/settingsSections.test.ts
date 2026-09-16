@@ -18,10 +18,11 @@ describe('getSettingsSidebarGroups', () => {
     expect(visibleSectionIDs(false)).toContain('billing');
   });
 
-  it.skipIf(!billingEnabled)('keeps billing in the workspace settings group', () => {
+  it.skipIf(!billingEnabled)('keeps billing separate from workspace settings', () => {
     const workspaceGroup = getSettingsSidebarGroups(false).find((group) => group.label === 'Workspace');
 
-    expect(workspaceGroup?.sections.map((section) => section.id)).toContain('billing');
+    expect(workspaceGroup?.sections.map((section) => section.id)).not.toContain('billing');
+    expect(getSettingsSidebarGroups(false)[0]).toMatchObject({ label: 'Billing', sections: [expect.objectContaining({ id: 'billing' })] });
   });
 
   it('still hides settings-admin-only sections without workspace settings management', () => {
