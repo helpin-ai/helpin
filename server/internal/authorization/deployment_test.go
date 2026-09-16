@@ -38,6 +38,7 @@ func TestDeploymentModulesRestrictOwnersAndDirectRoutes(t *testing.T) {
 		path string
 		want int
 	}{
+		{"/api/pm/attachments/image/content", 200}, {"/api/pm/attachments-lookalike", 404}, {"/api/pm/associations", 404},
 		{"/api/pm/tasks", 404}, {"/api/pm/tasks/task/run-agent", 404}, {"/api/automation/flows", 404}, {"/api/automation/library/triggers", 404}, {"/api/crm/deals", 404},
 		{"/api/support/inbox/conversations", 200}, {"/api/docs/spaces", 200}, {"/api/automation/agents", 200}, {"/api/automation/library/tools", 200}, {"/api/automation/runs", 200}, {"/api/pm/agent-presets", 200}, {"/api/pm/agent-runs/run/messages", 200},
 		{"/api/crm/contacts/contact", 200}, {"/api/crm/contacts-lookalike", 404}, {"/api/internal/agent-runtime/events", 200}, {"/api/settings/workspace", 200},

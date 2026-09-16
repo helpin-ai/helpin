@@ -29,6 +29,7 @@ func TestWidgetOriginMiddleware(t *testing.T) {
 		{"installation", "GET", "/settings/install", "", "https://site.example", "", 200, widgetorigin.Reference{InstallationID: "install"}},
 		{"identify", "POST", "/identify", `{"api_key":"key","email":"a@example.com"}`, "https://site.example", "", 200, widgetorigin.Reference{WidgetKey: "key"}},
 		{"session", "POST", "/session", `{"widget_key":"key"}`, "https://site.example", "", 200, widgetorigin.Reference{WidgetKey: "key"}},
+		{"history", "GET", "/messages?session_token=token", "", "https://site.example", "", 200, widgetorigin.Reference{SessionToken: "token"}},
 		{"message", "POST", "/messages", `{"session_token":"token","content":"hello"}`, "https://site.example", "", 200, widgetorigin.Reference{SessionToken: "token"}},
 		{"attachment", "PATCH", "/attachments/one", `{}`, "https://site.example", "token", 200, widgetorigin.Reference{SessionToken: "token"}},
 		{"denied origin", "POST", "/session", `{"widget_key":"key"}`, "https://other.example", "", 403, widgetorigin.Reference{WidgetKey: "key"}},
@@ -70,6 +71,15 @@ func TestWidgetOriginMiddleware(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, r)
+			if tc.status == 200 {
+				wantCache := ""
+				if tc.method != "GET" || tc.ref.SessionToken != "" {
+					wantCache = "no-store"
+				}
+				if got := w.Header().Get("Cache-Control"); got != wantCache {
+					t.Fatalf("cache policy %q, want %q", got, wantCache)
+				}
+			}
 			if w.Code != tc.status || called != (tc.status == 200) {
 				t.Fatalf("status=%d handler called=%v", w.Code, called)
 			}

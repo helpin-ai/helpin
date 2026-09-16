@@ -5,8 +5,14 @@ package dbmigrate
 import (
 	"context"
 	"database/sql"
+	"github.com/helpin-ai/helpin/server/internal/dbschema"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -48,6 +54,7 @@ func TestFreshCommunityFoundationPostgres(t *testing.T) {
 	if err := Up(ctx, db); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("API model schema parity", func(t *testing.T) { assertAPIModelSchemaParity(t, db) })
 	var before int
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM schema_migrations").Scan(&before); err != nil {
 		t.Fatal(err)
@@ -91,5 +98,52 @@ func TestFreshCommunityFoundationPostgres(t *testing.T) {
 	var exists bool
 	if err := db.QueryRowContext(ctx, "SELECT to_regclass('public.interrupted_probe') IS NOT NULL").Scan(&exists); err != nil || exists {
 		t.Fatal("interrupted work persisted")
+	}
+}
+
+// Compare the actual PostgreSQL schema, not logged DDL: GORM can issue harmless
+// ALTERs even when the schema is unchanged. Roll back all probe changes.
+func assertAPIModelSchemaParity(t *testing.T, db *sql.DB) {
+	t.Helper()
+	gdb, err := gorm.Open(postgres.New(postgres.Config{Conn: db}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx := gdb.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	snapshot := func() []string {
+		var rows []string
+		err := tx.Raw(`
+SELECT 'column ' || table_name || '.' || column_name || ' ' || udt_name || ' ' || is_nullable || ' ' || coalesce(column_default,'') || ' ' || coalesce(character_maximum_length::text,'') || ' ' || coalesce(numeric_precision::text,'') || ' ' || coalesce(numeric_scale::text,'') AS definition
+FROM information_schema.columns WHERE table_schema='public'
+UNION ALL SELECT 'index ' || tablename || '.' || indexname || ' ' || indexdef FROM pg_indexes WHERE schemaname='public'
+UNION ALL SELECT 'constraint ' || c.relname || '.' || con.conname || ' ' || pg_get_constraintdef(con.oid) FROM pg_constraint con JOIN pg_class c ON c.oid=con.conrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public'
+ORDER BY definition`).Scan(&rows).Error
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rows
+	}
+	before := snapshot()
+	if err := tx.AutoMigrate(dbschema.AutoMigrationModels()...); err != nil {
+		t.Fatalf("API AutoMigrate after ledger: %v", err)
+	}
+	after := snapshot()
+	if !slices.Equal(before, after) {
+		var diff []string
+		for _, row := range before {
+			if !slices.Contains(after, row) {
+				diff = append(diff, "- "+row)
+			}
+		}
+		for _, row := range after {
+			if !slices.Contains(before, row) {
+				diff = append(diff, "+ "+row)
+			}
+		}
+		t.Fatalf("API models differ from the fresh ledger schema; add a versioned SQL migration:\n%s", strings.Join(diff, "\n"))
 	}
 }

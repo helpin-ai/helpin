@@ -2,6 +2,7 @@ package authorization
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/deployment"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -36,6 +37,11 @@ func (s *AuthzService) visibleModules(allowed map[model.ModuleID]struct{}) []mod
 
 func (s *AuthzService) requestModule(path string) model.ModuleID {
 	module := deployment.APIModule(path)
+	// Attachment content is shared by Docs and PM; the handler still checks
+	// access to the owning resource. Do not open the rest of the PM API.
+	if module == model.ModulePM && !s.deploymentEnabled(model.ModulePM) && (path == "/api/pm/attachments" || strings.HasPrefix(path, "/api/pm/attachments/")) {
+		return model.ModuleDocs
+	}
 	if module == model.ModuleCRM && !s.deploymentEnabled(model.ModuleCRM) && deployment.SharedCustomerAPI(path) {
 		return model.ModuleSupport
 	}

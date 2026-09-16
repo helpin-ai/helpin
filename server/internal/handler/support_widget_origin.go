@@ -53,7 +53,9 @@ func requireWidgetOrigin(authorizer widgetOriginAuthorizer, next http.Handler, p
 		}
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Add("Vary", "Origin, Sec-Fetch-Site, Sec-Fetch-Mode")
-		w.Header().Set("Cache-Control", "no-store")
+		if r.Method != http.MethodGet || ref.SessionToken != "" {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

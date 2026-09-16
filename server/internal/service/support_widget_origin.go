@@ -45,6 +45,9 @@ func (s *SupportInboxService) AuthorizeWidgetOrigin(ctx context.Context, origin 
 		if session == nil || session.RevokedAt != nil || !session.ExpiresAt.After(time.Now()) {
 			return denied
 		}
+		// GetInstallation maintains one installation per workspace. Sessions are
+		// workspace-bound today; multiple installations would require persisting
+		// the installation ID on each session before changing that invariant.
 		if err := accept(s.installationRepo.GetByWorkspace(ctx, session.WorkspaceID)); err != nil {
 			return err
 		}

@@ -18,7 +18,7 @@ import (
 )
 
 // SMTPConfig configures application email only. TLSMode is starttls (default),
-// tls (implicit TLS), or explicit none for a trusted local relay/test fixture.
+// tls (implicit TLS), or none for an unauthenticated trusted local relay.
 type SMTPConfig struct {
 	Host                              string
 	Port                              int
@@ -49,6 +49,9 @@ func NewSMTPClient(config SMTPConfig) (*SMTPClient, error) {
 	}
 	if (config.Username == "") != (config.Password == "") {
 		return nil, fmt.Errorf("SMTP_USERNAME and SMTP_PASSWORD must both be set or empty")
+	}
+	if config.TLSMode == "none" && config.Username != "" {
+		return nil, fmt.Errorf("SMTP_TLS_MODE=none only supports unauthenticated local relays; use starttls or tls with SMTP credentials")
 	}
 	if strings.ContainsAny(config.From, "\r\n") {
 		return nil, fmt.Errorf("SMTP_FROM is invalid")

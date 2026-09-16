@@ -10,7 +10,7 @@ running the binaries directly retains conservative authentication defaults.
 | `SMTP_HOST`, `SMTP_PORT` | Optional application mail relay; port defaults to 587. SMTP takes precedence over application Postmark when configured. |
 | `SMTP_FROM` | Required sender address when SMTP is enabled. |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | Set both for authenticated delivery, or leave both empty for a trusted relay. |
-| `SMTP_TLS_MODE` | `starttls` by default; `tls` for implicit TLS; explicit `none` only for a trusted local relay. TLS certificates are verified. |
+| `SMTP_TLS_MODE` | `starttls` by default; `tls` for implicit TLS; explicit `none` only for an unauthenticated trusted local relay. Credentials require TLS and AUTH PLAIN; LOGIN-only SMTP servers are unsupported. TLS certificates are verified. |
 | `POSTMARK_APP_SERVER_TOKEN`, `POSTMARK_APP_FROM_EMAIL` | Optional alternative application-mail provider. |
 
 SMTP sends invitations, password reset, optional verification and application
@@ -76,3 +76,5 @@ The core foundation migration runs only for an empty application database. It
 creates the tables previously supplied by GORM, then runs the existing SQL
 ledger normally. It does not rewrite historical SQL or existing checksums.
 Incomplete base schemas fail explicitly rather than being treated as new installs.
+
+When `AUTH_EMAIL_VERIFICATION_REQUIRED=true`, API startup requires a configured application mail sender. This enables verification emails and the verification UI; the current server does not reject all unverified password logins. Do not treat it as a server-enforced login restriction.

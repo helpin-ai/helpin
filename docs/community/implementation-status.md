@@ -14,7 +14,7 @@ scope; its v0.2 work is deferred.
 - Community support/docs/agents module defaults, navigation and API admission;
   staff-email feature gates removed from HEAD.
 - Local signup without email verification, optional SMTP application mail,
-  enforced EE verification, operator URLs and no default telemetry endpoints.
+  EE verification email policy (not a server-enforced login restriction), operator URLs and no default telemetry endpoints.
 - Support-only SDK mode, local HTTP/WS addressing, signed private attachments,
   public help-center/snippet addressing, safe anonymous-to-known identification
   and isolation when switching between known users.

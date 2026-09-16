@@ -7,7 +7,7 @@ import { useUpdateChatSettings } from '@/hooks/queries/useSupport';
 import type { SupportInstallationResponse, WidgetOriginSettings as OriginSettings } from '@/lib/pmTypes';
 
 export function parseWidgetOrigins(value: string): string[] {
-  return [...new Set(value.split('\n').map(line => line.trim()).filter(Boolean).map(origin => {
+  return [...new Set(value.split('\n').map(line => line.trim().replace(/\/$/, '')).filter(Boolean).map(origin => {
     const url = new URL(origin);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
       url.pathname !== '/' || url.search || url.hash || /[?#*]/.test(origin) || origin.endsWith('/')) {

@@ -160,3 +160,10 @@ func TestDisabledAppSenderIsNil(t *testing.T) {
 		t.Fatalf("sender=%v err=%v", sender, err)
 	}
 }
+
+func TestSMTPRejectsCredentialsWithoutTLS(t *testing.T) {
+	_, err := NewSMTPClient(SMTPConfig{Host: "relay.lan", TLSMode: "none", Username: "user", Password: "fixture", From: "support@example.test"})
+	if err == nil || !strings.Contains(err.Error(), "use starttls or tls") {
+		t.Fatalf("expected actionable configuration error, got %v", err)
+	}
+}
