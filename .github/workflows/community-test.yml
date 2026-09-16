@@ -137,12 +137,23 @@ jobs:
         if: inputs.export-images
         working-directory: helpin/community
         run: |
+          test -s ../../agent-runtime/LICENSE
           ./check-images.sh
           sed -n '/^ghcr.io\/helpin-ai\//p' release-artifacts/images-local.txt > release-artifacts/application-images.txt
           mapfile -t images < release-artifacts/application-images.txt
           docker save "${images[@]}" | gzip > release-artifacts/tested-images.tar.gz
-          cp runtime-revision.txt release-artifacts/
-          git rev-parse HEAD > release-artifacts/source-revision.txt
+          cp runtime-revision.txt "release-artifacts/runtime-$COMMUNITY_ARCH.txt"
+          git rev-parse HEAD > "release-artifacts/source-$COMMUNITY_ARCH.txt"
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          images = Path('release-artifacts/application-images.txt').read_text().splitlines()
+          inventory = {}
+          for image in images:
+              info = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image]))[0]
+              inventory[image] = {'id': info['Id'], 'architecture': info['Architecture']}
+          Path('release-artifacts/tested-applications.json').write_text(json.dumps(inventory))
+          PY
           (cd release-artifacts && sha256sum tested-images.tar.gz > tested-images.tar.gz.sha256)
       - uses: actions/upload-artifact@v4
         with:

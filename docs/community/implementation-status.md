@@ -1,10 +1,11 @@
 # Community 0.1 implementation and verification
 
-Updated September 16, 2026. Work is isolated on local `feat/community-v01`
-worktrees for Helpin and Runtime. Nothing has been pushed or published. Existing
-developer and SaaS services, databases and environment values were not changed.
-The [reference plan](../plans/2026-09-15-community-release-plan.md) remains the
-scope; its v0.2 work is deferred.
+Historical implementation evidence, updated September 16, 2026. Community work
+is now consolidated into Helpin `feat/local-cli-admission` and Runtime
+`feat/host-neutral-local-cli`; both branches have been pushed. This document is
+maintainer-only and is excluded from operator bundles. Publication still requires
+[the publication checklist](../../community/PUBLICATION.md). Current CI and
+release commands are in [the development guide](development.md).
 
 ## Implemented
 
@@ -100,8 +101,8 @@ Runtime has no migration ledger head; record its image version/digest instead.
 
 These are not completed or claimed by local tests:
 
-1. Owner chooses Helpin/Runtime/SDK licenses and the public EE-source boundary.
-   No license grant, private-document deletion or history rewrite was invented.
+1. Licenses are now present; the owner must finish the public EE-source and
+   attribution decisions in the publication checklist.
 2. Owner resolves publication hygiene: private docs, personal addresses in
    historical `featureFlags.ts`, and redacted history-scan matches. Scans found
    60 Helpin and two Runtime matches needing classification; they are findings,
@@ -112,7 +113,7 @@ These are not completed or claimed by local tests:
    cross-compilation support do not substitute for execution on arm64 hardware.
 4. Run the outside-origin journey on an approved public DNS/trusted-TLS host.
    Local browser origins do not prove public certificate/DNS configuration.
-5. Make the pinned Runtime commit available remotely, enable/verify private
+5. The pinned Runtime revision has been pushed. Enable/verify private
    vulnerability reporting, configure the protected release environment, and
    publish reviewed artifacts only after the preceding gates pass.
 

@@ -1,0 +1,33 @@
+name: Promote Community candidate
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful Community release candidate run ID (no rebuild)
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: community-promotion
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: community-release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: community-bundle
+          path: release-artifacts
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify and publish the approved candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+        run: python3 community/promote-release.py
