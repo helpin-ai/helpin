@@ -253,3 +253,31 @@ func TestLoadRejectsNonObjectCommandRouterOpenRouterProviderOptions(t *testing.T
 		t.Fatalf("expected object config error, got %v", err)
 	}
 }
+
+func TestRateLimitConfiguration(t *testing.T) {
+	setRequiredConfigEnv(t)
+	t.Setenv("AUTHENTICATED_RATE_LIMIT_PER_MINUTE", "")
+	t.Setenv("EXPENSIVE_RATE_LIMIT_PER_MINUTE", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthenticatedRateLimit != 1200 || cfg.ExpensiveRateLimit != 120 {
+		t.Fatal("unexpected defaults")
+	}
+	t.Setenv("AUTHENTICATED_RATE_LIMIT_PER_MINUTE", "0")
+	t.Setenv("EXPENSIVE_RATE_LIMIT_PER_MINUTE", "240")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AuthenticatedRateLimit != 0 || cfg.ExpensiveRateLimit != 240 {
+		t.Fatal("overrides ignored")
+	}
+	for _, value := range []string{"-1", "bad"} {
+		t.Setenv("EXPENSIVE_RATE_LIMIT_PER_MINUTE", value)
+		if _, err = Load(); err == nil {
+			t.Fatal("invalid limit accepted")
+		}
+	}
+}

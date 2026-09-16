@@ -6,8 +6,6 @@ builders, and coding are outside the default Community surface.
 
 Known limitations to address:
 
-- No general rate limiter covers all authenticated `/api` routes. Widget and
-  help-center limits exist; operators should configure appropriate edge limits.
 - The crawler discovers sitemap URLs from robots.txt but does not fully enforce
   `Disallow`. Import only sites you are authorized to crawl.
 - Retrieved content does not yet have complete prompt-injection trust marking.

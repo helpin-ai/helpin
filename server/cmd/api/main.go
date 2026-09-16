@@ -49,6 +49,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
+	"github.com/helpin-ai/helpin/server/internal/ratelimit"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/router"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -1676,7 +1677,9 @@ func main() {
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 
+	requestLimiter := ratelimit.New(redisClient, ratelimit.Config{RequestsPerMinute: cfg.AuthenticatedRateLimit, ExpensivePerMinute: cfg.ExpensiveRateLimit})
 	handlers := router.Handlers{
+		AuthenticatedRateLimit:    middleware.AuthenticatedRateLimit(requestLimiter),
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
 		Assets:                    handler.NewAssetHandler(s3Client),
@@ -1724,7 +1727,7 @@ func main() {
 		AIProfile:           handler.NewAIProfileHandler(aiProfileService),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
 		CLI:                 handler.NewCLIHandler(cliService),
-		MCP:                 handler.NewMCPHandler(mcpService),
+		MCP:                 handler.NewMCPHandler(mcpService, requestLimiter),
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),

@@ -19,6 +19,8 @@ const (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
+	AuthenticatedRateLimit    int
+	ExpensiveRateLimit        int
 	PublicWidgetURL           string
 	PublicSDKURL              string
 	SMTPHost                  string
@@ -345,7 +347,17 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("CRM_MEETING_CAPTURE_PROVIDER must be recall or vexa")
 	}
 
+	authenticatedRateLimit, err := rateLimitEnv("AUTHENTICATED_RATE_LIMIT_PER_MINUTE", 1200)
+	if err != nil {
+		return nil, err
+	}
+	expensiveRateLimit, err := rateLimitEnv("EXPENSIVE_RATE_LIMIT_PER_MINUTE", 120)
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
+		AuthenticatedRateLimit:                 authenticatedRateLimit,
+		ExpensiveRateLimit:                     expensiveRateLimit,
 		DatabaseURL:                            dbURL,
 		JWTSecret:                              jwtSecret,
 		Port:                                   port,
@@ -655,4 +667,16 @@ func parseBoolEnvDefaultTrue(value string) bool {
 		return true
 	}
 	return parseBoolEnv(trimmed)
+}
+
+func rateLimitEnv(name string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer (0 disables the limit)", name)
+	}
+	return value, nil
 }

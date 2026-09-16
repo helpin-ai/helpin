@@ -16,6 +16,7 @@ import (
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
+	AuthenticatedRateLimit func(http.Handler) http.Handler
 	// WidgetRateLimit guards the unauthenticated /widget write endpoints
 	// (nil disables limiting, e.g. when Redis is not configured).
 	WidgetRateLimit func(http.Handler) http.Handler
@@ -491,6 +492,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(middleware.AdminAuditLogger(jwtManager))
 			r.Use(middleware.RequireAuth(jwtManager))
+			if h.AuthenticatedRateLimit != nil {
+				r.Use(h.AuthenticatedRateLimit)
+			}
 			r.Use(authorization.RequirePlatformAdmin)
 			r.Get("/webhook-events", h.AdminWebhookEvent.List)
 			r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
@@ -502,6 +506,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
+			if h.AuthenticatedRateLimit != nil {
+				r.Use(h.AuthenticatedRateLimit)
+			}
 			r.Use(authorization.RequireDeploymentAccess(authz))
 			if h.AIConnection != nil {
 				r.Route("/ai-connections", func(r chi.Router) {

@@ -91,3 +91,21 @@ The fresh-schema CI job applies the ledger to an empty PostgreSQL database and
 compares the schema before and after the API's exact AutoMigrate model list.
 Model additions therefore need an additive ledger migration; do not regenerate
 or edit the historical foundation snapshot to bypass the guard.
+
+## Authenticated request limits
+
+The API and public MCP use Redis counters shared across replicas. Defaults are
+1,200 requests/minute and a separate 120 expensive actions/minute. Configure
+`AUTHENTICATED_RATE_LIMIT_PER_MINUTE` and `EXPENSIVE_RATE_LIMIT_PER_MINUTE`;
+zero disables the corresponding ceiling. API counters use the authenticated
+user across workspaces (changing a workspace header cannot bypass the limit).
+MCP counters use the authenticated workspace and user/service principal, across
+all their tokens. Different principals do not consume each other's allowance.
+
+Expensive API actions include agent starts/continuations/messages, rewrites,
+previews, re-indexing, generation and sync. MCP mutations and workspace search
+share the expensive bucket. General requests return HTTP 429 and `Retry-After: 60`;
+MCP tool throttling returns a protocol tool error with a retry instruction.
+Streams are checked only at connection admission. Internal Runtime callbacks
+and visitor routes retain their separate policies. Redis outages fail open with
+a warning; this is an abuse ceiling, not a billing or authorization mechanism.
