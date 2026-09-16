@@ -51,6 +51,7 @@ type SupportContentSource struct {
 	SyncProgress         int             `json:"sync_progress" gorm:"not null;default:0"`
 	IndexedPages         int             `json:"indexed_pages" gorm:"not null;default:0"`
 	IndexedChunks        int             `json:"indexed_chunks" gorm:"not null;default:0"`
+	LastSyncWarning      *string         `json:"last_sync_warning"`
 	LastSyncError        *string         `json:"last_sync_error"`
 	LastCrawlJobID       *string         `json:"last_crawl_job_id"`
 	LastSyncStartedAt    *time.Time      `json:"last_sync_started_at" gorm:"type:timestamptz"`

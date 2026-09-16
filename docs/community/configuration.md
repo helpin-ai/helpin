@@ -109,3 +109,35 @@ MCP tool throttling returns a protocol tool error with a retry instruction.
 Streams are checked only at connection admission. Internal Runtime callbacks
 and visitor routes retain their separate policies. Redis outages fail open with
 a warning; this is an abuse ceiling, not a billing or authorization mechanism.
+
+### Allow website crawling
+
+In **Settings → Knowledge**, add or manage a **Website** source and expand
+**Allow Helpin to crawl your website**. Publish crawler-specific rules in your site's `/robots.txt`:
+
+```text
+User-agent: Helpin-Crawler
+Allow: /docs/
+Disallow: /
+
+User-agent: CloudflareBrowserRenderingCrawler
+Allow: /docs/
+Disallow: /
+```
+
+Replace `/docs/` with your public knowledge paths. Local crawling identifies as
+`Helpin-Crawler/1.0`; optional Cloudflare crawling uses
+`CloudflareBrowserRenderingCrawler/1.0`. Update existing groups rather than
+adding conflicting rules. For a wholly public site use `Allow: /` without
+`Disallow: /`. Keep private paths protected by authentication.
+
+Re-sync after changing rules. Blocked URLs are reported separately from sync
+errors and are removed from the index after a successful full refresh. Local
+crawling checks links, sitemap URLs, and redirect destinations, caching rules
+per origin for that sync. Missing robots.txt (4xx except 429) allows crawling;
+429, 5xx, and network errors fail the sync without stale-index cleanup. Uploads
+are unaffected. Firewalls may also need to allow the configured crawler on your
+public paths; robots.txt does not bypass bot challenges.
+
+Cloudflare enforces robots and content signals itself; see its
+[crawler behavior documentation](https://developers.cloudflare.com/browser-run/quick-actions/crawl-endpoint/#robotstxt-and-bot-protection).

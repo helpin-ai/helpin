@@ -6,8 +6,6 @@ builders, and coding are outside the default Community surface.
 
 Known limitations to address:
 
-- The crawler discovers sitemap URLs from robots.txt but does not fully enforce
-  `Disallow`. Import only sites you are authorized to crawl.
 - Retrieved content does not yet have complete prompt-injection trust marking.
   Review agent tools and permissions before using untrusted knowledge sources.
 - Contact deletion is not a complete personal-data erasure workflow across all

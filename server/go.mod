@@ -3,6 +3,7 @@ module github.com/helpin-ai/helpin/server
 go 1.25.0
 
 require (
+	github.com/temoto/robotstxt v1.1.2
 	firebase.google.com/go/v4 v4.17.0
 	github.com/ClickHouse/clickhouse-go/v2 v2.32.0
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.0
@@ -171,7 +172,6 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/stripe/stripe-go/v86 v86.0.0
-	github.com/temoto/robotstxt v1.1.2 // indirect
 	github.com/tetratelabs/wazero v1.8.1 // indirect
 	github.com/wasilibs/go-re2 v1.7.0 // indirect
 	github.com/wasilibs/wazero-helpers v0.0.0-20240620070341-3dff1577cd52 // indirect

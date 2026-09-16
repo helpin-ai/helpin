@@ -918,6 +918,7 @@ export interface SupportContentSource {
   sync_progress: number;
   indexed_pages: number;
   indexed_chunks: number;
+  last_sync_warning?: string | null;
   last_sync_error?: string | null;
   last_crawl_job_id?: string | null;
   last_sync_started_at?: string | null;
