@@ -20,5 +20,22 @@ boundaries. Agent credentials stay out of metadata and logs. Historical ledger
 migrations are immutable; add a new migration and test it against Postgres.
 
 See [the code of conduct](CODE_OF_CONDUCT.md) and
-[security reporting](SECURITY.md). License and contribution terms must be
-confirmed in the publication checklist before accepting public contributions.
+[security reporting](SECURITY.md).
+
+## Licensing contributions
+
+The community application is AGPL-3.0-only; enterprise directories have a
+separate commercial license; public SDKs and embedded widget packages use
+Apache-2.0. See [LICENSE](LICENSE) for the exact directory scopes. Preserve
+existing third-party licenses and notices, and identify any third-party
+material you add.
+
+For contributions to AGPL or enterprise code, each contributor must accept
+the [Helpin Contributor License Agreement](CLA.md) using its acceptance
+statement in the pull request. Maintainers must verify acceptance before
+merging. Contributors retain ownership; the agreement lets Helpin include
+their contributions in both community and commercial editions.
+
+Contributions solely to Apache-2.0 components use Apache-2.0's contribution
+terms and do not require the additional CLA. The [publication checklist](community/PUBLICATION.md)
+still applies before publishing this repository or its history.

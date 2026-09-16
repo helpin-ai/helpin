@@ -2,6 +2,16 @@
 
 Monorepo for the Helpin app, embedded widget SDK, shared widget components, and the standalone widget bundle.
 
+## License
+
+The community application is **AGPL-3.0-only**. Code in `server/ee/` and
+`frontend/src/ee/`, and any other directory named `ee`, is covered by the
+[Helpin Enterprise License](ee/LICENSE): internal development, testing, and
+evaluation are permitted; production use requires a commercial agreement.
+The public SDKs and embedded widget packages are **Apache-2.0**. See
+[LICENSE](LICENSE) for exact scopes and third-party exceptions, and
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution terms.
+
 ## Community 0.1 beta
 
 The self-hosted support beta includes visitor identification and chat, a staff

@@ -15,9 +15,10 @@ class ReleasePackageTest(unittest.TestCase):
             root = Path(temporary)
             shutil.copytree(source / 'community', root / 'community', ignore=shutil.ignore_patterns('.env', 'apps.json', 'backups', '__pycache__'))
             shutil.copytree(source / 'docs/community', root / 'docs/community')
-            for name in ('ROADMAP.md', 'SECURITY.md'):
+            license_files = ('LICENSE', 'LICENSE-AGPL-3.0', 'LICENSE-APACHE-2.0', 'ee/LICENSE')
+            for name in (*license_files, 'ROADMAP.md', 'SECURITY.md'):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source / name, root / name)
-            (root / 'LICENSE').write_text('Test fixture license; not a license for Helpin.\n')
             artifacts = root / 'release-artifacts'
             artifacts.mkdir()
             (artifacts / '.env').write_text('MUST_NOT_SHIP=fixture-only\n')
@@ -33,6 +34,9 @@ class ReleasePackageTest(unittest.TestCase):
             archive = next(artifacts.glob('*.tar.gz'))
             with tarfile.open(archive) as package:
                 names = package.getnames()
+                for name in license_files:
+                    self.assertEqual(package.extractfile('helpin-community/' + name).read(),
+                                     (source / name).read_bytes())
                 self.assertFalse(any(Path(name).name in ('.env', 'apps.json') for name in names))
                 compose = package.extractfile('helpin-community/community/compose.yaml').read().decode()
                 images = [line for line in compose.splitlines() if line.startswith('    image:')]

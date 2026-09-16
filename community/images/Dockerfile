@@ -27,6 +27,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags='-s 
     CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/migrate ./cmd/migrate
 
 FROM debian:bookworm-slim AS server-base
+COPY LICENSE LICENSE-AGPL-3.0 LICENSE-APACHE-2.0 /usr/share/licenses/helpin/
+COPY ee/LICENSE /usr/share/licenses/helpin/ee/LICENSE
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates tzdata wget && rm -rf /var/lib/apt/lists/* && useradd --uid 10001 --create-home app
 WORKDIR /app
 USER app
@@ -43,12 +45,16 @@ FROM server-base AS migrate
 COPY --from=go-build /out/migrate /app/migrate
 ENTRYPOINT ["/app/migrate"]
 FROM nginx:1.28.0-alpine AS frontend
+COPY LICENSE LICENSE-AGPL-3.0 LICENSE-APACHE-2.0 /usr/share/licenses/helpin/
+COPY ee/LICENSE /usr/share/licenses/helpin/ee/LICENSE
 RUN apk upgrade --no-cache
 ENV COMMUNITY_TRUSTED_PROXY_CIDR=127.0.0.1/32
 COPY --from=frontend-build /workspace/frontend/dist /usr/share/nginx/html
 COPY community/images/nginx.conf /etc/nginx/templates/default.conf.template
 EXPOSE 80
 FROM node:22.23.2-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS helpcenter
+COPY LICENSE LICENSE-AGPL-3.0 LICENSE-APACHE-2.0 /usr/share/licenses/helpin/
+COPY ee/LICENSE /usr/share/licenses/helpin/ee/LICENSE
 ENV NODE_ENV=production PORT=3000
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* && \
     rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /opt/yarn* /usr/local/bin/yarn*

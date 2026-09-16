@@ -1,11 +1,17 @@
 # Publication gate — decisions pending
 
-This worktree is an implementation candidate, not a license grant or permission
-to expose the existing repository history. Do not publish while any item below
-is unresolved.
+The licenses in LICENSE now apply to this worktree. Adding them does not
+authorize publication of the existing repository history. Do not publish
+while any item below is unresolved.
 
-- [ ] Owner chooses and adds the Helpin Community and Runtime licenses and confirms
-  Go/Python SDK licensing. Preserve all third-party notices; Garage is separately
+- [x] Add AGPL-3.0-only for Helpin Community, separate enterprise terms for all
+  `ee/` directories, and Apache-2.0 for Runtime, its Go/Python SDKs, and Helpin's
+  public SDK/widget packages. See the root LICENSE for exact scopes.
+- [ ] Confirm the legal entity behind the existing "Helpin AI" project
+  attribution in copyright notices, the enterprise license, and CLA before
+  publication. Confirm rights to existing contributions used commercially;
+  the CLA does not apply retroactively without acceptance.
+- [ ] Verify all third-party notices in the final artifacts; Garage is separately
   AGPL-3.0-licensed and is pulled as an unmodified upstream image. Preserve its
   source and license references in the distribution inventory.
 - [ ] Owner decides whether EE source stays separately licensed in the public

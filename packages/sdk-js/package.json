@@ -12,9 +12,7 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist", "LICENSE", "NOTICE"],
   "scripts": {
     "dev": "vite build --watch --mode development",
     "build": "tsc && vite build && node scripts/build-esm.mjs",
@@ -41,7 +39,7 @@
     "analytics",
     "tracking"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@helpin-ai/widget-core": "workspace:*",
     "@helpin-ai/shared": "workspace:*",

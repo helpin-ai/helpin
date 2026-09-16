@@ -13,8 +13,10 @@ root = Path(__file__).resolve().parent.parent
 tag = os.environ.get('COMMUNITY_RELEASE_TAG', '')
 if not re.fullmatch(r'community-v0\.\d+\.\d+(?:-[a-z0-9.]+)?', tag):
     raise SystemExit('Invalid Community beta tag')
-if not (root / 'LICENSE').is_file() or not (root / 'LICENSE').read_text().strip():
-    raise SystemExit('Choose and add a license before assembling release manifests')
+license_files = ('LICENSE', 'LICENSE-AGPL-3.0', 'LICENSE-APACHE-2.0', 'ee/LICENSE')
+for name in license_files:
+    if not (root / name).is_file() or not (root / name).read_text().strip():
+        raise SystemExit(f'Missing release license: {name}')
 artifacts = root / 'release-artifacts'
 by_arch = {}
 for arch in ('amd64', 'arm64'):
@@ -51,7 +53,8 @@ with tempfile.TemporaryDirectory(prefix='community-bundle-') as temporary:
     for name in ('backup-restore.sh', 'http-smoke.mjs'):
         shutil.copy2(root / 'community/tests' / name, community / 'tests' / name)
     shutil.copytree(root / 'docs/community', bundle / 'docs/community')
-    for name in ('LICENSE', 'ROADMAP.md', 'SECURITY.md'):
+    for name in (*license_files, 'ROADMAP.md', 'SECURITY.md'):
+        (bundle / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / name, bundle / name)
     (bundle / 'release-evidence').mkdir()
     for pattern in ('*.cdx.json', 'images-*.txt'):
