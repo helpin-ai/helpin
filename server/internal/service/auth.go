@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,7 @@ var (
 	ErrInvalidCredentials  = errors.New("invalid credentials")
 	ErrInvalidOAuthHandoff = errors.New("oauth handoff is invalid, expired, or already used")
 	ErrTwoFAUnavailable    = errors.New("two-factor authentication is not available")
+	ErrDemoDisabled        = errors.New("demo login is not enabled")
 )
 
 const (
@@ -73,6 +75,8 @@ type AuthService struct {
 	appBaseURL               string
 	encryptionKey            []byte
 	logger                   *slog.Logger
+	demo                     DemoConfig
+	demoHTTPClient           *http.Client
 }
 
 // NewAuthService creates a new AuthService.

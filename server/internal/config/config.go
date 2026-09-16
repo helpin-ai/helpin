@@ -30,19 +30,26 @@ type Config struct {
 	SMTPFrom                  string
 	SMTPTLSMode               string
 	EmailVerificationRequired bool
-	EnabledModules            []model.ModuleID
-	DatabaseURL               string
-	JWTSecret                 string
-	Port                      string
-	LogLevel                  string
-	RunAutoMigrate            bool
-	CORSOrigins               []string
-	TemporalAddress           string
-	TemporalNamespace         string
-	TemporalAPIKey            string
-	TemporalTLSEnabled        bool
-	TemporalTLSServerName     string
-	NatsURL                   string
+	// DemoViewerEmail enables the public read-only demo login when set. It is the
+	// email of the shared viewer account visitors are signed in as.
+	DemoViewerEmail string
+	// DemoRequireEmail makes the visitor email mandatory on POST /api/auth/demo.
+	DemoRequireEmail bool
+	// DemoLeadWebhookURL receives a JSON POST for every visitor email captured.
+	DemoLeadWebhookURL    string
+	EnabledModules        []model.ModuleID
+	DatabaseURL           string
+	JWTSecret             string
+	Port                  string
+	LogLevel              string
+	RunAutoMigrate        bool
+	CORSOrigins           []string
+	TemporalAddress       string
+	TemporalNamespace     string
+	TemporalAPIKey        string
+	TemporalTLSEnabled    bool
+	TemporalTLSServerName string
+	NatsURL               string
 
 	// Agent Runtime sidecar/service integration (optional; disabled when base URL is empty).
 	AgentRuntimeBaseURL       string
@@ -368,6 +375,9 @@ func Load() (*Config, error) {
 		PublicWidgetURL:                        publicWidgetURL,
 		PublicSDKURL:                           publicSDKURL,
 		EmailVerificationRequired:              emailVerificationRequired,
+		DemoViewerEmail:                        strings.ToLower(strings.TrimSpace(os.Getenv("DEMO_VIEWER_EMAIL"))),
+		DemoRequireEmail:                       parseBoolEnv(os.Getenv("DEMO_REQUIRE_EMAIL")),
+		DemoLeadWebhookURL:                     strings.TrimSpace(os.Getenv("DEMO_LEAD_WEBHOOK_URL")),
 		TemporalAddress:                        temporalAddress,
 		TemporalNamespace:                      temporalNamespace,
 		TemporalAPIKey:                         temporalAPIKey,

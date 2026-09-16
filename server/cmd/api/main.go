@@ -627,6 +627,11 @@ func main() {
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
 	authService.SetEmailVerificationRequired(cfg.EmailVerificationRequired)
+	authService.ConfigureDemo(service.DemoConfig{
+		ViewerEmail:    cfg.DemoViewerEmail,
+		RequireEmail:   cfg.DemoRequireEmail,
+		LeadWebhookURL: cfg.DemoLeadWebhookURL,
+	})
 	authService.SetOAuthMobileHandoffRepository(oauthMobileHandoffRepo)
 	authService.SetCustomerIOIdentityService(customerIOIdentityService)
 	authService.SetProductAnalyticsService(productAnalytics)
@@ -1678,10 +1683,15 @@ func main() {
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 
 	requestLimiter := ratelimit.New(redisClient, ratelimit.Config{RequestsPerMinute: cfg.AuthenticatedRateLimit, ExpensivePerMinute: cfg.ExpensiveRateLimit})
+	var demoReadOnly func(http.Handler) http.Handler
+	if authService.DemoEnabled() {
+		demoReadOnly = middleware.DemoReadOnly(authService.IsDemoUser)
+	}
 	handlers := router.Handlers{
 		AuthenticatedRateLimit:    middleware.AuthenticatedRateLimit(requestLimiter),
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
+		DemoReadOnly:              demoReadOnly,
 		Assets:                    handler.NewAssetHandler(s3Client),
 		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{

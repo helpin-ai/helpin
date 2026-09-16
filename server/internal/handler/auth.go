@@ -244,6 +244,27 @@ func (h *AuthHandler) Signin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// DemoSignin handles POST /api/auth/demo. It signs the visitor in as the shared
+// read-only demo viewer without a password. Disabled unless DEMO_VIEWER_EMAIL is set.
+func (h *AuthHandler) DemoSignin(w http.ResponseWriter, r *http.Request) {
+	var req model.DemoSigninRequest
+	if r.ContentLength != 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
+
+	resp, err := h.authService.DemoSignin(r.Context(), req)
+	if err != nil {
+		writeAuthError(w, err)
+		return
+	}
+
+	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // ForgotPassword handles POST /api/auth/forgot-password.
 func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req model.ForgotPasswordRequest
@@ -662,6 +683,8 @@ func writeAuthError(w http.ResponseWriter, err error) {
 		writeErrorCode(w, http.StatusUnauthorized, "invalid credentials", "invalid_credentials")
 	case errors.Is(err, service.ErrTwoFAUnavailable):
 		writeErrorCode(w, http.StatusServiceUnavailable, err.Error(), "two_factor_unavailable")
+	case errors.Is(err, service.ErrDemoDisabled):
+		writeErrorCode(w, http.StatusNotFound, err.Error(), "demo_disabled")
 	case errors.Is(err, service.ErrBadRequest):
 		writeErrorCode(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrBadRequest.Error()+": "), "bad_request")
 	default:
@@ -714,6 +737,8 @@ func (h *AuthHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		"email_verification_required": h.authService.EmailVerificationRequired(),
 		"app_email_configured":        h.authService.AppEmailConfigured(),
 		"google_login_enabled":        h.googleOAuth != nil,
+		"demo_enabled":                h.authService.DemoEnabled(),
+		"demo_requires_email":         h.authService.DemoRequiresEmail(),
 	})
 }
 

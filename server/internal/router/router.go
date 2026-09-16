@@ -25,6 +25,10 @@ type Handlers struct {
 	// (nil disables limiting, e.g. when Redis is not configured).
 	HelpcenterAnswerRateLimit func(http.Handler) http.Handler
 
+	// DemoReadOnly rejects every non-read request made by the shared public demo
+	// viewer account (nil when the demo login is not configured).
+	DemoReadOnly func(http.Handler) http.Handler
+
 	Assets              *handler.AssetHandler
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
@@ -290,6 +294,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Get("/auth/google/callback", h.Auth.GoogleCallback)
 		r.Post("/auth/google/mobile-exchange", h.Auth.GoogleMobileExchange)
 		r.Post("/auth/signin", h.Auth.Signin)
+		if h.WidgetRateLimit != nil {
+			r.With(h.WidgetRateLimit).Post("/auth/demo", h.Auth.DemoSignin)
+		} else {
+			r.Post("/auth/demo", h.Auth.DemoSignin)
+		}
 		r.Post("/auth/passkey/authentication-options", h.Passkey.AuthenticationOptions)
 		r.Post("/auth/passkey/authenticate", h.Passkey.Authenticate)
 		r.Post("/auth/2fa/verify-signin", h.Auth.Verify2FASignin)
@@ -506,6 +515,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
+			if h.DemoReadOnly != nil {
+				r.Use(h.DemoReadOnly)
+			}
 			if h.AuthenticatedRateLimit != nil {
 				r.Use(h.AuthenticatedRateLimit)
 			}

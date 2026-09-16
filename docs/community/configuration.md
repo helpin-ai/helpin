@@ -7,6 +7,9 @@ running the binaries directly retains conservative authentication defaults.
 | --- | --- |
 | `HELPIN_ENABLED_MODULES` | Comma-separated product surfaces. Community defaults to `support,docs,agents`; EE defaults to all modules. Support requires Docs. Workspace roles remain in force. |
 | `AUTH_EMAIL_VERIFICATION_REQUIRED` | Defaults to `true`. Set `false` for local Community signup without mail. EE rejects `false`. This never marks an email verified. |
+| `DEMO_VIEWER_EMAIL` | Optional. Email of an existing account that visitors of `/demo` are signed in as without a password. Give it the `viewer` role in one workspace only, no 2FA, not a platform admin. Every non-read API request from this account is rejected with `demo_read_only`. Empty disables `/demo`. |
+| `DEMO_REQUIRE_EMAIL` | Defaults to `false`. When `true`, visitors must enter their own email before the demo session is issued. |
+| `DEMO_LEAD_WEBHOOK_URL` | Optional. Visitor emails captured on `/demo` are POSTed here as `{"email","source":"demo","captured_at"}`. Failures are logged and never block the visitor. |
 | `SMTP_HOST`, `SMTP_PORT` | Optional application mail relay; port defaults to 587. SMTP takes precedence over application Postmark when configured. |
 | `SMTP_FROM` | Required sender address when SMTP is enabled. |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | Set both for authenticated delivery, or leave both empty for a trusted relay. |

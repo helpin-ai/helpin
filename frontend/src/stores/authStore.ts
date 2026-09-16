@@ -22,6 +22,7 @@ interface AuthState {
   ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string; cancelled?: boolean }>;
   verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
+  signInDemo: (email?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   updateUser: (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => Promise<void>;
 }
@@ -132,6 +133,17 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { data, error } = await authService.signup(email, password, fullName);
     if (error || !data) return { error: error || 'Sign up failed' };
     await persistAuthSession(data.user, data.access_token, data.refresh_token, false);
+    return { error: null };
+  },
+
+  signInDemo: async (email?: string) => {
+    const { data, error } = await authService.demoSignin(email);
+    if (error || !data) return { error: error || 'Demo sign in failed' };
+    if (!data.user) {
+      return { error: 'Demo sign in failed' };
+    }
+
+    await persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', false);
     return { error: null };
   },
 
