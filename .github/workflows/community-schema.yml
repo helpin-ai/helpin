@@ -21,7 +21,7 @@ jobs:
           POSTGRES_DB: schema_parity
         ports: ['5432:5432']
         options: >-
-          --health-cmd 'pg_isready -U postgres -d schema_parity'
+          --health-cmd "pg_isready -U postgres -d schema_parity"
           --health-interval 5s --health-retries 20
     env:
       GOWORK: off

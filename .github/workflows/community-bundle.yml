@@ -56,10 +56,13 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm --dir packages/sdk-js exec playwright install --with-deps chromium
+      - name: Prepare Community configuration
+        id: community_config
+        working-directory: helpin/community
+        run: ./setup.sh install
       - name: Build separate Community images natively
         working-directory: helpin/community
         run: |
-          ./setup.sh install
           COMMUNITY_SOURCE_REVISION=$(git rev-parse HEAD)
           export COMMUNITY_SOURCE_REVISION
           COMMUNITY_RUNTIME_REVISION=$(cat runtime-revision.txt)
@@ -77,6 +80,6 @@ jobs:
           name: community-tested-images-${{ matrix.runner }}
           path: helpin/community/tested-images.txt
       - name: Clean disposable stack
-        if: always()
+        if: ${{ always() && steps.community_config.outcome == 'success' }}
         working-directory: helpin/community
         run: docker compose -f compose.yaml -f tests/compose.fixture.yaml down -v --remove-orphans
