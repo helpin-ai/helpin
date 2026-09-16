@@ -18,7 +18,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: community-release-${{ inputs.tag }}
+  group: community-publication
   cancel-in-progress: false
 jobs:
   approved:
@@ -36,6 +36,11 @@ jobs:
           [[ "$TAG" =~ ^community-v0\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$ ]]
           [[ "$EVIDENCE" == https://* ]]
           test -s LICENSE
+      - name: Refuse an existing release or tag before building images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMUNITY_RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 community/promote-release.py check
   native:
     needs: approved
     strategy:

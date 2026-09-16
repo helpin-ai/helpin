@@ -83,4 +83,33 @@ architecture and image. Fork runs cannot write the shared build caches.
 
 Image archive artifacts expire after seven days; completed operator bundle
 artifacts expire after thirty days. Promote or build a new candidate within that
-window. Never regenerate an old candidate's assets under an already published tag.
+window. Candidate and promotion workflows share a publication lock and refuse
+already released tags before images are rebuilt or pushed. Never regenerate an old candidate's assets under an already published tag.
+
+## Cleanup validation — September 16, 2026
+
+Verified locally on Linux amd64:
+
+- CI selection/required-status/cache policy: 5 tests passed.
+- Runner, archive, image identity and promotion contracts: 14 tests passed;
+  publication calls are mocked. Installer/readiness: 4 tests passed.
+- Community backend build/tests with EE source absent, and full EE backend tests: passed.
+- PostgreSQL 16 migration regressions and PostgreSQL 17 schema/privacy checks: passed.
+- Community frontend build/artifact check: passed; 2,796 tests passed, 3 existing skips.
+- EE frontend build: passed; 2,829 tests passed, 1 existing skip.
+- Full isolated browser/AI/mail/restore acceptance: passed with the existing local
+  Community images. Restored credentials and private attachment bytes/policy passed.
+- Real SIGTERM cancellation with mocked Docker, failure cleanup and ownership
+  checks passed; no acceptance containers/volumes remained after live validation.
+- Compose-to-Bake definitions, workflow lint, shell checks and bundle links passed.
+
+Acceptance-only timings with existing images were approximately 58 seconds for
+smoke and 239 seconds for the final full run. These are local observations, not
+an end-to-end CI benchmark: builds, registry/cache transfer and runner scheduling
+are excluded. The PR path now omits full browser/mail/restore phases, host workspace
+installation for those phases, and duplicate Community frontend/API builds.
+
+Native arm64, fresh candidate image builds/scans, GitHub cache behavior and real
+registry/release promotion still run through their CI/release gates. They are not
+claimed by these local checks. No release, tag, repository visibility or branch
+protection setting was changed during this cleanup.

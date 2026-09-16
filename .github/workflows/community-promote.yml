@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: community-promotion
+  group: community-publication
   cancel-in-progress: false
 jobs:
   publish:

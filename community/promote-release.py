@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Publish an approved candidate's exact assets; never build or replace a release."""
+import argparse
 import hashlib
 import json
 import os
@@ -36,12 +37,9 @@ def validate(directory, run, repository):
     return metadata, archive, checksum
 
 
-def promote(directory, run_id, repository):
-    if not re.fullmatch(r'[0-9]+', run_id) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
-        raise ValueError('Invalid candidate run or repository')
-    run = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repository}/actions/runs/{run_id}']))
-    metadata, archive, checksum = validate(directory, run, repository)
-    tag = metadata['tag']
+def assert_unpublished(tag, repository):
+    if not re.fullmatch(r'community-v0\.\d+\.\d+(?:-[a-z0-9.]+)?', tag):
+        raise ValueError('Invalid candidate tag')
     # A tag can already point at another commit even without a release. Refuse
     # both cases. gh release create also fails if a release is created concurrently.
     for endpoint in (f'repos/{repository}/releases/tags/{tag}', f'repos/{repository}/git/ref/tags/{tag}'):
@@ -54,6 +52,15 @@ def promote(directory, run_id, repository):
             status = None
         if str(status) != '404':
             raise ValueError('Could not confirm release/tag absence; refusing publication')
+
+
+def promote(directory, run_id, repository):
+    if not re.fullmatch(r'[0-9]+', run_id) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
+        raise ValueError('Invalid candidate run or repository')
+    run = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repository}/actions/runs/{run_id}']))
+    metadata, archive, checksum = validate(directory, run, repository)
+    tag = metadata['tag']
+    assert_unpublished(tag, repository)
     notes = directory / 'release-notes.md'
     notes.write_text(f"Community 0.x beta.\n\nSource: `{metadata['source_revision']}`\n\n"
                      f"Runtime: `{metadata['runtime_revision']}`\n\n"
@@ -67,4 +74,9 @@ def promote(directory, run_id, repository):
 
 
 if __name__ == '__main__':
-    promote(Path('release-artifacts'), os.environ['CANDIDATE_RUN_ID'], os.environ['GITHUB_REPOSITORY'])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=('check', 'promote'), nargs='?', default='promote')
+    if parser.parse_args().command == 'check':
+        assert_unpublished(os.environ['COMMUNITY_RELEASE_TAG'], os.environ['GITHUB_REPOSITORY'])
+    else:
+        promote(Path('release-artifacts'), os.environ['CANDIDATE_RUN_ID'], os.environ['GITHUB_REPOSITORY'])
