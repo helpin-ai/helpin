@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+// This suite verifies Community defaults even when the full suite uses EE.
+vi.mock('@edition/config', () => vi.importActual('../config'));
 import * as config from '../config';
 import { initializeAppAnalytics } from '@/lib/analytics';
 
