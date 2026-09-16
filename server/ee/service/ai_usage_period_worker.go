@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -15,8 +16,7 @@ import (
 // AIUsagePeriodStore is the transaction boundary for allowance rollover.
 type AIUsagePeriodStore interface {
 	ListDuePeriods(context.Context, time.Time, int) ([]model.AIUsagePeriod, error)
-	ClosePeriod(context.Context, string, time.Time) (*model.AIUsageSettlement, error)
-	OpenNextPeriod(context.Context, eerepository.AIUsagePeriodSchedule) (*model.AIUsagePeriod, error)
+	RolloverPeriod(context.Context, string, eerepository.AIUsagePeriodSchedule, time.Time) (*model.AIUsagePeriod, error)
 }
 
 // AIUsagePeriodScheduleResolver derives the next plan allowance and anniversary window.
@@ -33,27 +33,27 @@ func NewAIUsagePeriodWorker(store AIUsagePeriodStore, schedule AIUsagePeriodSche
 	return &AIUsagePeriodWorker{store: store, schedule: schedule}
 }
 
-// CloseDuePeriods closes due periods and then opens successors separately.
+// CloseDuePeriods advances due allowances and finalizes drained periods.
 func (w *AIUsagePeriodWorker) CloseDuePeriods(ctx context.Context, now time.Time, limit int) (int, error) {
 	periods, err := w.store.ListDuePeriods(ctx, now, limit)
 	if err != nil {
 		return 0, err
 	}
 	processed := 0
+	var failures []error
 	for _, period := range periods {
-		if _, err := w.store.ClosePeriod(ctx, period.WorkspaceID, now); err != nil {
-			return processed, fmt.Errorf("close AI usage period %s: %w", period.ID, err)
-		}
 		schedule, err := w.schedule(ctx, period.WorkspaceID, period.PeriodEnd)
 		if err != nil {
-			return processed, fmt.Errorf("schedule next AI usage period: %w", err)
+			failures = append(failures, fmt.Errorf("schedule next AI usage period %s: %w", period.ID, err))
+			continue
 		}
-		if _, err := w.store.OpenNextPeriod(ctx, schedule); err != nil {
-			return processed, fmt.Errorf("open next AI usage period: %w", err)
+		if _, err := w.store.RolloverPeriod(ctx, period.ID, schedule, now); err != nil {
+			failures = append(failures, fmt.Errorf("roll over AI usage period %s: %w", period.ID, err))
+			continue
 		}
 		processed++
 	}
-	return processed, nil
+	return processed, errors.Join(failures...)
 }
 
 // Run checks due periods until cancellation.

@@ -292,7 +292,7 @@ func TestAIUsageClosePeriodCreatesExactSettlement(t *testing.T) {
 	repo.db.Model(&model.AIUsagePeriod{}).Where("id = ?", "period").Updates(map[string]any{
 		"used_microusd": 1_337_001, "overage_microusd": 337_001, "period_end": time.Now().UTC().Add(-time.Minute),
 	})
-	settlement, err := repo.ClosePeriod(context.Background(), "ws", time.Now().UTC())
+	settlement, err := repo.ClosePeriod(context.Background(), "period", time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +309,7 @@ func TestAIUsageCloseFounderPeriodNeverCreatesSettlement(t *testing.T) {
 	repo.db.Model(&model.AIUsagePeriod{}).Where("id = ?", "period").Updates(map[string]any{
 		"used_microusd": 200_000_000, "period_end": time.Now().UTC().Add(-time.Minute),
 	})
-	settlement, err := repo.ClosePeriod(context.Background(), "ws", time.Now().UTC())
+	settlement, err := repo.ClosePeriod(context.Background(), "period", time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
