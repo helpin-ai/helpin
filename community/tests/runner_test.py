@@ -1,5 +1,4 @@
 import importlib.util
-import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -42,7 +41,7 @@ class RunnerTest(unittest.TestCase):
                     if args == ['node', 'tests/http-smoke.mjs']:
                         raise failure
                     return subprocess.CompletedProcess(args, 0)
-                with patch.object(runner.subprocess, 'run', side_effect=invoke):
+                with patch.object(runner, 'execute', side_effect=invoke):
                     with self.assertRaises(type(failure)):
                         runner.run('smoke')
                 cleanups = [call for call in calls if 'down' in call[0]]
@@ -52,8 +51,26 @@ class RunnerTest(unittest.TestCase):
                     self.assertIn(project, (env['COMPOSE_PROJECT_NAME'], env['COMPOSE_PROJECT_NAME'] + '-restore'))
                     self.assertFalse(cwd.exists())
 
+    def test_cleanup_failure_cannot_report_success(self):
+        def invoke(args, cwd, env, check):
+            if args == ['./setup.sh', 'install']:
+                (cwd / '.env').write_text('fixture\n')
+            return subprocess.CompletedProcess(args, 1 if 'down' in args else 0)
+        with patch.object(runner, 'execute', side_effect=invoke):
+            with self.assertRaisesRegex(RuntimeError, 'cleanup'):
+                runner.run('smoke')
+
+    def test_interruption_terminates_child_before_cleanup(self):
+        with patch.object(runner.subprocess, 'Popen') as popen, patch.object(runner.os, 'killpg') as kill:
+            process = popen.return_value
+            process.pid = 123
+            process.wait.side_effect = [KeyboardInterrupt(), 0]
+            with self.assertRaises(KeyboardInterrupt):
+                runner.execute(['fixture'], runner.SOURCE, {})
+            kill.assert_called_once_with(123, runner.signal.SIGTERM)
+
     def test_failed_install_does_not_call_compose(self):
-        with patch.object(runner.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'install')) as invoke:
+        with patch.object(runner, 'execute', side_effect=subprocess.CalledProcessError(1, 'install')) as invoke:
             with self.assertRaises(subprocess.CalledProcessError):
                 runner.run('smoke')
             self.assertEqual(invoke.call_count, 1)

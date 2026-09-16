@@ -13,10 +13,9 @@ source_project=$(docker inspect --format '{{index .Config.Labels "com.docker.com
 restore_project="${source_project}-restore"
 snapshot=$(mktemp -d)
 cleanup() {
-  docker compose -p "$restore_project" down -v --remove-orphans >/dev/null 2>&1 || true
   rm -rf -- "$snapshot"
-  docker compose -p "$source_project" up -d --wait --wait-timeout 300 >/dev/null
 }
+# The parent acceptance runner owns both projects, including cleanup on failure.
 trap cleanup EXIT
 # Save keys/config along with the snapshot without printing them.
 cp .env apps.json "$snapshot/"

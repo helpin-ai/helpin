@@ -8,11 +8,34 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
 
 SOURCE = Path(__file__).resolve().parents[1]
+
+
+def execute(args, cwd, env, check=True):
+    process = subprocess.Popen(args, cwd=cwd, env=env, start_new_session=True)
+    try:
+        code = process.wait()
+    except BaseException:
+        # Cancellation must stop the active Compose/browser command before
+        # cleanup, rather than allowing it to recreate resources afterwards.
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+        except ProcessLookupError:
+            pass
+        raise
+    if check and code:
+        raise subprocess.CalledProcessError(code, args)
+    return subprocess.CompletedProcess(args, code)
 
 
 def clean_environment(source, inherited):
@@ -66,7 +89,7 @@ def run(mode):
         fixture = compose + ['-f', 'compose.yaml', '-f', 'tests/compose.fixture.yaml']
 
         def command(args, check=True):
-            return subprocess.run(args, cwd=community, env=env, check=check)
+            return execute(args, cwd=community, env=env, check=check)
 
         try:
             command(['./setup.sh', 'install'])
@@ -85,9 +108,15 @@ def run(mode):
             # Health/state only: raw application logs and inspect/config output
             # can contain credentials. Never upload the temporary configuration.
             if (community / '.env').exists():
-                command(compose + ['ps', '--all', '--format', '{{.Service}} {{.State}} {{.Health}} {{.ExitCode}}'], check=False)
+                cleanup_failed = False
                 for project in (env['COMPOSE_PROJECT_NAME'] + '-restore', env['COMPOSE_PROJECT_NAME']):
-                    command(fixture + ['-p', project, 'down', '-v', '--remove-orphans'], check=False)
+                    command(fixture + ['-p', project, 'ps', '--all', '--format', '{{.Service}} {{.State}} {{.Health}} {{.ExitCode}}'], check=False)
+                    result = command(fixture + ['-p', project, 'down', '-v', '--remove-orphans'], check=False)
+                    cleanup_failed |= result.returncode != 0
+                if cleanup_failed:
+                    print('Acceptance resource cleanup failed; inspect the named test projects.', file=sys.stderr)
+                    if sys.exc_info()[0] is None:
+                        raise RuntimeError('Acceptance cleanup failed')
             print(f'Acceptance {mode} elapsed: {time.monotonic() - started:.1f}s', flush=True)
 
 
