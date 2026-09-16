@@ -735,6 +735,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE support_conversations (
+            anonymized_at DATETIME,
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
 			mailbox_id TEXT,

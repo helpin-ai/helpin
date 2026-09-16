@@ -2078,6 +2078,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, fmt.Errorf("conversation not found")
 	}
 
+	if conv.AnonymizedAt != nil {
+		return nil, fmt.Errorf("this conversation is read-only because its customer was deleted")
+	}
+
 	messageType := req.MessageType
 	if messageType == "" {
 		messageType = "reply"

@@ -9,8 +9,11 @@ Known limitations to address:
 - Retrieved knowledge is marked as untrusted reference data. Prompt-injection
   defenses remain layered: keep tools scoped and approvals enabled; trust marking
   is not a guarantee of model resistance.
-- Contact deletion is not a complete personal-data erasure workflow across all
-  messages, imports, logs, and backups.
+- Contact deletion anonymizes linked support identity and revokes visitor sessions.
+  Messages, comments, subjects, and attachments are retained, including personal
+  details written in them. Linked conversations become read-only. This is not
+  complete erasure: imports, model/runtime transcripts, external systems, and
+  backups require separate retention and deletion procedures.
 - Agent profiles do not configure every AI feature. Knowledge embeddings need
   separate server configuration and 1,536-dimensional vectors. Without it,
   retrieval falls back to keyword matching. Triage and help-center AI answers

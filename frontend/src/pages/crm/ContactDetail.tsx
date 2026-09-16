@@ -1988,7 +1988,7 @@ export function ContactDetailPage({
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         title="Delete contact"
-        description="Are you sure? This action cannot be undone."
+        description="Delete this contact and remove their identity from linked conversations. Messages, comments, and attachments remain, including personal details written in them. Conversations become read-only and visitor sessions are revoked. This cannot be undone."
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={handleDelete}

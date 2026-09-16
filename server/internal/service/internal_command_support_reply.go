@@ -203,6 +203,10 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	if conv == nil {
 		return nil, fmt.Errorf("conversation not found")
 	}
+	if conv.AnonymizedAt != nil {
+		return mustJSON(map[string]any{"status": "suppressed", "next_action": "This customer was deleted. The conversation is read-only. End your turn."}), nil
+	}
+
 	if meta.RunID != "" && derefString(conv.AIActiveRunID) != "" {
 		run, err := s.resolveCommandRun(ctx, meta)
 		if err != nil {

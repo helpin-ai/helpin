@@ -37,6 +37,7 @@ export interface SupportConversationTriage {
 }
 
 export interface SupportConversation {
+  anonymized_at?: string | null;
   id: string;
   workspace_id: string;
   mailbox_id?: string | null;

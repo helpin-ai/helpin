@@ -240,6 +240,11 @@ jobs:
         env:
           AI_PROFILES_TEST_DATABASE_URL: postgres://postgres:integration-fixture@127.0.0.1:5432/ai_profiles_test?sslmode=disable
         run: go test -tags integration ./internal/dbmigrate -count=1
+      - name: Check contact anonymization, retained history, and stale-write guards
+        working-directory: server
+        env:
+          CONTACT_PRIVACY_TEST_DATABASE_URL: postgres://postgres:integration-fixture@127.0.0.1:5432/ai_profiles_test?sslmode=disable
+        run: go test -tags integration ./internal/repository -run '^TestContactAnonymization' -count=1
 
   server-tests:
     name: Server Tests

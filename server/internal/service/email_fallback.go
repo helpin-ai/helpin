@@ -1902,6 +1902,10 @@ func (s *EmailFallbackService) fireEmailBatch(ctx context.Context, conversationI
 		)
 		return s.finishEmailBatch(ctx, conversationID, messageIDs, opts.cleanupRedis)
 	}
+	if conv.AnonymizedAt != nil {
+		return s.finishEmailBatch(ctx, conversationID, messageIDs, opts.cleanupRedis)
+	}
+
 	if opts.explicitEmail {
 		if reason := explicitRecipientChanged(messages[0], conv); reason != "" {
 			return s.blockExplicitEmail(ctx, conv, messageIDs, reason, opts.cleanupRedis)

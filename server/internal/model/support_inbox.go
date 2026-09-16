@@ -12,6 +12,7 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
+	AnonymizedAt                   *time.Time      `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
 	ID                             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID                    string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	MailboxID                      *string         `json:"mailbox_id" gorm:"type:uuid;index"`

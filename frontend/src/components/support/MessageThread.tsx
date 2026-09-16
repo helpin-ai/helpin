@@ -1198,7 +1198,11 @@ export function MessageThread({
 
       {/* Reserve the editor's space immediately. Its key isolates drafts and
           attachments when switching between already cached conversations. */}
-      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (
+      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (conversation.anonymized_at ? (
+        <div className="px-4 py-3 text-sm text-muted-foreground" role="status">
+          This customer was deleted. Messages and comments are retained; this conversation is read-only.
+        </div>
+      ) : (
         <Suspense fallback={<ReplyComposerLoading />}>
           <LazyReplyComposer
             key={`${workspaceId}:${conversationId}`}
@@ -1208,7 +1212,7 @@ export function MessageThread({
             onUpgradeRequired={setUpgradeDialogReason}
           />
         </Suspense>
-      ) : <ReplyComposerLoading />)}
+      )) : <ReplyComposerLoading />)}
 
       {showCreateTaskDialog ? (
         <Suspense fallback={null}>
