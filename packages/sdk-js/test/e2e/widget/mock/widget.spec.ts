@@ -5,6 +5,7 @@ import {
   WIDGET_HOST,
   WIDGET_KEY,
   installWidgetMocks,
+  type InstallWidgetMockOptions,
 } from './widgetE2E'
 
 declare global {
@@ -30,7 +31,7 @@ declare global {
   }
 }
 
-async function bootWidget(page: Page, options: { unreadCount?: number; persistedSession?: boolean; invalidStoredSession?: boolean } = {}) {
+async function bootWidget(page: Page, options: InstallWidgetMockOptions = {}) {
   await installWidgetMocks(page, options)
   await page.goto('/test/e2e/widget/mock/test-page.html')
   await page.waitForFunction(() => typeof window.helpin === 'function')
@@ -53,13 +54,40 @@ async function openWidget(page: Page) {
   await expect(page.locator('.helpin-chat-window')).toBeVisible()
 }
 
-test('boots the widget and renders the active teammate conversation view', async ({ page }) => {
+test('boots the widget and shows the workspace name before a teammate replies', async ({ page }) => {
   await bootWidget(page)
   await openWidget(page)
 
-  await expect(page.locator('.helpin-conversation-title')).toContainText('Alice Agent')
+  await expect(page.locator('.helpin-conversation-title')).toHaveText('Support')
   await expect(page.locator('.helpin-message-list')).toContainText('Initial message')
 })
+
+for (const width of [1280, 390]) {
+  for (const widgetPosition of ['bottom-left', 'bottom-right'] as const) {
+    test(`positions the launcher and chat window at ${widgetPosition} on a ${width}px viewport`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await bootWidget(page, { widgetPosition })
+      const launcher = page.locator('.helpin-launcher')
+      const side = widgetPosition === 'bottom-left' ? 'left' : 'right'
+      const opposite = side === 'left' ? 'right' : 'left'
+      const inset = width <= 640 ? '16px' : '20px'
+      await expect(launcher).toHaveCSS(side, inset)
+      await expect(launcher).toHaveCSS('bottom', inset)
+      await expect(launcher).toHaveCSS('width', '60px')
+      await openWidget(page)
+      const chat = page.locator('.helpin-chat-window')
+      await expect(chat).toHaveCSS(side, width <= 640 ? '0px' : '20px')
+      if (width <= 640) {
+        await expect(chat).toHaveCSS(opposite, '0px')
+        await expect(chat).toHaveCSS('width', `${width}px`)
+        await expect(launcher).toBeHidden()
+      }
+      await page.evaluate(() => window.helpin?.('close'))
+      await expect(launcher).toBeVisible()
+      await expect(launcher).toHaveCSS(side, inset)
+    })
+  }
+}
 
 test('shows unread state on the launcher and in the messages list', async ({ page }) => {
   await bootWidget(page, { unreadCount: 2 })
@@ -245,8 +273,8 @@ test('shows the prolonged offline banner and manual reconnect recovers the widge
 
   await expect(page.getByText("We've been offline for a while. We'll keep trying in the background, or reconnect now.")).toBeVisible()
   await expect(page.getByRole('button', { name: 'Reconnect' })).toBeVisible()
-  await expect(page.locator('.helpin-compose-input')).toHaveAttribute('placeholder', 'Offline. Reconnecting in the background...')
-  await expect(page.locator('.helpin-compose-input')).toBeDisabled()
+  await expect(page.locator('.helpin-compose-input')).toHaveAttribute('placeholder', 'Write a message — we’ll send it when reconnected')
+  await expect(page.locator('.helpin-compose-input')).toBeEnabled()
 
   await page.evaluate(() => {
     window.__widgetE2E?.setSocketBehavior('open')
@@ -269,8 +297,8 @@ test('recovers automatically in the background when the server comes back', asyn
     window.__widgetE2E?.disconnect()
   })
 
-  await expect(page.getByText('Connection lost. Reconnecting...')).toBeVisible()
-  await expect(page.locator('.helpin-compose-input')).toHaveAttribute('placeholder', 'Connection lost. Reconnecting...')
+  await expect(page.getByText('Connection lost. Reconnecting…')).toBeVisible()
+  await expect(page.locator('.helpin-compose-input')).toHaveAttribute('placeholder', 'Write a message — we’ll send it when reconnected')
 
   await page.waitForTimeout(300)
   await page.evaluate(() => {
@@ -281,7 +309,7 @@ test('recovers automatically in the background when the server comes back', asyn
     return page.evaluate(() => window.__widgetE2E?.getSocketCount() || 0)
   }, { timeout: 5_000 }).toBeGreaterThan(initialSocketCount)
 
-  await expect(page.getByText('Connection lost. Reconnecting...')).toHaveCount(0)
+  await expect(page.getByText('Connection lost. Reconnecting…')).toHaveCount(0)
   await expect(page.locator('.helpin-compose-input')).not.toBeDisabled()
   await expect(page.locator('.helpin-message-list')).toContainText('Initial message')
 })
@@ -301,8 +329,8 @@ test('uploads an attachment and sends it with the customer message', async ({ pa
     buffer: Buffer.from('hello from attachment'),
   })
 
-  await expect(page.locator('.helpin-compose-attachment-filename')).toHaveText('invoice.txt')
-  await expect(page.locator('.helpin-compose-attachment-progress')).toHaveCount(0)
+  await expect(page.getByTitle('invoice.txt')).toBeVisible()
+  await expect(page.getByText('21 B · Ready to send')).toBeVisible()
 
   await page.locator('.helpin-compose-send').click()
 

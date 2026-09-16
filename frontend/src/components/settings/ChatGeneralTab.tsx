@@ -1702,7 +1702,7 @@ function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">File uploads</Label>
-                    <p className="text-xs text-muted-foreground">Allow visitors to upload images, documents, and other files (max 10 MB).</p>
+                    <p className="text-xs text-muted-foreground">Allow visitors to upload images, documents, and other files (max 100 MB per file).</p>
                   </div>
                   <Switch checked={fileUploadsEnabled} onCheckedChange={setFileUploadsEnabled} />
                 </div>

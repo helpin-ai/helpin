@@ -16,7 +16,7 @@
     "dist"
   ],
   "scripts": {
-    "dev": "vite build --watch",
+    "dev": "vite build --watch --mode development",
     "build": "tsc && vite build && node scripts/build-esm.mjs",
     "preview": "vite preview",
     "test": "vitest run",
