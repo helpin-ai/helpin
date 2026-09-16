@@ -70,7 +70,7 @@ jobs:
 
   community:
     name: Community bundle
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.community == 'true'
     uses: ./.github/workflows/community-test.yml
     with:
@@ -80,7 +80,7 @@ jobs:
 
   schema:
     name: fresh-ledger-matches-api
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.server == 'true'
     uses: ./.github/workflows/postgres-check.yml
     with:
@@ -89,7 +89,7 @@ jobs:
   # --------------------- Events Pipeline --------------------
   eventpipeline:
     name: Events Pipeline CI
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.eventpipeline == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 20
@@ -118,7 +118,7 @@ jobs:
   # ------------------------- Server -------------------------
   server:
     name: Server CI
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.server == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # Plan budget: ≤ 6 min for vet+build. Generous timeout so transient
@@ -147,7 +147,7 @@ jobs:
 
   community-backend:
     name: Community without EE source
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.server == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 15
@@ -174,7 +174,7 @@ jobs:
 
   ai-profile-postgres:
     name: AI profile migration PostgreSQL regression
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.server == 'true'
     uses: ./.github/workflows/postgres-check.yml
     with:
@@ -182,7 +182,7 @@ jobs:
 
   server-tests:
     name: Server Tests
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.server == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 20
@@ -218,7 +218,7 @@ jobs:
   # ------------------------ Frontend ------------------------
   frontend:
     name: Frontend CI
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # Compile both editions, including cold TypeScript caches.
@@ -239,7 +239,7 @@ jobs:
 
   frontend-tests:
     name: Frontend Vitest
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 10
@@ -260,7 +260,7 @@ jobs:
 
   community-frontend:
     name: Community frontend without EE source
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 15
@@ -282,7 +282,7 @@ jobs:
   # ------------------------ Packages ------------------------
   packages-tests:
     name: Package Vitest
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.packages == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # Plan budget: ≤ 3 min for all packages combined.
@@ -316,7 +316,7 @@ jobs:
   # ----------------------- Help Center ----------------------
   helpcenter:
     name: Help Center CI
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.helpcenter == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # Plan budget: ≤ 3 min build + test.
@@ -347,7 +347,7 @@ jobs:
   # -------------------------- Admin -------------------------
   admin:
     name: Admin CI
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.admin == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 8
@@ -372,7 +372,7 @@ jobs:
   # separate.)
   desktop:
     name: Support Desktop CI
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.desktop == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     timeout-minutes: 10
@@ -409,7 +409,7 @@ jobs:
   # pkg-config at build time), per https://v2.tauri.app/start/prerequisites/.
   mobile-check:
     name: Support Mobile CI
-    needs: changes
+    needs: [changes, workflow-checks]
     if: needs.changes.outputs.mobile == 'true'
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     # cargo check of the tauri stack is heavy on a cold cache (rust-cache

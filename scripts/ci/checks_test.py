@@ -1,6 +1,11 @@
 import unittest
 from pathlib import Path
 import re
+import json
+import os
+import tempfile
+import textwrap
+from unittest.mock import patch
 from checks import GROUPS, JOBS, failures, select
 
 
@@ -35,6 +40,23 @@ class ChecksTest(unittest.TestCase):
             for job in jobs:
                 self.assertRegex(workflow, r'(?m)^  ' + re.escape(job) + ':$')
                 self.assertRegex(final, r'(?<![a-z-])' + re.escape(job) + r'(?![a-z-])')
+
+    def test_forks_only_read_docker_caches(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / '.github/workflows/community-test.yml').read_text()
+        body = textwrap.dedent(workflow.split("python3 - <<'PY'\n", 1)[1].split('\n          PY', 1)[0])
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            (directory / 'community-bake.json').write_text(json.dumps({'target': {'helpin-api': {}, 'agent-runtime': {}}}))
+            for trusted in ('true', 'false'):
+                output = directory / trusted
+                with patch.dict(os.environ, {'RUNNER_TEMP': temporary, 'GITHUB_OUTPUT': str(output), 'COMMUNITY_ARCH': 'amd64', 'TRUSTED': trusted}):
+                    exec(compile(body, 'cache-policy', 'exec'), {})
+                lines = output.read_text().splitlines()
+                self.assertEqual(lines[0], 'cache<<CACHE')
+                self.assertEqual(lines[-1], 'CACHE')
+                self.assertEqual(sum('.cache-from=' in line for line in lines), 2)
+                self.assertEqual(sum('.cache-to=' in line for line in lines), 2 if trusted == 'true' else 0)
 
     def test_required_status(self):
         needs = {'changes': {'result': 'success', 'outputs': {k: 'false' for k in GROUPS}},
