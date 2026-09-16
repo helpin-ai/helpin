@@ -353,8 +353,9 @@ export const MessageBubble = memo(function MessageBubble({
   const explicitEmailState = deliveryMode && deliveryMode !== 'chat_only' ? getExplicitEmailDeliveryState(message) : undefined;
   const chatSeen = receiptStatus === 'read' || (source === 'widget' && !!contactLastSeenAt && Date.parse(contactLastSeenAt) >= Date.parse(message.created_at));
   const chatDeliveryLabel = message.id.startsWith('optimistic-') ? 'Sending' : chatSeen ? 'Seen' : 'Sent';
+  const isOwnMessage = !!message.sender_user_id && message.sender_user_id === currentUser?.id;
   const senderName = message.sender_display_name
-    ?? (isCustomer ? (customerDisplayName || 'Customer') : isAI ? HELPIN_AI_DISPLAY_NAME : isAgent ? 'Agent' : currentUser?.full_name ?? 'You');
+    ?? (isCustomer ? (customerDisplayName || 'Customer') : isAI ? HELPIN_AI_DISPLAY_NAME : isAgent ? 'Agent' : isOwnMessage ? currentUser?.full_name ?? 'You' : 'Teammate');
   const resolvedSenderName = isAI ? HELPIN_AI_DISPLAY_NAME : senderName;
   const showAvatar = isLastInGroup;
   const fullTimestamp = formatTimestamp(message.created_at);

@@ -430,7 +430,7 @@
             "type": "array"
           },
           "title": {
-            "description": "The document title",
+            "description": "Plain-text document title. Use literal characters such as & rather than HTML entities such as &amp;.",
             "type": "string"
           }
         },
@@ -4663,6 +4663,7 @@
             "type": "array"
           },
           "title": {
+            "description": "Plain-text document title. Use literal characters such as & rather than HTML entities such as &amp;.",
             "maxLength": 500,
             "minLength": 1,
             "type": "string"

@@ -1181,10 +1181,7 @@ export function MessageThread({
                   workspaceSlug={workspaceSlug}
                   linkedTaskId={conversation?.linked_task_id}
                   fallbackAvatarUrl={
-                    (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
-                    ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
-                      ? currentUser?.avatar_url
-                      : undefined)
+                    item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined
                   }
                 />
               </div>

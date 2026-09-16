@@ -27,7 +27,7 @@ func SupportAIChannelEnabled(settings SupportInboxSettings, channel string) bool
 func SupportAIReplyAllowed(settings SupportInboxSettings, conversation *SupportConversation, message *SupportMessage) bool {
 	channel := SupportAIReplyChannel(conversation, message)
 	if message != nil {
-		if message.SenderType != "customer" || message.IsInternal {
+		if message.SenderType != "customer" || message.IsInternal || IsSupportEmailNotice(message) {
 			return false
 		}
 

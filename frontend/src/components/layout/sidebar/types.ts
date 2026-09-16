@@ -16,6 +16,7 @@ export type NavSubItem = {
 
 export type NavGroup = {
   label: string;
+  icon?: IconComponent;
   items: NavItem[];
 };
 

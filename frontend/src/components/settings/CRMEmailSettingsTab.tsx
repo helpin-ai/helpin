@@ -4,15 +4,16 @@ import { toast } from 'sonner';
 import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { QuietPrimaryAction, QuietUnderlineInput } from '@/components/design-system/quiet';
+import { CRMEmailSettingsSection } from '@/components/crm/CRMEmailSettingsSection';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { useEmailSyncSettings, useUpdateEmailSyncSettings } from '@/hooks/queries/useCRM';
-import { Cancel01Icon, FloppyDiskIcon, PlusSignIcon, RotateLeft01Icon, Tick01Icon } from '@/lib/icons';
+import { Cancel01Icon, InformationCircleIcon, FloppyDiskIcon, PlusSignIcon, RotateLeft01Icon, Tick01Icon } from '@/lib/icons';
 import { unwrap } from '@/lib/queryUtils';
 import { crmEmailSyncSettingsService } from '@/lib/services/crmService';
 import type {
@@ -22,7 +23,6 @@ import type {
   CRMRecordCreationMode,
 } from '@/lib/crmTypes';
 import { useAuthStore } from '@/stores/authStore';
-import { LINEAR_CARD_CLASS } from './settingsConstants';
 
 function RemovableTag({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
@@ -52,8 +52,10 @@ function SettingRow({
   return (
     <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center">
       <div>
-        <Label className="text-sm font-medium">{label}</Label>
-        {description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>}
+        <div className="flex items-center gap-1">
+          <Label className="text-sm font-medium">{label}</Label>
+          {description && <QuickTooltip label={description}><button type="button" aria-label={`About ${label.toLowerCase()}`} className="inline-flex size-5 items-center justify-center rounded-sm text-quiet-text-secondary focus-visible:outline-2 focus-visible:outline-ring"><InformationCircleIcon className="size-3.5" /></button></QuickTooltip>}
+        </div>
       </div>
       <div className="sm:justify-self-end">{children}</div>
     </div>
@@ -158,7 +160,7 @@ function CRMEmailSettingsContent({
         blocked_record_prefixes: blockedRecordPrefixes,
       });
       setSaved(true);
-      toast.success('Email sync settings saved');
+      toast.success('Email preferences saved');
       window.setTimeout(() => setSaved(false), 2000);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to save settings');
@@ -190,9 +192,9 @@ function CRMEmailSettingsContent({
 
   return (
     <div className="space-y-4 pb-6">
-      <SettingsSaveBar>
+      <SettingsSaveBar visible={isDirty || saved || updateSettings.isPending}>
         {isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
-        <Button onClick={() => void handleSave()} disabled={updateSettings.isPending || saved || !isDirty}>
+        <QuietPrimaryAction onClick={() => void handleSave()} disabled={updateSettings.isPending || saved || !isDirty}>
           {saved ? (
             <><Tick01Icon className="mr-1.5 h-4 w-4" />Saved</>
           ) : updateSettings.isPending ? (
@@ -200,7 +202,7 @@ function CRMEmailSettingsContent({
           ) : (
             <><FloppyDiskIcon className="mr-1.5 h-4 w-4" />Save changes</>
           )}
-        </Button>
+        </QuietPrimaryAction>
       </SettingsSaveBar>
       {isError && (
         <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm text-muted-foreground">
@@ -210,15 +212,11 @@ function CRMEmailSettingsContent({
 
       <EmailAccountConnect workspaceId={workspaceId} memberId={user?.id ?? ''} showAll />
 
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <CardTitle className="text-base">Sync preferences</CardTitle>
-          <CardDescription>Choose how much history Helpin imports and which conversations are included.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+      <CRMEmailSettingsSection title="Sync preferences" optionId="email-sync">
+        <div className="space-y-5">
           <SettingRow label="Email history" description="Used for the first import and recovery syncs.">
             <Select value={String(historicalSyncDays)} onValueChange={(value) => setHistoricalSyncDays(Number(value))}>
-              <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
+              <SelectTrigger variant="underline" className="w-full sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {[30, 60, 90, 180, 365].map((days) => <SelectItem key={days} value={String(days)}>{days} days</SelectItem>)}
               </SelectContent>
@@ -232,7 +230,7 @@ function CRMEmailSettingsContent({
             description={filterMode === 'blocklist' ? 'Exclude addresses that match your patterns.' : 'Only sync addresses that match your patterns.'}
           >
             <Select value={filterMode} onValueChange={(value) => setFilterMode(value as CRMFilterMode)}>
-              <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
+              <SelectTrigger variant="underline" className="w-full sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="blocklist">Blocklist</SelectItem>
                 <SelectItem value="allowlist">Allowlist</SelectItem>
@@ -243,7 +241,7 @@ function CRMEmailSettingsContent({
           <div className="space-y-2">
             <Label htmlFor="email-filter-pattern">Address or domain patterns</Label>
             <div className="flex gap-2">
-              <Input
+              <QuietUnderlineInput
                 id="email-filter-pattern"
                 value={newPattern}
                 onChange={(event) => setNewPattern(event.target.value)}
@@ -261,7 +259,7 @@ function CRMEmailSettingsContent({
               </Button>
             </div>
             {filterPatterns.length ? (
-              <div className="flex flex-wrap gap-1.5 rounded-lg border bg-muted/20 p-3">
+              <div className="flex flex-wrap gap-1.5 py-2">
                 {filterPatterns.map((pattern) => (
                   <RemovableTag key={pattern} label={pattern} onRemove={() => setFilterPatterns(filterPatterns.filter((item) => item !== pattern))} />
                 ))}
@@ -270,18 +268,14 @@ function CRMEmailSettingsContent({
               <p className="text-xs text-muted-foreground">No patterns added.</p>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </CRMEmailSettingsSection>
 
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <CardTitle className="text-base">Calendar events</CardTitle>
-          <CardDescription>Control which Google Calendar events Helpin can use in CRM.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+      <CRMEmailSettingsSection title="Calendar events" optionId="email-calendar">
+        <div className="space-y-5">
           <SettingRow label="Internal activity" description="Optionally ignore email and meetings where everyone uses your company domain.">
             <Select value={internalExclusion} onValueChange={(value) => setInternalExclusion(value as CRMInternalExclusion)}>
-              <SelectTrigger className="w-full sm:w-64"><SelectValue /></SelectTrigger>
+              <SelectTrigger variant="underline" className="w-full sm:w-64"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Include internal activity</SelectItem>
                 <SelectItem value="exclude">Exclude internal activity</SelectItem>
@@ -300,15 +294,11 @@ function CRMEmailSettingsContent({
           <SettingRow label="Solo meetings" description="Include events without any other participants.">
             <Switch id="include-solo-meetings" checked={includeSoloMeetings} onCheckedChange={setIncludeSoloMeetings} />
           </SettingRow>
-        </CardContent>
-      </Card>
+        </div>
+      </CRMEmailSettingsSection>
 
-      <Card className={LINEAR_CARD_CLASS}>
-        <CardHeader>
-          <CardTitle className="text-base">Contact creation</CardTitle>
-          <CardDescription>Decide when synced conversations create new CRM contacts.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+      <CRMEmailSettingsSection title="Contact creation" optionId="email-contacts">
+        <div className="space-y-5">
           <SettingRow
             label="Create contacts"
             description={
@@ -320,7 +310,7 @@ function CRMEmailSettingsContent({
             }
           >
             <Select value={recordCreationMode} onValueChange={(value) => setRecordCreationMode(value as CRMRecordCreationMode)}>
-              <SelectTrigger className="w-full sm:w-44"><SelectValue /></SelectTrigger>
+              <SelectTrigger variant="underline" className="w-full sm:w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="disabled">Never</SelectItem>
                 <SelectItem value="selective">Selectively</SelectItem>
@@ -334,15 +324,14 @@ function CRMEmailSettingsContent({
           <div className="space-y-2">
             <div className="flex flex-wrap items-end justify-between gap-2">
               <div>
-                <Label htmlFor="blocked-email-prefix">Blocked email prefixes</Label>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">Prevent automated addresses such as noreply@ from creating contacts.</p>
+                <div className="flex items-center gap-1"><Label htmlFor="blocked-email-prefix">Blocked email prefixes</Label><QuickTooltip label="Prevent automated addresses such as noreply@ from creating contacts."><button type="button" aria-label="About blocked email prefixes" className="inline-flex size-5 items-center justify-center rounded-sm text-quiet-text-secondary focus-visible:outline-2 focus-visible:outline-ring"><InformationCircleIcon className="size-3.5" /></button></QuickTooltip></div>
               </div>
               <Button type="button" variant="ghost" size="sm" onClick={() => void resetPrefixesToDefault()} className="h-7 text-xs text-muted-foreground">
                 <RotateLeft01Icon className="mr-1.5 h-3.5 w-3.5" />Reset defaults
               </Button>
             </div>
             <div className="flex gap-2">
-              <Input
+              <QuietUnderlineInput
                 id="blocked-email-prefix"
                 value={newPrefix}
                 onChange={(event) => setNewPrefix(event.target.value)}
@@ -360,7 +349,7 @@ function CRMEmailSettingsContent({
               </Button>
             </div>
             {blockedRecordPrefixes.length ? (
-              <div className="max-h-44 overflow-y-auto rounded-lg border bg-muted/20 p-3">
+              <div className="max-h-44 overflow-y-auto py-2">
                 <div className="flex flex-wrap gap-1.5">
                   {blockedRecordPrefixes.map((prefix) => (
                     <RemovableTag key={prefix} label={prefix} onRemove={() => setBlockedRecordPrefixes(blockedRecordPrefixes.filter((item) => item !== prefix))} />
@@ -371,8 +360,8 @@ function CRMEmailSettingsContent({
               <p className="text-xs text-muted-foreground">No prefixes blocked.</p>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </CRMEmailSettingsSection>
 
 
     </div>

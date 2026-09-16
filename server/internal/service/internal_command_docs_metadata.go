@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
@@ -58,7 +59,7 @@ func (s *InternalCommandService) executeDocsUpdateDocumentMetadata(ctx context.C
 		return nil, fmt.Errorf("document not found")
 	}
 	if req.Title != nil {
-		trimmed := strings.TrimSpace(*req.Title)
+		trimmed := strings.TrimSpace(html.UnescapeString(*req.Title))
 		if trimmed == "" {
 			return nil, fmt.Errorf("title must not be empty")
 		}

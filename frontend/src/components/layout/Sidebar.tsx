@@ -2,6 +2,7 @@ import { helpinClient } from '@/lib/helpin';
 import { filterWorkspaceNav } from '@/lib/workspaceSurface';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
+import { buildSettingsHomePath } from '@/lib/settingsDiscovery';
 import { useTheme } from 'next-themes';
 import { useHelpin } from '@helpin-ai/react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -161,7 +162,15 @@ export function Sidebar() {
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(() =>
     workspaceId ? getExpandedTeams(workspaceId) : new Set(),
   );
-  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(getCollapsedSettingsGroups);
+  const isSettingsHome = location.pathname.replace(/\/$/, '') === buildSettingsHomePath(wsSlug).replace(/\/$/, '');
+  const [collapsedSettingsGroups, setCollapsedSettingsGroups] = useState<Set<string>>(() =>
+    isSettingsHome ? new Set(COLLAPSIBLE_SETTINGS_GROUPS) : getCollapsedSettingsGroups(),
+  );
+  const [settingsSidebarPath, setSettingsSidebarPath] = useState(location.pathname);
+  if (settingsSidebarPath !== location.pathname) {
+    setSettingsSidebarPath(location.pathname);
+    if (isSettingsHome) setCollapsedSettingsGroups(new Set(COLLAPSIBLE_SETTINGS_GROUPS));
+  }
   const [activeSetupJourney, setActiveSetupJourney] = useState<string>();
 
   useEffect(() => {
@@ -229,7 +238,11 @@ export function Sidebar() {
   }, [activeRail, location.pathname, workspaceId, wsSlug]);
 
   useEffect(() => {
-    if (activeRail !== 'settings') {
+    if (isSettingsHome) saveCollapsedSettingsGroups(new Set(COLLAPSIBLE_SETTINGS_GROUPS));
+  }, [location.pathname, isSettingsHome]);
+
+  useEffect(() => {
+    if (activeRail !== 'settings' || isSettingsHome) {
       return;
     }
 
@@ -249,7 +262,7 @@ export function Sidebar() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, activeRail, currentNavGroups, collapsedSettingsGroups]);
+  }, [location.pathname, activeRail, currentNavGroups]);
 
   const activeTeamParam = useMemo(() => {
     const search = location.search as Record<string, string | undefined>;
@@ -347,7 +360,7 @@ export function Sidebar() {
                 selectedPresenceMode={selectedSupportPresenceMode}
                 onPresenceChange={(value) => updateMyPresence.mutate(value === 'auto' ? null : value)}
                 onProfile={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'profile' } })}
-                onSettings={() => handleNavigate({ to: '/w/$slug/settings/$section', params: { slug: wsSlug, section: 'general' } })}
+                onSettings={() => handleNavigate(buildSettingsHomePath(wsSlug))}
                 onWorkspaces={() => handleNavigate('/workspaces')}
                 onGetHelp={helpinClient ? () => {
                   showHelpin();
@@ -381,6 +394,7 @@ export function Sidebar() {
 
             {activeRail === 'settings' ? (
               <SettingsRailNav
+                workspaceSlug={wsSlug}
                 groups={currentNavGroups}
                 isActive={isActive}
                 collapsedGroups={collapsedSettingsGroups}

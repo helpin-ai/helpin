@@ -15,7 +15,8 @@ import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { QuietPrimaryAction, QuietTextAction } from '@/components/design-system/quiet';
+import { CRMEmailSettingsSection } from './CRMEmailSettingsSection';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import {
   Dialog,
@@ -188,13 +189,12 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
 
   const isWorking = disconnectAccount.isPending || purgeAccount.isPending || syncAccount.isPending;
 
+  const ConnectAction = visibleAccounts.length === 0 ? QuietPrimaryAction : QuietTextAction;
+
   return (
-    <Card className="rounded-xl border border-border bg-card shadow-none">
-      <CardHeader>
-        <CardTitle className="text-base">Google accounts</CardTitle>
-        <CardDescription>Connect Google to sync Gmail conversations and Google Calendar events.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <section className="rounded-lg border border-border/70 bg-card">
+      <h2 className="border-b border-quiet-divider-strong px-4 py-3 text-sm font-semibold text-quiet-text-primary">Connected accounts</h2>
+      <div className="space-y-3 px-4 pb-4 pt-1">
         {visibleAccounts.length === 0 && (
           <div className="rounded-lg border bg-muted/20 px-5 py-7 text-center">
             <Mail01Icon className="mx-auto h-7 w-7 text-muted-foreground" />
@@ -211,7 +211,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
           return (
             <div
               key={account.id}
-              className="flex flex-col gap-3 rounded-lg border border-border bg-background p-3"
+              className="flex flex-col gap-3 border-b border-quiet-divider-light py-4 last:border-b-0"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0 space-y-2">
@@ -245,12 +245,12 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
                   </div>
                 </div>
 
-                <Button variant="outline" size="sm" onClick={() => setSelectedAccount(account)}>
-                  Sync details
-                </Button>
+                <QuietTextAction onClick={() => setSelectedAccount(account)}>
+                  Manage
+                </QuietTextAction>
               </div>
 
-              {account.member_id === memberId && <><CRMEmailSignatureSettings workspaceId={workspaceId} account={account} /><MailboxCapacityPanel workspaceId={workspaceId} accountId={account.id} /></>}
+              {account.member_id === memberId && <><CRMEmailSignatureSettings workspaceId={workspaceId} account={account} /><CRMEmailSettingsSection title="Sending limits" optionId="email-sending-limits"><MailboxCapacityPanel workspaceId={workspaceId} accountId={account.id} /></CRMEmailSettingsSection></>}
               <div
                 className={cn(
                   'flex items-start gap-2 rounded-lg border px-3 py-2.5',
@@ -278,15 +278,15 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
         })}
 
         <div className={cn('flex flex-wrap gap-2 pt-1', visibleAccounts.length === 0 && 'justify-center')}>
-          <Button size="sm" onClick={() => handleConnect('gmail')} disabled={!!connecting}>
+          <ConnectAction onClick={() => handleConnect('gmail')} disabled={!!connecting}>
             {connecting === 'gmail' ? (
               <Loading01Icon className="mr-1.5 h-3 w-3 animate-spin" />
             ) : (
               <PlusSignIcon className="mr-1.5 h-3 w-3" />
             )}
             Connect Google
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => handleConnect('microsoft')} disabled={!!connecting}>
+          </ConnectAction>
+          <Button variant="ghost" size="sm" disabled title="Microsoft support is coming soon">
             <PlusSignIcon className="mr-1.5 h-3 w-3" />
             Microsoft
             <Badge variant="secondary" className="ml-1.5 text-[10px]">
@@ -423,7 +423,7 @@ export function EmailAccountConnect({ workspaceId, memberId, showAll = false }: 
           confirmLabel={purgeAccount.isPending ? 'Deleting…' : 'Delete synced data'}
           onConfirm={handlePurge}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

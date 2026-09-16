@@ -252,6 +252,8 @@ func main() {
 		nil,
 		cfg.AppBaseURL,
 	)
+	notificationAuthz := authorization.NewAuthzService(db, authorization.NewGORMMemberRepository(db), repository.NewWorkspaceModuleGrantRepository(db))
+	notificationService.SetAccessChecker(service.NewNotificationAccessPolicy(notificationAuthz, notificationRepo))
 	// Email sync activities (may be nil if Gmail not configured).
 	crmEmailSyncSettingsRepo := repository.NewCRMEmailSyncSettingsRepository(db)
 

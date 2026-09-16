@@ -118,7 +118,7 @@ func (r *SupportMessageRepository) Create(ctx context.Context, message *model.Su
 		return fmt.Errorf("create message: %w", err)
 	}
 	// Bump parent conversation's updated_at so it moves to top of inbox list
-	if message.ConversationID != "" {
+	if message.ConversationID != "" && !model.IsSupportEmailNotice(message) {
 		r.db.WithContext(ctx).
 			Model(&model.SupportConversation{}).
 			Where("id = ?", message.ConversationID).
@@ -1468,7 +1468,7 @@ func (r *SupportConversationRepository) applySupportSearchFilters(query *gorm.DB
 			WHERE sm_search.workspace_id = %s.workspace_id
 			  AND sm_search.conversation_id = %s.id
 			  AND sm_search.deleted_at IS NULL
-			  AND sm_search.message_type = 'reply'
+			  AND sm_search.message_type IN ('reply', 'email_notice')
 			  AND sm_search.system_event_type IS NULL
 			  AND sm_search.search_vector @@ websearch_to_tsquery('simple', ?)
 		)`, alias, alias),
@@ -1485,7 +1485,7 @@ func (r *SupportConversationRepository) applySupportSearchFilters(query *gorm.DB
 			WHERE sm_search.workspace_id = %s.workspace_id
 			  AND sm_search.conversation_id = %s.id
 			  AND sm_search.deleted_at IS NULL
-			  AND sm_search.message_type = 'reply'
+			  AND sm_search.message_type IN ('reply', 'email_notice')
 			  AND sm_search.system_event_type IS NULL
 			  AND LOWER(COALESCE(sm_search.content, '')) LIKE ? ESCAPE '\'
 		)`, alias, alias),
@@ -1543,7 +1543,7 @@ func supportSearchScoreSQL(query string) (string, []any) {
 		WHERE sm_score.workspace_id = support_conversations.workspace_id
 		  AND sm_score.conversation_id = support_conversations.id
 		  AND sm_score.deleted_at IS NULL
-		  AND sm_score.message_type = 'reply'
+		  AND sm_score.message_type IN ('reply', 'email_notice')
 		  AND sm_score.system_event_type IS NULL
 		  AND LOWER(COALESCE(sm_score.content, '')) LIKE ? ESCAPE '\'
 	) THEN 5 ELSE 0 END`)
@@ -1579,7 +1579,7 @@ func supportSearchPostgresScoreSQL(query string) (string, []any) {
 		WHERE sm_score.workspace_id = support_conversations.workspace_id
 		  AND sm_score.conversation_id = support_conversations.id
 		  AND sm_score.deleted_at IS NULL
-		  AND sm_score.message_type = 'reply'
+		  AND sm_score.message_type IN ('reply', 'email_notice')
 		  AND sm_score.system_event_type IS NULL
 		  AND sm_score.search_vector @@ websearch_to_tsquery('simple', ?)
 	) THEN 5 ELSE 0 END`)
@@ -1623,7 +1623,7 @@ func (r *SupportConversationRepository) searchSnippet(ctx context.Context, works
 
 	var message model.SupportMessage
 	err := r.db.WithContext(ctx).
-		Where(`workspace_id = ? AND conversation_id = ? AND deleted_at IS NULL AND message_type = 'reply' AND system_event_type IS NULL AND LOWER(COALESCE(content, '')) LIKE ? ESCAPE '\'`,
+		Where(`workspace_id = ? AND conversation_id = ? AND deleted_at IS NULL AND message_type IN ('reply', 'email_notice') AND system_event_type IS NULL AND LOWER(COALESCE(content, '')) LIKE ? ESCAPE '\'`,
 			workspaceID, conversationID, pattern).
 		Order("created_at DESC").
 		First(&message).Error

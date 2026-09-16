@@ -13,7 +13,7 @@ const supportHooks = vi.hoisted(() => ({
   useConversationMessages: vi.fn(),
   markConversationRead: vi.fn(),
   deleteMessage: vi.fn(),
-  currentUser: null as { id: string } | null,
+  currentUser: null as { id: string; full_name?: string; email?: string; avatar_url?: string } | null,
 }))
 
 function createTestQueryClient() {
@@ -76,7 +76,7 @@ vi.mock('../ReplyComposer', () => ({
 }))
 
 vi.mock('../MessageBubble', () => ({
-  MessageBubble: ({ message, isConsecutive }: { message: { content: string }; isConsecutive: boolean }) => <div data-testid="message-bubble" data-consecutive={String(isConsecutive)}>{message.content}</div>,
+  MessageBubble: ({ message, isConsecutive, fallbackAvatarUrl }: { message: { content: string }; isConsecutive: boolean; fallbackAvatarUrl?: string }) => <div data-testid="message-bubble" data-consecutive={String(isConsecutive)} data-avatar={fallbackAvatarUrl}>{message.content}</div>,
 }))
 
 vi.mock('../AIRunApprovalCard', () => ({
@@ -105,6 +105,29 @@ describe('MessageThread', () => {
     vi.useRealTimers()
     vi.clearAllMocks()
     document.body.innerHTML = ''
+  })
+
+  it.each(['Viewer', undefined])('does not use the viewer photo based on a matching or missing sender name (%s)', async (senderName) => {
+    supportHooks.currentUser = { id: 'viewer', full_name: senderName, email: 'viewer@example.com', avatar_url: '/viewer.png' }
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: '2026-09-15T09:00:00Z' } })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([{
+      id: 'reply', workspace_id: 'ws-1', conversation_id: 'conv-1', sender_type: 'user',
+      sender_user_id: 'teammate', sender_display_name: senderName, content: 'Hello', is_internal: false,
+      created_at: '2026-09-15T09:00:00Z', updated_at: '2026-09-15T09:00:00Z',
+    }]) })
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const client = createTestQueryClient()
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      const bubble = container.querySelector('[data-testid="message-bubble"]')
+      expect(bubble).not.toBeNull()
+      expect(bubble?.getAttribute('data-avatar')).toBeNull()
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+      supportHooks.currentUser = null
+    }
   })
 
   it('handles keyboard Undo once with two mounted threads and restores original email details', async () => {

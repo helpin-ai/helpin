@@ -1556,7 +1556,7 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("parse create document input: %w", err)
 			}
 			req.SpaceID = strings.TrimSpace(req.SpaceID)
-			req.Title = strings.TrimSpace(req.Title)
+			req.Title = strings.TrimSpace(html.UnescapeString(req.Title))
 			if req.SpaceID == "" {
 				return nil, fmt.Errorf("space_id is required")
 			}

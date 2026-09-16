@@ -3,12 +3,15 @@
 package tiptap
 
 import (
+	"bufio"
 	"encoding/json"
+	"html"
 	"strings"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	extast "github.com/yuin/goldmark/extension/ast"
+	gmhtml "github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
 
 	"github.com/yuin/goldmark/extension"
@@ -437,6 +440,9 @@ func convertInline(n ast.Node, source []byte, marks []Mark) []Node {
 	case ast.KindString:
 		s := n.(*ast.String)
 		txt := string(s.Value)
+		if !s.IsRaw() && !s.IsCode() {
+			txt = markdownTextValue(s.Value)
+		}
 		if txt == "" {
 			return nil
 		}
@@ -460,10 +466,27 @@ func convertInline(n ast.Node, source []byte, marks []Mark) []Node {
 	}
 }
 
+// markdownTextValue follows Goldmark's entity and backslash rules for prose.
+// Its writer emits escaped HTML text; remove that output-encoding layer to
+// store plain TipTap text. Raw/code nodes must bypass this conversion.
+func markdownTextValue(raw []byte) string {
+	if !strings.ContainsAny(string(raw), "&\\\x00") {
+		return string(raw)
+	}
+	var escaped strings.Builder
+	writer := bufio.NewWriterSize(&escaped, len(raw)+16)
+	gmhtml.DefaultWriter.Write(writer, raw)
+	_ = writer.Flush() // strings.Builder writes cannot fail.
+	return html.UnescapeString(escaped.String())
+}
+
 func convertText(n ast.Node, source []byte, marks []Mark) []Node {
 	t := n.(*ast.Text)
 	raw := t.Segment.Value(source)
 	txt := string(raw)
+	if !t.IsRaw() {
+		txt = markdownTextValue(raw)
+	}
 	// Soft line breaks become a space.
 	if t.SoftLineBreak() {
 		txt = strings.TrimRight(txt, "\n")

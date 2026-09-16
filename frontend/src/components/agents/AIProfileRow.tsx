@@ -57,6 +57,7 @@ export function AIProfileRow({
   canSetDefault,
   onEdit,
   onSetDefault,
+  onClearDefault,
 }: {
   workspaceId: string;
   profile: AIProfile;
@@ -66,6 +67,7 @@ export function AIProfileRow({
   canSetDefault: boolean;
   onEdit: (profile: AIProfile) => void;
   onSetDefault: (profile: AIProfile) => void;
+  onClearDefault?: () => void;
 }) {
   const confirm = useConfirm();
   const remove = useDeleteAIProfile(workspaceId);
@@ -140,14 +142,14 @@ export function AIProfileRow({
       {canManage && (
         <TableCell className="text-right">
           <div className="flex justify-end gap-1 transition-opacity [@media(hover:hover)]:opacity-0 group-hover/profile:opacity-100 group-focus-within/profile:opacity-100">
-            {canSetDefault && !isDefault && !blocked && (
-              <QuickTooltip label="Set as workspace default">
+            {canSetDefault && (isDefault ? !!onClearDefault : !blocked) && (
+              <QuickTooltip label={isDefault ? "Clear workspace default" : "Set as workspace default"}>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  aria-label={`Set ${profile.name} as the workspace default`}
-                  onClick={() => onSetDefault(profile)}
+                  aria-label={isDefault ? `Clear ${profile.name} as the workspace default` : `Set ${profile.name} as the workspace default`}
+                  onClick={() => isDefault ? onClearDefault?.() : onSetDefault(profile)}
                 >
                   <CheckmarkCircle02Icon className="h-4 w-4" aria-hidden="true" />
                 </Button>

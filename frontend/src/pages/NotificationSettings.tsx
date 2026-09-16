@@ -1,133 +1,60 @@
-import type { ReactNode } from 'react';
+import { useNotificationPreferences } from '@/hooks/queries/useNotifications';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
+import { SettingsSection } from '@/components/settings/SettingsSection';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { Message01Icon, Notification02Icon, Setting07Icon } from '@/lib/icons';
 import {
   AccountNotificationPreferences,
+  CRMNotificationCategoriesCard,
+  IntegrationNotificationCategoriesCard,
   SupportNotificationCategoriesCard,
   WorkspaceMuteNotificationsCard,
   WorkspaceNotificationCategoriesCard,
 } from '@/components/settings/NotificationPreferencesPanels';
 import { QuietPageHeader } from '@/components/design-system/quiet';
 
-const SETTINGS_CARD_CLASS = 'border-border/70 shadow-none';
-
-function PageIntroItem({
-  icon: Icon,
-  title,
-  description,
-}: {
-  icon: typeof Notification02Icon;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex min-w-0 gap-3">
-      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/40">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
-      </div>
-    </div>
-  );
-}
-
-function SettingsSection({
-  eyebrow,
-  title,
-  description,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-3">
-      <div className="flex flex-col gap-1 border-b pb-3">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{eyebrow}</span>
-        <h3 className="text-base font-semibold">{title}</h3>
-        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
-      </div>
-      {children}
-    </section>
-  );
-}
-
 export default function NotificationSettings() {
   useTitle('Notifications');
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const workspaceId = workspace?.id ?? '';
-  const workspaceName = workspace?.name ?? 'this workspace';
+
+  const access = useWorkspaceAccess(workspace?.id ?? '');
+  const permissions = usePermissions(access.data);
+  const preferences = useNotificationPreferences(workspace?.id ?? '');
 
   return (
-    <div className="space-y-8">
-      <div className="space-y-5">
-        <QuietPageHeader
-          title="Notifications"
-          description="Set your default delivery rules, then fine-tune what this workspace can send."
-        />
-
-        <div className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-3">
-          <PageIntroItem
-            icon={Setting07Icon}
-            title="Account delivery"
-            description="Pause notifications, email delivery, digest timing, and unread badge behavior."
-          />
-          <PageIntroItem
-            icon={Notification02Icon}
-            title="Workspace activity"
-            description="Mute a workspace or choose which project events appear in-app and by email."
-          />
-          <PageIntroItem
-            icon={Message01Icon}
-            title="Support inbox"
-            description="Tune alerts for customer replies and teammate collaboration."
-          />
-        </div>
-      </div>
-
-      <SettingsSection
-        eyebrow="Account"
-        title="Delivery defaults"
-        description="These settings apply across every workspace before any workspace-specific preferences are considered."
-      >
-        <AccountNotificationPreferences cardClassName={SETTINGS_CARD_CLASS} />
-      </SettingsSection>
-
-      {workspaceId ? (
-        <SettingsSection
-          eyebrow="Workspace"
-          title={workspaceName}
-          description="Use these personal preferences to reduce noise from project and workspace activity."
-        >
-          <WorkspaceMuteNotificationsCard
-            workspaceId={workspaceId}
-            workspaceName={workspaceName}
-            cardClassName={SETTINGS_CARD_CLASS}
-          />
-          <WorkspaceNotificationCategoriesCard
-            workspaceId={workspaceId}
-            cardClassName={SETTINGS_CARD_CLASS}
-          />
-        </SettingsSection>
-      ) : null}
-
-      {workspaceId ? (
-        <SettingsSection
-          eyebrow="Support"
-          title="Inbox alerts"
-          description={`Choose how customer and teammate activity from ${workspaceName} reaches you.`}
-        >
-          <SupportNotificationCategoriesCard
-            workspaceId={workspaceId}
-            cardClassName={SETTINGS_CARD_CLASS}
-          />
-        </SettingsSection>
-      ) : null}
+    <div className="space-y-7">
+      <QuietPageHeader title="Notifications" description="Choose how you receive updates. Changes save automatically." />
+      <Tabs defaultValue="account" className="gap-5">
+        <TabsList variant="quiet" aria-label="Notification scope">
+          <TabsTrigger value="account">Account</TabsTrigger>
+          <TabsTrigger value="workspace" disabled={!workspace?.id}>Workspace</TabsTrigger>
+        </TabsList>
+        <TabsContent value="account" forceMount className="data-[state=inactive]:hidden">
+          <SettingsSection title="General" description="Applies across all workspaces" defaultOpen>
+            <AccountNotificationPreferences />
+          </SettingsSection>
+        </TabsContent>
+        <TabsContent value="workspace" forceMount className="data-[state=inactive]:hidden">
+          {workspace?.id ? (
+            <section aria-label="This workspace" className="space-y-3">
+              {preferences.isError ? <div role="alert" className="text-sm text-quiet-text-secondary">Couldn’t load workspace preferences. <Button variant="ghost" onClick={() => preferences.refetch()}>Try again</Button></div> : <>
+              <WorkspaceMuteNotificationsCard workspaceId={workspace.id} />
+              {access.isLoading ? <Skeleton className="h-40" /> : access.isError ? (
+                <div role="alert" className="text-sm text-quiet-text-secondary">Couldn’t load your module access. <Button variant="ghost" onClick={() => access.refetch()}>Try again</Button></div>
+              ) : <>
+                {permissions.canAccessModule('support') && <SupportNotificationCategoriesCard workspaceId={workspace.id} />}
+                {permissions.canAccessModule('pm') && <WorkspaceNotificationCategoriesCard workspaceId={workspace.id} />}
+                {permissions.canAccessModule('crm') && <CRMNotificationCategoriesCard workspaceId={workspace.id} />}
+                {permissions.has('settings.read') && <IntegrationNotificationCategoriesCard workspaceId={workspace.id} />}
+              </>}
+              </>}
+            </section>
+          ) : null}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

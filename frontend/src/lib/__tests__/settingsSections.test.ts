@@ -9,6 +9,15 @@ function visibleSectionIDs(canManageSettings: boolean) {
 }
 
 describe('getSettingsSidebarGroups', () => {
+  it('omits disabled modules from the Community settings home and search source', () => {
+    const groups = getSettingsSidebarGroups(true, new Set(['settings.read', 'workspace.read']), ['support', 'docs', 'agents']);
+    const ids = groups.flatMap(group => group.sections.map(section => section.id));
+    expect(ids).toEqual(expect.arrayContaining(['chat-general', 'helpcenter', 'ai']));
+    expect(ids).not.toContain('workflows');
+    expect(ids).not.toContain('automations');
+    expect(ids.some(id => id.startsWith('crm-'))).toBe(false);
+    expect(groups.every(group => group.sections.length > 0)).toBe(true);
+  });
   it.skipIf(billingEnabled)('omits billing in community workspaces', () => {
     expect(SETTINGS_ROUTE_SECTIONS.map(section => section.id)).not.toContain('billing');
     expect(visibleSectionIDs(true)).not.toContain('billing');
@@ -28,14 +37,14 @@ describe('getSettingsSidebarGroups', () => {
     expect(visibleSectionIDs(false)).not.toContain('command-intents');
   });
 
-  it('places inbound and external MCP together after Access', () => {
+  it('groups MCP and repositories under Integrations', () => {
     const workspaceGroup = getSettingsSidebarGroups(true, new Set(['workspace.read', 'settings.read', 'module_access.manage']))
-      .find((group) => group.label === 'Workspace');
+      .find((group) => group.label === 'Integrations & data');
 
     const sections = workspaceGroup?.sections.map((section) => section.id) ?? [];
-    expect(sections.indexOf('mcp')).toBe(sections.indexOf('access') + 1);
-    expect(sections.indexOf('external-mcp')).toBe(sections.indexOf('mcp') + 1);
-    expect(sections.indexOf('repositories')).toBe(sections.indexOf('external-mcp') + 1);
+    expect(sections).toContain('mcp');
+    expect(sections.indexOf('external-mcp')).toBe(sections.indexOf('repositories') + 1);
+    expect(sections.indexOf('mcp')).toBe(sections.indexOf('external-mcp') + 1);
   });
 
   it('labels the inbound workspace surface MCP access', () => {
@@ -62,13 +71,13 @@ describe('getSettingsSidebarGroups', () => {
     expect(withSettingsRead).toContain('external-mcp');
   });
 
-  it('puts AI Assistant first in support settings', () => {
+  it('puts inbox and widget setup before AI assistant', () => {
     const supportGroup = getSettingsSidebarGroups(true).find((group) => group.label === 'Support');
 
     expect(supportGroup?.sections.map((section) => section.id).slice(0, 3)).toEqual([
-      'support-ai-assistant',
       'inboxes-routing',
       'chat-general',
+      'support-ai-assistant',
     ]);
   });
   it('gates the AI settings sections on their read permissions', () => {
@@ -79,19 +88,14 @@ describe('getSettingsSidebarGroups', () => {
 
     expect(none).not.toContain('ai-connections');
     expect(none).not.toContain('ai');
-    expect(both).toContain('ai-connections');
+    expect(both).not.toContain('ai-connections');
     expect(both).toContain('ai');
   });
 
-  it('gives each AI section its own icon', () => {
-    const sections = getSettingsSidebarGroups(true, new Set(['workspace.read', 'settings.read']))
+  it('exposes a single AI setup entry to members with workspace read access', () => {
+    const sections = getSettingsSidebarGroups(false, new Set(['workspace.read']))
       .flatMap((group) => group.sections);
-    const personal = sections.find((section) => section.id === 'ai-connections');
-    const workspace = sections.find((section) => section.id === 'ai');
-    const profile = sections.find((section) => section.id === 'profile');
-
-    expect(personal?.icon).not.toBe(workspace?.icon);
-    expect(personal?.icon).not.toBe(profile?.icon);
-    expect(workspace?.icon).not.toBe(profile?.icon);
+    expect(sections.find((section) => section.id === 'ai')?.label).toBe('AI setup');
+    expect(sections.some((section) => section.id === 'ai-connections')).toBe(false);
   });
 });

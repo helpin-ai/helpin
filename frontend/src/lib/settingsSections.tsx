@@ -1,6 +1,7 @@
 import { billingSettingsSections } from '@edition/settings';
 import type { FC, CSSProperties } from 'react';
-import type { Permission } from '@/lib/types';
+import type { Permission, WorkspaceModule } from '@/lib/types';
+import { workspaceSurface } from './workspaceSurface';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   UserIcon,
@@ -111,134 +112,157 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
   requiresManageSettings?: boolean;
   requiredPermission?: Permission;
   sidebar?: boolean;
+  keywords?: string[];
+  scope?: 'organization';
+  options?: { id: string; label: string; keywords?: string[] }[];
+};
+
+const SETTINGS_GROUP_LABELS = ['Personal', 'Organization', 'Workspace', 'AI & knowledge', 'Integrations & data', 'Projects', 'Support', 'CRM'];
+const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
+  Personal: Profile,
+  Organization: Members,
+  Workspace: General,
+  'AI & knowledge': WorkspaceAI,
+  'Integrations & data': ExternalMCP,
+  Projects: Pipelines,
+  Support: ChatWidget,
+  CRM: Autonomy,
+};
+export const SETTINGS_HOME_LABEL = 'Settings home';
+export const SETTINGS_SIDEBAR_GROUP_LABELS: Record<string, string> = {
+  'Integrations & data': 'Integration',
 };
 
 const allSettingsSections: SettingsSectionMeta[] = [
   {
-    id: 'ai-connections',
-    label: 'AI connections',
-    description: 'Your API keys and ChatGPT login, plus the profiles that use them.',
-    icon: AIConnections,
-    group: 'Personal',
-    requiredPermission: 'workspace.read',
-  },
-  {
-    id: 'ai',
-    label: 'AI',
-    description: 'Shared connections, profiles, and the default profile agents inherit.',
-    icon: WorkspaceAI,
-    group: 'Workspace',
-    requiredPermission: 'settings.read',
-  },
-  {
     id: 'profile',
+    keywords: ["name", "avatar", "photo", "timezone"],
     label: 'Profile',
-    description: '',
+    description: "Your name, avatar, and personal details.",
     icon: Profile,
     group: 'Personal',
   },
   {
-    id: 'security',
-    label: 'Security',
-    description: '',
-    icon: Security,
-    group: 'Personal',
-  },
-  {
     id: 'notifications',
+    keywords: ["alerts", "email notifications", "desktop", "push"],
     label: 'Notifications',
-    description: '',
+    description: "Choose when and how Helpin notifies you.",
     icon: Notifications,
     group: 'Personal',
   },
   {
+    id: 'security',
+    keywords: ["password", "login", "authentication", "2fa"],
+    label: 'Security',
+    description: "Password and account security.",
+    icon: Security,
+    group: 'Personal',
+  },
+  {
     id: 'account',
-    label: 'Organization',
-    description: '',
+    scope: 'organization',
+    keywords: ["organization name"],
+    label: 'Organization details',
+    description: "Organization details and preferences.",
     icon: Account,
     group: 'Organization',
   },
   {
     id: 'git-connections',
-    label: 'Git Connections',
+    scope: 'organization',
+    label: 'Git connections',
     description: 'Manage organization-level GitHub and GitLab provider connections.',
     icon: Delivery,
     group: 'Organization',
   },
   {
     id: 'general',
+    keywords: ["workspace name", "logo", "timezone"],
     label: 'General',
-    description: '',
+    description: "Workspace name and preferences.",
     icon: General,
     group: 'Workspace',
   },
-  ...billingSettingsSections(Account),
   {
     id: 'members',
+    keywords: ["invite teammate", "invite user", "remove member", "roles"],
     label: 'Members',
-    description: '',
+    description: "Invite people and manage workspace membership.",
     icon: Members,
     group: 'Workspace',
   },
   {
     id: 'teams',
+    keywords: ["team membership", "team settings"],
     label: 'Teams',
-    description: '',
+    description: "Organize people into teams.",
     icon: Teams,
     group: 'Workspace',
   },
   {
     id: 'access',
-    label: 'Module Access',
+    label: 'Module access',
     description: 'Grant CRM and Support access by team or by direct workspace member exception.',
     icon: Access,
     group: 'Workspace',
     requiredPermission: 'module_access.manage',
   },
+  ...billingSettingsSections(Account).map(section => ({ ...section, group: 'Workspace', keywords: ['invoices', 'payment', 'subscription', 'plan', 'usage', 'credits'] })),
   {
-    id: 'mcp',
-    label: 'MCP access',
-    description: 'Connect outside MCP clients to Helpin and control their workspace access.',
-    icon: MCP,
-    group: 'Workspace',
+    id: 'ai-connections',
+    sidebar: false,
+    label: 'Personal AI setup',
+    description: 'Your API keys and ChatGPT login, plus the profiles that use them.',
+    icon: AIConnections,
+    group: 'AI & knowledge',
     requiredPermission: 'workspace.read',
   },
   {
-    id: 'external-mcp',
-    label: 'External MCP',
-    description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
-    icon: ExternalMCP,
-    group: 'Workspace',
-    requiredPermission: 'settings.read',
+    id: 'ai',
+    label: 'AI setup',
+    description: 'Workspace and personal AI connections, profiles, and the workspace default.',
+    keywords: ['personal AI', 'workspace AI', 'API keys', 'ChatGPT', 'models', 'profiles'],
+    icon: WorkspaceAI,
+    group: 'AI & knowledge',
+    requiredPermission: 'workspace.read',
+  },
+  {
+    id: 'knowledge',
+    label: 'Knowledge sources',
+    description: 'Manage help center docs and website content sources used across AI experiences.',
+    icon: Knowledge,
+    group: 'AI & knowledge',
   },
   {
     id: 'repositories',
     label: 'Repositories',
     description: 'Choose which synced Git repositories are available to this workspace.',
     icon: Delivery,
-    group: 'Workspace',
+    group: 'Integrations & data',
   },
   {
-    id: 'knowledge',
-    label: 'Knowledge',
-    description: 'Manage help center docs and website content sources used across AI experiences.',
-    icon: Knowledge,
-    group: 'Workspace',
+    id: 'external-mcp',
+    label: 'External tools (MCP)',
+    description: 'Connect remote MCP servers and choose which tools Helpin agents may use.',
+    icon: ExternalMCP,
+    group: 'Integrations & data',
+    requiredPermission: 'settings.read',
   },
   {
-    id: 'workflows',
-    label: 'Workflows',
-    description: 'Manage workflows, pipeline rules, and workspace-level Git provider event rules.',
-    icon: Workflows,
-    group: 'Projects',
-    sidebar: false,
+    id: 'mcp',
+    label: 'MCP access',
+    description: 'Connect outside MCP clients to Helpin and control their workspace access.',
+    icon: MCP,
+    group: 'Integrations & data',
+    requiredPermission: 'workspace.read',
   },
   {
-    id: 'delivery',
-    label: 'Delivery',
-    description: 'Configure project delivery repositories, branches, and team defaults.',
-    icon: Delivery,
-    group: 'Projects',
+    id: 'import',
+    keywords: ["csv", "export", "migrate"],
+    label: 'Import & export',
+    description: 'Import data from Shortcut and other project management tools.',
+    icon: ImportExport,
+    group: 'Integrations & data',
   },
   {
     id: 'labels',
@@ -249,49 +273,67 @@ const allSettingsSections: SettingsSectionMeta[] = [
   },
   {
     id: 'task-templates',
-    label: 'Templates',
+    label: 'Task templates',
     description: 'Define reusable templates for quick task creation.',
     icon: TaskTemplates,
     group: 'Projects',
   },
   {
     id: 'recurring-tasks',
-    label: 'Recurring Tasks',
+    label: 'Recurring tasks',
     description: 'Manage recurring work templates, schedules, failures, and generated tasks.',
     icon: RecurringTasks,
     group: 'Projects',
   },
   {
     id: 'automations',
+    keywords: ["rules", "triggers"],
     label: 'Automations',
-    description: '',
+    description: "Configure rules for recurring actions.",
     icon: Automations,
     group: 'Projects',
   },
   {
-    id: 'support-ai-assistant',
-    label: 'AI Assistant',
-    description: 'Configure how support AI replies, drafts internal notes, and hands conversations to humans.',
-    icon: Automations,
-    group: 'Support',
+    id: 'delivery',
+    label: 'Delivery',
+    description: 'Configure project delivery repositories, branches, and team defaults.',
+    icon: Delivery,
+    group: 'Projects',
+  },
+  {
+    id: 'workflows',
+    label: 'Workflows',
+    description: 'Manage workflows, pipeline rules, and workspace-level Git provider event rules.',
+    icon: Workflows,
+    group: 'Projects',
+    sidebar: false,
   },
   {
     id: 'inboxes-routing',
-    label: 'Inboxes & Routing',
+    label: 'Inboxes & routing',
     description: 'Manage team inboxes, email forwarding, and AI conversation routing.',
     icon: InboxesRouting,
     group: 'Support',
   },
   {
     id: 'chat-general',
-    label: 'Chat Widget',
+    label: 'Chat widget',
     description: 'Widget installation, availability, identity capture, and appearance.',
     icon: ChatWidget,
     group: 'Support',
   },
   {
+    id: 'support-ai-assistant',
+    label: 'AI assistant',
+    description: 'Configure how support AI replies, drafts internal notes, and hands conversations to humans.',
+    icon: Automations,
+    group: 'Support',
+  },
+  {
     id: 'helpcenter',
-    label: 'Help Center',
+    options: [{"id": "helpcenter-domain", "label": "Domain & SEO", "keywords": ["custom domain", "website address", "url", "seo"]}],
+    keywords: ["custom domain", "branding", "seo", "languages"],
+    label: 'Help center',
     description: 'Configure your public help center branding, domain, and SEO.',
     icon: HelpCenter,
     group: 'Support',
@@ -304,39 +346,35 @@ const allSettingsSections: SettingsSectionMeta[] = [
     group: 'Support',
   },
   {
+    id: 'crm-email',
+    options: [{"id": "email-signature", "label": "Email signature", "keywords": ["signature", "footer"]}, {"id": "email-sending-limits", "label": "Sending limits", "keywords": ["daily limit", "sending limit", "quota", "capacity", "pacing"]}, {"id": "email-sync", "label": "Sync preferences", "keywords": ["email history", "address filters", "blocklist", "allowlist"]}, {"id": "email-calendar", "label": "Calendar events", "keywords": ["private meetings", "solo meetings", "calendar sync"]}, {"id": "email-contacts", "label": "Contact creation", "keywords": ["automatic contacts", "blocked prefixes", "noreply"]}],
+    keywords: ["gmail", "email sync", "mailbox", "outlook"],
+    label: 'Email & calendar',
+    description: 'Connected accounts, sending limits, and sync preferences.',
+    icon: EmailAccounts,
+    group: 'CRM',
+  },
+  {
     id: 'crm-pipelines',
-    label: 'Deal Pipelines',
+    keywords: ["deal stages", "sales pipeline"],
+    label: 'Deal pipelines',
     description: 'Configure deal pipelines and stages.',
     icon: Pipelines,
     group: 'CRM',
   },
   {
-    id: 'crm-email',
-    label: 'Email Sync',
-    description: 'Connect Gmail to sync conversations and detect CRM signals.',
-    icon: EmailAccounts,
-    group: 'CRM',
-  },
-  {
     id: 'crm-meetings',
-    label: 'Meeting Notes',
+    label: 'Meeting notes',
     description: 'Choose how Helpin joins calls, takes notes, and saves recordings.',
     icon: Meetings,
     group: 'CRM',
   },
   {
     id: 'crm-autonomy',
-    label: 'Deal Automation',
+    label: 'Deal automation',
     description: 'Configure self-driving deal automation thresholds.',
     icon: Autonomy,
     group: 'CRM',
-  },
-  {
-    id: 'import',
-    label: 'Import & Export',
-    description: 'Import data from Shortcut and other project management tools.',
-    icon: ImportExport,
-    group: 'Data',
   },
 ];
 
@@ -368,13 +406,18 @@ export function buildSettingsRoutePath(workspaceSlug: string, section: SettingsR
 
 export type SettingsSidebarGroup = {
   label: string;
+  icon?: IconComponent;
   sections: SettingsSectionMeta[];
 };
 
-export function getSettingsSidebarGroups(canManageSettings: boolean, permissionSet?: Set<string>): SettingsSidebarGroup[] {
+export function getSettingsSidebarGroups(canManageSettings: boolean, permissionSet?: Set<string>, modules?: readonly WorkspaceModule[]): SettingsSidebarGroup[] {
   const groups: SettingsSidebarGroup[] = [];
 
   for (const section of SETTINGS_ROUTE_SECTIONS) {
+    const module = workspaceSurface(buildSettingsRoutePath('workspace', section.id));
+    if (modules && module && !modules.includes(module)) {
+      continue;
+    }
     if (section.requiresManageSettings && !canManageSettings) {
       continue;
     }
@@ -391,8 +434,8 @@ export function getSettingsSidebarGroups(canManageSettings: boolean, permissionS
       continue;
     }
 
-    groups.push({ label: section.group, sections: [section] });
+    groups.push({ label: section.group, icon: SETTINGS_GROUP_ICONS[section.group], sections: [section] });
   }
 
-  return groups;
+  return groups.sort((a, b) => SETTINGS_GROUP_LABELS.indexOf(a.label) - SETTINGS_GROUP_LABELS.indexOf(b.label));
 }

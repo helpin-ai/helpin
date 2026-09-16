@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AIProfileEditor } from '../AIProfileEditor';
 import { aiProfileService } from '@/lib/services/aiProfileService';
 import type { AIConnection } from '@/lib/services/aiConnectionService';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 
 vi.mock('@/lib/services/aiProfileService', () => ({
@@ -45,7 +46,7 @@ afterEach(() => {
 });
 
 async function render(node: React.ReactNode) {
-  await act(async () => root.render(<QueryClientProvider client={client}>{node}</QueryClientProvider>));
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>{node}</TooltipProvider></QueryClientProvider>));
 }
 
 function openConnectionPicker(index = 0) {

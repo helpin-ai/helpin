@@ -116,7 +116,6 @@ import { DocsOutlineMinimap } from '@/components/docs/DocsOutlineMinimap'
 import { CommentSideGutter } from '@/components/docs/CommentSideGutter'
 import { BlockCommentTrigger } from '@/components/docs/BlockCommentTrigger'
 import { DocsRailHeader } from '@/components/docs/DocsRailHeader'
-import { RailSection } from '@/components/crm/contact-detail/RailSection'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
 import type { TranslationRow } from '@/components/docs/helpcenter/TranslationsPanel'
@@ -2322,60 +2321,58 @@ export function DocsDocumentDetail({
               </>
             )}
 
-            {/* ── Less-frequent actions (collapsed by default) ── */}
+            {/* ── Document actions ── */}
             {isSourceLocaleActive && canEditDocs && (
-              <div className="-mx-4 mt-4">
-                <RailSection title="Actions" defaultOpen={false}>
-                  {(!doc.is_locked || canUnlock) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newLocked = !doc.is_locked
-                        toggleLock.mutate(
-                          { docId, isLocked: newLocked },
-                          {
-                            onSuccess: () => toast.success(newLocked ? 'Document locked' : 'Document unlocked'),
-                            onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to toggle lock'),
-                          },
-                        )
-                      }}
-                      disabled={toggleLock.isPending}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                      {doc.is_locked ? <SquareUnlock01Icon className="h-4 w-4 text-muted-foreground" /> : <LockIcon className="h-4 w-4 text-muted-foreground" />}
-                      {doc.is_locked ? 'Unlock document' : 'Lock document'}
-                    </button>
-                  )}
+              <div className="mt-4 space-y-2">
+                {(!doc.is_locked || canUnlock) && (
                   <button
                     type="button"
-                    onClick={() => setMoveDialogOpen(true)}
+                    onClick={() => {
+                      const newLocked = !doc.is_locked
+                      toggleLock.mutate(
+                        { docId, isLocked: newLocked },
+                        {
+                          onSuccess: () => toast.success(newLocked ? 'Document locked' : 'Document unlocked'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to toggle lock'),
+                        },
+                      )
+                    }}
+                    disabled={toggleLock.isPending}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {doc.is_locked ? <SquareUnlock01Icon className="h-4 w-4 text-muted-foreground" /> : <LockIcon className="h-4 w-4 text-muted-foreground" />}
+                    {doc.is_locked ? 'Unlock document' : 'Lock document'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMoveDialogOpen(true)}
+                  disabled={doc.is_locked}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  <FolderInputIcon className="h-4 w-4 text-muted-foreground" />
+                  Move to...
+                </button>
+                {doc.status !== 'archived' && (
+                  <button
+                    type="button"
+                    onClick={handleArchive}
                     disabled={doc.is_locked}
                     className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <FolderInputIcon className="h-4 w-4 text-muted-foreground" />
-                    Move to...
+                    <ArchiveIcon className="h-4 w-4 text-muted-foreground" />
+                    Archive
                   </button>
-                  {doc.status !== 'archived' && (
-                    <button
-                      type="button"
-                      onClick={handleArchive}
-                      disabled={doc.is_locked}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                      <ArchiveIcon className="h-4 w-4 text-muted-foreground" />
-                      Archive
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setDeleteConfirmOpen(true)}
-                    disabled={doc.is_locked}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50 disabled:pointer-events-none"
-                  >
-                    <Delete01Icon className="h-4 w-4 text-muted-foreground" />
-                    Delete
-                  </button>
-                </RailSection>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  disabled={doc.is_locked}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  <Delete01Icon className="h-4 w-4 text-muted-foreground" />
+                  Delete
+                </button>
               </div>
             )}
               </div>

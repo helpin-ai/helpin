@@ -472,6 +472,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           scheduleAgentRunInvalidation(queryKeys.automation.agentUsage(workspaceId, eventAgentId))
         } else {
           scheduleAgentRunInvalidation(queryKeys.automation.agentsRoot(workspaceId))
+          scheduleAgentRunInvalidation(queryKeys.dock.aiDefaults(workspaceId))
         }
         if (event.parent_type === 'task' && event.parent_id) {
           scheduleAgentRunInvalidation(queryKeys.pm.task(workspaceId, event.parent_id))
@@ -679,6 +680,13 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
             conversation_id: parentId,
             content: messageData.content,
             sender_type: messageData.sender_type,
+            // Live events use the widget projection; normalize its sender fields
+            // before storing a staff inbox message. Only user replies identify
+            // their author via actor_id (customer/AI actors are not teammates).
+            sender_display_name: messageData.sender_display_name ?? messageData.sender_name,
+            sender_avatar_url: messageData.sender_avatar_url ?? messageData.sender_avatar,
+            sender_user_id: messageData.sender_user_id
+              ?? (messageData.sender_type === 'user' ? event.actor_id : undefined),
             is_internal: Boolean(messageData.is_internal),
             created_at: createdAt,
             updated_at: typeof messageData.updated_at === 'string' ? messageData.updated_at : createdAt,
@@ -851,7 +859,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     const keys = [
       queryKeys.automation.runsRoot(workspaceId), queryKeys.automation.runAttentionCount(workspaceId),
       queryKeys.automation.activityRoot(workspaceId), queryKeys.automation.overview(workspaceId),
-      queryKeys.automation.agentFleet(workspaceId), queryKeys.automation.agentsRoot(workspaceId),
+      queryKeys.automation.agentFleet(workspaceId), queryKeys.automation.agentsRoot(workspaceId), queryKeys.dock.aiDefaults(workspaceId),
       queryKeys.notifications.all(workspaceId), queryKeys.support.teammatePresence(workspaceId),
       queryKeys.workspaces.memberPresence(workspaceId), queryKeys.support.workspaceUnread(),
       queryKeys.support.routingUsage(workspaceId), queryKeys.support.unreadStats(workspaceId),

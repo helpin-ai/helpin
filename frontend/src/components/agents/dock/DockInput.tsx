@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
@@ -116,24 +116,7 @@ export interface DockInputProps {
   stopping?: boolean;
   placeholder?: string;
   showShortcutHint?: boolean;
-}
-
-export function shouldUseExpandedComposerLayout({
-  value,
-  scrollHeight,
-  singleLineHeight,
-  currentlyExpanded,
-}: {
-  value: string;
-  scrollHeight: number;
-  singleLineHeight: number;
-  currentlyExpanded: boolean;
-}) {
-  if (!value.trim()) return false;
-  // Once text wraps, keep the text row above the actions until the user
-  // clears the composer. This avoids a flicker at widths where freeing the
-  // action controls makes that same text fit back onto a single line.
-  return currentlyExpanded || scrollHeight > singleLineHeight + 1;
+  profilePicker?: ReactNode;
 }
 
 export function composerTextareaHeight({
@@ -152,7 +135,7 @@ export function composerTextareaHeight({
 export function composerPlaceholderForContext(contextType?: CommandBarPageContext['entity_type']) {
   return contextType === 'support_conversation'
     ? 'Ask about this conversation…'
-    : 'Ask a question or delegate work to agents…';
+    : 'Message agent…';
 }
 
 export function canClearDockContext(
@@ -166,8 +149,8 @@ export function contextChipMaxWidth(canAddContext: boolean) {
   return canAddContext ? 'calc(100% - 116px)' : undefined;
 }
 
-export function usesSeparateComposerActionRow(mode: DockInputProps['mode'], expanded: boolean) {
-  return mode === 'conversation' && expanded;
+export function usesSeparateComposerActionRow(mode: DockInputProps['mode']) {
+  return mode === 'conversation';
 }
 
 export function sendControlClassName(disabled: boolean) {
@@ -203,10 +186,10 @@ export function DockInput({
   stopping,
   placeholder: placeholderOverride,
   showShortcutHint = true,
+  profilePicker,
 }: DockInputProps) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
-  const [expandedComposer, setExpandedComposer] = useState(false);
   const referencePickerRef = useRef<DockReferencePickerHandle | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
@@ -220,12 +203,6 @@ export function DockInput({
     const singleLineHeight = lineHeight
       + (Number.parseFloat(style.paddingTop) || 0)
       + (Number.parseFloat(style.paddingBottom) || 0);
-    setExpandedComposer((current) => shouldUseExpandedComposerLayout({
-      value,
-      scrollHeight: el.scrollHeight,
-      singleLineHeight,
-      currentlyExpanded: current,
-    }));
     el.style.height = `${composerTextareaHeight({
       value,
       scrollHeight: el.scrollHeight,
@@ -254,7 +231,7 @@ export function DockInput({
   const canAddReferences = !!workspaceId && !!onAddReference;
   const canAddContext = !!onAddContext || canAddReferences;
   const showContextRow = mode === 'conversation' && (showChip || !!onAddContext || canAddReferences || references.length > 0);
-  const separateActionRow = usesSeparateComposerActionRow(mode, expandedComposer);
+  const separateActionRow = usesSeparateComposerActionRow(mode);
   const attachmentButton = mode === 'conversation' && onAddMedia ? (
     <>
       <input
@@ -475,13 +452,16 @@ export function DockInput({
           disabled={disabled}
           className={cn(
             'block min-w-0 flex-1 resize-none bg-transparent py-1 text-sm leading-5 placeholder:text-muted-foreground focus:outline-none disabled:opacity-60',
-            separateActionRow && 'w-full flex-none',
+            separateActionRow && 'w-full flex-none min-h-[52px]',
           )}
         />
         {separateActionRow ? (
-          <div className="flex w-full items-center justify-between pt-0.5">
+          <div className="flex w-full min-w-0 items-center gap-2 pt-1" data-composer-actions>
             {attachmentButton}
-            {submitControl}
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              {profilePicker}
+              {submitControl}
+            </div>
           </div>
         ) : submitControl}
       </div>

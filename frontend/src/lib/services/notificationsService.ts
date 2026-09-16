@@ -15,7 +15,7 @@ const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspac
 export const notificationsService = {
   // Account-level notification settings (no workspace scope)
   getUserSettings: () =>
-    api.get<UserNotificationSettings>('/user/notification-settings'),
+    api.get<UserNotificationSettings>(`/user/notification-settings?timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`),
 
   updateUserSettings: (data: UpdateUserNotificationSettingsRequest) =>
     api.put<UserNotificationSettings>('/user/notification-settings', data),
@@ -31,7 +31,7 @@ export const notificationsService = {
   },
 
   unreadCount: (wsId: string) =>
-    api.get<UnreadCountResponse>(`/notifications/unread-count${qs(wsId)}`),
+    api.get<UnreadCountResponse>(`/notifications/unread-count${qs(wsId)}&timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`),
 
   update: (wsId: string, notifId: string, data: { status?: string; snoozed_until?: string }) =>
     api.patch<{ status: string }>(`/notifications/${notifId}${qs(wsId)}`, data),

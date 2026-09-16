@@ -178,8 +178,7 @@ func (r *NotificationPreferenceRepository) ShouldNotify(ctx context.Context, use
 	if teamID != "" && category != "" {
 		teamPref, err := r.GetForTeam(ctx, userID, workspaceID, teamID)
 		if err != nil {
-			// Log but don't fail — fall through to workspace-level
-			_ = err
+			return false, err
 		}
 		if teamPref != nil {
 			if val, found := resolveChannelPref(teamPref, category, channel); found {

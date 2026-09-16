@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import { helpinClient } from "@/lib/helpin";
 import { toast } from "sonner";
 import { AIConnectionPolicyNotice } from "./AIConnectionPolicyNotice";
 import { ChatGPTDeviceLogin, useChatGPTDeviceLogin } from "./ChatGPTDeviceLogin";
@@ -37,7 +38,13 @@ import {
 } from "@/components/design-system/quiet-dropdown-select";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { QuickTooltip } from "@/components/ui/quick-tooltip";
+import { InformationCircleIcon } from "@/lib/icons";
 import { Skeleton } from "@/components/ui/skeleton";
+
+function ConnectionHelp({ label, description }: { label: string; description: string }) {
+  return <QuickTooltip label={description}><button type="button" aria-label={label} className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><InformationCircleIcon className="size-3.5" /></button></QuickTooltip>;
+}
 
 export type AIConnectionDialogMode =
   | { kind: "add" }
@@ -127,8 +134,8 @@ export function AIConnectionDialog({
       if (!name.trim()) return "Name is required";
       if (provider === "openai_compatible" && !endpoint)
         return endpoints.data?.length
-          ? "Choose an approved endpoint"
-          : "Your administrator must approve an endpoint before you can connect.";
+          ? "Choose an endpoint"
+          : "No compatible endpoints are available. Contact Helpin support to request one.";
     }
     if (needsKey && !apiKey.trim()) return "API key is required";
     return null;
@@ -167,26 +174,31 @@ export function AIConnectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-lg">
+      <DialogContent className="grid max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-lg" onOpenAutoFocus={(event) => {
+        const firstField = document.getElementById(`${id}-${reconnecting ? 'key' : 'provider'}`) ?? document.getElementById(`${id}-cancel`);
+        if (firstField) { event.preventDefault(); firstField.focus(); }
+      }}>
         <DialogHeader className="space-y-1.5 border-b border-border/60 px-6 py-4 text-left">
           <DialogTitle>
             {reconnecting ? `Reconnect “${reconnecting.name}”` : "Add connection"}
           </DialogTitle>
-          <DialogDescription>
-            {reconnecting
+          <div className="flex items-center gap-1">
+            <DialogDescription>
+              {scope === "personal" ? "Personal connection · Only you" : "Workspace connection · Shared with members"}
+            </DialogDescription>
+            <ConnectionHelp label={reconnecting ? "About reconnecting" : "Who can use this connection"} description={reconnecting
               ? "Replace the stored credential. Runs already accepted keep their route."
               : scope === "personal"
                 ? "Only you can use this connection, for your manual runs and chats."
-                : "Members can select this connection. Shared profiles can use it for automation."}
-          </DialogDescription>
+                : "Members can select this connection. Shared profiles can use it for automation."} />
+          </div>
         </DialogHeader>
 
         <div className="min-h-0 max-h-[calc(88vh-8.5rem)] space-y-4 overflow-y-auto px-6 py-5">
           {reconnecting && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <ProviderIcon provider={reconnecting.provider} className="h-3.5 w-3.5" />
-              {providerLabel(reconnecting.provider)} ·{" "}
-              {reconnecting.scope === "personal" ? "Personal" : "Workspace"}
+              {providerLabel(reconnecting.provider)}
             </p>
           )}
 
@@ -210,7 +222,10 @@ export function AIConnectionDialog({
             >
               {!reconnecting && (
                 <div className="space-y-1.5">
-                  <Label htmlFor={`${id}-provider`}>Provider</Label>
+                  <div className="flex items-center gap-1">
+                    <Label htmlFor={`${id}-provider`}>Provider</Label>
+                    <ConnectionHelp label="About this provider" description={providerMeta[provider as AIProviderKey]?.description ?? providerLabel(provider)} />
+                  </div>
                   <Select
                     value={provider}
                     disabled={pending}
@@ -239,9 +254,6 @@ export function AIConnectionDialog({
                             <ProviderIcon provider={key} className="h-3.5 w-3.5 shrink-0" />
                             <span>{providerMeta[key].label}</span>
                           </span>
-                          <span className="block text-[11px] text-muted-foreground">
-                            {providerMeta[key].description}
-                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -251,13 +263,13 @@ export function AIConnectionDialog({
 
               {!reconnecting && (
                 <div className="space-y-1.5">
-                  <Label htmlFor={`${id}-name`}>Name</Label>
+                  <Label htmlFor={`${id}-name`}>Connection name</Label>
                   <QuietUnderlineInput
                     id={`${id}-name`}
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     maxLength={100}
-                    placeholder="Team OpenAI key"
+                    placeholder={scope === "personal" ? "My OpenAI connection" : "Team OpenAI connection"}
                     disabled={pending}
                   />
                 </div>
@@ -265,7 +277,7 @@ export function AIConnectionDialog({
 
               {provider === "openai_compatible" && !reconnecting && (
                 <div className="space-y-1.5">
-                  <Label htmlFor={`${id}-endpoint`}>Approved endpoint</Label>
+                  <Label htmlFor={`${id}-endpoint`}>Endpoint</Label>
                   {endpoints.isPending ? (
                     <Skeleton className="h-8 w-full" />
                   ) : (
@@ -287,10 +299,12 @@ export function AIConnectionDialog({
                       <SelectContent>
                         {endpoints.data?.map((entry) => (
                           <SelectItem key={entry.id} value={entry.id} textValue={entry.id}>
-                            <span>{entry.id}</span>
-                            <span className="block text-[11px] text-muted-foreground">
+                            <span className="min-w-0 flex-1">
+                            <span className="block">{entry.id}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
                               {entry.base_url} ·{" "}
                               {entry.auth_mode === "none" ? "No authentication" : "API key"}
+                            </span>
                             </span>
                           </SelectItem>
                         ))}
@@ -299,7 +313,7 @@ export function AIConnectionDialog({
                   )}
                   {endpoints.isError ? (
                     <p className="flex items-center gap-2 text-xs text-destructive">
-                      Could not load approved endpoints.
+                      Could not load endpoints.
                       <button
                         type="button"
                         className="underline"
@@ -309,9 +323,14 @@ export function AIConnectionDialog({
                       </button>
                     </p>
                   ) : !endpoints.isPending && !endpoints.data?.length ? (
-                    <p className="text-xs text-muted-foreground">
-                      Your administrator must approve an endpoint before you can connect.
-                    </p>
+                    <div className="space-y-1 text-xs">
+                      <p className="text-muted-foreground">No compatible endpoints are available.</p>
+                      <button type="button" className="underline underline-offset-4" onClick={() => {
+                        onOpenChange(false);
+                        helpinClient?.show();
+                        helpinClient?.open();
+                      }}>Contact Helpin support to request one</button>
+                    </div>
                   ) : null}
                 </div>
               )}
@@ -325,7 +344,10 @@ export function AIConnectionDialog({
 
               {needsKey && (
                 <div className="space-y-1.5">
-                  <Label htmlFor={`${id}-key`}>API key</Label>
+                  <div className="flex items-center gap-1">
+                    <Label htmlFor={`${id}-key`}>API key</Label>
+                    <ConnectionHelp label="About API key storage" description={reconnecting ? "Paste a new key to replace the stored credential. The key is stored encrypted and never returned by the API." : "Stored encrypted. It is never returned by the API."} />
+                  </div>
                   <QuietUnderlineInput
                     id={`${id}-key`}
                     type="password"
@@ -334,11 +356,7 @@ export function AIConnectionDialog({
                     onChange={(event) => setApiKey(event.target.value)}
                     disabled={pending}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {reconnecting
-                      ? "Paste a new key. The stored key is replaced."
-                      : "Stored encrypted. It is never returned by the API."}
-                  </p>
+
                 </div>
               )}
 
@@ -350,14 +368,14 @@ export function AIConnectionDialog({
 
               {reconnecting?.policy && <AIConnectionPolicyNotice policy={reconnecting.policy} />}
               <button type="submit" className="sr-only">
-                {isChatGPT ? "Start device login" : "Save connection"}
+                {isChatGPT ? "Continue to ChatGPT" : "Add connection"}
               </button>
             </form>
           )}
         </div>
 
         <DialogFooter className="border-t border-border/60 px-6 py-3">
-          <Button type="button" size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button id={`${id}-cancel`} type="button" size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
             {device.phase === "connected" ? "Done" : "Cancel"}
           </Button>
           {!showDeviceLogin && (
@@ -365,10 +383,10 @@ export function AIConnectionDialog({
               {pending
                 ? "Connecting…"
                 : isChatGPT
-                  ? "Start device login"
+                  ? "Continue to ChatGPT"
                   : reconnecting
                     ? "Save changes"
-                    : "Save connection"}
+                    : "Add connection"}
             </Button>
           )}
         </DialogFooter>

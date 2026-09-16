@@ -22,7 +22,7 @@ Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn
 Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 
 const mocks = vi.hoisted(() => ({
-  useAgents: vi.fn(),
+  useAskAgentDefaults: vi.fn(),
   aiPicker: vi.fn(() => null),
 	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
@@ -60,7 +60,7 @@ const mocks = vi.hoisted(() => ({
 // Profile queries have their own provider-backed tests; keep these dock tests
 // focused on transcript, message correlation, and composer behavior.
 vi.mock('@/components/agents/AIConnectionPicker', () => ({ AIConnectionPicker: mocks.aiPicker }));
-vi.mock('@/hooks/queries/useAgents', () => ({ useAgents: mocks.useAgents }));
+vi.mock('@/hooks/queries/useAskAgentDefaults', () => ({ useAskAgentDefaults: mocks.useAskAgentDefaults }));
 
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }));
 
@@ -176,7 +176,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
-  mocks.useAgents.mockReturnValue({ data: [{ preset_key: 'ask_agent', ai_profile_id: 'ask-default' }], isPending: false, isError: false, refetch: vi.fn() });
+  mocks.useAskAgentDefaults.mockReturnValue({ data: { ai_profile_id: 'ask-default' }, isPending: false, isError: false, refetch: vi.fn() });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -2526,9 +2526,9 @@ describe('inherited AI route disclosure', () => {
     expect(mocks.aiPicker).toHaveBeenCalledWith(expect.objectContaining({ defaultProfileId: 'ask-default', workspaceId: 'ws-1', inDock: true }), undefined);
   });
   it('waits for the agent default instead of presenting a workspace fallback', async () => {
-    mocks.useAgents.mockReturnValue({ data: undefined, isPending: true, isError: false });
+    mocks.useAskAgentDefaults.mockReturnValue({ data: undefined, isPending: true, isError: false });
     await renderDock();
-    expect(document.body.textContent).toContain('Loading the agent’s AI default');
+    expect(document.body.textContent).toContain('Loading…');
     expect(mocks.aiPicker).not.toHaveBeenCalled();
   });
 });

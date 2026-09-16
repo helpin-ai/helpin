@@ -55,6 +55,19 @@ func TestFreshCommunityFoundationPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("API model schema parity", func(t *testing.T) { assertAPIModelSchemaParity(t, db) })
+	t.Run("pre-merge CLI version collision", func(t *testing.T) {
+		// Recreate the applied ledger from the Community branch before develop
+		// introduced the email-notice migration at the same version.
+		if _, err := db.ExecContext(ctx, "DELETE FROM schema_migrations WHERE version='202609150001'; UPDATE schema_migrations SET version='202609150001' WHERE version='20260915000101'"); err != nil {
+			t.Fatal(err)
+		}
+		if err := Up(ctx, db); err != nil {
+			t.Fatal(err)
+		}
+		if issues, err := Validate(ctx, db); err != nil || len(issues) != 0 {
+			t.Fatalf("relocated ledger: %v %v", issues, err)
+		}
+	})
 	var before int
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM schema_migrations").Scan(&before); err != nil {
 		t.Fatal(err)

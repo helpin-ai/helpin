@@ -94,6 +94,7 @@ export function useInstallAutomationFlowTemplate(wsId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.dock.aiDefaults(wsId) });
     },
   });
 }
@@ -107,6 +108,7 @@ export function useUninstallAutomationFlowTemplate(wsId: string) {
       qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.dock.aiDefaults(wsId) });
     },
   });
 }
@@ -206,6 +208,7 @@ export function useCreateAutomationAgent(wsId: string) {
     mutationFn: async (payload: CreateAgentRequest) => unwrap(await automationService.createAgent(wsId, payload)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.dock.aiDefaults(wsId) });
     },
   });
 }
@@ -217,6 +220,7 @@ export function useCreateAutomationAgentFromTemplate(wsId: string) {
       unwrap(await automationService.createAgentFromTemplate(wsId, templateId, payload)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.dock.aiDefaults(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) });
     },
@@ -230,6 +234,7 @@ export function useUpdateAutomationAgent(wsId: string) {
       unwrap(await automationService.updateAgent(wsId, agentId, payload)),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.dock.aiDefaults(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.automation.agent(wsId, vars.agentId) });
       qc.invalidateQueries({ queryKey: queryKeys.automation.agentUsage(wsId, vars.agentId) });
     },
@@ -242,6 +247,7 @@ export function useDeleteAutomationAgent(wsId: string) {
     mutationFn: async (agentId: string) => unwrap(await automationService.deleteAgent(wsId, agentId)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.dock.aiDefaults(wsId) });
     },
   });
 }

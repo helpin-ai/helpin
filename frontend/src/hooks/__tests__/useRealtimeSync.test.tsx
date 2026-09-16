@@ -884,6 +884,31 @@ describe('useRealtimeSync task ordering events', () => {
     container.remove()
   })
 
+  it.each([
+    { sender_type: 'user', sender_name: 'Teammate', sender_avatar: '/teammate.png', expectedID: 'user-2' },
+    { sender_type: 'user', sender_name: 'Legacy name', sender_avatar: '/legacy.png', sender_display_name: 'Teammate', sender_avatar_url: '/teammate.png', sender_user_id: 'actual-author', expectedID: 'actual-author' },
+    { sender_type: 'customer', sender_name: 'Teammate', sender_avatar: '/teammate.png', expectedID: undefined },
+  ])('normalizes realtime sender identity before caching ($sender_type/$expectedID)', async ({ expectedID, ...data }) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const key = queryKeys.support.messages('ws-1', 'thread')
+    client.setQueryData(key, seedSupportMessagePages([]))
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    try {
+      act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+      await act(async () => {
+        captured.onEvent?.({ action: 'created', entity: 'support_conversation_message', entity_id: 'reply', workspace_id: 'ws-1', actor_id: 'user-2', parent_id: 'thread', data: { ...data, content: 'Hello', message_type: 'reply' } })
+      })
+      const [message] = flattenSupportMessagePages(client.getQueryData<SupportMessagePages>(key))
+      expect(message.sender_display_name).toBe('Teammate')
+      expect(message.sender_avatar_url).toBe('/teammate.png')
+      expect(message.sender_user_id).toBe(expectedID)
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+    }
+  })
+
   it('invalidates filtered Waiting lists so new teammate replies can enter an empty view', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const waitingKey = ['support', 'ws-1', 'conversations', 'infinite', { filter: 'waiting' }]

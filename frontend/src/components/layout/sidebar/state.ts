@@ -1,9 +1,9 @@
-const COLLAPSIBLE_SETTINGS_GROUP_LABELS = ['Project Settings', 'Support & Docs', 'CRM Settings', 'AI & Automations', 'Data'];
+import { SETTINGS_ROUTE_SECTIONS } from '@/lib/settingsSections';
 const CRM_SECTIONS = new Set(['overview', 'contacts', 'companies', 'deals', 'meetings', 'emails', 'review', 'insights']);
 
 const crmLastPathKey = (workspaceId: string) => `crm_sidebar_last_path_${workspaceId}`;
 
-export const COLLAPSIBLE_SETTINGS_GROUPS = new Set(COLLAPSIBLE_SETTINGS_GROUP_LABELS);
+export const COLLAPSIBLE_SETTINGS_GROUPS = new Set(SETTINGS_ROUTE_SECTIONS.map(section => section.group));
 
 export function getExpandedTeams(workspaceId: string): Set<string> {
   try {
@@ -24,7 +24,7 @@ export function saveExpandedTeams(workspaceId: string, teams: Set<string>) {
 
 export function getCollapsedSettingsGroups(): Set<string> {
   try {
-    const raw = localStorage.getItem('settings_sidebar_collapsed');
+    const raw = localStorage.getItem('settings_sidebar_collapsed_v3');
     if (raw) {
       return new Set(JSON.parse(raw));
     }
@@ -35,7 +35,7 @@ export function getCollapsedSettingsGroups(): Set<string> {
 
 export function saveCollapsedSettingsGroups(groups: Set<string>) {
   try {
-    localStorage.setItem('settings_sidebar_collapsed', JSON.stringify([...groups]));
+    localStorage.setItem('settings_sidebar_collapsed_v3', JSON.stringify([...groups]));
   } catch { /* local preference is best effort */ }
 }
 

@@ -12,6 +12,7 @@ export function AIConnectionPicker({
   locked = false,
   inDock = false,
   defaultProfileId,
+  compact = false,
 }: {
   workspaceId: string;
   value: AIConnectionSelection;
@@ -20,9 +21,11 @@ export function AIConnectionPicker({
   locked?: boolean;
   inDock?: boolean;
   defaultProfileId?: string | null;
+  compact?: boolean;
 }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   if (locked && value.model_connection_id && !value.ai_profile_id) {
+    if (compact) return <span className="text-xs text-quiet-text-secondary" title="This conversation keeps its saved AI configuration">Saved profile</span>;
     return (
       <div className="space-y-2">
         <p className="text-xs text-quiet-text-secondary">
@@ -40,6 +43,7 @@ export function AIConnectionPicker({
   return (
     <AIProfilePicker
       workspaceId={workspaceId}
+      compact={compact}
       inDock={inDock}
       defaultProfileId={defaultProfileId}
       value={value.ai_profile_id}

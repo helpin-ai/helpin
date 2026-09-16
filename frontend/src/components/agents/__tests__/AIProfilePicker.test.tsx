@@ -178,3 +178,40 @@ it("uses the agent default before the workspace default", async () => {
   expect(document.body.textContent).toContain("Default");
   expect(aiProfileService.settings).not.toHaveBeenCalled();
 });
+
+it("keeps the composer trigger to the profile name and orders default, workspace, then personal", async () => {
+  const orderedProfiles: AIProfile[] = [
+    { ...profiles[0], id: 'personal-a', name: 'Alpha personal' },
+    { ...profiles[1], id: 'workspace-z', name: 'Zulu workspace' },
+    { ...profiles[1], id: 'default-profile', name: 'Balanced' },
+    { ...profiles[1], id: 'workspace-a', name: 'Alpha workspace' },
+  ];
+  client.setQueryData(queryKeys.ai.profiles('ws'), orderedProfiles);
+  vi.mocked(aiProfileService.list).mockResolvedValue({ data: orderedProfiles, error: null });
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>
+    <AIProfilePicker workspaceId="ws" compact defaultProfileId="default-profile" onChange={() => {}} />
+  </TooltipProvider></QueryClientProvider>));
+  expect(document.querySelector('label')).toBeNull();
+  const trigger = document.querySelector('button[aria-haspopup="dialog"]');
+  expect(trigger?.textContent).toBe('Balanced');
+  expect(document.body.textContent).not.toContain('custom-model');
+  await openPicker();
+  expect([...document.querySelectorAll('[cmdk-item]')].map(el => el.getAttribute('data-value'))).toEqual(['default-profile', 'workspace-a', 'workspace-z', 'personal-a']);
+  const row = document.querySelector('[cmdk-item][data-value="default-profile"]');
+  expect(row?.textContent).toBe('BalancedDefaultWorkspace');
+});
+
+it("keeps an existing run locked even when its profile is no longer listed", async () => {
+  useWorkspaceStore.setState({ currentWorkspace: { id: 'ws', slug: 'acme', name: 'Acme' } });
+  client.setQueryData(queryKeys.ai.profiles('ws'), []);
+  vi.mocked(aiProfileService.list).mockResolvedValue({data: [], error: null});
+  await act(async () => root.render(<QueryClientProvider client={client}><TooltipProvider>
+    <AIConnectionPicker workspaceId="ws" compact locked value={{ai_profile_id:'removed'}} onChange={() => {}} />
+  </TooltipProvider></QueryClientProvider>));
+  for (let i=0;i<20 && !document.querySelector('[data-slot="select-trigger"]');i++) {
+    await act(async () => { await new Promise(resolve=>setTimeout(resolve,0)); });
+  }
+  const trigger=document.querySelector<HTMLButtonElement>('[data-slot="select-trigger"]');
+  expect(trigger?.disabled).toBe(true);
+  expect(trigger?.textContent).toBe('Saved profile');
+});

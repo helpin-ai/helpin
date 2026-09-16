@@ -640,6 +640,7 @@ func main() {
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	pmAutomationService.SetHealthObserver(automationHealthService)
 	notificationService := service.NewNotificationService(notificationRepo, notificationPrefRepo, userNotifSettingsRepo, followerRepo, userRepo, workspaceRepo, wsPublisher, appEmailClient, cfg.AppBaseURL)
+	notificationService.SetAccessChecker(service.NewNotificationAccessPolicy(authzService, notificationRepo))
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	pushDeviceService := service.NewPushDeviceService(pushDeviceRepo)
 	var fcmClient service.FCMClient
