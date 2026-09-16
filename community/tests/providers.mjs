@@ -8,6 +8,12 @@ http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   if (req.url === '/metrics') return res.end(JSON.stringify(metrics));
   if (req.url === '/mail') return res.end(JSON.stringify(mails));
+  // Docker may reuse the old API address while nginx refreshes DNS. Readiness
+  // probes to /api/auth/config are not model calls and must not pollute this
+  // credential assertion. Real model routes still require the exact key below.
+  if (!['/v1/embeddings', '/v1/chat/completions'].includes(req.url)) {
+    res.writeHead(404); return res.end('{}');
+  }
   if (req.headers.authorization !== 'Bearer community-fixture-key') {
     metrics.credential_rejections++;
     res.writeHead(401); return res.end('{"error":{"message":"fixture credential missing"}}');
