@@ -247,7 +247,7 @@ func TestSupportExplicitEmailRecipientChangeBlocksDelivery(t *testing.T) {
 	}
 	sent := captureExplicitDeliveryEmails(t, env)
 	conv.CustomerEmail = strPtr("other@example.com")
-	if err := env.convRepo.Update(ctx, conv); err != nil {
+	if err := env.convRepo.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{"customer_email": conv.CustomerEmail}); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Minute)

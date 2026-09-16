@@ -1,3 +1,4 @@
+import { SupportAIControl } from './SupportAIControl';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -1020,6 +1021,7 @@ export function MessageThread({
           </div>
         </SupportInboxPanelHeader>
       ))}
+      {conversation && <SupportAIControl key={conversation.id} conversation={conversation} />}
       {!conversation && isThreadLoading && (
         <ThreadHeaderSkeleton presentation={presentation} onBackToInbox={onBackToInbox} />
       )}

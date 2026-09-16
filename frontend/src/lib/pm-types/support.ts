@@ -60,6 +60,7 @@ export interface SupportConversation {
   assigned_agent_id?: string;
   linked_task_id?: string;
   source: TicketSource;
+  channel?: string;
   crm_contact_id?: string;
   crm_company_id?: string | null;
   ai_state?: 'pending' | 'resolved' | 'escalated' | null;
@@ -74,6 +75,10 @@ export interface SupportConversation {
   ai_turn_count?: number;
   customer_requested_human_at?: string;
   human_takeover?: boolean | null;
+  ai_control_version?: number;
+  ai_resumed_at?: string | null;
+  ai_paused_at?: string | null;
+  ai_paused_by_user_id?: string | null;
   list_last_message_id?: string | null;
   list_last_message_at?: string | null;
   list_last_activity_at?: string | null;
@@ -90,6 +95,7 @@ export interface SupportConversation {
   state_version?: number;
   personal_state_version?: number;
   last_customer_message_id?: string | null;
+  last_customer_message_at?: string | null;
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;

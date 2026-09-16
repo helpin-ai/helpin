@@ -37,6 +37,9 @@ func supportFollowUpEnabled(settings model.SupportInboxSettings) bool {
 }
 
 func supportFollowUpEligible(conv *model.SupportConversation, episode *model.SupportAIFollowUp, settings model.SupportInboxSettings, replyChannels ...string) bool {
+	if conv.AIResumedAt != nil && !episode.CreatedAt.After(*conv.AIResumedAt) {
+		return false
+	}
 	if !supportFollowUpEnabled(settings) || conv.FlowState == nil || *conv.FlowState != model.SupportConversationFlowStateAIHandling || derefString(conv.AIState) != "pending" || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || conv.LinkedTaskID != nil || conv.CustomerAwaitingResponse {
 		return false
 	}

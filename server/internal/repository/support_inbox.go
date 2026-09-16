@@ -2048,14 +2048,26 @@ func (r *SupportConversationRepository) Update(ctx context.Context, conversation
 	if conversation.Status == "resolved" || conversation.Status == "closed" || conversation.Status == "spam" {
 		conversation.DelayedTeamReplySentFor = conversation.AIEscalatedAt
 	}
-	if err := r.db.WithContext(ctx).Save(conversation).Error; err != nil {
-		return fmt.Errorf("update conversation: %w", err)
+	// A pre-takeover snapshot must never restore old ownership/control fields.
+	result := r.db.WithContext(ctx).Model(conversation).Where("workspace_id = ? AND ai_control_version = ?", conversation.WorkspaceID, conversation.AIControlVersion).Select("*").Updates(conversation)
+	if result.Error != nil {
+		return fmt.Errorf("update conversation: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrSupportAIControlConflict
 	}
 	return nil
 }
 
 // UpdateFields updates specific fields on a conversation by ID and workspace.
 func (r *SupportConversationRepository) UpdateFields(ctx context.Context, workspaceID, conversationID string, fields map[string]any) error {
+	// Legacy channel-policy and email takeover paths also revoke prior runs.
+	if _, changesOwnership := fields["human_takeover"]; changesOwnership {
+		fields = maps.Clone(fields)
+		fields["ai_control_version"] = gorm.Expr("ai_control_version + 1")
+		fields["ai_active_run_id"] = nil
+	}
+
 	if status, ok := fields["status"].(string); ok && (status == "resolved" || status == "closed" || status == "spam") {
 		fields = maps.Clone(fields)
 		fields["delayed_team_reply_sent_for"] = gorm.Expr("ai_escalated_at")

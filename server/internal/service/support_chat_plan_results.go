@@ -84,7 +84,7 @@ func (s *SupportChatService) notifySupportPlanSettled(ctx context.Context, plan 
 	if err != nil {
 		return err
 	}
-	if conv == nil || supportPlanDeliveryBlocked(conv) {
+	if conv == nil || supportPlanDeliveryBlocked(conv) || (conv.AIResumedAt != nil && !plan.CreatedAt.After(*conv.AIResumedAt)) {
 		// Orphaned plan, or the conversation left AI handling (takeover /
 		// escalation / visitor asked for a human): a human owns it now, so the
 		// child result is permanently undeliverable to the agent.
@@ -359,7 +359,7 @@ func normalizedSupportWebsiteHost(raw string) string {
 // supportPlanDeliveryBlocked reports whether the conversation has left AI
 // handling, making child-result delivery to the agent moot.
 func supportPlanDeliveryBlocked(conv *model.SupportConversation) bool {
-	if !supportAIConversationSupported(conv) || conv.CustomerRequestedHumanAt != nil || (conv.HumanTakeover != nil && *conv.HumanTakeover) {
+	if !supportAIConversationSupported(conv) || model.SupportAIConversationBlocked(conv) {
 		return true
 	}
 	return derefString(conv.AIState) == "escalated"

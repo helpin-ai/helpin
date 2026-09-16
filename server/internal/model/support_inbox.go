@@ -73,9 +73,13 @@ type SupportConversation struct {
 	// AIActiveRunID points at the agent-runtime chat run currently backing
 	// this conversation's AI turns (nil before the first AI turn; repointed
 	// when an idle-expired run gets a successor).
-	AIFollowUp    *SupportAIFollowUp `json:"ai_follow_up,omitempty" gorm:"-"`
-	AIActiveRunID *string            `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
-	HumanTakeover *bool              `json:"human_takeover" gorm:"default:false;index"`
+	AIFollowUp       *SupportAIFollowUp `json:"ai_follow_up,omitempty" gorm:"-"`
+	AIActiveRunID    *string            `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
+	AIControlVersion int64              `json:"ai_control_version" gorm:"not null;default:0"`
+	AIResumedAt      *time.Time         `json:"ai_resumed_at,omitempty" gorm:"type:timestamptz"`
+	AIPausedAt       *time.Time         `json:"ai_paused_at,omitempty" gorm:"column:ai_paused_at;type:timestamptz"`
+	AIPausedByUserID *string            `json:"ai_paused_by_user_id,omitempty" gorm:"column:ai_paused_by_user_id;type:uuid"`
+	HumanTakeover    *bool              `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -1907,4 +1911,12 @@ type InstallationSettingsResponse struct {
 type RotateWidgetSecretResponse struct {
 	SecretKey string `json:"secret_key"`
 	RotatedAt string `json:"rotated_at"`
+}
+
+// SupportAIControlRequest changes ownership without sending a customer message.
+// Version prevents one teammate from overwriting another's newer decision.
+type SupportAIControlRequest struct {
+	Action              string `json:"action"`
+	ExpectedVersion     int64  `json:"expected_version"`
+	ConfirmHumanRequest bool   `json:"confirm_human_request"`
 }

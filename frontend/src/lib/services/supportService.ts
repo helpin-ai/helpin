@@ -259,6 +259,9 @@ export const supportService = {
     `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
     payload,
   ),
+  changeConversationAIControl: (workspaceId: string, conversationId: string, payload: { action: 'pause' | 'return'; expected_version: number; confirm_human_request?: boolean }) =>
+    api.post<{ updated: boolean }>(`/support/inbox/conversations/${conversationId}/ai-control?workspace_id=${workspaceId}`, payload),
+
   assignConversationAgent: (workspaceId: string, conversationId: string, payload: AssignConversationAgentRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
   assignConversationUser: (workspaceId: string, conversationId: string, payload: AssignConversationUserRequest) =>

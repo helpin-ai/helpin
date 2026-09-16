@@ -309,7 +309,7 @@ func (s *SupportAIService) createSupportAIReply(ctx context.Context, message *mo
 	if s.processingRepo == nil {
 		return fmt.Errorf("support processing repository is not configured")
 	}
-	created, err := s.processingRepo.CreateReply(ctx, processingID[0], message)
+	created, err := s.processingRepo.CreateReply(ctx, processingID[0], message, processingID[1:]...)
 	if err != nil {
 		return err
 	}
