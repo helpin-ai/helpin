@@ -1694,7 +1694,11 @@ describe('AskAgentsDock', () => {
     expect(header?.querySelector('[aria-label="Conversation actions"]')).not.toBeNull();
   });
 
-	it('creates and copies a public Ask chat link from the header menu', async () => {
+	it.each([false, true])('shares the displayed chat with a background agent run selected: %s', async (hasBackgroundRun) => {
+		if (hasBackgroundRun) {
+			useDockStore.setState({ tab: 'chats', activeRunId: 'agent-run-1' });
+			mocks.listRuns.mockResolvedValue({ data: { runs: [DOCK_RUN], attention_count: 1 }, error: null });
+		}
 		await renderDock();
 		await waitForText('Sprint questions');
 		const trigger = document.body.querySelector<HTMLButtonElement>('[aria-label="Conversation actions"]');
@@ -1704,6 +1708,7 @@ describe('AskAgentsDock', () => {
 			.find((item) => item.textContent === 'Share publicly');
 		await act(async () => share?.click());
 		await flush();
+		expect(mocks.getPublicShare).toHaveBeenCalledWith('ws-1', 'dock_chat', 'chat-1');
 		expect(mocks.createPublicShare).toHaveBeenCalledWith('ws-1', 'dock_chat', 'chat-1');
 		expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://helpin.ai/shared/share-token');
 	});
@@ -1732,6 +1737,12 @@ describe('AskAgentsDock', () => {
 		expect(trigger).not.toBeNull();
 		await act(async () => trigger?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })));
 		await waitForText('Share publicly');
+		expect(mocks.getPublicShare).toHaveBeenCalledWith('ws-1', 'agent_run', 'agent-run-1');
+		const share = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+			.find((item) => item.textContent === 'Share publicly');
+		await act(async () => share?.click());
+		await flush();
+		expect(mocks.createPublicShare).toHaveBeenCalledWith('ws-1', 'agent_run', 'agent-run-1');
 	});
 
   it('presents the dock close control as a minimized action with a tooltip', async () => {
@@ -2531,4 +2542,40 @@ describe('inherited AI route disclosure', () => {
     expect(document.body.textContent).toContain('Loading…');
     expect(mocks.aiPicker).not.toHaveBeenCalled();
   });
+});
+
+it.each([true, false])('opens the linked chat instead of the saved selection (in first page: %s)', async (inFirstPage) => {
+  const shared = { ...CHAT, id: 'linked-chat', title: 'Linked conversation' };
+  window.history.replaceState({}, '', '/w/acme/pm/my-work?ask_chat=linked-chat');
+  mocks.listChats.mockResolvedValue({ data: { chats: inFirstPage ? [CHAT, shared] : [CHAT] }, error: null });
+  mocks.getChat.mockImplementation(async (_workspaceId: string, chatId: string) => ({ data: chatDetail({ chat: chatId === shared.id ? shared : CHAT }), error: null }));
+  try {
+    await renderDock();
+    expect(useDockStore.getState().activeChatId).toBe(shared.id);
+    expect(mocks.getChat.mock.calls.some((call) => call[1] === shared.id)).toBe(true);
+    expect(window.location.search).not.toContain('ask_chat');
+  } finally {
+    window.history.replaceState({}, '', '/');
+  }
+});
+
+it('shows an error for an inaccessible linked chat instead of opening the saved chat, and can retry', async () => {
+  window.history.replaceState({}, '', '/w/acme/pm/my-work?ask_chat=linked-chat');
+  mocks.getChat.mockResolvedValue({ data: null, error: 'Chat not found or access denied', status: 404 });
+  try {
+    await renderDock();
+    expect(useDockStore.getState().activeChatId).toBe('linked-chat');
+    expect(document.body.textContent).toContain('Unable to open this conversation chat.');
+    expect(document.body.textContent).toContain('Ask its owner to share it with your workspace.');
+    expect(mocks.getChat.mock.calls.every(call => call[1] === 'linked-chat')).toBe(true);
+    const shared = { ...CHAT, id: 'linked-chat', title: 'Linked conversation' };
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: shared }), error: null });
+    const retry = Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Retry');
+    await act(async () => { retry?.click(); });
+    await flush();
+    expect(document.body.textContent).not.toContain('Unable to open this conversation chat.');
+    expect(useDockStore.getState().activeChatId).toBe(shared.id);
+  } finally {
+    window.history.replaceState({}, '', '/');
+  }
 });

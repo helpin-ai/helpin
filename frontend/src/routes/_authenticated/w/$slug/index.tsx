@@ -10,5 +10,6 @@ function WorkspaceHome() {
   const { data: access, isLoading } = useWorkspaceAccess(workspace?.id ?? '');
   if (isLoading) return null;
   const home = workspaceHome(slug, access?.modules ?? []);
-  return home ? <Navigate to={home} replace /> : <p className="p-6">Ask your workspace administrator for module access.</p>;
+  // Preserve shared-chat links until the Ask dock consumes ask_chat.
+  return home ? <Navigate to={home} search={true} replace /> : <p className="p-6">Ask your workspace administrator for module access.</p>;
 }
