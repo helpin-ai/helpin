@@ -1,0 +1,80 @@
+name: Community bundle
+on:
+  pull_request:
+    branches: [main, develop]
+    paths: ['community/**', 'server/**', 'frontend/**', 'help-center/**', 'packages/**', '.github/workflows/community-bundle.yml']
+  workflow_dispatch:
+    inputs:
+      both_architectures:
+        description: Run the release gate on native amd64 and arm64
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: community-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.both_architectures && '["ubuntu-24.04", "ubuntu-24.04-arm"]' || '["ubuntu-24.04"]') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: helpin
+      - id: runtime
+        shell: bash
+        run: |
+          revision=$(cat helpin/community/runtime-revision.txt)
+          [[ $revision =~ ^[a-f0-9]{40}$ ]]
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: helpin-ai/agent-runtime
+          ref: ${{ steps.runtime.outputs.revision }}
+          path: agent-runtime
+          # Needed while Runtime is private; public forks need no credential.
+          token: ${{ secrets.COMMUNITY_RUNTIME_READ_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.7'
+          cache-dependency-path: helpin/server/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.32.1'
+      - name: Install browser test dependencies
+        working-directory: helpin
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir packages/sdk-js exec playwright install --with-deps chromium
+      - name: Build separate Community images natively
+        working-directory: helpin/community
+        run: |
+          ./setup.sh install
+          export COMMUNITY_SOURCE_REVISION=$(git rev-parse HEAD)
+          export COMMUNITY_RUNTIME_REVISION=$(cat runtime-revision.txt)
+          docker compose -f compose.yaml -f compose.build.yaml build
+      - name: Fresh install, support journey, AI/mail and restore
+        working-directory: helpin
+        run: community/tests/run.sh
+      - name: Record tested image identities
+        working-directory: helpin/community
+        run: |
+          docker compose config --images | sort -u | xargs docker image inspect --format '{{.RepoTags}} {{.Id}} {{.Architecture}}' > tested-images.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: community-tested-images-${{ matrix.runner }}
+          path: helpin/community/tested-images.txt
+      - name: Clean disposable stack
+        if: always()
+        working-directory: helpin/community
+        run: docker compose -f compose.yaml -f tests/compose.fixture.yaml down -v --remove-orphans

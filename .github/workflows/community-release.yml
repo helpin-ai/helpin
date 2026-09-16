@@ -1,0 +1,127 @@
+name: Community release candidate
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Distinct Community beta tag (community-v0.1.0-rc.1)
+        required: true
+        type: string
+      publication_review_complete:
+        description: License/EE/history review and real DNS/TLS RC journey are approved
+        type: boolean
+        required: true
+        default: false
+      public_host_evidence:
+        description: HTTPS link to the reviewed external-host acceptance record
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  native:
+    if: inputs.publication_review_complete
+    environment: community-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    env:
+      COMMUNITY_RELEASE_TAG: ${{ inputs.tag }}
+      COMMUNITY_ARCH: ${{ matrix.arch }}
+      PUBLIC_HOST_EVIDENCE: ${{ inputs.public_host_evidence }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: helpin}
+      - name: Check publication prerequisites
+        id: runtime
+        run: |
+          [[ "$COMMUNITY_RELEASE_TAG" =~ ^community-v0\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$ ]]
+          [[ "$PUBLIC_HOST_EVIDENCE" == https://* ]]
+          test -s helpin/LICENSE
+          revision=$(cat helpin/community/runtime-revision.txt)
+          [[ $revision =~ ^[a-f0-9]{40}$ ]]
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: helpin-ai/agent-runtime
+          ref: ${{ steps.runtime.outputs.revision }}
+          path: agent-runtime
+          token: ${{ secrets.COMMUNITY_RUNTIME_READ_TOKEN || github.token }}
+      - run: test -s agent-runtime/LICENSE
+      - uses: actions/setup-node@v4
+        with: {node-version: '22.22.0'}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.7'
+          cache-dependency-path: helpin/server/go.sum
+      - uses: pnpm/action-setup@v4
+        with: {version: '10.32.1'}
+      - uses: aquasecurity/setup-trivy@e07451d2e059ed86c2870430ea286b3a9e0bf241
+        with: {version: 'v0.69.3'}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and test the candidate natively
+        working-directory: helpin
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir packages/sdk-js exec playwright install --with-deps chromium
+          if [ "$COMMUNITY_ARCH" = amd64 ]; then
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+            scripts/check-community-backend.sh
+            scripts/check-community-frontend.sh
+            (cd ../agent-runtime && GOWORK=off go test ./...)
+          fi
+          cd community
+          ./setup.sh install
+          export COMMUNITY_SOURCE_REVISION=$(git rev-parse HEAD)
+          export COMMUNITY_RUNTIME_REVISION=$(cat runtime-revision.txt)
+          docker compose -f compose.yaml -f compose.build.yaml build
+          tests/run.sh
+      - name: Scan and push exactly the tested architecture images
+        working-directory: helpin
+        run: community/release-images.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: community-release-${{ matrix.arch }}
+          path: helpin/community/release-artifacts/
+      - if: always()
+        working-directory: helpin/community
+        run: docker compose -f compose.yaml -f tests/compose.fixture.yaml down -v --remove-orphans
+  bundle:
+    needs: native
+    runs-on: ubuntu-24.04
+    environment: community-release
+    permissions:
+      contents: read
+      packages: write
+    env:
+      COMMUNITY_RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: {pattern: 'community-release-*', path: release-artifacts, merge-multiple: true}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Assemble tested manifests and digest-pinned bundle
+        run: python3 community/package-release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: community-bundle
+          path: release-artifacts/helpin-community-*.tar.gz*

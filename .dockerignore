@@ -2,3 +2,17 @@
 **/dist
 **/.git
 **/.DS_Store
+**/.env
+**/.env.*
+**/test-results
+**/playwright-report
+community/apps.json
+community/backups
+server/bin
+server/tmp
+*.db
+*.sqlite*
+
+**/*_test.go
+packages/sdk-js/test/
+packages/sdk-js/playwright*.ts
