@@ -78,3 +78,16 @@ ledger normally. It does not rewrite historical SQL or existing checksums.
 Incomplete base schemas fail explicitly rather than being treated as new installs.
 
 When `AUTH_EMAIL_VERIFICATION_REQUIRED=true`, API startup requires a configured application mail sender. This enables verification emails and the verification UI; the current server does not reject all unverified password logins. Do not treat it as a server-enforced login restriction.
+
+`AWS_S3_PRIVATE_BUCKET=true` selects a private ACL-free bucket (the Garage bundle
+default). Do not enable Garage website hosting or anonymous reads. API and worker
+must share the same storage configuration and `APP_BASE_URL`; private Docs image
+URLs use the application origin. Garage has a distinct generated access key,
+secret key and RPC secret. Keep them with backups of the entire `garage_data`
+volume, including metadata and object data. Changing env values does not rotate
+an existing Garage access key; use Garage's documented key management procedure.
+
+The fresh-schema CI job applies the ledger to an empty PostgreSQL database and
+compares the schema before and after the API's exact AutoMigrate model list.
+Model additions therefore need an additive ledger migration; do not regenerate
+or edit the historical foundation snapshot to bypass the guard.

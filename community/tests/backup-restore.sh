@@ -23,7 +23,7 @@ docker compose -p "$source_project" stop helpin-frontend helpin-helpcenter helpi
 docker compose -p "$source_project" exec -T postgres psql -U postgres -d helpin -At -c \
   'SELECT (SELECT count(*) FROM users), (SELECT count(*) FROM support_messages), (SELECT count(*) FROM schema_migrations)' > "$snapshot/counts"
 docker compose -p "$source_project" stop
-for volume in postgres_data minio_data redis_data nats_data; do
+for volume in postgres_data garage_data redis_data nats_data; do
   docker volume inspect "${source_project}_${volume}" >/dev/null
   docker volume create --label "com.docker.compose.project=$restore_project" --label "com.docker.compose.volume=$volume" "${restore_project}_${volume}" >/dev/null
   docker run --rm --network none -v "${source_project}_${volume}:/source:ro" -v "$snapshot:/backup" alpine:3.21.3 \

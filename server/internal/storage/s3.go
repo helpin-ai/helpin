@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,6 +22,8 @@ type S3Client struct {
 	bucket        string
 	endpointURL   string
 	publicBaseURL string
+	appBaseURL    string
+	privateBucket bool
 }
 
 // NewS3Client creates a new S3Client from the given configuration.
@@ -86,6 +90,19 @@ func (s *S3Client) EnsureCORS(ctx context.Context) error {
 
 // PublicURL constructs a direct public URL for the given storage key.
 func (s *S3Client) PublicURL(key string) string {
+	if s.privateBucket && s.appBaseURL != "" && strings.HasPrefix(key, "docs-import/") {
+		parts := strings.SplitN(key, "/", 3)
+		if len(parts) == 3 {
+			return s.appBaseURL + "/api/docs/images/content?workspace_id=" + url.QueryEscape(parts[1]) + "&key=" + url.QueryEscape(key)
+		}
+	}
+	if s.privateBucket {
+		if !PublicAssetKey(key) {
+			return ""
+		}
+		return s.appBaseURL + "/api/public/assets/" + key
+	}
+
 	baseURL := s.publicBaseURL
 	if baseURL == "" {
 		baseURL = s.endpointURL
@@ -101,7 +118,7 @@ func (s *S3Client) PublicURL(key string) string {
 
 // HasPublicURL returns true when the endpoint URL is configured (public access possible).
 func (s *S3Client) HasPublicURL() bool {
-	return s.publicBaseURL != "" || s.endpointURL != ""
+	return !s.privateBucket && (s.publicBaseURL != "" || s.endpointURL != "")
 }
 
 // GeneratePresignedPutURL generates a presigned PUT URL for uploading a file.
@@ -114,7 +131,7 @@ func (s *S3Client) GeneratePresignedPutURL(key, contentType string, size int64, 
 		ContentType:   aws.String(contentType),
 		ContentLength: aws.Int64(size),
 	}
-	if publicRead {
+	if publicRead && !s.privateBucket {
 		input.ACL = s3types.ObjectCannedACLPublicRead
 	}
 
@@ -138,7 +155,7 @@ func (s *S3Client) PutObject(ctx context.Context, key, contentType string, size 
 	if size >= 0 {
 		input.ContentLength = aws.Int64(size)
 	}
-	if publicRead {
+	if publicRead && !s.privateBucket {
 		input.ACL = s3types.ObjectCannedACLPublicRead
 	}
 	if _, err := s.client.PutObject(ctx, input); err != nil {
@@ -208,4 +225,45 @@ func (s *S3Client) DeleteObject(ctx context.Context, key string) error {
 		return fmt.Errorf("delete S3 object: %w", err)
 	}
 	return nil
+}
+
+// ConfigureAssetAccess keeps imported Docs media authenticated. Private bucket
+// mode uses presigned requests, never ACLs, and exposes only public asset keys.
+func (s *S3Client) ConfigureAssetAccess(appBaseURL string, privateBucket bool) {
+	if s == nil {
+		return
+	}
+	s.appBaseURL = strings.TrimRight(appBaseURL, "/")
+	s.privateBucket = privateBucket
+}
+
+func (s *S3Client) PrivateBucket() bool { return s != nil && s.privateBucket }
+
+func PublicAssetKey(key string) bool {
+	if key == "" || path.Clean(key) != key || strings.ContainsAny(key, "\\%?#") {
+		return false
+	}
+	parts := strings.Split(key, "/")
+	if len(parts) < 4 || parts[1] == "" {
+		return false
+	}
+	return parts[0] == "helpcenter" || (parts[0] == "users" && parts[2] == "avatar") || (parts[0] == "workspaces" && parts[2] == "logo")
+}
+
+func DocsImageKey(key, workspaceID string) bool {
+	return workspaceID != "" && strings.HasPrefix(key, "docs-import/"+workspaceID+"/") && path.Clean(key) == key && !strings.ContainsAny(key, "\\%?#")
+}
+
+// DocsImageKeyFromURL recognizes only this deployment's authenticated asset URL.
+func (s *S3Client) DocsImageKeyFromURL(raw, workspaceID string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || s.appBaseURL == "" {
+		return "", false
+	}
+	base, err := url.Parse(s.appBaseURL)
+	if err != nil || u.Scheme != base.Scheme || u.Host != base.Host || u.Path != "/api/docs/images/content" {
+		return "", false
+	}
+	key := u.Query().Get("key")
+	return key, u.Query().Get("workspace_id") == workspaceID && DocsImageKey(key, workspaceID)
 }

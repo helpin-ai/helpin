@@ -93,7 +93,7 @@ migrator logs. Do not paste credentials or full environment files into issues.
 
 One Postgres server holds separate Helpin, Runtime, Temporal and visibility
 databases with separate users. NATS JetStream, Temporal and Redis are required by
-this supported bundle. MinIO supplies S3-compatible storage. Optional coding is
+this supported bundle. Garage supplies S3-compatible storage. Optional coding is
 outside the support beta. No ClickHouse/event collector or automatic analytics
 service runs. Runtime browser tools are disabled in `apps.json` by default.
 The bundle uses Runtime's `community` image target, which omits Node, browser
@@ -103,26 +103,30 @@ when deliberately enabling those optional capabilities.
 The tested pins are PostgreSQL 17 with pgvector 0.8.6, Redis 7.2.16,
 NATS 2.14.7, and Temporal 1.32.0. Temporal's schema and namespace jobs are
 idempotent and run before workers. Redis stays on the BSD-licensed 7.2 line.
-Small infrastructure rebuilds update vulnerable dependencies and retain
-upstream notices; the source-build Dockerfiles record the exact versions.
+Infrastructure uses unmodified upstream images pinned by digest. We do not
+rebuild PostgreSQL, NATS, or storage to change scanner results. See
+[upstream image maintenance](../docs/community/upstream-images.md) for findings and review policy.
 
 The internal model-credential callback allows HTTP only for the explicitly
 configured `helpin-api:8080` host and still requires token authentication.
 User-added MCP endpoints use a separate policy: HTTP and private networks are off
 unless explicitly enabled. See `.env.example` and the configuration guide.
 
-MinIO's security release is built from pinned upstream source because upstream
-no longer publishes the patched Docker image. Its separate AGPL license and
-corresponding source, including our pinned dependency security patches, are
-included in that image at `/usr/share/minio-source`.
-Anonymous storage reads are limited to documentation asset prefixes, never
-bucket listings or writes. Customer attachments use expiring signed URLs.
+Garage 2.3.0 provides S3-compatible storage from its upstream multi-architecture
+image. Its bucket is private: attachments use signed URLs and imported Docs
+images require a workspace member with Docs read access. Publishing makes a
+separate public help-center image copy. Helpin exposes only help-center assets,
+user avatars and workspace logos; Garage has no anonymous website listener.
+The one-node bundle has no storage redundancy. Use off-host backups; deployments
+requiring fault tolerance should use an external replicated S3-compatible store.
+This replaces the unreleased MinIO fixture, not an automatic migration of MinIO
+volumes. Export any existing fixture objects before discarding its old volume.
 
 ## Back up and restore the same release
 
 Schedule backups and practice restoring them on an isolated host. Quiesce writers
 before taking a consistent snapshot. Back up `.env`, `apps.json`, the exact bundle
-and image digests, all four databases, MinIO data, and the Redis/NATS volumes.
+and image digests, all four databases, Garage metadata/object data, and the Redis/NATS volumes.
 Do not print `.env` or embed it in a public support archive. Use restrictive file
 permissions and encrypt backups off-host.
 
@@ -142,7 +146,7 @@ cp .env apps.json backups/
 docker compose stop
 ```
 
-Use your host's volume backup tooling to snapshot `postgres_data`, `minio_data`,
+Use your host's volume backup tooling to snapshot `postgres_data`, `garage_data`,
 `redis_data`, and `nats_data` while stopped, then `./setup.sh start`. Record which
 method was used; do not mix logical SQL restore and old Postgres volume contents.
 The automated gate tests a cold volume restore, including the whole Postgres

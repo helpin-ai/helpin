@@ -86,8 +86,10 @@ jobs:
           fi
           cd community
           ./setup.sh install
-          export COMMUNITY_SOURCE_REVISION=$(git rev-parse HEAD)
-          export COMMUNITY_RUNTIME_REVISION=$(cat runtime-revision.txt)
+          COMMUNITY_SOURCE_REVISION=$(git rev-parse HEAD)
+          export COMMUNITY_SOURCE_REVISION
+          COMMUNITY_RUNTIME_REVISION=$(cat runtime-revision.txt)
+          export COMMUNITY_RUNTIME_REVISION
           docker compose -f compose.yaml -f compose.build.yaml build
           tests/run.sh
       - name: Scan and push exactly the tested architecture images

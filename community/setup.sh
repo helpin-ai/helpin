@@ -13,6 +13,7 @@ case "${1:-}" in
       trap 'rm -f -- "$temporary"' EXIT
       while IFS= read -r line || [[ -n "$line" ]]; do
         case "$line" in
+          *=GENERATE_GARAGE_ACCESS_KEY) printf '%s=GK%s\n' "${line%%=*}" "$(openssl rand -hex 16)" ;;
           *=GENERATE_BASE64) printf '%s=%s\n' "${line%%=*}" "$(openssl rand -base64 32)" ;;
           *=GENERATE) printf '%s=%s\n' "${line%%=*}" "$(openssl rand -hex 32)" ;;
           *) printf '%s\n' "$line" ;;
@@ -29,7 +30,7 @@ case "${1:-}" in
     ;;
   start)
     [[ -f .env && -f apps.json ]] || fail 'Run ./setup.sh install first.'
-    if awk -F= '$2 == "GENERATE" || $2 == "GENERATE_BASE64" {found=1} END {exit !found}' .env; then
+    if awk -F= '$2 == "GENERATE" || $2 == "GENERATE_BASE64" || $2 == "GENERATE_GARAGE_ACCESS_KEY" {found=1} END {exit !found}' .env; then
       fail 'Uninitialized secret placeholders. Use setup.sh install in a new directory or generate the missing secrets.'
     fi
     docker compose --env-file .env -f compose.yaml config --quiet

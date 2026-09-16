@@ -90,6 +90,7 @@ window.helpin = function () { (window.helpinQ = window.helpinQ || []).push(argum
     await staff.goto(`${base}/w/${ws.slug}/support/${conversation.id}`);
     await staff.locator('[contenteditable="true"]').first().fill('Reply from the staff browser');
     await staff.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect(staff.getByRole('button', { name: 'Link a task', exact: true })).toHaveCount(0);
     await expect(page.locator('.helpin-message-list')).toContainText('Reply from the staff browser');
     await page.evaluate(() => window.helpin?.('id', { id: 'another-visitor', email: 'another-visitor@example.test' }));
     await expect(page.locator('.helpin-launcher')).toBeVisible();

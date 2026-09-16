@@ -49,6 +49,7 @@ func run(ctx context.Context) error {
 		cfg.AWSPublicBaseURL,
 		cfg.AWSPresignEndpointURL,
 	)
+	artifactStore.ConfigureAssetAccess(cfg.AppBaseURL, cfg.AWSPrivateBucket)
 	if artifactStore == nil {
 		return fmt.Errorf("S3 storage is not configured")
 	}

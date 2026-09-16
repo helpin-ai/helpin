@@ -54,6 +54,9 @@ const fileText = 'Private Community support attachment';
 const attachment = await request('/widget/support/attachments', { method: 'POST', status: 201, visitorOrigin: origin,
   sessionToken: session.session_token, body: { file_name: 'support.txt', file_size: fileText.length, content_type: 'text/plain' } });
 assert.equal(new URL(attachment.upload_url).hostname, 'localhost');
+const uploadPreflight = await fetch(attachment.upload_url, { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'PUT', 'Access-Control-Request-Headers': 'content-type' } });
+assert.ok(uploadPreflight.ok, 'browser upload CORS preflight failed');
+assert.ok(['*', origin].includes(uploadPreflight.headers.get('access-control-allow-origin')), 'browser upload origin was not allowed');
 assert.equal((await fetch(attachment.upload_url, { method: 'PUT', headers: { 'Content-Type': 'text/plain' }, body: fileText })).status, 200);
 await request(`/widget/support/attachments/${attachment.attachment.id}/confirm`, { method: 'PATCH', visitorOrigin: origin, sessionToken: session.session_token, body: {} });
 const signedFile = await fetch(attachment.public_url);
@@ -79,11 +82,45 @@ const space = await request('/api/docs/spaces', { method: 'POST', status: 201, b
 const collection = await request(`/api/docs/spaces/${space.id}/collections`, { method: 'POST', status: 201, body: { name: 'Basics', slug: 'basics' } });
 const article = await request('/api/docs/documents', { method: 'POST', status: 201, body: { space_id: space.id, collection_id: collection.id, title: 'Your first support conversation' } });
 await request(`/api/docs/documents/${article.id}/content/markdown`, { method: 'PUT', body: { markdown: '# Your first support conversation\n\nInstall the widget on your website to start a conversation. Add your website origin in settings, copy the support-only installation snippet, and open the inbox to reply to a visitor. Your data stays in your installation.' } });
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1cAAAAASUVORK5CYII=', 'base64');
+const editorUpload = await request('/api/pm/attachments', { method: 'POST', status: 201, body: {
+  entity_type: 'editor_upload', entity_id: article.id, file_name: 'diagram.png', file_size: png.length, content_type: 'image/png', private: true,
+} });
+assert.equal((await fetch(editorUpload.url, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: png })).status, 200);
+await request(`/api/pm/attachments/${editorUpload.attachment.id}/confirm`, { method: 'PATCH' });
+const imageSrc = `/api/pm/attachments/${editorUpload.attachment.id}/content`;
+const contentResponse = await fetch(`${base}${imageSrc}?workspace_id=${ws.id}&proxy=1`, { headers: { Authorization: `Bearer ${token}` } });
+assert.equal(contentResponse.status, 200, 'Docs image content must work with PM disabled');
+assert.deepEqual(Buffer.from(await contentResponse.arrayBuffer()), png);
+const unsigned = new URL(editorUpload.url); unsigned.search = '';
+assert.ok([400,403].includes((await fetch(unsigned)).status), 'storage object was anonymously readable');
+const imageNodes = [{ type: 'resizableImage', attrs: { src: imageSrc, attachmentId: editorUpload.attachment.id } }];
+if (process.env.COMMUNITY_TEST_AI === 'yes') {
+  const imported = await request('/api/docs/images/import', { method: 'POST', body: { image_url: 'http://test-providers:8080/image.png' } });
+  const privateURL = new URL(imported.url);
+  assert.equal(privateURL.pathname, '/api/docs/images/content');
+  assert.equal((await fetch(privateURL)).status, 401, 'imported Docs image was publicly readable');
+  const privateImage = await fetch(privateURL, { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal(privateImage.status, 200);
+  assert.deepEqual(Buffer.from(await privateImage.arrayBuffer()), png);
+  const publicAttempt = `${base}/api/public/assets/${privateURL.searchParams.get('key')}`;
+  assert.equal((await fetch(publicAttempt)).status, 404, 'private import passed the public allowlist');
+  imageNodes.push({ type: 'resizableImage', attrs: { src: imported.url } });
+}
 await request(`/api/docs/documents/${article.id}/publish`, { method: 'POST', body: {
-  slug: 'first-conversation', published_content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Install the widget on your website to start a conversation.' }] }] },
+  slug: 'first-conversation', published_content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Install the widget on your website to start a conversation.' }] }, ...imageNodes] },
 } });
 const published = await request(`/api/hc/${helpSlug}/spaces/getting-started/articles/first-conversation`);
 assert.ok(JSON.stringify(published).includes('Install the widget'));
+const publicImages = Array.from((published.content_html || '').matchAll(/<img[^>]*\bsrc="([^"]+)"/g), match => match[1].replaceAll('&amp;', '&'));
+assert.ok(publicImages.length >= imageNodes.length, 'publication lost images');
+for (const src of publicImages) {
+  assert.ok(src.startsWith(`${base}/api/public/assets/helpcenter/`), 'published image still uses a private source');
+  const image = await fetch(src);
+  assert.equal(image.status, 200);
+  assert.deepEqual(Buffer.from(await image.arrayBuffer()), png);
+}
+
 const hcBase = process.env.COMMUNITY_HC_URL || 'http://localhost:8086';
 const rendered = await fetch(`${hcBase}/getting-started/basics/first-conversation?subdomain=${helpSlug}`);
 assert.equal(rendered.status, 200, (await rendered.clone().text()).replace(/<[^>]+>/g, ' ').slice(-2500));
@@ -91,4 +128,4 @@ assert.ok((await rendered.text()).includes('Install the widget'));
 assert.equal((await fetch(`${hcBase}/api/internal/agent-runtime/target-context`)).status, 404);
 console.log('PASS: owner/workspace, report-only identity, origin isolation, visitor message and staff reply, internal route isolation');
 console.log('PASS: explicit embedding diagnostics, published help article, help-center SSR and proxy isolation');
-export { auth, ws, installation, request, base, origin, helpSlug, article, attachment, session, ownerPassword };
+export { auth, ws, installation, request, base, origin, helpSlug, article, attachment, session, ownerPassword, fileText };

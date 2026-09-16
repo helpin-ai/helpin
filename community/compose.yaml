@@ -21,13 +21,13 @@ x-helpin-env: &helpin-env
   AGENT_RUNTIME_EVENT_PROTOCOL: v2
   AGENT_RUNTIME_APP_ID: helpin
   AGENT_RUNTIME_SERVICE_TOKEN: ${AGENT_RUNTIME_SERVICE_TOKEN:?run setup.sh install}
-  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-helpin-storage}
-  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?run setup.sh install}
+  AWS_ACCESS_KEY_ID: ${GARAGE_ACCESS_KEY:?run setup.sh install}
+  AWS_SECRET_ACCESS_KEY: ${GARAGE_SECRET_KEY:?run setup.sh install}
   AWS_S3_BUCKET_NAME: helpin
-  AWS_REGION: us-east-1
-  AWS_S3_ENDPOINT_URL: http://minio:9000
+  AWS_REGION: garage
+  AWS_S3_ENDPOINT_URL: http://garage:3900
   AWS_S3_PRESIGN_ENDPOINT_URL: ${PUBLIC_STORAGE_URL:-http://localhost:9005}
-  AWS_S3_PUBLIC_BASE_URL: ${PUBLIC_STORAGE_URL:-http://localhost:9005}/helpin
+  AWS_S3_PRIVATE_BUCKET: "true"
   SMTP_HOST: ${SMTP_HOST:-}
   SMTP_PORT: ${SMTP_PORT:-587}
   SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -63,7 +63,7 @@ x-runtime-env: &runtime-env
   TEMPORAL_TASK_QUEUE_PREFIX: community-runtime-
 services:
   postgres:
-    image: ghcr.io/helpin-ai/community-postgres:community-v0.1.0-rc.1
+    image: pgvector/pgvector:0.8.6-pg17-bookworm@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -80,7 +80,7 @@ services:
       interval: 5s
       retries: 20
   redis:
-    image: redis:7.2.16-alpine
+    image: redis:7.2.16-alpine@sha256:ccd6aa8d45ff3f033d6fa15b8cc1a50579f65c89f38cf9bb607a954c4f2128ed
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?run setup.sh install}
@@ -91,7 +91,7 @@ services:
       interval: 5s
       retries: 20
   nats:
-    image: ghcr.io/helpin-ai/community-nats:community-v0.1.0-rc.1
+    image: nats:2.14.7-alpine@sha256:ae5c49895a97b129546e30908012d7c965296c02f8754cd879e9d50ed3edd508
     restart: unless-stopped
     command: [-js, --store_dir=/data, -m, '8222']
     volumes: [nats_data:/data]
@@ -100,7 +100,7 @@ services:
       interval: 5s
       retries: 20
   temporal-schema:
-    image: temporalio/admin-tools:1.32.0
+    image: temporalio/admin-tools:1.32.0@sha256:a9f84fb9a374b2374fe2e67c8efc0468ff3f1c66c8a0b14597ec86e349e62bca
     entrypoint: [/bin/sh, /setup/temporal-schema.sh]
     environment:
       TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:?run setup.sh install}
@@ -109,7 +109,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
   temporal:
-    image: temporalio/server:1.32.0
+    image: temporalio/server:1.32.0@sha256:c3e752127759616bb1615e0f9ba0e21635aeb5fdeb922de4f371c350955f46ae
     restart: unless-stopped
     environment:
       TEMPORAL_SERVER_CONFIG_FILE_PATH: /etc/temporal/community.yaml
@@ -125,33 +125,26 @@ services:
       start_period: 30s
       retries: 30
   temporal-namespace:
-    image: temporalio/admin-tools:1.32.0
+    image: temporalio/admin-tools:1.32.0@sha256:a9f84fb9a374b2374fe2e67c8efc0468ff3f1c66c8a0b14597ec86e349e62bca
     entrypoint: [/bin/sh, /setup/temporal-namespace.sh]
     volumes: ['./temporal-namespace.sh:/setup/temporal-namespace.sh:ro']
     depends_on:
       temporal: {condition: service_healthy}
-  minio:
-    image: ghcr.io/helpin-ai/community-minio:RELEASE.2025-10-15T17-29-55Z
+  garage:
+    image: dxflrs/garage:v2.3.0@sha256:866bd13ed2038ba7e7190e840482bc27234c4afaf77be8cfa439ae088c1e4690
     restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-helpin-storage}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run setup.sh install}
-    command: [server, /data, --console-address, ':9001']
-    ports: ['${BIND_ADDRESS:-127.0.0.1}:${STORAGE_PORT:-9005}:9000']
-    volumes: [minio_data:/data]
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?run setup.sh install}
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_ACCESS_KEY:?run setup.sh install}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_SECRET_KEY:?run setup.sh install}
+      GARAGE_DEFAULT_BUCKET: helpin
+    command: [/garage, server, --single-node, --default-bucket]
+    ports: ['${BIND_ADDRESS:-127.0.0.1}:${STORAGE_PORT:-9005}:3900']
+    volumes: ['garage_data:/var/lib/garage', './garage.toml:/etc/garage.toml:ro']
     healthcheck:
-      test: [CMD, curl, -f, 'http://localhost:9000/minio/health/live']
+      test: [CMD, /garage, bucket, info, helpin]
       interval: 5s
       retries: 20
-  storage-init:
-    image: ghcr.io/helpin-ai/community-storage-init:community-v0.1.0-rc.1
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-helpin-storage}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run setup.sh install}
-    entrypoint: [/bin/sh, /setup/storage-init.sh]
-    volumes: ['./storage-init.sh:/setup/storage-init.sh:ro', './storage-public-policy.json:/setup/public-policy.json:ro']
-    depends_on:
-      minio: {condition: service_healthy}
   helpin-migrate:
     image: ghcr.io/helpin-ai/helpin-community-migrate:${HELPIN_VERSION:-community-v0.1.0-rc.1}
     environment: *helpin-env
@@ -164,7 +157,7 @@ services:
     environment: *helpin-env
     depends_on:
       helpin-migrate: {condition: service_completed_successfully}
-      storage-init: {condition: service_completed_successfully}
+      garage: {condition: service_healthy}
       redis: {condition: service_healthy}
       nats: {condition: service_healthy}
       temporal-namespace: {condition: service_completed_successfully}
@@ -232,4 +225,4 @@ volumes:
   postgres_data:
   redis_data:
   nats_data:
-  minio_data:
+  garage_data:

@@ -105,7 +105,7 @@ func (c *SMTPClient) SendEmail(to, subject, htmlBody, textBody string) error {
 	}
 	if c.config.Username != "" {
 		if err := client.Auth(smtp.PlainAuth("", c.config.Username, c.config.Password, c.config.Host)); err != nil {
-			return fmt.Errorf("SMTP authentication failed: %w", err)
+			return fmt.Errorf("SMTP authentication failed (AUTH PLAIN over TLS is required; LOGIN-only servers are unsupported): %w", err)
 		}
 	}
 	if err := client.Mail(c.from.Address); err != nil {

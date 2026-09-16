@@ -49,7 +49,7 @@ Use `docs/strategy/2026-09-10-open-source-intercom-alternative-gap-list.md` as a
 - Community is the default build in both repositories. EE is selected explicitly by Go build tags and the EE frontend build command.
 - Community releases use prebuilt, versioned images for Linux amd64 and arm64. Wire architecture-aware builds and run the full core smoke on each architecture, including the paired Runtime and infrastructure images. Document Docker Desktop on Apple Silicon as a Linux arm64 installation. Coding may remain amd64-only. Do not claim native arm64 support based only on Helpin images or amd64 emulation.
 - The bundle pins image tags or digests. It never uses `latest` for application images. Infrastructure image updates are reviewed separately.
-- Keep NATS, Temporal, and Redis in the supported bundle. Use one Postgres server with separate databases and database users for Helpin, Runtime, and Temporal (including Temporal visibility). Keep the Helpin worker and Runtime normal worker on the existing durable execution path. Runtime coding is an opt-in worker; Temporal UI and database admin UIs are optional. S3-compatible storage uses MinIO by default, with an external storage option.
+- Keep NATS, Temporal, and Redis in the supported bundle. Use one Postgres server with separate databases and database users for Helpin, Runtime, and Temporal (including Temporal visibility). Keep the Helpin worker and Runtime normal worker on the existing durable execution path. Runtime coding is an opt-in worker; Temporal UI and database admin UIs are optional. S3-compatible storage uses Garage by default, with an external storage option.
 - Runtime remains a separate service and remains useful standalone. Helpin supplies tenant context, tools, credentials, and events through its configured app entry.
 - Community has no Stripe, subscription entitlement, paid-tool charge, SaaS token tariff, or commercial settings route. Users can configure provider API keys and personal/workspace connections, but the community meter records normalized usage without a Helpin token charge.
 - ChatGPT subscription access stays optional. Normal API-key installation requires neither ChatGPT flags nor OAuth registration nor a BYOK tariff. Verify callback requirements for API-key credential refresh/reconnection and provide the authenticated callback wiring where required.
@@ -65,7 +65,7 @@ The goal is the smallest supported installation that preserves the existing Help
 - **Redis stays:** Helpin can start without Redis, and single-instance WebSockets and some caches have local fallbacks. However, support email fallback workers require Redis, explicit support email delivery can reject without it, widget/help-center rate limits and help-center answer budgets fail open, and the help-center auto-index backfill trigger skips execution. It is not merely a scaling cache. Keep it for the supported full experience.
 - **One Postgres server:** provision independent Helpin, Runtime, Temporal, and Temporal visibility databases/users. Preserve database boundaries; do not combine their schemas or migration ledgers. Initialize and migrate each through its own supported tooling, including on an existing volume.
 - **Optional admin UIs and coding:** Temporal UI and pgAdmin are not required for operation. Start the coding worker only when repository execution is enabled.
-- **Object storage:** keep MinIO for complete local attachments/artifacts, or use an external S3-compatible service. Do not silently disable uploads merely to remove its container.
+- **Object storage:** keep Garage for complete local attachments/artifacts, or use an external S3-compatible service. Do not silently disable uploads merely to remove its container.
 
 Runtime supports SQLite in code, but its current Docker binaries use CGO-disabled builds while the SQLite driver requires CGO. SQLite also does not remove the Postgres server Helpin already needs. Do not add SQLite packaging, lightweight launch configuration, in-process coding admission, or lightweight crash reconciliation to this distribution plan. Those remain possible standalone Runtime work.
 
@@ -165,11 +165,11 @@ Product decision: the local Community bundle allows normal password signup and l
 
 Resolve an explicit server-owned verification policy through the existing edition wiring. EE selects verification required and cannot be weakened by the Community local setting. Community supports an operator setting, defaulting to required when unspecified; the local bundle explicitly disables it. Establish the exact configuration name during implementation and add it to the environment example. Do not infer this policy from a nil email client, a failed send, request headers, or a caller flag.
 
-Keep signup, verification tokens, email delivery, and enforcement implementation in shared auth code. Only the edition's policy selection belongs in EE versus Community wiring; shared code consumes the resolved policy without importing EE. This preserves opt-in verification for public self-hosted Community deployments and avoids duplicating auth behavior. The frontend consumes the effective server policy rather than assuming every Community deployment disables verification.
+Keep signup, verification tokens, and email delivery in shared auth code. This selects the verification email/UI policy; the current server does not block every unverified password login, so do not describe this as a universal login enforcement gate. Only the edition's policy selection belongs in EE versus Community wiring; shared code consumes the resolved policy without importing EE. This preserves opt-in verification for public self-hosted Community deployments and avoids duplicating auth behavior. The frontend consumes the effective server policy rather than assuming every Community deployment disables verification.
 
 Apply the policy consistently to signup, login/session handling, API authorization, verification/resend endpoints, and frontend onboarding/banners. Expose the effective requirement through the existing public auth configuration path, or one small configuration field if needed. A local account admitted without verification is not proof of mailbox ownership: do not fabricate an `EmailVerifiedAt` timestamp or weaken OAuth identity/linking rules. Audit all `email_verified` checks, including existing local unverified users.
 
-Test signup through workspace creation and Ask Agent with no Postmark credentials; assert no verification token/email is produced in disabled mode. Test that required mode still enforces verification even when email delivery is unavailable.
+Test signup through workspace creation and Ask Agent with no Postmark credentials; assert no verification token/email is produced in disabled mode. Test that required mode fails API startup when no application mail sender is configured. Preserve the existing verification email/UI behavior without claiming server-side rejection of every unverified login.
 
 Postmark is currently the only outbound email implementation. v0.1 adds a minimal SMTP sender for application mail: invitations, password reset, optional verification, and existing app notifications. Reuse the existing `authEmailSender` and notification sender contracts. Invitations currently depend on `*email.Client`; replace that dependency with the narrow send-invitation contract and wire both implementations. Reuse message rendering without duplicating templates or introducing a general mail framework.
 
@@ -304,7 +304,7 @@ The Compose file should use YAML anchors for shared environment and health setti
 | `nats` | Pinned NATS | Runtime/Helpin events | `nats_data` |
 | `temporal` | Pinned Temporal with validated schema initialization | Durable workflows | Separate databases in `postgres_data` |
 | `temporal-ui` (optional) | Matching Temporal UI | Local operator visibility | none |
-| `minio` | Pinned MinIO | Default S3-compatible storage | `minio_data` |
+| `garage` | Pinned Garage | Default S3-compatible storage | `garage_data` |
 | `helpin-migrate` | Helpin community image | Core migration runner | none |
 | `helpin-api` | Helpin community image | HTTP API | logs volume optional |
 | `helpin-worker` | Helpin community image | Product/automation Temporal worker | logs volume optional |
@@ -355,8 +355,8 @@ Helpin variables:
 | `TEMPORAL_NAMESPACE` | A dedicated default namespace for this installation. |
 | `TEMPORAL_TLS_ENABLED` | `false` for the private default Compose network; document TLS for external Temporal. |
 | `REDIS_URL` | Compose Redis URL. |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | MinIO defaults or external S3 credentials. |
-| `AWS_S3_ENDPOINT_URL`, `AWS_S3_BUCKET_NAME`, `AWS_REGION` | MinIO defaults or external S3 settings. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Garage defaults or external S3 credentials. |
+| `AWS_S3_ENDPOINT_URL`, `AWS_S3_BUCKET_NAME`, `AWS_REGION` | Garage defaults or external S3 settings. |
 | `APP_BASE_URL` | Canonical staff application origin, used for generated links and redirects. |
 | `CORS_ORIGINS` | Backend origin validation uses the operator's public origin; the main UI calls same-origin `/api`. |
 | `SDK_DIST_DIR` | Packaged SDK asset directory in the chosen serving image; no source-tree dependency. |
@@ -367,7 +367,7 @@ Helpin variables:
 
 Add the chosen SMTP app-mail variables and explicit provider-selection setting after implementation; distinguish app-mail from Postmark support-reply settings. Do not imply that setting SMTP credentials enables incoming support email.
 
-Define the public widget/loader/help-center origins and edge hostname configuration in the bundle; add backend configuration only where the existing origin settings cannot represent them. Document MinIO/S3 signing versus public addressing, and preserve the signed host/path through the proxy. Browser upload URLs must not contain Compose-only hostnames.
+Define the public widget/loader/help-center origins and edge hostname configuration in the bundle; add backend configuration only where the existing origin settings cannot represent them. Document Garage/S3 signing versus public addressing, and preserve the signed host/path through the proxy. Browser upload URLs must not contain Compose-only hostnames.
 
 Add the new explicit local verification policy variable after implementation; disabled in the local bundle and required under existing SaaS defaults. `VITE_API_URL=/api` belongs to the Community image build, not this runtime environment file.
 
@@ -655,3 +655,13 @@ Plane Community provides a useful versioned release-bundle pattern: [installatio
 Sentry self-hosted documents a public SDK ingress alongside an optionally private dashboard, external TLS termination, canonical public URLs, and proxy configuration: [official reverse-proxy guide](https://github.com/getsentry/develop/blob/master/src/docs/self-hosted/reverse-proxy.mdx). These are the relevant support-deployment patterns; its analytics infrastructure is not Helpin's default service list.
 
 Caddy documents the prerequisites and lifecycle of automatic certificates: [automatic HTTPS](https://caddyserver.com/docs/automatic-https). The release guide must connect those requirements to the exact shipped proxy configuration.
+
+### RC storage and schema review (September 16)
+
+Use unmodified digest-pinned upstream infrastructure, including Garage for the
+private S3 bucket. No custom PostgreSQL, NATS, MinIO or storage-init images.
+Public help-center assets use an explicit application allowlist; imported Docs
+images stay authenticated and publication creates a public copy. Record exact,
+expiring upstream vulnerability exceptions instead of rebuilding dependencies.
+CI must compare a fresh ledger database to the exact API AutoMigrate model list;
+new model fields require a matching additive migration.

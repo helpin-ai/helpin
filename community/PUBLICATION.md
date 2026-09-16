@@ -5,8 +5,9 @@ to expose the existing repository history. Do not publish while any item below
 is unresolved.
 
 - [ ] Owner chooses and adds the Helpin Community and Runtime licenses and confirms
-  Go/Python SDK licensing. Preserve all third-party notices; MinIO is separately
-  AGPL-3.0-only and the bundled source must remain available.
+  Go/Python SDK licensing. Preserve all third-party notices; Garage is separately
+  AGPL-3.0-licensed and is pulled as an unmodified upstream image. Preserve its
+  source and license references in the distribution inventory.
 - [ ] Owner decides whether EE source stays separately licensed in the public
   repository or is a private overlay. Community builds exclude EE either way.
 - [ ] Review the tracked document inventory. Keep operator/contributor docs;

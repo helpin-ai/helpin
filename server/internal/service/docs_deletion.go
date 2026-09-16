@@ -252,6 +252,7 @@ func addOwnedDocsAssetRefs(out map[string]struct{}, workspaceID string, store do
 		return
 	}
 	raw = strings.ReplaceAll(raw, `\/`, `/`)
+	raw = strings.ReplaceAll(raw, `\u0026`, `&`)
 	ownedPrefix := "docs-import/" + workspaceID + "/"
 	publicPrefix := ""
 	if store != nil {
@@ -265,6 +266,14 @@ func addOwnedDocsAssetRefs(out map[string]struct{}, workspaceID string, store do
 		}
 
 		key := ""
+		if locator, ok := store.(interface {
+			DocsImageKeyFromURL(string, string) (string, bool)
+		}); ok {
+			if privateKey, valid := locator.DocsImageKeyFromURL(token, workspaceID); valid {
+				out[privateKey] = struct{}{}
+				continue
+			}
+		}
 		switch {
 		case publicPrefix != "" && strings.HasPrefix(token, publicPrefix):
 			key = strings.TrimPrefix(token, publicPrefix)

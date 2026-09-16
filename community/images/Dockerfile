@@ -1,4 +1,5 @@
 # Build from the Helpin repository root. Never copy an operator .env into images.
+ARG BUILDPLATFORM
 FROM node:22.23.2-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS sdk-build
 ENV CI=true NODE_OPTIONS=--max-old-space-size=4096
 WORKDIR /workspace

@@ -310,7 +310,13 @@ func main() {
 		cfg.AWSPublicBaseURL,
 		cfg.AWSPresignEndpointURL,
 	)
+	s3Client.ConfigureAssetAccess(cfg.AppBaseURL, cfg.AWSPrivateBucket)
 	if s3Client != nil {
+		if cfg.AWSPrivateBucket {
+			if err := s3Client.EnsureCORS(context.Background()); err != nil {
+				fatalWithSentry("configure private bucket browser uploads", err)
+			}
+		}
 		slog.Info("S3 storage configured")
 	} else {
 		slog.Info("S3 storage not configured — attachments disabled")
@@ -984,6 +990,7 @@ func main() {
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterService.SetPublicationArtifactDependencies(agentRunArtifactRepo, s3Client)
+	docsHelpcenterService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	tlsAskService := service.NewTLSAskService(docsHelpcenterRepo, cfg.TLSAskExtraAllowedDomains)
 
 	// Tiered cache for hot public help-center reads. L1 is an in-process LRU;
@@ -1021,6 +1028,7 @@ func main() {
 	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsHelpcenterTranslationService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterTranslationService.SetPublicationArtifactDependencies(agentRunArtifactRepo, s3Client)
+	docsHelpcenterTranslationService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	docsImportService := service.NewDocsImportService(
 		docsImportRepo,
 		docsSpaceService,
@@ -1670,6 +1678,7 @@ func main() {
 	handlers := router.Handlers{
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
+		Assets:                    handler.NewAssetHandler(s3Client),
 		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
 			ClientID:         cfg.GoogleAuthClientID,

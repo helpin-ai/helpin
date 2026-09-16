@@ -8,12 +8,6 @@ x-helpin-build: &helpin-build
     org.opencontainers.image.version: ${HELPIN_VERSION:-community-v0.1.0-rc.1}
     ai.helpin.edition: community
 services:
-  postgres:
-    build: {<<: *helpin-build, dockerfile: community/images/Infrastructure.Dockerfile, target: postgres}
-  nats:
-    build: {<<: *helpin-build, dockerfile: community/images/Infrastructure.Dockerfile, target: nats}
-  storage-init:
-    build: {<<: *helpin-build, dockerfile: community/images/Infrastructure.Dockerfile, target: mc}
   helpin-api:
     build: {<<: *helpin-build, target: api}
   helpin-worker:
@@ -32,5 +26,3 @@ services:
         org.opencontainers.image.source: https://github.com/helpin-ai/agent-runtime
         org.opencontainers.image.revision: ${COMMUNITY_RUNTIME_REVISION:-uncommitted}
         org.opencontainers.image.version: ${AGENT_RUNTIME_VERSION:-community-v0.1.0-rc.1}
-  minio:
-    build: {<<: *helpin-build, dockerfile: community/images/Minio.Dockerfile}

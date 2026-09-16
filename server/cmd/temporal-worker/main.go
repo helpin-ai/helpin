@@ -78,6 +78,7 @@ func main() {
 		cfg.AWSPublicBaseURL,
 		cfg.AWSPresignEndpointURL,
 	)
+	s3Client.ConfigureAssetAccess(cfg.AppBaseURL, cfg.AWSPrivateBucket)
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
@@ -485,6 +486,7 @@ func main() {
 	)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterService.SetPublicationArtifactDependencies(artifactRepo, s3Client)
+	docsHelpcenterService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
 	docsImportService := service.NewDocsImportService(
 		docsImportRepo,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 process.env.COMMUNITY_TEST_AI = 'yes';
-const { request, auth, ws } = await import('./http-smoke.mjs');
+const { request, auth, ws, attachment, fileText } = await import('./http-smoke.mjs');
 const fixture = process.env.COMMUNITY_PROVIDER_URL || 'http://localhost:8097';
 const before = await (await fetch(fixture + '/metrics')).json();
 const created = await request('/api/ai-connections', { method: 'POST', status: 201, body: {
@@ -63,6 +63,7 @@ const signedIn = await request('/api/auth/signin', { method: 'POST', body: { ema
 if (process.env.COMMUNITY_TEST_PROOF_FILE) {
   await writeFile(process.env.COMMUNITY_TEST_PROOF_FILE, JSON.stringify({
     access_token: signedIn.access_token, workspace_id: ws.id, profile_id: profile.id,
+    attachment_url: attachment.public_url, attachment_text: fileText,
   }), { mode: 0o600 });
 }
 console.log('PASS: shared profile → durable Runtime worker → authenticated compatible provider; embeddings; SMTP password reset; no hosted mail links');

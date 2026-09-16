@@ -6,10 +6,12 @@ trap 'rm -rf -- "$proof_dir"' EXIT
 export COMMUNITY_TEST_PROOF_FILE="$proof_dir/restored-profile.json"
 node --test tests/installer.test.mjs
 python3 tests/package_release_test.py
+python3 tests/image_findings_test.py
 ./setup.sh install
 docker compose config --quiet
 docker compose up -d --wait --wait-timeout 300 --remove-orphans
 tests/migrations.sh
+tests/verification-mail.sh
 node tests/http-smoke.mjs
 pnpm --dir ../packages/sdk-js exec playwright test --config=playwright.community.config.ts
 docker compose -f compose.yaml -f tests/compose.fixture.yaml up -d --wait --wait-timeout 300

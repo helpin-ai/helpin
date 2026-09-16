@@ -65,3 +65,27 @@ func TestParseDeploymentModules(t *testing.T) {
 		t.Fatalf("parse=%v %v", got, err)
 	}
 }
+
+func TestSharedAttachmentsRequireAnEnabledProduct(t *testing.T) {
+	for _, tc := range []struct {
+		name                                string
+		modules                             []model.ModuleID
+		attachmentStatus, associationStatus int
+	}{
+		{"Docs", []model.ModuleID{model.ModuleDocs}, 200, 404},
+		{"PM", []model.ModuleID{model.ModulePM}, 200, 200},
+		{"neither", []model.ModuleID{model.ModuleAgents}, 404, 404},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewAuthzService(nil, nil, nil)
+			s.SetDeploymentModules(tc.modules)
+			for path, want := range map[string]int{"/api/pm/attachments/id/content": tc.attachmentStatus, "/api/pm/associations": tc.associationStatus} {
+				w := httptest.NewRecorder()
+				RequireDeploymentAccess(s)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })).ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+				if w.Code != want {
+					t.Fatalf("%s status=%d want=%d", path, w.Code, want)
+				}
+			}
+		})
+	}
+}

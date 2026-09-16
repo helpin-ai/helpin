@@ -4,6 +4,7 @@ import net from 'node:net';
 const metrics = { completions: 0, embeddings: 0, mail: 0, credential_rejections: 0 };
 const mails = [];
 http.createServer(async (req, res) => {
+  if (req.url === '/image.png') { res.setHeader('Content-Type', 'image/png'); return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZ1cAAAAASUVORK5CYII=', 'base64')); }
   res.setHeader('Content-Type', 'application/json');
   if (req.url === '/metrics') return res.end(JSON.stringify(metrics));
   if (req.url === '/mail') return res.end(JSON.stringify(mails));

@@ -25,3 +25,11 @@ for (let attempt = 0; attempt < 60; attempt++) {
 }
 assert.ok(answered, 'the existing encrypted connection did not work after restore');
 console.log('PASS: restored existing profile decrypted its saved connection and ran an agent');
+
+assert.ok(proof.attachment_url, 'restore proof must include a pre-backup attachment');
+const restoredAttachment = await fetch(proof.attachment_url);
+assert.equal(restoredAttachment.status, 200, 'pre-backup private attachment was not restored');
+assert.equal(await restoredAttachment.text(), proof.attachment_text);
+const unsignedAttachment = new URL(proof.attachment_url); unsignedAttachment.search = '';
+assert.equal((await fetch(unsignedAttachment)).status, 403, 'restored attachment became public');
+console.log('PASS: pre-backup private attachment bytes and access policy survived Garage restore');

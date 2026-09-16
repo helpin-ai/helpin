@@ -24,6 +24,7 @@ type Handlers struct {
 	// (nil disables limiting, e.g. when Redis is not configured).
 	HelpcenterAnswerRateLimit func(http.Handler) http.Handler
 
+	Assets              *handler.AssetHandler
 	Health              *handler.HealthHandler
 	Auth                *handler.AuthHandler
 	Passkey             *handler.PasskeyHandler
@@ -159,6 +160,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		wsActive = func(next http.Handler) http.Handler {
 			return wsAccess(h.Edition.RequireActiveWorkspace(next))
 		}
+	}
+
+	if h.Assets != nil {
+		r.Get("/api/public/assets/*", h.Assets.Public)
 	}
 
 	// Root endpoint — responds on bare domain requests.
@@ -1375,6 +1380,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsActive)
 				r.Use(handler.NoStoreOnWrites)
+
+				if h.Assets != nil {
+					r.With(requirePerm(authorization.PermDocsRead)).Get("/images/content", h.Assets.DocsImage)
+				}
 
 				// Spaces — docs.read / docs.edit / docs.admin
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/spaces", h.Docs.ListSpaces)

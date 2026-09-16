@@ -37,8 +37,8 @@ func (s *AuthzService) visibleModules(allowed map[model.ModuleID]struct{}) []mod
 
 func (s *AuthzService) requestModule(path string) model.ModuleID {
 	module := deployment.APIModule(path)
-	// Attachment content is shared by Docs and PM; the handler still checks
-	// access to the owning resource. Do not open the rest of the PM API.
+	// Attachments are shared by Docs and PM. This only selects the deployment
+	// module; it does not authorize individual resources or open other PM routes.
 	if module == model.ModulePM && !s.deploymentEnabled(model.ModulePM) && (path == "/api/pm/attachments" || strings.HasPrefix(path, "/api/pm/attachments/")) {
 		return model.ModuleDocs
 	}

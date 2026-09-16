@@ -9,12 +9,11 @@ mkdir -p release-artifacts
 private_report=$(mktemp)
 trap 'rm -f -- "$private_report"' EXIT
 while IFS= read -r image; do
-  name=${image##*/}; name=${name%%:*}
+  name=${image%%@*}; name=${name##*/}; name=${name%%:*}
   trivy image --scanners vuln --format cyclonedx --output "release-artifacts/$name-$architecture.cdx.json" "$image"
-  trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 "$image"
-  # These are corresponding upstream source trees, including upstream test
-  # credentials. They are not application configuration; retain them for AGPL.
-  if ! trivy image --scanners secret --skip-dirs /usr/share/minio-source,/usr/share/mc-source --format json --output "$private_report" --exit-code 1 "$image"; then
+  trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --format json --output "$private_report" "$image"
+  python3 verify-image-findings.py "$image" "$private_report"
+  if ! trivy image --scanners secret --format json --output "$private_report" --exit-code 1 "$image"; then
     echo "Secret scan requires private review for $name; no findings were uploaded." >&2
     exit 1
   fi

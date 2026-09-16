@@ -27,6 +27,7 @@ type DocsHelpcenterTranslationService struct {
 	spaceRepo       *repository.DocsSpaceRepository
 	collectionRepo  *repository.DocsCollectionRepository
 	searchRepo      *repository.DocsHelpcenterSearchRepository
+	attachmentRepo  publicationAttachmentRepository
 	artifactRepo    publicationArtifactRepository
 	artifactStore   publicationArtifactStore
 	llmProvider     llm.Provider
@@ -1462,6 +1463,10 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 	if len(publishedContent) > 0 {
 		publication.Content = publishedContent
 	}
+	publication.Content, err = materializePublicationImages(ctx, s.artifactStore, s.attachmentRepo, doc.WorkspaceID, doc.ID, publication.Content)
+	if err != nil {
+		return nil, err
+	}
 	publication.Content, err = materializePublicationArtifactReferences(ctx, s.artifactRepo, s.artifactStore, doc.WorkspaceID, doc.ID, publication.Content)
 	if err != nil {
 		return nil, err
@@ -1994,4 +1999,8 @@ func articleSEODescription(article *model.DocsHelpcenterArticle) *string {
 		return nil
 	}
 	return article.SEODescription
+}
+
+func (s *DocsHelpcenterTranslationService) SetPublicationAttachmentRepository(repo *repository.PMAttachmentRepository) {
+	s.attachmentRepo = repo
 }

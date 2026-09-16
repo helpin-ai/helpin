@@ -31,6 +31,8 @@ for repository in by_arch['amd64']:
 def pinned(match):
     original = match.group(1).strip()
     repository = original.split(':', 1)[0]
+    if repository not in by_arch['amd64'] and '@sha256:' in original:
+        return f'    image: {original}'
     reference = f'{repository}:{tag}' if repository in by_arch['amd64'] else original.split('@', 1)[0]
     digest = subprocess.check_output(['docker', 'buildx', 'imagetools', 'inspect', reference, '--format', '{{.Manifest.Digest}}'], text=True).strip()
     if not re.fullmatch(r'sha256:[a-f0-9]{64}', digest):
@@ -42,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='community-bundle-') as temporary:
     community = bundle / 'community'
     community.mkdir(parents=True)
     for name in ('setup.sh', '.env.example', 'apps.example.json', 'README.md', 'PUBLICATION.md', 'Caddyfile.example',
-                 'storage-init.sh', 'storage-public-policy.json', 'temporal-schema.sh', 'temporal.yaml', 'temporal-namespace.sh', 'runtime-revision.txt'):
+                 'garage.toml', 'upstream-image-exceptions.json', 'temporal-schema.sh', 'temporal.yaml', 'temporal-namespace.sh', 'runtime-revision.txt'):
         shutil.copy2(root / 'community' / name, community / name)
     shutil.copytree(root / 'community/postgres', community / 'postgres')
     (community / 'tests').mkdir()
