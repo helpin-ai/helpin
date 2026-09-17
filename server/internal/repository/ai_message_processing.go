@@ -178,6 +178,16 @@ func (r *AIMessageProcessingRepository) IncrementAttempts(ctx context.Context, i
 // CreateReply atomically saves the one reply belonging to an in-flight customer
 // turn. Concurrent tool calls and retries cannot publish a second reply.
 func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, processingID string, message *model.SupportMessage, runID ...string) (bool, error) {
+	return r.createReply(ctx, processingID, message, nil, runID...)
+}
+
+// CreateInitialGreetingReply fences a first greeting against conversation changes
+// under the same lock used to publish and settle the reply.
+func (r *AIMessageProcessingRepository) CreateInitialGreetingReply(ctx context.Context, processingID string, message *model.SupportMessage, source model.SupportMessage) (bool, error) {
+	return r.createReply(ctx, processingID, message, &source)
+}
+
+func (r *AIMessageProcessingRepository) createReply(ctx context.Context, processingID string, message *model.SupportMessage, greetingSource *model.SupportMessage, runID ...string) (bool, error) {
 	created := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var conversation model.SupportConversation
@@ -188,6 +198,9 @@ func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, process
 			return nil
 		}
 		if model.SupportAIConversationBlocked(&conversation) {
+			return nil
+		}
+		if greetingSource != nil && (conversation.AIControlVersion != 0 || conversation.AIActiveRunID != nil || conversation.AIResumedAt != nil || conversation.AITurnCount != 0 || conversation.Status != model.SupportConversationStatusOpen || conversation.LinkedTaskID != nil || conversation.LastPublicMessageID == nil || *conversation.LastPublicMessageID != greetingSource.ID) {
 			return nil
 		}
 		settings := model.DefaultSupportInboxSettings()
@@ -203,6 +216,9 @@ func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, process
 				return nil
 			}
 		}
+		if greetingSource != nil && (installation == nil || !installation.Active || settings.AIAgentID == nil || message.SenderAgentID == nil || *settings.AIAgentID != *message.SenderAgentID || message.IsInternal != (settings.AIResponseMode == "internal_note")) {
+			return nil
+		}
 		var turn model.AIMessageProcessing
 		if err := tx.Where("id = ? AND workspace_id = ? AND conversation_id = ?", processingID, message.WorkspaceID, message.ConversationID).First(&turn).Error; err != nil {
 			return err
@@ -213,6 +229,25 @@ func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, process
 		}
 		if !model.SupportAIReplyAllowed(settings, &conversation, source) {
 			return nil
+		}
+		if greetingSource != nil {
+			if source == nil || source.ID != greetingSource.ID || source.WorkspaceID != message.WorkspaceID || source.ConversationID != message.ConversationID || source.Content != greetingSource.Content || len(source.Attachments) != 0 || source.DeletedAt.Valid {
+				return nil
+			}
+			var attachments int64
+			if err := tx.Model(&model.SupportAttachment{}).Where("message_id = ?", source.ID).Count(&attachments).Error; err != nil {
+				return err
+			}
+			if attachments != 0 {
+				return nil
+			}
+			var replies int64
+			if err := tx.Model(&model.SupportMessage{}).Where("workspace_id = ? AND conversation_id = ? AND message_type = ? AND is_internal = false", message.WorkspaceID, message.ConversationID, "reply").Count(&replies).Error; err != nil {
+				return err
+			}
+			if replies != 1 {
+				return nil
+			}
 		}
 		result := tx.Model(&model.AIMessageProcessing{}).
 			Where("id = ? AND workspace_id = ? AND conversation_id = ? AND status = ? AND reply_message_id IS NULL", processingID, message.WorkspaceID, message.ConversationID, "processing").
