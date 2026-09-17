@@ -6,6 +6,8 @@ export interface AttachmentUploadOptions {
 
 // Covers initialization, the direct storage upload, and server confirmation.
 const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+// A disconnected storage request must not leave the widget waiting at 0%.
+const UPLOAD_IDLE_TIMEOUT_MS = 30 * 1000;
 const timeoutMessage = 'The file upload timed out. Check your connection and retry.';
 const aborted = () => new DOMException('File upload cancelled.', 'AbortError');
 
@@ -28,13 +30,23 @@ function uploadToStorage(url: string, file: File, signal: AbortSignal, onProgres
   return new Promise((resolve, reject) => {
     checkAborted(signal);
     const xhr = new XMLHttpRequest();
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastLoaded = 0;
     const cleanup = () => {
+      clearTimeout(idleTimer);
       signal.removeEventListener('abort', cancel);
       xhr.onload = xhr.onerror = xhr.onabort = xhr.ontimeout = null;
       xhr.upload.onprogress = null;
     };
     const fail = (error: Error) => { cleanup(); reject(error); };
     const cancel = () => { xhr.abort(); fail(aborted()); };
+    const armIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        fail(new Error('The upload stopped making progress. Check your connection and retry.'));
+        xhr.abort();
+      }, UPLOAD_IDLE_TIMEOUT_MS);
+    };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) { cleanup(); resolve(); }
       else fail(new Error(`Unable to upload the file to storage (HTTP ${xhr.status}). Please retry.`));
@@ -43,6 +55,10 @@ function uploadToStorage(url: string, file: File, signal: AbortSignal, onProgres
     xhr.onabort = () => fail(aborted());
     xhr.ontimeout = () => fail(new Error(timeoutMessage));
     xhr.upload.onprogress = event => {
+      if (event.loaded > lastLoaded) {
+        lastLoaded = event.loaded;
+        armIdleTimer();
+      }
       if (event.lengthComputable && event.total > 0) {
         // 100% means confirmed and ready to send, not just transferred to storage.
         onProgress?.(Math.min(99, Math.max(0, Math.round(event.loaded / event.total * 100))));
@@ -53,6 +69,7 @@ function uploadToStorage(url: string, file: File, signal: AbortSignal, onProgres
       xhr.open('PUT', url, true);
       xhr.timeout = UPLOAD_TIMEOUT_MS;
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      armIdleTimer();
       xhr.send(file);
     } catch (error) {
       fail(error instanceof Error ? error : new Error('Unable to start the file upload. Please retry.'));
