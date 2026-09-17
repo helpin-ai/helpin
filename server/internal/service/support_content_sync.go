@@ -189,7 +189,15 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		indexedChunks int
 	)
 
+	if err := s.sourceRepo.UpdateSyncWarning(ctx, source.ID, nil); err != nil {
+		return err
+	}
+	skippedURLs := map[string]bool{}
 	onPage := func(record crawler.CrawlRecord) error {
+		if record.SkipReason != "" {
+			skippedURLs[record.URL] = true
+			return nil
+		}
 		contentText, format := crawlRecordText(record)
 		if strings.TrimSpace(contentText) == "" {
 			slog.DebugContext(ctx, "support content page skipped: empty content",
@@ -321,6 +329,12 @@ func (s *SupportContentSyncService) RunSourceSync(ctx context.Context, workspace
 		"start_url", source.StartURL,
 	)
 	crawledCount, err := s.crawler.Crawl(ctx, *source, onPage)
+	if len(skippedURLs) > 0 {
+		warning := fmt.Sprintf("%d URLs skipped because the site disallows crawling. Check robots.txt and the crawler access instructions before re-syncing.", len(skippedURLs))
+		if warningErr := s.sourceRepo.UpdateSyncWarning(ctx, source.ID, &warning); warningErr != nil {
+			return warningErr
+		}
+	}
 	if err != nil {
 		slog.ErrorContext(ctx, "support content crawl failed",
 			"workspace_id", workspaceID,

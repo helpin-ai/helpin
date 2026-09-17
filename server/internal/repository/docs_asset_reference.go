@@ -140,8 +140,9 @@ func (r *DocsAssetReferenceRepository) likeAnySQL(alias, column string) string {
 }
 
 func likePatternsForAssetKey(assetKey string) []string {
-	variants := make([]string, 0, 4)
+	variants := make([]string, 0, 5)
 	for _, variant := range []string{
+		url.QueryEscape(assetKey),
 		assetKey,
 		strings.ReplaceAll(assetKey, "/", `\/`),
 		pathEscapePreservingSlashes(assetKey),
@@ -157,8 +158,8 @@ func likePatternsForAssetKey(assetKey string) []string {
 	return variants[:len(assetReferencePatternKinds())]
 }
 
-func assetReferencePatternKinds() [4]struct{} {
-	return [4]struct{}{}
+func assetReferencePatternKinds() [5]struct{} {
+	return [5]struct{}{}
 }
 
 func pathEscapePreservingSlashes(value string) string {

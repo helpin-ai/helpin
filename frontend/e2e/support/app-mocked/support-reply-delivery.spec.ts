@@ -198,10 +198,14 @@ test("email options explain missing address and notes hide the channel control",
   await expect(page.getByRole("option")).toHaveCount(3);
   await expect(composer.getByRole("button", { name: "Sending options: Chat only", exact: true })).toBeVisible();
   await page.mouse.move(0, 0);
-  // Start keyboard coverage from a fresh menu, without the pointer-dismissed tooltip state.
-  await page.keyboard.press("Escape");
+  // Escape can dismiss just the tooltip. Explicitly close the menu before
+  // reopening it for keyboard coverage, and wait out its exit animation.
+  await composer.getByRole("button", { name: /^Sending options:/ }).click();
+  await expect(page.getByRole("option")).toHaveCount(0);
   await composer.getByRole("button", { name: /^Sending options:/ }).press("Enter");
+  await expect(page.getByRole("option")).toHaveCount(3);
   await unavailableEmail.locator('[tabindex="0"]').focus();
+  await expect(unavailableEmail.locator('[tabindex="0"]')).toBeFocused();
   await expect(page.getByRole("tooltip", { name: "No email address", exact: true })).toBeVisible();
   await unavailableEmail.locator('[tabindex="0"]').press("Enter");
   await expect(page.getByRole("option")).toHaveCount(3);

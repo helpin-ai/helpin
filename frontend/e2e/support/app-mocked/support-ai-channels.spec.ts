@@ -16,6 +16,9 @@ test('AI reply channels save and survive reload on desktop and narrow screens', 
   });
   await page.goto(`/w/${WORKSPACE_SLUG}/settings/support-ai-assistant`);
   const channels = page.getByRole('combobox', { name: 'Reply channels' });
+  // A cold Vite server still has to compile the lazy settings route after navigation.
+  // Wait for the page to be ready before checking the saved value.
+  await expect(channels).toBeVisible({ timeout: 45_000 });
   await expect(channels).toHaveText('Chat');
   for (const [label, value] of [['Email', 'email'], ['Both', 'both'], ['Chat', 'chat']] as const) {
     await channels.click();

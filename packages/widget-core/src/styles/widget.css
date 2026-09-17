@@ -342,6 +342,11 @@
   transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.helpin-launcher--left {
+  left: 20px;
+  right: auto;
+}
+
 .helpin-launcher:hover {
   transform: scale(1.05);
   box-shadow: var(--helpin-shadow-xl);
@@ -2721,6 +2726,9 @@
 }
 
 .helpin-conversation-header {
+  /* Keep the menu above the animated message list's stacking context. */
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -3740,6 +3748,11 @@
   .helpin-launcher {
     bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     right: calc(16px + env(safe-area-inset-right, 0px));
+  }
+
+  .helpin-launcher--left {
+    left: calc(16px + env(safe-area-inset-left, 0px));
+    right: auto;
   }
 
   .helpin-launcher--open {

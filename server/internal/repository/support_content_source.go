@@ -112,3 +112,11 @@ func (r *SupportContentSourceRepository) MarkSyncQueued(ctx context.Context, id 
 	}
 	return nil
 }
+
+// UpdateSyncWarning records non-fatal crawl policy skips separately from errors.
+func (r *SupportContentSourceRepository) UpdateSyncWarning(ctx context.Context, id string, warning *string) error {
+	if err := r.db.WithContext(ctx).Model(&model.SupportContentSource{}).Where("id = ?", id).Update("last_sync_warning", warning).Error; err != nil {
+		return fmt.Errorf("update content source sync warning: %w", err)
+	}
+	return nil
+}

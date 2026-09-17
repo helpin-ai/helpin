@@ -24,14 +24,21 @@ declare global {
   }
 }
 
-type InstallWidgetMockOptions = {
+export type InstallWidgetMockOptions = {
   invalidStoredSession?: boolean
   persistedSession?: boolean
   unreadCount?: number
+  widgetPosition?: 'bottom-left' | 'bottom-right'
 }
 
 export async function installWidgetMocks(page: Page, options: InstallWidgetMockOptions = {}) {
-  await page.addInitScript(({ widgetHost, widgetKey, unreadCount, conversationId, linkPreviewUrl, persistedSession, invalidStoredSession }) => {
+  // Storage uploads use XMLHttpRequest for progress; fetch mocks do not intercept it.
+  await page.route(`https://${WIDGET_HOST}/uploads/**`, route => route.fulfill({
+    status: 200,
+    headers: { 'Access-Control-Allow-Origin': '*' },
+    body: '',
+  }))
+  await page.addInitScript(({ widgetHost, widgetKey, unreadCount, conversationId, linkPreviewUrl, persistedSession, invalidStoredSession, widgetPosition }) => {
     const patchedUserAgent = (navigator.userAgent || '').replace(/HeadlessChrome\/[\d.]+\s*/i, 'Chrome/122.0.0.0 ')
     Object.defineProperty(Navigator.prototype, 'userAgent', {
       configurable: true,
@@ -102,9 +109,10 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
       socketBehavior: 'open' as 'open' | 'fail',
     }
 
+    const sessionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
     const buildSessionPayload = () => ({
       session_token: state.sessionToken,
-      expires_at: '2026-04-27T20:00:00Z',
+      expires_at: sessionExpiresAt,
       is_anonymous: state.isAnonymous,
       customer_email: state.customerEmail || null,
       conversations: state.conversations,
@@ -155,7 +163,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
               primaryColor: '#2563eb',
               logoUrl: '',
               welcomeMessage: 'Hi there. How can we help?',
-              widgetPosition: 'bottom-right',
+              widgetPosition,
               showBranding: true,
               launcherIcon: 'chat_bubble',
               colorScheme: 'light',
@@ -468,7 +476,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
       if (persistedSession || invalidStoredSession) {
         localStorage.setItem(`helpin_ws_${widgetKey}`, JSON.stringify({
           session_token: 'session-1',
-          expires_at: '2026-04-27T20:00:00Z',
+          expires_at: sessionExpiresAt,
         }))
       }
     } catch {
@@ -480,6 +488,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
     persistedSession: options.persistedSession ?? false,
     invalidStoredSession: options.invalidStoredSession ?? false,
     unreadCount: options.unreadCount ?? 0,
+    widgetPosition: options.widgetPosition ?? 'bottom-right',
     conversationId: CONVERSATION_ID,
     linkPreviewUrl: LINK_PREVIEW_URL,
   })

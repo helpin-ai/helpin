@@ -94,7 +94,7 @@ func TestSupportEmailSubjectSnapshotsQueuedDelivery(t *testing.T) {
 				t.Fatalf("conversation renamed to %q", unchanged.Subject)
 			}
 			conv.Subject = "Renamed after queueing"
-			if err := env.convRepo.Update(ctx, conv); err != nil {
+			if err := env.convRepo.UpdateSubject(ctx, conv.ID, conv.Subject); err != nil {
 				t.Fatal(err)
 			}
 			sent := captureExplicitDeliveryEmails(t, env)

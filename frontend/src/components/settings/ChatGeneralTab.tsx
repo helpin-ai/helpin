@@ -1,3 +1,5 @@
+import { SupportAIPreview } from "./SupportAIPreview";
+import { WidgetOriginSettings } from './chat-widget/WidgetOriginSettings';
 import { brandingDescription } from '@edition';
 import { AIReplyChannelsSelect, getAIReplyChannels, type AIReplyChannels } from './chat-widget/AIReplyChannelsSelect';
 import { AIFollowUpSettings } from './chat-widget/AIFollowUpSettings';
@@ -26,6 +28,7 @@ import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { WidgetPreview } from './WidgetPreview';
 import { CodeBlock } from '@/components/ui/code-block';
 import { BrandColorPicker } from '@/components/pm/ColorPicker';
+import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import type { BusinessHoursDay } from '@/lib/pmTypes';
@@ -58,13 +61,16 @@ import { CuratedGuidanceField } from './CuratedGuidanceField';
 /* ── Main component ──────────────────────────────────────────────────── */
 
 type ChatGeneralTabMode = 'chat-widget' | 'ai-assistant';
-const HELPIN_WIDGET_HOST = 'https://client.helpin.ai';
+
 
 export function ChatGeneralTab({ workspaceId, mode = 'chat-widget' }: { workspaceId: string; mode?: ChatGeneralTabMode }) {
   return <ChatGeneralSettings key={`${workspaceId}:${mode}`} workspaceId={workspaceId} mode={mode} />;
 }
 
 function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode: ChatGeneralTabMode }) {
+  const publicConfig = useAuthStore((s) => s.configuration);
+  const widgetHost = publicConfig?.public_widget_url || window.location.origin;
+  const sdkURL = publicConfig?.public_sdk_url || `${widgetHost}/sdk/lib.js`;
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const isAIAssistantPage = mode === 'ai-assistant';
   const { data, isLoading } = useChatSettings(workspaceId);
@@ -409,8 +415,9 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
     t.defer = true;
     t.id = 'helpin-widget';
     t.setAttribute('data-widget-key', '${widgetKey}');
-    t.setAttribute('data-host', '${HELPIN_WIDGET_HOST}');
-    t.src = 'https://cdn.helpin.ai/lib.js';
+    t.setAttribute('data-host', '${widgetHost}');
+    t.setAttribute('data-support-only', 'true');
+    t.src = '${sdkURL}';
     s.parentNode.insertBefore(t, s);
   })();
 </script>
@@ -452,9 +459,9 @@ import { createClient, HelpinProvider } from '@helpin-ai/react';
 
 const client = createClient({
   widgetKey: '${widgetKey}',
-  host: '${HELPIN_WIDGET_HOST}',
-  // The React package loads the live widget runtime from Helpin's CDN.
-  // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
+  host: '${widgetHost}',
+  widgetRuntimeUrl: '${sdkURL}',
+  supportOnly: true,
 });
 
 function App() {
@@ -510,7 +517,9 @@ import App from './App.vue';
 
 const client = createClient({
   widgetKey: '${widgetKey}',
-  host: '${HELPIN_WIDGET_HOST}',
+  host: '${widgetHost}',
+  widgetRuntimeUrl: '${sdkURL}',
+  supportOnly: true,
 });
 
 createApp(App)
@@ -546,7 +555,9 @@ import { createClient, HelpinProvider } from '@helpin-ai/nextjs';
 export function Providers({ children }) {
   const client = useMemo(() => createClient({
     widgetKey: '${widgetKey}',
-    host: '${HELPIN_WIDGET_HOST}',
+    host: '${widgetHost}',
+  widgetRuntimeUrl: '${sdkURL}',
+  supportOnly: true,
   }), []);
 
   return <HelpinProvider client={client}>{children}</HelpinProvider>;
@@ -589,7 +600,8 @@ function Dashboard() {
   const installPrompt = buildWidgetInstallPrompt({
     framework: snippetTab,
     widgetKey,
-    host: HELPIN_WIDGET_HOST,
+    host: widgetHost,
+    runtimeURL: sdkURL,
   });
 
   // Derive help spaces for the widget preview
@@ -597,7 +609,7 @@ function Dashboard() {
     .filter(space => widgetHelpSpaceIds.includes(space.id))
     .map(space => ({ id: space.id, name: space.name, slug: space.slug }));
 
-  const previewHost = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').replace(/\/api\/?$/, '');
+  const previewHost = widgetHost;
   const previewAvailability = buildPreviewAvailability({
     businessHoursEnabled,
     timezone,
@@ -987,6 +999,7 @@ function Dashboard() {
       <div className="space-y-4">
         {saveIndicator}
         {aiAssistantSection}
+        {data?.settings.ai_agent_id && <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />}
         <CuratedGuidanceField
           key={aiAgentId}
           workspaceId={workspaceId}
@@ -1003,6 +1016,7 @@ function Dashboard() {
       <div className="flex flex-1 flex-col overflow-auto">
         <div className="flex-1 space-y-3 p-4">
         {saveIndicator}
+        {data && <WidgetOriginSettings key={workspaceId} workspaceId={workspaceId} installation={data} />}
         {/* Widget Installation */}
         <div className={supportSectionClass}>
           <button
@@ -1014,7 +1028,7 @@ function Dashboard() {
               <CodeIcon className="h-4 w-4" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Widget Installation</p>
+              <p className="text-sm font-medium">2. Install the widget</p>
               <p className="text-sm text-muted-foreground">Embed the chat widget on your website</p>
             </div>
             <ArrowDown01Icon className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200', isExpanded('widget-installation') && 'rotate-180')} />
@@ -1690,7 +1704,7 @@ function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">File uploads</Label>
-                    <p className="text-xs text-muted-foreground">Allow visitors to upload images, documents, and other files (max 10 MB).</p>
+                    <p className="text-xs text-muted-foreground">Allow visitors to upload images, documents, and other files (max 100 MB per file).</p>
                   </div>
                   <Switch checked={fileUploadsEnabled} onCheckedChange={setFileUploadsEnabled} />
                 </div>

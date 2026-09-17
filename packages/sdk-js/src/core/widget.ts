@@ -1,3 +1,4 @@
+import { widgetOrigin, widgetURL, widgetSocketURL } from './urls';
 import { mountWidget, unmountWidget, SYSTEM_EVENT_TYPES } from '@helpin-ai/widget-core';
 import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
@@ -35,6 +36,7 @@ export interface WidgetUser {
 }
 
 export interface WidgetSettings {
+  supportOnly?: boolean;
   widgetKey?: string;
   key?: string;
   host?: string;
@@ -224,7 +226,7 @@ export class WidgetManager {
     }
 
     if (settings.host) {
-      this.host = settings.host.replace(/^https?:\/\//, '');
+      this.host = widgetOrigin(settings.host);
     }
 
     // Get or create anonymous ID from cookie
@@ -457,7 +459,7 @@ export class WidgetManager {
     }
 
     const response = await fetch(
-      `https://${this.host}/widget/conversations/${encodeURIComponent(this.activeConversationId)}/transcript`,
+      widgetURL(this.host, `/widget/conversations/${encodeURIComponent(this.activeConversationId)}/transcript`),
       {
         method: 'POST',
         headers: {
@@ -684,7 +686,7 @@ export class WidgetManager {
     if (this.receivedMessageAudioUnlocked) return;
     try {
       if (!this.receivedMessageAudio) {
-        this.receivedMessageAudio = new Audio(RECEIVED_MESSAGE_SOUND_URL);
+        this.receivedMessageAudio = new Audio(this.config?.supportOnly ? widgetURL(this.host, '/sdk/sounds/ping.mp3') : RECEIVED_MESSAGE_SOUND_URL);
       }
       // Silent play to unlock autoplay policy, then pause
       this.receivedMessageAudio.volume = 0;
@@ -699,7 +701,7 @@ export class WidgetManager {
   private playReceivedMessageSound(): void {
     try {
       if (!this.receivedMessageAudio) {
-        this.receivedMessageAudio = new Audio(RECEIVED_MESSAGE_SOUND_URL);
+        this.receivedMessageAudio = new Audio(this.config?.supportOnly ? widgetURL(this.host, '/sdk/sounds/ping.mp3') : RECEIVED_MESSAGE_SOUND_URL);
       }
       this.receivedMessageAudio.volume = 0.5;
       this.receivedMessageAudio.currentTime = 0;
@@ -714,7 +716,7 @@ export class WidgetManager {
     if (this.sentMessageAudioUnlocked) return;
     try {
       if (!this.sentMessageAudio) {
-        this.sentMessageAudio = new Audio(SENT_MESSAGE_SOUND_URL);
+        this.sentMessageAudio = new Audio(this.config?.supportOnly ? widgetURL(this.host, '/sdk/sounds/submit.mp3') : SENT_MESSAGE_SOUND_URL);
       }
       this.sentMessageAudio.volume = 0;
       this.sentMessageAudio.play().then(() => {
@@ -728,7 +730,7 @@ export class WidgetManager {
   private playSentMessageSound(): void {
     try {
       if (!this.sentMessageAudio) {
-        this.sentMessageAudio = new Audio(SENT_MESSAGE_SOUND_URL);
+        this.sentMessageAudio = new Audio(this.config?.supportOnly ? widgetURL(this.host, '/sdk/sounds/submit.mp3') : SENT_MESSAGE_SOUND_URL);
       }
       this.sentMessageAudio.volume = 0.4;
       this.sentMessageAudio.currentTime = 0;
@@ -1483,7 +1485,7 @@ export class WidgetManager {
   private async sendTypingHTTP(isTyping: boolean): Promise<void> {
     if (!this.sessionToken) return;
     try {
-      await fetch(`https://${this.host}/widget/typing`, {
+      await fetch(widgetURL(this.host, '/widget/typing'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_token: this.sessionToken, is_typing: isTyping }),
@@ -1495,7 +1497,7 @@ export class WidgetManager {
 
   private async handleAnswerFeedback(messageId: string, helpful: boolean): Promise<boolean> {
     if (!this.sessionToken) throw new Error('Please reconnect to save feedback.');
-    const response = await fetch(`https://${this.host}/widget/messages/${encodeURIComponent(messageId)}/feedback`, {
+    const response = await fetch(widgetURL(this.host, `/widget/messages/${encodeURIComponent(messageId)}/feedback`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ session_token: this.sessionToken, helpful }),
@@ -1549,7 +1551,7 @@ export class WidgetManager {
     }
     const widgetKey = this.widgetKey;
     const anonymousId = this.anonymousId;
-    const response = await fetch(`https://${this.host}/widget/identify`, {
+    const response = await fetch(widgetURL(this.host, '/widget/identify'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1747,7 +1749,7 @@ export class WidgetManager {
 
     try {
       const response = await fetch(
-        `https://${this.host}/widget/config?widget_key=${encodeURIComponent(this.config.widgetKey)}`
+        widgetURL(this.host, `/widget/config?widget_key=${encodeURIComponent(this.config.widgetKey)}`)
       );
 
       if (!response.ok) {
@@ -1779,7 +1781,7 @@ export class WidgetManager {
     try {
       // Connect with just widget_key (unauthenticated)
       this.wsConnection = new WebSocket(
-        `wss://${this.host}/widget/ws?key=${encodeURIComponent(this.widgetKey)}`
+        widgetSocketURL(this.host, this.widgetKey)
       );
 
       this.wsConnection.onopen = () => {

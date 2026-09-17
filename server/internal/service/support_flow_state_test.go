@@ -448,9 +448,10 @@ func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.
 	if err != nil {
 		t.Fatalf("ListByConversation: %v", err)
 	}
-	if len(messages) != 2 {
-		t.Fatalf("expected escalation reply + system event, got %+v", messages)
+	if len(messages) != 3 || !messages[0].IsInternal || !strings.Contains(messages[0].Content, "AI handoff") {
+		t.Fatalf("expected internal briefing + escalation reply + system event, got %+v", messages)
 	}
+	messages = messages[1:]
 	if messages[0].MessageType != "system" || messages[0].SystemEventType == nil || *messages[0].SystemEventType != model.SystemEventCustomerRequestedHuman {
 		t.Fatalf("first message = %+v, want customer requested human system event before AI acknowledgement", messages[0])
 	}

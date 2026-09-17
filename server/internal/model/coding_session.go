@@ -7,6 +7,7 @@ import (
 )
 
 type CodingSession struct {
+	ExecutionLocation   string                       `json:"execution_location,omitempty"`
 	DeliveryMode        string                       `json:"delivery_mode"`
 	ID                  string                       `json:"id"`
 	RunID               string                       `json:"run_id"`

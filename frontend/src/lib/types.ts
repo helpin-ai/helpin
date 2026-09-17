@@ -207,7 +207,7 @@ export type Permission =
   | 'search.read'
   | 'ws.connect';
 
-export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support' | 'automation';
+export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support' | 'automation' | 'agents';
 export type ManagedWorkspaceModule = Extract<WorkspaceModule, 'crm' | 'support' | 'automation'>;
 export type ModuleGrantSubjectType = 'team' | 'workspace_member';
 

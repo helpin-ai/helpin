@@ -33,6 +33,7 @@ export function logClientInitializationError(
 export function normalizeClientConfig(config: Partial<Config>): Config {
   const cleanConfig = JSON.parse(JSON.stringify(config ?? {}));
   const camelCaseConfig = convertKeysToCamelCase(cleanConfig);
+  if (camelCaseConfig.supportOnly && !camelCaseConfig.host) throw new Error('supportOnly requires an explicit host');
   return {
     ...defaultConfig,
     ...camelCaseConfig,

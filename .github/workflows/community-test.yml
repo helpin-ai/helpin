@@ -1,0 +1,181 @@
+name: Community acceptance
+on:
+  workflow_call:
+    inputs:
+      level:
+        type: string
+        default: smoke
+      architecture:
+        type: string
+        default: amd64
+      export-images:
+        type: boolean
+        default: false
+    secrets:
+      runtime_read_token:
+        required: false
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    env:
+      GOWORK: off
+      COMMUNITY_ARCH: ${{ inputs.architecture }}
+    steps:
+      - name: Free unused hosted-runner SDK space
+        # This job uses fresh GitHub-hosted Linux runners, never the ARC pool.
+        # Keep Docker and the Node/Go tool caches; none of these SDKs are used.
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: helpin
+      - name: Validate request and Runtime access
+        id: runtime
+        env:
+          LEVEL: ${{ inputs.level }}
+          EXPORT_IMAGES: ${{ inputs.export-images }}
+          GH_TOKEN: ${{ secrets.runtime_read_token || github.token }}
+        run: |
+          [[ "$LEVEL" == smoke || "$LEVEL" == full ]]
+          [[ "$COMMUNITY_ARCH" == amd64 || "$COMMUNITY_ARCH" == arm64 ]]
+          [[ "$EXPORT_IMAGES" != true || "$LEVEL" == full ]]
+          revision=$(cat helpin/community/runtime-revision.txt)
+          [[ $revision =~ ^[a-f0-9]{40}$ ]]
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          if ! gh api repos/helpin-ai/agent-runtime --silent >/dev/null 2>&1; then
+            echo '::error::Runtime source is unavailable. Internal runs need COMMUNITY_RUNTIME_READ_TOKEN with Contents: read on agent-runtime. Fork runs require the pinned Runtime source to be public; no private token is exposed to forks.'
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: helpin-ai/agent-runtime
+          ref: ${{ steps.runtime.outputs.revision }}
+          path: agent-runtime
+          token: ${{ secrets.runtime_read_token || github.token }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          package-manager-cache: false
+          node-version-file: helpin/.node-version
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: inputs.level == 'full'
+        with:
+          package_json_file: helpin/package.json
+          # Smoke builds dependencies inside Docker; it has no host pnpm store.
+          cache: true
+          cache_dependency_path: helpin/pnpm-lock.yaml
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        # Host Go commands only run during exported amd64 source acceptance.
+        if: inputs.export-images && inputs.architecture == 'amd64'
+        with:
+          go-version-file: helpin/.go-version
+          cache-dependency-path: |
+            helpin/server/go.sum
+            agent-runtime/go.sum
+      - name: Check installer, runner and packaging contracts
+        working-directory: helpin
+        run: |
+          node --test community/tests/installer.test.mjs
+          python3 -m unittest discover -s community/tests -p '*_test.py'
+      - name: Prepare browser and source acceptance
+        if: inputs.level == 'full'
+        working-directory: helpin
+        env:
+          EXPORT_IMAGES: ${{ inputs.export-images }}
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir packages/sdk-js exec playwright install --with-deps chromium
+          if [[ "$EXPORT_IMAGES" == true && "$COMMUNITY_ARCH" == amd64 ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+            scripts/check-community-backend.sh
+            scripts/check-community-frontend.sh
+            (cd ../agent-runtime && go test ./...)
+          fi
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Prepare build-only configuration and cache scopes
+        id: build
+        env:
+          TRUSTED: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          directory=$(mktemp -d "$RUNNER_TEMP/community-build.XXXXXX")
+          cp helpin/community/{setup.sh,.env.example,apps.example.json} "$directory/"
+          "$directory/setup.sh" install
+          echo "COMMUNITY_ENV_FILE=$directory/.env" >> "$GITHUB_ENV"
+          echo "COMMUNITY_SOURCE_REVISION=$(git -C helpin rev-parse HEAD)" >> "$GITHUB_ENV"
+          export COMMUNITY_SOURCE_REVISION=$(git -C helpin rev-parse HEAD)
+          export COMMUNITY_RUNTIME_REVISION=$(cat helpin/community/runtime-revision.txt)
+          docker compose --env-file "$directory/.env" -f helpin/community/compose.yaml -f helpin/community/compose.build.yaml build --print > "$RUNNER_TEMP/community-bake.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          build = json.loads((Path(os.environ['RUNNER_TEMP']) / 'community-bake.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('cache<<CACHE\n')
+              for target in build['target']:
+                  scope = f"community-{os.environ['COMMUNITY_ARCH']}-{target}"
+                  output.write(f'{target}.cache-from=type=gha,scope={scope}\n')
+                  if os.environ['TRUSTED'] == 'true':
+                      output.write(f'{target}.cache-to=type=gha,scope={scope},mode=max\n')
+              output.write('CACHE\n')
+          PY
+      - uses: docker/bake-action@018cb6412ab401ebaa809aa5f85966b74628600f # v7.4.0
+        with:
+          source: .
+          files: ${{ runner.temp }}/community-bake.json
+          load: true
+          set: ${{ steps.build.outputs.cache }}
+      - name: Run isolated acceptance
+        working-directory: helpin
+        env:
+          LEVEL: ${{ inputs.level }}
+        run: community/tests/run.sh "$LEVEL"
+      - name: Record image identities
+        working-directory: helpin/community
+        run: |
+          mkdir -p release-artifacts
+          docker compose --env-file "$COMMUNITY_ENV_FILE" config --images | sort -u > release-artifacts/images-local.txt
+          xargs docker image inspect --format '{{.Id}} {{.Architecture}}' < release-artifacts/images-local.txt > release-artifacts/tested-images.txt
+      - name: Install checksum-verified Trivy
+        if: inputs.export-images
+        run: bash helpin/scripts/ci/install-tool.sh trivy
+      - name: Scan and export tested application images
+        if: inputs.export-images
+        working-directory: helpin/community
+        run: |
+          test -s ../../agent-runtime/LICENSE
+          ./check-images.sh
+          sed -n '/^ghcr.io\/helpin-ai\//p' release-artifacts/images-local.txt > release-artifacts/application-images.txt
+          mapfile -t images < release-artifacts/application-images.txt
+          docker save "${images[@]}" | gzip > release-artifacts/tested-images.tar.gz
+          cp runtime-revision.txt "release-artifacts/runtime-$COMMUNITY_ARCH.txt"
+          git rev-parse HEAD > "release-artifacts/source-$COMMUNITY_ARCH.txt"
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          images = Path('release-artifacts/application-images.txt').read_text().splitlines()
+          inventory = {}
+          for image in images:
+              info = json.loads(subprocess.check_output(['docker', 'image', 'inspect', image]))[0]
+              inventory[image] = {'id': info['Id'], 'architecture': info['Architecture']}
+          Path('release-artifacts/tested-applications.json').write_text(json.dumps(inventory))
+          PY
+          (cd release-artifacts && sha256sum tested-images.tar.gz > tested-images.tar.gz.sha256)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: community-tested-${{ inputs.architecture }}
+          path: helpin/community/release-artifacts/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove generated build configuration
+        if: always()
+        run: |
+          if [[ -n ${COMMUNITY_ENV_FILE:-} ]]; then
+            rm -rf -- "$(dirname -- "$COMMUNITY_ENV_FILE")"
+          fi

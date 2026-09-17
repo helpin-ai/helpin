@@ -1,11 +1,14 @@
 package email
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -73,5 +76,40 @@ func TestSendEmailWithHeadersAndAttachmentsSerializesPostmarkAttachments(t *test
 	}
 	if captured.Attachments[0].ContentType != "application/pdf" {
 		t.Fatalf("attachment content type = %q", captured.Attachments[0].ContentType)
+	}
+}
+
+func TestSendEmailContextCancelsInFlightRequest(t *testing.T) {
+	client := NewClient("test-only", "support@example.com")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	entered := make(chan struct{})
+	client.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		close(entered)
+		select {
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		case <-time.After(time.Second):
+			return nil, errors.New("request did not receive cancellation")
+		}
+	})})
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.SendEmailWithHeadersAttachmentsAndOptionsContext(ctx, "support@example.com", "customer@example.com", "Subject", "Body", "Body", "", nil, nil, SendEmailOptions{})
+		done <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("send did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("send error = %v, want cancellation", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("send did not stop")
 	}
 }

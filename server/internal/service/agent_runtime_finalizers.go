@@ -202,7 +202,7 @@ func (s *AgentRunFinalizerService) SetSupportCoverageService(coverage agentRunFi
 // that read the summary contract are skipped without markers when it is false
 // so a later duplicate terminal event can retry them.
 func (s *AgentRunFinalizerService) FinalizeTerminalRun(ctx context.Context, run *model.AgentRun, runtimeSummaryAvailable bool) {
-	if s == nil || run == nil {
+	if s == nil || run == nil || model.IsLocalAgentRun(run) {
 		return
 	}
 	completed := strings.TrimSpace(run.Status) == model.AgentRunStatusCompleted

@@ -327,7 +327,7 @@ func (s *AgentRuntimeProjectionService) ReconcileMappedRuns(ctx context.Context,
 		if runtimeRunID == "" {
 			continue
 		}
-		if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" {
+		if strings.TrimSpace(derefString(run.ExecutionStage)) == "cancelling" || (run.TargetType == supportPreviewTarget && s.nowUTC().Sub(run.CreatedAt) > 3*time.Minute) {
 			runtimeRun, err := s.agentRuntimeClient.CancelRun(ctx, runtimeRunID)
 			if err != nil {
 				slog.WarnContext(ctx, "agent runtime cancellation reconciliation failed",
@@ -678,6 +678,9 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	run, err := s.resolveRun(ctx, event)
 	if err != nil {
 		return err
+	}
+	if model.IsLocalAgentRun(run) {
+		return ErrCLIForbidden
 	}
 	if ignore, err := s.ignoreStaleTurnLifecycle(ctx, run, event); err != nil {
 		return err
@@ -1555,6 +1558,10 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 }
 
 func (s *AgentRuntimeProjectionService) publishRuntimeCodingSessionEvent(run *model.AgentRun, event AgentRuntimeEventEnvelope) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s == nil || s.wsPublisher == nil || run == nil {
 		return
 	}
@@ -1958,6 +1965,10 @@ func (s *AgentRuntimeProjectionService) upsertRuntimeInteraction(ctx context.Con
 }
 
 func (s *AgentRuntimeProjectionService) publishRuntimeInteractionEvent(run *model.AgentRun, interaction model.AgentRunInteraction) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s == nil || s.wsPublisher == nil || run == nil {
 		return
 	}

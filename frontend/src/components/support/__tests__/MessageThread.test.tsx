@@ -1,3 +1,4 @@
+vi.mock('../SupportAIControl', () => ({ SupportAIControl: ({ compact }: { compact?: boolean }) => <button data-testid="ai-control" data-compact={Boolean(compact)}>AI control</button> }));
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -107,6 +108,27 @@ describe('MessageThread', () => {
     document.body.innerHTML = ''
   })
 
+  it('preserves messages and comments but hides the composer after customer deletion', async () => {
+    supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'resolved', anonymized_at: '2026-09-16T00:00:00Z' } })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: seedSupportMessagePages([
+      { id: 'message', conversation_id: 'conv-1', sender_type: 'customer', content: 'I am Alice', is_internal: false, created_at: '2026-09-15T00:00:00Z' },
+      { id: 'comment', conversation_id: 'conv-1', sender_type: 'user', content: 'Comment about Alice', is_internal: true, created_at: '2026-09-15T00:01:00Z' },
+    ] as never) })
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    const client = createTestQueryClient()
+    try {
+      await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
+      expect(container.textContent).toContain('I am Alice')
+      expect(container.textContent).toContain('Comment about Alice')
+      expect(container.textContent).toContain('this conversation is read-only')
+      expect(container.querySelector('[data-testid="reply-composer"]')).toBeNull()
+    } finally {
+      act(() => root.unmount())
+      client.clear()
+    }
+  })
+
   it.each(['Viewer', undefined])('does not use the viewer photo based on a matching or missing sender name (%s)', async (senderName) => {
     supportHooks.currentUser = { id: 'viewer', full_name: senderName, email: 'viewer@example.com', avatar_url: '/viewer.png' }
     supportHooks.useConversation.mockReturnValue({ isFetched: true, data: { id: 'conv-1', workspace_id: 'ws-1', status: 'open', source: 'widget', created_at: '2026-09-15T09:00:00Z' } })
@@ -175,6 +197,10 @@ describe('MessageThread', () => {
     try {
       await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
       expect(container.querySelector('[data-testid="ai-run-approvals"]')?.getAttribute('data-enabled')).toBe(String(enabled))
+      const control = container.querySelector('[data-testid="ai-control"]')!
+      expect(control.closest('[data-slot="support-inbox-panel-header"]')).toBeTruthy()
+      expect(control.getAttribute('data-compact')).toBe('false')
+      expect(container.querySelectorAll('[data-testid="ai-control"]')).toHaveLength(1)
     } finally {
       act(() => root.unmount())
       client.clear()
@@ -438,6 +464,10 @@ describe('MessageThread', () => {
     expect(container.querySelector('[aria-label="Resolve conversation"]')).toBeTruthy()
     expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
     expect(container.textContent).not.toContain('Create Task')
+    const control = container.querySelector('[data-testid="ai-control"]')!
+    expect(control.closest('[data-slot="support-inbox-panel-header"]')).toBeTruthy()
+    expect(control.getAttribute('data-compact')).toBe('true')
+    expect(container.querySelectorAll('[data-testid="ai-control"]')).toHaveLength(1)
 
     act(() => {
       returnButton?.click()

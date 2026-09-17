@@ -403,6 +403,21 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 	if err := s.authorizeCommandActor(meta, def); err != nil {
 		return nil, err
 	}
+	if meta.RunID != "" && s.agentRunRepo != nil {
+		run, err := s.resolveCommandRun(ctx, meta)
+		if err != nil {
+			return nil, err
+		}
+		if run.TargetType == supportPreviewTarget {
+			if meta.TargetType != run.TargetType || meta.TargetID != run.TargetID || meta.AgentID != run.AgentID {
+				return nil, fmt.Errorf("preview command scope mismatch")
+			}
+			return s.executeSupportPreviewCommand(ctx, run, meta, def, input)
+		}
+	} else if meta.TargetType == supportPreviewTarget {
+		return nil, fmt.Errorf("preview requires a persisted run")
+	}
+
 	if def.Mutating {
 		if err := s.authorizeDockMutation(ctx, meta, def, input); err != nil {
 			return nil, err

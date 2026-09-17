@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/helpin-ai/helpin/server/internal/deployment"
 	"html"
 	"net/mail"
 	"strings"
@@ -36,7 +37,7 @@ func (s *SupportInboxService) inboundEmailDomain() string {
 	if s != nil && s.emailFallbackService != nil {
 		return s.emailFallbackService.InboundDomain()
 	}
-	return "replies.helpin.email"
+	return deployment.DefaultReplyDomain
 }
 
 func (s *SupportInboxService) ListEmailRoutes(ctx context.Context, workspaceID string) ([]model.SupportEmailRoute, error) {
@@ -47,6 +48,9 @@ func (s *SupportInboxService) ListEmailRoutes(ctx context.Context, workspaceID s
 }
 
 func (s *SupportInboxService) CreateEmailRoute(ctx context.Context, workspaceID string, req model.CreateSupportEmailRouteRequest, actorID string) (*model.SupportEmailRoute, error) {
+	if s.inboundEmailDomain() == "" {
+		return nil, fmt.Errorf("support email is not configured: set SUPPORT_EMAIL_ROUTE_DOMAIN and a support email provider")
+	}
 	if s.emailRouteRepo == nil {
 		return nil, fmt.Errorf("support email route repository is unavailable")
 	}

@@ -76,7 +76,9 @@ func main() {
 		cfg.AWSRegion,
 		cfg.AWSEndpointURL,
 		cfg.AWSPublicBaseURL,
+		cfg.AWSPresignEndpointURL,
 	)
+	s3Client.ConfigureAssetAccess(cfg.AppBaseURL, cfg.AWSPrivateBucket)
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  cfg.DatabaseURL,
@@ -486,6 +488,7 @@ func main() {
 	)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterService.SetPublicationArtifactDependencies(artifactRepo, s3Client)
+	docsHelpcenterService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
 	docsImportService := service.NewDocsImportService(
 		docsImportRepo,
@@ -674,6 +677,7 @@ func main() {
 
 	scheduledRuleActivities := temporalapp.NewScheduledRuleActivities(ruleEngine)
 	crmPlaybookAuthz := authorization.NewAuthzService(db, authorization.NewGORMMemberRepository(db), repository.NewWorkspaceModuleGrantRepository(db))
+	crmPlaybookAuthz.SetDeploymentModules(cfg.EnabledModules)
 	crmSituationService := service.NewCRMSituationService(repository.NewCRMSituationRepository(db), crmPlaybookAuthz)
 	crmPlaybookService := service.NewCRMPlaybookService(repository.NewCRMPlaybookRepository(db), crmPlaybookAuthz, crmSituationService)
 	crmPlaybookExecutionRepo := repository.NewCRMPlaybookExecutionRepository(db)

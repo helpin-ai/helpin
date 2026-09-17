@@ -37,6 +37,7 @@ else
 fi
 
 cp "$EMOJI_SRC" "$EMOJI_OUT"
+cp "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/NOTICE" "$DIST_DIR/"
 
 SIZE=$(wc -c < "$OUT")
 GZIP_SIZE=$(gzip -c "$OUT" | wc -c)

@@ -375,7 +375,7 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 				continue
 			}
 			key := fmt.Sprintf("docs-import/%s/%s/%s", workspaceID, jobID, asset.SourcePath)
-			if err := s.s3Client.PutObject(ctx, key, asset.ContentType, int64(len(assetData)), bytes.NewReader(assetData), true); err != nil {
+			if err := s.s3Client.PutObject(ctx, key, asset.ContentType, int64(len(assetData)), bytes.NewReader(assetData), !s.s3Client.PrivateBucket()); err != nil {
 				summary.AssetRewriteFailures++
 				s.logger.Error("nextra import: upload asset failed",
 					"job_id", jobID, "asset", asset.SourcePath, "error", err)

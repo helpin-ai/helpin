@@ -120,7 +120,7 @@ type CRMSignal struct {
 	SourceThreadID                 *string    `json:"source_thread_id" gorm:"type:uuid;index"`
 	Summary                        string     `json:"summary" gorm:"not null"`
 	EvidenceExcerpt                *string    `json:"evidence_excerpt"`
-	Metadata                       JSONB      `json:"metadata" gorm:"type:jsonb;default:'{}'"`
+	Metadata                       JSONB      `json:"metadata" gorm:"type:jsonb;not null;default:'{}'"`
 	Confidence                     float64    `json:"confidence" gorm:"not null;default:0"`
 	DetectedAt                     time.Time  `json:"detected_at" gorm:"not null"`
 	DetectorKind                   string     `json:"detector_kind" gorm:"not null;default:'llm_extracted';index"`

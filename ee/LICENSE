@@ -1,0 +1,77 @@
+Helpin Enterprise License
+Version 1.0
+
+Copyright (c) 2026 Helpin AI. All rights reserved.
+
+1. Scope
+
+This license applies to the Helpin-owned software and documentation in any
+directory named "ee" in this repository, including server/ee/ and
+frontend/src/ee/, and to copies and modifications of that material (the
+"Enterprise Software"). "Helpin" means Helpin AI. Third-party material
+remains subject to its own licenses and notices.
+
+2. Development, testing, and evaluation
+
+Helpin grants you a non-exclusive, royalty-free license to inspect, copy,
+modify, and run the Enterprise Software solely for internal development,
+testing, and evaluation in non-production environments. You may permit your
+employees and contractors to exercise these rights on your behalf, provided
+they comply with this license and you remain responsible for their use.
+Evaluation does not include operating the Enterprise Software for live
+business operations or providing a service to customers or other third parties.
+
+You may submit modifications to Helpin under its contributor agreement.
+This license does not otherwise authorize public redistribution of the
+Enterprise Software or modified versions of it.
+
+3. Production and commercial use
+
+Production use requires a separate, valid commercial agreement with Helpin
+that expressly authorizes your use of the Enterprise Software. You must
+comply with that agreement, including its applicable fees, term, and usage
+limits. Redistribution, sublicensing, resale, and providing hosted or managed
+services to third parties require express authorization in that agreement.
+Publishing source code or modifying a license check does not grant these rights.
+
+4. Use with the community code
+
+For code in this repository that Helpin owns or has the right to sublicense,
+Helpin also grants you permission to combine that code with the Enterprise
+Software and to copy, modify, and run that combination solely for the purposes
+permitted by section 2. Production and distribution rights to the combination
+must be provided by your separate commercial agreement.
+
+This separate permission does not change the AGPL license available for the
+community code, grant rights to third-party material, or override any
+third-party license obligations. It does not require the Enterprise Software
+to be licensed under the AGPL.
+
+5. Ownership and notices
+
+Helpin and its licensors retain ownership of the Enterprise Software. You
+retain ownership of your original modifications, subject to the rights in the
+underlying software and any contributor agreement you separately accept.
+Keep copyright, license, and attribution notices intact. No trademark rights
+are granted, except as needed to reproduce required notices or identify the
+origin of the software. All rights not expressly granted are reserved.
+
+6. Termination
+
+The permissions in this license terminate if you materially violate its
+terms and fail to cure the violation within 30 days after receiving written
+notice from Helpin. On termination, stop using the Enterprise Software and
+delete your copies except those required by law. Rights under a separate
+commercial agreement are governed by that agreement. Termination does not
+terminate rights independently granted under an open-source license.
+
+7. Warranty and liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE ENTERPRISE SOFTWARE IS
+PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+NONINFRINGEMENT. IN NO EVENT SHALL HELPIN OR ITS LICENSORS BE LIABLE FOR ANY
+CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM OR IN CONNECTION WITH THE
+ENTERPRISE SOFTWARE OR ITS USE, WHETHER IN CONTRACT, TORT, OR OTHERWISE.
+ANY WARRANTIES OR LIABILITY COMMITMENTS IN A SEPARATE COMMERCIAL AGREEMENT
+ARE GOVERNED BY THAT AGREEMENT.

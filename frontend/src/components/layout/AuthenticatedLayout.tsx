@@ -16,12 +16,14 @@ interface AuthenticatedLayoutProps {
 
 export function AuthenticatedLayout({ auth }: AuthenticatedLayoutProps) {
   const user = useAuthStore((state) => state.user)
+  const configuration = useAuthStore((state) => state.configuration)
   const [retrying, setRetrying] = useState(false)
   const [topBannerHeight, setTopBannerHeight] = useState(0)
   const topBannerRef = useRef<HTMLDivElement>(null)
   const location = useLocation()
   const showEmailVerificationBanner = shouldShowEmailVerificationBanner({
     emailVerified: user?.email_verified,
+    verificationRequired: configuration?.email_verification_required,
     pathname: location.pathname,
     search: location.search as Record<string, unknown>,
   })

@@ -67,3 +67,4 @@ packages/*/lib/
 .playwright-mcp/
 # Build cache
 .cache/
+__pycache__/

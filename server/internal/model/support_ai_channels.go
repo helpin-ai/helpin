@@ -27,6 +27,9 @@ func SupportAIChannelEnabled(settings SupportInboxSettings, channel string) bool
 func SupportAIReplyAllowed(settings SupportInboxSettings, conversation *SupportConversation, message *SupportMessage) bool {
 	channel := SupportAIReplyChannel(conversation, message)
 	if message != nil {
+		if conversation != nil && conversation.AIResumedAt != nil && !message.CreatedAt.After(*conversation.AIResumedAt) {
+			return false
+		}
 		if message.SenderType != "customer" || message.IsInternal || IsSupportEmailNotice(message) {
 			return false
 		}
@@ -90,5 +93,5 @@ func SupportAIConversationBlocked(c *SupportConversation) bool {
 		return true
 	}
 	nonempty := func(s *string) bool { return s != nil && strings.TrimSpace(*s) != "" }
-	return (c.HumanTakeover != nil && *c.HumanTakeover) || c.CustomerRequestedHumanAt != nil || nonempty(c.AssignedUserID) || nonempty(c.OpenedByUserID) || (c.AIState != nil && *c.AIState == "escalated") || (c.Status == "resolved" && (c.AIState == nil || *c.AIState != "resolved")) || c.Status == "spam"
+	return c.AnonymizedAt != nil || (c.HumanTakeover != nil && *c.HumanTakeover) || c.CustomerRequestedHumanAt != nil || nonempty(c.AssignedUserID) || nonempty(c.OpenedByUserID) || (c.AIState != nil && *c.AIState == "escalated") || (c.Status == "resolved" && (c.AIState == nil || *c.AIState != "resolved")) || c.Status == "spam"
 }

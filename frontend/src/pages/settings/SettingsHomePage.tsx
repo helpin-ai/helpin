@@ -70,5 +70,5 @@ export function SettingsHomePage({ autoFocus = false }: { autoFocus?: boolean })
   if (access.isPending) return <p className="text-sm text-muted-foreground" role="status">Loading settings…</p>;
   if (access.isError) return <QuietTextAction onClick={() => void access.refetch()}>Couldn’t load settings. Try again</QuietTextAction>;
   if (!ws) return null;
-  return <SettingsHomeView groups={getSettingsSidebarGroups(permissions.canManageSettings, permissions.permissionSet)} slug={ws.slug} recent={readRecentSettings(`${userId ?? ''}:${ws.id}`)} autoFocus={autoFocus} onNavigate={href => void navigate({ to: href })} />;
+  return <SettingsHomeView groups={getSettingsSidebarGroups(permissions.canManageSettings, permissions.permissionSet, permissions.modules)} slug={ws.slug} recent={readRecentSettings(`${userId ?? ''}:${ws.id}`)} autoFocus={autoFocus} onNavigate={href => void navigate({ to: href })} />;
 }

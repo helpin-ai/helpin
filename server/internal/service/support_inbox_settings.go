@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/deployment"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
@@ -608,7 +609,7 @@ func (s *SupportInboxService) GetInstallation(ctx context.Context, workspaceID s
 			WorkspaceID:              workspaceID,
 			WidgetKey:                widgetKey,
 			SecretKey:                secretKey,
-			IdentityVerificationMode: model.IdentityVerificationModeEnforced,
+			IdentityVerificationMode: deployment.WidgetIdentityMode,
 			Settings:                 string(raw),
 			Active:                   true,
 		}
@@ -847,7 +848,7 @@ func (s *SupportInboxService) SeedWorkspaceDefaults(ctx context.Context, workspa
 				WorkspaceID:              workspaceID,
 				WidgetKey:                widgetKey,
 				SecretKey:                secretKey,
-				IdentityVerificationMode: model.IdentityVerificationModeEnforced,
+				IdentityVerificationMode: deployment.WidgetIdentityMode,
 				Settings:                 string(raw),
 				Active:                   true,
 			}

@@ -110,8 +110,17 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 			if err := s.handoff(ctx, tx, conv, settings, now); err != nil {
 				return err
 			}
-			metadata, _ := json.Marshal(map[string]any{"reason": d.Reason, "support_follow_up_id": e.ID})
-			sent = &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderDisplayName: strPtr(helpinAIDisplayName), MessageType: "system", SystemEventType: strPtr(model.SystemEventAIEscalated), IsInternal: true, Content: "Follow-up assessment requested a teammate: " + d.Reason, Metadata: string(metadata), CreatedAt: now}
+			history, err := s.chat.messageRepo.WithTx(tx).ListByConversation(ctx, conv.WorkspaceID, conv.ID, false)
+			if err != nil {
+				return err
+			}
+			sent = buildSupportHandoffNote(conv, history, "Follow-up assessment: "+d.Reason, SupportHandoffBrief{}, now)
+			metadata, _ := json.Marshal(map[string]any{"reason": d.Reason, "support_follow_up_id": e.ID, "ai_handoff_brief": true})
+			sent.Metadata = string(metadata)
+			event := &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderDisplayName: strPtr(helpinAIDisplayName), MessageType: "system", SystemEventType: strPtr(model.SystemEventAIEscalated), IsInternal: true, Content: "Follow-up assessment requested a teammate: " + d.Reason, Metadata: string(metadata), CreatedAt: now}
+			if err := s.chat.messageRepo.WithTx(tx).Create(ctx, event); err != nil {
+				return err
+			}
 			return s.chat.messageRepo.WithTx(tx).Create(ctx, sent)
 		}
 		if e.SequenceVersion >= 2 {
@@ -234,7 +243,10 @@ func (s *SupportFollowUpService) closeIfDue(ctx context.Context, tx *gorm.DB, co
 }
 
 func resolveSupportAIConversation(ctx context.Context, tx *gorm.DB, conv *model.SupportConversation, resolutionType string, now time.Time) error {
-	return repository.NewSupportConversationRepository(tx).UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
+	// An answer accepted before takeover must not resolve the human-owned
+	// conversation if its post-publication finalizer runs later.
+	scoped := tx.Where("ai_control_version = ? AND NOT coalesce(human_takeover,false) AND assigned_user_id IS NULL AND opened_by_user_id IS NULL AND customer_requested_human_at IS NULL AND anonymized_at IS NULL", conv.AIControlVersion)
+	return repository.NewSupportConversationRepository(scoped).UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
 		"status": model.SupportConversationStatusResolved, "flow_state": model.SupportConversationFlowStateResolvedByAI,
 		"ai_state": "resolved", "ai_resolution_type": resolutionType, "ai_resolved_at": now, "resolved_at": now,
 	})
@@ -246,7 +258,7 @@ func (s *SupportFollowUpService) handoff(ctx context.Context, tx *gorm.DB, conv 
 	if mailboxID == nil {
 		mailboxID = ai.resolveConfiguredHandoffMailbox(ctx, conv.WorkspaceID, settings)
 	}
-	fields := map[string]any{"status": model.SupportConversationStatusOpen, "resolved_at": nil, "closed_at": nil, "customer_awaiting_response": true, "ai_state": "escalated", "ai_escalated_at": now, "flow_state": escalatedConversationFlowState(settings, now), "assigned_agent_id": nil, "mailbox_id": mailboxID}
+	fields := map[string]any{"human_takeover": true, "status": model.SupportConversationStatusOpen, "resolved_at": nil, "closed_at": nil, "customer_awaiting_response": true, "ai_state": "escalated", "ai_escalated_at": now, "flow_state": escalatedConversationFlowState(settings, now), "assigned_agent_id": nil, "mailbox_id": mailboxID}
 	if settings.HandoffBehavior != "unassigned" && ai.workspaceRepo != nil {
 		selection, err := selectSupportConversationRecipient(ctx, ai.workspaceRepo, ai.mailboxRepo, ai.installationRepo, nil, ai.presence, ai.statusOverrideRepo, supportRecipientSelectorInput{WorkspaceID: conv.WorkspaceID, MailboxID: mailboxID, HandoffBehavior: settings.HandoffBehavior, HandoffTeamID: settings.HandoffTeamID, RequireAvailability: true, Now: now})
 		if err != nil {

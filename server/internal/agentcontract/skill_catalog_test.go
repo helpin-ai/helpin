@@ -687,3 +687,14 @@ func containsString(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestSupportTrustBoundaryAddedToOldDeliverySnapshots(t *testing.T) {
+	old := "Workspace instructions\n\n" + supportRuntimeDeliveryContract
+	got := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, old)
+	if !strings.Contains(got, SupportKnowledgeTrustPolicy) {
+		t.Fatal("old snapshot bypasses trust boundary")
+	}
+	if next := EnsureSupportRuntimeDeliveryContract(model.AgentPresetSupportAgent, got); next != got {
+		t.Fatal("trust boundary duplicated")
+	}
+}

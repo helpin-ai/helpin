@@ -1,6 +1,7 @@
 import { billingSettingsSections } from '@edition/settings';
 import type { FC, CSSProperties } from 'react';
-import type { Permission } from '@/lib/types';
+import type { Permission, WorkspaceModule } from '@/lib/types';
+import { workspaceSurface } from './workspaceSurface';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   UserIcon,
@@ -409,10 +410,14 @@ export type SettingsSidebarGroup = {
   sections: SettingsSectionMeta[];
 };
 
-export function getSettingsSidebarGroups(canManageSettings: boolean, permissionSet?: Set<string>): SettingsSidebarGroup[] {
+export function getSettingsSidebarGroups(canManageSettings: boolean, permissionSet?: Set<string>, modules?: readonly WorkspaceModule[]): SettingsSidebarGroup[] {
   const groups: SettingsSidebarGroup[] = [];
 
   for (const section of SETTINGS_ROUTE_SECTIONS) {
+    const module = workspaceSurface(buildSettingsRoutePath('workspace', section.id));
+    if (modules && module && !modules.includes(module)) {
+      continue;
+    }
     if (section.requiresManageSettings && !canManageSettings) {
       continue;
     }

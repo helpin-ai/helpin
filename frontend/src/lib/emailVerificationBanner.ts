@@ -1,15 +1,17 @@
 type EmailVerificationBannerVisibilityInput = {
   emailVerified?: boolean;
+  verificationRequired?: boolean;
   pathname: string;
   search?: Record<string, unknown>;
 };
 
 export function shouldShowEmailVerificationBanner({
   emailVerified,
+  verificationRequired = true,
   pathname,
   search,
 }: EmailVerificationBannerVisibilityInput) {
-  if (emailVerified !== false) {
+  if (!verificationRequired || emailVerified !== false) {
     return false;
   }
 

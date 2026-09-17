@@ -13,6 +13,7 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -61,15 +62,15 @@ func (s *SupportAIService) EscalateToHumanForMessage(ctx context.Context, worksp
 
 // EscalateToHumanForMessageWithIssue transitions a conversation from AI handling to human pickup,
 // including the issue key and summary from the query plan for coverage tracking.
-func (s *SupportAIService) EscalateToHumanForMessageWithIssue(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary string) error {
-	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, "")
+func (s *SupportAIService) EscalateToHumanForMessageWithIssue(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary string, briefs ...SupportHandoffBrief) error {
+	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, "", briefs...)
 }
 
 func (s *SupportAIService) escalateToHumanForMessageWithIssueAndReply(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply string) error {
 	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply)
 }
 
-func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply string) error {
+func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply string, briefs ...SupportHandoffBrief) error {
 	escalationLockKey := "support:ai:escalation-lock:" + conversationID
 	if !s.acquireLock(ctx, escalationLockKey) {
 		slog.InfoContext(ctx, "support escalation skipped — escalation already in progress",
@@ -101,6 +102,15 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		return nil
 	}
 
+	if conv.AIResumedAt != nil && messageID != "" {
+		source, err := s.messageRepo.GetByID(ctx, messageID)
+		if err != nil {
+			return err
+		}
+		if source == nil || !source.CreatedAt.After(*conv.AIResumedAt) {
+			return nil
+		}
+	}
 	now := time.Now()
 	settings, availability, err := loadSupportAvailability(ctx, s.installationRepo, workspaceID, now)
 	if err != nil {
@@ -185,7 +195,16 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			"error", historyErr,
 		)
 	} else {
-		escalationAlreadyMessaged = hasEscalationMessageInHistory(history)
+		recent := history
+		if conv.AIResumedAt != nil {
+			recent = nil
+			for _, msg := range history {
+				if msg.CreatedAt.After(*conv.AIResumedAt) {
+					recent = append(recent, msg)
+				}
+			}
+		}
+		escalationAlreadyMessaged = hasEscalationMessageInHistory(recent)
 	}
 
 	// 1. Create escalation messages — a customer-facing reply plus an
@@ -202,9 +221,6 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 				SenderDisplayName: strPtr(helpinAIDisplayName),
 				Content:           "",
 				IsInternal:        true,
-			}
-			if err := s.messageRepo.Create(ctx, escalationSystemMsg); err != nil {
-				return fmt.Errorf("create escalation system event: %w", err)
 			}
 		}
 
@@ -233,9 +249,6 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 				replyMsg.Metadata = `{"delivery_mode":"email_only"}`
 				replyMsg.ViaChannel = strPtr("email")
 			}
-			if err := s.messageRepo.Create(ctx, replyMsg); err != nil {
-				return fmt.Errorf("create escalation reply: %w", err)
-			}
 		}
 
 		if !createSystemEventFirst {
@@ -248,9 +261,6 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 				SenderDisplayName: strPtr(helpinAIDisplayName),
 				Content:           "",
 				IsInternal:        true,
-			}
-			if err := s.messageRepo.Create(ctx, escalationSystemMsg); err != nil {
-				return fmt.Errorf("create escalation system event: %w", err)
 			}
 		}
 	} else {
@@ -285,9 +295,39 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	if !availability.IsWithinOfficeHours && selection == nil {
 		fields["flow_state"] = model.SupportConversationFlowStateAfterHoursQueue
 	}
-	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, fields); err != nil {
+	history, historyErr = s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if historyErr != nil {
+		slog.WarnContext(ctx, "load handoff transcript", "error", historyErr)
+	}
+	brief := SupportHandoffBrief{Issue: issueSummary}
+	if len(briefs) > 0 {
+		brief = briefs[0]
+		if brief.Issue == "" {
+			brief.Issue = issueSummary
+		}
+	}
+	note := buildSupportHandoffNote(conv, history, reason, brief, now)
+	messages := []*model.SupportMessage{replyMsg, escalationSystemMsg}
+	if systemEventForEscalationReason(reason) == model.SystemEventCustomerRequestedHuman {
+		messages = []*model.SupportMessage{escalationSystemMsg, replyMsg}
+	}
+	oldRun, changed, err := s.conversationRepo.ChangeAIControl(ctx, workspaceID, conversationID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
+		if current.AIControlVersion != conv.AIControlVersion || (brief.ExpectedRunID != "" && current.AIControlVersion > 0 && derefString(current.AIActiveRunID) != brief.ExpectedRunID) {
+			return nil, nil, repository.ErrSupportAIControlConflict
+		}
+		if current.AnonymizedAt != nil || (current.HumanTakeover != nil && *current.HumanTakeover) || derefString(current.AIState) == "escalated" {
+			return nil, nil, nil
+		}
+		return fields, note, nil
+	}, messages...)
+	if err != nil {
 		return fmt.Errorf("update conversation for escalation: %w", err)
 	}
+	if !changed {
+		return nil
+	}
+	s.cancelControlledRun(ctx, workspaceID, conversationID, oldRun)
+	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, note, "ai:handoff"))
 	if selection != nil && strings.TrimSpace(selection.UserID) != "" && s.assignmentSystemMessageEmitter != nil {
 		s.assignmentSystemMessageEmitter(ctx, workspaceID, conversationID, selection.UserID)
 	}

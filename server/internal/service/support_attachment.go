@@ -92,18 +92,20 @@ func (s *SupportAttachmentService) Create(
 	storageKey := fmt.Sprintf("workspaces/%s/support/%s/%s-%s",
 		workspaceID, storageScope, attachment.ID, attachment.FileName)
 
-	var publicURL string
-	if s.s3Client.HasPublicURL() {
-		publicURL = s.s3Client.PublicURL(storageKey)
+	// Customer attachments remain private. URLs are minted for authorized
+	// readers and never stored as permanent public object URLs.
+	publicURL, err := s.s3Client.GeneratePresignedInlineGetURL(storageKey)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := s.attachmentRepo.UpdateStorageKey(ctx, attachment.ID, storageKey, publicURL); err != nil {
+	if err := s.attachmentRepo.UpdateStorageKey(ctx, attachment.ID, storageKey, ""); err != nil {
 		return nil, err
 	}
 	attachment.StorageKey = storageKey
-	attachment.PublicURL = publicURL
+	attachment.PublicURL = ""
 
-	uploadURL, err := s.s3Client.GeneratePresignedPutURL(storageKey, attachment.ContentType, attachment.FileSize, s.s3Client.HasPublicURL())
+	uploadURL, err := s.s3Client.GeneratePresignedPutURL(storageKey, attachment.ContentType, attachment.FileSize, false)
 	if err != nil {
 		return nil, fmt.Errorf("generate upload URL: %w", err)
 	}
@@ -207,10 +209,7 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 	storageKey := fmt.Sprintf("workspaces/%s/support/%s/%s-%s",
 		strings.TrimSpace(req.WorkspaceID), strings.TrimSpace(req.ConversationID), attachmentID, fileName)
 	publicURL := ""
-	if s.s3Client.HasPublicURL() {
-		publicURL = s.s3Client.PublicURL(storageKey)
-	}
-	if err := s.s3Client.PutObject(ctx, storageKey, contentType, fileSize, bytes.NewReader(data), s.s3Client.HasPublicURL()); err != nil {
+	if err := s.s3Client.PutObject(ctx, storageKey, contentType, fileSize, bytes.NewReader(data), false); err != nil {
 		return nil, err
 	}
 
@@ -279,13 +278,21 @@ func (s *SupportAttachmentService) HydrateMessages(ctx context.Context, messages
 		if a.MessageID == nil {
 			continue
 		}
+		attachmentURL := a.PublicURL
+		if s.s3Client != nil && a.StorageKey != "" {
+			var err error
+			attachmentURL, err = s.s3Client.GeneratePresignedInlineGetURL(a.StorageKey)
+			if err != nil {
+				return fmt.Errorf("sign support attachment: %w", err)
+			}
+		}
 		byMsg[*a.MessageID] = append(byMsg[*a.MessageID], model.SupportAttachmentPayload{
 			ID:       a.ID,
 			FileKey:  a.StorageKey,
 			FileName: a.FileName,
 			FileType: a.ContentType,
 			FileSize: a.FileSize,
-			URL:      a.PublicURL,
+			URL:      attachmentURL,
 		})
 	}
 

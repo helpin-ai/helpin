@@ -65,6 +65,9 @@ func (s *SupportChatService) closeSupportChatRunIfTerminal(ctx context.Context, 
 		return true
 	}
 	closeRun, reason := supportChatRunClosureDecision(run, conversation, now, *settings)
+	if conversation != nil && conversation.AIControlVersion > 0 && derefString(conversation.AIActiveRunID) != run.ID {
+		closeRun, reason = true, "ownership_changed"
+	}
 	if !closeRun && conversation != nil {
 		allowed, err := s.channelAllowsPendingTurn(ctx, *settings, conversation)
 		if err != nil {
@@ -363,7 +366,11 @@ func (s *SupportChatService) filterChatDeferredMessages(ctx context.Context, row
 		if err != nil {
 			continue
 		}
-		if !model.SupportAIReplyAllowed(*settings, nil, message) {
+		conv, err := s.conversationRepo.GetByID(ctx, row.WorkspaceID, row.ConversationID, "", model.RoleOwner)
+		if err != nil {
+			continue
+		}
+		if message == nil || model.SupportAIConversationBlocked(conv) || !model.SupportAIReplyAllowed(*settings, conv, message) {
 			_ = s.processingRepo.MarkCompleted(ctx, row.ID, nil, 0)
 			continue
 		}

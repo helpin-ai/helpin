@@ -1,0 +1,28 @@
+# Source-build override for contributors/CI; published bundles use pinned images.
+x-helpin-build: &helpin-build
+  context: ..
+  dockerfile: community/images/Dockerfile
+  labels:
+    org.opencontainers.image.source: https://github.com/helpin-ai/helpin
+    org.opencontainers.image.revision: ${COMMUNITY_SOURCE_REVISION:-uncommitted}
+    org.opencontainers.image.version: ${HELPIN_VERSION:-community-v0.1.0-rc.1}
+    ai.helpin.edition: community
+services:
+  helpin-api:
+    build: {<<: *helpin-build, target: api}
+  helpin-worker:
+    build: {<<: *helpin-build, target: worker}
+  helpin-migrate:
+    build: {<<: *helpin-build, target: migrate}
+  helpin-frontend:
+    build: {<<: *helpin-build, target: frontend}
+  helpin-helpcenter:
+    build: {<<: *helpin-build, target: helpcenter}
+  agent-runtime:
+    build:
+      context: ${AGENT_RUNTIME_SOURCE:-../../agent-runtime}
+      target: community
+      labels:
+        org.opencontainers.image.source: https://github.com/helpin-ai/agent-runtime
+        org.opencontainers.image.revision: ${COMMUNITY_RUNTIME_REVISION:-uncommitted}
+        org.opencontainers.image.version: ${AGENT_RUNTIME_VERSION:-community-v0.1.0-rc.1}

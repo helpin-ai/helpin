@@ -1,0 +1,56 @@
+Helpin licensing
+
+Copyright (c) 2026 Helpin AI and contributors.
+
+The following licensing scopes apply to this repository. Paths are relative
+to the repository root. These scopes do not change existing third-party
+licenses, copyright notices, or expressly stated component licenses.
+
+1. Community application: AGPL-3.0-only
+
+Except for the material described below, this project's software and
+documentation are licensed under the GNU Affero General Public License,
+version 3 only (SPDX: AGPL-3.0-only). The complete, unmodified license text
+is in LICENSE-AGPL-3.0.
+
+2. Enterprise directories: Helpin Enterprise License
+
+Helpin-owned material within any directory named "ee", at any depth, is
+excluded from the AGPL grant above. This includes server/ee/ and
+frontend/src/ee/. The applicable terms are in ee/LICENSE, with copies in
+each existing enterprise directory. Copies and modifications of this
+material remain subject to those terms even if moved outside an ee directory.
+
+3. Public SDKs and embedded widgets: Apache-2.0
+
+The following directories are licensed under the Apache License, Version 2.0
+(SPDX: Apache-2.0), with a complete LICENSE file in each directory:
+
+  packages/sdk-js/
+  packages/react/
+  packages/vue/
+  packages/nextjs/
+  packages/shared/
+  packages/widget-core/
+  packages/widget-embed/
+  widget/
+
+The same license text is also provided in LICENSE-APACHE-2.0. These grants
+do not license application or enterprise code under Apache-2.0 merely
+because it uses one of these packages.
+
+4. Third-party and separately licensed material
+
+Third-party dependencies, vendored code, assets, and other material with
+their own explicit licensing notices retain those licenses and notices.
+This file does not relicense that material or remove attribution obligations.
+
+5. Commercial combinations and trademarks
+
+The enterprise directory exclusion does not waive AGPL obligations for a
+combined work. Separate rights for Helpin-owned or sublicensable code are
+described in ee/LICENSE and, for production, in the applicable commercial
+agreement. Third-party rights must be respected independently.
+
+No rights to the Helpin name, logo, or other trademarks are granted by this
+notice. This does not limit rights independently permitted by applicable law.

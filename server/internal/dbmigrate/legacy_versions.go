@@ -6,8 +6,8 @@ import (
 	"fmt"
 )
 
-// These four native-runtime migrations shared version numbers with CRM
-// migrations already released on develop. Their SQL is unchanged; the new
+// These native-runtime/CLI migrations shared version numbers with migrations
+// already released on develop. Their SQL is unchanged; the new
 // versions sort immediately after the original numbers to preserve dependencies.
 // Only an exact checksum match can identify a pre-merge native-runtime row.
 var legacyNativeVersions = map[string]string{
@@ -15,6 +15,7 @@ var legacyNativeVersions = map[string]string{
 	"20260912000201": "202609120002",
 	"20260914000101": "202609140001",
 	"20260914000201": "202609140002",
+	"20260915000101": "202609150001",
 }
 
 type migrationVersionMove struct {

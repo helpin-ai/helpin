@@ -2078,6 +2078,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, fmt.Errorf("conversation not found")
 	}
 
+	if conv.AnonymizedAt != nil {
+		return nil, fmt.Errorf("this conversation is read-only because its customer was deleted")
+	}
+
 	messageType := req.MessageType
 	if messageType == "" {
 		messageType = "reply"
@@ -2170,6 +2174,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
 	msg.Metadata = withSupportDeliveryMode(msg.Metadata, req.DeliveryMode)
+	if senderType == "user" && !msg.IsInternal && messageType == "reply" {
+		if err := s.pauseForTeammate(ctx, conv, derefString(senderUserID), "teammate_replied", map[string]any{"opened_by_user_id": senderUserID}); err != nil {
+			return nil, err
+		}
+	}
 	// Before persisting a teammate's first public reply, emit a widget-visible
 	// "{name} joined the conversation" system message so the customer sees a
 	// centered pill immediately ahead of the reply — Intercom's pattern.
@@ -2243,31 +2252,18 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
-	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" && senderUserID != nil && conv != nil {
-		if conv.OpenedByUserID == nil || *conv.OpenedByUserID != *senderUserID {
-			conv.OpenedByUserID = senderUserID
-			conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
-			conv.HumanTakeover = boolPtr(true)
-			// The message insert has already advanced the database projections.
-			// Saving the pre-reply snapshot here would restore the old preview,
-			// sender and workload state along with these ownership changes.
-			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
-				"opened_by_user_id": senderUserID,
-				"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
-				"human_takeover":    true,
-			}); err != nil {
-				slog.ErrorContext(ctx, "failed to set support conversation owner", "error", err, "conversation_id", ticketID)
-			}
-		}
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" && senderUserID != nil {
+		conv.OpenedByUserID = senderUserID
 	}
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && conv != nil {
 		conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
 		conv.HumanTakeover = boolPtr(true)
-		updates := map[string]any{
-			"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
-			"opened_by_user_id": conv.OpenedByUserID,
-			"human_takeover":    true,
+		updates := map[string]any{}
+		if msg.SenderType != "user" {
+			updates["flow_state"] = model.SupportConversationFlowStateAssignedToHuman
+			updates["human_takeover"] = true
+			updates["opened_by_user_id"] = conv.OpenedByUserID
 		}
 		if conv.Status == model.SupportConversationStatusResolved {
 			conv.Status = model.SupportConversationStatusWaitingOnCustomer
@@ -4227,16 +4223,14 @@ func (s *SupportInboxService) assignConversationAgent(ctx context.Context, works
 		if inst != nil {
 			settings := parseSettings(inst.Settings)
 			if settings.AIAgentID != nil && strings.TrimSpace(*settings.AIAgentID) == agentID {
-				pending := "pending"
-				ticket.HumanTakeover = boolPtr(false)
-				ticket.AIState = &pending
-				ticket.AIResolvedAt = nil
-				ticket.AIResolutionType = nil
-				ticket.FlowState = strPtr(model.SupportConversationFlowStateAIHandling)
+				if !inst.Active {
+					return fmt.Errorf("support AI is not enabled")
+				}
+				return s.changeConversationAIControl(ctx, ticket, derefString(actorID), &model.SupportAIControlRequest{Action: "return", ExpectedVersion: ticket.AIControlVersion}, settings, nil, "")
 			}
 		}
 	}
-	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{"assigned_agent_id": ticket.AssignedAgentID, "flow_state": ticket.FlowState}); err != nil {
 		return err
 	}
 
@@ -4283,13 +4277,18 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 	}
 
 	previousAssignedUserID := derefString(ticket.AssignedUserID)
-	ticket.AssignedUserID = normalizedUserID
 	if normalizedUserID != nil {
-		ticket.HumanTakeover = boolPtr(true)
-	}
-	ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
-	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
-		return err
+		if err := s.pauseForTeammate(ctx, ticket, derefString(actorID), "assigned_to_teammate", map[string]any{"assigned_user_id": normalizedUserID}); err != nil {
+			return err
+		}
+	} else {
+		if ticket.HumanTakeover != nil && *ticket.HumanTakeover {
+			if err := s.pauseForTeammate(ctx, ticket, derefString(actorID), "unassigned_by_teammate", map[string]any{"assigned_user_id": (*string)(nil)}); err != nil {
+				return err
+			}
+		} else if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{"assigned_user_id": nil}); err != nil {
+			return err
+		}
 	}
 
 	if s.activitySvc != nil {

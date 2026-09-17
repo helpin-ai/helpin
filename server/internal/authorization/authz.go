@@ -32,11 +32,12 @@ type MemberInfo struct {
 
 // AuthzService is the single authorization boundary for the application.
 type AuthzService struct {
-	rbac       *RBACEngine
-	relations  *RelationEngine
-	memberRepo MemberRepository
-	moduleRepo ModuleAccessRepository
-	mfaRepo    WorkspaceMFARepository
+	deploymentModules map[model.ModuleID]bool
+	rbac              *RBACEngine
+	relations         *RelationEngine
+	memberRepo        MemberRepository
+	moduleRepo        ModuleAccessRepository
+	mfaRepo           WorkspaceMFARepository
 }
 
 // NewAuthzService creates a new AuthzService.
@@ -143,11 +144,11 @@ func (s *AuthzService) AccessibleModules(ctx context.Context, actor *Actor) ([]m
 		allowed[model.ModuleCRM] = struct{}{}
 		allowed[model.ModuleSupport] = struct{}{}
 		allowed[model.ModuleAutomation] = struct{}{}
-		return orderedModules(allowed), nil
+		return s.visibleModules(allowed), nil
 	}
 
 	if s.moduleRepo == nil {
-		return orderedModules(allowed), nil
+		return s.visibleModules(allowed), nil
 	}
 
 	modules, err := s.moduleRepo.ListAccessibleModules(ctx, actor.WorkspaceID, actor.WorkspaceMemberID, actor.TeamIDs())
@@ -159,7 +160,7 @@ func (s *AuthzService) AccessibleModules(ctx context.Context, actor *Actor) ([]m
 			allowed[module] = struct{}{}
 		}
 	}
-	return orderedModules(allowed), nil
+	return s.visibleModules(allowed), nil
 }
 
 func (s *AuthzService) CanAccessModule(ctx context.Context, actor *Actor, module model.ModuleID) (bool, error) {

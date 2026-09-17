@@ -1,11 +1,12 @@
 {
+  "license": "Apache-2.0",
   "name": "@helpin-ai/widget-core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "LICENSE", "NOTICE"],
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",

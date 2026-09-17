@@ -1,29 +1,7 @@
-/**
- * Module-level feature flags.
- * Modules listed here are only visible to the specified emails.
- * Modules NOT listed are visible to everyone.
- */
-const GATED_MODULES: Record<string, string[]> = {
-  crm: [
-    'waqar@contentstudio.io',
-    'azhar@contentstudio.io',
-    'amad@usermaven.com',
-    'waqar.azeem1986@gmail.com',
-  ],
-  support: [
-    'waqar@contentstudio.io',
-    'azhar@contentstudio.io',
-    'amad@usermaven.com',
-    'waqar.azeem1986@gmail.com',
-  ],
-};
-
-export function isModuleEnabled(moduleId: string, userEmail?: string): boolean {
-  const resolvedModuleId = moduleId === 'agents' ? 'automation' : moduleId;
-  const allowedEmails = GATED_MODULES[resolvedModuleId];
-  if (!allowedEmails) return true;
-  if (!userEmail) return false;
-  return allowedEmails.includes(userEmail.toLowerCase());
+/** Workspace access returned by the server is the module visibility authority.
+ * No staff email allowlist is shipped in either edition. */
+export function isModuleEnabled(_moduleId: string, _userEmail?: string): boolean {
+  return true;
 }
 
 // Coordinate with the backend SETUP_SUCCESS_ENABLED flag to avoid exposing a route the API has disabled.

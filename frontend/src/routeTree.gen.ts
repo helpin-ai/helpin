@@ -14,6 +14,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as BillingPreviewRouteImport } from './routes/billing-preview'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
@@ -36,6 +37,7 @@ import { Route as AuthenticatedWSlugDocsRouteImport } from './routes/_authentica
 import { Route as AuthenticatedWSlugDashboardRouteImport } from './routes/_authenticated/w/$slug/dashboard'
 import { Route as AuthenticatedWSlugCrmRouteImport } from './routes/_authenticated/w/$slug/crm'
 import { Route as AuthenticatedWSlugAutomationRouteImport } from './routes/_authenticated/w/$slug/automation'
+import { Route as AuthenticatedOauthCliAuthorizeRouteImport } from './routes/_authenticated/oauth/cli/authorize'
 import { Route as AuthenticatedWSlugSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/sprints/index'
 import { Route as AuthenticatedWSlugSettingsIndexRouteImport } from './routes/_authenticated/w/$slug/settings/index'
 import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authenticated/w/$slug/pm/index'
@@ -152,6 +154,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BillingPreviewRoute = BillingPreviewRouteImport.update({
   id: '/billing-preview',
   path: '/billing-preview',
@@ -266,6 +273,12 @@ const AuthenticatedWSlugAutomationRoute =
     id: '/automation',
     path: '/automation',
     getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedOauthCliAuthorizeRoute =
+  AuthenticatedOauthCliAuthorizeRouteImport.update({
+    id: '/oauth/cli/authorize',
+    path: '/oauth/cli/authorize',
+    getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedWSlugSprintsIndexRoute =
   AuthenticatedWSlugSprintsIndexRouteImport.update({
@@ -810,6 +823,7 @@ const AuthenticatedWSlugAutomationToolsConnectionsRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/billing-preview': typeof BillingPreviewRoute
+  '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -824,6 +838,7 @@ export interface FileRoutesByFullPath {
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -927,6 +942,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/billing-preview': typeof BillingPreviewRoute
+  '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -940,6 +956,7 @@ export interface FileRoutesByTo {
   '/share/$shareToken': typeof ShareShareTokenRoute
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
+  '/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
   '/w/$slug/notifications': typeof AuthenticatedWSlugNotificationsRoute
   '/w/$slug/setup': typeof AuthenticatedWSlugSetupRoute
@@ -1040,6 +1057,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/billing-preview': typeof BillingPreviewRoute
+  '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
@@ -1054,6 +1072,7 @@ export interface FileRoutesById {
   '/shared/$shareToken': typeof SharedShareTokenRoute
   '/_authenticated/oauth/authorize': typeof AuthenticatedOauthAuthorizeRoute
   '/_authenticated/w/$slug': typeof AuthenticatedWSlugRouteWithChildren
+  '/_authenticated/oauth/cli/authorize': typeof AuthenticatedOauthCliAuthorizeRoute
   '/_authenticated/w/$slug/automation': typeof AuthenticatedWSlugAutomationRouteWithChildren
   '/_authenticated/w/$slug/crm': typeof AuthenticatedWSlugCrmRouteWithChildren
   '/_authenticated/w/$slug/dashboard': typeof AuthenticatedWSlugDashboardRoute
@@ -1160,6 +1179,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/billing-preview'
+    | '/demo'
     | '/forgot-password'
     | '/login'
     | '/register'
@@ -1174,6 +1194,7 @@ export interface FileRouteTypes {
     | '/shared/$shareToken'
     | '/oauth/authorize'
     | '/w/$slug'
+    | '/oauth/cli/authorize'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/dashboard'
@@ -1277,6 +1298,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/billing-preview'
+    | '/demo'
     | '/forgot-password'
     | '/login'
     | '/register'
@@ -1290,6 +1312,7 @@ export interface FileRouteTypes {
     | '/share/$shareToken'
     | '/shared/$shareToken'
     | '/oauth/authorize'
+    | '/oauth/cli/authorize'
     | '/w/$slug/dashboard'
     | '/w/$slug/notifications'
     | '/w/$slug/setup'
@@ -1389,6 +1412,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/billing-preview'
+    | '/demo'
     | '/forgot-password'
     | '/login'
     | '/register'
@@ -1403,6 +1427,7 @@ export interface FileRouteTypes {
     | '/shared/$shareToken'
     | '/_authenticated/oauth/authorize'
     | '/_authenticated/w/$slug'
+    | '/_authenticated/oauth/cli/authorize'
     | '/_authenticated/w/$slug/automation'
     | '/_authenticated/w/$slug/crm'
     | '/_authenticated/w/$slug/dashboard'
@@ -1509,6 +1534,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   BillingPreviewRoute: typeof BillingPreviewRoute
+  DemoRoute: typeof DemoRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
@@ -1555,6 +1581,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/billing-preview': {
@@ -1710,6 +1743,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/automation'
       preLoaderRoute: typeof AuthenticatedWSlugAutomationRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/oauth/cli/authorize': {
+      id: '/_authenticated/oauth/cli/authorize'
+      path: '/oauth/cli/authorize'
+      fullPath: '/oauth/cli/authorize'
+      preLoaderRoute: typeof AuthenticatedOauthCliAuthorizeRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/w/$slug/sprints/': {
       id: '/_authenticated/w/$slug/sprints/'
@@ -2684,6 +2724,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedWorkspacesRoute: typeof AuthenticatedWorkspacesRoute
   AuthenticatedOauthAuthorizeRoute: typeof AuthenticatedOauthAuthorizeRoute
   AuthenticatedWSlugRoute: typeof AuthenticatedWSlugRouteWithChildren
+  AuthenticatedOauthCliAuthorizeRoute: typeof AuthenticatedOauthCliAuthorizeRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -2692,6 +2733,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedWorkspacesRoute: AuthenticatedWorkspacesRoute,
   AuthenticatedOauthAuthorizeRoute: AuthenticatedOauthAuthorizeRoute,
   AuthenticatedWSlugRoute: AuthenticatedWSlugRouteWithChildren,
+  AuthenticatedOauthCliAuthorizeRoute: AuthenticatedOauthCliAuthorizeRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
@@ -2702,6 +2744,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   BillingPreviewRoute: BillingPreviewRoute,
+  DemoRoute: DemoRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,

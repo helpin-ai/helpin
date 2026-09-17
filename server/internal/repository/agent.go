@@ -1090,7 +1090,7 @@ func (r *AgentRunRepository) ListActiveByExternalRuntime(ctx context.Context, ex
 			model.AgentRunStatusRunning,
 			model.AgentRunStatusPaused,
 		}).
-		Where("updated_at < ?", olderThan).
+		Where("updated_at < ? OR (target_type = ? AND created_at < ?)", olderThan, "support_preview", olderThan).
 		Order("updated_at ASC").
 		Limit(limit).
 		Find(&runs).Error; err != nil {

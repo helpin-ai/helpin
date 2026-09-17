@@ -35,3 +35,7 @@ describe('emailVerificationBanner', () => {
     })).toBe(false);
   });
 });
+
+it('does not claim verification or show a verification banner when policy is disabled', () => {
+  expect(shouldShowEmailVerificationBanner({ emailVerified: false, verificationRequired: false, pathname: '/w/acme/support' })).toBe(false);
+});
