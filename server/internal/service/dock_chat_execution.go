@@ -54,7 +54,11 @@ func runtimeAgentForDockExecution(run *model.AgentRun, agent AgentRuntimeAgent) 
 	if json.Unmarshal(agent.ExecutionConfig, &config) != nil || config == nil {
 		config = map[string]any{}
 	}
-	config["workspace"] = map[string]any{"access": "read_write"}
+	workspaceConfig := map[string]any{"access": "read_write"}
+	if run.RepositoryID != nil && strings.TrimSpace(*run.RepositoryID) != "" {
+		workspaceConfig["mode"] = "repository"
+	}
+	config["workspace"] = workspaceConfig
 	agent.ExecutionConfig, _ = json.Marshal(config)
 	const readOnly = "- Repository inspection is read-only: discover the repository, check out its default branch, and use read/search/symbol/commit-history tools. Never attempt file edits, shell commands, branches, commits, pushes, merges, or pull requests from the Dock."
 	agent.SystemPrompt = strings.ReplaceAll(agent.SystemPrompt, readOnly, "")
@@ -62,7 +66,7 @@ func runtimeAgentForDockExecution(run *model.AgentRun, agent AgentRuntimeAgent) 
 
 ## User-enabled direct execution
 These rules replace read-only Dock and mandatory Forge delegation restrictions.
-The conversation owner explicitly enabled execution. You may edit files, run commands and Python, create branches, push and open PRs when authorized, subject to tool permissions and publication approvals. Attach repositories with list_repositories and checkout_repositories; do not invent a task. Forge delegation is optional.
+The conversation owner explicitly enabled execution. You may edit files, run commands and Python, create branches, push and open PRs when authorized, subject to tool permissions and publication approvals. When a repository workspace is not already present, before the first repository command, read, edit, or branch operation, call list_repositories and then checkout_repositories with the matching repository_id. Do not search the container filesystem for a checkout. Do not invent a task. Forge delegation is optional.
 Use run_python for analysis without a repository. Each call starts a fresh interpreter; files and private packages are retained within this run only. Analysis storage is capped at 512 MiB and deleted at run end. Publish important files with output_paths or publish_outputs before finishing a turn. Successor runs do not inherit files or packages. Never claim missing state still exists or repeat external writes to recreate it.
 Commands execute in a trusted worker container. They can read other runs' checkouts on its shared volume; this is not a filesystem sandbox.
 If a tool reports an interrupted operation with outcome unknown, tell the user and inspect external state before any retry. Never claim it failed without evidence.

@@ -852,7 +852,12 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		trigger,
 		nil,
 		parentRunID,
-		startTargetRunOptions{dockChatID: &chat.ID, clientMessageID: clientMessageID, executionEnabled: chat.ExecutionEnabled},
+		startTargetRunOptions{
+			dockChatID:       &chat.ID,
+			clientMessageID:  clientMessageID,
+			executionEnabled: chat.ExecutionEnabled,
+			repositoryID:     initialDockExecutionRepositoryID(chat.ExecutionEnabled, attachedContexts),
+		},
 	)
 	if err != nil {
 		return err
@@ -868,6 +873,27 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		}
 	}
 	return nil
+}
+
+func initialDockExecutionRepositoryID(executionEnabled bool, contexts []model.AgentRunContextReference) *string {
+	if !executionEnabled {
+		return nil
+	}
+	var repositoryID string
+	for _, attached := range contexts {
+		if strings.TrimSpace(attached.EntityType) != "repository" || strings.TrimSpace(attached.EntityID) == "" {
+			continue
+		}
+		candidate := strings.TrimSpace(attached.EntityID)
+		if repositoryID != "" && repositoryID != candidate {
+			return nil
+		}
+		repositoryID = candidate
+	}
+	if repositoryID == "" {
+		return nil
+	}
+	return &repositoryID
 }
 
 func dockChatAttachedContexts(chat *model.DockChat, pageContext map[string]interface{}, references []model.DockEntityReference) []model.AgentRunContextReference {

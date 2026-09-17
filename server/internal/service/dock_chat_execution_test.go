@@ -30,8 +30,20 @@ func TestDockExecutionProjectionIsOptInAndSeparate(t *testing.T) {
 	if slices.Contains(ordinary.AllowedTools, "run_python") || string(agent.AllowedTools) != `["read_files"]` {
 		t.Fatal("saved agent widened")
 	}
-	if strings.Contains(enabled.SystemPrompt, "Never attempt file edits") || !strings.Contains(enabled.SystemPrompt, "Forge delegation is optional") {
+	if strings.Contains(enabled.SystemPrompt, "Never attempt file edits") ||
+		!strings.Contains(enabled.SystemPrompt, "Forge delegation is optional") ||
+		!strings.Contains(enabled.SystemPrompt, "Do not search the container filesystem for a checkout") {
 		t.Fatal("direct execution instructions missing")
+	}
+	run.RepositoryID = stringPointer("repo-1")
+	withRepository := runtimeAgentForDockExecution(run, ordinary)
+	var executionConfig map[string]interface{}
+	if err := json.Unmarshal(withRepository.ExecutionConfig, &executionConfig); err != nil {
+		t.Fatal(err)
+	}
+	workspaceConfig, _ := executionConfig["workspace"].(map[string]interface{})
+	if workspaceConfig["mode"] != "repository" || workspaceConfig["access"] != "read_write" {
+		t.Fatalf("attached repository execution config = %#v", executionConfig)
 	}
 	req, err := runtimeStartRunRequest(run, agent, enabled)
 	if err != nil {
@@ -43,6 +55,20 @@ func TestDockExecutionProjectionIsOptInAndSeparate(t *testing.T) {
 	run.DockChatID = nil
 	if got := runtimeAgentForDockExecution(run, ordinary); got.ID != ordinary.ID {
 		t.Fatal("non-Dock input enabled execution")
+	}
+}
+
+func TestInitialDockExecutionRepositoryIDRequiresOneAuthorizedAttachment(t *testing.T) {
+	contexts := []model.AgentRunContextReference{{EntityType: "repository", EntityID: "repo-1"}}
+	if got := initialDockExecutionRepositoryID(false, contexts); got != nil {
+		t.Fatalf("ordinary chat selected repository %q", *got)
+	}
+	if got := initialDockExecutionRepositoryID(true, contexts); got == nil || *got != "repo-1" {
+		t.Fatalf("execution chat repository = %#v", got)
+	}
+	contexts = append(contexts, model.AgentRunContextReference{EntityType: "repository", EntityID: "repo-2"})
+	if got := initialDockExecutionRepositoryID(true, contexts); got != nil {
+		t.Fatalf("ambiguous repositories selected %q", *got)
 	}
 }
 

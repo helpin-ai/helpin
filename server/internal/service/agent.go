@@ -4552,6 +4552,7 @@ type startTargetRunOptions struct {
 	executionEnabled bool
 	dockChatID       *string
 	clientMessageID  string
+	repositoryID     *string
 }
 
 func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
@@ -5214,6 +5215,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			allowActiveParentRun: opts.allowActiveParentRun,
 			dockChatID:           opts.dockChatID,
 			clientMessageID:      opts.clientMessageID,
+			repositoryID:         opts.repositoryID,
 			actorID:              actorID,
 			input:                input,
 			trigger:              trigger,
