@@ -594,10 +594,11 @@ export function useUploadSupportAttachment(workspaceId: string, conversationId: 
         conversationId,
         { file_name: file.name, file_size: file.size, content_type: contentType },
       ))
+      // Support attachments are private, even when a signed download URL is returned.
       const response = await fetch(initiated.upload_url, {
         method: 'PUT',
         body: file,
-        headers: { 'Content-Type': contentType, 'x-amz-acl': 'public-read' },
+        headers: { 'Content-Type': contentType },
       })
       if (!response.ok) throw new Error('Upload to storage failed')
       unwrapOrThrow(await supportService.confirmAttachmentUpload(workspaceId, initiated.attachment.id))

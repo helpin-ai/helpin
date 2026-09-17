@@ -501,7 +501,7 @@ describe('useUploadSupportAttachment', () => {
     expect(storageFetch).toHaveBeenCalledWith('https://storage.test/presigned', {
       method: 'PUT',
       body: file,
-      headers: { 'Content-Type': 'application/pdf', 'x-amz-acl': 'public-read' },
+      headers: { 'Content-Type': 'application/pdf' },
     })
     expect(fakeApi.patch).toHaveBeenCalledWith(
       `/support/inbox/attachments/att-1/confirm?workspace_id=${WORKSPACE_ID}`,

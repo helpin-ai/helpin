@@ -1043,13 +1043,12 @@ export function useUploadSupportAttachment(workspaceId: string, conversationId: 
         },
       ));
 
-      // Step 2: Upload to S3 via presigned PUT URL
+      // Step 2: Match the private presigned PUT; do not add a public-read ACL.
       const uploadResp = await fetch(initData.upload_url, {
         method: 'PUT',
         body: file,
         headers: {
           'Content-Type': file.type || 'application/octet-stream',
-          'x-amz-acl': 'public-read',
         },
       });
       if (!uploadResp.ok) throw new Error('Upload to storage failed');
