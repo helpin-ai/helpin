@@ -93,8 +93,25 @@ users trusted to execute in that worker container.
 
 TypeSafe review is optional operator configuration on the runtime workers:
 `TYPESAFE_API_KEY`, `AGENT_RUNTIME_TYPESAFE_ENABLED=true`, and optionally
-`AGENT_RUNTIME_TYPESAFE_THRESHOLD` (default 0.95). Enabling it sends selected
+`AGENT_RUNTIME_TYPESAFE_ASKED_THRESHOLD` (default minimum 0.90),
+`AGENT_RUNTIME_TYPESAFE_HAZARD_THRESHOLD` (default maximum 0.20), and
+`AGENT_RUNTIME_TYPESAFE_ESCALATION_THRESHOLD` (prompt above 0.50). Enabling it sends selected
 command/repository context to TypeSafe's official endpoint. Automatic approval
 requires `AGENT_RUNTIME_TYPESAFE_AUTO_APPROVE=true`; keep it off until the runtime's
 live command-review evaluations pass. No key/provider failure retains the existing
 risk-label policy, and human-only/never approval modes remain unchanged.
+
+Auto-approval only suppresses prompts for local-operation candidates. Pushes, PRs,
+network installation and API writes do not acquire authorization from review scores;
+use the existing human approval flow. The seventh `external_send_requested` score
+is diagnostic only. High hazards escalate routine calls and appear in the approval
+summary. The reviewer does not enforce network isolation or package-name safety.
+
+`AGENT_RUNTIME_TYPESAFE_MODEL` defaults to `jev-latest`, but prompt suppression
+requires the response to match `AGENT_RUNTIME_TYPESAFE_EVALUATED_MODEL` (default
+`jev-1.13.0`). Reevaluate each version before changing that setting. The supplied
+ad hoc trial reported 18/34 benign approvals and 0/44 false approvals at 0.90/0.20;
+these are not guarantees or fresh measurements. The runtime release suite contains
+39 reconstructed scenarios, each run twice when live evaluation is enabled.
+Remove the obsolete single-choice `AGENT_RUNTIME_TYPESAFE_THRESHOLD` setting
+when migrating; it is not equivalent to the new thresholds.
