@@ -5,11 +5,43 @@ import json
 import os
 import tempfile
 import textwrap
+import subprocess
 from unittest.mock import patch
 from checks import GROUPS, JOBS, failures, select
 
 
 class ChecksTest(unittest.TestCase):
+    def test_external_actions_are_immutable(self):
+        root = Path(__file__).resolve().parents[2]
+        for workflow in (root / '.github/workflows').glob('*.yml'):
+            text = workflow.read_text()
+            self.assertNotIn('ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION', text, workflow)
+            self.assertRegex(text, r'(?m)^permissions:\n  contents: read$', workflow)
+            for reference in re.findall(r'^\s*(?:- )?uses: ([^\s]+)', text, re.M):
+                if reference.startswith('./'):
+                    continue
+                self.assertRegex(reference, r'^[\w.-]+/[\w./-]+@[a-f0-9]{40}$', workflow)
+
+    def test_tool_installer_rejects_bad_checksum_before_extraction(self):
+        installer = Path(__file__).with_name('install-tool.sh')
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            # Emulate a corrupted download, without downloading or running a tool.
+            curl = directory / 'curl'
+            curl.write_text('#!/bin/bash\nprintf corrupt > "${@: -1}"\n')
+            curl.chmod(0o755)
+            output = directory / 'github-path'
+            for tool in ('doppler', 'trivy'):
+                with self.subTest(tool=tool):
+                    result = subprocess.run(['bash', str(installer), tool],
+                        env={**os.environ, 'PATH': temporary + os.pathsep + os.environ['PATH'],
+                             'RUNNER_TEMP': temporary, 'GITHUB_PATH': str(output)},
+                        capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('FAILED', result.stdout)
+                    self.assertFalse(output.exists())
+                    self.assertEqual(list(directory.glob('tool-*')), [])
+
     def test_dependency_selection(self):
         for path, groups in {
             'frontend/src/lib/supportInboxFilters.ts': ('mobile', 'desktop', 'frontend', 'community'),
