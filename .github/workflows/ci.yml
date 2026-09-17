@@ -1,7 +1,7 @@
 name: CI
 
-# Required edition checks and dependency-aware selection. Community acceptance
-# shares its read-only workflow with scheduled and release-candidate validation.
+# Required source/edition checks and dependency-aware selection. Full Community
+# image acceptance runs separately on schedules, manual dispatch and releases.
 
 on:
   pull_request:
@@ -21,7 +21,6 @@ jobs:
     name: Detect Changes
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || 'arc-runners-helpin-ai' }}
     outputs:
-      community: ${{ steps.filter.outputs.community }}
       server: ${{ steps.filter.outputs.server }}
       frontend: ${{ steps.filter.outputs.frontend }}
       admin: ${{ steps.filter.outputs.admin }}
@@ -73,16 +72,6 @@ jobs:
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           "$(go env GOPATH)/bin/actionlint" -shellcheck= .github/workflows/*.yml
           shellcheck -S error community/*.sh community/postgres/*.sh community/tests/*.sh scripts/check-community-*.sh scripts/ci/*.sh
-
-  community:
-    name: Community bundle
-    needs: [changes, workflow-checks]
-    if: needs.changes.outputs.community == 'true'
-    uses: ./.github/workflows/community-test.yml
-    with:
-      level: smoke
-    secrets:
-      runtime_read_token: ${{ secrets.COMMUNITY_RUNTIME_READ_TOKEN }}
 
   schema:
     name: fresh-ledger-matches-api
@@ -503,7 +492,7 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [changes, workflow-checks, server, server-tests, community-backend, ai-profile-postgres, schema, frontend, frontend-tests, community-frontend, admin, packages-tests, helpcenter, desktop, mobile-check, eventpipeline, community]
+    needs: [changes, workflow-checks, server, server-tests, community-backend, ai-profile-postgres, schema, frontend, frontend-tests, community-frontend, admin, packages-tests, helpcenter, desktop, mobile-check, eventpipeline]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

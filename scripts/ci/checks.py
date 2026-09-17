@@ -5,13 +5,12 @@ import json
 import os
 import sys
 
-GROUPS = ('server', 'frontend', 'admin', 'packages', 'helpcenter', 'desktop', 'mobile', 'eventpipeline', 'community')
+GROUPS = ('server', 'frontend', 'admin', 'packages', 'helpcenter', 'desktop', 'mobile', 'eventpipeline')
 JOBS = {
     'server': ('server', 'server-tests', 'community-backend', 'ai-profile-postgres', 'schema'),
     'frontend': ('frontend', 'frontend-tests', 'community-frontend'),
     'admin': ('admin',), 'packages': ('packages-tests',), 'helpcenter': ('helpcenter',),
     'desktop': ('desktop',), 'mobile': ('mobile-check',), 'eventpipeline': ('eventpipeline',),
-    'community': ('community',),
 }
 ROOT_CONFIG = {'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'turbo.json', 'tsconfig.base.json', '.node-version', '.go-version', '.dockerignore', '.npmrc', '.pnpmfile.cjs', '.github/actionlint.yaml'}
 
@@ -34,7 +33,6 @@ def select(paths, all_checks=False):
             'desktop': path.startswith(('apps/support-desktop/', 'frontend/', 'packages/')),
             'mobile': path.startswith(('apps/support-mobile/', 'frontend/', 'packages/support-core/', 'packages/shared/', 'packages/widget-core/')),
             'eventpipeline': path.startswith('events-pipeline/'),
-            'community': server or frontend or path.startswith(('community/', 'help-center/', 'packages/')),
         }
         for group, changed in matches.items():
             result[group] |= changed

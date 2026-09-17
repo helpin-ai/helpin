@@ -39,21 +39,24 @@ remove their own resources. They do not upload raw logs or credential-bearing tr
 - Community jobs own builds/tests with EE source absent. EE jobs own EE builds/tests.
 - PostgreSQL 16 checks historical migrations; PostgreSQL 17/pgvector checks the
   fresh ledger against API models and verifies contact anonymization.
-- Relevant PRs run amd64 smoke acceptance. Scheduled acceptance runs full amd64;
-  manual acceptance can run both native architectures.
+- PRs run relevant source/edition checks, schema parity and lightweight installer/
+  packaging checks, without building or starting the Docker bundle. Scheduled
+  acceptance builds and tests full amd64; manual acceptance can run both native
+  architectures. Run it before merging Dockerfile or Compose changes when needed.
 - Release candidates run full native amd64 and arm64 acceptance, source validation,
   scans and SBOM generation. Publishing reuses the tested image archives.
 - `CI required` rejects failed, cancelled and unexpectedly skipped selected jobs.
-  Existing leaf check names remain. Maintainers should require the new aggregate
-  only after observing a passing run and reviewing existing protection rules.
+  Keep `CI required` as the aggregate protection check. Remove any separately
+  required `Community bundle` leaf check from branch protection: that PR job no
+  longer runs.
 
 Fork PR jobs use GitHub-hosted runners without private credentials. Internal
 jobs retain ARC runners where already configured. Before making the repository
 public, restrict ARC runner-group access to trusted workflows/refs: a contributor
 can edit workflow YAML, so the runner selector alone is not an authorization boundary. While Runtime is private,
-internal acceptance requires `COMMUNITY_RUNTIME_READ_TOKEN` with Contents: read
-on that repository. Fork acceptance reports this dependency as blocked; do not
-supply private credentials or use `pull_request_target` to bypass that boundary.
+scheduled/manual/release acceptance requires `COMMUNITY_RUNTIME_READ_TOKEN` with
+Contents: read on that repository. PR checks do not check out Runtime or need that
+token; do not supply private credentials or use `pull_request_target` for forks.
 Public release requires the pinned Runtime source to be publicly available.
 
 Go and Node are pinned in `.go-version` and `.node-version`; pnpm is declared in

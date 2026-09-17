@@ -67,12 +67,11 @@ class ChecksTest(unittest.TestCase):
 
     def test_dependency_selection(self):
         for path, groups in {
-            'frontend/src/lib/supportInboxFilters.ts': ('mobile', 'desktop', 'frontend', 'community'),
-            'packages/shared/src/types.ts': ('packages', 'mobile', 'frontend', 'helpcenter', 'community'),
-            'packages/widget-core/src/index.ts': ('mobile', 'frontend', 'helpcenter', 'community'),
-            'server/internal/model/user.go': ('server', 'community'),
-            'server/skills/support.md': ('server', 'community'),
-            'community/compose.yaml': ('community',),
+            'frontend/src/lib/supportInboxFilters.ts': ('mobile', 'desktop', 'frontend'),
+            'packages/shared/src/types.ts': ('packages', 'mobile', 'frontend', 'helpcenter'),
+            'packages/widget-core/src/index.ts': ('mobile', 'frontend', 'helpcenter'),
+            'server/internal/model/user.go': ('server',),
+            'server/skills/support.md': ('server',),
         }.items():
             with self.subTest(path=path):
                 selected = select([path])
@@ -89,13 +88,31 @@ class ChecksTest(unittest.TestCase):
             (['apps/admin/src/App.tsx'], {'admin'}),
             (['apps/support-mobile/src/App.tsx'], {'mobile'}),
             (['events-pipeline/src/main.rs'], {'eventpipeline'}),
-            (['server/internal/model/user.go'], {'server', 'community'}),
-            (['community/compose.yaml'], {'community'}),
-            (['frontend/src/pages/support/Inbox.tsx'], {'frontend', 'desktop', 'mobile', 'community'}),
-            (['server/internal/model/user.go', 'apps/admin/src/App.tsx'], {'server', 'community', 'admin'}),
+            (['server/internal/model/user.go'], {'server'}),
+            (['community/compose.yaml'], set()),
+            (['frontend/src/pages/support/Inbox.tsx'], {'frontend', 'desktop', 'mobile'}),
+            (['server/internal/model/user.go', 'apps/admin/src/App.tsx'], {'server', 'admin'}),
         ):
             with self.subTest(paths=paths):
                 self.assertEqual({group for group, selected in select(paths).items() if selected}, expected)
+
+    def test_pr_checks_do_not_build_community_images(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / '.github/workflows/ci.yml').read_text()
+        self.assertNotIn('community-test.yml', workflow)
+        self.assertNotIn('docker/bake-action@', workflow)
+        self.assertIn('node --test community/tests/installer.test.mjs', workflow)
+        self.assertIn("python3 -m unittest discover -s community/tests", workflow)
+        for group, job in (('server', 'community-backend'), ('frontend', 'community-frontend')):
+            self.assertIn(job, JOBS[group])
+        scheduled = (root / '.github/workflows/community-bundle.yml').read_text()
+        self.assertIn('schedule:', scheduled)
+        self.assertIn('workflow_dispatch:', scheduled)
+        self.assertIn('uses: ./.github/workflows/community-test.yml', scheduled)
+        release = (root / '.github/workflows/community-release.yml').read_text()
+        self.assertIn('arch: [amd64, arm64]', release)
+        self.assertIn('export-images: true', release)
+        self.assertIn('uses: ./.github/workflows/community-test.yml', release)
 
     def test_toolchain_pins_match_community_images(self):
         root = Path(__file__).resolve().parents[2]

@@ -1,5 +1,5 @@
 name: Community bundle
-# Relevant PRs call the same acceptance workflow from CI.
+# Full image acceptance stays outside PR CI; run manually before packaging merges.
 on:
   schedule:
     - cron: '15 3 * * *'
