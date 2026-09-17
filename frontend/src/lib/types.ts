@@ -523,7 +523,13 @@ export interface AutomationTriggerCatalogEntry {
   create_rule_search?: WorkflowRuleSearchPreset;
 }
 
+export interface SemanticConditionAvailability {
+  available: boolean;
+  reason?: 'not_configured' | 'workspace_disabled' | 'disabled' | 'shadow';
+}
+
 export interface AutomationInventoryResponse {
+  semantic_conditions?: SemanticConditionAvailability;
   groups: AutomationInventoryGroup[];
   items: AutomationInventoryItem[];
   trigger_catalog: AutomationTriggerCatalogEntry[];

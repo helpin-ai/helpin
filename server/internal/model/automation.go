@@ -90,12 +90,20 @@ type AutomationInventoryGroup struct {
 	Description string `json:"description"`
 }
 
+// SemanticConditionAvailability describes configuration, not provider health.
+// It contains no credentials and never requires a provider call.
+type SemanticConditionAvailability struct {
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+}
+
 // AutomationInventoryResponse is the combined settings payload.
 type AutomationInventoryResponse struct {
-	Groups         []AutomationInventoryGroup      `json:"groups"`
-	Items          []AutomationInventoryItem       `json:"items"`
-	TriggerCatalog []AutomationTriggerCatalogEntry `json:"trigger_catalog"`
-	GeneratedAt    time.Time                       `json:"generated_at"`
+	SemanticConditions SemanticConditionAvailability   `json:"semantic_conditions"`
+	Groups             []AutomationInventoryGroup      `json:"groups"`
+	Items              []AutomationInventoryItem       `json:"items"`
+	TriggerCatalog     []AutomationTriggerCatalogEntry `json:"trigger_catalog"`
+	GeneratedAt        time.Time                       `json:"generated_at"`
 }
 
 // TriggerExecutionSearchPreset is a normalized filter contract for linking to

@@ -1103,6 +1103,10 @@ func (e *AutomationRuleEngine) CreateRuleForActor(ctx context.Context, workspace
 		return nil, err
 	}
 
+	if err := e.validateSemanticConditionChange(workspaceID, req.TriggerType, req.TriggerConfig, "", nil); err != nil {
+		return nil, err
+	}
+
 	rule := &model.AutomationRule{
 		WorkspaceID:   workspaceID,
 		Name:          req.Name,
@@ -1157,6 +1161,7 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 		return nil, fmt.Errorf("manage this Flow from its CRM Playbook")
 	}
 	wasScheduled := rule.TriggerType == model.TriggerCron && rule.Enabled
+	previousTrigger, previousConfig := rule.TriggerType, rule.TriggerConfig
 
 	if req.Name != nil {
 		rule.Name = *req.Name
@@ -1187,6 +1192,9 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 	}
 
 	if err := e.validateRuleRequest(rule.TriggerType, rule.TriggerConfig, rule.ActionType, rule.ActionConfig); err != nil {
+		return nil, err
+	}
+	if err := e.validateSemanticConditionChange(workspaceID, rule.TriggerType, rule.TriggerConfig, previousTrigger, previousConfig); err != nil {
 		return nil, err
 	}
 	if e.entitlementSvc != nil && rule.Enabled {
