@@ -108,7 +108,7 @@ func (r *AIMessageProcessingRepository) MarkFailedBySourceMessageID(ctx context.
 func (r *AIMessageProcessingRepository) LatestProcessingForConversation(ctx context.Context, workspaceID, conversationID string) (*model.AIMessageProcessing, error) {
 	var row model.AIMessageProcessing
 	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND conversation_id = ? AND status = ?", workspaceID, conversationID, "processing").
+		Where("workspace_id = ? AND conversation_id = ? AND status IN ?", workspaceID, conversationID, []string{"processing", "waiting_for_result"}).
 		Order("updated_at DESC").
 		First(&row).Error
 	if err == gorm.ErrRecordNotFound {
@@ -178,16 +178,22 @@ func (r *AIMessageProcessingRepository) IncrementAttempts(ctx context.Context, i
 // CreateReply atomically saves the one reply belonging to an in-flight customer
 // turn. Concurrent tool calls and retries cannot publish a second reply.
 func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, processingID string, message *model.SupportMessage, runID ...string) (bool, error) {
-	return r.createReply(ctx, processingID, message, nil, runID...)
+	return r.createReply(ctx, processingID, message, nil, false, runID...)
 }
 
 // CreateInitialGreetingReply fences a first greeting against conversation changes
 // under the same lock used to publish and settle the reply.
 func (r *AIMessageProcessingRepository) CreateInitialGreetingReply(ctx context.Context, processingID string, message *model.SupportMessage, source model.SupportMessage) (bool, error) {
-	return r.createReply(ctx, processingID, message, &source)
+	return r.createReply(ctx, processingID, message, &source, false)
 }
 
-func (r *AIMessageProcessingRepository) createReply(ctx context.Context, processingID string, message *model.SupportMessage, greetingSource *model.SupportMessage, runID ...string) (bool, error) {
+// CreateProgressReply publishes one acknowledgment without settling the customer
+// turn. The same ownership and channel guards apply as for the final reply.
+func (r *AIMessageProcessingRepository) CreateProgressReply(ctx context.Context, processingID string, message *model.SupportMessage, runID ...string) (bool, error) {
+	return r.createReply(ctx, processingID, message, nil, true, runID...)
+}
+
+func (r *AIMessageProcessingRepository) createReply(ctx context.Context, processingID string, message *model.SupportMessage, greetingSource *model.SupportMessage, progress bool, runID ...string) (bool, error) {
 	created := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var conversation model.SupportConversation
@@ -249,9 +255,13 @@ func (r *AIMessageProcessingRepository) createReply(ctx context.Context, process
 				return nil
 			}
 		}
+		statuses, nextStatus := []string{"processing", "waiting_for_result"}, "completed"
+		if progress {
+			statuses, nextStatus = []string{"processing"}, "waiting_for_result"
+		}
 		result := tx.Model(&model.AIMessageProcessing{}).
-			Where("id = ? AND workspace_id = ? AND conversation_id = ? AND status = ? AND reply_message_id IS NULL", processingID, message.WorkspaceID, message.ConversationID, "processing").
-			Updates(map[string]any{"status": "completed", "updated_at": time.Now()})
+			Where("id = ? AND workspace_id = ? AND conversation_id = ? AND status IN ? AND reply_message_id IS NULL", processingID, message.WorkspaceID, message.ConversationID, statuses).
+			Updates(map[string]any{"status": nextStatus, "updated_at": time.Now()})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -275,8 +285,10 @@ func (r *AIMessageProcessingRepository) createReply(ctx context.Context, process
 		if err := NewSupportMessageRepository(tx).Create(ctx, message); err != nil {
 			return err
 		}
-		if err := tx.Model(&model.AIMessageProcessing{}).Where("id = ?", processingID).Update("reply_message_id", message.ID).Error; err != nil {
-			return err
+		if !progress {
+			if err := tx.Model(&model.AIMessageProcessing{}).Where("id = ?", processingID).Update("reply_message_id", message.ID).Error; err != nil {
+				return err
+			}
 		}
 		if !message.IsInternal {
 			// A fresh customer turn may have been parked while the preceding AI
@@ -288,8 +300,12 @@ func (r *AIMessageProcessingRepository) createReply(ctx context.Context, process
 					return err
 				}
 			}
+			turnIncrement := 1
+			if progress {
+				turnIncrement = 0
+			}
 			if err := tx.Model(&model.SupportConversation{}).Where("id = ? AND workspace_id = ?", message.ConversationID, message.WorkspaceID).Updates(map[string]any{
-				"ai_state": "pending", "assigned_agent_id": message.SenderAgentID, "ai_turn_count": gorm.Expr("ai_turn_count + 1"), "flow_state": model.SupportConversationFlowStateAIHandling,
+				"ai_state": "pending", "assigned_agent_id": message.SenderAgentID, "ai_turn_count": gorm.Expr("ai_turn_count + ?", turnIncrement), "flow_state": model.SupportConversationFlowStateAIHandling,
 			}).Error; err != nil {
 				return err
 			}
