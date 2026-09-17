@@ -360,6 +360,11 @@ func validateAIUsageOperation(operationKey, taskNature string, resolved aiusage.
 	switch strings.ToLower(strings.TrimSpace(operationKey)) {
 	case "":
 		return nil
+	case aiusage.AIUsageOperationSupportGreeting:
+		if resolved.Provider != "openrouter" || resolved.CanonicalModel != "gpt-5.6-luna" || resolved.Route != "openai/gpt-5.6-luna" || resolved.Tier != aiusage.TierSmall {
+			return fmt.Errorf("%w: %s requires the approved small greeting model", model.ErrModelUnavailableUnderPricing, operationKey)
+		}
+		return nil
 	case AIUsageOperationMediaEnrichment:
 		if resolved.Provider != mediaEnrichmentProvider || resolved.CanonicalModel != mediaEnrichmentCanonicalModel || resolved.Route != mediaEnrichmentRoute || resolved.Tier != aiusage.TierMedium {
 			return fmt.Errorf("%w: %s requires the approved multimodal reader", model.ErrModelUnavailableUnderPricing, operationKey)
