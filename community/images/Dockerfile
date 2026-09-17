@@ -63,5 +63,7 @@ COPY --from=helpcenter-build /out/help-center/node_modules ./node_modules
 COPY --from=helpcenter-build /workspace/help-center/dist ./dist
 COPY help-center/package.json help-center/*.mjs ./
 USER node
+# Check SSR imports against the production-only tree before shipping the image.
+RUN node --input-type=module -e "await import('./dist/server/server.js')"
 EXPOSE 3000
 CMD ["node", "serve.mjs"]
