@@ -84,3 +84,21 @@ credentials. Investigate errors before raising alert thresholds.
 
 Rollback: suspend the smoke CronJob in Git, remove the new monitoring resources
 if needed, and revert application instrumentation. Keep upload transport fixes.
+
+## Initial alert-delivery audit — 2026-09-17
+
+Read-only production inspection found 73,159 Slack notification attempts and
+73,159 failures with reason `clientError` over the current counter lifetime.
+The previous 30 minutes of Alertmanager logs contained 37 HTTP 404 responses
+with `no_active_hooks`. The configured Slack incoming webhook is inactive.
+Existing alert rules therefore must not be treated as delivered notifications.
+Restore the webhook or provision a replacement through the infrastructure secret
+workflow, then verify a clearly labelled controlled notification. Never commit a
+replacement webhook to source. The dashboard includes notification failures so
+this dependency remains visible even while Slack itself is unavailable.
+
+Application release: `7848f074f` (plus subsequent monitoring documentation fixes).
+Deployment and live smoke verification remain pending explicit production
+approval; Kubernetes server-side dry-run succeeded. Local checks passed: Go race
+tests for metrics/telemetry/ownership/rate limits, Go vet/build, 29 SDK tests and
+16 browser upload checks across Chromium and Firefox.
