@@ -97,3 +97,39 @@ it('renders video controls with a download fallback', () => {
   expect(getByText(/cannot play in your browser/)).toBeTruthy();
   expect(container.querySelector('a[download="recording.mp4"]')).toBeTruthy();
 });
+
+describe('attachment edge-case regressions', () => {
+  it('rejects empty files without calling the upload transport', async () => {
+    const upload = vi.fn();
+    const { getByText } = render(<Harness upload={upload} files={[sizedFile('empty.txt', 0, 'text/plain')]} />);
+    fireEvent.click(getByText('Select'));
+    await waitFor(() => expect(getByText(/empty.txt is empty/)).toBeTruthy());
+    expect(upload).not.toHaveBeenCalled();
+  });
+  it('aborts an in-flight upload when the widget unmounts', async () => {
+    const upload = vi.fn(() => new Promise<{ attachmentId: string; url: string }>(() => {}));
+    const { getByText, unmount } = render(<Harness upload={upload} files={[sizedFile('video.mp4', 100)]} />);
+    fireEvent.click(getByText('Select'));
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    const signal = (upload.mock.calls as unknown as Array<[File, string, { signal: AbortSignal }]>)[0][2].signal;
+    unmount();
+    expect(signal.aborted).toBe(true);
+  });
+  it('continues a batch after a failed file while retaining it for retry', async () => {
+    const upload = vi.fn().mockRejectedValueOnce(new Error('Connection lost')).mockResolvedValueOnce({ attachmentId: 'second', url: '/second' });
+    const { getByText } = render(<Harness upload={upload} files={[sizedFile('first.mp4', 100), sizedFile('second.mp4', 100)]} />);
+    fireEvent.click(getByText('Select'));
+    await waitFor(() => expect(getByText(/Ready to send/)).toBeTruthy());
+    expect(getByText('Connection lost')).toBeTruthy();
+    expect(upload).toHaveBeenCalledTimes(2);
+  });
+  it('recovers from an upload attempted before the chat connects', async () => {
+    const upload = vi.fn().mockRejectedValueOnce(new Error('Chat is not connected yet. Please wait and retry the upload.')).mockResolvedValueOnce({ attachmentId: 'connected', url: '/connected' });
+    const { getByText } = render(<Harness upload={upload} files={[sizedFile('photo.png', 100, 'application/octet-stream')]} />);
+    fireEvent.click(getByText('Select'));
+    await waitFor(() => expect(getByText(/Chat is not connected yet/)).toBeTruthy());
+    fireEvent.click(getByText('Retry'));
+    await waitFor(() => expect(getByText(/Ready to send/)).toBeTruthy());
+    expect(upload.mock.calls[1][0]).toBe(upload.mock.calls[0][0]);
+  });
+});

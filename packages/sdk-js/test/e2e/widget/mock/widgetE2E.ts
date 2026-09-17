@@ -25,6 +25,7 @@ declare global {
 }
 
 export type InstallWidgetMockOptions = {
+  deferSession?: boolean
   invalidStoredSession?: boolean
   persistedSession?: boolean
   unreadCount?: number
@@ -38,7 +39,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
     headers: { 'Access-Control-Allow-Origin': '*' },
     body: '',
   }))
-  await page.addInitScript(({ widgetHost, widgetKey, unreadCount, conversationId, linkPreviewUrl, persistedSession, invalidStoredSession, widgetPosition }) => {
+  await page.addInitScript(({ widgetHost, widgetKey, unreadCount, conversationId, linkPreviewUrl, persistedSession, invalidStoredSession, widgetPosition, deferSession }) => {
     const patchedUserAgent = (navigator.userAgent || '').replace(/HeadlessChrome\/[\d.]+\s*/i, 'Chrome/122.0.0.0 ')
     Object.defineProperty(Navigator.prototype, 'userAgent', {
       configurable: true,
@@ -298,6 +299,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
 
         switch (frame.type) {
           case 'session:create':
+            if (deferSession) break
             queueMicrotask(() => {
               this.serverEmit({
                 type: 'session:joined',
@@ -483,6 +485,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
       // ignore localStorage issues in tests
     }
   }, {
+    deferSession: options.deferSession,
     widgetHost: WIDGET_HOST,
     widgetKey: WIDGET_KEY,
     persistedSession: options.persistedSession ?? false,

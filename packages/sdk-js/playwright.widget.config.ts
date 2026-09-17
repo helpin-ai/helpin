@@ -10,7 +10,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: [['html'], ['list']],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://localhost:3017',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
@@ -19,12 +19,16 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
   ],
   webServer: [
     {
-      command: 'pnpm run serve:test',
-      url: 'http://localhost:3000',
-      reuseExistingServer: !process.env.CI,
+      command: 'pnpm exec http-server . -p 3017',
+      url: 'http://localhost:3017',
+      reuseExistingServer: false,
       timeout: 30000,
     },
   ],
