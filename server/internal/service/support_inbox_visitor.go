@@ -27,6 +27,10 @@ func (s *SupportInboxService) GetVisitorContext(ctx context.Context, workspaceID
 		CompanyContextStatus: model.VisitorCompanyContextUnlinked,
 	}
 
+	if conversation.AnonymizedAt != nil {
+		return resp, nil
+	}
+
 	// Find the latest session for device/location info
 	var session *model.SupportWidgetSession
 	session, err = s.sessionRepo.GetLatestByConversation(ctx, workspaceID, conversationID)

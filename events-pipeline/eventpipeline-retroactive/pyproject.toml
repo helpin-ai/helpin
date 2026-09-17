@@ -1,4 +1,5 @@
 [tool.poetry]
+license = "AGPL-3.0-only"
 name = "eventpipeline-retroactive"
 version = "0.1.0"
 description = ""

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User } from '@/lib/types';
-import { authService } from '@/lib/services/authService';
+import { authService, type AuthConfig } from '@/lib/services/authService';
 import { passkeyService } from '@/lib/services/passkeyService';
 import { stopTokenRefreshTimer } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
@@ -9,6 +9,7 @@ import { resetHelpinIdentity } from '@/lib/helpin';
 import { clearSession, hydrateSessionStorage, writeSession } from '@helpin-ai/support-core';
 
 interface AuthState {
+  configuration: AuthConfig | null;
   user: User | null;
   loading: boolean;
   serverUnreachable: boolean;
@@ -21,6 +22,7 @@ interface AuthState {
   ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string; cancelled?: boolean }>;
   verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
+  signInDemo: (email?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   updateUser: (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => Promise<void>;
 }
@@ -55,6 +57,7 @@ export async function persistAuthSession(user: User, accessToken: string, refres
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
+  configuration: null,
   loading: true,
   serverUnreachable: false,
 
@@ -62,6 +65,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (_initializing) return;
     _initializing = true;
     try {
+      // Public capabilities are also needed on the login page. A failed config
+      // request must not turn off verification or invalidate an existing session.
+      try {
+        const config = await authService.config();
+        if (config.data) set({ configuration: config.data });
+      } catch { /* Keep conservative defaults until configuration is reachable. */ }
       await hydrateSessionStorage();
       const { data, error, isNetworkError } = await authService.me();
       if (data && !error) {
@@ -124,6 +133,17 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { data, error } = await authService.signup(email, password, fullName);
     if (error || !data) return { error: error || 'Sign up failed' };
     await persistAuthSession(data.user, data.access_token, data.refresh_token, false);
+    return { error: null };
+  },
+
+  signInDemo: async (email?: string) => {
+    const { data, error } = await authService.demoSignin(email);
+    if (error || !data) return { error: error || 'Demo sign in failed' };
+    if (!data.user) {
+      return { error: 'Demo sign in failed' };
+    }
+
+    await persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', false);
     return { error: null };
   },
 

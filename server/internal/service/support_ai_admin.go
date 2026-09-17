@@ -11,71 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
-
-// PreviewSupportReply runs the support AI planner + retrieval + answer pipeline without side effects.
-func (s *SupportAIService) PreviewSupportReply(
-	ctx context.Context,
-	workspaceID, agentID string,
-	req model.SupportAIPreviewRequest,
-) (*model.SupportAIPreviewResponse, error) {
-	if s == nil {
-		return nil, fmt.Errorf("support AI service not initialized")
-	}
-	if strings.TrimSpace(workspaceID) == "" {
-		return nil, fmt.Errorf("%w: workspace_id is required", ErrSupportPreviewInvalidInput)
-	}
-	agentID = strings.TrimSpace(agentID)
-	if agentID == "" {
-		return nil, fmt.Errorf("%w: agent_id is required", ErrSupportPreviewInvalidInput)
-	}
-	customerMessage := strings.TrimSpace(req.Message)
-	if customerMessage == "" {
-		return nil, fmt.Errorf("%w: message is required", ErrSupportPreviewInvalidInput)
-	}
-	if s.agentRepo == nil {
-		return nil, fmt.Errorf("agent repository is not configured")
-	}
-	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
-	if err != nil {
-		return nil, fmt.Errorf("get agent: %w", err)
-	}
-	if agent == nil {
-		return nil, fmt.Errorf("%w: %s", ErrSupportPreviewAgentNotFound, agentID)
-	}
-
-	history, conversationSource, err := s.resolvePreviewHistory(ctx, workspaceID, req)
-	if err != nil {
-		return nil, err
-	}
-
-	settings := model.DefaultSupportInboxSettings()
-	if s.installationRepo != nil {
-		if loaded, err := s.loadSettings(ctx, workspaceID); err == nil && loaded != nil {
-			settings = *loaded
-		}
-	}
-
-	includeAnswer := true
-	if req.IncludeAnswer != nil {
-		includeAnswer = *req.IncludeAnswer
-	}
-
-	return s.previewSupportReply(
-		ctx,
-		workspaceID,
-		agent,
-		history,
-		customerMessage,
-		includeAnswer,
-		normalizePreviewMaxResults(req.MaxResults),
-		settings.AIConfidenceThreshold,
-		conversationSource,
-		settings.WelcomeMessage,
-	)
-}
 
 // RewriteSupportDraft rewrites a human-authored support draft for a specific conversation.
 func (s *SupportAIService) RewriteSupportDraft(
@@ -354,11 +293,15 @@ func (s *SupportAIService) resolvePreviewHistory(
 	if req.ConversationID != nil && strings.TrimSpace(*req.ConversationID) != "" {
 		conversationID := strings.TrimSpace(*req.ConversationID)
 		if s.conversationRepo != nil {
-			conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+			actor := authorization.GetActor(ctx)
+			if actor == nil || actor.WorkspaceID != workspaceID {
+				return nil, "", ErrSupportPreviewConversationNotFound
+			}
+			conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, actor.WorkspaceMemberID, actor.Role)
 			if err != nil {
 				return nil, "", fmt.Errorf("get conversation: %w", err)
 			}
-			if conv == nil {
+			if conv == nil || conv.AnonymizedAt != nil {
 				return nil, "", fmt.Errorf("%w: %s", ErrSupportPreviewConversationNotFound, conversationID)
 			}
 		}
@@ -373,138 +316,6 @@ func (s *SupportAIService) resolvePreviewHistory(
 	}
 
 	return nil, "none", nil
-}
-
-func (s *SupportAIService) previewSupportReply(
-	ctx context.Context,
-	workspaceID string,
-	agent *model.Agent,
-	history []model.SupportMessage,
-	customerMessage string,
-	includeAnswer bool,
-	maxResults int,
-	confidenceThreshold float64,
-	conversationSource string,
-	welcomeMessage string,
-) (*model.SupportAIPreviewResponse, error) {
-	if s.llmProvider == nil {
-		return nil, fmt.Errorf("support chat LLM provider is not configured")
-	}
-	previewDeadline := time.Now().Add(30 * time.Second)
-
-	// The LLM planner was retired with the auto-reply pipeline; preview uses
-	// the deterministic default plan (the runtime agent path does its own
-	// routing via tools).
-	_ = welcomeMessage
-	queryPlan := defaultSupportQueryPlan(customerMessage)
-	plannerTokens := 0
-	fallbackUsed := true
-	plannerError := ""
-
-	response := &model.SupportAIPreviewResponse{
-		ConversationSource:  conversationSource,
-		ConfidenceThreshold: confidenceThreshold,
-		FinalDecision:       queryPlan.Decision,
-		FinalReason:         queryPlan.Reason,
-		TotalTokensUsed:     plannerTokens,
-		QueryPlan: model.SupportAIPreviewQueryPlan{
-			Route:              queryPlan.Route,
-			Decision:           queryPlan.Decision,
-			Intent:             queryPlan.Intent,
-			Subject:            queryPlan.Subject,
-			Language:           queryPlan.Language,
-			Risk:               queryPlan.Risk,
-			RequiredEvidence:   cloneStringSlice(queryPlan.RequiredEvidence),
-			EvidenceMode:       queryPlan.EvidenceMode,
-			RegistryVersion:    queryPlan.RegistryVersion,
-			ContextAction:      queryPlan.ContextAction,
-			IssueKey:           queryPlan.IssueKey,
-			IssueSummary:       queryPlan.IssueSummary,
-			ProgressSignal:     queryPlan.ProgressSignal,
-			StandaloneQuery:    queryPlan.StandaloneQuery,
-			SearchQueries:      cloneStringSlice(queryPlan.SearchQueries),
-			ClarifyingQuestion: queryPlan.ClarifyingQuestion,
-			GreetingReply:      queryPlan.GreetingReply,
-			Reason:             queryPlan.Reason,
-			TokensUsed:         plannerTokens,
-			FallbackUsed:       fallbackUsed,
-			Error:              plannerError,
-		},
-		Retrieval: model.SupportAIPreviewRetrieval{
-			QueryCount:      len(queryPlan.SearchQueries),
-			EvidenceFound:   map[string][]string{},
-			EvidenceMissing: []string{},
-			Results:         []model.SupportAIPreviewSearchResult{},
-		},
-	}
-
-	switch queryPlan.Decision {
-	case supportDecisionClarify, supportDecisionHandoff, supportDecisionGreet:
-		return response, nil
-	}
-
-	searchResults, retrievalErr := s.loadKnowledgeChunks(ctx, workspaceID, agent.ID, queryPlan.Language, queryPlan.SearchQueries)
-	if retrievalErr != nil {
-		response.Retrieval.Error = retrievalErr.Error()
-		searchResults = nil
-	}
-	coverage := supportEvidenceCoverage{Found: map[string][]string{}, Missing: []string{}}
-	response.Retrieval.EvidenceFound = coverage.Found
-	response.Retrieval.EvidenceMissing = cloneStringSlice(coverage.Missing)
-	if maxResults > 0 && len(searchResults) > maxResults {
-		searchResults = searchResults[:maxResults]
-	}
-	response.Retrieval.ResultCount = len(searchResults)
-	response.Retrieval.Results = previewSearchResults(searchResults)
-
-	if !includeAnswer {
-		return response, nil
-	}
-
-	providerName, modelName := resolveSupportLLMConfig(agent)
-	contextResults := selectSupportEvidenceContext(queryPlan, coverage, searchResults, 8)
-	generationCtx, cancelGeneration := context.WithDeadline(ctx, previewDeadline)
-	answer, answerTokens, err := s.generateResponseWithPlan(generationCtx, agent, nil, history, buildKnowledgeContext(contextResults), model.SupportMessage{
-		SenderType: "customer",
-		Content:    customerMessage,
-	}, providerName, modelName, queryPlan)
-	cancelGeneration()
-	if err != nil {
-		return nil, fmt.Errorf("generate preview response: %w", err)
-	}
-	answer.SourceDocIDs = publicSourceDocIDs(answer.SourceDocIDs, searchResults)
-	validation := validateSupportAnswer(queryPlan, coverage, searchResults, answer)
-	if validation.Outcome != supportValidationPass {
-		answer.CanAnswer = false
-		answer.Confidence = 0
-	}
-	response.TotalTokensUsed += answerTokens
-
-	groundedConfidence := evaluateConfidence(searchResults, answer, isGreetingMessage(customerMessage))
-	response.Answer = &model.SupportAIPreviewAnswer{
-		Content:            answer.Content,
-		CanAnswer:          answer.CanAnswer,
-		SourceDocIDs:       cloneStringSlice(answer.SourceDocIDs),
-		LLMConfidence:      answer.Confidence,
-		GroundedConfidence: groundedConfidence,
-		TokensUsed:         answerTokens,
-		Provider:           providerName,
-		Model:              modelName,
-		ValidationOutcome:  validation.Outcome,
-		ValidationReasons:  cloneStringSlice(validation.Reasons),
-		MaterialClaims:     validation.MaterialClaimCount,
-		SupportedClaims:    validation.SupportedClaimCount,
-	}
-
-	if answer.CanAnswer && groundedConfidence >= confidenceThreshold {
-		response.FinalDecision = supportDecisionAnswer
-		response.FinalReason = queryPlan.Reason
-		return response, nil
-	}
-
-	response.FinalDecision = supportDecisionHandoff
-	response.FinalReason = "low_confidence"
-	return response, nil
 }
 
 // generateResponse calls the LLM with knowledge context and conversation history.
@@ -561,12 +372,16 @@ func (s *SupportAIService) generateResponseWithPlanRevision(
 		return nil, 0, fmt.Errorf("support chat LLM provider is not configured")
 	}
 
-	systemPrompt := buildAISystemPromptWithPlan(agent, knowledgeContext, plan)
+	// Retrieved source text must never occupy the system instruction channel.
+	systemPrompt := buildAISystemPromptWithPlan(agent, "", plan)
 	if strings.TrimSpace(revisionInstruction) != "" {
 		systemPrompt += "\n\nREVISION REQUIRED:\n" + revisionInstruction
 	}
 
-	messages := make([]llm.Message, 0, len(history)+1)
+	messages := make([]llm.Message, 0, len(history)+2)
+	if knowledgeContext != "" {
+		messages = append(messages, llm.Message{Role: "user", Content: "Untrusted knowledge reference data (JSON):\n" + knowledgeContext})
+	}
 	messages = append(messages, buildConversationMessages(history)...)
 	messages = append(messages, llm.Message{
 		Role:         "user",

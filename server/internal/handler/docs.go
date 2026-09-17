@@ -63,6 +63,8 @@ func writeDocsBlockMutationError(w http.ResponseWriter, err error) {
 
 // DocsHandler handles HTTP requests for the Docs module.
 type DocsHandler struct {
+	publicWidgetURL      string
+	publicSDKURL         string
 	spaceSvc             *service.DocsSpaceService
 	collectionSvc        *service.DocsCollectionService
 	documentSvc          *service.DocsDocumentService
@@ -106,6 +108,8 @@ type supportWidgetConfigProvider interface {
 }
 
 type publicHelpcenterConfigResponse struct {
+	PublicWidgetURL string `json:"public_widget_url,omitempty"`
+	PublicSDKURL    string `json:"public_sdk_url,omitempty"`
 	*model.DocsHelpcenterConfig
 	SupportWidgetKey *string `json:"support_widget_key,omitempty"`
 }
@@ -2285,4 +2289,9 @@ func ptrIfSet(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func (h *DocsHandler) SetPublicWidgetURLs(widget, sdk string) {
+	h.publicWidgetURL = widget
+	h.publicSDKURL = sdk
 }

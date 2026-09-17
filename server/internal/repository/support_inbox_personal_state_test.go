@@ -48,7 +48,8 @@ func setupSupportPersonalStateTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE support_conversations (
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, mailbox_id TEXT,
 			status TEXT NOT NULL DEFAULT 'open', flow_state TEXT, ai_state TEXT,
-			human_takeover BOOLEAN NOT NULL DEFAULT 0, customer_requested_human_at DATETIME,
+			human_takeover BOOLEAN NOT NULL DEFAULT 0,
+            ai_control_version BIGINT NOT NULL DEFAULT 0, ai_resumed_at DATETIME, ai_paused_at DATETIME, ai_paused_by_user_id TEXT, customer_requested_human_at DATETIME,
 			assigned_user_id TEXT, opened_by_user_id TEXT, assigned_agent_id TEXT,
 			last_public_sender_type TEXT, customer_awaiting_response BOOLEAN NOT NULL DEFAULT 0,
 			team_last_seen_at DATETIME, needs_human_reply BOOLEAN NOT NULL DEFAULT 0,

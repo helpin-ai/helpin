@@ -119,6 +119,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
               <div className="flex min-w-0 items-center gap-1.5">
                 <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
                 <span className="truncate">{agentName}</span>
+                {run.input.execution_location === 'local' && <span className="text-[11px] text-quiet-text-tertiary">Local</span>}
               </div>
             </div>
             <div className={`${TABLE_CELL} text-muted-foreground`} style={{ flex: '1 1 0%', minWidth: 140 }}>

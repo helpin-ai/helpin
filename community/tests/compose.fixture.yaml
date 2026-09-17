@@ -1,0 +1,22 @@
+# Run from community/ with -f compose.yaml -f tests/compose.fixture.yaml.
+x-fixture-env: &fixture-env
+  OPENAI_API_KEY: community-fixture-key
+  OPENAI_BASE_URL: http://test-providers:8080/v1
+  SMTP_HOST: test-providers
+  SMTP_PORT: '2525'
+  SMTP_FROM: support@example.test
+  SMTP_TLS_MODE: none
+services:
+  test-providers:
+    image: node:24.21.0-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
+    command: [node, /fixtures/providers.mjs]
+    volumes: ['./tests/providers.mjs:/fixtures/providers.mjs:ro']
+    ports: ['127.0.0.1:${COMMUNITY_PROVIDER_PORT:?use tests/run.sh full}:8080']
+  helpin-api:
+    environment: *fixture-env
+  helpin-worker:
+    environment: *fixture-env
+  agent-runtime:
+    volumes: ['./tests/apps.fixture.json:/etc/agent-runtime/apps.json:ro']
+  agent-runtime-worker:
+    volumes: ['./tests/apps.fixture.json:/etc/agent-runtime/apps.json:ro']

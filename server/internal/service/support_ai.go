@@ -293,6 +293,7 @@ var (
 // SupportAIService handles autonomous AI-first auto-replies for support conversations.
 // It is a separate path from the existing AgentRun system (manual-assist mode).
 type SupportAIService struct {
+	runCloser                      supportChatRunCloser
 	llmProvider                    llm.Provider
 	embeddingProvider              llm.EmbeddingProvider
 	embeddingModel                 string

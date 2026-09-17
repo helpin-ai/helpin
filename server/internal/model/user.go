@@ -41,6 +41,13 @@ type SigninRequest struct {
 	RememberMe bool   `json:"remember_me"`
 }
 
+// DemoSigninRequest is the payload for POST /api/auth/demo. Email is the
+// visitor's own address (optional unless the server requires it); it is only
+// forwarded to the lead webhook and never becomes an account.
+type DemoSigninRequest struct {
+	Email string `json:"email"`
+}
+
 // AuthResponse is returned after successful authentication.
 type AuthResponse struct {
 	AccessToken  string      `json:"access_token"`

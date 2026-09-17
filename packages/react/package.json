@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "Helpin JavaScript SDK for React",
   "author": "Helpin <hello@helpin.ai>",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "module": "lib/index.es.js",
@@ -11,9 +11,7 @@
   "directories": {
     "lib": "lib"
   },
-  "files": [
-    "lib"
-  ],
+  "files": ["lib", "LICENSE", "NOTICE"],
   "publishConfig": {
     "access": "public"
   },

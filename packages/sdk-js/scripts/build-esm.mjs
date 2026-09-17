@@ -20,7 +20,7 @@ await build({
   },
   build: {
     emptyOutDir: false,
-    minify: false,
+    minify: 'esbuild',
     lib: {
       entry: resolve(__dirname, '../src/esm-entry.ts'),
       formats: ['es'],

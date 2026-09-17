@@ -12,6 +12,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/mcpserver"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/ratelimit"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
@@ -22,8 +23,8 @@ type MCPHandler struct {
 }
 
 // NewMCPHandler creates the public MCP HTTP handler.
-func NewMCPHandler(mcpService *service.MCPService) *MCPHandler {
-	return &MCPHandler{service: mcpService, protocol: mcpserver.NewHandler(mcpService)}
+func NewMCPHandler(mcpService *service.MCPService, limiter *ratelimit.Limiter) *MCPHandler {
+	return &MCPHandler{service: mcpService, protocol: mcpserver.NewHandler(mcpService, limiter)}
 }
 
 // Protocol serves Streamable HTTP MCP requests.

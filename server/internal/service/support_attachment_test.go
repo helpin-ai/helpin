@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -46,6 +47,23 @@ func TestSupportAttachmentCreateStagesWidgetUploadWithoutConversation(t *testing
 	}, "workspace-1", "", "customer", nil, &sessionID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+	upload, err := url.Parse(response.UploadURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	download, err := url.Parse(response.PublicURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upload.Query().Get("x-amz-acl") != "" {
+		t.Fatal("customer upload granted public access")
+	}
+	if download.Query().Get("X-Amz-Signature") == "" {
+		t.Fatal("download URL must be signed")
+	}
+	if response.Attachment.PublicURL != "" {
+		t.Fatal("must not persist expiring or public attachment URLs")
 	}
 	if response.Attachment.ConversationID != nil {
 		t.Fatalf("conversation_id = %v, want nil while upload is staged", response.Attachment.ConversationID)

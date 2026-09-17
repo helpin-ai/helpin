@@ -67,12 +67,12 @@ func (f *flexString) UnmarshalJSON(data []byte) error {
 
 // CloudflareCrawlRecord is a single page result from the Cloudflare crawl API.
 type CloudflareCrawlRecord struct {
-	URL      string            `json:"url"`
-	Status   string            `json:"status"`
-	HTML     string            `json:"html"`
-	Markdown string            `json:"markdown"`
-	JSON     json.RawMessage   `json:"json"`
-	Metadata map[string]any    `json:"metadata"`
+	URL      string          `json:"url"`
+	Status   string          `json:"status"`
+	HTML     string          `json:"html"`
+	Markdown string          `json:"markdown"`
+	JSON     json.RawMessage `json:"json"`
+	Metadata map[string]any  `json:"metadata"`
 }
 
 // NewCloudflareCrawlClient creates a Cloudflare Browser Rendering crawl client.
@@ -222,7 +222,9 @@ func (c *CloudflareCrawlClient) GetCrawlResult(ctx context.Context, jobID string
 }
 
 // joinCloudflareErrors formats API error messages into a single string.
-func joinCloudflareErrors(errors []struct{ Message string `json:"message"` }, fallback string) string {
+func joinCloudflareErrors(errors []struct {
+	Message string `json:"message"`
+}, fallback string) string {
 	if len(errors) == 0 {
 		return fallback
 	}
@@ -274,6 +276,15 @@ func crawlWithCloudflare(
 			}
 			delivered[recordURL] = struct{}{}
 
+			if record.Status == "disallowed" {
+				if err := onPage(CrawlRecord{URL: recordURL, SkipReason: "robots_disallowed"}); err != nil {
+					return err
+				}
+				continue
+			}
+			if record.Status != "completed" {
+				continue
+			}
 			text := cfRecordText(record)
 			if strings.TrimSpace(text) == "" {
 				continue
@@ -333,7 +344,7 @@ func crawlWithCloudflare(
 	// 3. Final pagination pass to catch any remaining records.
 	var cursor string
 	for {
-		job, err := client.GetCrawlResult(ctx, jobID, 100, cursor, "completed")
+		job, err := client.GetCrawlResult(ctx, jobID, 100, cursor, "")
 		if err != nil {
 			return pageCount, err
 		}

@@ -9,9 +9,21 @@ import type {
   User,
 } from '../types';
 
+export type AuthConfig = {
+  public_widget_url?: string;
+  public_sdk_url?: string;
+  email_verification_required: boolean;
+  app_email_configured: boolean;
+  google_login_enabled: boolean;
+  demo_enabled?: boolean;
+  demo_requires_email?: boolean;
+};
+
 export const authService = {
+  config: () => api.get<AuthConfig>('/auth/config'),
   signup: (email: string, password: string, fullName: string) =>
     api.post<AuthResponse>('/auth/signup', { email, password, full_name: fullName, anonymous_id: getUsermavenAnonymousId() }),
+  demoSignin: (email?: string) => api.post<SigninResponse>('/auth/demo', email ? { email } : {}),
   signin: (email: string, password: string, rememberMe = true) =>
     api.post<SigninResponse>('/auth/signin', { email, password, remember_me: rememberMe }),
   verify2FASignin: (twoFaToken: string, code: string, useRecoveryCode = false) =>

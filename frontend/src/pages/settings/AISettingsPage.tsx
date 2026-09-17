@@ -131,6 +131,20 @@ function AISettingsContent({
 
   return (
     <div className="space-y-7">
+      {scope === "workspace" && connections.data?.knowledge && (
+        <section className="space-y-2" aria-label="Knowledge search configuration">
+          <AISectionLabel label="Knowledge search" />
+          <p className="text-sm text-muted-foreground">
+            {connections.data.knowledge.embeddings_configured
+              ? `Embeddings configured: ${connections.data.knowledge.embedding_model} (${connections.data.knowledge.embedding_dimensions} dimensions). Provider connectivity has not been verified.`
+              : "Semantic search is not configured. Knowledge search uses keyword matching only. Ask your administrator to configure OPENAI_API_KEY and, if needed, OPENAI_BASE_URL with a compatible 1,536-dimension embedding model."}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Profiles below apply to agent runs. Embeddings, help-center AI answers, and automatic triage use server provider settings separately.
+            {connections.data.knowledge.chat_providers.length === 0 && " No server chat provider is configured."}
+          </p>
+        </section>
+      )}
       {!canManage && (
         <Alert>
           <Shield01Icon className="h-4 w-4" />

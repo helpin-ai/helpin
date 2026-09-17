@@ -1,3 +1,4 @@
+import { SupportAIControl } from './SupportAIControl';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -921,6 +922,8 @@ export function MessageThread({
             {createTaskFromConversation.isPending ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
           </Button>
 
+          <SupportAIControl key={conversation.id} conversation={conversation} compact />
+
           <Button
             type="button"
             variant="ghost"
@@ -977,6 +980,8 @@ export function MessageThread({
               {createTaskFromConversation.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
               Create Task
             </Button>
+
+            <SupportAIControl key={conversation.id} conversation={conversation} />
 
             {/* Resolve / Unresolve */}
             {conversation.status === 'resolved' ? (
@@ -1198,7 +1203,11 @@ export function MessageThread({
 
       {/* Reserve the editor's space immediately. Its key isolates drafts and
           attachments when switching between already cached conversations. */}
-      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (
+      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (conversation.anonymized_at ? (
+        <div className="px-4 py-3 text-sm text-muted-foreground" role="status">
+          This customer was deleted. Messages and comments are retained; this conversation is read-only.
+        </div>
+      ) : (
         <Suspense fallback={<ReplyComposerLoading />}>
           <LazyReplyComposer
             key={`${workspaceId}:${conversationId}`}
@@ -1208,7 +1217,7 @@ export function MessageThread({
             onUpgradeRequired={setUpgradeDialogReason}
           />
         </Suspense>
-      ) : <ReplyComposerLoading />)}
+      )) : <ReplyComposerLoading />)}
 
       {showCreateTaskDialog ? (
         <Suspense fallback={null}>

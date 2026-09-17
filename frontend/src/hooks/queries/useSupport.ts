@@ -1,3 +1,4 @@
+import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
@@ -232,7 +233,7 @@ export function useSupportRoutingUsage(workspaceId: string) {
 export function useUpdateChatSettings(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (settings: Partial<SupportInboxSettings>) =>
+    mutationFn: (settings: Partial<SupportInboxSettings & WidgetOriginSettings>) =>
       supportService.updateInstallationSettings(workspaceId, settings).then(unwrap),
     onSuccess: async (installation) => {
       queryClient.setQueryData(queryKeys.support.installation(workspaceId), installation);

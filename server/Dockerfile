@@ -1,5 +1,6 @@
 # ---- Build stage ----
-FROM golang:1.24-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.7-alpine AS builder
+ARG TARGETARCH
 
 RUN apk add --no-cache git ca-certificates
 
@@ -13,14 +14,14 @@ RUN go mod download
 COPY . .
 # Community is the default. SaaS pipelines explicitly pass GO_BUILD_TAGS=ee.
 ARG GO_BUILD_TAGS=
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/server ./cmd/api
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/temporal-worker ./cmd/temporal-worker
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/migrate ./cmd/migrate
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/clickhouse-migrate ./cmd/clickhouse-migrate
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/reconcile-git-pr-status ./cmd/reconcile-git-pr-status
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/recover-missed-support-emails ./cmd/recover-missed-support-emails
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/reindex-helpcenter-search ./cmd/reindex-helpcenter-search
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/repair-helpcenter-artifacts ./cmd/repair-helpcenter-artifacts
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/server ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/temporal-worker ./cmd/temporal-worker
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/clickhouse-migrate ./cmd/clickhouse-migrate
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/reconcile-git-pr-status ./cmd/reconcile-git-pr-status
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/recover-missed-support-emails ./cmd/recover-missed-support-emails
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/reindex-helpcenter-search ./cmd/reindex-helpcenter-search
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -tags="$GO_BUILD_TAGS" -ldflags="-w -s" -o /app/repair-helpcenter-artifacts ./cmd/repair-helpcenter-artifacts
 
 # ---- Minimal runtime base ----
 FROM alpine:3.19 AS runtime-base

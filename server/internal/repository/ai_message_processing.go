@@ -177,12 +177,15 @@ func (r *AIMessageProcessingRepository) IncrementAttempts(ctx context.Context, i
 
 // CreateReply atomically saves the one reply belonging to an in-flight customer
 // turn. Concurrent tool calls and retries cannot publish a second reply.
-func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, processingID string, message *model.SupportMessage) (bool, error) {
+func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, processingID string, message *model.SupportMessage, runID ...string) (bool, error) {
 	created := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var conversation model.SupportConversation
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", message.ConversationID, message.WorkspaceID).First(&conversation).Error; err != nil {
 			return err
+		}
+		if len(runID) > 0 && runID[0] != "" && (conversation.AIControlVersion > 0 || conversation.AIActiveRunID != nil) && (conversation.AIActiveRunID == nil || *conversation.AIActiveRunID != runID[0]) {
+			return nil
 		}
 		if model.SupportAIConversationBlocked(&conversation) {
 			return nil
@@ -260,4 +263,11 @@ func (r *AIMessageProcessingRepository) CreateReply(ctx context.Context, process
 		return nil
 	})
 	return created && err == nil, err
+}
+
+// CompleteSource settles only the customer message captured by a handoff.
+func (r *AIMessageProcessingRepository) CompleteSource(ctx context.Context, workspaceID, conversationID, sourceMessageID string) error {
+	return r.db.WithContext(ctx).Model(&model.AIMessageProcessing{}).
+		Where("workspace_id = ? AND conversation_id = ? AND source_message_id = ? AND status <> 'completed'", workspaceID, conversationID, sourceMessageID).
+		Updates(map[string]any{"status": "completed", "updated_at": time.Now()}).Error
 }

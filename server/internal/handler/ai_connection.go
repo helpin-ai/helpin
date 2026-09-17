@@ -14,7 +14,27 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
 
-type AIConnectionHandler struct{ service *service.AIConnectionService }
+type KnowledgeAIConfiguration struct {
+	EmbeddingsConfigured bool     `json:"embeddings_configured"`
+	EmbeddingModel       string   `json:"embedding_model"`
+	EmbeddingDimensions  int      `json:"embedding_dimensions"`
+	ChatProviders        []string `json:"chat_providers"`
+}
+type AIConnectionHandler struct {
+	service   *service.AIConnectionService
+	knowledge KnowledgeAIConfiguration
+}
+
+// Configuration describes wiring, not a successful provider health check.
+func (h *AIConnectionHandler) SetKnowledgeConfiguration(embeddings bool, embeddingModel string, chatProviders []string) {
+	if embeddingModel == "" {
+		embeddingModel = "text-embedding-3-small"
+	}
+	if chatProviders == nil {
+		chatProviders = []string{}
+	}
+	h.knowledge = KnowledgeAIConfiguration{embeddings, embeddingModel, 1536, chatProviders}
+}
 
 func NewAIConnectionHandler(s *service.AIConnectionService) *AIConnectionHandler {
 	return &AIConnectionHandler{service: s}
@@ -25,7 +45,7 @@ func (h *AIConnectionHandler) List(w http.ResponseWriter, r *http.Request) {
 		h.failure(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"enabled": h.service.Enabled(), "connections": connections, "models": h.service.Models()})
+	writeJSON(w, 200, map[string]any{"enabled": h.service.Enabled(), "connections": connections, "models": h.service.Models(), "knowledge": h.knowledge})
 }
 func decodeAIConnection(w http.ResponseWriter, r *http.Request, out any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 128<<10)

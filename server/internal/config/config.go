@@ -3,6 +3,8 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/helpin-ai/helpin/server/internal/deployment"
+	"github.com/helpin-ai/helpin/server/internal/model"
 	"net/url"
 	"os"
 	"strconv"
@@ -17,6 +19,25 @@ const (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
+	AuthenticatedRateLimit    int
+	ExpensiveRateLimit        int
+	PublicWidgetURL           string
+	PublicSDKURL              string
+	SMTPHost                  string
+	SMTPPort                  int
+	SMTPUsername              string
+	SMTPPassword              string
+	SMTPFrom                  string
+	SMTPTLSMode               string
+	EmailVerificationRequired bool
+	// DemoViewerEmail enables the public read-only demo login when set. It is the
+	// email of the shared viewer account visitors are signed in as.
+	DemoViewerEmail string
+	// DemoRequireEmail makes the visitor email mandatory on POST /api/auth/demo.
+	DemoRequireEmail bool
+	// DemoLeadWebhookURL receives a JSON POST for every visitor email captured.
+	DemoLeadWebhookURL    string
+	EnabledModules        []model.ModuleID
 	DatabaseURL           string
 	JWTSecret             string
 	Port                  string
@@ -38,12 +59,14 @@ type Config struct {
 	AgentRuntimeLaunchEnabled bool
 
 	// S3 / object storage (optional — attachments disabled if not set)
-	AWSAccessKeyID     string
-	AWSSecretAccessKey string
-	AWSBucket          string
-	AWSRegion          string
-	AWSEndpointURL     string // S3-compatible API endpoint (MinIO / R2)
-	AWSPublicBaseURL   string // Optional public asset base URL (R2 custom domain / CDN)
+	AWSAccessKeyID        string
+	AWSSecretAccessKey    string
+	AWSBucket             string
+	AWSRegion             string
+	AWSEndpointURL        string // S3-compatible API endpoint (MinIO / R2)
+	AWSPresignEndpointURL string // Public S3 origin for browser-signed requests
+	AWSPrivateBucket      bool
+	AWSPublicBaseURL      string // Optional public asset base URL (R2 custom domain / CDN)
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
 	AnthropicAPIKey  string
@@ -98,6 +121,9 @@ type Config struct {
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
 	MobileAppBaseURL                  string
+	CLIEnabled                        bool
+	CLIModelGatewayEnabled            bool
+	CLIPublicBaseURL                  string
 	MCPServerEnabled                  bool
 	MCPOAuthEnabled                   bool
 	MCPServiceTokensEnabled           bool
@@ -234,13 +260,37 @@ func Load() (*Config, error) {
 		port = "8080"
 	}
 
+	smtpPort := 587
+	if raw := os.Getenv("SMTP_PORT"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 65535 {
+			return nil, fmt.Errorf("SMTP_PORT must be between 1 and 65535")
+		}
+		smtpPort = parsed
+	}
+	emailVerificationRequired, err := deployment.EmailVerificationPolicy(os.Getenv("AUTH_EMAIL_VERIFICATION_REQUIRED"))
+	if err != nil {
+		return nil, err
+	}
 	corsOrigins := parseCORSOrigins(os.Getenv("CORS_ORIGINS"))
+	enabledModules, err := deployment.ParseModules(os.Getenv("HELPIN_ENABLED_MODULES"))
+	if err != nil {
+		return nil, err
+	}
 
 	appBaseURL := os.Getenv("APP_BASE_URL")
 	if appBaseURL == "" {
 		appBaseURL = "http://localhost:5173"
 	}
 
+	publicWidgetURL, err := publicURL(firstNonEmpty(os.Getenv("PUBLIC_WIDGET_URL"), deployment.DefaultWidgetOrigin, appBaseURL), true)
+	if err != nil {
+		return nil, fmt.Errorf("PUBLIC_WIDGET_URL: %w", err)
+	}
+	publicSDKURL, err := publicURL(firstNonEmpty(os.Getenv("PUBLIC_SDK_URL"), deployment.DefaultSDKLoaderURL, publicWidgetURL+"/sdk/lib.js"), false)
+	if err != nil {
+		return nil, fmt.Errorf("PUBLIC_SDK_URL: %w", err)
+	}
 	webAuthnRPID := strings.TrimSpace(os.Getenv("WEBAUTHN_RP_ID"))
 	if webAuthnRPID == "" {
 		webAuthnRPID = originHost(appBaseURL)
@@ -304,13 +354,30 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("CRM_MEETING_CAPTURE_PROVIDER must be recall or vexa")
 	}
 
+	authenticatedRateLimit, err := rateLimitEnv("AUTHENTICATED_RATE_LIMIT_PER_MINUTE", 1200)
+	if err != nil {
+		return nil, err
+	}
+	expensiveRateLimit, err := rateLimitEnv("EXPENSIVE_RATE_LIMIT_PER_MINUTE", 120)
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
+		AuthenticatedRateLimit:                 authenticatedRateLimit,
+		ExpensiveRateLimit:                     expensiveRateLimit,
 		DatabaseURL:                            dbURL,
 		JWTSecret:                              jwtSecret,
 		Port:                                   port,
 		LogLevel:                               strings.TrimSpace(firstNonEmpty(os.Getenv("LOG_LEVEL"), "info")),
 		RunAutoMigrate:                         parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
 		CORSOrigins:                            corsOrigins,
+		EnabledModules:                         enabledModules,
+		PublicWidgetURL:                        publicWidgetURL,
+		PublicSDKURL:                           publicSDKURL,
+		EmailVerificationRequired:              emailVerificationRequired,
+		DemoViewerEmail:                        strings.ToLower(strings.TrimSpace(os.Getenv("DEMO_VIEWER_EMAIL"))),
+		DemoRequireEmail:                       parseBoolEnv(os.Getenv("DEMO_REQUIRE_EMAIL")),
+		DemoLeadWebhookURL:                     strings.TrimSpace(os.Getenv("DEMO_LEAD_WEBHOOK_URL")),
 		TemporalAddress:                        temporalAddress,
 		TemporalNamespace:                      temporalNamespace,
 		TemporalAPIKey:                         temporalAPIKey,
@@ -324,10 +391,12 @@ func Load() (*Config, error) {
 		AgentRuntimeLaunchEnabled:              parseBoolEnv(os.Getenv("AGENT_RUNTIME_LAUNCH_ENABLED")),
 		AWSAccessKeyID:                         os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:                     os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AWSPresignEndpointURL:                  strings.TrimSpace(os.Getenv("AWS_S3_PRESIGN_ENDPOINT_URL")),
 		AWSBucket:                              os.Getenv("AWS_S3_BUCKET_NAME"),
 		AWSRegion:                              os.Getenv("AWS_REGION"),
 		AWSEndpointURL:                         os.Getenv("AWS_S3_ENDPOINT_URL"),
 		AWSPublicBaseURL:                       strings.TrimSpace(os.Getenv("AWS_S3_PUBLIC_BASE_URL")),
+		AWSPrivateBucket:                       strings.EqualFold(os.Getenv("AWS_S3_PRIVATE_BUCKET"), "true"),
 		AnthropicAPIKey:                        os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicBaseURL:                       strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")),
 		OpenAIAPIKey:                           strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
@@ -355,18 +424,27 @@ func Load() (*Config, error) {
 		GitHubAppSlug:                          os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:                    os.Getenv("GITHUB_APP_PRIVATE_KEY"),
 		GitOAuthEncryptionKey:                  strings.TrimSpace(os.Getenv("GIT_OAUTH_ENCRYPTION_KEY")),
+		SMTPHost:                               strings.TrimSpace(os.Getenv("SMTP_HOST")),
+		SMTPPort:                               smtpPort,
+		SMTPUsername:                           os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:                           os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:                               strings.TrimSpace(os.Getenv("SMTP_FROM")),
+		SMTPTLSMode:                            strings.TrimSpace(os.Getenv("SMTP_TLS_MODE")),
 		PostmarkAccountToken:                   strings.TrimSpace(os.Getenv("POSTMARK_ACCOUNT_TOKEN")),
 		PostmarkAppServerToken:                 strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
 		PostmarkAppFromEmail:                   strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),
 		PostmarkReplyServerToken:               strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
 		PostmarkReplyFromEmail:                 strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),
 		PostmarkReplyInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
-		SupportEmailReplyDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "replies.helpin.email")),
+		SupportEmailReplyDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), deployment.DefaultReplyDomain)),
 		PostmarkRouteServerToken:               strings.TrimSpace(os.Getenv("POSTMARK_ROUTE_SERVER_TOKEN")),
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
-		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
+		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), deployment.DefaultRouteDomain)),
 		AppBaseURL:                             appBaseURL,
 		MobileAppBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("MOBILE_APP_BASE_URL")), "/"),
+		CLIEnabled:                             parseBoolEnv(os.Getenv("CLI_ENABLED")),
+		CLIModelGatewayEnabled:                 parseBoolEnv(os.Getenv("CLI_MODEL_GATEWAY_ENABLED")),
+		CLIPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("CLI_PUBLIC_BASE_URL")), "/"),
 		MCPServerEnabled:                       parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVER_ENABLED")),
 		MCPOAuthEnabled:                        parseBoolEnvDefaultTrue(os.Getenv("MCP_OAUTH_ENABLED")),
 		MCPServiceTokensEnabled:                parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVICE_TOKENS_ENABLED")),
@@ -599,4 +677,16 @@ func parseBoolEnvDefaultTrue(value string) bool {
 		return true
 	}
 	return parseBoolEnv(trimmed)
+}
+
+func rateLimitEnv(name string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer (0 disables the limit)", name)
+	}
+	return value, nil
 }

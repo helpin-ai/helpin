@@ -27,7 +27,7 @@ type DockChat struct {
 	ModuleID              *ModuleID          `json:"module_id,omitempty" gorm:"type:text;index"`
 	SupportConversationID *string            `json:"support_conversation_id,omitempty" gorm:"type:uuid;index;uniqueIndex:idx_dock_chats_support_conversation,priority:3,where:archived_at IS NULL"`
 	ActiveRunID           *string            `json:"active_run_id,omitempty" gorm:"type:uuid;index"`
-	NextMessageSequence   int64              `json:"-" gorm:"->"`
+	NextMessageSequence   int64              `json:"-" gorm:"->;not null;default:0"`
 	// ActiveRunStatus is a read-only projection used by chat roster surfaces.
 	// It is hydrated from ActiveRunID and is not stored on the chat row.
 	ActiveRunStatus string     `json:"active_run_status,omitempty" gorm:"-"`

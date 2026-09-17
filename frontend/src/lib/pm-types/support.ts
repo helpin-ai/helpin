@@ -37,6 +37,7 @@ export interface SupportConversationTriage {
 }
 
 export interface SupportConversation {
+  anonymized_at?: string | null;
   id: string;
   workspace_id: string;
   mailbox_id?: string | null;
@@ -59,6 +60,7 @@ export interface SupportConversation {
   assigned_agent_id?: string;
   linked_task_id?: string;
   source: TicketSource;
+  channel?: string;
   crm_contact_id?: string;
   crm_company_id?: string | null;
   ai_state?: 'pending' | 'resolved' | 'escalated' | null;
@@ -73,6 +75,10 @@ export interface SupportConversation {
   ai_turn_count?: number;
   customer_requested_human_at?: string;
   human_takeover?: boolean | null;
+  ai_control_version?: number;
+  ai_resumed_at?: string | null;
+  ai_paused_at?: string | null;
+  ai_paused_by_user_id?: string | null;
   list_last_message_id?: string | null;
   list_last_message_at?: string | null;
   list_last_activity_at?: string | null;
@@ -89,6 +95,7 @@ export interface SupportConversation {
   state_version?: number;
   personal_state_version?: number;
   last_customer_message_id?: string | null;
+  last_customer_message_at?: string | null;
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;
@@ -795,6 +802,12 @@ export interface SupportAIPreviewAnswer {
 }
 
 export interface SupportAIPreviewResponse {
+  run_id?: string;
+  status?: string;
+  provider?: string;
+  model?: string;
+  profile_id?: string;
+  excluded_tools?: string[];
   conversation_source: string;
   confidence_threshold: number;
   total_tokens_used: number;
@@ -918,6 +931,7 @@ export interface SupportContentSource {
   sync_progress: number;
   indexed_pages: number;
   indexed_chunks: number;
+  last_sync_warning?: string | null;
   last_sync_error?: string | null;
   last_crawl_job_id?: string | null;
   last_sync_started_at?: string | null;
@@ -1190,7 +1204,12 @@ export interface SupportRoutingUsageStatus {
   exhausted: boolean;
 }
 
-export interface SupportInstallationResponse {
+export interface WidgetOriginSettings {
+  allowed_origins: string[];
+  identity_verification_mode: 'report_only' | 'enforced';
+}
+
+export interface SupportInstallationResponse extends WidgetOriginSettings {
   id: string;
   workspace_id: string;
   widget_key: string;

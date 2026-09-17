@@ -15,7 +15,12 @@ function resolveNamespace(config: Partial<Config>): string {
 }
 
 function resolveRuntimeUrl(config: Partial<Config>): string {
-  return normalizeRuntimeUrl(config.widgetRuntimeUrl || config.widget_runtime_url);
+  const explicit = config.widgetRuntimeUrl || config.widget_runtime_url;
+  if ((config.supportOnly || config.support_only) && !explicit) {
+    if (!config.host) throw new Error('supportOnly requires an explicit host');
+    return new URL('/sdk/lib.js', config.host).href;
+  }
+  return normalizeRuntimeUrl(explicit);
 }
 
 function resolveRuntimeChannel(config: Partial<Config>): string | undefined {
@@ -55,6 +60,7 @@ function isHelpinRuntimeScript(script: HTMLScriptElement, namespace: string): bo
 
 export class HostedWidgetController implements HelpinWidgetController {
   private namespace: string;
+  private supportOnly: boolean;
   private runtimeUrl: string;
   private runtimeChannel?: string;
   private runtimeVersion?: string;
@@ -64,6 +70,7 @@ export class HostedWidgetController implements HelpinWidgetController {
 
   constructor(config: Partial<Config>) {
     this.namespace = resolveNamespace(config);
+    this.supportOnly = config.supportOnly ?? config.support_only ?? false;
     this.runtimeUrl = resolveRuntimeUrl(config);
     this.runtimeChannel = resolveRuntimeChannel(config);
     this.runtimeVersion = resolveRuntimeVersion(config);
@@ -195,6 +202,7 @@ export class HostedWidgetController implements HelpinWidgetController {
     script.setAttribute('data-host', this.currentSettings.host || '');
     script.setAttribute('data-namespace', this.namespace);
     script.setAttribute('data-no-auto-init', 'true');
+    if (this.supportOnly) script.setAttribute('data-support-only', 'true');
     if (this.runtimeChannel) {
       script.setAttribute('data-runtime-channel', this.runtimeChannel);
     }

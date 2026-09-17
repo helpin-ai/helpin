@@ -34,7 +34,7 @@ function injectSDKFilename() {
   };
 }
 
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
   const isBuild = command === 'build';
 
   return {
@@ -47,7 +47,7 @@ export default defineConfig(({ command }) => {
       ],
     },
     build: {
-      minify: false,
+      minify: mode === 'development' ? false : 'esbuild',
       cssCodeSplit: false,
       rollupOptions: {
         input: {

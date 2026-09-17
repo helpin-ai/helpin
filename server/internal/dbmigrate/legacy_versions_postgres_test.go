@@ -46,9 +46,11 @@ func TestLegacyNativeVersionUpgradePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Only the four incoming CRM migrations are pending. Native tables are
+	// Only the incoming CRM and email-notice migrations are pending. Native tables are
 	// deliberately absent: replaying already-applied native SQL must fail.
 	if _, err := db.ExecContext(ctx, `
+CREATE TABLE support_messages(message_type text);
+CREATE FUNCTION project_support_message_state() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;
 CREATE TABLE crm_pipelines(id uuid, workspace_id uuid, is_default bool, name text, default_commercial_motion text);
 CREATE TABLE crm_pipeline_stages(id uuid, pipeline_id uuid, name text, position bigint, probability bigint, stage_type text);
 CREATE TABLE crm_deals(id uuid, stage_id uuid);
@@ -81,7 +83,7 @@ CREATE TABLE crm_email_messages(id uuid, email_account_id uuid, message_external
 		}
 	}
 	issues, err := Validate(ctx, db)
-	if err != nil || len(issues) != 4 {
+	if err != nil || len(issues) != len(oldVersions) {
 		t.Fatalf("pre-upgrade validation: %v %v", issues, err)
 	}
 	for _, issue := range issues {
@@ -90,11 +92,11 @@ CREATE TABLE crm_email_messages(id uuid, email_account_id uuid, message_external
 		}
 	}
 	pending, err := Pending(ctx, db)
-	if err != nil || len(pending) != 4 {
+	if err != nil || len(pending) != len(oldVersions) {
 		t.Fatalf("pending=%v err=%v", pending, err)
 	}
 	var count int
-	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM schema_migrations WHERE version IN ('20260912000101','20260912000201','20260914000101','20260914000201')").Scan(&count); err != nil || count != 0 {
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM schema_migrations WHERE version IN ('20260912000101','20260912000201','20260914000101','20260914000201','20260915000101')").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("read-only commands modified ledger: %d %v", count, err)
 	}
 	for range 2 {
@@ -122,8 +124,8 @@ CREATE TABLE crm_email_messages(id uuid, email_account_id uuid, message_external
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM information_schema.columns WHERE table_schema=$1 AND table_name='crm_deals' AND column_name='revenue_type'", schema).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("CRM SQL was not applied: %d %v", count, err)
 	}
-	// Now represent Develop's history: CRM is applied at the original versions,
-	// while the four native migrations are pending. The native SQL must run, and
+	// Now represent Develop's history: CRM and email notices use the original
+	// versions, while the native-runtime/CLI migrations are pending. The native SQL must run, and
 	// the CRM ledger rows must retain their timestamps and checksums.
 	for _, migration := range core {
 		if migration.Version != originalPipelineVersion {
@@ -134,9 +136,9 @@ CREATE TABLE crm_email_messages(id uuid, email_account_id uuid, message_external
 		}
 	}
 	if _, err := db.ExecContext(ctx, `
-CREATE TEMP TABLE crm_ledger_before AS SELECT * FROM schema_migrations WHERE version IN ('202609120001','202609120002','202609140001','202609140002');
+CREATE TEMP TABLE crm_ledger_before AS SELECT * FROM schema_migrations WHERE version IN ('202609120001','202609120002','202609140001','202609140002','202609150001');
 DELETE FROM schema_migrations WHERE version='20260912000102';
-DELETE FROM schema_migrations WHERE version IN ('20260912000101','20260912000201','20260914000101','20260914000201');
+DELETE FROM schema_migrations WHERE version IN ('20260912000101','20260912000201','20260914000101','20260914000201','20260915000101');
 CREATE TABLE workspaces(id uuid PRIMARY KEY);
 CREATE TABLE users(id uuid PRIMARY KEY);
 CREATE TABLE agents(id uuid PRIMARY KEY, is_system bool, active_version_id uuid, runtime_kind text, preset_key text, updated_at timestamptz);
@@ -151,7 +153,7 @@ CREATE TABLE workspace_agent_preset_versions(id text PRIMARY KEY, runtime_kind t
 			t.Fatalf("develop upgrade: %v", err)
 		}
 	}
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM crm_ledger_before b JOIN schema_migrations m USING(version) WHERE b.name=m.name AND b.checksum=m.checksum AND b.applied_at=m.applied_at`).Scan(&count); err != nil || count != 4 {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM crm_ledger_before b JOIN schema_migrations m USING(version) WHERE b.name=m.name AND b.checksum=m.checksum AND b.applied_at=m.applied_at`).Scan(&count); err != nil || count != len(oldVersions) {
 		t.Fatalf("develop ledger was modified: %d %v", count, err)
 	}
 	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM information_schema.columns WHERE table_schema=$1 AND table_name='ai_connections' AND column_name='scope'", schema).Scan(&count); err != nil || count != 1 {

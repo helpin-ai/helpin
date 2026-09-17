@@ -1,3 +1,4 @@
+import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { api } from '../api';
 import type { AssignableMember } from '../types';
 import type {
@@ -258,6 +259,9 @@ export const supportService = {
     `/support/inbox/conversations/${conversationId}/create-task${qs(workspaceId)}`,
     payload,
   ),
+  changeConversationAIControl: (workspaceId: string, conversationId: string, payload: { action: 'pause' | 'return'; expected_version: number; confirm_human_request?: boolean }) =>
+    api.post<{ updated: boolean }>(`/support/inbox/conversations/${conversationId}/ai-control?workspace_id=${workspaceId}`, payload),
+
   assignConversationAgent: (workspaceId: string, conversationId: string, payload: AssignConversationAgentRequest) =>
     api.post(`/support/inbox/conversations/${conversationId}/assign-agent${qs(workspaceId)}`, payload),
   assignConversationUser: (workspaceId: string, conversationId: string, payload: AssignConversationUserRequest) =>
@@ -307,7 +311,7 @@ export const supportService = {
     api.get<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`),
   getRoutingUsageStatus: (workspaceId: string) =>
     api.get<SupportRoutingUsageStatus>(`/support/inbox/routing-usage${qs(workspaceId)}`),
-  updateInstallationSettings: (workspaceId: string, settings: Partial<SupportInboxSettings>) =>
+  updateInstallationSettings: (workspaceId: string, settings: Partial<SupportInboxSettings & WidgetOriginSettings>) =>
     api.patch<SupportInstallationResponse>(`/support/inbox/installations${qs(workspaceId)}`, settings),
   regenerateWidgetKey: (workspaceId: string) =>
     api.post<SupportInstallationResponse>(`/support/inbox/installations/regenerate-key${qs(workspaceId)}`, {}),

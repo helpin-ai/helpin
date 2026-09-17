@@ -61,6 +61,7 @@ export const aiConnectionService = {
   list: (workspace: string) =>
     api.get<{
       enabled: boolean;
+      knowledge?: { embeddings_configured: boolean; embedding_model: string; embedding_dimensions: number; chat_providers: string[] };
       connections: AIConnection[];
       models: AIConnectionModel[];
     }>(path(workspace, "/")),

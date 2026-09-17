@@ -47,6 +47,8 @@ export interface FooterConfig {
 }
 
 export interface HelpCenterConfig {
+  public_widget_url?: string
+  public_sdk_url?: string
   id: string
   workspace_id: string
   subdomain: string

@@ -41,6 +41,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { CrawlerAccessHelp } from './CrawlerAccessHelp';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 import { getUpgradeRequiredReason, type UpgradeRequiredReason } from '@edition/errors';
 import { cn } from '@/lib/utils';
@@ -717,6 +718,13 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
                           </TableCell>
                         </TableRow>
                       ) : null}
+                      {source.warning ? (
+                        <TableRow key={`${source.id}:warning`} className="hover:bg-transparent">
+                          <TableCell colSpan={6} className="px-4 py-2 text-xs text-muted-foreground" role="status">
+                            {source.warning}
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
                       {source.error ? (
                         <TableRow key={`${source.id}:error`} className="hover:bg-transparent">
                           <TableCell colSpan={6} className="px-4 py-2 text-xs text-destructive">
@@ -848,6 +856,7 @@ export function KnowledgeTab({ workspaceId }: { workspaceId: string }) {
             </div>
           ) : sourceChooserStep === 'website' ? (
             <div className="space-y-4">
+              <CrawlerAccessHelp />
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="knowledge-website-url">Website URL</Label>

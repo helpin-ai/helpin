@@ -1,4 +1,5 @@
 import { FunctionComponent } from 'preact';
+import type { WidgetConfig } from '../types';
 import { MessageCircleIcon, CircleHelpIcon, LifeBuoyIcon, XIcon } from './icons';
 
 type LauncherIcon = 'chat_bubble' | 'question_mark' | 'help';
@@ -11,6 +12,7 @@ interface WidgetLauncherProps {
   buttonColor?: string;
   buttonIconColor?: string;
   icon?: LauncherIcon;
+  position?: WidgetConfig['branding']['widgetPosition'];
 }
 
 export const WidgetLauncher: FunctionComponent<WidgetLauncherProps> = ({
@@ -21,6 +23,7 @@ export const WidgetLauncher: FunctionComponent<WidgetLauncherProps> = ({
   buttonColor,
   buttonIconColor,
   icon = 'chat_bubble',
+  position = 'bottom-right',
 }) => {
   const bgColor = buttonColor || brandColor;
   const iconColor = buttonIconColor || '#ffffff';
@@ -34,7 +37,7 @@ export const WidgetLauncher: FunctionComponent<WidgetLauncherProps> = ({
 
   return (
     <button
-      className={`helpin-launcher ${isOpen ? 'helpin-launcher--open' : ''}`}
+      className={`helpin-launcher ${position === 'bottom-left' ? 'helpin-launcher--left' : 'helpin-launcher--right'} ${isOpen ? 'helpin-launcher--open' : ''}`}
       onClick={onClick}
       style={{ backgroundColor: bgColor }}
       aria-label={isOpen ? 'Close chat' : 'Open chat'}

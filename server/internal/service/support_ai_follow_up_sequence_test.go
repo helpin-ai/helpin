@@ -219,6 +219,14 @@ func TestSupportFollowUpIntentionalHandoffRecordsVisibleEventOnce(t *testing.T) 
 	if len(events) != 1 || !events[0].IsInternal || !strings.Contains(events[0].Content, decision.Reason) {
 		t.Fatalf("missing handoff evidence: %+v", events)
 	}
+	var notes []model.SupportMessage
+	if err := db.Where("message_type='note'").Find(&notes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || !notes[0].IsInternal || notes[0].WidgetVisible() || !strings.Contains(notes[0].Content, "Still unresolved") {
+		t.Fatalf("missing private handoff brief: %+v", notes)
+	}
+
 }
 
 func TestSupportFollowUpEmailContinuationRequiresDeliveryConfirmation(t *testing.T) {

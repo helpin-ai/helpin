@@ -336,7 +336,12 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	if agentRunIsPreview(run) {
 		deliveryMode = "preview"
 	}
+	executionLocation := "cloud"
+	if model.IsLocalAgentRun(run) {
+		executionLocation = "local"
+	}
 	session := &model.CodingSession{
+		ExecutionLocation:   executionLocation,
 		DeliveryMode:        deliveryMode,
 		ID:                  run.ID,
 		RunID:               run.ID,
@@ -860,6 +865,9 @@ func (s *AgentService) resolveCodingSessionRepoState(ctx context.Context, run *m
 }
 
 func codingSessionCapabilitiesForRun(run *model.AgentRun) model.CodingSessionCapabilities {
+	if model.IsLocalAgentRun(run) {
+		return model.CodingSessionCapabilities{}
+	}
 	capabilities := model.CodingSessionCapabilities{
 		LiveTextStreaming: true,
 		ToolStreaming:     true,
@@ -1168,6 +1176,10 @@ func (s *AgentService) publishCodingSessionModelEvent(
 	event model.CodingSessionEvent,
 	actorID string,
 ) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s.wsPublisher == nil || run == nil || strings.TrimSpace(event.ID) == "" {
 		return
 	}
@@ -1185,6 +1197,10 @@ func (s *AgentService) publishCodingSessionModelEvent(
 }
 
 func (s *AgentService) publishCodingSessionMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s.wsPublisher == nil || run == nil || message == nil {
 		return
 	}
@@ -1282,6 +1298,10 @@ func (s *AgentService) ListRunInteractions(ctx context.Context, workspaceID, run
 	if s == nil || s.interactionRepo == nil {
 		return nil, fmt.Errorf("interaction repository is not configured")
 	}
+	if err := s.requireSupportPreviewReader(ctx, workspaceID, runID); err != nil {
+		return nil, err
+	}
+
 	return s.interactionRepo.ListByRun(ctx, workspaceID, runID)
 }
 

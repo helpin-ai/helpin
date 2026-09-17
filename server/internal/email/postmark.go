@@ -2,12 +2,14 @@ package email
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Client is a lightweight Postmark email client.
@@ -39,7 +41,8 @@ func NewClient(serverToken, fromEmail string) *Client {
 	return &Client{
 		serverToken: serverToken,
 		fromEmail:   fromEmail,
-		httpClient:  &http.Client{},
+		// Bound network calls, including sends serialized with contact deletion.
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -128,7 +131,7 @@ func (c *Client) SendEmail(to, subject, htmlBody, textBody string) error {
 }
 
 // SendVerificationEmail sends an account email verification message.
-func (c *Client) SendVerificationEmail(to, fullName, verificationURL string) error {
+func sendVerificationEmail(sender appMessageSender, to, fullName, verificationURL string) error {
 	name := strings.TrimSpace(fullName)
 	if name == "" {
 		name = "there"
@@ -136,7 +139,7 @@ func (c *Client) SendVerificationEmail(to, fullName, verificationURL string) err
 	subject := "Verify your Helpin email"
 	textBody := fmt.Sprintf("Hi %s,\n\nVerify your email address to secure your Helpin account:\n%s\n\nIf you did not create a Helpin account, you can ignore this email.", name, verificationURL)
 	htmlBody := fmt.Sprintf(`<p>Hi %s,</p><p>Verify your email address to secure your Helpin account:</p><p><a href="%s">Verify email</a></p><p>If you did not create a Helpin account, you can ignore this email.</p>`, html.EscapeString(name), html.EscapeString(verificationURL))
-	return c.SendEmail(to, subject, htmlBody, textBody)
+	return sender.SendEmail(to, subject, htmlBody, textBody)
 }
 
 // FromEmail returns the configured Postmark sender address.
@@ -167,6 +170,12 @@ func (c *Client) SendEmailWithHeadersAndAttachments(from, to, subject, htmlBody,
 }
 
 func (c *Client) SendEmailWithHeadersAttachmentsAndOptions(from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader, attachments []Attachment, options SendEmailOptions) (string, error) {
+	return c.SendEmailWithHeadersAttachmentsAndOptionsContext(context.Background(), from, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
+}
+
+// SendEmailWithHeadersAttachmentsAndOptionsContext cancels the HTTP request when
+// its caller loses admission (for example, its database transaction is cancelled).
+func (c *Client) SendEmailWithHeadersAttachmentsAndOptionsContext(ctx context.Context, from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader, attachments []Attachment, options SendEmailOptions) (string, error) {
 	payload := postmarkRequest{
 		From:        from,
 		To:          to,
@@ -180,7 +189,7 @@ func (c *Client) SendEmailWithHeadersAttachmentsAndOptions(from, to, subject, ht
 		TrackOpens:  true,
 		Attachments: attachments,
 	}
-	return c.send(payload)
+	return c.sendContext(ctx, payload)
 }
 
 func normalizeEmailList(values []string) []string {
@@ -201,6 +210,10 @@ func normalizeEmailList(values []string) []string {
 }
 
 func (c *Client) send(payload postmarkRequest) (string, error) {
+	return c.sendContext(context.Background(), payload)
+}
+
+func (c *Client) sendContext(ctx context.Context, payload postmarkRequest) (string, error) {
 	if c == nil {
 		return "", fmt.Errorf("postmark client not configured")
 	}
@@ -209,7 +222,7 @@ func (c *Client) send(payload postmarkRequest) (string, error) {
 		return "", fmt.Errorf("marshal email request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", "https://api.postmarkapp.com/email", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.postmarkapp.com/email", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("create email request: %w", err)
 	}
@@ -241,11 +254,14 @@ func (c *Client) send(payload postmarkRequest) (string, error) {
 }
 
 // SendInviteEmail sends a workspace invitation email.
-func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string) error {
+func sendInviteEmail(sender appMessageSender, to, inviterName, workspaceName, joinURL string) error {
 	subject := fmt.Sprintf("%s invited you to join %s on Helpin", inviterName, workspaceName)
 
 	// Get the first letter of workspace name for the avatar.
-	wsInitial := string([]rune(workspaceName)[0])
+	wsInitial := "W"
+	if runes := []rune(workspaceName); len(runes) > 0 {
+		wsInitial = string(runes[0])
+	}
 
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -358,7 +374,7 @@ func (c *Client) SendInviteEmail(to, inviterName, workspaceName, joinURL string)
     </tr>
 	  </table>
 </body>
-</html>`, BrandHeaderCSS(), inviterName, workspaceName, BrandHeaderHTML(), wsInitial, workspaceName, inviterName, joinURL)
+</html>`, BrandHeaderCSS(), html.EscapeString(inviterName), html.EscapeString(workspaceName), BrandHeaderHTML(), html.EscapeString(wsInitial), html.EscapeString(workspaceName), html.EscapeString(inviterName), html.EscapeString(joinURL))
 
 	textBody := fmt.Sprintf(`%s invited you to join %s on Helpin.
 
@@ -367,11 +383,11 @@ Click the link below to join:
 
 This invitation expires in 7 days.`, inviterName, workspaceName, joinURL)
 
-	return c.SendEmail(to, subject, htmlBody, textBody)
+	return sender.SendEmail(to, subject, htmlBody, textBody)
 }
 
 // SendPasswordResetEmail sends a password reset email with a single-use link.
-func (c *Client) SendPasswordResetEmail(to, fullName, resetURL string) error {
+func sendPasswordResetEmail(sender appMessageSender, to, fullName, resetURL string) error {
 	firstName := fullName
 	if parts := strings.Fields(strings.TrimSpace(fullName)); len(parts) > 0 {
 		firstName = parts[0]
@@ -494,7 +510,7 @@ func (c *Client) SendPasswordResetEmail(to, fullName, resetURL string) error {
     </tr>
 	  </table>
 </body>
-</html>`, BrandHeaderCSS(), BrandHeaderHTML(), initial, firstName, resetURL)
+</html>`, BrandHeaderCSS(), BrandHeaderHTML(), html.EscapeString(initial), html.EscapeString(firstName), html.EscapeString(resetURL))
 
 	textBody := fmt.Sprintf(`Hi %s,
 
@@ -507,5 +523,5 @@ This link expires in 1 hour and can only be used once.
 
 If you didn't request this, you can ignore this email.`, firstName, resetURL)
 
-	return c.SendEmail(to, subject, htmlBody, textBody)
+	return sender.SendEmail(to, subject, htmlBody, textBody)
 }

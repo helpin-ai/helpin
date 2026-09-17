@@ -525,6 +525,7 @@ func setupAgentRuntimeSupportRunTestDB(t *testing.T) *gorm.DB {
 			customer_requested_human_at datetime,
 			ai_active_run_id TEXT,
 			human_takeover boolean DEFAULT false,
+            ai_control_version BIGINT NOT NULL DEFAULT 0, ai_resumed_at timestamptz, ai_paused_at timestamptz, ai_paused_by_user_id TEXT,
 			created_at datetime,
 			updated_at datetime
 		)`,
