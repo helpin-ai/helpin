@@ -594,6 +594,8 @@ export interface AutomationTriggerExecutionListItem {
   target_title?: string;
   target_key?: string;
   run_id?: string;
+  condition_outcome?: string;
+  condition_assessment_id?: string;
   status: string;
   error_message?: string;
   fired_at: string;

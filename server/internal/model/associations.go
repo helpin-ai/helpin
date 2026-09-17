@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // TaskRelationshipAction values drive user-facing relationship creation.
 const (
 	TaskRelationshipActionRelatesTo      = "relates_to"
@@ -7,13 +9,13 @@ const (
 	TaskRelationshipActionIsBlockedBy    = "is_blocked_by"
 	TaskRelationshipActionDuplicates     = "duplicates"
 	TaskRelationshipActionIsDuplicatedBy = "is_duplicated_by"
-
 )
 
 // CreateTaskRelationshipRequest creates a directional task relationship from a task detail surface.
 type CreateTaskRelationshipRequest struct {
-	RelationshipType string `json:"relationship_type"`
-	OtherTaskID      string `json:"other_task_id"`
+	ExpectedTaskRevisions map[string]time.Time `json:"-"`
+	RelationshipType      string               `json:"relationship_type"`
+	OtherTaskID           string               `json:"other_task_id"`
 }
 
 // AssociationObjectSummary is the lightweight cross-object shape returned by grouped association APIs.

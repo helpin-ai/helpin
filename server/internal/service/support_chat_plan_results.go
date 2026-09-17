@@ -285,10 +285,6 @@ func supportChildResearchKinds(steps []model.CommandBarPlanStep) (hasWeb, hasRep
 	return hasWeb, hasRepository
 }
 
-func childRunResultHasSummary(block string) bool {
-	return childRunResultEvidenceContent(block) != ""
-}
-
 // childRunResultEvidenceContent deliberately excludes the plan prompt and
 // error envelope. Visitor-supplied values in the original question must never
 // become evidence for themselves; only completed child summaries count.

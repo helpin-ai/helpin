@@ -147,30 +147,32 @@ type TriggerExecutionListFilters struct {
 // AutomationTriggerExecutionListItem is the workspace-level execution row used
 // by the AI & Automations diagnostics surface.
 type AutomationTriggerExecutionListItem struct {
-	ExecutionID    string     `json:"execution_id"`
-	AgentID        string     `json:"agent_id"`
-	AgentName      string     `json:"agent_name"`
-	ActorID        *string    `json:"actor_id,omitempty"`
-	ActorName      *string    `json:"actor_name,omitempty"`
-	BindingID      string     `json:"binding_id"`
-	BindingKind    string     `json:"binding_kind"`
-	BindingTitle   string     `json:"binding_title"`
-	TriggerType    *string    `json:"trigger_type,omitempty"`
-	TriggerTitle   *string    `json:"trigger_title,omitempty"`
-	ReferenceID    *string    `json:"reference_id,omitempty"`
-	ReferenceType  *string    `json:"reference_type,omitempty"`
-	ReferenceTitle *string    `json:"reference_title,omitempty"`
-	ManagePath     *string    `json:"manage_path,omitempty"`
-	TargetType     *string    `json:"target_type,omitempty"`
-	TargetID       *string    `json:"target_id,omitempty"`
-	TargetTitle    *string    `json:"target_title,omitempty"`
-	TargetKey      *string    `json:"target_key,omitempty"`
-	RunID          *string    `json:"run_id,omitempty"`
-	Status         string     `json:"status"`
-	ErrorMessage   *string    `json:"error_message,omitempty"`
-	FiredAt        time.Time  `json:"fired_at"`
-	StartedAt      *time.Time `json:"started_at,omitempty"`
-	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	ExecutionID           string     `json:"execution_id"`
+	AgentID               string     `json:"agent_id"`
+	AgentName             string     `json:"agent_name"`
+	ActorID               *string    `json:"actor_id,omitempty"`
+	ActorName             *string    `json:"actor_name,omitempty"`
+	BindingID             string     `json:"binding_id"`
+	BindingKind           string     `json:"binding_kind"`
+	BindingTitle          string     `json:"binding_title"`
+	TriggerType           *string    `json:"trigger_type,omitempty"`
+	TriggerTitle          *string    `json:"trigger_title,omitempty"`
+	ReferenceID           *string    `json:"reference_id,omitempty"`
+	ReferenceType         *string    `json:"reference_type,omitempty"`
+	ReferenceTitle        *string    `json:"reference_title,omitempty"`
+	ManagePath            *string    `json:"manage_path,omitempty"`
+	TargetType            *string    `json:"target_type,omitempty"`
+	TargetID              *string    `json:"target_id,omitempty"`
+	TargetTitle           *string    `json:"target_title,omitempty"`
+	TargetKey             *string    `json:"target_key,omitempty"`
+	RunID                 *string    `json:"run_id,omitempty"`
+	ConditionOutcome      *string    `json:"condition_outcome,omitempty"`
+	ConditionAssessmentID *string    `json:"condition_assessment_id,omitempty"`
+	Status                string     `json:"status"`
+	ErrorMessage          *string    `json:"error_message,omitempty"`
+	FiredAt               time.Time  `json:"fired_at"`
+	StartedAt             *time.Time `json:"started_at,omitempty"`
+	CompletedAt           *time.Time `json:"completed_at,omitempty"`
 }
 
 // AutomationTriggerExecutionListResponse is the paginated settings payload for

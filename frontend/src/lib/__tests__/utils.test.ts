@@ -17,8 +17,9 @@ describe('timeAgo', () => {
 
   it('uses an absolute date for timestamps 30 days or older', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-06-17T12:00:00Z'));
 
-    expect(timeAgo('2026-05-18T12:00:00Z')).toBe('May 18, 12:00 PM');
+    // Absolute dates display in the viewer's local timezone.
+    vi.setSystemTime(new Date(2026, 5, 17, 12));
+    expect(timeAgo(new Date(2026, 4, 18, 12))).toBe('May 18, 12:00 PM');
   });
 });

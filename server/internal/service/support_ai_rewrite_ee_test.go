@@ -27,7 +27,7 @@ func TestRewriteSupportDraftFallsBackOnInvalidOutput(t *testing.T) {
 				openRouterLunaRoute.Model:         {Content: `{"content":"Hello."}`, Provider: "openrouter", Model: openRouterLunaRoute.Model, FinishReason: "stop"},
 			}}
 			svc := &SupportAIService{llmProvider: newTestAICompletionService(t, provider, &fakeAIUsageStore{})}
-			response, err := svc.RewriteSupportDraftWithoutConversation(context.Background(), "ws-1", model.SupportAIRewriteDraftRequest{
+			response, err := svc.RewriteDraftForSurface(context.Background(), "ws-1", "support reply", BillingFeatureSupportReplyRewrite, model.SupportAIRewriteDraftRequest{
 				Content: "hello", Operation: supportRewriteFixGrammar,
 			})
 			if err != nil {
@@ -49,7 +49,7 @@ func TestRewriteSupportDraftRejectsInvalidOutputFromBothRoutes(t *testing.T) {
 		openRouterLunaRoute.Model:         {Content: `{"content":`, FinishReason: "stop"},
 	}}
 	svc := &SupportAIService{llmProvider: newTestAICompletionService(t, provider, &fakeAIUsageStore{})}
-	response, err := svc.RewriteSupportDraftWithoutConversation(context.Background(), "ws-1", model.SupportAIRewriteDraftRequest{
+	response, err := svc.RewriteDraftForSurface(context.Background(), "ws-1", "support reply", BillingFeatureSupportReplyRewrite, model.SupportAIRewriteDraftRequest{
 		Content: "hello", Operation: supportRewriteFixGrammar,
 	})
 	if err == nil || response != nil {
@@ -63,7 +63,7 @@ func TestRewriteSupportDraftUsesPolicyAndMetersSmallTierUsage(t *testing.T) {
 	audit := &gatewayFakeAudit{}
 	completer := newTestAICompletionService(t, provider, store).SetGovernance(aipolicy.DefaultRegistry(), audit)
 	svc := &SupportAIService{llmProvider: completer}
-	_, err := svc.RewriteSupportDraftWithoutConversation(context.Background(), "ws-1", model.SupportAIRewriteDraftRequest{
+	_, err := svc.RewriteDraftForSurface(context.Background(), "ws-1", "support reply", BillingFeatureSupportReplyRewrite, model.SupportAIRewriteDraftRequest{
 		Content: "hello", Operation: supportRewriteFixGrammar,
 	})
 	if err != nil {

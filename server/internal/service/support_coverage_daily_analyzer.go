@@ -18,7 +18,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
-	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"go.temporal.io/api/serviceerror"
 	tclient "go.temporal.io/sdk/client"
 )
@@ -135,11 +134,6 @@ type CoverageFixBundleDecision struct {
 	Confidence       float64                  `json:"confidence"`
 }
 
-type CoverageKnowledgeSuggestionDraft struct {
-	Title           string `json:"title"`
-	MarkdownContent string `json:"markdown_content"`
-}
-
 // CoverageConversationSegment represents a lifecycle segment of a support
 // conversation delimited by resolved/reopened system events. The daily
 // analyzer operates on the latest segment so that unrelated earlier issues
@@ -155,22 +149,8 @@ type CoverageConversationSegment struct {
 	PublicMessageID map[string]bool
 }
 
-type CoverageFindingUpsertInput struct {
-	WorkspaceID                  string
-	ConversationID               string
-	MessageID                    string
-	AnalysisID                   string
-	Result                       CoverageConversationAnalysisResult
-	MatchedKnowledgeCandidates   []CoverageKnowledgeCandidate
-	RecommendationDecisionReason string
-	SegmentID                    string
-	SegmentStartMessageID        string
-	SegmentEndMessageID          string
-	SegmentResolved              bool
-	HasHumanReply                bool
-}
-
 type SupportCoverageDailyAnalyzer struct {
+	jevDecisions      *JevDecisionService
 	llmProvider       llm.Provider
 	providerName      string
 	modelName         string
@@ -413,7 +393,7 @@ func (s *SupportCoverageDailyAnalyzer) reconcileCoverageAssignments(ctx context.
 	}
 	for index := range findings {
 		finding := &findings[index]
-		if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding); err != nil {
+		if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding, s.jevDecisions); err != nil {
 			_ = s.coverageV2Repo.UpdateFindingAssignmentStatus(ctx, workspaceID, finding.ID, "retryable")
 			slog.WarnContext(ctx, "coverage topic assignment retry deferred", "workspace_id", workspaceID, "finding_id", finding.ID, "error", err)
 		}
@@ -1080,17 +1060,23 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal analyzer input: %w", err)
 	}
+	classification := s.classifyCoverageWithJev(ctx, input)
+	schema, prompt := classification.constrain(coverageConversationAnalysisJSONSchema(), coverageConversationAnalysisSystemPrompt())
+	generationKey := aiUsageIdempotencyKey(input.WorkspaceID, BillingFeatureCoverageGapAnalysis, "analyze", input.ConversationID, input.TranscriptHash)
+	if classification != nil {
+		generationKey = aiUsageIdempotencyKey(generationKey, classification.assessmentID)
+	}
 	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    input.WorkspaceID,
 		ActionKey:      aipolicy.ActionSupportCoverageAnalyze,
 		FeatureKey:     BillingFeatureCoverageGapAnalysis,
-		IdempotencyKey: aiUsageIdempotencyKey(input.WorkspaceID, BillingFeatureCoverageGapAnalysis, "analyze", input.ConversationID, input.TranscriptHash),
+		IdempotencyKey: generationKey,
 		Metadata: map[string]interface{}{
 			"conversation_id": input.ConversationID,
 			"action":          "analyze",
 		},
 		Chat: llm.ChatRequest{
-			SystemPrompt: coverageConversationAnalysisSystemPrompt(),
+			SystemPrompt: prompt,
 			Messages: []llm.Message{{
 				Role:    "user",
 				Content: string(inputJSON),
@@ -1098,7 +1084,7 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 			Temperature: 0.1,
 			MaxTokens:   1800,
 			JSONMode:    true,
-			JSONSchema:  coverageConversationAnalysisJSONSchema(),
+			JSONSchema:  schema,
 		},
 	})
 	if err != nil {
@@ -1110,6 +1096,9 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 		return nil, nil, fmt.Errorf("parse coverage conversation analyzer response: %w", err)
 	}
 	normalizeCoverageConversationAnalysisResult(&result)
+	if err := classification.validate(result); err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
+	}
 	if err := validateActionableCoverageResult(result); err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
 	}
@@ -1199,7 +1188,7 @@ func (s *SupportCoverageDailyAnalyzer) persistCoverageV2Finding(ctx context.Cont
 	}
 	// The durable finding is committed first. Assignment is independently
 	// retryable and must never erase or roll back the analysis result.
-	if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding); err != nil {
+	if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding, s.jevDecisions); err != nil {
 		_ = s.coverageV2Repo.UpdateFindingAssignmentStatus(ctx, finding.WorkspaceID, finding.ID, "retryable")
 		slog.WarnContext(ctx, "coverage topic assignment deferred", "finding_id", finding.ID, "error", err)
 	}
@@ -1263,295 +1252,6 @@ func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.
 	return &decision, nil
 }
 
-func (s *SupportCoverageDailyAnalyzer) GenerateKnowledgeSuggestion(ctx context.Context, result CoverageConversationAnalysisResult, fix CoverageRecommendedFix) (string, json.RawMessage, error) {
-	if !isCoverageDocsFix(fix) {
-		return "", nil, fmt.Errorf("knowledge suggestion generation only supports docs fixes")
-	}
-	if s == nil || s.llmProvider == nil {
-		content, err := coverageSuggestionContent(result, fix)
-		return firstNonEmptyCoverageString(fix.TargetTitle, result.CanonicalTitle, "Coverage gap fix"), content, err
-	}
-	payload := struct {
-		Result CoverageConversationAnalysisResult `json:"result"`
-		Fix    CoverageRecommendedFix             `json:"fix"`
-	}{
-		Result: result,
-		Fix:    fix,
-	}
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return "", nil, fmt.Errorf("marshal knowledge suggestion input: %w", err)
-	}
-	metering, _ := AIUsageMeteringFromContext(ctx)
-	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
-		WorkspaceID: metering.WorkspaceID, FeatureKey: BillingFeatureDocsArticleGeneration,
-		IdempotencyKey: metering.IdempotencyKey, Metadata: metering.Metadata,
-		Chat: llm.ChatRequest{
-			SystemPrompt: coverageKnowledgeSuggestionSystemPrompt(),
-			Messages: []llm.Message{{
-				Role:    "user",
-				Content: string(payloadJSON),
-			}},
-			Temperature: 0.1,
-			MaxTokens:   1200,
-			JSONMode:    true,
-			JSONSchema:  coverageKnowledgeSuggestionJSONSchema(),
-		},
-	})
-	if err != nil {
-		return "", nil, fmt.Errorf("coverage knowledge suggestion llm: %w", err)
-	}
-	var draft CoverageKnowledgeSuggestionDraft
-	if err := llm.UnmarshalResponse(resp.Content, &draft); err != nil {
-		return "", nil, fmt.Errorf("parse coverage knowledge suggestion: %w", err)
-	}
-	title := firstNonEmptyCoverageString(draft.Title, fix.TargetTitle, result.CanonicalTitle, "Coverage gap fix")
-	markdown := strings.TrimSpace(draft.MarkdownContent)
-	if markdown == "" {
-		markdown = firstNonEmptyCoverageString(fix.SuggestedChange, result.HumanResolution, result.CustomerNeed)
-	}
-	return title, tiptap.MarkdownToJSON(markdown), nil
-}
-
-func (s *SupportCoverageDailyAnalyzer) UpsertFinding(ctx context.Context, input CoverageFindingUpsertInput) (*model.SupportCoverageGap, error) {
-	if s == nil || s.coverageRepo == nil || s.analysisRepo == nil {
-		return nil, fmt.Errorf("coverage repositories are not configured")
-	}
-	if strings.TrimSpace(input.WorkspaceID) == "" {
-		return nil, fmt.Errorf("workspace_id is required")
-	}
-	result := input.Result
-	normalizeCoverageConversationAnalysisResult(&result)
-	if !result.HasGap {
-		return nil, nil
-	}
-	now := time.Now()
-	title := coverageTruncate(firstNonEmptyCoverageString(result.CanonicalTitle, result.CustomerNeed, "Coverage gap"), 160)
-	clusterKey := ComputeSupportCoverageClusterKey(
-		input.WorkspaceID,
-		"daily_conversation_analysis",
-		primaryCoverageTargetID(result.RecommendedFixes),
-		"",
-		result.CanonicalTitle+" "+result.CustomerNeed,
-	)
-
-	gap := &model.SupportCoverageGap{
-		WorkspaceID:  input.WorkspaceID,
-		DedupeKey:    clusterKey,
-		GapKind:      firstNonEmptyCoverageString(result.GapKind, "content"),
-		GapCategory:  firstNonEmptyCoverageString(result.GapCategory, model.SupportCoverageGapCategoryUnknown),
-		V1GapType:    coverageV1GapTypeForFinding(result),
-		Title:        title,
-		IssueKey:     clusterKey,
-		Status:       model.SupportCoverageGapStatusOpen,
-		Confidence:   result.Confidence,
-		SourceSignal: model.SupportCoverageGapSourceDailyConversationAnalysis,
-		FirstSeenAt:  now,
-		LastSeenAt:   now,
-		Metadata:     []byte(`{"source":"daily_conversation_analysis"}`),
-	}
-	if err := s.populateLegacyFindingGapEmbedding(ctx, gap, result); err != nil {
-		return nil, err
-	}
-
-	upserted, err := s.attachFindingToSimilarGap(ctx, input, result, gap, now)
-	if err != nil {
-		return nil, err
-	}
-	if upserted == nil {
-		var topic *model.SupportCoverageTopic
-		topic, err = s.coverageRepo.UpsertTopicByClusterKey(ctx, input.WorkspaceID, clusterKey, title)
-		if err != nil {
-			return nil, fmt.Errorf("upsert analysis topic: %w", err)
-		}
-		gap.TopicID = &topic.ID
-		upserted, _, err = s.coverageRepo.UpsertOpenGapByTopic(ctx, gap)
-		if err != nil {
-			return nil, fmt.Errorf("upsert analysis gap: %w", err)
-		}
-	}
-
-	evidenceMetadata, err := json.Marshal(map[string]any{
-		"customer_need":                result.CustomerNeed,
-		"ai_failure":                   result.AIFailure,
-		"human_resolution":             result.HumanResolution,
-		"decision_reason":              result.DecisionReason,
-		"recommended_fixes":            result.RecommendedFixes,
-		"conversation_analysis_id":     input.AnalysisID,
-		"matched_knowledge_candidates": input.MatchedKnowledgeCandidates,
-		"segment_id":                   input.SegmentID,
-		"segment_start_message_id":     input.SegmentStartMessageID,
-		"segment_end_message_id":       input.SegmentEndMessageID,
-		"segment_resolved":             input.SegmentResolved,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("marshal evidence metadata: %w", err)
-	}
-	evidence := &model.SupportGapEvidence{
-		GapID:          upserted.ID,
-		WorkspaceID:    input.WorkspaceID,
-		EvidenceType:   model.SupportCoverageGapSourceDailyConversationAnalysis,
-		ConversationID: emptyToNil(input.ConversationID),
-		MessageID:      emptyToNil(input.MessageID),
-		SourceSignal:   model.SupportCoverageGapSourceDailyConversationAnalysis,
-		Excerpt:        coverageTruncate(firstNonEmptyCoverageString(result.CustomerNeed, result.DecisionReason, title), 500),
-		Metadata:       evidenceMetadata,
-		CreatedAt:      now,
-	}
-	if err := s.coverageRepo.CreateEvidence(ctx, evidence); err != nil {
-		return nil, fmt.Errorf("create analysis evidence: %w", err)
-	}
-
-	recommendations, err := s.recommendationRowsForFinding(ctx, input, upserted.ID, now)
-	if err != nil {
-		return nil, err
-	}
-	if err := s.analysisRepo.ReplaceRecommendations(ctx, input.WorkspaceID, upserted.ID, recommendations); err != nil {
-		return nil, fmt.Errorf("replace analysis recommendations: %w", err)
-	}
-	if input.AnalysisID != "" {
-		if err := s.analysisRepo.SetConversationAnalysisGap(ctx, input.AnalysisID, upserted.ID, primaryRecommendationType(result.RecommendedFixes)); err != nil {
-			return nil, err
-		}
-	}
-	return upserted, nil
-}
-
-func (s *SupportCoverageDailyAnalyzer) attachFindingToSimilarGap(ctx context.Context, input CoverageFindingUpsertInput, result CoverageConversationAnalysisResult, gap *model.SupportCoverageGap, now time.Time) (*model.SupportCoverageGap, error) {
-	items, err := s.coverageRepo.ListOpenGapsForClusterRebuild(ctx, input.WorkspaceID, coverageClusterCreationDedupeLimit)
-	if err != nil {
-		return nil, fmt.Errorf("list open gaps for similar-gap dedupe: %w", err)
-	}
-	if len(items) == 0 {
-		return nil, nil
-	}
-	incoming := coverageClusterCandidate{
-		Gap: model.SupportCoverageGapListItem{
-			SupportCoverageGap: *gap,
-			CanonicalTitle:     result.CanonicalTitle,
-			CustomerNeedText:   result.CustomerNeed,
-		},
-		Embedding: coverageParseVectorLiteral(gap.Embedding),
-	}
-	incoming.Text = coverageGapEmbeddingText(incoming.Gap)
-
-	var best *model.SupportCoverageGapListItem
-	bestScore := 0.0
-	for _, item := range items {
-		if !coverageClusterCompatible(incoming.Gap, item) {
-			continue
-		}
-		candidate := coverageClusterCandidate{
-			Gap:       item,
-			Embedding: coverageParseVectorLiteral(item.Embedding),
-		}
-		candidate.Text = coverageGapEmbeddingText(item)
-		score := coverageClusterSimilarity(incoming, candidate)
-		if score > bestScore {
-			bestScore = score
-			itemCopy := item
-			best = &itemCopy
-		}
-	}
-	if best == nil {
-		return nil, nil
-	}
-	bestCandidate := coverageClusterCandidate{
-		Gap:       *best,
-		Text:      coverageGapEmbeddingText(*best),
-		Embedding: coverageParseVectorLiteral(best.Embedding),
-	}
-	if bestScore < coverageClusterAutoMergeThresholdFor(incoming, bestCandidate) {
-		return nil, nil
-	}
-	return s.coverageRepo.IncrementOpenGapEvidence(ctx, input.WorkspaceID, best.ID, now)
-}
-
-func (s *SupportCoverageDailyAnalyzer) populateLegacyFindingGapEmbedding(ctx context.Context, gap *model.SupportCoverageGap, result CoverageConversationAnalysisResult) error {
-	if s == nil || s.embeddingProvider == nil || gap == nil {
-		return nil
-	}
-	item := model.SupportCoverageGapListItem{
-		SupportCoverageGap: *gap,
-		CanonicalTitle:     result.CanonicalTitle,
-		CustomerNeedText:   result.CustomerNeed,
-	}
-	text := coverageGapEmbeddingText(item)
-	if text == "" {
-		return nil
-	}
-	modelName := coverageEmbeddingModel(s.embeddingModel)
-	embedCtx := WithAIUsageMetering(ctx, AIUsageMeteringContext{
-		WorkspaceID: gap.WorkspaceID, ActionKey: aipolicy.ActionSupportCoverageEmbed,
-		FeatureKey:     BillingFeatureCoverageGapAnalysis,
-		IdempotencyKey: aiUsageIdempotencyKey(gap.WorkspaceID, "coverage_embed", gap.ID, aiUsageStableHash(text)),
-		Metadata:       map[string]interface{}{"gap_id": gap.ID},
-	})
-	resp, err := s.embeddingProvider.CreateEmbeddings(embedCtx, llm.EmbeddingRequest{
-		Provider: coverageEmbeddingProviderName,
-		Model:    modelName,
-		Inputs:   []string{text},
-	})
-	if err != nil {
-		return fmt.Errorf("embed coverage finding gap: %w", err)
-	}
-	if resp == nil || len(resp.Vectors) != 1 || len(resp.Vectors[0]) == 0 {
-		return fmt.Errorf("embedding response did not include a gap vector")
-	}
-	now := time.Now().UTC()
-	gap.Embedding = coverageVectorLiteral(resp.Vectors[0])
-	gap.EmbeddingProvider = coverageEmbeddingProviderName
-	gap.EmbeddingModel = modelName
-	gap.EmbeddingVersion = coverageGapEmbeddingVersion
-	gap.EmbeddingDimensions = len(resp.Vectors[0])
-	gap.EmbeddingTextHash = coverageEmbeddingTextHash(text)
-	gap.EmbeddingUpdatedAt = &now
-	return nil
-}
-
-func (s *SupportCoverageDailyAnalyzer) recommendationRowsForFinding(ctx context.Context, input CoverageFindingUpsertInput, gapID string, now time.Time) ([]model.SupportCoverageRecommendation, error) {
-	result := input.Result
-	fixes := result.RecommendedFixes
-	rows := make([]model.SupportCoverageRecommendation, 0, len(fixes))
-	for _, fix := range fixes {
-		metadata, err := json.Marshal(map[string]any{
-			"source":                       "daily_conversation_analysis",
-			"decision_reason":              firstNonEmptyCoverageString(input.RecommendationDecisionReason, result.DecisionReason),
-			"matched_knowledge_candidates": input.MatchedKnowledgeCandidates,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("marshal recommendation metadata: %w", err)
-		}
-		row := model.SupportCoverageRecommendation{
-			WorkspaceID:         input.WorkspaceID,
-			GapID:               gapID,
-			AnalysisID:          emptyToNil(input.AnalysisID),
-			RecommendationType:  fix.Type,
-			TargetType:          fix.TargetType,
-			TargetID:            emptyToNil(fix.TargetID),
-			TargetTitle:         fix.TargetTitle,
-			TargetURL:           fix.TargetURL,
-			Priority:            firstNonEmptyCoverageString(fix.Priority, model.SupportCoverageRecommendationPrioritySecondary),
-			Status:              model.SupportCoverageRecommendationStatusOpen,
-			Rationale:           fix.Rationale,
-			SuggestedChange:     fix.SuggestedChange,
-			ImplementationNotes: fix.ImplementationNotes,
-			Metadata:            metadata,
-			CreatedAt:           now,
-			UpdatedAt:           now,
-		}
-		if isCoverageDocsFix(fix) {
-			if strings.TrimSpace(fix.TargetID) != "" {
-				if err := s.coverageRepo.LinkGapArticle(ctx, gapID, strings.TrimSpace(fix.TargetID), input.WorkspaceID); err != nil {
-					return nil, fmt.Errorf("link recommendation article: %w", err)
-				}
-			}
-		}
-		rows = append(rows, row)
-	}
-	return rows, nil
-}
-
 func CoverageTranscriptHash(messages []model.SupportMessage) string {
 	ordered := sortedCoverageMessages(messages)
 	records := make([]string, 0, len(ordered))
@@ -1602,20 +1302,6 @@ func timePtrIfNonZero(t time.Time) *time.Time {
 	return &utc
 }
 
-func primaryCoverageTargetID(fixes []CoverageRecommendedFix) string {
-	for _, fix := range fixes {
-		if fix.Priority == model.SupportCoverageRecommendationPriorityPrimary && strings.TrimSpace(fix.TargetID) != "" {
-			return strings.TrimSpace(fix.TargetID)
-		}
-	}
-	for _, fix := range fixes {
-		if strings.TrimSpace(fix.TargetID) != "" {
-			return strings.TrimSpace(fix.TargetID)
-		}
-	}
-	return ""
-}
-
 func primaryRecommendationType(fixes []CoverageRecommendedFix) string {
 	for _, fix := range fixes {
 		if fix.Priority == model.SupportCoverageRecommendationPriorityPrimary && strings.TrimSpace(fix.Type) != "" {
@@ -1628,53 +1314,6 @@ func primaryRecommendationType(fixes []CoverageRecommendedFix) string {
 		}
 	}
 	return ""
-}
-
-func coverageV1GapTypeForFinding(result CoverageConversationAnalysisResult) string {
-	if result.GapCategory != model.SupportCoverageGapCategoryKnowledge {
-		return model.SupportCoverageV1GapNeedsReview
-	}
-	for _, fix := range result.RecommendedFixes {
-		switch fix.Type {
-		case model.SupportCoverageFixCreateArticle:
-			return model.SupportCoverageV1GapMissingArticle
-		case model.SupportCoverageFixUpdateArticle:
-			return model.SupportCoverageV1GapWeakArticle
-		}
-	}
-	return model.SupportCoverageV1GapNeedsReview
-}
-
-func isCoverageDocsFix(fix CoverageRecommendedFix) bool {
-	return fix.Type == model.SupportCoverageFixCreateArticle || fix.Type == model.SupportCoverageFixUpdateArticle
-}
-
-func coverageSuggestionContent(result CoverageConversationAnalysisResult, fix CoverageRecommendedFix) (json.RawMessage, error) {
-	lines := []string{
-		firstNonEmptyCoverageString(fix.SuggestedChange, result.HumanResolution, result.CustomerNeed),
-	}
-	if strings.TrimSpace(result.HumanResolution) != "" {
-		lines = append(lines, "Human resolution: "+strings.TrimSpace(result.HumanResolution))
-	}
-	if strings.TrimSpace(fix.ImplementationNotes) != "" {
-		lines = append(lines, "Implementation notes: "+strings.TrimSpace(fix.ImplementationNotes))
-	}
-	content := map[string]any{
-		"type": "doc",
-		"content": []map[string]any{
-			{
-				"type": "paragraph",
-				"content": []map[string]any{
-					{
-						"type": "text",
-						"text": strings.Join(lines, "\n\n"),
-					},
-				},
-			},
-		},
-	}
-	raw, err := json.Marshal(content)
-	return json.RawMessage(raw), err
 }
 
 func firstNonEmptyCoverageString(values ...string) string {
@@ -1916,26 +1555,6 @@ func coverageFixBundleDecisionJSONSchema() map[string]any {
 					},
 				},
 			},
-		},
-	}
-}
-
-func coverageKnowledgeSuggestionSystemPrompt() string {
-	return `You write concise help-center documentation fixes from analyzed support coverage gaps. Return JSON only.
-
-Use the human_resolution as evidence for what solved the customer problem. Do not invent product behavior, policy, pricing, integrations, or steps that are not supported by the customer need, human resolution, or suggested change. If the fix is an update_article, write content that can be appended or merged into the existing article. If the fix is create_article, write a short standalone article draft.
-
-Return a clear title and markdown_content. Keep the markdown practical: headings, short paragraphs, and bullets when useful.`
-}
-
-func coverageKnowledgeSuggestionJSONSchema() map[string]any {
-	return map[string]any{
-		"type":                 "object",
-		"additionalProperties": false,
-		"required":             []string{"title", "markdown_content"},
-		"properties": map[string]any{
-			"title":            map[string]any{"type": "string"},
-			"markdown_content": map[string]any{"type": "string"},
 		},
 	}
 }

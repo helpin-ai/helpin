@@ -132,3 +132,26 @@ func (h *SupportAttachmentHandler) WidgetConfirmUpload(w http.ResponseWriter, r 
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "upload confirmed"})
 }
+
+// WidgetDelete removes an unsent attachment owned by the authenticated widget session.
+func (h *SupportAttachmentHandler) WidgetDelete(w http.ResponseWriter, r *http.Request) {
+	token := r.Header.Get("X-Session-Token")
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "session token required")
+		return
+	}
+	ctx := r.Context()
+	if ip, ok := requestmeta.ExtractClientIP(r); ok {
+		ctx = requestmeta.WithClientIP(ctx, ip)
+	}
+	session, err := h.inboxService.GetWidgetSession(ctx, token)
+	if err != nil || session == nil {
+		writeError(w, http.StatusUnauthorized, "invalid session")
+		return
+	}
+	if err := h.attachmentService.DeleteUnsentWidget(ctx, chi.URLParam(r, "attachmentId"), session.ID); err != nil {
+		writeError(w, http.StatusBadRequest, "unable to remove attachment")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
