@@ -303,6 +303,10 @@ func (s *PMTaskService) GetByDisplayID(ctx context.Context, workspaceID string, 
 
 // Create creates a task.
 func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest, actorID string) (*model.TaskDetail, error) {
+	return s.create(ctx, req, actorID, nil)
+}
+
+func (s *PMTaskService) create(ctx context.Context, req model.CreateTaskRequest, actorID string, supportReview *supportTaskCreateReview) (*model.TaskDetail, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
@@ -480,6 +484,11 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	}
 
 	if err := s.taskRepo.WithMutationTransaction(ctx, func(tasks *repository.PMTaskRepository, checklist *repository.PMChecklistItemRepository) error {
+		if supportReview != nil {
+			if err := tasks.RequireSupportEvidence(ctx, req.WorkspaceID, supportReview.conversationID, supportReview.validate); err != nil {
+				return err
+			}
+		}
 		if err := tasks.CreateWithPosition(ctx, newTask, req.Position); err != nil {
 			return err
 		}
@@ -495,6 +504,11 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		for i := range checklistItems {
 			checklistItems[i].TaskID = newTask.ID
 			if err := checklist.Create(ctx, &checklistItems[i]); err != nil {
+				return err
+			}
+		}
+		if supportReview != nil {
+			if err := tasks.LinkCreatedSupportTask(ctx, req.WorkspaceID, supportReview.conversationID, newTask.ID); err != nil {
 				return err
 			}
 		}

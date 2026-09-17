@@ -128,7 +128,7 @@ func (s *PMTriageReviewService) apply(ctx context.Context, workspaceID, actorID,
 			return ErrPMTriageStale
 		}
 		if kind == "support_conversation" {
-			return s.triage.support.LinkConversationTask(ctx, workspaceID, sourceID, target.ID, actorID)
+			return s.triage.support.linkReviewedConversationTask(ctx, workspaceID, sourceID, target.ID, actorID, record.SourceHash, target.UpdatedAt)
 		}
 		source, err := s.triage.tasks.GetRawByID(ctx, sourceID)
 		if err != nil {

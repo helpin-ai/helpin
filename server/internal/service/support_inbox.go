@@ -2549,13 +2549,19 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		createReq.Priority = &priority
 	}
 
-	detail, err := s.taskService.Create(ctx, createReq, actorID)
+	var review *supportTaskCreateReview
+	if req.ReviewedDraft {
+		review = &supportTaskCreateReview{conversationID: conversationID, sourceHash: req.SourceHash}
+	}
+	detail, err := s.taskService.create(ctx, createReq, actorID, review)
 	if err != nil {
 		return nil, err
 	}
 
 	taskID := detail.Task.ID
-	if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
+	if req.ReviewedDraft {
+		s.publishReviewedTaskLink(ctx, workspaceID, conversationID, taskID, actorID)
+	} else if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
 		return nil, err
 	}
 
