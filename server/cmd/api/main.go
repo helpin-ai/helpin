@@ -838,6 +838,10 @@ func main() {
 		supportJevService = jevService
 	}
 
+	jevProductDecisions, jevProductErr := service.NewJevDecisionService(pmJevProvider, repository.NewJevDecisionRepository(db), repository.NewAIExecutionUsageRepository(db), cfg.JevProductPolicies, strings.Split(cfg.JevWorkspaceIDs, ","))
+	if jevProductErr != nil {
+		fatalWithSentry("configure product decisions", jevProductErr)
+	}
 	pmTriageService, pmTriageErr := service.NewPMTriageService(service.PMTriageConfig{
 		Mode: cfg.JevPMMode, Threshold: cfg.JevPMThreshold, DailyLimit: cfg.JevPMDailyLimit,
 		WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
@@ -1479,6 +1483,7 @@ func main() {
 		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
+	supportCoverageDailyAnalyzer.SetJevDecisions(jevProductDecisions)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
 		SetCoverageV2Repository(supportCoverageV2Repo).
