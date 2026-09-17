@@ -33,7 +33,6 @@ Support compatibility decisions:
 
 Still required before completion:
 - Final concurrency review of support linking and source changes during reviewed mutations.
-- Dedicated unsaved-draft async/stale-result tests and task-detail review state checks.
 - Final permission/error-path audit and verification after any resulting fixes.
 
 ## Verification ledger
@@ -45,6 +44,7 @@ Still required before completion:
 - Frontend type checking and Community/Enterprise production builds pass.
 - Backend Community/Enterprise API builds and backend vet pass; go mod tidy leaves module files unchanged.
 - Shared review-row tests and existing CreateTaskModal tests pass (23 tests).
+- Dedicated draft/review component tests pass (10 additional tests): debounce, stale team responses, failure/manual-save recovery, cleared drafts, unsaved-edit guards, loading, disabled/shadow modes, stale-review refresh, and accepted-task reload.
 - Chromium full-app support tests pass for desktop/light, mobile/dark, keyboard linking and editable draft retention after a creation error. Screenshots were inspected.
 
 No customer-data provider call, deployment, push or merge has been made. Tests use an isolated PostgreSQL container and mocked browser transport.
