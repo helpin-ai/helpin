@@ -17,7 +17,7 @@ type scriptedSupportRewriteLLM struct {
 func TestRewriteSupportDraftUsesLowReasoningAndBoundedDeadline(t *testing.T) {
 	provider := &rewriteDeadlineProvider{}
 	svc := &SupportAIService{llmProvider: provider}
-	_, err := svc.RewriteSupportDraftWithoutConversation(context.Background(), "ws-1", model.SupportAIRewriteDraftRequest{
+	_, err := svc.RewriteDraftForSurface(context.Background(), "ws-1", "support reply", BillingFeatureSupportReplyRewrite, model.SupportAIRewriteDraftRequest{
 		Content: "hello", Operation: supportRewriteFixGrammar,
 	})
 	if err != nil {
@@ -89,7 +89,7 @@ func TestRewriteSupportDraftReportsActualModelAndReturnsContent(t *testing.T) {
 	}
 }
 
-func TestRewriteSupportDraftWithoutConversationUsesDraftOnly(t *testing.T) {
+func TestRewriteDraftForSurfaceUsesDraftOnly(t *testing.T) {
 	fakeLLM := &scriptedSupportRewriteLLM{
 		response: llm.ChatResponse{
 			Content: `{"content":"Hello Jane, thanks for reaching out."}`,
@@ -99,12 +99,12 @@ func TestRewriteSupportDraftWithoutConversationUsesDraftOnly(t *testing.T) {
 		llmProvider: fakeLLM,
 	}
 
-	resp, err := svc.RewriteSupportDraftWithoutConversation(context.Background(), "ws-1", model.SupportAIRewriteDraftRequest{
+	resp, err := svc.RewriteDraftForSurface(context.Background(), "ws-1", "support reply", BillingFeatureSupportReplyRewrite, model.SupportAIRewriteDraftRequest{
 		Content:   "hi jane",
 		Operation: supportRewriteFriendly,
 	})
 	if err != nil {
-		t.Fatalf("RewriteSupportDraftWithoutConversation() error = %v", err)
+		t.Fatalf("RewriteDraftForSurface() error = %v", err)
 	}
 	if resp.Content != "Hello Jane, thanks for reaching out." {
 		t.Fatalf("content = %q", resp.Content)

@@ -220,7 +220,7 @@ func TestCLILeaseFencesExpiredAndRevokedExecutions(t *testing.T) {
 	if _, err = s.BindExecution(context.Background(), c, a.RunID, 1, "local-2"); !errors.Is(err, ErrCLIConflict) {
 		t.Fatal("second local run stole grant")
 	}
-	if err = db.Model(&model.CLIExecution{}).Where("id = ?", a.Execution.ID).Update("lease_expires_at", time.Now().Add(-time.Minute)).Error; err != nil {
+	if err = db.Model(&model.CLIExecution{}).Where("id = ?", a.Execution.ID).Update("lease_expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.BindExecution(context.Background(), c, a.RunID, 1, "local-1"); !errors.Is(err, ErrCLIConflict) {
@@ -271,7 +271,7 @@ func TestCLIRejectsWrongWorkspaceAndPreservesReadOnlyPolicy(t *testing.T) {
 func TestCLIExpiredAccessAndLogout(t *testing.T) {
 	s, db, _, _ := setupCLIService(t)
 	_, tokens := cliTestLogin(t, s)
-	if err := db.Model(&model.CLIToken{}).Where("hash = ?", mcpHash(tokens.AccessToken)).Update("expires_at", time.Now().Add(-time.Minute)).Error; err != nil {
+	if err := db.Model(&model.CLIToken{}).Where("hash = ?", mcpHash(tokens.AccessToken)).Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Authenticate(context.Background(), tokens.AccessToken); !errors.Is(err, ErrCLIUnauthorized) {
