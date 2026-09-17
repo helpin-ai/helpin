@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -39,6 +40,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/dbschema"
+	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -798,6 +800,36 @@ func main() {
 		supportMessageRepo,
 		supportLLMProvider,
 	)
+	var decisionPolicies []service.SupportDecisionPolicy
+	if cfg.SupportDecisionMode != "" && cfg.SupportDecisionMode != "off" && cfg.SupportDecisionPolicies != "" {
+		if err := json.Unmarshal([]byte(cfg.SupportDecisionPolicies), &decisionPolicies); err != nil {
+			fatalWithSentry("invalid support decision policies", err)
+		}
+	}
+	decisionClient, err := service.NewSupportDecisionClient(service.SupportDecisionConfig{
+		Mode: cfg.SupportDecisionMode, URL: cfg.SupportDecisionURL, Token: cfg.SupportDecisionToken,
+		Timeout:      time.Duration(cfg.SupportDecisionTimeoutMS) * time.Millisecond,
+		WorkspaceIDs: strings.Split(cfg.SupportDecisionWorkspaceIDs, ","), Policies: decisionPolicies,
+	})
+	if err != nil {
+		fatalWithSentry("configure support decision client", err)
+	}
+	supportInboxTriageService.SetLocalDecisionClient(decisionClient)
+	if strings.TrimSpace(cfg.JevAPIKey) != "" && !(cfg.JevRoutingMode == "off" && cfg.JevTagsMode == "off") {
+		jevClient, jevErr := decision.NewJev(cfg.JevAPIKey, time.Duration(cfg.JevTimeoutMS)*time.Millisecond)
+		if jevErr != nil {
+			fatalWithSentry("configure Jev client", jevErr)
+		}
+		jevService, jevErr := service.NewSupportJevService(service.SupportJevConfig{
+			RoutingMode: cfg.JevRoutingMode, TagsMode: cfg.JevTagsMode, WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
+			RoutingThreshold: cfg.JevRoutingThreshold, TagThreshold: cfg.JevTagThreshold, DailyLimit: cfg.JevDailyLimit,
+		}, jevClient, repository.NewSupportJevRepository(db), repository.NewAIExecutionUsageRepository(db), supportTagService)
+		if jevErr != nil {
+			fatalWithSentry("configure support Jev", jevErr)
+		}
+		supportInboxTriageService.SetJevService(jevService)
+	}
+
 	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
