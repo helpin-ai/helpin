@@ -11,6 +11,29 @@ from checks import GROUPS, JOBS, failures, select
 
 
 class ChecksTest(unittest.TestCase):
+    def test_node_is_ready_before_pnpm_bootstrap(self):
+        root = Path(__file__).resolve().parents[2]
+        for workflow in (root / '.github/workflows').glob('*.yml'):
+            # Keep this policy check dependency-free, like the rest of CI checks.
+            for job in re.split(r'(?m)^  [\w-]+:\n', workflow.read_text()):
+                node_ready = False
+                for step in re.split(r'(?m)^      - ', job):
+                    if re.search(r'uses: actions/setup-node@', step):
+                        node_ready = True
+                        self.assertNotRegex(step, r'(?m)^          cache:', workflow)
+                        self.assertIn('package-manager-cache: false', step, workflow)
+                    if re.search(r'uses: pnpm/action-setup@', step):
+                        # v6 otherwise auto-selects @pnpm/exe on older runners,
+                        # which requires libatomic even with standalone=false.
+                        self.assertTrue(node_ready, workflow)
+                        if 'cache: true' in step:
+                            self.assertIn('cache_dependency_path:', step, workflow)
+        community = (root / '.github/workflows/community-test.yml').read_text()
+        pnpm = next(step for step in re.split(r'(?m)^      - ', community)
+                    if 'uses: pnpm/action-setup@' in step)
+        self.assertIn("if: inputs.level == 'full'", pnpm)
+        self.assertIn('cache_dependency_path: helpin/pnpm-lock.yaml', pnpm)
+
     def test_external_actions_are_immutable(self):
         root = Path(__file__).resolve().parents[2]
         for workflow in (root / '.github/workflows').glob('*.yml'):

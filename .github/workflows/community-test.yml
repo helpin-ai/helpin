@@ -52,17 +52,17 @@ jobs:
           ref: ${{ steps.runtime.outputs.revision }}
           path: agent-runtime
           token: ${{ secrets.runtime_read_token || github.token }}
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        if: inputs.level == 'full'
-        with:
-          package_json_file: helpin/package.json
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           package-manager-cache: false
           node-version-file: helpin/.node-version
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: inputs.level == 'full'
+        with:
+          package_json_file: helpin/package.json
           # Smoke builds dependencies inside Docker; it has no host pnpm store.
-          cache: ${{ inputs.level == 'full' && 'pnpm' || '' }}
-          cache-dependency-path: helpin/pnpm-lock.yaml
+          cache: true
+          cache_dependency_path: helpin/pnpm-lock.yaml
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         # Host Go commands only run during exported amd64 source acceptance.
         if: inputs.export-images && inputs.architecture == 'amd64'
