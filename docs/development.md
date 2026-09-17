@@ -1,11 +1,15 @@
 # Local development
 
-Run commands from the repository root unless a step says otherwise.
+Run commands from the repository root unless a step says otherwise. Read the
+[architecture overview](../ARCHITECTURE.md) for service ownership and code entry points.
+For the complete Community stack, including Agent Runtime, use the
+[Compose source-build guide](community/development.md#source-builds-and-acceptance).
+The steps below are for editing the API and frontend as host processes.
 
 ## Prerequisites
 
-- Go 1.24.3 or newer, matching `server/go.mod`.
-- Node.js 22, matching the CI environment.
+- Go 1.26.7, pinned in [`.go-version`](../.go-version).
+- Node.js 24.21.0, pinned in [`.node-version`](../.node-version).
 - pnpm 10.32.1, pinned in the root `package.json`.
 - Docker Engine with Compose V2 for local infrastructure.
 - Optional: `just` for task shortcuts and Air for backend hot reload.

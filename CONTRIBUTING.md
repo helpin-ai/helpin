@@ -42,7 +42,8 @@ still applies before publishing this repository or its history.
 
 ## Development and documentation
 
-Start with the [local development guide](docs/development.md) and the
+Start with the [architecture overview](ARCHITECTURE.md),
+[local development guide](docs/development.md), and the
 [documentation index](docs/README.md). Component-specific instructions live near
 the code; `AGENTS.md` describes repository conventions.
 
