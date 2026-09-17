@@ -153,3 +153,41 @@ func TestSupportAttachmentCreateSizeAndTypeValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteUnsentWidgetOwnershipAndSentProtection(t *testing.T) {
+	for _, tt := range []struct {
+		name, session   string
+		sent, wantError bool
+	}{
+		{"owner can clean up", "owner", false, false},
+		{"other session denied", "other", false, true},
+		{"sent file protected", "owner", true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			createSupportAttachmentTestTable(t, db)
+			repo := repository.NewSupportAttachmentRepository(db)
+			svc := NewSupportAttachmentService(repo, nil)
+			owner := "owner"
+			attachment := &model.SupportAttachment{WorkspaceID: "workspace", FileName: "test.png", FileSize: 1, ContentType: "image/png", UploadedByType: "customer", SessionID: &owner}
+			if tt.sent {
+				message := "message"
+				attachment.MessageID = &message
+			}
+			if err := repo.Create(context.Background(), attachment); err != nil {
+				t.Fatal(err)
+			}
+			err := svc.DeleteUnsentWidget(context.Background(), attachment.ID, tt.session)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("error=%v wantError=%v", err, tt.wantError)
+			}
+			remaining, err := repo.GetByID(context.Background(), attachment.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (remaining != nil) != tt.wantError {
+				t.Fatal("attachment deletion violated ownership or sent protection")
+			}
+		})
+	}
+}

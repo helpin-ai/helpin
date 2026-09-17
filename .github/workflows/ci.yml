@@ -352,6 +352,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir packages/sdk-js exec playwright install --with-deps chromium firefox
       - run: pnpm --dir packages/sdk-js run test:e2e:uploads
+      - name: Verify smoke ConfigMap matches source
+        run: |
+          python3 scripts/monitoring/generate-smoke-manifest.py
+          git diff --exit-code -- k8s/prod/monitoring-smoke-config.yaml
 
   # ----------------------- Help Center ----------------------
   helpcenter:

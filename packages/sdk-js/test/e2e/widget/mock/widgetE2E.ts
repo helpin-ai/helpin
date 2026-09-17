@@ -147,6 +147,8 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
           ? JSON.parse(init.body)
           : undefined
 
+      if (url.host === widgetHost && url.pathname === '/widget/telemetry') return new Response(null, { status: 204 })
+
       if (url.host === widgetHost && url.pathname === '/widget/config' && method === 'GET') {
         return new Response(
           JSON.stringify({

@@ -15,6 +15,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
@@ -30,6 +31,7 @@ type SupportJevConfig struct {
 
 // SupportJevService evaluates support decisions and records provider usage.
 type SupportJevService struct {
+	metrics    *observability.Metrics
 	config     SupportJevConfig
 	provider   decision.Provider
 	events     *repository.SupportJevRepository
@@ -70,10 +72,30 @@ func NewSupportJevService(config SupportJevConfig, provider decision.Provider, e
 	}
 	return &SupportJevService{config: config, provider: provider, events: events, usage: usage, tags: tags, workspaces: workspaces}, nil
 }
+
+// SetMetrics attaches content-free operational monitoring.
+func (s *SupportJevService) SetMetrics(m *observability.Metrics) { s.metrics = m }
+
 func (s *SupportJevService) enabled(workspace string) bool {
 	return s != nil && (len(s.workspaces) == 0 || s.workspaces[workspace])
 }
-func (s *SupportJevService) evaluate(ctx context.Context, workspace, conversation, state, identity string, questions map[string]decision.Question) (*decision.Result, error) {
+func (s *SupportJevService) evaluate(ctx context.Context, workspace, conversation, state, identity string, questions map[string]decision.Question) (resultOut *decision.Result, errOut error) {
+	start := time.Now()
+	defer func() {
+		outcome := "success"
+		if errOut != nil {
+			outcome = "error"
+		} else if resultOut == nil {
+			outcome = "skipped"
+		}
+		operation := "tagging"
+		if identity == "routing" {
+			operation = "routing"
+		}
+		if s != nil {
+			s.metrics.Decision(operation, outcome, time.Since(start))
+		}
+	}()
 	if !s.enabled(workspace) {
 		return nil, nil
 	}
@@ -116,7 +138,17 @@ func (s *SupportJevService) evaluate(ctx context.Context, workspace, conversatio
 	}
 	return result, nil
 }
-func (s *SupportJevService) route(ctx context.Context, workspace, conversation, input string, options []supportTriageMailboxOption) (*supportInboxTriageResult, bool, error) {
+func (s *SupportJevService) route(ctx context.Context, workspace, conversation, input string, options []supportTriageMailboxOption) (resultOut *supportInboxTriageResult, accepted bool, errOut error) {
+	start := time.Now()
+	defer func() {
+		outcome := "fallback"
+		if accepted {
+			outcome = "accepted"
+		}
+		if s != nil {
+			s.metrics.Decision("routing_selection", outcome, time.Since(start))
+		}
+	}()
 	if !s.enabled(workspace) || s.config.RoutingMode == "off" {
 		return nil, false, nil
 	}

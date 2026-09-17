@@ -215,3 +215,34 @@ describe('upload regression edge cases', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+it('reports stage outcomes without leaking attachment data', async () => {
+  const onTelemetry = vi.fn();
+  const result = start({ onTelemetry });
+  const xhr = await storage();
+  xhr.onload?.();
+  await result;
+  expect(onTelemetry.mock.calls.map(([e]) => [e.stage, e.outcome])).toEqual([
+    ['initialization', 'success'], ['storage', 'success'], ['confirmation', 'success'], ['upload', 'success'],
+  ]);
+  expect(JSON.stringify(onTelemetry.mock.calls)).not.toContain(file.name);
+  expect(JSON.stringify(onTelemetry.mock.calls)).not.toContain(initialized.upload_url);
+});
+
+it('reports storage stalls as timeouts and not success', async () => {
+  vi.useFakeTimers();
+  const onTelemetry = vi.fn();
+  const result = start({ onTelemetry });
+  const rejected = expect(result).rejects.toThrow(/stopped making progress/);
+  await storage();
+  await vi.advanceTimersByTimeAsync(30_000);
+  await rejected;
+  expect(onTelemetry).toHaveBeenCalledWith(expect.objectContaining({ stage: 'storage', outcome: 'timeout' }));
+  expect(onTelemetry).toHaveBeenLastCalledWith(expect.objectContaining({ stage: 'upload', outcome: 'timeout' }));
+});
+
+it('ignores telemetry callback errors without breaking an upload', async () => {
+  const result = start({ onTelemetry: () => { throw new Error('telemetry unavailable'); } });
+  (await storage()).onload?.();
+  await expect(result).resolves.toMatchObject({ attachmentId: 'att-1' });
+});

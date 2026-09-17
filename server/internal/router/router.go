@@ -12,10 +12,12 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/handler"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 )
 
 // Handlers aggregates all HTTP handlers.
 type Handlers struct {
+	Metrics                *observability.Metrics
 	AuthenticatedRateLimit func(http.Handler) http.Handler
 	// WidgetRateLimit guards the unauthenticated /widget write endpoints
 	// (nil disables limiting, e.g. when Redis is not configured).
@@ -123,6 +125,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.RequestLogger)
+	if h.Metrics != nil {
+		r.Use(h.Metrics.HTTP)
+	}
 	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.SentryHTTP)
 	r.Use(middleware.SentryRequestContext)
@@ -200,13 +205,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	r.Route("/widget", func(r chi.Router) {
 		r.Use(cors.Handler(cors.Options{
 			AllowedOrigins:   []string{"*"},
-			AllowedMethods:   []string{"GET", "POST", "PATCH", "OPTIONS"},
+			AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 			AllowedHeaders:   []string{"Content-Type", "X-Session-Token"},
 			AllowCredentials: false,
 			MaxAge:           3600,
 		}))
 		if h.WidgetRateLimit != nil {
 			r.Use(h.WidgetRateLimit)
+		}
+		if h.Metrics != nil {
+			r.With(h.SupportInboxWidget.RequireOrigin).Post("/telemetry", handler.WidgetTelemetry(h.Metrics))
 		}
 		r.With(h.SupportInboxWidget.RequireOrigin).Get("/config", h.SupportInboxWidget.GetConfig)
 		r.With(h.SupportInboxWidget.RequireOrigin).Post("/session", h.SupportInboxWidget.CreateSession)
@@ -221,6 +229,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		if h.SupportAttachment != nil {
 			r.With(h.SupportInboxWidget.RequireOrigin).Post("/support/attachments", h.SupportAttachment.WidgetCreate)
 			r.With(h.SupportInboxWidget.RequireOrigin).Patch("/support/attachments/{attachmentId}/confirm", h.SupportAttachment.WidgetConfirmUpload)
+			r.With(h.SupportInboxWidget.RequireOrigin).Delete("/support/attachments/{attachmentId}", h.SupportAttachment.WidgetDelete)
 		}
 		// Help center routes (used by widget-core helpApi.ts)
 		r.With(h.SupportInboxWidget.RequireOrigin).Get("/support/help/spaces/{spaceSlug}/collections", h.SupportInboxWidget.GetHelpCollections)
@@ -409,7 +418,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Route("/widget/support", func(r chi.Router) {
 			r.Use(cors.Handler(cors.Options{
 				AllowedOrigins:   []string{"*"},
-				AllowedMethods:   []string{"GET", "POST", "PATCH", "OPTIONS"},
+				AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 				AllowedHeaders:   []string{"Content-Type", "X-Session-Token"},
 				AllowCredentials: false,
 				MaxAge:           3600,
