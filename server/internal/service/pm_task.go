@@ -19,7 +19,8 @@ var attachmentIDAttrPattern = regexp.MustCompile(`data-attachment-id=["']([^"']+
 
 // PMTaskService contains task business logic.
 type PMTaskService struct {
-	taskRepo *repository.PMTaskRepository
+	taskRepo      *repository.PMTaskRepository
+	triageService *PMTriageService
 	productAnalyticsEmitter
 	templateRepo        *repository.PMTaskTemplateRepository
 	workspaceRepo       *repository.WorkspaceRepository
@@ -639,6 +640,7 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	}
 
 	s.logger.InfoContext(ctx, "task created", "task_id", newTask.ID, "workspace_id", newTask.WorkspaceID, "actor_id", actorID)
+	s.triageTask(ctx, newTask.WorkspaceID, newTask.ID)
 	detail, err := s.taskRepo.GetByID(ctx, newTask.ID)
 	if err != nil {
 		return nil, err
@@ -1573,7 +1575,11 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 			}
 		}
 		if req.LabelIDs != nil {
-			if err := tasks.ReplaceLabels(ctx, current.ID, labelIDs); err != nil {
+			if s.triageService != nil {
+				if err := tasks.ReplaceLabelsWithTriageSuppression(ctx, current.WorkspaceID, current.ID, labelIDs); err != nil {
+					return err
+				}
+			} else if err := tasks.ReplaceLabels(ctx, current.ID, labelIDs); err != nil {
 				return err
 			}
 		}
@@ -1830,6 +1836,16 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		}
 	}
 
+	if previousDetail.Task.Name != current.Name || derefString(previousDetail.Task.Description) != derefString(current.Description) {
+		if s.triageTask(ctx, current.WorkspaceID, current.ID) {
+			refreshed, refreshErr := s.taskRepo.GetByID(ctx, current.ID)
+			if refreshErr != nil {
+				s.logger.ErrorContext(ctx, "refresh triaged task", "error", refreshErr, "task_id", current.ID)
+			} else if refreshed != nil {
+				updatedDetail.Labels = refreshed.Labels
+			}
+		}
+	}
 	s.logger.InfoContext(ctx, "task updated", "task_id", current.ID, "workspace_id", current.WorkspaceID, "actor_id", actorID)
 	s.populateTaskDetail(ctx, updatedDetail)
 	return updatedDetail, nil
@@ -2212,7 +2228,14 @@ func (s *PMTaskService) RemoveLabel(ctx context.Context, taskID, labelID, actorI
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
 	}
-	if err := s.taskRepo.RemoveLabel(ctx, taskID, labelID); err != nil {
+	if err := requireTeamAccess(ctx, current.TeamID); err != nil {
+		return err
+	}
+	if s.triageService != nil {
+		if err := s.taskRepo.RemoveLabelWithTriageSuppression(ctx, current.WorkspaceID, taskID, labelID); err != nil {
+			return err
+		}
+	} else if err := s.taskRepo.RemoveLabel(ctx, taskID, labelID); err != nil {
 		return err
 	}
 	if err := s.activityService.Log(ctx, current.WorkspaceID, "task", current.ID, optionalActor(actorID), "label_removed", stringPtr("label"), &labelID, nil, nil); err != nil {

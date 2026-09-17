@@ -1,0 +1,273 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+
+	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/decision"
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
+)
+
+type pmTriageTestProvider struct {
+	calls  int
+	states []string
+	during func()
+}
+
+func (p *pmTriageTestProvider) DecideMany(_ context.Context, state string, questions map[string]decision.Question) (*decision.Result, error) {
+	p.calls++
+	p.states = append(p.states, state)
+	if p.during != nil {
+		p.during()
+	}
+	result := &decision.Result{Model: decision.Model, InputTokens: 100, OutputTokens: 10, Answers: map[string]decision.Answer{}}
+	for key, q := range questions {
+		selected := "yes"
+		switch key {
+		case "task_type":
+			selected = "bug"
+		case "team":
+			selected = "mine"
+		}
+		if strings.HasPrefix(key, "candidate_") {
+			selected = "duplicates"
+		}
+		probabilities := map[string]float64{}
+		for id := range q.Choices {
+			probabilities[id] = .01 / float64(len(q.Choices)-1)
+		}
+		probabilities[selected] = .99
+		result.Answers[key] = decision.Answer{Choice: selected, Probabilities: probabilities}
+	}
+	return result, nil
+}
+
+type pmTriageTestUsage struct{ entries []model.AIExecutionUsage }
+
+func (u *pmTriageTestUsage) RecordExecutionUsage(_ context.Context, entry model.AIExecutionUsage, _ model.JSONBlob) error {
+	u.entries = append(u.entries, entry)
+	return nil
+}
+
+func setupPMTriageService(t *testing.T) (*PMTriageService, *pmTriageTestProvider, *pmTriageTestUsage, *gorm.DB) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:pm_triage_service_%d?mode=memory&cache=shared", time.Now().UnixNano())), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	for _, sql := range []string{
+		`CREATE TABLE workspaces (id TEXT PRIMARY KEY)`,
+		`INSERT INTO workspaces (id) VALUES ('workspace')`,
+		`CREATE TABLE pm_tasks (id TEXT PRIMARY KEY, workspace_id TEXT, team_id TEXT, display_id INTEGER, name TEXT, description TEXT, updated_at DATETIME, archived BOOLEAN)`,
+		`INSERT INTO pm_tasks VALUES ('source','workspace','mine',1,'CSV export crash','Invoice export fails','2026-09-17 10:00:00',false), ('match','workspace','mine',2,'CSV export fails','Invoice export fails','2026-09-17 10:00:00',false), ('secret','workspace','other',3,'SECRET CSV export','Private','2026-09-17 10:00:00',false)`,
+		`CREATE TABLE workspace_teams (id TEXT PRIMARY KEY,workspace_id TEXT,name TEXT,description TEXT)`,
+		`INSERT INTO workspace_teams VALUES ('mine','workspace','Payments','Invoice exports'), ('other','workspace','SECRET TEAM','Private')`,
+		`CREATE TABLE pm_labels (id TEXT PRIMARY KEY,workspace_id TEXT,team_id TEXT,name TEXT,description TEXT,archived BOOLEAN)`,
+		`INSERT INTO pm_labels VALUES ('export','workspace','mine','Export','Export functionality',false), ('secret','workspace','other','SECRET LABEL','Private',false)`,
+	} {
+		if err := db.Exec(sql).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.AutoMigrate(&model.PMTriageAssessment{}, &model.PMTriageLabelSuppression{}, &model.PMTaskLabel{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE pm_activity_log (id TEXT PRIMARY KEY,workspace_id TEXT,entity_type TEXT,entity_id TEXT,actor_id TEXT,event_type TEXT,action TEXT,field_name TEXT,old_value TEXT,new_value TEXT,metadata TEXT,created_at DATETIME)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	provider := &pmTriageTestProvider{}
+	usage := &pmTriageTestUsage{}
+	service, err := NewPMTriageService(PMTriageConfig{Mode: "primary", Threshold: .95, DailyLimit: 10}, provider, repository.NewPMTriageRepository(db), usage, repository.NewPMTaskRepository(db), repository.NewWorkspaceRepository(db), repository.NewPMLabelRepository(db), &SupportInboxService{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service, provider, usage, db
+}
+func pmTriageMemberContext() context.Context {
+	return authorization.WithActor(context.Background(), &authorization.Actor{UserID: "actor", WorkspaceID: "workspace", Role: model.RoleMember, TeamMemberships: []authorization.TeamRole{{TeamID: "mine", Role: "member"}}})
+}
+
+func TestPMTriageTaskUsesAuthorizedEvidence(t *testing.T) {
+	service, provider, usage, _ := setupPMTriageService(t)
+	view, err := service.Analyze(pmTriageMemberContext(), "workspace", "task", "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Status != "ready" || view.Assessment == nil || len(view.Assessment.Matches) != 1 || view.Assessment.Matches[0].TaskID != "match" {
+		t.Fatalf("unexpected result: %+v", view)
+	}
+	if provider.calls != 1 || strings.Contains(provider.states[0], "SECRET") {
+		t.Fatalf("unauthorized context sent: calls=%d", provider.calls)
+	}
+	if len(usage.entries) != 1 || usage.entries[0].FeatureKey != "pm_triage" || usage.entries[0].InputTokens != 100 {
+		t.Fatalf("missing usage: %+v", usage.entries)
+	}
+	cached, err := service.Analyze(pmTriageMemberContext(), "workspace", "task", "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cached.ID != view.ID || cached.Assessment == nil || provider.calls != 1 || len(usage.entries) != 1 {
+		t.Fatal("cached assessment caused another provider call or lost suggestions")
+	}
+}
+func TestPMTriageRejectsUnauthorizedSource(t *testing.T) {
+	service, provider, _, _ := setupPMTriageService(t)
+	for _, tc := range []struct {
+		name              string
+		ctx               context.Context
+		workspace, source string
+	}{
+		{"no actor", context.Background(), "workspace", "source"},
+		{"wrong workspace", pmTriageMemberContext(), "other", "source"},
+		{"other team", pmTriageMemberContext(), "workspace", "secret"},
+		{"missing source", pmTriageMemberContext(), "workspace", "missing"},
+		{"viewer", authorization.WithActor(context.Background(), &authorization.Actor{UserID: "viewer", WorkspaceID: "workspace", Role: model.RoleViewer}), "workspace", "source"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := service.Analyze(tc.ctx, tc.workspace, "task", tc.source); err == nil {
+				t.Fatal("unauthorized source accepted")
+			}
+		})
+	}
+	if provider.calls != 0 {
+		t.Fatal("unauthorized source reached provider")
+	}
+}
+func TestPMTriageModes(t *testing.T) {
+	for _, mode := range []string{"off", "shadow"} {
+		t.Run(mode, func(t *testing.T) {
+			service, provider, _, _ := setupPMTriageService(t)
+			service.config.Mode = mode
+			view, err := service.Analyze(pmTriageMemberContext(), "workspace", "task", "source")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if view.Assessment != nil {
+				t.Fatal("non-primary mode exposed actionable suggestions")
+			}
+			if mode == "off" && (view.Status != "disabled" || provider.calls != 0) {
+				t.Fatal("off mode invoked provider")
+			}
+			if mode == "shadow" && (view.Status != "shadow" || provider.calls != 1) {
+				t.Fatal("shadow did not evaluate")
+			}
+		})
+	}
+}
+func TestPMTriagePermissionChangeInvalidatesCandidates(t *testing.T) {
+	service, provider, _, db := setupPMTriageService(t)
+	if _, err := service.Analyze(pmTriageMemberContext(), "workspace", "task", "source"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("UPDATE pm_tasks SET team_id = ? WHERE id = ?", "other", "match").Error; err != nil {
+		t.Fatal(err)
+	}
+	view, err := service.Analyze(pmTriageMemberContext(), "workspace", "task", "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Candidates) != 0 || len(view.Assessment.Matches) != 0 || provider.calls != 2 {
+		t.Fatal("reused inaccessible cached candidates")
+	}
+}
+
+func TestPMTriageAutomaticLabelsRespectManualRemoval(t *testing.T) {
+	for _, removal := range []string{"endpoint", "form"} {
+		t.Run(removal, func(t *testing.T) {
+			service, provider, _, db := setupPMTriageService(t)
+			ctx := pmTriageMemberContext()
+			added, err := service.automaticTask(ctx, "workspace", "source")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(added) != 1 || added[0] != "export" {
+				t.Fatalf("label not applied: %v", added)
+			}
+			var events int64
+			if err := db.Model(&model.PMActivityLog{}).Where("action = ?", "label_added").Count(&events).Error; err != nil {
+				t.Fatal(err)
+			}
+			if events != 1 {
+				t.Fatal("automatic label missing audit")
+			}
+			switch removal {
+			case "endpoint":
+				err = service.tasks.RemoveLabelWithTriageSuppression(ctx, "workspace", "source", "export")
+			case "form":
+				err = service.tasks.ReplaceLabelsWithTriageSuppression(ctx, "workspace", "source", []string{})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("UPDATE pm_tasks SET name = ?, updated_at = ? WHERE id = ?", "CSV export crash persists", time.Now().UTC(), "source").Error; err != nil {
+				t.Fatal(err)
+			}
+			added, err = service.automaticTask(ctx, "workspace", "source")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(added) != 0 || provider.calls != 2 {
+				t.Fatal("automatic triage overrode manual removal")
+			}
+			var count int64
+			if err := db.Model(&model.PMTaskLabel{}).Count(&count).Error; err != nil {
+				t.Fatal(err)
+			}
+			if count != 0 {
+				t.Fatal("removed label reappeared")
+			}
+		})
+	}
+}
+func TestPMTriageAutomaticLabelsRejectEditedSource(t *testing.T) {
+	service, provider, _, db := setupPMTriageService(t)
+	provider.during = func() {
+		if err := db.Exec("UPDATE pm_tasks SET name = ?, updated_at = ? WHERE id = ?", "Actually fix login", time.Now().UTC(), "source").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	added, err := service.automaticTask(pmTriageMemberContext(), "workspace", "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(added) != 0 {
+		t.Fatal("labels applied from stale source evidence")
+	}
+}
+func TestPMTriageAutomaticLabelsAreIdempotent(t *testing.T) {
+	service, provider, _, db := setupPMTriageService(t)
+	if _, err := service.automaticTask(pmTriageMemberContext(), "workspace", "source"); err != nil {
+		t.Fatal(err)
+	}
+	added, err := service.automaticTask(pmTriageMemberContext(), "workspace", "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(added) != 0 || provider.calls != 1 {
+		t.Fatal("repeated triage duplicated work")
+	}
+	var count int64
+	if err := db.Model(&model.PMActivityLog{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatal("repeated triage duplicated activity")
+	}
+}

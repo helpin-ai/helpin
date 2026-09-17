@@ -50,6 +50,7 @@ type Handlers struct {
 	PMAISuggestion      *handler.PMAISuggestionHandler
 	PMTask              *handler.PMTaskHandler
 	PMTaskInsights      *handler.PMTaskInsightsHandler
+	PMTriage            *handler.PMTriageHandler
 	PMComment           *handler.PMCommentHandler
 	PMAttachment        *handler.PMAttachmentHandler
 	PMObjective         *handler.PMObjectiveHandler
@@ -1010,6 +1011,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-task", h.SupportInbox.LinkConversationTask)
 				r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/create-task", h.SupportInbox.CreateTaskFromConversation)
+				if h.PMTriage != nil {
+					r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/task-triage", h.PMTriage.AnalyzeConversation)
+				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/ai-control", h.SupportInbox.ChangeConversationAIControl)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-user", h.SupportInbox.AssignConversationUser)
@@ -1199,6 +1203,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/counts", h.PMTask.CountByState)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/display/{displayID}", h.PMTask.GetByDisplayID)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}", h.PMTask.Get)
+				if h.PMTriage != nil {
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/triage", h.PMTriage.AnalyzeTask)
+				}
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/save-as-template", h.PMTask.SaveAsTemplate)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/duplicate", h.PMTask.Duplicate)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}", h.PMTask.Update)
