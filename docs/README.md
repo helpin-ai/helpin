@@ -7,6 +7,9 @@ current document links to them explicitly.
 
 ## Start here
 
+- [Architecture overview](../ARCHITECTURE.md)
+- [Community installation](../community/README.md)
+- [Community source builds](community/development.md)
 - [Local development](development.md)
 - [Contributing](../CONTRIBUTING.md)
 - [AI connections and profiles](ai-connections.md)

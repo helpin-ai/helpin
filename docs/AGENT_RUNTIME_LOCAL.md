@@ -8,6 +8,18 @@ one-shot command agents all use this connection for `native_sdk`, `codex`, and
 For the ownership model, see `docs/AGENTS_AND_AUTOMATION.md`. For staging, see
 `docs/AGENT_RUNTIME_STAGING.md`.
 
+## Complete stack for new contributors
+
+For a configured Helpin and Runtime pair, start with the
+[Community source-build guide](community/development.md#source-builds-and-acceptance).
+It supplies clone commands, the pinned Runtime revision, and Compose startup with
+a generated app configuration. The [architecture overview](../ARCHITECTURE.md)
+explains the boundaries between the two services.
+
+The remainder of this guide is for manually wiring host processes or an existing
+Runtime installation. Community Compose uses internal service names and manages
+its own configuration; do not replace those values with the host examples below.
+
 ## Helpin environment
 
 Use `127.0.0.1`; some machines resolve `localhost` to IPv6 before IPv4.

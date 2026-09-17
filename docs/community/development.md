@@ -5,15 +5,55 @@ are for a source checkout, not the downloadable operator bundle.
 
 ## Source builds and acceptance
 
-Check out Helpin and Agent Runtime as sibling repositories. Runtime must match
-`community/runtime-revision.txt`. Local source builds use:
+The complete stack builds in Docker; host Go and Node installations are not
+required for this path. Install Git, Docker Engine with Compose v2, Bash, and
+OpenSSL. Start with at least 8 GiB RAM and 20 GiB disk for evaluation, and allow
+additional memory and disk for source builds and image layers.
+
+Use a new parent directory for these checkouts. The Runtime repository currently
+requires access; do not interpret these commands as proof of public availability.
+Public release requires both repositories and the pinned Runtime source to be
+accessible to users.
 
 ```sh
+git clone https://github.com/helpin-ai/helpin.git
+git clone https://github.com/helpin-ai/agent-runtime.git
+cd helpin
+# Build the Runtime revision this Helpin checkout was packaged against.
+git -C ../agent-runtime checkout --detach "$(cat community/runtime-revision.txt)"
 cd community
 ./setup.sh install
+# Edit .env if needed; the generated defaults target local evaluation.
 docker compose -f compose.yaml -f compose.build.yaml build
 ./setup.sh start
+./setup.sh status
 ```
+
+The build override resolves Runtime at `../../agent-runtime` relative to
+`community/`, or at `AGENT_RUNTIME_SOURCE` if explicitly configured. It builds the
+Runtime image used by both its API and worker. The installer generates secrets
+and copies [apps.example.json](../../community/apps.example.json) into `apps.json`,
+which configures internal Helpin callbacks; no hand-written Runtime configuration
+is needed for this Compose path. Keep `.env` private.
+
+Open `http://localhost:8085`, sign up, and create an organization and workspace.
+Follow the [first-chat steps](../../README.md#get-started) to allow your website
+origin, install the widget, and send a message. AI is optional: configure a shared
+connection and workspace profile in Settings → AI to exercise agent execution.
+Public articles are available at
+`http://localhost:8086/?subdomain=YOUR_HELP_CENTER_SLUG` after publishing.
+
+```sh
+# From community/:
+./setup.sh logs helpin-api agent-runtime-worker
+./setup.sh stop
+```
+
+Stop preserves data volumes. See [configuration](configuration.md) for mail and
+AI settings, [deployment](deployment.md) for public access, and
+[backup/restore](backups.md) before working with persistent data. For host-process
+editing rather than container builds, use [local development](../development.md)
+and the [Runtime integration guide](../AGENT_RUNTIME_LOCAL.md).
 
 For tests, run from the Helpin repository root:
 

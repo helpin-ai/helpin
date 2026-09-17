@@ -6,6 +6,11 @@ See [known limitations](../ROADMAP.md). Community 0.1 is a beta.
 
 ## Install
 
+**Pre-release:** the current candidate is local and unpublished. The bundle steps
+below apply once a release is published. Contributors with repository access can
+use the [source-build guide](https://github.com/helpin-ai/helpin/blob/develop/docs/community/development.md#source-builds-and-acceptance)
+now. See [publication gates](https://github.com/helpin-ai/helpin/blob/develop/community/PUBLICATION.md) for remaining release requirements.
+
 Download the bundle and checksum from the [Community releases](https://github.com/helpin-ai/helpin/releases).
 Verify and extract the archive, then enter its `community/` directory. Candidate
 Actions artifacts are for maintainers until a release is published. Requirements: Docker Engine,
