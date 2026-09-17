@@ -3,13 +3,16 @@ const email = process.env.HELPIN_E2E_EMAIL;
 const password = process.env.HELPIN_E2E_PASSWORD;
 let chatID = process.env.HELPIN_E2E_CHAT_ID;
 const resumeExistingChat = Boolean(chatID);
+const verifyExistingChat = process.env.HELPIN_E2E_VERIFY_EXISTING === 'true';
 if (!email || !password) throw new Error('credentials required');
-if (process.env.HELPIN_E2E_ALLOW_GITHUB_WRITES !== 'true') {
+if (!verifyExistingChat && process.env.HELPIN_E2E_ALLOW_GITHUB_WRITES !== 'true') {
   throw new Error('HELPIN_E2E_ALLOW_GITHUB_WRITES=true is required because this test pushes a branch and opens a pull request');
 }
+if (verifyExistingChat && !chatID) throw new Error('HELPIN_E2E_CHAT_ID is required with HELPIN_E2E_VERIFY_EXISTING=true');
 const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 const branch = `e2e/ask-agent-${stamp}`;
 const filePath = `docs/e2e-agent-runtime-${stamp}.md`;
+const validationCommand = 'cargo test --lib enrichment::ua_resolver';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const log = (name, value) => console.log(`E2E ${name}:`, typeof value === 'string' ? value : JSON.stringify(value));
 
@@ -82,6 +85,16 @@ if (resumeExistingChat) {
   }
 }
 
+if (verifyExistingChat) {
+  await send(`Run exactly \`${validationCommand}\` with run_command in the attached repository's \`rust-capture\` directory. Make no file changes. Report E2E_CODING_TEST_OK only after the command passes, and include the exact command. Do not push or open another pull request.`);
+  const verification = await waitTurn('existing coding branch tests', { expectedHuman: true, timeout: 600_000 });
+  if (verification.state.detail.run?.status === 'failed' || verification.state.detail.run?.status === 'cancelled') throw new Error(`coding test run ended ${verification.state.detail.run.status}`);
+  const verificationText = verification.state.messages.filter((message) => message.role === 'assistant').map(messageText).join('\n');
+  if (!verificationText.includes('E2E_CODING_TEST_OK')) throw new Error(`coding test marker missing: ${verificationText.slice(-1500)}`);
+  console.log(JSON.stringify({ chat_id: chatID, run_id: verification.state.detail.run?.id, repository: repository.full_name, repository_validation_passed: true, marker: 'E2E_CODING_TEST_OK', approval_count: verification.approvalCount }, null, 2));
+  process.exit(0);
+}
+
 await send('Run exactly `ls -la` in the attached repository, then report E2E_LOCAL_COMMAND_OK. Do not perform any other operation.');
 const local = await waitTurn('exact local command', { expectedHuman: true });
 if (local.state.detail.run?.status === 'failed' || local.state.detail.run?.status === 'cancelled') throw new Error(`local command ended ${local.state.detail.run.status}`);
@@ -89,7 +102,7 @@ const localText = local.state.messages.filter((message) => message.role === 'ass
 if (!localText.includes('E2E_LOCAL_COMMAND_OK')) throw new Error(`local marker missing: ${localText.slice(-1200)}`);
 log('exact local command', { auto_approved: local.approvalCount === 0, run_id: local.state.detail.run?.id });
 
-await send(`Authorized end-to-end coding validation. Work only in the attached ${repository.full_name} repository. Create branch ${branch} from ${repository.default_branch}. Add exactly one new file ${filePath} containing a heading and the marker E2E_DIRECT_CODING_OK. Run git status --short to verify only that file changed. Commit it with message "test: validate Ask Agent direct coding ${stamp}", push the branch, and open a pull request to ${repository.default_branch} titled "E2E: validate Ask Agent direct coding ${stamp}". The pull request body must say this is an authorized disposable E2E validation. Do not modify any other file. Push and PR creation are explicitly authorized; use the direct tools and do not delegate to Forge.`);
+await send(`Authorized end-to-end coding validation. Work only in the attached ${repository.full_name} repository. Create branch ${branch} from ${repository.default_branch}. Add exactly one new file ${filePath} containing a heading and the marker E2E_DIRECT_CODING_OK. Run git status --short to verify only that file changed. Run exactly \`${validationCommand}\` with run_command in the \`rust-capture\` directory and require it to pass. Commit the file with message "test: validate Ask Agent direct coding ${stamp}", push the branch, and open a pull request to ${repository.default_branch} titled "E2E: validate Ask Agent direct coding ${stamp}". The pull request body must say this is an authorized disposable E2E validation. Do not modify any other file. Push and PR creation are explicitly authorized; use the direct tools and do not delegate to Forge.`);
 const coding = await waitTurn('direct coding', { expectedHuman: true });
 const codingText = coding.state.messages.filter((message) => message.role === 'assistant').map(messageText).join('\n');
 log('direct coding final', { status: coding.state.detail.run?.status, approval_count: coding.approvalCount, tail: codingText.slice(-2500) });

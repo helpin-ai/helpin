@@ -32,4 +32,12 @@ The coding check edits `usermaven/events-pipeline`, pushes a disposable timestam
 HELPIN_E2E_ALLOW_GITHUB_WRITES=true pnpm test:e2e:agent-runtime:coding
 ```
 
+To rerun the repository's self-contained Rust unit-test subset in an existing live coding chat without another external write:
+
+```bash
+HELPIN_E2E_CHAT_ID='<chat-id>' \
+HELPIN_E2E_VERIFY_EXISTING=true \
+pnpm test:e2e:agent-runtime:coding
+```
+
 Each script fails on a missing marker, unexpected route or approval, terminal run failure, or privacy/lifecycle regression. Provider failures are reported as failures rather than silently retried, so a failed run can distinguish infrastructure instability from a product assertion.
