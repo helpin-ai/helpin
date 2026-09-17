@@ -23,13 +23,16 @@ type CoverageTopicAssignmentDecision struct {
 	Compatibility float64
 }
 
-func assignCoverageV2Finding(ctx context.Context, repo *repository.CoverageV2Repository, finding *model.CoverageFinding) error {
+func assignCoverageV2Finding(ctx context.Context, repo *repository.CoverageV2Repository, finding *model.CoverageFinding, decisions *JevDecisionService) error {
 	if repo == nil || finding == nil {
 		return nil
 	}
 	topics, err := repo.ListOpenTopics(ctx, finding.WorkspaceID, 500)
 	if err != nil {
 		return fmt.Errorf("list canonical coverage topics: %w", err)
+	}
+	if handled, err := assignCoverageTopicWithJev(ctx, decisions, repo, finding, topics); handled || err != nil {
+		return err
 	}
 	decision := DecideCoverageTopicAssignment(*finding, topics)
 	attempt := &model.CoverageAssignmentAttempt{

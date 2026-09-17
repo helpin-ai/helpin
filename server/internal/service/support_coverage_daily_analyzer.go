@@ -414,7 +414,7 @@ func (s *SupportCoverageDailyAnalyzer) reconcileCoverageAssignments(ctx context.
 	}
 	for index := range findings {
 		finding := &findings[index]
-		if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding); err != nil {
+		if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding, s.jevDecisions); err != nil {
 			_ = s.coverageV2Repo.UpdateFindingAssignmentStatus(ctx, workspaceID, finding.ID, "retryable")
 			slog.WarnContext(ctx, "coverage topic assignment retry deferred", "workspace_id", workspaceID, "finding_id", finding.ID, "error", err)
 		}
@@ -1209,7 +1209,7 @@ func (s *SupportCoverageDailyAnalyzer) persistCoverageV2Finding(ctx context.Cont
 	}
 	// The durable finding is committed first. Assignment is independently
 	// retryable and must never erase or roll back the analysis result.
-	if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding); err != nil {
+	if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding, s.jevDecisions); err != nil {
 		_ = s.coverageV2Repo.UpdateFindingAssignmentStatus(ctx, finding.WorkspaceID, finding.ID, "retryable")
 		slog.WarnContext(ctx, "coverage topic assignment deferred", "finding_id", finding.ID, "error", err)
 	}

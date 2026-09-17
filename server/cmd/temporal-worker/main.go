@@ -670,6 +670,8 @@ func main() {
 		fatalWithSentry("configure product decisions", err)
 	}
 	supportCoverageDailyAnalyzer.SetJevDecisions(jevDecisions)
+	commandService.SetJevDecisions(jevDecisions)
+	ruleEngine.SetJevDecisions(jevDecisions)
 	var meetingProcessor *service.CRMMeetingProcessingService
 	if s3Client != nil {
 		meetingProcessor = service.NewCRMMeetingProcessingService(

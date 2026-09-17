@@ -482,6 +482,7 @@ func stripConversationPII(content string, customerEmail, customerPhone *string) 
 // SupportKnowledgeSearchOutcome is what the search_knowledge runtime tool
 // receives: the resolved support agent plus the agent-scoped search results.
 type SupportKnowledgeSearchOutcome struct {
+	Queries []string
 	AgentID string
 	Results []KnowledgeSearchResult
 }
@@ -517,7 +518,7 @@ func (s *SupportAIService) SearchKnowledgeForConversation(ctx context.Context, w
 	}
 
 	s.recordToolRetrievalTrace(ctx, workspaceID, conversationID, effectiveQueries, results)
-	return &SupportKnowledgeSearchOutcome{AgentID: agentID, Results: results}, nil
+	return &SupportKnowledgeSearchOutcome{AgentID: agentID, Results: results, Queries: effectiveQueries}, nil
 }
 
 // Both production and previews prepend the exact visitor message and use the

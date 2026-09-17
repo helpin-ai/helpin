@@ -228,3 +228,11 @@ describe('Needs attention table', () => {
     expect(attentionBadges[0]?.getAttribute('tabindex')).toBe('0');
   });
 });
+
+
+it('shows the reason a semantic condition skipped an action with no run', () => {
+  render(<ActivityTableRow item={{ ...execution, agent_id: '', agent_name: '', run_id: undefined, binding_kind: 'automation_rule', binding_id: 'semantic_condition', condition_outcome: 'uncertain', condition_assessment_id: 'assessment-1', status: 'skipped' }} onOpenRun={vi.fn()} onOpenFlow={vi.fn()} onOpenTarget={vi.fn()} />);
+  expect(container?.textContent).toContain('Condition was uncertain — action skipped');
+  expect(container?.textContent).toContain('Flow condition');
+  expect(container?.querySelector('[aria-label="View run"]')).toBeNull();
+});

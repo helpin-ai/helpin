@@ -975,6 +975,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	)
+	ruleEngine.SetJevDecisions(jevProductDecisions)
 	ruleEngine.SetAgentService(agentService)
 	ruleEngine.SetTaskService(pmTaskService)
 	ruleEngine.SetHealthObserver(automationHealthService)
@@ -1484,6 +1485,7 @@ func main() {
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
 	supportCoverageDailyAnalyzer.SetJevDecisions(jevProductDecisions)
+	commandService.SetJevDecisions(jevProductDecisions)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
 		SetCoverageV2Repository(supportCoverageV2Repo).

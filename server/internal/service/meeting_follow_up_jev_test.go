@@ -71,3 +71,30 @@ func TestJevMeetingRoutingFailurePreservesExistingEvidenceValidation(t *testing.
 		t.Fatalf("legacy fallback failed: %s %v", scope, err)
 	}
 }
+
+func TestJevMeetingProjectionRoutesDraftAndRetainsProvenance(t *testing.T) {
+	decisions, p, _, _ := setupJevDecisionTest(t, "primary")
+	p.choices = map[string]string{"scope": "internal", "internal_evidence": "evidence_00", "customer_evidence": "unknown"}
+	manager := &routingSuggestionManager{}
+	processor := (&CRMMeetingProcessingService{suggestions: manager}).SetJevDecisions(decisions)
+	meeting := &model.CRMMeeting{ID: "meeting", WorkspaceID: "workspace", Title: "Engineering planning"}
+	transcript := &model.CRMMeetingTranscript{PlainText: "Prepare the internal engineering sprint plan."}
+	output := &meetingIntelligenceOutput{FollowUpDraft: meetingFollowUpOutput{Subject: "Prepare the internal engineering sprint plan", Body: "Arrange our next engineering planning session.", Scope: "uncertain"}}
+	if err := processor.projectFollowUp(context.Background(), meeting, transcript, output); err != nil {
+		t.Fatal(err)
+	}
+	if len(manager.created) != 1 {
+		t.Fatal("draft not projected")
+	}
+	created := manager.created[0]
+	if *created.Description != output.FollowUpDraft.Body || created.Context[model.MeetingFollowUpScopeKey] != "internal" || created.Context["meeting_follow_up_jev_assessment_id"] == nil || created.Context["meeting_follow_up_scope_evidence"] == nil {
+		t.Fatalf("projection=%+v", created)
+	}
+	manager.existing = []model.CRMSuggestion{{ID: "existing"}}
+	if err := processor.projectFollowUp(context.Background(), meeting, transcript, output); err != nil {
+		t.Fatal(err)
+	}
+	if len(manager.created) != 1 || p.calls != 1 {
+		t.Fatal("existing draft was regenerated or reassessed")
+	}
+}

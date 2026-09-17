@@ -33,5 +33,24 @@ Scope: implement the reviewed recommendations 2–6 end to end: meeting follow-u
 - Meeting routing wired in the Temporal worker for new projections and existing-draft routing, with exact supplied-excerpt selection and legacy fallback for ambiguous, failed or oversized inputs. Existing routing revision guards remain in use.
 - Knowledge-gap classification wired in API and worker; accepted classifications constrain the existing narrative generator's schema/prompt. Contradictory generated classifications are rejected before persistence. Generated recommendations and their business priority remain independent of Jev probabilities.
 - Focused service/repository/config tests pass under the Go race detector for shared decisions, meeting routing and coverage classification, plus existing meeting/coverage regression tests. API and Temporal worker builds pass.
-- Still pending: semantic topic matching, Flow model/API/UI/execution and Activity outcomes, answer-evidence assessment, full new-meeting projection tests, PostgreSQL migration/concurrency verification, final Community/Enterprise validation and completion audit.
+- Semantic topic matching is connected to both canonical assignment entry points. Workspace/open-topic filtering, explicit uncertainty review, Unicode-preserving identity, transactional source/topic checks and shared manual/dismissal fences are covered by tests. Candidate retrieval remains the existing bounded topic list, as documented.
+- Answer-evidence assessment is wired through the actual support knowledge command and preview path, with exact returned excerpts, advisory provenance and preserved full citation evidence. Tool-level and fallback tests pass.
+- Flows support an optional semantic condition in trigger_config across API validation, create/edit/detail UI, action gating and Activity outcomes. Scheduled/managed-playbook conditions are rejected. Unavailable/uncertain/shadow checks fail closed; legacy Flows remain unchanged. Pipeline quick editing preserves a saved condition. Activity counts do not treat condition checks as executed actions.
+- New-meeting projection tests verify draft preservation, routing provenance and no duplicate projection.
+- Disposable PostgreSQL tests apply both migrations twice and verify concurrent admission deduplication/caps, condition history without an agent, and manual topic assignment winning against a concurrent semantic result.
+- Focused backend suites pass under the race detector. Full service/repository/handler/model suites pass with TZ=UTC. Two existing SQLite expiry tests fail under local Europe/Berlin time; both failures reproduce unchanged on the earlier PM branch. No unrelated expiry code was changed.
+- Community and Enterprise API/worker/migrate builds and backend vet pass; go mod tidy leaves dependencies unchanged. Both frontend edition builds pass. 32 Flow/Activity component tests and two mobile light/dark Chromium harness tests pass, including keyboard use, editing/removal, disabled/error states and outcomes. Screenshots were inspected; the local symlinked dependency setup blocked the bundled font in Vite, so browser checks used its fallback font.
+- Rollout/fallback/limitations and test commands are documented in docs/deployments/jev-product-decisions.md. All new classifiers default to shadow; no real customer/provider calls were used for verification.
 - No customer-data/provider calls, merge, push or deployment performed for this work.
+
+## Completion audit
+
+| Reviewed recommendation | Implemented behavior | Evidence |
+| --- | --- | --- |
+| 2: Meetings | New and existing draft classification with exact quote and legacy fallback | meeting_follow_up_jev_test.go; existing meeting routing tests |
+| 3: Knowledge gaps | Closed categories constrain grounded narrative generation | support_coverage_jev_test.go; Coverage regressions |
+| 4: Topic matching | Bounded semantic comparison; reversible guarded assignments and review | support_coverage_topic_jev_test.go; support_coverage_semantic_assignment_test.go; PostgreSQL concurrency test |
+| 5: Flows | Optional editor/API condition, guarded execution, durable Activity and provenance | automation_rule_jev_test.go; Flow/Activity components; Chromium harness |
+| 6: Answer evidence | Exact excerpt assessments in knowledge-tool output, unchanged citation validation | support_answer_evidence_jev_test.go; search-knowledge regressions |
+
+Recommendation 1, CRM signal classification, remains excluded. Merging, deployment and primary-mode rollout require a separate instruction.

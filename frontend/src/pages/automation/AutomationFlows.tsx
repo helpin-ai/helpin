@@ -1,3 +1,4 @@
+import { FlowSemanticConditionField } from '@/components/automation/FlowSemanticConditionField';
 import { SequenceAutomationConnections } from '@/components/crm/outreach/SequenceAutomationConnections';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -90,6 +91,7 @@ type FlowDraft = {
   triggerType: string;
   workflowId: string;
   triggerStateId: string;
+  semanticCondition: string;
   actionType: 'start_agent_run' | 'move_to_state' | 'merge_branch';
   agentId: string;
   targetMode: FlowTargetMode;
@@ -1283,6 +1285,7 @@ function defaultDraft(): FlowDraft {
   return {
     name: '',
     description: '',
+    semanticCondition: '',
     triggerType: 'github.pull_request_merged',
     workflowId: '',
     triggerStateId: '',
@@ -1420,6 +1423,7 @@ export function draftFromRule(rule: AutomationRule, workflows: WorkflowWithState
   draft.triggerType = rule.trigger_type;
   draft.workflowId = rule.workflow_id ?? '';
   draft.triggerStateId = stringValue(rule.trigger_config?.state_id);
+  draft.semanticCondition = stringValue(rule.trigger_config?.semantic_condition?.text);
   draft.actionType = (rule.action_type as FlowDraft['actionType']) || 'start_agent_run';
   draft.agentId = stringValue(rule.action_config?.agent_id);
   draft.targetMode = (stringValue(rule.action_config?.target_type) as FlowDraft['targetMode']) || 'event';
@@ -1439,7 +1443,7 @@ export function draftFromRule(rule: AutomationRule, workflows: WorkflowWithState
 }
 
 export function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: string) {
-  let triggerConfig: Record<string, string> = {};
+  let triggerConfig: Record<string, unknown> = {};
   if (draft.triggerType === 'task.state_entered') {
     triggerConfig = { state_id: draft.triggerStateId };
   } else if (draft.triggerType === 'agent_run.approved') {
@@ -1455,6 +1459,8 @@ export function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: 
   } else if (draft.triggerType === 'cron') {
     triggerConfig = serializeScheduleConfig(scheduleExpressionForDraftUTC(draft, timezone));
   }
+
+  if (draft.semanticCondition.trim()) triggerConfig.semantic_condition = { text: draft.semanticCondition.trim() };
 
   let actionConfig: Record<string, unknown> = {};
   if (draft.actionType === 'start_agent_run') {
@@ -1491,6 +1497,8 @@ export function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: 
 
 export function validateDraft(draft: FlowDraft) {
   if (!draft.name.trim()) return 'Give the flow a name';
+  if ([...draft.semanticCondition.trim()].length > 500) return 'Keep the semantic condition within 500 characters';
+  if (draft.triggerType === 'cron' && draft.semanticCondition.trim()) return 'Remove the semantic condition before using a schedule';
   if (isWorkflowTrigger(draft.triggerType)) {
     if (!draft.workflowId) return 'Choose a workflow';
     if (!draft.triggerStateId) return 'Choose the state that starts this flow';
@@ -1581,6 +1589,7 @@ function draftLogicRows(draft: FlowDraft, workflows: WorkflowWithStates[], state
   const triggerStateName = statesById.get(draft.triggerStateId)?.name;
   const destinationStateName = statesById.get(draft.targetStateId)?.name;
   const rows: FlowLogicRow[] = [{ connector: 'When', text: triggerLabel(draft.triggerType), tone: 'strong' }];
+  if (draft.semanticCondition.trim()) rows.push({ connector: 'If', text: draft.semanticCondition.trim() });
   const conditions = compactList((() => {
     if (isWorkflowTrigger(draft.triggerType)) {
       const parts = [];
@@ -1991,6 +2000,7 @@ export function flowDetailsSections({
       title: 'Trigger setup',
       rows: compactRows([
         { label: 'Trigger', value: triggerLabel(draft.triggerType) },
+        draft.semanticCondition.trim() ? { label: 'Semantic condition', value: draft.semanticCondition.trim() } : null,
         workflowName ? { label: 'Workflow', value: workflowName } : null,
         triggerStateName ? { label: 'State', value: triggerStateName } : null,
         draft.repoFullName.trim() ? { label: 'Repository', value: draft.repoFullName.trim() } : null,
@@ -3056,6 +3066,12 @@ export function FlowComposer({
             )}
 
             <div className="my-1 h-px bg-border/40" />
+
+            <FlowSemanticConditionField
+              value={draft.semanticCondition}
+              scheduled={isCronTrigger}
+              onChange={(semanticCondition) => updateDraft((current) => ({ ...current, semanticCondition }))}
+            />
 
             <SentenceRow connector="then" tone="strong">
               <Select
