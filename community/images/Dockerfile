@@ -1,6 +1,6 @@
 # Build from the Helpin repository root. Never copy an operator .env into images.
 ARG BUILDPLATFORM
-FROM node:22.23.2-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS sdk-build
+FROM node:24.21.0-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553 AS sdk-build
 ENV CI=true NODE_OPTIONS=--max-old-space-size=4096
 WORKDIR /workspace
 RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
@@ -52,7 +52,7 @@ ENV COMMUNITY_TRUSTED_PROXY_CIDR=127.0.0.1/32
 COPY --from=frontend-build /workspace/frontend/dist /usr/share/nginx/html
 COPY community/images/nginx.conf /etc/nginx/templates/default.conf.template
 EXPOSE 80
-FROM node:22.23.2-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS helpcenter
+FROM node:24.21.0-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553 AS helpcenter
 COPY LICENSE LICENSE-AGPL-3.0 LICENSE-APACHE-2.0 /usr/share/licenses/helpin/
 COPY ee/LICENSE /usr/share/licenses/helpin/ee/LICENSE
 ENV NODE_ENV=production PORT=3000

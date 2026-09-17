@@ -76,7 +76,7 @@ jobs:
           if echo "$CHANGED" | grep -qE '^(frontend/|packages/)'; then
             FRONTEND=true
           fi
-          if echo "$CHANGED" | grep -qE '^(pnpm-lock\.yaml|pnpm-workspace\.yaml)$'; then
+          if echo "$CHANGED" | grep -qE '^(pnpm-lock\.yaml|pnpm-workspace\.yaml|\.node-version)$'; then
             HELPCENTER=true
             FRONTEND=true
           fi
@@ -239,7 +239,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           package-manager-cache: false
-          node-version: 22
+          node-version-file: build-prod-netlify/.node-version
 
       - name: Install Doppler CLI
         run: bash build-prod-netlify/scripts/ci/install-tool.sh doppler

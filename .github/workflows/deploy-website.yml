@@ -9,6 +9,7 @@ on:
   push:
     branches: [main]
     paths:
+      - ".node-version"
       - "website/**"
       - ".github/workflows/deploy-website.yml"
   workflow_dispatch:
@@ -37,7 +38,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           package-manager-cache: false
-          node-version: '22'
+          node-version-file: .node-version
 
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
@@ -68,7 +69,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           package-manager-cache: false
-          node-version: '22'
+          node-version: "24.21.0"
 
       - name: Ensure Cloudflare Pages project exists
         run: npx wrangler@3.114.1 pages project create helpin-website --production-branch=main 2>/dev/null || true

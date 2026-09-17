@@ -78,7 +78,18 @@ class ChecksTest(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         dockerfile = (root / 'community/images/Dockerfile').read_text()
         self.assertIn('golang:' + (root / '.go-version').read_text().strip() + '-bookworm', dockerfile)
-        self.assertIn('node:' + (root / '.node-version').read_text().strip() + '-bookworm-slim', dockerfile)
+        node = (root / '.node-version').read_text().strip()
+        for filename in ('community/images/Dockerfile', 'frontend/Dockerfile',
+                         'help-center/Dockerfile', 'packages/sdk-js/docker/Dockerfile',
+                         'community/tests/compose.fixture.yaml'):
+            images = re.findall(r'node:([^\s]+)', (root / filename).read_text())
+            self.assertTrue(images, filename)
+            for image in images:
+                self.assertRegex(image, '^' + re.escape(node) + r'-[\w.-]+@sha256:[a-f0-9]{64}$', filename)
+        # Artifact-only deploy jobs cannot read a checkout's .node-version.
+        for workflow in (root / '.github/workflows').glob('*.yml'):
+            for version in re.findall(r'node-version: [\'"]?([\d.]+)', workflow.read_text()):
+                self.assertEqual(version, node, workflow)
 
     def test_every_selected_job_is_in_final_gate(self):
         workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/ci.yml').read_text()

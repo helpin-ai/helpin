@@ -8,7 +8,7 @@ x-fixture-env: &fixture-env
   SMTP_TLS_MODE: none
 services:
   test-providers:
-    image: node:22.23.2-bookworm-slim
+    image: node:24.21.0-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
     command: [node, /fixtures/providers.mjs]
     volumes: ['./tests/providers.mjs:/fixtures/providers.mjs:ro']
     ports: ['127.0.0.1:${COMMUNITY_PROVIDER_PORT:?use tests/run.sh full}:8080']

@@ -61,6 +61,13 @@ Go and Node are pinned in `.go-version` and `.node-version`; pnpm is declared in
 files. Dependency caches follow lockfiles, and Docker caches are scoped per
 architecture and image. Fork runs cannot write the shared build caches.
 
+JavaScript actions use Node 24 and are pinned to reviewed commit SHAs; Dependabot
+proposes weekly action updates. Keep ARC runners at version 2.329.0 or newer
+before using these workflows. Tokens default to read-only, with write permissions
+limited to publishing jobs. Checkout credentials are retained only for Git release
+operations. The Doppler and Trivy installers verify versioned archive checksums
+from `scripts/ci/install-tool.sh` without running remote installer scripts.
+
 ## Candidate and promotion
 
 1. Complete [publication review](../../community/PUBLICATION.md), including real

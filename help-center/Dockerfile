@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:24.21.0-alpine@sha256:be80f76cf40ec8e42b9bec49f60a55e0660f30af58d3e5a25530785b30ea67e2 AS build
 ENV CI=true
 WORKDIR /workspace/help-center
 RUN corepack enable
@@ -9,7 +9,7 @@ COPY packages/shared/src/docs-blocks.css /workspace/packages/shared/src/docs-blo
 RUN pnpm install --frozen-lockfile
 RUN pnpm run build
 
-FROM node:22-alpine
+FROM node:24.21.0-alpine@sha256:be80f76cf40ec8e42b9bec49f60a55e0660f30af58d3e5a25530785b30ea67e2
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
