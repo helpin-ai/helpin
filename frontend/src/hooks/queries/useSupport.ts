@@ -1,3 +1,4 @@
+import type { CreateTaskFromConversationRequest } from '@/lib/pmTypes';
 import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -1237,8 +1238,9 @@ export function useRunConversationAgent(workspaceId: string) {
 export function useCreateTaskFromConversation(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ conversationId, teamId }: { conversationId: string; teamId: string }) =>
+    mutationFn: ({ conversationId, teamId, draft }: { conversationId: string; teamId: string; draft?: Omit<CreateTaskFromConversationRequest, 'team_id'> }) =>
       supportService.createTaskFromConversation(workspaceId, conversationId, {
+        ...draft,
         team_id: teamId,
       }).then(unwrap),
     onSuccess: (_data, { conversationId }) => {

@@ -1054,6 +1054,8 @@ export interface LinkTaskRequest {
 }
 
 export interface CreateTaskFromConversationRequest {
+  reviewed_draft?: boolean;
+  source_hash?: string;
   team_id: string;
   name?: string;
   description?: string;
