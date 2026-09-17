@@ -270,12 +270,12 @@ func (s *SupportTagService) AddAutomaticConversationTag(ctx context.Context, wor
 		return err
 	}
 	if s.messageRepo != nil {
-		display := "Jev"
+		display := "Helpin AI"
 		metadata, err := json.Marshal(map[string]string{"tag_id": tagID, "provider": "typesafe", "model": decision.Model})
 		if err != nil {
 			return err
 		}
-		msg := &model.SupportMessage{WorkspaceID: workspaceID, ConversationID: conversationID, SenderType: "ai", SenderDisplayName: &display, Content: "Jev added tag " + tag.Name + ".", IsInternal: true, MessageType: "system", SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventTagAdded), Metadata: string(metadata)}
+		msg := &model.SupportMessage{WorkspaceID: workspaceID, ConversationID: conversationID, SenderType: "ai", SenderDisplayName: &display, Content: "Helpin AI added tag " + tag.Name + ".", IsInternal: true, MessageType: "system", SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventTagAdded), Metadata: string(metadata)}
 		if err := s.messageRepo.Create(ctx, msg); err != nil {
 			return err
 		}

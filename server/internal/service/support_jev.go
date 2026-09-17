@@ -141,7 +141,7 @@ func (s *SupportJevService) route(ctx context.Context, workspace, conversation, 
 	}
 	confidence := a.Probabilities[a.Choice]
 	intent := "jev_semantic_routing"
-	reason := "Jev " + result.Model + "; provider probability (not locally calibrated)"
+	reason := "Helpin AI matched this conversation to the inbox."
 	return &supportInboxTriageResult{Intent: &intent, Confidence: &confidence, Reason: &reason, ClassifierSource: model.SupportConversationTriageSourceAI, SuggestedHandle: a.Choice}, true, nil
 }
 
