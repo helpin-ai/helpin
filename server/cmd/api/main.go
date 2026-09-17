@@ -86,7 +86,8 @@ func main() {
 	}
 
 	// Initialize structured logger.
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
+	metrics := observability.NewMetrics()
+	logger := slog.New(metrics.BackgroundHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)})))
 	slog.SetDefault(logger)
 
 	// Connect to PostgreSQL via GORM.
@@ -830,6 +831,7 @@ func main() {
 		if jevErr != nil {
 			fatalWithSentry("configure support Jev", jevErr)
 		}
+		jevService.SetMetrics(metrics)
 		supportInboxTriageService.SetJevService(jevService)
 		supportJevService = jevService
 	}
@@ -1725,6 +1727,7 @@ func main() {
 		demoReadOnly = middleware.DemoReadOnly(authService.IsDemoUser)
 	}
 	handlers := router.Handlers{
+		Metrics:                   metrics,
 		AuthenticatedRateLimit:    middleware.AuthenticatedRateLimit(requestLimiter),
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
@@ -2131,6 +2134,18 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Metrics uses a dedicated cluster-only port, never the public API ingress.
+	var metricsServer *http.Server
+	if addr := os.Getenv("METRICS_ADDR"); addr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metrics.Handler())
+		metricsServer = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fatalWithSentry("metrics server failed", err)
+			}
+		}()
+	}
 	// Listen for shutdown signals.
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -2194,6 +2209,11 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	if metricsServer != nil {
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			slog.Error("metrics shutdown failed", "error", err)
+		}
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		fatalWithSentry("server forced to shutdown", err)
 	}

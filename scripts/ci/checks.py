@@ -28,7 +28,7 @@ def select(paths, all_checks=False):
             'server': server,
             'frontend': frontend,
             'admin': path.startswith(('apps/admin/', 'frontend/src/index.css')),
-            'packages': path.startswith('packages/'),
+            'packages': path.startswith(('packages/', 'ops/widget-smoke/', 'scripts/monitoring/')),
             'helpcenter': path.startswith(('help-center/', 'packages/shared/', 'packages/widget-core/')),
             'desktop': path.startswith(('apps/support-desktop/', 'frontend/', 'packages/')),
             'mobile': path.startswith(('apps/support-mobile/', 'frontend/', 'packages/support-core/', 'packages/shared/', 'packages/widget-core/')),

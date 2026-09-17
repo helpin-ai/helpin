@@ -1,3 +1,4 @@
+import { createWidgetTelemetry } from '../transport/widget-telemetry';
 import { widgetOrigin, widgetURL, widgetSocketURL } from './urls';
 import { mountWidget, unmountWidget, SYSTEM_EVENT_TYPES } from '@helpin-ai/widget-core';
 import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai/widget-core';
@@ -132,6 +133,7 @@ export class WidgetManager {
   private unreadCount = 0;
   private titleUnreadByConversation = new Map<string, number>();
   private sessionToken: string | null = null;
+  private reportTelemetry = createWidgetTelemetry(() => this.host, () => this.widgetKey);
   private wsConnection: WebSocket | null = null;
   private wsRetryCount = 0;
   private wsHasConnected = false;
@@ -1424,7 +1426,7 @@ export class WidgetManager {
   }
 
   private async handleUploadAttachment(file: File, _localId: string, options?: AttachmentUploadOptions): Promise<{ attachmentId: string; url: string }> {
-    return uploadAttachment(this.host, this.sessionToken || '', file, options);
+    return uploadAttachment(this.host, this.sessionToken || '', file, { ...options, onTelemetry: this.reportTelemetry });
   }
 
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
@@ -1819,6 +1821,7 @@ export class WidgetManager {
 
       this.wsConnection.onclose = (event) => {
         if (this.isShutdown) return;
+        this.reportTelemetry({ stage: 'connection', outcome: 'error', duration_ms: 0 });
 
         const now = Date.now();
         if (this.connectionIssueStartedAt === null) {
@@ -1898,6 +1901,7 @@ export class WidgetManager {
         this.clearAIResponseStreams();
         const payload = data.data;
         this.sessionToken = payload.session_token;
+        this.reportTelemetry({ stage: 'connection', outcome: 'success', duration_ms: 0 });
 
         // Persist session to a shared root-domain cookie.
         if (this.widgetKey && payload.session_token && payload.expires_at) {
@@ -2029,6 +2033,7 @@ export class WidgetManager {
       }
 
       case 'message:received': {
+        this.reportTelemetry({ stage: 'message', outcome: 'success', duration_ms: 0 });
         this.handleReceivedMessage(data.data);
         break;
       }

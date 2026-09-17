@@ -346,3 +346,27 @@ func authorizeSupportAttachment(attachment *model.SupportAttachment, uploaderTyp
 func supportAttachmentStringPtr(value string) *string {
 	return &value
 }
+
+// DeleteUnsentWidget removes only an attachment owned by this session that has
+// never been sent. Storage cleanup is required even if confirmation failed.
+func (s *SupportAttachmentService) DeleteUnsentWidget(ctx context.Context, id, sessionID string) error {
+	attachment, err := s.attachmentRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if attachment == nil {
+		return nil
+	}
+	if err := authorizeSupportAttachment(attachment, "customer", nil, &sessionID); err != nil {
+		return err
+	}
+	if attachment.MessageID != nil {
+		return fmt.Errorf("sent attachments cannot be removed")
+	}
+	if s.s3Client != nil && attachment.StorageKey != "" {
+		if err := s.s3Client.DeleteObject(ctx, attachment.StorageKey); err != nil {
+			return fmt.Errorf("delete attachment storage: %w", err)
+		}
+	}
+	return s.attachmentRepo.Delete(ctx, id)
+}
