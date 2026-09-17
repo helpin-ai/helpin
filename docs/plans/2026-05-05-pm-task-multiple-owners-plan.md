@@ -18,7 +18,7 @@
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Primary owner concept | **None.** Owners are a true set. | Linear-style. User explicitly chose first-class multi-owner. |
+| Primary owner concept | **None.** Owners are a true set. | Owners have equal standing; there is no primary owner. |
 | Group-by-owner on board | Duplicate the card across each owner's lane; show "Unassigned" lane for tasks with no owners. | Standard for true-set tools. |
 | MyWork filter | "I am one of the owners" (set membership). | Matches user intent. |
 | Notification on owner change | Existing auto-follow on `AddOwner`/`RemoveOwner` already covers this. No new emission. | Service already emits `owner_added` / `owner_removed` activity events. |

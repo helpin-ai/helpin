@@ -15,7 +15,7 @@
 - Import source is a manually uploaded `.zip` of the Nextra repo. Do not build GitHub OAuth, GitHub App, webhooks, or Git sync in this plan.
 - Helpin becomes the source of truth after import. Re-import/sync is not part of v1.
 - The importer must not execute user-provided JavaScript/TypeScript. `_meta.js` / `_meta.ts` support is static parsing only; dynamic metadata is warned and partially skipped.
-- The importer must be source-agnostic below the adapter layer. Nextra is the first adapter, but the normalized model must also fit Mintlify/Fumadocs later.
+- The importer must be source-agnostic below the adapter layer. Nextra is the first adapter, but the normalized model must also support additional documentation sources later.
 - Preview is mandatory before import. Users must see tree shape, article count, unsupported MDX components, broken links, image issues, slug conflicts, and redirects before committing.
 - Import creates redirects from original Nextra routes to Helpin public article routes.
 - Import stores source provenance: `source_system=nextra`, `source_path`, `source_route`, optional user-provided `source_commit`, and `import_job_id`.

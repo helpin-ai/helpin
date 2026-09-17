@@ -1,6 +1,6 @@
 # Reply Expectations Plan — 2026-04-15
 
-Ship Intercom-style reply-time expectations and a delay/outage notice for
+Ship reply-time expectations and a delay/outage notice for
 the support widget, without cloning every Intercom surface. Phase 1 is a
 hard-scoped MVP that delivers the configurable reply time, a per-mailbox
 override, and a global special notice. Phase 2 covers dynamic timing,
@@ -222,7 +222,7 @@ Per-mailbox dynamic timing can be added only after workspace-level dynamic mode
 has proven useful and enough data density exists to avoid constant fallback.
 
 #### Phase 2C — automation / send timing
-Intercom-style "send immediately vs after 2 minutes" behavior belongs in the
+"send immediately vs after 2 minutes" behavior belongs in the
 automation/workflow layer, not the resolver. Keep it out of the dynamic
 analytics implementation.
 

@@ -339,7 +339,7 @@ This phase should add:
 
 ### Phase 4: Agent Email Notifications for Unread Customer Replies
 
-After availability exists, build the Crisp/Intercom-style delayed teammate email notifications:
+After availability exists, build the delayed teammate email notifications:
 - 3 minute delay
 - suppress if read before the delay expires
 - prefer assigned / available teammate
@@ -500,7 +500,7 @@ Once AI is the first layer, Helpin still needs a clean model of scheduled human 
 
 | Question | Decision | Rationale |
 |----------|----------|-----------|
-| Availability scope | Workspace default + optional team overrides | Matches Intercom’s office-hours model |
+| Availability scope | Workspace default + optional team overrides | Supports shared hours with team-specific schedules |
 | Per-teammate schedules in v1 | No | Too much complexity too early |
 | Timezone basis | Each office-hours config has its own timezone | Needed for team/region support |
 | Human visibility in widget | Only after escalation / human request | Matches AI-first product direction |

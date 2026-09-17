@@ -12,8 +12,8 @@
 Build a comprehensive notification system for Helpin's PM tool that keeps users informed about relevant activity in their workspace. The system delivers notifications through multiple channels (in-app inbox, email, WebSocket real-time, and future push/Slack) with granular per-user preference controls.
 
 **Core design principles:**
-- **Entity-centric inbox** (Linear-inspired): One notification row per entity (story, epic, objective), not per event. Multiple events on the same entity update the existing notification row.
-- **Follower/subscriber model** (Shortcut-inspired): Users receive notifications only for entities they follow. Auto-follow on assignment, creation, mention, and comment.
+- **Entity-centric inbox**: One notification row per entity (story, epic, objective), not per event. Multiple events on the same entity update the existing notification row.
+- **Follower/subscriber model**: Users receive notifications only for entities they follow. Auto-follow on assignment, creation, mention, and comment.
 - **Per-channel, per-event-type preferences**: Users control exactly what they receive and where.
 - **Denormalized render snapshots**: The aggregated `notifications` row stores `actor_snapshot`, `entity_snapshot`, and `parent_entity_snapshot` JSONB payloads for inbox rendering. Relational IDs remain canonical for lookups, integrity, and backfills.
 - **Transactional consistency**: Notification jobs are enqueued in the same PostgreSQL transaction as the triggering business operation — no ghost notifications.
@@ -733,7 +733,7 @@ Frontend receives via existing `useWebSocket` → `useRealtimeSync` invalidates 
 
 ### 8.1 Notification Center Component
 
-Located in the top navigation bar (header). Inspired by Linear's sidebar inbox + Shortcut's activity button.
+Located in the top navigation bar (header). It provides access to the notification inbox and recent activity.
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -944,7 +944,7 @@ New users get sensible defaults. All preferences are overridable.
 
 ## 10. Smart Behaviors
 
-### 10.1 Smart Email Deduplication (Linear-inspired)
+### 10.1 Smart Email Deduplication
 If a user reads the in-app notification before the email worker processes it, skip the email. This prevents redundant alerts for active users.
 
 ### 10.2 Entity-Centric Consolidation
@@ -1427,7 +1427,7 @@ The `notification_deliveries` table already supports Mattermost as a channel. Im
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Job queue | River | PostgreSQL-native, transactional enqueue, all required primitives built-in |
-| Notification model | Entity-centric | Prevents notification flood; matches Linear's proven UX |
+| Notification model | Entity-centric | Groups related updates to prevent notification flooding |
 | Delivery tracking | Per-event `notification_deliveries` table | Row-level delivery flags on aggregated entity rows cause missed/duplicated emails when new events arrive |
 | Render data strategy | Relational IDs + JSONB snapshots on `notifications` and `notification_events` | Eliminates inbox-time joins while keeping FK-backed identifiers and point-in-time display context |
 | Mention taxonomy | `{entity}.mentioned` + `metadata.mention_type` | Avoids dual event types (`mention.direct` vs `story.mentioned`) for the same action |

@@ -186,7 +186,7 @@ Tiers (global v1 constants):
 - **Medium:** `evidence_30d ≥ 3`
 - **Low:** `evidence_30d < 3`
 
-Gaps with `evidence_30d == 1` are hidden by default (filterable via "Show all"). The 30-day window matches Intercom's reporting window.
+Gaps with `evidence_30d == 1` are hidden by default (filterable via "Show all"). The reporting window is 30 days.
 
 ### 6.6 Lifecycle (modified)
 

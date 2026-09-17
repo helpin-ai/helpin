@@ -6,7 +6,7 @@
 
 ## Context
 
-Our Rust events-pipeline (capture API + consumer/worker) is functional but lacks production-hardening. After benchmarking against PostHog's mature Rust capture service, we identified critical gaps: silent event loss in Kafka batch sends, no health checks (k8s can't route traffic away from broken pods), no fallback when Kafka is down, and several panic-on-error patterns that crash the entire process. Events are being permanently lost in production today.
+Our Rust events-pipeline (capture API + consumer/worker) is functional but lacks production-hardening. The reliability review identified critical gaps: silent event loss in Kafka batch sends, no health checks (k8s can't route traffic away from broken pods), no fallback when Kafka is down, and several panic-on-error patterns that crash the entire process. Events are being permanently lost in production today.
 
 This PRD covers two phases: **Phase 1** (quick wins that prevent data loss and crashes) and **Phase 2** (disk fallback sink with a replay worker for full durability).
 

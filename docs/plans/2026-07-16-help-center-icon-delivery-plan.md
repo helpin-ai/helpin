@@ -56,15 +56,15 @@ There is also a performance concern in adopting Hugeicons directly in the Help C
 - Using the icon delivery system for fixed application controls such as close, search, or chevron icons. Those should remain direct, statically analyzable component imports.
 - Reworking `AgentIconPicker`. It uses a separate, fixed `AGENT_ICON_PRESETS` catalog and does not import the shared full-catalog picker.
 
-## 5. Industry patterns
+## 5. Icon storage and delivery requirements
 
-The relevant public product patterns are consistent even though their private renderers are not fully documented.
+Persist icon identity separately from icon delivery. A saved value should identify
+an icon from a bounded library, an intentional emoji/text value, or an asset.
+The public renderer should resolve only the icons used by the current help center;
+it should not load the full authoring catalog.
 
-- Mintlify lets a project select one icon library and stores an icon name, URL, or project-relative asset path. This gives its build system a bounded source and the opportunity to include only referenced assets. See [Mintlify icon settings](https://www.mintlify.com/docs/organize/settings-appearance) and [Mintlify's Icon component](https://www.mintlify.com/docs/components/icons).
-- Notion represents an icon as a typed value: native icon name and color, emoji, custom emoji, external image, or uploaded file. Its March 2026 API changelog notes that native icons previously appeared as external SVG URLs and now use a structured name-and-color representation. See [Notion's icon object](https://developers.notion.com/reference/emoji-and-icon) and [Notion's changelog](https://developers.notion.com/page/changelog).
-- GitBook supports icons, emoji, uploaded assets, and site-level icon weight/style configuration. See [GitBook icon customization](https://gitbook.com/docs/publishing-documentation/customization/icons-colors-and-themes).
-
-The shared lesson is to persist icon identity separately from icon delivery and to avoid making the public renderer aware of an entire authoring catalog.
+Keep the stored identity stable as delivery moves from individual immutable SVGs
+to a sprite, if measured request costs justify that change.
 
 ## 6. Proposed architecture
 

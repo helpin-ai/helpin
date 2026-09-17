@@ -1031,7 +1031,7 @@ These decisions are intentionally fixed before implementation so the rollout doe
   - source third-level grouping -> grandchild collection
   - deeper levels -> flatten into the nearest supported parent and emit a warning
 - Imported documents are attached to the deepest supported mapped collection.
-- Unsupported source constructs like Mintlify tabs, products, anchors, or version groups are not converted into fake collections.
+- Unsupported source constructs like tabs, products, anchors, or version groups are not converted into fake collections.
   - Instead:
     - flatten where reasonable
     - emit explicit import warnings

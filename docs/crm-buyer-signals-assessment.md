@@ -316,7 +316,7 @@ Consequences:
 
 ### 3.5 Secure widget identity
 
-Implement a HelpScout-style Secure Mode using customer-server-generated HMAC-SHA256. The browser never receives the signing secret.
+Implement a Secure Mode using customer-server-generated HMAC-SHA256. The browser never receives the signing secret.
 
 The SDK accepts:
 

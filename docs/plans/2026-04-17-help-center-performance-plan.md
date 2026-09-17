@@ -42,37 +42,19 @@
 
 ---
 
-## 3. How Others Do It (Industry Benchmark)
+## 3. Caching approach for Helpin
 
-Research of Scalar, Mintlify, Help Scout, and Intercom (2026-04-17 live probes + public writeups) shows two distinct patterns:
+Helpin's help center serves customer-editable content across multiple workspaces.
+The proposed starting point is server-rendered pages backed by a shared data cache:
 
-### Pattern A: Docs-as-Code (Scalar, Mintlify) — Edge-Cached SSR/ISR
+- Batch navigation queries to reduce serial database round-trips.
+- Use an in-process cache for hot reads and Redis for reuse across API pods.
+- Invalidate affected workspace, space, and article entries when content changes.
+- Keep immutable static assets cacheable independently from page data.
+- Consider edge caching and prewarming after measuring the remaining bottlenecks.
 
-- **Mintlify:** Next.js App Router on Vercel, behind a custom **Cloudflare Worker proxy**. Cache key is `${cachePrefix}/${deploymentId}/${path}` with a **15-day edge TTL**. On customer edit, backend calls a `POST /admin/prewarm` endpoint that queues the sitemap paths into a Cloudflare Queue; a Durable Object serialises the version swap to avoid mid-navigation splits. Result: ~100% edge cache hit rate on 72M monthly pageviews. Response headers observed: `x-nextjs-prerender: 1`, `x-vercel-cache`, `x-mint-proxy-version`, `server: cloudflare`.
-  - Source: [Mintlify blog — eliminating cold starts](https://www.mintlify.com/blog/page-speed-improvements), [Vercel case study](https://vercel.com/blog/mintlify-scaling-a-powerful-documentation-platform-with-vercel).
-- **Scalar:** Next.js SSR + Cloudflare for the hosted guides (`docs.scalar.com`); the OSS API-reference component is Vue/Vite and spec-driven, so updates flow when the OpenAPI file changes — no per-article rebuild needed.
-
-**Key takeaway:** Version-scoped cache keys + webhook-driven prewarm let them edge-cache dynamic customer content safely.
-
-### Pattern B: SaaS Help Center (Intercom, Help Scout) — SSR + Data-Layer Cache
-
-- **Intercom:** Next.js Pages Router hydrating against a **Rails** backend. Response: `cache-control: max-age=0, private, must-revalidate` — **no CDN HTML cache**. Speed comes from aggressive data-layer caching: memcached on Elasticache + Shopify's **IdentityCache** for ActiveRecord models. Edits bust the model key; the next SSR request reads fresh from memcached. Static assets CDN-cached; HTML is not (contains per-visitor messenger state). JSON-LD (Article, BreadcrumbList) is emitted for SEO.
-  - Source: [Intercom engineering blog](https://www.intercom.com/blog/intercom-for-enterprise-infrastructure-and-scale/).
-- **Help Scout:** Classic **Play Framework (Scala)** SSR — `PLAY_SESSION` cookie, full HTML per request, no `__NEXT_DATA__`, minimal JS. Behind Caddy + istio-envoy. Static assets on a CDN; HTML rendered per request with app-level caching. Search is an in-app service (Elasticsearch-style), not Algolia.
-
-**Key takeaway:** When help-center content is dynamic and per-tenant, they give up edge HTML caching and invest in **data-layer caching + cheap SSR**. Edits invalidate a model key, not a CDN.
-
-### Common Patterns Across All Four
-
-1. Every product SSRs the first paint — none are pure SPAs (SEO + LCP).
-2. All emit JSON-LD structured data for Google.
-3. Static assets always sit behind a CDN with year-long immutability.
-4. Data caching is the real battleground: Mintlify bets on edge; Intercom/Help Scout bet on memcached/IdentityCache.
-5. Content edits never trigger full rebuilds — always targeted cache invalidation (edge key purge or model key bust).
-
-### Which Pattern Fits Helpin?
-
-Helpin's help center is multi-tenant with customer-editable articles — closer to **Intercom/Help Scout**. Pattern B is the pragmatic starting point; we can layer on Pattern A's edge prewarm later if traffic justifies it.
+This keeps the initial work focused on the query and navigation gaps identified
+above. The implementation phases below define the proposed cache policy.
 
 ---
 
@@ -139,7 +121,7 @@ Public handlers already emit cache headers (`server/internal/handler/docs.go:125
 
 ### Phase 3 — Backend Query Batching + Two-Tier Cache (structural, ~3–5 days)
 
-Follow the Intercom/Help Scout playbook: collapse the serial queries and add a two-tier cache (L1 in-process LRU, L2 Redis). Tag-based invalidation replicates Mintlify's surrogate-key idea without needing an edge-cache vendor.
+Collapse the serial queries and add a two-tier cache (L1 in-process LRU, L2 Redis). Use tag-based invalidation to evict entries affected by content changes.
 
 **K8s additions:**
 - [ ] New Redis StatefulSet in the `helpin` namespace: `k8s/prod/redis.yaml`, `k8s/stage/redis.yaml`. ~50–100 Mi footprint, one replica with persistent volume claim (cache loss is fine — warm back from Postgres). Secret `REDIS_URL` via Doppler.
@@ -171,9 +153,9 @@ Phase 0 gave us the bare minimum. This is the proper deployment.
 
 ### Phase 5 — SEO polish
 
-- [ ] Emit JSON-LD (`Article`, `BreadcrumbList`) on article pages (mirror Intercom, helps Google).
+- [ ] Emit JSON-LD (`Article`, `BreadcrumbList`) on article pages for search indexing.
 - [ ] Generate per-workspace `sitemap.xml` from the Go API with `Cache-Control: public, max-age=3600`.
-- [ ] Emit `llms.txt` / `llms-full.txt` per space (Mintlify pattern) — useful for AI retrieval.
+- [ ] Emit `llms.txt` / `llms-full.txt` per space — useful for AI retrieval.
 
 ### Phase 6 — (Optional) External CDN (defer until traffic demands it)
 
@@ -207,8 +189,3 @@ Not needed if Phase 1–3 hit the success criteria.
 ## 6. References
 
 - Codebase investigation (2026-04-17): `help-center/src/lib/rootLoader.ts`, `help-center/src/lib/services.ts`, `help-center/src/lib/queryClient.ts`, `help-center/serve.mjs`, `server/internal/handler/docs.go`, `server/internal/service/docs_helpcenter.go`
-- [Mintlify — Page speed improvements](https://www.mintlify.com/blog/page-speed-improvements)
-- [Vercel — Mintlify case study](https://vercel.com/blog/mintlify-scaling-a-powerful-documentation-platform-with-vercel)
-- [Intercom — Infrastructure and scale](https://www.intercom.com/blog/intercom-for-enterprise-infrastructure-and-scale/)
-- [Scalar on GitHub](https://github.com/scalar/scalar)
-- Live header probes of `docs.scalar.com`, `docs.mintlify.com`, `docs.helpscout.com`, `www.intercom.com/help/en/` — 2026-04-17

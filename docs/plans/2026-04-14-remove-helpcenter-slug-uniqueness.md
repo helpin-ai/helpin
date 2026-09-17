@@ -45,7 +45,7 @@ Primary frontend/package changes:
 - Modify `packages/widget-core/src/components/ChatWindow.tsx`: keep `openArticleRequest.articleKey` as the canonical field.
 - Modify `packages/widget-core/src/components/helpTree.ts`: rename `findHelpCollectionBySlug` / `helpCollectionAncestorPath` inputs to collection refs and match bare PublicIDs.
 - Modify `packages/sdk-js/src/core/widget.ts`, `packages/sdk-js/src/core/client.ts`, and `packages/sdk-js/src/core/types.ts`: document and type `openArticle(articleId)` as PublicID-first.
-- Add SDK DOM attribute support in `packages/sdk-js/src/index.ts` or a focused helper file for Help Scout-style embedded article links.
+- Add SDK DOM attribute support in `packages/sdk-js/src/index.ts` or a focused helper file for embedded article links.
 
 ---
 
@@ -213,7 +213,7 @@ git commit -m "feat: store public id backed redirect targets"
 
 ---
 
-### Task 3: Help Scout-Style Embedded Article IDs
+### Task 3: Embedded Article IDs
 
 **Files:**
 - Modify: `packages/sdk-js/src/core/widget.ts`

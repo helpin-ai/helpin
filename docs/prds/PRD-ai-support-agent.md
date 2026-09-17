@@ -431,7 +431,7 @@ CustomerRequestedHumanAt *time.Time `json:"customer_requested_human_at" gorm:"ty
 | `"resolved"` | AI resolved — customer confirmed or went idle | AI agent ID | "Helpin AI Agent → Resolved" |
 | `"escalated"` | AI handed off to humans | **cleared to nil** | "Helpin AI Agent → Escalated & Handoff" + **"Unassigned"** (human sections) |
 
-**Resolution Detection (two types, like Intercom Fin):**
+**Resolution Detection (two types):**
 
 1. **Confirmed resolution**: The AI classifies the customer's response after an AI answer as affirmative. Simple keyword/pattern matching for v1 (e.g., "thanks", "that helped", "got it", "perfect"). LLM-based classification in Phase 5.
 

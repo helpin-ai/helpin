@@ -8,8 +8,8 @@ import "fmt"
 const MaxDocsCollectionTreeDepth = 2
 
 // ImportSourceGroup describes one grouping node as returned by the
-// source system (HelpScout Category, Intercom Collection, Mintlify
-// Section, etc). ImportSourceGroup rows are independent of whatever
+// source system, such as a category, collection, or section.
+// ImportSourceGroup rows are independent of whatever
 // format the source actually uses; the importer adapter translates
 // the source's raw shape into this normalised form before calling
 // MapSourceGroupsToDocsCollections.

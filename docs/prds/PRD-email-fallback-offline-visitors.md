@@ -15,7 +15,7 @@ When a visitor sends a message via the Helpin chat widget and closes their brows
 - **Broken AI value**: AI can respond in under 3 seconds, but if the visitor already closed the page, that speed is meaningless
 - **No continuity**: Chat is a dead end when the visitor leaves
 
-**What happens today**: `CreateConversationMessage()` in `server/internal/service/support_inbox.go` creates the message, broadcasts via WebSocket, and queues a fallback email candidate. The queue currently checks visitor online status at fire time, but it does not fully model "unread after the visitor leaves." If the visitor is online but does not read the reply, the queue can be cleaned up too early. If the visitor has already read the reply in the widget, the fallback can still send later if they disconnect before the delay fires. The product behavior should match Intercom-style delivery: email is a fallback for unread replies, not merely a fallback for disconnected sockets.
+**What happens today**: `CreateConversationMessage()` in `server/internal/service/support_inbox.go` creates the message, broadcasts via WebSocket, and queues a fallback email candidate. The queue currently checks visitor online status at fire time, but it does not fully model "unread after the visitor leaves." If the visitor is online but does not read the reply, the queue can be cleaned up too early. If the visitor has already read the reply in the widget, the fallback can still send later if they disconnect before the delay fires. Email delivery should be a fallback for unread replies, not merely a fallback for disconnected sockets.
 
 ### 1.1 2026-04-25 Amendment: Unread, Offline, and Delivery Visibility
 

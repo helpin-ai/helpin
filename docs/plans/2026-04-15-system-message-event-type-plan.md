@@ -11,7 +11,7 @@ Single source of truth, stored on the message row:
 
 | event_type          | Fires from                                               | Admin style | Widget style |
 |---------------------|----------------------------------------------------------|-------------|--------------|
-| `teammate_joined`   | First non-internal reply by a given user (Intercom-style)| muted pill  | **flat Intercom pill (only widget-visible system event)** |
+| `teammate_joined`   | First non-internal reply by a given user | muted pill  | **flat system-message pill (only widget-visible system event)** |
 | `assigned`          | `assignConversationUser` cross-assign                    | muted pill  | none (is_internal) |
 | `unassigned`        | `assignConversationUser` with nil user                   | muted pill  | none (is_internal) |
 | `took`              | `assignConversationUser` self-assign                     | muted pill  | none (is_internal) |
@@ -54,7 +54,7 @@ All event types are defined as named constants in one place on each layer:
 2. **SDK `mapSupportMessage`** (`packages/sdk-js/src/core/widget.ts`): map `raw.system_event_type` → `message.systemEventType`.
 
 3. **Widget MessageBubble** (`packages/widget-core/src/components/MessageBubble.tsx`):
-   - `role === 'system' && systemEventType === 'teammate_joined'` → render the flat Intercom pill.
+   - `role === 'system' && systemEventType === 'teammate_joined'` → render the flat system-message pill.
    - Any other `role === 'system'`:
      - if `is_internal` — don't render (shouldn't arrive anyway; belt + braces).
      - else if the message has sender context (name/avatar) — render as a normal incoming bubble (avoids the handoff regression where a legitimate system-ish message collapsed to nothing).

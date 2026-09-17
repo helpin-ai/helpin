@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add per-team sprint enable/disable toggle with configuration settings (like Linear's Cycles), and convert the global Automations tab sprint section into a read-only overview.
+**Goal:** Add per-team sprint enable/disable toggle with configuration settings, and convert the global Automations tab sprint section into a read-only overview.
 
 **Architecture:** Add `sprints_enabled` column to `workspace_teams` table. Sprint config (duration, start day, upcoming count) stays in existing `pm_automations` table. Team settings page gets a new Sprints section. Automations tab becomes a summary view.
 

@@ -72,7 +72,7 @@ The `tiptap-markdown` package already has markdown serialization helpers for:
 The blocks that need custom work are:
 
 - `Callout`
-- `Emoji` picker UX if we want Help Scout-like insertion flow
+- `Emoji` picker UX for inserting emoji into the editor
 - `HTML` block
 - `Video`
 - richer `Image` behavior if we want captions / asset ownership / public fidelity
@@ -149,7 +149,7 @@ Docs images currently piggyback the PM attachment upload path in [frontend/src/h
 - there is no docs-specific asset contract
 - there is no docs-specific caption / attribution / reuse model
 
-This is acceptable for current simple image support, but not for a complete Help Scout-like editor expansion.
+This is acceptable for current simple image support, but not for a complete editor expansion.
 
 ### Recommended target architecture
 

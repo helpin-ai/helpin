@@ -139,6 +139,6 @@ body {
 Based on this research, a **16-20px margin-bottom** on `<p>` tags in published help center articles is the industry standard sweet spot:
 - `1em` (browser default) for minimal styling overhead
 - `1.25em` for slightly more breathing room (GitBook-like)
-- `1.5em` for maximum readability (HelpScout-like)
+- `1.5em` for maximum readability
 
 A line-height of `1.5` to `1.75` on article body content is universal across all tools.

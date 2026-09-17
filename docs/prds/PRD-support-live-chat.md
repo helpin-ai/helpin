@@ -58,7 +58,7 @@
 - [x] `CsatRating` — 5-point emoji rating with feedback textarea
 - [x] `StreamingText` — Animated AI response text with cursor
 
-### 1d. SDK Widget API (Intercom-style)
+### 1d. SDK Widget API
 - [x] `boot()` — Initialize widget with config
 - [x] `show()` / `hide()` / `toggle()` — Widget visibility
 - [x] `showMessages()` / `showConversation()` / `showArticle()` — Navigation
@@ -484,7 +484,7 @@ After copy, adapt each package to Helpin naming and API conventions before build
 2. set up pnpm workspace + Turborepo at repo root
 3. adapt shared types to Helpin naming
 4. implement widget-core components
-5. extend sdk-js with chat widget initialization + Intercom-style JS API
+5. extend sdk-js with chat widget initialization + JS API
 6. build widget-embed IIFE bundle (`pixel.js`)
 7. wire Go APIs for widget endpoints
 8. integrate inbox UI in dashboard
@@ -506,7 +506,7 @@ Therefore:
 
 ### 2.6 SDK JavaScript API Methods
 
-The Helpin SDK should expose an Intercom-style JavaScript API via a global `window.Helpin()` command function. This provides a familiar developer experience and allows customers to programmatically control the widget.
+The Helpin SDK should expose a JavaScript API via a global `window.Helpin()` command function. This provides a familiar developer experience and allows customers to programmatically control the widget.
 
 #### Lifecycle Methods
 
@@ -611,7 +611,7 @@ import { HelpinProvider, useSupportWidget } from '@helpin-ai/nextjs';
 
 #### Pre-load Command Queue
 
-Like Intercom, the SDK should support a command queue pattern so calls made before the script loads are queued and replayed:
+The SDK should support a command queue pattern so calls made before the script loads are queued and replayed:
 
 ```javascript
 window.Helpin = window.Helpin || function() {
@@ -1422,7 +1422,7 @@ This is the preferred control pattern because it:
 - identifies the customer early
 - enables CRM matching/creation
 - supports follow-up and lead handling
-- matches the desired Intercom-like behavior
+- matches the desired behavior
 
 ### 6.3 Workspace Controls
 
@@ -2827,7 +2827,7 @@ Setup:
 Package adaptation (after copy):
 - [x] `packages/shared/` — aligned types with Go model fields (Phase 1)
 - [x] `packages/widget-core/` — all 11 components implemented with tests (Phase 1)
-- [x] `packages/sdk-js/` — Intercom-style JS API, WebSocket management, analytics pipeline (Phase 1)
+- [x] `packages/sdk-js/` — JS API, WebSocket management, analytics pipeline (Phase 1)
 - [x] `packages/react/` — analytics hooks + support widget hooks (Phase 1)
 - [x] `packages/nextjs/` — SSR-safe wrapper with no-op server fallbacks (Phase 1)
 - [x] `packages/widget-embed/` — Vite IIFE build producing `pixel.js` with shadow DOM (Phase 1)

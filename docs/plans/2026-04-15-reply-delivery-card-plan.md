@@ -1,6 +1,6 @@
 # Reply Delivery Card Plan — 2026-04-15
 
-Ship an Intercom-style persistence-backed "reply delivery" card that
+Ship a persistence-backed "reply delivery" card that
 reassures the customer right after they send their first message on a
 new conversation. Card confirms (1) where replies will land (widget +
 email), (2) the email on file, (3) the expected reply time.
@@ -196,7 +196,7 @@ in the dispatcher swaps the hide for a muted routing-pill render
 
 ## Open questions
 - **Frequency**: only emit once per conversation, never per session.
-  Agreed — matches Intercom. Call out in the comment on the emitter.
+  Agreed — document this behavior in the comment on the emitter.
 - **Reload vs live**: the message flows over WS on creation and is
   fetched via `ListConversationMessages` on reload — both paths
   already go through `SupportMessageEvent` and the widget's normal
@@ -206,4 +206,4 @@ in the dispatcher swaps the hide for a muted routing-pill render
   flip to show later. No migration needed either way.
 - **Email formatting**: we render `{email}` verbatim without
   auto-linking — safer than sending customers to a `mailto:` they
-  didn't expect. Intercom styles it as bold plain text too.
+  didn't expect. Use bold plain text.

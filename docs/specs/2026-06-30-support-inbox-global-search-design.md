@@ -24,7 +24,7 @@ This is the complete first-class search feature for the current support conversa
 
 ## Non-Goals
 
-- A separate Intercom-style support ticket object.
+- A separate support ticket object.
 - Search over ticket attributes that do not exist in the current data model.
 - Boolean keyword syntax such as `AND` / `OR`.
 - Saved search presets beyond existing support inbox view persistence.
@@ -122,7 +122,7 @@ Supported filters:
   - `handoff` maps to AI escalation / requested human / queued-for-human conditions.
   - `resolved` maps to AI-resolved conditions: `human_takeover=false` and `flow_state='resolved_by_ai'` or `ai_state='resolved'`.
 
-Unavailable Intercom-style filters:
+Unavailable filters:
 
 - `Company`, `Topic`, `AI Topic`, `AI Subtopic`, `Brand`, and ticket attributes are not support conversation fields in the current Helpin data model.
 - They are not omitted as deferred search work; they are outside this feature's source data unless those product entities become part of `support_conversations`.

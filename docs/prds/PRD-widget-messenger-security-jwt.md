@@ -10,7 +10,7 @@ Helpin should add Messenger Security for the support widget using server-generat
 
 The current widget identify flow accepts browser-provided `email`, `name`, and company attributes. That is useful for lead capture, but it is not identity verification. For authenticated SaaS app installs, this leaves a spoofing gap: any browser can claim another user's email if it can call the widget SDK.
 
-The recommended product direction is an Intercom-style JWT Messenger Security model:
+The recommended product direction is a JWT Messenger Security model:
 
 - Customer backend signs a short-lived JWT using a Helpin widget secret.
 - Customer frontend passes that token to the Helpin widget.

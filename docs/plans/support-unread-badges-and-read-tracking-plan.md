@@ -217,7 +217,7 @@ This keeps support ownership aligned with auth and removes any `user -> agent` i
 
 ### 5.7 AI Conversation State Model
 
-If we want Intercom-style AI folders later, support should store AI outcome state directly on the conversation instead of inferring it from logs:
+If we want AI folders later, support should store AI outcome state directly on the conversation instead of inferring it from logs:
 
 - `ai_involved` — whether AI participated in the conversation
 - `ai_resolution_state` — current AI outcome / routing state
@@ -1037,7 +1037,7 @@ Do not derive these counts from the currently loaded page of conversations.
 
 ### 15.9 Future AI Folders
 
-If the product adds Intercom-style AI folders later, the frontend should use:
+If the product adds AI folders later, the frontend should use:
 
 - `ai_involved`
 - `ai_resolution_state`
@@ -1516,7 +1516,7 @@ This section lists interface and response shape changes that require coordinated
 
 7. **`My Inbox` semantic** — changes from the current `opened_by_user_id` behavior to `needs_human = true AND assigned_user_id = currentUserId`.
 
-8. **AI folder groundwork** — `ai_involved` and `ai_resolution_state` become first-class support fields for future Intercom-style AI inbox views.
+8. **AI folder groundwork** — `ai_involved` and `ai_resolution_state` become first-class support fields for future AI inbox views.
 
 ---
 

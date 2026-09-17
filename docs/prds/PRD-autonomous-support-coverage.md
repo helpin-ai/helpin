@@ -337,7 +337,7 @@ However, the product must not depend on human feedback as the primary signal. In
 
 Treat the human-resolved signal as a backstop, not a primary source. When a richer signal (handoff reason, retrieval quality, docs-issue feedback) exists for the same conversation, the resolution event should attach evidence to the existing gap rather than create a new one.
 
-**Alignment with industry baselines.** This matches Intercom Fin's outcome model: confirmed and *assumed* AI resolutions are both counted as successful outcomes, not gaps. A customer who ghosts after AI answers is an assumed resolution, not a coverage gap. Coverage gaps are reserved for conversations where a human had to step in. The upside is high signal-to-noise; the downside is missing genuine gaps hidden inside assumed resolutions. That trade-off is acceptable for v1 — lower-confidence gap classes (e.g., CX Score, assumed-resolution sampling) can layer in later as separate signals rather than being conflated with coverage.
+**Resolution outcomes.** Confirmed and *assumed* AI resolutions are both counted as successful outcomes, not gaps. A customer who ghosts after AI answers is an assumed resolution, not a coverage gap. Coverage gaps are reserved for conversations where a human had to step in. The upside is high signal-to-noise; the downside is missing genuine gaps hidden inside assumed resolutions. That trade-off is acceptable for v1 — lower-confidence gap classes (e.g., CX Score, assumed-resolution sampling) can layer in later as separate signals rather than being conflated with coverage.
 
 ### 5.8 Self-Service Is Part Of The Same Funnel
 

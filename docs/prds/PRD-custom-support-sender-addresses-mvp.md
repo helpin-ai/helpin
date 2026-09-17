@@ -74,7 +74,7 @@ This should be decided before engineering starts because it affects UI visibilit
 
 ## Provider Parity Target
 
-Target Intercom-style MVP:
+Target MVP:
 
 - Add support email address.
 - Authenticate domain.

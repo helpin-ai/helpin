@@ -45,7 +45,7 @@ Crisp offers a related but different model:
 - For full custom branding, Crisp recommends a dedicated subdomain such as `support.company.com`.
 - That subdomain can handle outbound branding and inbound replies through DNS records, including MX.
 
-Helpin should support the Intercom-style model first because most teams expect to use existing support addresses such as `support@company.com`. A Crisp-style dedicated reply subdomain should be offered as an advanced option for full white-label routing.
+Helpin should first support existing support addresses such as `support@company.com`. A dedicated reply subdomain should be offered as an advanced option for full white-label routing.
 
 ## Product Positioning
 

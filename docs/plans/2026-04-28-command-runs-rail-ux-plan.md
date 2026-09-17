@@ -50,7 +50,7 @@ The UI may use branch visuals for fan-out, but it must not imply unsupported joi
 
 ## Design Direction
 
-Adopt a compact Linear-style execution spine:
+Adopt a compact execution spine:
 
 - a vertical 1px spine connects sequential steps
 - fan-out targets render as indented branch rows
