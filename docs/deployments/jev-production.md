@@ -195,3 +195,28 @@ Lifecycle validation on 2026-09-17 passed: full service, repository, config and
 provider suites with `TZ=UTC` and `-race`; the targeted PostgreSQL lifecycle and
 control integration suites with `-race`; `go vet ./...`; and community/enterprise
 builds. PostgreSQL tests used a disposable local container, removed afterward.
+
+
+## PM triage
+
+The PM integration uses the same configured Jev provider and workspace allowlist,
+with independent controls:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `JEV_PM_MODE` | primary with a key | off / shadow / primary |
+| `JEV_PM_THRESHOLD` | 0.95 | Minimum selected-option probability |
+| `JEV_PM_DAILY_LIMIT` | 1000 | Separate attempted calls per workspace per UTC day |
+
+Apply `202609170002_pm_triage.sql` through the normal migration runner before
+starting this API version. Its assessment and label-suppression tables are SQL-owned.
+Provider usage is recorded as `pm_triage`, under the operator-funded pilot policy.
+Failed calls consume admission budget; identical successful inputs reuse an
+actor-scoped assessment. Internal support notes are excluded from Jev context.
+
+Primary mode automatically adds qualifying existing task labels on creation and
+content edits. Human removals suppress later automatic additions. Task type/team
+changes, task relationships and support task creation require review. Priority is
+not derived from classifier probability. Shadow mode records decisions without
+applying labels or exposing suggestions. Set `JEV_PM_MODE=off` to disable PM
+classification independently of support routing and lifecycle decisions.

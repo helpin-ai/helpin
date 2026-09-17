@@ -817,11 +817,13 @@ func main() {
 	}
 	supportInboxTriageService.SetLocalDecisionClient(decisionClient)
 	var supportJevService *service.SupportJevService
+	var pmJevProvider decision.Provider
 	if strings.TrimSpace(cfg.JevAPIKey) != "" {
 		jevClient, jevErr := decision.NewJev(cfg.JevAPIKey, time.Duration(cfg.JevTimeoutMS)*time.Millisecond)
 		if jevErr != nil {
 			fatalWithSentry("configure Jev client", jevErr)
 		}
+		pmJevProvider = jevClient
 		jevService, jevErr := service.NewSupportJevService(service.SupportJevConfig{
 			HandoffMode: cfg.JevHandoffMode, FollowUpMode: cfg.JevFollowUpMode,
 			HandoffThreshold: cfg.JevHandoffThreshold, FollowUpThreshold: cfg.JevFollowUpThreshold,
@@ -836,6 +838,15 @@ func main() {
 		supportJevService = jevService
 	}
 
+	pmTriageService, pmTriageErr := service.NewPMTriageService(service.PMTriageConfig{
+		Mode: cfg.JevPMMode, Threshold: cfg.JevPMThreshold, DailyLimit: cfg.JevPMDailyLimit,
+		WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
+	}, pmJevProvider, repository.NewPMTriageRepository(db), repository.NewAIExecutionUsageRepository(db), pmTaskRepo, workspaceRepo, pmLabelRepo, supportInboxService)
+	if pmTriageErr != nil {
+		fatalWithSentry("configure PM Jev", pmTriageErr)
+	}
+
+	pmTaskService.SetTriageService(pmTriageService)
 	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
@@ -1187,6 +1198,8 @@ func main() {
 	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
+	pmTriageHandler := handler.NewPMTriageHandler(pmTriageService)
+	pmTriageHandler.SetReviewer(service.NewPMTriageReviewService(pmTriageService, pmTaskService, associationsService))
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo).SetDealService(crmDealService)
 
@@ -1758,6 +1771,7 @@ func main() {
 		PMAISuggestion:      handler.NewPMAISuggestionHandler(pmAISuggestionService),
 		PMTask:              handler.NewPMTaskHandler(pmTaskService),
 		PMTaskInsights:      handler.NewPMTaskInsightsHandler(pmTaskInsightsService),
+		PMTriage:            pmTriageHandler,
 		PMComment:           handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment:        handler.NewPMAttachmentHandler(pmAttachmentService),
 		PMObjective:         handler.NewPMObjectiveHandler(pmObjectiveService),

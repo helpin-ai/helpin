@@ -16,6 +16,14 @@ const toastError = vi.fn()
 const navigate = vi.fn()
 const showEntityCreatedToast = vi.fn()
 
+vi.mock('@/lib/services/pmTriageService', () => ({
+  pmTriageService: { analyzeDraft: vi.fn(async () => ({ data: { status: 'disabled' }, error: null })) },
+}))
+
+async function settleDraftCheck() {
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 750)) })
+}
+
 vi.mock('sonner', () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
@@ -664,6 +672,8 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
+    await settleDraftCheck()
+
     await act(async () => {
       saveButton?.click()
       await Promise.resolve()
@@ -727,6 +737,8 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
+    await settleDraftCheck()
+
     await act(async () => {
       saveButton?.click()
       await Promise.resolve()
@@ -780,6 +792,8 @@ describe('CreateTaskModal', () => {
       setInputValue(titleInput!, 'New task')
       await Promise.resolve()
     })
+
+    await settleDraftCheck()
 
     await act(async () => {
       saveAndCreateAnotherButton?.click()
@@ -856,6 +870,8 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
+    await settleDraftCheck()
+
     await act(async () => {
       saveButton?.click()
       await Promise.resolve()
@@ -917,6 +933,8 @@ describe('CreateTaskModal', () => {
       inProgressButton?.click()
       await Promise.resolve()
     })
+
+    await settleDraftCheck()
 
     await act(async () => {
       saveButton?.click()
@@ -988,6 +1006,8 @@ describe('CreateTaskModal', () => {
       fileInput?.dispatchEvent(new Event('change', { bubbles: true }))
       await Promise.resolve()
     })
+
+    await settleDraftCheck()
 
     await act(async () => {
       saveButton?.click()
@@ -1072,6 +1092,8 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
+    await settleDraftCheck()
+
     await act(async () => {
       saveButton?.click()
       await Promise.resolve()
@@ -1144,6 +1166,8 @@ describe('CreateTaskModal', () => {
       templateButton?.click()
       await Promise.resolve()
     })
+
+    await settleDraftCheck()
 
     await act(async () => {
       saveButton?.click()
@@ -1237,6 +1261,8 @@ describe('CreateTaskModal', () => {
       templateButton?.click()
       await Promise.resolve()
     })
+
+    await settleDraftCheck()
 
     await act(async () => {
       saveButton?.click()
@@ -1394,6 +1420,8 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+
+    await settleDraftCheck()
 
     await act(async () => {
       saveButton?.click()

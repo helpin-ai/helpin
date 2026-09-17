@@ -203,6 +203,7 @@ type SeedPMTasksResponse struct {
 
 // UpdateTaskRequest is the payload for updating a task.
 type UpdateTaskRequest struct {
+	ExpectedUpdatedAt *time.Time `json:"-"`
 	Name              *string    `json:"name"`
 	Description       *string    `json:"description"`
 	TaskType          *string    `json:"task_type"`

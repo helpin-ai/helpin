@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
@@ -120,6 +121,11 @@ func (s *AssociationsService) CreateTaskRelationship(ctx context.Context, worksp
 	if len(tasks) != 2 {
 		return nil, fmt.Errorf("both tasks must exist in the workspace")
 	}
+	for _, task := range tasks {
+		if err := requireTeamAccess(ctx, task.TeamID); err != nil {
+			return nil, err
+		}
+	}
 
 	sourceTaskID, targetTaskID, linkType, err := resolveRelationshipInput(currentTaskID, req)
 	if err != nil {
@@ -159,7 +165,15 @@ func (s *AssociationsService) CreateTaskRelationship(ctx context.Context, worksp
 		LinkType:     linkType,
 		CreatedBy:    actorID,
 	}
-	if err := s.taskLinkRepo.Create(ctx, link); err != nil {
+	if req.ExpectedTaskRevisions != nil {
+		actor := authorization.GetActor(ctx)
+		if actor == nil {
+			return nil, &model.ErrForbidden{Message: "authenticated review required"}
+		}
+		if err := s.taskLinkRepo.CreateWithTaskRevisions(ctx, link, req.ExpectedTaskRevisions, repository.PMTriageScope{WorkspaceID: workspaceID, TeamIDs: actor.TeamIDs(), AllTeams: isPrivileged(actor)}); err != nil {
+			return nil, err
+		}
+	} else if err := s.taskLinkRepo.Create(ctx, link); err != nil {
 		return nil, err
 	}
 	return link, nil
