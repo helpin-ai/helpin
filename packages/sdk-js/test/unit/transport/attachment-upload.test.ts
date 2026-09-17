@@ -36,7 +36,7 @@ describe('attachment upload transport', () => {
     const xhr = await storage();
     expect(xhr.open).toHaveBeenCalledWith('PUT', initialized.upload_url, true);
     expect(xhr.send).toHaveBeenCalledWith(file);
-    expect(xhr.setRequestHeader.mock.calls).toEqual([['Content-Type', 'video/mp4'], ['x-amz-acl', 'public-read']]);
+    expect(xhr.setRequestHeader.mock.calls).toEqual([['Content-Type', 'video/mp4']]);
     xhr.upload.onprogress?.({ lengthComputable: true, loaded: 2, total: 5 } as ProgressEvent);
     expect(onProgress).toHaveBeenLastCalledWith(40);
     xhr.upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 5 } as ProgressEvent);

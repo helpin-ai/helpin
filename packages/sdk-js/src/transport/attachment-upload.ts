@@ -24,7 +24,7 @@ async function responseError(response: Response, fallback: string): Promise<Erro
   return new Error(`${fallback} (HTTP ${response.status}). Please retry.`);
 }
 
-function uploadToStorage(url: string, file: File, publicRead: boolean, signal: AbortSignal, onProgress?: (percent: number) => void): Promise<void> {
+function uploadToStorage(url: string, file: File, signal: AbortSignal, onProgress?: (percent: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     checkAborted(signal);
     const xhr = new XMLHttpRequest();
@@ -53,7 +53,6 @@ function uploadToStorage(url: string, file: File, publicRead: boolean, signal: A
       xhr.open('PUT', url, true);
       xhr.timeout = UPLOAD_TIMEOUT_MS;
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-      if (publicRead) xhr.setRequestHeader('x-amz-acl', 'public-read');
       xhr.send(file);
     } catch (error) {
       fail(error instanceof Error ? error : new Error('Unable to start the file upload. Please retry.'));
@@ -94,7 +93,8 @@ export async function uploadAttachment(
     }
     stage = 'upload the file to storage';
     const publicUrl = typeof data.public_url === 'string' ? data.public_url : '';
-    await uploadToStorage(data.upload_url, file, !!publicUrl, signal, options.onProgress);
+    // A returned download URL does not make an attachment public. Match the private PUT signature.
+    await uploadToStorage(data.upload_url, file, signal, options.onProgress);
     checkAborted(signal);
     stage = 'confirm the file upload';
     const confirm = await fetch(widgetURL(host, `/widget/support/attachments/${attachmentId}/confirm`), {
