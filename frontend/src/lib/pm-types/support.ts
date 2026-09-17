@@ -1174,6 +1174,10 @@ export interface SupportInboxSettings {
   widget_name: string;
   widget_avatar_url: string;
   widget_help_space_ids: string[];
+  portal_enabled: boolean;
+  portal_requests_only: boolean;
+  portal_anonymous_intake_enabled: boolean;
+  portal_intake_enabled: boolean;
   csat_enabled: boolean;
   file_uploads_enabled: boolean;
   force_visitor_identity: boolean;
