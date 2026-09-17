@@ -22,7 +22,6 @@ Product requirements and proposed contracts. These documents record intent and d
 - [PRD: Notifications System](PRD-notifications-system.md)
 - [PRD — Platform Admin Access for Helpin Admin Panel](PRD-platform-admin-access.md)
 - [PRD - Platform Admin Operations Console](PRD-platform-admin-operations-console.md)
-- [Historical Note: Product-Spec Planning Pipeline PRD](PRD-product-spec-planning-pipeline.md)
 - [Product Requirements Document: Helpin Project Management Module](PRD-project-management.md)
 - [PRD: RBAC And Workspace Authorization](PRD-rbac-final-2026-03-08.md)
 - [Product Requirements Document: Tasks Scale And Performance](PRD-stories-scale-and-performance.md)

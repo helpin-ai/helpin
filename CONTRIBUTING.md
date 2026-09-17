@@ -64,10 +64,31 @@ the code; `AGENTS.md` describes repository conventions.
   `docs/plans/`; design specifications in `docs/specs/`.
 - Operational procedures belong in `docs/ops/`; research and assessments in
   `docs/research/`; product strategy in `docs/strategy/`.
-- Retain useful historical documents in `docs/archive/`. A proposal or dated plan
-  is not evidence that a feature has shipped.
+- Keep historical plans only while they explain a still-relevant decision or
+  requirement. Remove superseded implementation checklists once current guidance
+  covers the behavior; Git history preserves them. A proposal or dated plan is
+  not evidence that a feature has shipped.
 - Add documents to the relevant directory index, use relative links, and update
   references when moving a file.
 - Keep temporary screenshots, test output, and local scratch files out of the
   repository root. Store intentional documentation assets beside their guide or
   in `docs/mockups/`; preserve assets required by application builds.
+
+Product tutorials will be maintained at [helpin.ai/docs](https://helpin.ai/docs)
+when the hosted help center is available.
+Link to those articles rather than duplicating them in the repository. Keep
+version-sensitive setup, architecture, and API contracts alongside code. The
+[PR template](.github/PULL_REQUEST_TEMPLATE.md) asks for affected documentation.
+
+For documentation changes, run:
+
+```sh
+python3 scripts/docs/check_links.py
+python3 -m unittest discover -s scripts/docs -p '*_test.py'
+git diff --check
+```
+
+Add new maintained technical guides to
+[scripts/docs/maintained-docs.json](scripts/docs/maintained-docs.json). Read the
+[checker scope](scripts/docs/README.md) and [publication review](docs/publication-review.md)
+when adding public documentation. Passing link checks does not authorize publication.

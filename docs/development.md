@@ -87,7 +87,9 @@ pnpm --dir frontend build
 
 Some integration tests need configured services. Component test instructions and
 [CI](../.github/workflows/ci.yml) describe additional checks, including EE builds.
-For documentation-only changes, verify relative links and run `git diff --check`.
+For documentation-only changes, run `python3 scripts/docs/check_links.py` and
+`git diff --check`. See the [link-check guide](../scripts/docs/README.md) for coverage
+and the regression-test command.
 
 ## Further guides
 

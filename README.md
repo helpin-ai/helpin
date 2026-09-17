@@ -10,7 +10,7 @@ unpublished. Public installation artifacts are not yet available; publication
 requires the [release gates](community/PUBLICATION.md) to pass. Contributors with
 access to both source repositories can use the source-build path below.
 
-[Get started](#get-started) · [Architecture](ARCHITECTURE.md) ·
+[Help docs — coming soon](https://helpin.ai/docs) · [Get started](#get-started) · [Architecture](ARCHITECTURE.md) ·
 [Contribute](CONTRIBUTING.md) · [Known limitations](ROADMAP.md)
 
 ## What you can do
@@ -115,6 +115,11 @@ agent flows, data ownership, edition boundaries, and a guide to where changes be
 - [Documentation index](docs/README.md): deeper engineering and product references.
 
 ## Contributing and support
+
+Product guides will be hosted in the [Helpin docs](https://helpin.ai/docs) (coming soon).
+For now, use the repository guides above and [SUPPORT.md](SUPPORT.md) for setup
+questions, bug reports, and support expectations.
+Self-hosters can start with [troubleshooting](docs/community/troubleshooting.md).
 
 [Report a bug](https://github.com/helpin-ai/helpin/issues/new?template=community-bug.yml)
 or [request a feature](https://github.com/helpin-ai/helpin/issues/new?template=community-feature.yml)

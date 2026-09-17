@@ -59,6 +59,8 @@ changing them only in the environment makes encrypted credentials unreadable.
 
 ## Next steps
 
+- [Troubleshoot](../docs/community/troubleshooting.md): service startup, widget, AI, mail, and storage problems.
+- [Product help](https://helpin.ai/docs): forthcoming guides hosted in Helpin.
 - [Deploy publicly](../docs/community/deployment.md): DNS, HTTPS, website origins and storage.
 - [Configure the installation](../docs/community/configuration.md): SMTP, AI, embeddings and optional capabilities.
 - [Back up and restore](../docs/community/backups.md): preserve data and encryption keys.

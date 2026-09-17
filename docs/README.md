@@ -7,6 +7,9 @@ current document links to them explicitly.
 
 ## Start here
 
+- [Product help docs — coming soon](https://helpin.ai/docs)
+- [Getting help](../SUPPORT.md)
+- [Self-hosting troubleshooting](community/troubleshooting.md)
 - [Architecture overview](../ARCHITECTURE.md)
 - [Community installation](../community/README.md)
 - [Community source builds](community/development.md)
@@ -15,6 +18,13 @@ current document links to them explicitly.
 - [AI connections and profiles](ai-connections.md)
 - [Widget architecture and builds](widget-architecture.md)
 - [Email architecture](email-architecture.md)
+
+## Publication boundary
+
+This index includes internal operations, strategy, and historical design material;
+it is not a list of pages to import into the public help center. See the
+[publication review](publication-review.md) for specific findings and required
+disposition decisions before public export.
 
 ## Document collections
 
@@ -26,7 +36,6 @@ current document links to them explicitly.
 | [Operations](ops/README.md) | Migration, deployment, and operational runbooks |
 | [Research](research/README.md) | Investigations and comparative assessments |
 | [Strategy](strategy/README.md) | Product direction, backlog, and campaign proposals |
-| [Archive](archive/README.md) | Historical project phases |
 | [Mockups](mockups/README.md) | Standalone HTML design references |
 | [Manual testing](testing/README.md) | Browser test pages |
 

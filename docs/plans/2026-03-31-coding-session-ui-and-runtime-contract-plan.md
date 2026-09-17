@@ -10,11 +10,10 @@ This plan assumes:
 - Helpin owns the product UX, persistence, auth surfaces, approval flows, and repo-facing session state
 - runtimes are adapter-backed execution engines behind one Helpin session contract
 
-Related plans:
+Current execution references (the retired in-process rollout plans remain in Git history):
 
-- [docs/plans/2026-03-27-codex-app-server-coding-runtime-plan.md](/root/teampulse/docs/plans/2026-03-27-codex-app-server-coding-runtime-plan.md)
-- [docs/plans/2026-03-25-codex-opencode-coder-runtime-plan.md](/root/teampulse/docs/plans/2026-03-25-codex-opencode-coder-runtime-plan.md)
-- [docs/plans/2026-03-24-native-provider-runtime-migration-plan.md](/root/teampulse/docs/plans/2026-03-24-native-provider-runtime-migration-plan.md)
+- [Coding Agent Runtime Flow](../CODING_AGENT_RUNTIME_FLOW.md)
+- [Agents and automation](../AGENTS_AND_AUTOMATION.md)
 
 ## Goal
 

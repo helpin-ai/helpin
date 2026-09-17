@@ -41,6 +41,7 @@ class ReleasePackageTest(unittest.TestCase):
             archive = next(artifacts.glob('*.tar.gz'))
             with tarfile.open(archive) as package:
                 names = package.getnames()
+                self.assertIn('helpin-community/docs/community/troubleshooting.md', names)
                 for name in license_files:
                     self.assertEqual(package.extractfile('helpin-community/' + name).read(),
                                      (source / name).read_bytes())
