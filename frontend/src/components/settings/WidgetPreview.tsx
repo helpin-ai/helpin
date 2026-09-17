@@ -26,7 +26,7 @@ interface WidgetPreviewProps {
 }
 
 /**
- * Full-height sticky widget preview panel (Intercom-style).
+ * Full-height sticky widget preview panel.
  * Uses mountWidget() from @helpin-ai/widget-core so the widget renders
  * with its own bundled Preact instance — no dual-instance __H errors.
  */

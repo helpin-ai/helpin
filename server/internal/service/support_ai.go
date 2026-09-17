@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+
 	"errors"
 	"log/slog"
 	"strings"
@@ -62,135 +62,6 @@ type SupportQueryPlanContract struct {
 	ClarifyingQuestion string   `json:"clarifying_question"`
 	GreetingReply      string   `json:"greeting_reply"`
 	Reason             string   `json:"reason"`
-}
-
-// isAIContract checks whether a raw JSON string contains the keys expected
-// in an AIResponseContract (can_answer and content), distinguishing it from
-// arbitrary user-shared JSON.
-func isAIContract(raw string) bool {
-	var m map[string]any
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return false
-	}
-	_, hasCanAnswer := m["can_answer"]
-	_, hasContent := m["content"]
-	return hasCanAnswer && hasContent
-}
-
-// parseAIResponse parses the raw LLM output into an AIResponseContract.
-// It handles three formats:
-//  1. Pure JSON: the entire string is a valid JSON contract
-//  2. Fenced JSON: the string is wrapped in ```json ... ``` markdown fences
-//  3. Mixed content: readable markdown text followed by an embedded ```json block
-//
-// Returns the parsed contract and true, or a zero contract and false if parsing fails.
-// When parsing fails, cleanedContent contains the raw text with any trailing JSON block stripped.
-func parseAIResponse(raw string) (contract AIResponseContract, cleanedContent string, ok bool) {
-	trimmed := strings.TrimSpace(raw)
-
-	// Case 1 & 2: Strip outer markdown fences if present, then try pure JSON parse.
-	jsonCandidate := trimmed
-	if strings.HasPrefix(jsonCandidate, "```") {
-		if idx := strings.Index(jsonCandidate, "\n"); idx != -1 {
-			jsonCandidate = jsonCandidate[idx+1:]
-		}
-		if idx := strings.LastIndex(jsonCandidate, "```"); idx != -1 {
-			jsonCandidate = jsonCandidate[:idx]
-		}
-		jsonCandidate = strings.TrimSpace(jsonCandidate)
-	}
-
-	if err := json.Unmarshal([]byte(jsonCandidate), &contract); err == nil {
-		if isAIContract(jsonCandidate) {
-			return contract, contract.Content, true
-		}
-	}
-
-	// Case 3: Readable text followed by an embedded ```json block.
-	if jsonStart := strings.Index(trimmed, "```json"); jsonStart != -1 {
-		after := trimmed[jsonStart+len("```json"):]
-		if jsonEnd := strings.Index(after, "```"); jsonEnd != -1 {
-			embedded := strings.TrimSpace(after[:jsonEnd])
-			if err := json.Unmarshal([]byte(embedded), &contract); err == nil && isAIContract(embedded) {
-				// Use contract.Content if present, otherwise use the text before the JSON block.
-				if strings.TrimSpace(contract.Content) == "" {
-					contract.Content = strings.TrimSpace(trimmed[:jsonStart])
-				}
-				return contract, contract.Content, true
-			}
-		}
-	}
-
-	// Case 4: Readable text followed by a trailing raw JSON object.
-	if jsonStart, embedded := findTrailingJSONObject(trimmed); jsonStart > 0 {
-		if err := json.Unmarshal([]byte(embedded), &contract); err == nil && isAIContract(embedded) {
-			if strings.TrimSpace(contract.Content) == "" {
-				contract.Content = strings.TrimSpace(trimmed[:jsonStart])
-			}
-			return contract, contract.Content, true
-		}
-	}
-
-	// Parsing failed — strip trailing ```json...``` block only if it looks like an AI contract.
-	cleaned := raw
-	if jsonStart := strings.Index(cleaned, "```json"); jsonStart > 0 {
-		after := cleaned[jsonStart+len("```json"):]
-		if jsonEnd := strings.Index(after, "```"); jsonEnd != -1 {
-			candidate := strings.TrimSpace(after[:jsonEnd])
-			if isAIContract(candidate) {
-				cleaned = strings.TrimSpace(cleaned[:jsonStart])
-			}
-		}
-	}
-	if jsonStart, embedded := findTrailingJSONObject(cleaned); jsonStart > 0 && isAIContract(embedded) {
-		cleaned = strings.TrimSpace(cleaned[:jsonStart])
-	}
-	return AIResponseContract{}, cleaned, false
-}
-
-// findTrailingJSONObject returns the start index and raw JSON for a balanced
-// JSON object at the end of the string, or (-1, "") if none is found.
-func findTrailingJSONObject(raw string) (int, string) {
-	trimmed := strings.TrimSpace(raw)
-	if !strings.HasSuffix(trimmed, "}") {
-		return -1, ""
-	}
-
-	inString := false
-	escaped := false
-	depth := 0
-
-	for i := len(trimmed) - 1; i >= 0; i-- {
-		ch := trimmed[i]
-
-		if escaped {
-			escaped = false
-			continue
-		}
-		if ch == '\\' && inString {
-			escaped = true
-			continue
-		}
-		if ch == '"' {
-			inString = !inString
-			continue
-		}
-		if inString {
-			continue
-		}
-
-		switch ch {
-		case '}':
-			depth++
-		case '{':
-			depth--
-			if depth == 0 {
-				return i, strings.TrimSpace(trimmed[i:])
-			}
-		}
-	}
-
-	return -1, ""
 }
 
 // AIMessageMetadata is stored in the SupportMessage.Metadata JSONB field.
@@ -253,21 +124,14 @@ const (
 	knowledgeSourceTypeGuidance = "curated_guidance"
 	helpinAIDisplayName         = "Helpin AI"
 	supportDecisionAnswer       = "answer"
-	supportDecisionClarify      = "clarify"
-	supportDecisionGreet        = "greet"
-	supportDecisionHandoff      = "handoff"
-	supportDecisionConfirm      = "confirmation"
-	supportRouteConversational  = "conversational"
-	supportReplyKindAnswer      = "answer"
-	supportReplyKindClarify     = "clarify"
-	supportReplyKindGreeting    = "greeting"
-	supportReplyKindConfirm     = "confirmation"
-	supportProgressNewIssue     = "new_issue"
-	supportProgressSameNewInfo  = "same_issue_new_info"
-	supportProgressSameRepeat   = "same_issue_repeat"
-	supportProgressSameUnclear  = "same_issue_unclear"
-	supportStateProgressing     = "progressing"
-	supportStateStalled         = "stalled"
+
+	supportReplyKindAnswer   = "answer"
+	supportReplyKindClarify  = "clarify"
+	supportReplyKindGreeting = "greeting"
+	supportReplyKindConfirm  = "confirmation"
+
+	supportStateProgressing = "progressing"
+
 	// Direct support assistance is metered as a small-tier task. Keep these
 	// defaults aligned with the curated pricing catalog so preflight cannot
 	// reject grammar rewrites before the provider call is made.
@@ -290,8 +154,9 @@ var (
 	ErrSupportRewriteConversationNotFound = errors.New("support rewrite conversation not found")
 )
 
-// SupportAIService handles autonomous AI-first auto-replies for support conversations.
-// It is a separate path from the existing AgentRun system (manual-assist mode).
+// SupportAIService provides Helpin-owned knowledge retrieval, reply publication,
+// handoff, and composer assistance. SupportChatService delegates autonomous
+// conversation execution to Agent Runtime.
 type SupportAIService struct {
 	runCloser                      supportChatRunCloser
 	llmProvider                    llm.Provider

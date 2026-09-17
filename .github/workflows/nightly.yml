@@ -1,7 +1,7 @@
 name: Nightly
 
 # Slow / flaky / browser suites that don't fit the PR runtime budget.
-# See `docs/test-suite-ci-email-plan.md` "Layer 3: Nightly Integration".
+# See `docs/plans/test-suite-ci-email-plan.md` "Layer 3: Nightly Integration".
 #
 # Runs:
 # - On a daily schedule (02:30 UTC ≈ 19:30 PT, off-peak for self-hosted runners).

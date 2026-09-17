@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"path/filepath"
+
 	"sort"
 	"strings"
 	"time"
@@ -660,17 +660,6 @@ func resolveIntentForInteraction(interaction *model.AgentRunInteraction, respons
 	}
 }
 
-func interactionMessageTypeForIntent(intent string) string {
-	switch strings.TrimSpace(intent) {
-	case model.AgentRunResumeIntentApprove:
-		return "approval"
-	case model.AgentRunResumeIntentRequestChanges:
-		return "request_changes"
-	default:
-		return "user_reply"
-	}
-}
-
 func requestUserInputResumeContent(interaction *model.AgentRunInteraction, responsePayload json.RawMessage) string {
 	if interaction == nil {
 		return ""
@@ -980,10 +969,6 @@ func metadataStringFromJSON(raw json.RawMessage, key string) string {
 	return strings.TrimSpace(value)
 }
 
-func codingSessionEventFromInteraction(interaction model.AgentRunInteraction) (string, map[string]any, map[string]any) {
-	return codingSessionEventFromInteractionWithStatus(interaction, strings.TrimSpace(interaction.Status))
-}
-
 func codingSessionEventFromInteractionWithStatus(interaction model.AgentRunInteraction, status string) (string, map[string]any, map[string]any) {
 	interaction = codingSessionInteractionEventView(interaction, status)
 	eventType := "interaction.updated"
@@ -1280,15 +1265,6 @@ func firstNonEmptyString(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func sessionPathLabel(path string) *string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return nil
-	}
-	cleaned := filepath.Clean(path)
-	return &cleaned
 }
 
 // ListRunInteractions returns the run's interaction records (approval

@@ -21,18 +21,6 @@ func validExternalEvidenceType(value string) bool {
 	}
 }
 
-func validSignalDomain(value string) bool {
-	switch value {
-	case model.CRMSignalDomainConversation, model.CRMSignalDomainWebBehavior,
-		model.CRMSignalDomainProductUsage, model.CRMSignalDomainSupport,
-		model.CRMSignalDomainDelivery, model.CRMSignalDomainRelationship,
-		model.CRMSignalDomainMarket:
-		return true
-	default:
-		return false
-	}
-}
-
 func validSignalPolarity(value string) bool {
 	return value == model.CRMSignalPolarityPositive || value == model.CRMSignalPolarityNegative || value == model.CRMSignalPolarityNeutral
 }

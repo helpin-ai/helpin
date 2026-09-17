@@ -14,10 +14,12 @@ import (
 // SupportHandoffBrief carries a bounded, optional agent-authored briefing.
 // Missing context falls back to attributed transcript excerpts, never guesses.
 type SupportHandoffBrief struct {
-	ExpectedRunID       string   `json:"-"`
-	Issue               string   `json:"issue_summary"`
-	AttemptedSteps      []string `json:"attempted_steps"`
-	UnresolvedQuestions []string `json:"unresolved_questions"`
+	ExpectedMessageID      string   `json:"-"`
+	ExpectedControlVersion *int64   `json:"-"`
+	ExpectedRunID          string   `json:"-"`
+	Issue                  string   `json:"issue_summary"`
+	AttemptedSteps         []string `json:"attempted_steps"`
+	UnresolvedQuestions    []string `json:"unresolved_questions"`
 }
 
 func supportControlNote(conv *model.SupportConversation, actorID, content string, now time.Time) *model.SupportMessage {

@@ -325,8 +325,8 @@ Update repo-level documentation that references "story" as the canonical term:
 - `CLAUDE.md` (root) — logging examples (`"story created"`, `"story_id"`), route references (`/pm/stories`)
 - `server/CLAUDE.md` — `/stories` route definition, story creation log examples
 - `AGENTS.md` — story references in log output examples
-- `docs/prd-shortcut-importer.md` — Shortcut import mappings referencing `pm_stories`, story type counts, team story counts
-- `docs/PRD-stories-scale-and-performance.md` — performance requirements for stories board and scaling
+- `docs/prds/prd-shortcut-importer.md` — Shortcut import mappings referencing `pm_stories`, story type counts, team story counts
+- `docs/prds/PRD-stories-scale-and-performance.md` — performance requirements for stories board and scaling
 - Any internal PRDs or plan docs that describe story as the current product term should note the rename
 
 ## Rollout Notes

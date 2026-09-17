@@ -45,7 +45,7 @@ still pending; SaaS BYOK remains disabled until its release gates pass.
    fix discovered issues, and commit verified steps separately.
 5. **Final verification and handoff.** Run affected backend tests, vet, Community
    and EE builds/checks, desktop type checks, frontend launch regressions, and
-   isolated PostgreSQL integration. Update this plan and the main checkpoint with
+   isolated PostgreSQL integration. Update this plan and the current AI connections guide with
    exact results and remaining live gates; leave working trees clean.
 
 ## Progress

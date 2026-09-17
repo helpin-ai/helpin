@@ -144,7 +144,7 @@ export const MessageList: FunctionComponent<MessageListProps> = ({
     if (message.role === 'customer') {
       return 'customer';
     }
-    // teammate_joined renders as the flat Intercom-style pill — a distinct
+    // teammate_joined renders as the flat pill — a distinct
     // layout with no bubble header. Force it into its own group so the
     // following reply shows its full sender header instead of collapsing
     // into the pill's "group".

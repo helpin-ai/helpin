@@ -1,8 +1,3 @@
-/** Format a canonical task key like "HLP-123". */
-export function formatTaskKey(workspaceKey: string, displayId: number): string {
-  return `${workspaceKey}-${displayId}`;
-}
-
 /** Parse a task key string like "HLP-123" into its parts. Returns null if invalid. */
 export function parseTaskKey(input: string): { workspaceKey: string; displayId: number } | null {
   const match = input.match(/^([A-Z]{2,5})-(\d+)$/);

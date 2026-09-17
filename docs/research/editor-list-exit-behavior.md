@@ -40,7 +40,7 @@
 ### Confluence (Atlassian)
 - **Enter on empty list item**: Exits the list.
 - **Tab/Shift+Tab**: Tab indents list items, Shift+Tab outdents.
-- **Nested exit**: Progressive unnesting like Notion - outdent first, then exit.
+- **Nested exit**: Progressive unnesting: outdent first, then exit.
 - **Summary**: Standard behavior - Enter on empty exits, Tab/Shift+Tab for nesting.
 
 ### Coda

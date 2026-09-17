@@ -66,10 +66,6 @@ func (s *SupportAIService) EscalateToHumanForMessageWithIssue(ctx context.Contex
 	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, "", briefs...)
 }
 
-func (s *SupportAIService) escalateToHumanForMessageWithIssueAndReply(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply string) error {
-	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply)
-}
-
 func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply string, briefs ...SupportHandoffBrief) error {
 	escalationLockKey := "support:ai:escalation-lock:" + conversationID
 	if !s.acquireLock(ctx, escalationLockKey) {
@@ -312,6 +308,9 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		messages = []*model.SupportMessage{escalationSystemMsg, replyMsg}
 	}
 	oldRun, changed, err := s.conversationRepo.ChangeAIControl(ctx, workspaceID, conversationID, func(current *model.SupportConversation) (map[string]any, *model.SupportMessage, error) {
+		if brief.ExpectedControlVersion != nil && (current.AIControlVersion != *brief.ExpectedControlVersion || derefString(current.LastPublicMessageID) != brief.ExpectedMessageID || model.SupportAIConversationBlocked(current) || supportConversationHumanOwned(current)) {
+			return nil, nil, nil
+		}
 		if current.AIControlVersion != conv.AIControlVersion || (brief.ExpectedRunID != "" && current.AIControlVersion > 0 && derefString(current.AIActiveRunID) != brief.ExpectedRunID) {
 			return nil, nil, repository.ErrSupportAIControlConflict
 		}

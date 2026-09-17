@@ -816,12 +816,15 @@ func main() {
 		fatalWithSentry("configure support decision client", err)
 	}
 	supportInboxTriageService.SetLocalDecisionClient(decisionClient)
-	if strings.TrimSpace(cfg.JevAPIKey) != "" && !(cfg.JevRoutingMode == "off" && cfg.JevTagsMode == "off") {
+	var supportJevService *service.SupportJevService
+	if strings.TrimSpace(cfg.JevAPIKey) != "" {
 		jevClient, jevErr := decision.NewJev(cfg.JevAPIKey, time.Duration(cfg.JevTimeoutMS)*time.Millisecond)
 		if jevErr != nil {
 			fatalWithSentry("configure Jev client", jevErr)
 		}
 		jevService, jevErr := service.NewSupportJevService(service.SupportJevConfig{
+			HandoffMode: cfg.JevHandoffMode, FollowUpMode: cfg.JevFollowUpMode,
+			HandoffThreshold: cfg.JevHandoffThreshold, FollowUpThreshold: cfg.JevFollowUpThreshold,
 			RoutingMode: cfg.JevRoutingMode, TagsMode: cfg.JevTagsMode, WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
 			RoutingThreshold: cfg.JevRoutingThreshold, TagThreshold: cfg.JevTagThreshold, DailyLimit: cfg.JevDailyLimit,
 		}, jevClient, repository.NewSupportJevRepository(db), repository.NewAIExecutionUsageRepository(db), supportTagService)
@@ -830,6 +833,7 @@ func main() {
 		}
 		jevService.SetMetrics(metrics)
 		supportInboxTriageService.SetJevService(jevService)
+		supportJevService = jevService
 	}
 
 	supportInboxService.SetTriageService(supportInboxTriageService)
@@ -1490,6 +1494,7 @@ func main() {
 		agentService,
 		supportAIService,
 	)
+	supportChatService.SetJevService(supportJevService)
 	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo, workspaceRepo)
 	supportFollowUpRepo := repository.NewSupportFollowUpRepository(db)
 	supportFollowUpService := service.NewSupportFollowUpService(supportFollowUpRepo, supportChatService)

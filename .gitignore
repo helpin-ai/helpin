@@ -6,7 +6,6 @@ server/bin/
 server/tmp/
 server/data/*.mmdb
 server/temporal-worker
-server/migrate
 
 # Node
 frontend/node_modules/
@@ -68,3 +67,10 @@ packages/*/lib/
 # Build cache
 .cache/
 __pycache__/
+
+# Local scratch artifacts (intentional assets belong in component directories)
+/*.png
+/scratch/
+/artifacts/
+/test-results/
+/playwright-report/

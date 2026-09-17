@@ -29,7 +29,7 @@ Verified in code; these are the assets the launch should lead with.
 | Customer-facing AI agent on widget and email | `service/support_chat.go`, JetStream `SUPPORT_AI` stream, `internal_command_support_reply.go` |
 | Retrieval: LLM query planning, structure-aware chunking, pgvector + Postgres FTS hybrid, TEI-compatible cross-encoder rerank, neighbor expansion | `service/support_knowledge_search.go` and neighbours |
 | Server-side confidence (weights 0.40/0.25/0.20/0.15) and citation re-validation that drops fabricated evidence | `service/support_ai_confidence.go:16`, `internal_command_support_reply.go:57-84` |
-| Resolution accounting identical to Fin's model: confirmed vs assumed after 24h idle, distinction stored | `docs/PRD-ai-support-agent.md`, service layer |
+| Resolution accounting identical to Fin's model: confirmed vs assumed after 24h idle, distinction stored | `docs/prds/PRD-ai-support-agent.md`, service layer |
 | Layered escalation: hard phrases, turn caps, budget, post-answer grounding gate, model-initiated handoff, mid-turn human takeover suppresses in-flight reply | `support_chat.go:82-194` |
 | AI usage metering with immutable pricing catalog, preflight + settlement, idempotency, Stripe rollback | `internal/aiusage`, `docs/ai-usage-metering.md` |
 | Coverage gaps loop (unanswered questions → clustered gaps → AI-drafted article fixes → review UI). Fin sells this as the Pro add-on. | `service/support_coverage_*`, `/support/coverage` |
@@ -94,12 +94,12 @@ Each verified missing, partial, or dormant. Grouped, ordered by leverage.
 9. **AI summary of a thread on handoff**: missing, despite handoff being the core loop. `draft_support_reply` and rewrite exist; summarise does not.
 10. **Per-conversation AI mute**: takeover is implicit (an agent must reply to silence the AI). Add an explicit "pause AI on this conversation" toggle.
 11. **Keyboard shortcuts** beyond the composer (`j/k`, assign, resolve, cheatsheet). Intercom's inbox is Command-K driven.
-12. **Availability-aware routing**: round-robin (`repository/support_mailbox.go:581-621`) ignores presence and only fires on mailbox move or AI handoff. The status model shipped; routing does not consult it (`docs/TODO-support-availability-and-agent-notifications.md`).
+12. **Availability-aware routing**: round-robin (`repository/support_mailbox.go:581-621`) ignores presence and only fires on mailbox move or AI handoff. The status model shipped; routing does not consult it (`docs/plans/TODO-support-availability-and-agent-notifications.md`).
 13. **SLA policies are sold and unbuilt.** `EntitlementFeatureSLAPolicies` is gated as a Growth feature (`service/entitlements.go:134`) and shown on the pricing page; nothing consumes it. Either build first-response/next-response/time-to-close targets with breach events, or remove it from pricing before an OSS audience reads the code.
 
 ### 4c. Widget correctness and parity
 14. **Custom visitor attributes are dropped.** `WidgetUser.metadata` is declared (`widget.ts:34`) and never serialised; the identity payload is a fixed field set (`model/support_inbox.go:1128-1139`). Intercom custom data attributes are the basis of targeting, routing, and Fin context.
-15. **JWT messenger security.** Only HMAC v1 exists; Intercom's current recommendation is JWT with expiry and trusted domains, and `docs/PRD-widget-messenger-security-jwt.md` already specifies it. Pairs with Tier 0 item 6.
+15. **JWT messenger security.** Only HMAC v1 exists; Intercom's current recommendation is JWT with expiry and trusted domains, and `docs/prds/PRD-widget-messenger-security-jwt.md` already specifies it. Pairs with Tier 0 item 6.
 16. **Widget i18n**: every string is an English literal; `navigator.language` is captured and unused. Intercom ships 45 languages, and Helpin's help center is already multilingual.
 17. **Launcher `bottom-left` is broken** (`widget.css:324-327` hardcodes `right: 20px`).
 18. **SDK ships unminified at 426 KB** (`packages/sdk-js/vite.config.ts:50` `minify: false`).
@@ -123,8 +123,8 @@ Post-launch, but these are what Fin buyers compare on. Ordered by cost-to-value 
 
 1. **Workspace-attached external tools for the support agent (Fin Data Connectors / MCP connectors).** The runtime's run-scoped MCP with OAuth and encrypted credentials is fully plumbed (`agent-runtime/internal/mcp/run_config.go`, `helpin service/agent.go:6541-6584`, `externalmcp/oauth.go`) but the `support_agent` preset ships zero `mcp__*` tools (`agentcontract/runtime_profiles.go:44`). Exposing "attach MCP servers to the support agent" in settings is the cheapest Fin-parity win in the codebase. A simple HTTP action builder (URL, auth, when-to-use description) can follow.
 2. **Guidance as structured settings.** Fin: natural-language guardrails in categories with limits (100 items, 2,500 chars), tone (5 presets), answer length (3), per-guidance usage metrics, audience targeting. Helpin has curated guidance for retrieval but no structured behaviour/tone settings; workspaces edit raw prompt text.
-3. **Evaluation harness.** No golden set, no scored offline runs, no CI gate; `docs/PRD-knowledge-retrieval-platform.md:17` calls it launch-critical. Fin ships Previews, Batch tests (50 questions, CSV), Simulations, and since Aug 2026 Evals + Releases (staged rollout, A/B, rollback). Start with batch tests over a CSV and a retrieval-quality score; it also gives BYOK users a way to compare local models.
-4. **Knowledge imports from Intercom, Zendesk, Notion, Confluence.** All missing, while `docs/pricing-strategy.md:128` sells "Import from Notion, Intercom". An **Intercom articles + conversations importer** is the single highest-leverage switching tool given the Salesforce acquisition. The HelpScout importer is a complete template to copy.
+3. **Evaluation harness.** No golden set, no scored offline runs, no CI gate; `docs/prds/PRD-knowledge-retrieval-platform.md:17` calls it launch-critical. Fin ships Previews, Batch tests (50 questions, CSV), Simulations, and since Aug 2026 Evals + Releases (staged rollout, A/B, rollback). Start with batch tests over a CSV and a retrieval-quality score; it also gives BYOK users a way to compare local models.
+4. **Knowledge imports from Intercom, Zendesk, Notion, Confluence.** All missing, while `docs/strategy/pricing-strategy.md:128` sells "Import from Notion, Intercom". An **Intercom articles + conversations importer** is the single highest-leverage switching tool given the Salesforce acquisition. The HelpScout importer is a complete template to copy.
 5. **Procedures-lite.** Fin 3 replaced Tasks with Procedures (NL steps, conditions, connector calls, handoff, wait-for-webhook). Helpin's agent is already tool-driven; a workspace-authored "procedure" is a skill package plus allowed tools. Do after 1 and 2.
 6. **Fin-style outcome attributes and escalation reporting**: Fin classifies issue type, sentiment, urgency, escalation reason per conversation for reporting. Helpin's triage classifier already emits structured JSON; persist and surface it.
 7. **Fin Memory** (cross-conversation recall for returning customers): Helpin has carry-forward transcript within a run; cross-conversation memory is missing.
@@ -155,15 +155,15 @@ Listed so nobody re-derives it. Ranked within the group by how soon it will be a
 Anyone reading the repo will be misled by these.
 
 - `docs/strategy/2026-06-11-product-engineering-assessment.md`: billing is present; support UI is more than one page.
-- `docs/PRD-support-live-chat.md`: claims Phases 3–5 not started; they shipped.
-- `docs/PRD-help-center-ssr-migration.md`: marked Draft for a shipped migration.
-- `docs/PRD-widget-identify-crm-leads.md`: marked Draft; shipped beyond spec.
-- `docs/PRD-support-ai-stuck-detection-and-handoff.md`: describes a feature that is implemented but not wired.
+- `docs/prds/PRD-support-live-chat.md`: claims Phases 3–5 not started; they shipped.
+- `docs/prds/PRD-help-center-ssr-migration.md`: marked Draft for a shipped migration.
+- `docs/prds/PRD-widget-identify-crm-leads.md`: marked Draft; shipped beyond spec.
+- `docs/prds/PRD-support-ai-stuck-detection-and-handoff.md`: describes a feature that is implemented but not wired.
 - `docs/mattermost-integration.md`: divergent design, proposes a dependency not in `go.mod`.
-- `docs/BACKLOG-and-ideas.md` (March 2026) and `docs/PRD-current-state-review-2026-03-05.md`: pre-support-module, several "Open" items shipped, "zero Go tests" no longer true.
-- `docs/widget-feature-parity.md` and `docs/PRD_WIDGET_SDK_FEATURE_PARITY.md`: benchmarked against Crisp; emoji picker and article search have since shipped. Reframe against Intercom if kept.
-- `docs/pricing-strategy.md:128`: sells importers that do not exist.
-- `docs/PRD-custom-support-sender-addresses-mvp.md:13`: puts SMTP out of scope; must be reversed for self-hosting.
+- `docs/strategy/backlog-and-ideas.md` (March 2026) and `docs/prds/PRD-current-state-review-2026-03-05.md`: pre-support-module, several "Open" items shipped, "zero Go tests" no longer true.
+- `docs/widget-feature-parity.md` and `docs/prds/PRD_WIDGET_SDK_FEATURE_PARITY.md`: benchmarked against Crisp; emoji picker and article search have since shipped. Reframe against Intercom if kept.
+- `docs/strategy/pricing-strategy.md:128`: sells importers that do not exist.
+- `docs/prds/PRD-custom-support-sender-addresses-mvp.md:13`: puts SMTP out of scope; must be reversed for self-hosting.
 - Dead code to remove before publishing: `widget/` (2,132-line vanilla predecessor, built by nothing), `packages/widget-embed` (abandoned).
 
 ---

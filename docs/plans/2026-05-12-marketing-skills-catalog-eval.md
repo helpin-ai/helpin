@@ -188,7 +188,7 @@ Will run, but quality drops because they expect data from a platform we don't ta
 | `ai-seo` | Same — also wants JS-rendered DOM | Misses JS-injected schema and content | Add a browser tool (see below) |
 | `schema-markup` | schema.org validator API | Can author markup, can't validate live | `fetch_url` validator.schema.org/?url=... works as a fallback |
 | `site-architecture` | Sitemap crawler | Limited beyond what `crawl_url` returns | Often fine; user can paste sitemap XML |
-| `analytics-tracking` | GA4 / GTM / Mixpanel / PostHog APIs | Can only produce *plans* and tracking-plan docs — can't read live event data | Acceptable; plan-authoring is the main use |
+| `analytics-tracking` | External analytics and tag-management APIs | Can only produce *plans* and tracking-plan docs — can't read live event data | Acceptable; plan-authoring is the main use |
 | `ab-test-setup` | Optimizely / Statsig / GrowthBook | Can author test specs + power calcs; can't read variant data | Acceptable; design is the value |
 | `form-cro`, `popup-cro` | Live event/funnel data | Falls back to heuristic audits via `fetch_url` | Acceptable |
 

@@ -19,14 +19,18 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
-// SupportJevConfig controls routing and tagging independently. Empty modes mean primary.
+// SupportJevConfig controls support decisions independently. Empty modes mean primary.
 type SupportJevConfig struct {
-	RoutingMode      string
-	TagsMode         string
-	WorkspaceIDs     []string
-	RoutingThreshold float64
-	TagThreshold     float64
-	DailyLimit       int
+	RoutingMode       string
+	TagsMode          string
+	HandoffMode       string
+	FollowUpMode      string
+	HandoffThreshold  float64
+	FollowUpThreshold float64
+	WorkspaceIDs      []string
+	RoutingThreshold  float64
+	TagThreshold      float64
+	DailyLimit        int
 }
 
 // SupportJevService evaluates support decisions and records provider usage.
@@ -51,12 +55,18 @@ func NewSupportJevService(config SupportJevConfig, provider decision.Provider, e
 	if config.TagsMode == "" {
 		config.TagsMode = "primary"
 	}
-	for _, mode := range []string{config.RoutingMode, config.TagsMode} {
+	if config.HandoffMode == "" {
+		config.HandoffMode = "primary"
+	}
+	if config.FollowUpMode == "" {
+		config.FollowUpMode = "primary"
+	}
+	for _, mode := range []string{config.RoutingMode, config.TagsMode, config.HandoffMode, config.FollowUpMode} {
 		if mode != "off" && mode != "shadow" && mode != "primary" {
 			return nil, errors.New("Jev mode must be off, shadow or primary")
 		}
 	}
-	for _, threshold := range []float64{config.RoutingThreshold, config.TagThreshold} {
+	for _, threshold := range []float64{config.RoutingThreshold, config.TagThreshold, config.HandoffThreshold, config.FollowUpThreshold} {
 		if math.IsNaN(threshold) || threshold <= 0 || threshold > 1 {
 			return nil, errors.New("Jev probability thresholds must be in (0,1]")
 		}
@@ -125,7 +135,7 @@ func (s *SupportJevService) evaluate(ctx context.Context, workspace, conversatio
 			status = "usage_error"
 		}
 	}
-	payload, err := json.Marshal(map[string]any{"status": status, "result": result, "identity": identity, "routing_mode": s.config.RoutingMode, "tags_mode": s.config.TagsMode, "routing_threshold": s.config.RoutingThreshold, "tag_threshold": s.config.TagThreshold, "confidence_kind": "provider_probability_not_locally_calibrated", "cost_policy": "operator_funded_pilot"})
+	payload, err := json.Marshal(map[string]any{"status": status, "result": result, "identity": identity, "routing_mode": s.config.RoutingMode, "tags_mode": s.config.TagsMode, "handoff_mode": s.config.HandoffMode, "follow_up_mode": s.config.FollowUpMode, "handoff_threshold": s.config.HandoffThreshold, "follow_up_threshold": s.config.FollowUpThreshold, "routing_threshold": s.config.RoutingThreshold, "tag_threshold": s.config.TagThreshold, "confidence_kind": "provider_probability_not_locally_calibrated", "cost_policy": "operator_funded_pilot"})
 	if err != nil {
 		return nil, err
 	}

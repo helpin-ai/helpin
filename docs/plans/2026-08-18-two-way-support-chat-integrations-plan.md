@@ -21,7 +21,7 @@ The first release follows the Crisp operator-bridge model:
 The schema and provider interfaces reserve two other modes without implementing them in v1:
 
 - `notification_only`: one-way event posts whose thread replies do not affect Helpin.
-- `customer_channel`: Intercom-style conversations initiated by customers inside Slack, Slack Connect, Mattermost, or another provider.
+- `customer_channel`: conversations initiated by customers inside Slack, Slack Connect, Mattermost, or another provider.
 
 ## 2. Scope
 
@@ -897,7 +897,7 @@ Smaller alternatives:
 - One-way posting only, both providers, text/links: 10-15 engineering days.
 - Slack-only two-way, text-only pilot: 20-28 engineering days.
 - Slack + Mattermost text-only pilot without attachments/actions/admin diagnostics: 30-40 engineering days.
-- Intercom-style provider-originated customer channels after this v1: add approximately 15-25 engineering days for channel ownership, customer/CRM identity, conversation creation, Slack Connect/DM semantics, and new routing behavior.
+- provider-originated customer channels after this v1: add approximately 15-25 engineering days for channel ownership, customer/CRM identity, conversation creation, Slack Connect/DM semantics, and new routing behavior.
 
 ## 15. Deployment and rollback
 

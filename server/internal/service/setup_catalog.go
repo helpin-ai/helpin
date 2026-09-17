@@ -595,22 +595,6 @@ func setupMaturityFromProgress(coreDone, coreTotal, allDone, allTotal, powerDone
 	return model.SetupMaturityEstablished
 }
 
-func supportSetupMaturity(e SetupEvidence) string {
-	if e.SupportEmailInboxCount == 0 || e.LiveChatInstallationCount == 0 {
-		return model.SetupMaturityPreparing
-	}
-	if e.PublicHelpDocCount == 0 || e.BrandKnowledgeSourceCount == 0 || !e.SupportAIAgentActive {
-		return model.SetupMaturityReady
-	}
-	if e.TeamInboxCount == 0 || e.AutomaticRoutingCount == 0 {
-		return model.SetupMaturityActivated
-	}
-	if e.LinkedSupportTaskCount == 0 || e.CoverageImprovementCount == 0 {
-		return model.SetupMaturityEstablished
-	}
-	return model.SetupMaturityAdvanced
-}
-
 func isSetupCoreTask(key string) bool {
 	for _, journey := range setupJourneyCatalog {
 		for _, task := range journey.tasks {

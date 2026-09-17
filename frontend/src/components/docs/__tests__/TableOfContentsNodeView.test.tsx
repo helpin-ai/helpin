@@ -59,7 +59,7 @@ function createEditorMock() {
 }
 
 describe('TableOfContentsNodeView', () => {
-  it('renders Notion-style heading links without numeric ordered-list markers', () => {
+  it('renders heading links without numeric ordered-list markers', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)

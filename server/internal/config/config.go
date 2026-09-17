@@ -79,6 +79,10 @@ type Config struct {
 	OpenAIBaseURL               string
 	OpenAIEmbeddingModel        string
 	JevAPIKey                   string
+	JevHandoffMode              string
+	JevFollowUpMode             string
+	JevHandoffThreshold         float64
+	JevFollowUpThreshold        float64
 	JevRoutingThreshold         float64
 	JevTagThreshold             float64
 	JevRoutingMode              string
@@ -422,6 +426,10 @@ func Load() (*Config, error) {
 		JevRoutingThreshold:                    parseJevProbability(os.Getenv("JEV_ROUTING_THRESHOLD"), 0.9),
 		JevTagThreshold:                        parseJevProbability(os.Getenv("JEV_TAG_THRESHOLD"), 0.95),
 		JevAPIKey:                              os.Getenv("JEV_API_KEY"),
+		JevHandoffMode:                         strings.TrimSpace(os.Getenv("JEV_HANDOFF_MODE")),
+		JevFollowUpMode:                        strings.TrimSpace(os.Getenv("JEV_FOLLOW_UP_MODE")),
+		JevHandoffThreshold:                    parseJevProbability(os.Getenv("JEV_HANDOFF_THRESHOLD"), .95),
+		JevFollowUpThreshold:                   parseJevProbability(os.Getenv("JEV_FOLLOW_UP_THRESHOLD"), .95),
 		JevRoutingMode:                         strings.TrimSpace(os.Getenv("JEV_ROUTING_MODE")),
 		JevTagsMode:                            strings.TrimSpace(os.Getenv("JEV_TAGS_MODE")),
 		JevTimeoutMS:                           parsePositiveIntEnv(os.Getenv("JEV_TIMEOUT_MS"), 1000),

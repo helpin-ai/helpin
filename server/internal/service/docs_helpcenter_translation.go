@@ -1965,14 +1965,6 @@ func normalizeSlug(value string) string {
 	return trimmed
 }
 
-func trimmedStringPointer(value string) *string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}
-
 func stringPtrValue(value *string) string {
 	if value == nil {
 		return ""

@@ -6,7 +6,7 @@ Draft implementation plan for replacing Helpin's flattened human-input and appro
 
 This plan is based on:
 
-- [docs/plans/2026-03-27-codex-app-server-coding-runtime-plan.md](/root/teampulse/docs/plans/2026-03-27-codex-app-server-coding-runtime-plan.md)
+- Current execution ownership: [Coding Agent Runtime Flow](../CODING_AGENT_RUNTIME_FLOW.md). The retired in-process runtime rollout plan is available in Git history.
 - [docs/plans/2026-03-31-coding-session-ui-and-runtime-contract-plan.md](/root/teampulse/docs/plans/2026-03-31-coding-session-ui-and-runtime-contract-plan.md)
 - the locally cloned Codex repo at `/tmp/codex`
 - the current Helpin bridge code in:

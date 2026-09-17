@@ -161,8 +161,8 @@
 - [x] Update `CLAUDE.md` (root) — logging examples, route references updated to task terminology
 - [x] Update `server/CLAUDE.md` — `/tasks` route definition, task creation log examples
 - [x] Update `AGENTS.md` — task references in log output examples
-- [x] Update `docs/prd-shortcut-importer.md` — `pm_tasks` table references, task type/team counts
-- [x] Update `docs/PRD-stories-scale-and-performance.md` — performance requirements terminology updated to tasks
+- [x] Update `docs/prds/prd-shortcut-importer.md` — `pm_tasks` table references, task type/team counts
+- [x] Update `docs/prds/PRD-stories-scale-and-performance.md` — performance requirements terminology updated to tasks
 - [x] Update internal PRDs and plan docs
 
 ### 7. Validation and rollout

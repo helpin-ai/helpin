@@ -1,8 +1,11 @@
 # Support Native Tool Extraction Plan
 
+> **Historical / superseded execution design.** The proposal to retain a separate AI-first executor was superseded by the full Agent Runtime migration. Current support execution uses agent_run and Helpin-owned knowledge, delivery and handoff tools.
+> See [Support execution through Agent Runtime](../support-agent-runtime.md) for current ownership.
+
 ## Status
 
-Proposed.
+Superseded by the Agent Runtime migration.
 
 ## Goal
 

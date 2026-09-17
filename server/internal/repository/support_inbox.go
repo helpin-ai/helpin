@@ -919,14 +919,6 @@ func conversationHumanInboxCondition(alias string) string {
 	)
 }
 
-func conversationHumanResolvedCondition(alias string) string {
-	return fmt.Sprintf("(%s.status = '%s' AND NOT (%s))",
-		alias,
-		model.SupportConversationStatusResolved,
-		conversationResolvedByAICondition(alias),
-	)
-}
-
 func applyConversationFlowState(query *gorm.DB, alias, flowState string) *gorm.DB {
 	trimmed := strings.TrimSpace(flowState)
 	if trimmed == "" {

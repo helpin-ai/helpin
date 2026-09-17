@@ -447,24 +447,6 @@ export function useDeletePipeline(wsId: string) {
   })
 }
 
-// ── Associations ──
-
-export function useLegacyEpicAssociations(wsId: string, epicId: string) {
-  return useQuery({
-    queryKey: queryKeys.pm.epicAssociations(wsId, epicId),
-    queryFn: async () => unwrap(await crmAssociationService.listByEpic(wsId, epicId)),
-    enabled: !!wsId && !!epicId,
-  })
-}
-
-export function useLegacyTaskAssociations(wsId: string, taskId: string) {
-  return useQuery({
-    queryKey: queryKeys.pm.taskAssociations(wsId, taskId),
-    queryFn: async () => unwrap(await crmAssociationService.listByTask(wsId, taskId)),
-    enabled: !!wsId && !!taskId,
-  })
-}
-
 export function useCreateAssociation(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -483,32 +465,10 @@ export function useCreateAssociation(wsId: string) {
   })
 }
 
-export function useLegacyCreateAssociationFromPM(wsId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (data: CreateCRMAssociationRequest) => unwrap(await crmAssociationService.createFromPM(data)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['crm', wsId] })
-      qc.invalidateQueries({ queryKey: ['pm', wsId] })
-    },
-  })
-}
-
 export function useDeleteAssociation(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => unwrap(await crmAssociationService.remove(wsId, id)),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['crm', wsId] })
-      qc.invalidateQueries({ queryKey: ['pm', wsId] })
-    },
-  })
-}
-
-export function useLegacyDeleteAssociationFromPM(wsId: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (id: string) => unwrap(await crmAssociationService.removeFromPM(wsId, id)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crm', wsId] })
       qc.invalidateQueries({ queryKey: ['pm', wsId] })

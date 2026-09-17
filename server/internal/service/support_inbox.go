@@ -4750,8 +4750,8 @@ func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targe
 
 // emitTeammateJoinedIfFirstReply emits a public "{name} joined the conversation"
 // system message on the widget-visible side the first time a given teammate
-// sends a non-internal reply on the conversation. Matches Intercom's behavior
-// of surfacing a "joined" pill on first engagement rather than on assignment.
+// sends a non-internal reply on the conversation. The "joined" pill appears
+// on first engagement rather than on assignment.
 func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string, replyClientMessageID string, savedReply ...*model.SupportMessage) {
 	if s.messageRepo == nil || senderUserID == "" {
 		return

@@ -46,7 +46,7 @@ func attachJev(t *testing.T, f *supportTriageTestFixture, provider *fakeJev, rou
 		t.Fatal(err)
 	}
 	tags := NewSupportTagService(repository.NewSupportTagRepository(f.db), f.conversationRepo, nil).SetMessageRepo(f.messageRepo)
-	svc, err := NewSupportJevService(SupportJevConfig{RoutingMode: routeMode, TagsMode: tagMode, RoutingThreshold: .9, TagThreshold: .95, DailyLimit: 100}, provider, repository.NewSupportJevRepository(f.db), repository.NewAIExecutionUsageRepository(f.db), tags)
+	svc, err := NewSupportJevService(SupportJevConfig{RoutingMode: routeMode, TagsMode: tagMode, RoutingThreshold: .9, TagThreshold: .95, HandoffThreshold: .95, FollowUpThreshold: .95, DailyLimit: 100}, provider, repository.NewSupportJevRepository(f.db), repository.NewAIExecutionUsageRepository(f.db), tags)
 	if err != nil {
 		t.Fatal(err)
 	}

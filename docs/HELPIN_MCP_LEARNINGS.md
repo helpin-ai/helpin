@@ -6,10 +6,10 @@
 
 Related references:
 
-- [Complete Helpin Public MCP Guide](./HELPIN_PUBLIC_MCP.md)
-- [Public MCP Server PRD](./PRD-helpin-public-mcp-server.md)
-- [Public MCP Implementation Plan](./plans/2026-07-10-helpin-public-mcp-server-plan.md)
-- [MCP UI PRD](./PRD-helpin-mcp-ui.md)
+- [Complete Helpin Public MCP Guide](HELPIN_PUBLIC_MCP.md)
+- [Public MCP Server PRD](prds/PRD-helpin-public-mcp-server.md)
+- [Public MCP Implementation Plan](plans/2026-07-10-helpin-public-mcp-server-plan.md)
+- [MCP UI PRD](prds/PRD-helpin-mcp-ui.md)
 
 ## 1. The most important lesson
 

@@ -12,10 +12,10 @@
 
 Related documents:
 
-- [Public MCP Server PRD](./PRD-helpin-public-mcp-server.md)
-- [Public MCP Server Implementation Plan](./plans/2026-07-10-helpin-public-mcp-server-plan.md)
-- [MCP UI PRD](./PRD-helpin-mcp-ui.md)
-- [Engineering Learnings and Next-Time Playbook](./HELPIN_MCP_LEARNINGS.md)
+- [Public MCP Server PRD](prds/PRD-helpin-public-mcp-server.md)
+- [Public MCP Server Implementation Plan](plans/2026-07-10-helpin-public-mcp-server-plan.md)
+- [MCP UI PRD](prds/PRD-helpin-mcp-ui.md)
+- [Engineering Learnings and Next-Time Playbook](HELPIN_MCP_LEARNINGS.md)
 
 ## 1. What Helpin MCP is
 

@@ -1558,7 +1558,7 @@
 
 /* ── Syntax highlighting (highlight.js / lowlight) ─────────────────────────── */
 
-/* Light theme (GitHub-inspired) */
+/* Light theme */
 .hljs-comment,
 .hljs-quote { color: #6a737d; font-style: italic; }
 .hljs-keyword,

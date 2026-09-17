@@ -329,7 +329,7 @@ is no in-app classifier or inline LLM tool loop anymore — the chat run itself
 answers read-only questions with product command tools and orchestrates durable
 work through the `agents.*` command tools.
 
-Current reference: [ASK_AGENTS_BAR.md](./ASK_AGENTS_BAR.md).
+Current reference: [ASK_AGENTS_BAR.md](ASK_AGENTS_BAR.md).
 
 Important boundaries:
 
@@ -349,6 +349,14 @@ Important boundaries:
   `<child_run_result>` back into the chat when they settle
 - one-shot ad hoc work still uses the system `Command Agent`
 - saved custom agents still persist through the normal `agents` creation path
+
+## Support conversations
+
+Support conversations execute through Agent Runtime chat-mode runs. Helpin owns
+message admission, knowledge retrieval, reply validation/publication and human
+handoff. `SupportAIService` supplies these collaborators; it is not a separate
+in-process answer executor. See [Support execution through Agent Runtime](support-agent-runtime.md)
+for the code map and retained composer-assistance boundary.
 
 ## Agent runs
 

@@ -1,6 +1,6 @@
 # AI profiles, community BYOK, and optional SaaS BYOK
 
-Status: review corrections implemented and verified locally; live deployment acceptance remains pending. See the [review correction plan](2026-09-14-ai-profiles-review-fixes.md). The [current checkpoint](2026-09-14-ai-profiles-checkpoint.md#resumed-implementation) records commits, verification, and the remaining user-run rollout gates.
+Status: review corrections implemented and verified locally; live deployment acceptance remains pending. See the [review correction plan](2026-09-14-ai-profiles-review-fixes.md). Use [AI connections and profiles](../ai-connections.md) for current configuration and rollout requirements; the superseded implementation checkpoint remains in Git history.
 
 Split delivery into a standalone catalog prerequisite, **Plan A: AI configuration and execution**, and **Plan B: commercial billing extraction**. Plan A can use an adapter to the existing commercial implementation while Plan B proceeds separately. A clean community distribution requires both plans.
 
@@ -337,9 +337,8 @@ widget initialization in the support fixture. A fresh EE-free archive passed all
 invocation itself was not entirely green. Backend service/EE regression suites,
 EE-free backend builds/tests, and final backend vet passed.
 
-The current [checkpoint](2026-09-14-ai-profiles-checkpoint.md#resumed-implementation)
-records the remaining user-run migration/bootstrap, matching service restarts,
-workspace/tariff selection, and live acceptance gates. No service was restarted,
+The [AI connections guide](../ai-connections.md) describes current provisioning,
+matching service configuration, workspace policy, and live validation requirements. No service was restarted,
 no live SQL was applied, and no SaaS BYOK flag or rate was activated. Other apps'
 Runtime environment defaults remain supported. Do not mark live refresh, deployed
 worker recovery, or database edition transitions as validated by unit fixtures.

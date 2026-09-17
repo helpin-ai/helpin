@@ -72,4 +72,6 @@ This replaces the unreleased MinIO fixture, not an automatic migration of MinIO
 volumes. Export any existing fixture objects before discarding its old volume.
 
 
+For step-by-step diagnosis, see [troubleshooting](troubleshooting.md).
+
 Next: [configuration](configuration.md), [widget identity](widget-identity.md), and [backups](backups.md).

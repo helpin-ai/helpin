@@ -3,7 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"slices"
+
 	"strconv"
 	"strings"
 	"time"
@@ -343,43 +343,6 @@ func validatePromotedAgentTargets(targets []string, sourceAgent *model.Agent) er
 	return nil
 }
 
-func commandBarAllAgentCandidates(agents []model.Agent) []model.CommandBarAgent {
-	candidates := make([]model.CommandBarAgent, 0, len(agents))
-	for _, agent := range agents {
-		candidates = append(candidates, commandBarAgentCandidate(agent, parseJSONStringSlice(agent.AllowedTargets)))
-	}
-	return candidates
-}
-
-func commandBarAgentCandidate(agent model.Agent, allowedTargets []string) model.CommandBarAgent {
-	return model.CommandBarAgent{
-		ID:             agent.ID,
-		Name:           agent.Name,
-		Description:    commandBarAgentDescription(agent),
-		PresetKey:      normalizePresetKey(agent.PresetKey),
-		Role:           agent.Role,
-		Status:         agent.Status,
-		RuntimeKind:    agent.RuntimeKind,
-		IsSystem:       agent.IsSystem,
-		SupportedModes: slices.Clone(agent.SupportedModes),
-		AllowedTargets: normalizeCommandBarTargetTypes(allowedTargets),
-		AllowedTools:   parseJSONStringSlice(agent.AllowedTools),
-	}
-}
-
-func commandBarAgentDescription(agent model.Agent) string {
-	if preset, ok := agentPresetDefinition(normalizePresetKey(agent.PresetKey)); ok {
-		return strings.TrimSpace(preset.Description)
-	}
-	if role := strings.TrimSpace(agent.Role); role != "" {
-		return role
-	}
-	if template := strings.TrimSpace(agent.SourceTemplateKey); template != "" {
-		return "Custom agent created from template " + template + "."
-	}
-	return "Custom workspace agent."
-}
-
 func shortCommandBarID(id string) string {
 	id = strings.TrimSpace(id)
 	if len(id) <= 8 {
@@ -629,13 +592,4 @@ func commandBarBlockContextInstruction(pageContext model.CommandBarPageContext) 
 		lines = append(lines, "- block_excerpt: "+strings.TrimSpace(excerpt))
 	}
 	return strings.Join(lines, "\n")
-}
-
-func containsAny(value string, needles ...string) bool {
-	for _, needle := range needles {
-		if strings.Contains(value, strings.ToLower(needle)) {
-			return true
-		}
-	}
-	return false
 }

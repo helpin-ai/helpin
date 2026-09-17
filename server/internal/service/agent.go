@@ -7437,10 +7437,6 @@ func normalizeRunTargetType(targetType string) string {
 	}
 }
 
-func isTaskRunTargetType(targetType string) bool {
-	return normalizeRunTargetType(targetType) == "task"
-}
-
 func validateRuntimeKind(runtimeKind string) error {
 	switch runtimeKind {
 	case "native_sdk":
