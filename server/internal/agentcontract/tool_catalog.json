@@ -322,12 +322,24 @@
             "items": {
               "additionalProperties": false,
               "properties": {
-                "alias": {"type": "string"},
-                "base_branch": {"type": "string"},
-                "primary": {"type": "boolean"},
-                "repo_full_name": {"type": "string"},
-                "repository_id": {"type": "string"},
-                "work_branch": {"type": "string"}
+                "alias": {
+                  "type": "string"
+                },
+                "base_branch": {
+                  "type": "string"
+                },
+                "primary": {
+                  "type": "boolean"
+                },
+                "repo_full_name": {
+                  "type": "string"
+                },
+                "repository_id": {
+                  "type": "string"
+                },
+                "work_branch": {
+                  "type": "string"
+                }
               },
               "type": "object"
             },
@@ -336,7 +348,9 @@
             "type": "array"
           }
         },
-        "required": ["repositories"],
+        "required": [
+          "repositories"
+        ],
         "type": "object"
       },
       "presets": []
@@ -419,7 +433,7 @@
             "type": "string"
           },
           "space_id": {
-            "description": "The space ID where the document will be created. Optional — omit to use the workspace's only space; required when multiple spaces exist (use list_spaces to discover IDs).",
+            "description": "The space ID where the document will be created. Optional \u2014 omit to use the workspace's only space; required when multiple spaces exist (use list_spaces to discover IDs).",
             "type": "string"
           },
           "tags": {
@@ -1934,7 +1948,10 @@
             "type": "string"
           },
           "match_mode": {
-            "enum": ["regex", "literal"],
+            "enum": [
+              "regex",
+              "literal"
+            ],
             "type": "string"
           },
           "max_results": {
@@ -2189,7 +2206,7 @@
             "type": "integer"
           },
           "path": {
-            "description": "Optional path filter — only commits touching this file or directory.",
+            "description": "Optional path filter \u2014 only commits touching this file or directory.",
             "type": "string"
           },
           "repository": {
@@ -2758,7 +2775,17 @@
             "type": "boolean"
           },
           "kind": {
-            "enum": ["function", "method", "type", "class", "interface", "constructor", "constant", "variable", "module"],
+            "enum": [
+              "function",
+              "method",
+              "type",
+              "class",
+              "interface",
+              "constructor",
+              "constant",
+              "variable",
+              "module"
+            ],
             "type": "string"
           },
           "path": {
@@ -2790,7 +2817,11 @@
         "additionalProperties": false,
         "properties": {
           "direction": {
-            "enum": ["callers", "callees", "both"],
+            "enum": [
+              "callers",
+              "callees",
+              "both"
+            ],
             "type": "string"
           },
           "path": {
@@ -5298,15 +5329,26 @@
         "additionalProperties": false,
         "properties": {
           "additional_queries": {
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "category": {
-            "enum": ["company", "research paper", "news", "personal site", "financial report", "people"],
+            "enum": [
+              "company",
+              "research paper",
+              "news",
+              "personal site",
+              "financial report",
+              "people"
+            ],
             "type": "string"
           },
           "exclude_domains": {
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "freshness": {
@@ -5314,7 +5356,9 @@
             "type": "string"
           },
           "include_domains": {
-            "items": {"type": "string"},
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "max_results": {
@@ -5323,7 +5367,10 @@
             "type": "integer"
           },
           "mode": {
-            "enum": ["fast", "deep"],
+            "enum": [
+              "fast",
+              "deep"
+            ],
             "type": "string"
           },
           "query": {
@@ -5391,6 +5438,59 @@
           "content"
         ],
         "type": "object"
+      },
+      "presets": []
+    },
+    {
+      "name": "run_python",
+      "description": "Run Python source in a fresh interpreter with a private run-local venv. Files and installed packages persist only in this run; analysis storage (512 MiB) is deleted when the run ends and never transfers to successor runs. Install dependencies with run_command (python3 -m pip install), subject to approval. Publish important outputs before finishing the turn. output_paths explicitly selects private CSV, PNG, JSON or text artifacts (10 files, 10 MiB each, 25 MiB total).",
+      "category": "Workspace",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "output_paths": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string"
+            }
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "presets": []
+    },
+    {
+      "name": "publish_outputs",
+      "description": "Publish explicitly selected workspace CSV, PNG, JSON or text files as durable private downloads. Maximum 10 files, 10 MiB per file and 25 MiB total; artifacts survive run workspace deletion.",
+      "category": "Workspace",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "additionalProperties": false
       },
       "presets": []
     }

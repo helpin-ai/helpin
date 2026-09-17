@@ -58,6 +58,12 @@ x-runtime-env: &runtime-env
   AGENT_RUNTIME_MCP_ALLOW_PRIVATE_NETWORKS: ${AGENT_RUNTIME_MCP_ALLOW_PRIVATE_NETWORKS:-false}
   AGENT_RUNTIME_MCP_ALLOWED_HOSTS: ${AGENT_RUNTIME_MCP_ALLOWED_HOSTS:-}
   AGENT_RUNTIME_CHATGPT_ENABLED: ${AGENT_RUNTIME_CHATGPT_ENABLED:-false}
+  # Optional external command review; auto-approval needs passing live evaluations.
+  TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+  AGENT_RUNTIME_TYPESAFE_ENABLED: ${AGENT_RUNTIME_TYPESAFE_ENABLED:-false}
+  AGENT_RUNTIME_TYPESAFE_AUTO_APPROVE: ${AGENT_RUNTIME_TYPESAFE_AUTO_APPROVE:-false}
+  AGENT_RUNTIME_TYPESAFE_THRESHOLD: ${AGENT_RUNTIME_TYPESAFE_THRESHOLD:-0.95}
+  AGENT_RUNTIME_TYPESAFE_MODEL: ${AGENT_RUNTIME_TYPESAFE_MODEL:-jev-latest}
   AGENT_RUNTIME_EVENT_SINK: nats
   AGENT_RUNTIME_NATS_URL: nats://nats:4222
   TEMPORAL_ADDRESS: temporal:7233
@@ -197,6 +203,28 @@ services:
       test: [CMD, curl, -fsS, 'http://localhost:8091/readyz']
       interval: 10s
       retries: 30
+  agent-runtime-execution:
+    image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.1.0-rc.1}
+    restart: unless-stopped
+    entrypoint: [/agent-runtime-worker, --coding]
+    environment:
+      <<: *runtime-env
+      AGENT_RUNTIME_APP_CONFIG: ${AGENT_RUNTIME_EXECUTION_APP_CONFIG:?use setup.sh or export inline app configuration}
+      AGENT_RUNTIME_WORKSPACE_ROOT: /tmp/agent-runtime-workspaces
+    volumes: [execution_workspaces:/tmp/agent-runtime-workspaces]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: {soft: 0, hard: 0}
+    tmpfs: [/tmp]
+    stop_grace_period: 150s
+    depends_on:
+      agent-runtime: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, -fsS, 'http://localhost:8091/readyz']
+      interval: 10s
+      retries: 30
   helpin-frontend:
     image: ghcr.io/helpin-ai/helpin-community-frontend:${HELPIN_VERSION:-community-v0.1.0-rc.1}
     restart: unless-stopped
@@ -224,6 +252,7 @@ services:
       interval: 10s
       retries: 10
 volumes:
+  execution_workspaces:
   postgres_data:
   redis_data:
   nats_data:

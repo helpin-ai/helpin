@@ -6,6 +6,7 @@ import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ArrowRight01Icon, ArrowUp01Icon, Loading01Icon } from '@/lib/icons';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
@@ -115,6 +116,7 @@ export function ChatView({
   const cachedTranscript = chatId ? useDockStore.getState().transcripts[chatId] : undefined;
   const cacheTranscript = useDockStore((state) => state.cacheTranscript);
   const [aiConnection, setAIConnection] = useState<AIConnectionSelection>({});
+  const [changingExecution, setChangingExecution] = useState(false);
   const [detail, setDetail] = useState<DockChatDetail | null>(cachedTranscript?.detail ?? null);
   const [detailLoading, setDetailLoading] = useState(!!chatId && !cachedTranscript);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -992,6 +994,29 @@ export function ChatView({
             </div>
           )}
           <div className="p-2">
+              {detail && detail.chat.user_id === currentUserId && chatId && (
+                <div className="mb-2 border-t border-quiet-divider-light pt-2 text-xs text-quiet-text-secondary">
+                  <label className="flex items-center justify-between gap-2">
+                    <span>Allow code and Python execution</span>
+                    <Switch
+                      checked={Boolean(detail.chat.execution_enabled)}
+                      disabled={changingExecution || sending || (!detail.chat.execution_enabled && Boolean(run && ['queued', 'running', 'pending'].includes(run.status)))}
+                      onCheckedChange={async (enabled) => {
+                        setChangingExecution(true);
+                        try {
+                          const response = await dockChatService.updateChat(workspaceId, chatId, { execution_enabled: enabled });
+                          if (response.error) { toast.error(response.error); return; }
+                          await refreshDetail();
+                          onChatChanged?.();
+                          toast.message(enabled ? 'Execution enabled for your next message.' : 'Execution stopped. Interrupted external actions may have completed; check their status before retrying.');
+                        } catch { toast.error('Could not update execution settings.'); }
+                        finally { setChangingExecution(false); }
+                      }}
+                    />
+                  </label>
+                  <p className="mt-1">Commands can read other runs’ files on the execution worker. Files and packages last for this run only.</p>
+                </div>
+              )}
               <DockInput
                 mode="conversation"
                 profilePicker={run ? (

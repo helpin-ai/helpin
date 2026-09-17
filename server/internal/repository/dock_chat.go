@@ -134,3 +134,17 @@ func (r *DockChatRepository) SetTitleIfEmpty(ctx context.Context, workspaceID, i
 func (r *DockChatRepository) TouchLastMessage(ctx context.Context, workspaceID, id string, at time.Time) error {
 	return r.Update(ctx, workspaceID, id, map[string]interface{}{"last_message_at": at})
 }
+
+// WithTurnLock serializes settings transitions and message admission across API
+// replicas without holding a row lock during runtime callbacks.
+func (r *DockChatRepository) WithTurnLock(ctx context.Context, workspaceID, chatID string, fn func() error) error {
+	if r.db.Dialector.Name() != "postgres" {
+		return fn()
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "dock-turn:"+workspaceID+":"+chatID).Error; err != nil {
+			return err
+		}
+		return fn()
+	})
+}

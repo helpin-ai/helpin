@@ -46,7 +46,7 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
   const reviewFindings = artifact.artifact_type === 'review_findings' ? parseReviewFindingsArtifact(artifact.inline_content) : null;
   const reviewDecision = artifact.artifact_type === 'review_decision' ? parseReviewDecisionArtifact(artifact.inline_content) : null;
   const linkedDecision = artifact.artifact_type === 'review_findings' ? parseReviewDecisionArtifact(reviewDecisionArtifact?.inline_content) : null;
-  const isBrowserMedia = artifact.artifact_type === 'browser_screenshot' || artifact.artifact_type === 'browser_recording';
+  const isBrowserMedia = artifact.artifact_type === 'analysis_output' || artifact.artifact_type === 'browser_screenshot' || artifact.artifact_type === 'browser_recording';
   const mediaKey = isBrowserMedia ? `${artifact.workspace_id}/${artifact.id}` : '';
   const [mediaState, setMediaState] = useState<{ key: string; url: string | null; error: boolean }>({ key: '', url: null, error: false });
   const mediaURL = mediaState.key === mediaKey ? mediaState.url : null;
@@ -75,7 +75,12 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
         <span className="capitalize">{label}</span>
         <span className="text-muted-foreground">({artifact.format})</span>
       </div>
-      {artifact.artifact_type === 'browser_screenshot' ? (
+      {artifact.artifact_type === 'analysis_output' ? (
+        mediaURL ? <div className="space-y-2">
+          {artifact.format === 'png' && <img src={mediaURL} alt="Analysis output" className="max-h-96 max-w-full" />}
+          <a href={mediaURL} target="_blank" rel="noreferrer" download className="text-quiet-accent underline">Download {artifact.format?.toUpperCase() || 'file'}</a>
+        </div> : <p>{mediaError ? 'Output is unavailable' : 'Loading output…'}</p>
+      ) : artifact.artifact_type === 'browser_screenshot' ? (
         mediaURL ? (
           <a href={mediaURL} target="_blank" rel="noreferrer" className="block overflow-hidden rounded border border-border/60 bg-background">
             <img

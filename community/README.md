@@ -61,3 +61,40 @@ changing them only in the environment makes encrypted credentials unreadable.
 
 Published bundles pin exact image digests. Changing a version variable does not
 upgrade one; use a reviewed replacement bundle. Cross-version upgrades start in 0.2.
+
+### Optional Ask Agent execution
+
+The Community image now includes Python, pip and venv. Compose runs a separate
+`agent-runtime-execution` service on the existing coding queue, concurrency one.
+Shared workers do not poll that queue or mount the execution volume. Enable
+execution explicitly in an owned Ask Agent conversation; the next message after
+a safe transition starts a separately routed run. Existing permissions and
+publication approvals still apply.
+
+Use `./setup.sh start` to load `apps.json` as inline execution-worker configuration.
+For direct Compose commands, first export it without printing it:
+
+```sh
+export AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat apps.json)"
+docker compose up -d
+```
+
+The execution service does not mount `apps.json`. Python's private venv, pip cache,
+temporary files and outputs live on `execution_workspaces`, so installation does
+not write to the read-only root or shared system environment. Analysis scratch
+has a monitored 512 MiB operational limit and is removed when its run ends.
+There is no inactivity timer. Files and packages do not transfer to successor
+runs; explicitly published private artifacts remain downloadable.
+
+Commands **can read other runs' checkouts on the shared execution volume**.
+Filtered environments and process dumpability hardening reduce credential
+exposure but do not provide tenant or filesystem isolation. Enable this only for
+users trusted to execute in that worker container.
+
+TypeSafe review is optional operator configuration on the runtime workers:
+`TYPESAFE_API_KEY`, `AGENT_RUNTIME_TYPESAFE_ENABLED=true`, and optionally
+`AGENT_RUNTIME_TYPESAFE_THRESHOLD` (default 0.95). Enabling it sends selected
+command/repository context to TypeSafe's official endpoint. Automatic approval
+requires `AGENT_RUNTIME_TYPESAFE_AUTO_APPROVE=true`; keep it off until the runtime's
+live command-review evaluations pass. No key/provider failure retains the existing
+risk-label policy, and human-only/never approval modes remain unchanged.

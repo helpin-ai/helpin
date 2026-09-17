@@ -30,7 +30,11 @@
         "package_token_env": "HELPIN_INTERNAL_API_SECRET"
       },
       "browser": {
-        "enabled": false
+        "enabled": false,
+        "artifact_provider": {
+          "upload_endpoint": "http://helpin-api:8080/api/internal/agent-runtime/artifacts",
+          "token_env": "HELPIN_INTERNAL_API_SECRET"
+        }
       },
       "model_endpoints": [
         {
@@ -39,7 +43,12 @@
           "auth_mode": "api_key",
           "allow_http": true
         }
-      ]
+      ],
+      "workspace_provider": {
+        "transport": "repository",
+        "base_url": "http://helpin-api:8080/api/internal/agent-runtime/workspace",
+        "token_env": "HELPIN_INTERNAL_API_SECRET"
+      }
     }
   ]
 }

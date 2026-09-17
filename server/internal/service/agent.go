@@ -588,7 +588,7 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 	}
 	return AgentRuntimeStartRunRequest{
 		HostRunID:       strings.TrimSpace(run.ID),
-		AgentID:         strings.TrimSpace(run.AgentID),
+		AgentID:         firstNonEmptyString(strings.TrimSpace(runtimeAgent.ID), strings.TrimSpace(run.AgentID)),
 		Target:          AgentRuntimeTargetRef{Type: strings.TrimSpace(run.TargetType), ID: strings.TrimSpace(run.TargetID), Metadata: metadata},
 		Instructions:    instructions,
 		AllowedTools:    allowedTools,
@@ -4549,8 +4549,9 @@ type startTargetRunOptions struct {
 	// dockChatID marks the run as the backing run of a dock chat. Dock chat
 	// runs are keyed by their chat, not their target, so the per-target
 	// active-run guard does not apply to them.
-	dockChatID      *string
-	clientMessageID string
+	executionEnabled bool
+	dockChatID       *string
+	clientMessageID  string
 }
 
 func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
@@ -5173,12 +5174,30 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
-		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+		validationAgent := agent
+		if opts.executionEnabled && opts.dockChatID != nil && agent.EffectivePresetKey() == model.AgentPresetAskAgent {
+			copy := *agent
+			copy.AllowedTools, _ = json.Marshal(appendPresetTools(parseJSONStringSlice(agent.AllowedTools), askAgentDirectTools()))
+			validationAgent = &copy
+		}
+		if err := validateRunAllowedTools(req.AllowedTools, validationAgent); err != nil {
 			return nil, err
 		}
 		input, err := buildAgentRunInputPayload("workspace", workspaceID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build workspace run input: %w", err)
+		}
+
+		if opts.executionEnabled && opts.dockChatID != nil {
+			var payload model.AgentRunInputPayload
+			if err := json.Unmarshal(input, &payload); err != nil {
+				return nil, err
+			}
+			payload.ExecutionEnabled = true
+			input, err = json.Marshal(payload)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
@@ -6534,6 +6553,8 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
+
+	runtimeAgent = runtimeAgentForDockExecution(run, runtimeAgent)
 
 	params.agent.Status = "working"
 	if params.taskID != nil {
