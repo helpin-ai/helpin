@@ -6,7 +6,7 @@ Product requirements and proposed contracts. These documents record intent and d
 
 - [PRD — Reply Delivery Card](2026-04-15-reply-delivery-card.md)
 - [PRD: Addressable Docs Blocks](PRD-addressable-docs-blocks.md)
-- [PRD: AI-First Customer Support Agent](PRD-ai-support-agent.md)
+- [PRD: AI-First Customer Support Agent](PRD-ai-support-agent.md) — historical; execution design superseded by Agent Runtime
 - [PRD: Autonomous Support Coverage](PRD-autonomous-support-coverage.md)
 - [PRD: Backend Logging & Test Coverage](PRD-backend-logging-tests.md)
 - [PRD: Closed-Loop Agent Task Delivery](PRD-closed-loop-agent-delivery.md)
@@ -25,7 +25,7 @@ Product requirements and proposed contracts. These documents record intent and d
 - [Product Requirements Document: Helpin Project Management Module](PRD-project-management.md)
 - [PRD: RBAC And Workspace Authorization](PRD-rbac-final-2026-03-08.md)
 - [Product Requirements Document: Tasks Scale And Performance](PRD-stories-scale-and-performance.md)
-- [PRD: Support AI Stuck Detection And Same-Issue Handoff](PRD-support-ai-stuck-detection-and-handoff.md)
+- [PRD: Support AI Stuck Detection And Same-Issue Handoff](PRD-support-ai-stuck-detection-and-handoff.md) — historical; execution design superseded by Agent Runtime
 - [PRD: Support Conversation Triage And Inbox Routing](PRD-support-conversation-triage-routing.md)
 - [PRD: Support Inbox Sidebar And Status Model](PRD-support-inbox-sidebar-status-model.md)
 - [PRD: Support Live Chat, Inbox, and AI Messenger](PRD-support-live-chat.md)

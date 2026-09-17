@@ -1,6 +1,9 @@
 # PRD: Support AI Stuck Detection And Same-Issue Handoff
 
-**Status:** Draft -> Ready for implementation  
+> **Historical / superseded execution design.** This describes the retired planner/answer pipeline. Its issue-stall and pre-model heuristic functions were disconnected after the Agent Runtime migration and are removed. It is not a guarantee of current runtime behavior.
+> See [Support execution through Agent Runtime](../support-agent-runtime.md) for current ownership.
+
+**Status:** Historical draft — execution design superseded
 **Version:** v1.0  
 **Date:** 2026-04-07  
 **Owners:** Support, AI Platform, Frontend  

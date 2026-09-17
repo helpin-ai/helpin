@@ -67,7 +67,7 @@ Implementation plans, progress notes, and audits. Dated documents record the sta
 - [Native SDK Dynamic Skill Activation Plan](2026-04-22-native-sdk-dynamic-skill-activation-plan.md)
 - [GitHub PR Status Reconciliation — PRD / Plan](2026-04-23-github-pr-status-reconciliation-plan.md)
 - [Release Notes Agent Template Plan](2026-04-24-release-notes-agent-template-plan.md)
-- [Support Native Tool Extraction Plan](2026-04-24-support-native-tool-extraction-plan.md)
+- [Support Native Tool Extraction Plan](2026-04-24-support-native-tool-extraction-plan.md) — historical; execution design superseded by Agent Runtime
 - [Shortcut API Import Progress Tracker](2026-04-26-shortcut-api-import-progress.md)
 - [Coverage Gaps Redesign Implementation Plan](2026-04-27-coverage-gaps-redesign.md)
 - [Command Bar Agent Architecture](2026-04-28-command-bar-agent-architecture.md)

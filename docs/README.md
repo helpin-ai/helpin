@@ -47,6 +47,8 @@ present behavior. Filenames are retained where useful for history and search.
 
 - [`AGENTS_AND_AUTOMATION.md`](AGENTS_AND_AUTOMATION.md) — agent ownership,
   execution, and automation contracts.
+- [`support-agent-runtime.md`](support-agent-runtime.md) — support execution,
+  retained backend responsibilities, and retired pipeline boundaries.
 - [`CRM_MODULE.md`](CRM_MODULE.md) — CRM module overview.
 - [`crm-signals.md`](crm-signals.md) — canonical CRM-signal
   architecture, rule catalogue, activation model, and operations.

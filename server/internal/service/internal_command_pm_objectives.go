@@ -655,13 +655,6 @@ func formatPMObjectiveCommandDate(value *time.Time) string {
 	return value.UTC().Format(internalCommandDateOnlyLayout)
 }
 
-func nonNilCommandStrings(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
-}
-
 func boundedPMObjectiveCommandStrings(values []string) []string {
 	if len(values) == 0 {
 		return []string{}

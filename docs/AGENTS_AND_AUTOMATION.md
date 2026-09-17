@@ -350,6 +350,14 @@ Important boundaries:
 - one-shot ad hoc work still uses the system `Command Agent`
 - saved custom agents still persist through the normal `agents` creation path
 
+## Support conversations
+
+Support conversations execute through Agent Runtime chat-mode runs. Helpin owns
+message admission, knowledge retrieval, reply validation/publication and human
+handoff. `SupportAIService` supplies these collaborators; it is not a separate
+in-process answer executor. See [Support execution through Agent Runtime](support-agent-runtime.md)
+for the code map and retained composer-assistance boundary.
+
 ## Agent runs
 
 Every real execution becomes an `agent_run`.

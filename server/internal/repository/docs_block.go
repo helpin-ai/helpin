@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sort"
+
 	"strings"
 	"time"
 
@@ -358,13 +358,4 @@ func ptrIfNonEmpty(s string) *string {
 	}
 	v := strings.TrimSpace(s)
 	return &v
-}
-
-func sortBlocksBySortKey(blocks []model.DocsBlock) {
-	sort.SliceStable(blocks, func(i, j int) bool {
-		if blocks[i].SortKey == blocks[j].SortKey {
-			return blocks[i].CreatedAt.Before(blocks[j].CreatedAt)
-		}
-		return blocks[i].SortKey < blocks[j].SortKey
-	})
 }

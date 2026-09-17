@@ -682,7 +682,3 @@ func (s *SupportInboxService) createMailboxMoveSystemMessage(ctx context.Context
 	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, msg, actorID))
 }
-
-func supportActorIsElevated(actor *authorization.Actor) bool {
-	return actor != nil && (actor.Role == model.RoleOwner || actor.Role == model.RoleAdmin)
-}

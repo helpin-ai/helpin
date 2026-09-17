@@ -19,7 +19,7 @@ import (
 
 const (
 	// supportChatMaxAITurns is an absolute per-conversation ceiling on AI
-	// turns (the stall detector usually escalates far earlier).
+	// turns, in addition to the configured answer-turn limit.
 	supportChatMaxAITurns = 30
 
 	supportChatCarryForwardTurns = 20

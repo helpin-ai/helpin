@@ -66,10 +66,6 @@ func (s *SupportAIService) EscalateToHumanForMessageWithIssue(ctx context.Contex
 	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, "", briefs...)
 }
 
-func (s *SupportAIService) escalateToHumanForMessageWithIssueAndReply(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply string) error {
-	return s.escalateToHuman(ctx, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply)
-}
-
 func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary, transitionReply string, briefs ...SupportHandoffBrief) error {
 	escalationLockKey := "support:ai:escalation-lock:" + conversationID
 	if !s.acquireLock(ctx, escalationLockKey) {

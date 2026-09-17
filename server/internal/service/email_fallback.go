@@ -2291,20 +2291,6 @@ func freshEmailFallbackMessages(messages []model.SupportMessage, now time.Time, 
 	return fresh
 }
 
-func latestEmailFallbackFireAt(messages []model.SupportMessage, delay time.Duration) time.Time {
-	var latest time.Time
-	for _, msg := range messages {
-		fireAt := msg.CreatedAt.Add(delay)
-		if msg.CancellableUntil != nil {
-			fireAt = *msg.CancellableUntil
-		}
-		if latest.IsZero() || fireAt.After(latest) {
-			latest = fireAt
-		}
-	}
-	return latest
-}
-
 func countMessagesWithEmailNotifiedAt(ctx context.Context, repo *repository.SupportMessageRepository, ids []string) int {
 	if repo == nil || len(ids) == 0 {
 		return 0

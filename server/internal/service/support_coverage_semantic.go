@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"unicode"
+
 	"unicode/utf8"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -340,23 +340,4 @@ func coverageParseVectorLiteral(value string) []float32 {
 		vector = append(vector, parsed)
 	}
 	return vector
-}
-
-func coverageFirstRuneStart(value string, idx int) int {
-	if idx >= len(value) {
-		return len(value)
-	}
-	for idx < len(value) && !utf8.RuneStart(value[idx]) {
-		idx++
-	}
-	return idx
-}
-
-func coverageIsBlank(value string) bool {
-	for _, r := range value {
-		if !unicode.IsSpace(r) {
-			return false
-		}
-	}
-	return true
 }

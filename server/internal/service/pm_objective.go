@@ -795,10 +795,6 @@ func isValidObjectiveType(v string) bool {
 	return v == model.PMObjectiveTypeTactical || v == model.PMObjectiveTypeStrategic
 }
 
-func isValidObjectiveState(v string) bool {
-	return v == model.PMObjectiveStateNotStarted || v == model.PMObjectiveStateActive || v == model.PMObjectiveStateClosed
-}
-
 func normalizeObjectiveState(v string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "not_started", "not started", "todo", "to_do", "to do":

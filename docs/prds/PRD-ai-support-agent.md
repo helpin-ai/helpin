@@ -1,6 +1,9 @@
 # PRD: AI-First Customer Support Agent
 
-**Status:** Draft v3
+> **Historical / superseded execution design.** The separate in-process responder and worker-owned execution described below were superseded by Agent Runtime. The current API consumer delegates through SupportChatService; do not use the embedded implementation sketches as current code.
+> See [Support execution through Agent Runtime](../support-agent-runtime.md) for current ownership.
+
+**Status:** Historical draft v3 — execution design superseded
 **Date:** 2026-03-18
 **Author:** TeamPulse
 **Feature:** AI-powered autonomous support agent with knowledge base RAG, NATS event streaming, and human handoff
@@ -23,7 +26,7 @@ Customer support teams are overwhelmed with repetitive questions that are alread
 
 ## 2. Design Decisions
 
-These answers were resolved during design review and are canonical for implementation:
+These were the original design decisions; they are retained for historical context:
 
 | Question | Decision |
 |----------|----------|
