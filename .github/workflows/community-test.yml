@@ -52,14 +52,18 @@ jobs:
           token: ${{ secrets.runtime_read_token || github.token }}
           persist-credentials: false
       - uses: pnpm/action-setup@v4
+        if: inputs.level == 'full'
         with:
           package_json_file: helpin/package.json
       - uses: actions/setup-node@v4
         with:
           node-version-file: helpin/.node-version
-          cache: pnpm
+          # Smoke builds dependencies inside Docker; it has no host pnpm store.
+          cache: ${{ inputs.level == 'full' && 'pnpm' || '' }}
           cache-dependency-path: helpin/pnpm-lock.yaml
       - uses: actions/setup-go@v5
+        # Host Go commands only run during exported amd64 source acceptance.
+        if: inputs.export-images && inputs.architecture == 'amd64'
         with:
           go-version-file: helpin/.go-version
           cache-dependency-path: |

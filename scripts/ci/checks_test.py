@@ -28,6 +28,20 @@ class ChecksTest(unittest.TestCase):
             self.assertTrue(all(select([path]).values()))
         self.assertTrue(all(select([], all_checks=True).values()))
 
+    def test_unrelated_jobs_are_not_selected(self):
+        for paths, expected in (
+            (['docs/community/development.md'], set()),
+            (['apps/admin/src/App.tsx'], {'admin'}),
+            (['apps/support-mobile/src/App.tsx'], {'mobile'}),
+            (['events-pipeline/src/main.rs'], {'eventpipeline'}),
+            (['server/internal/model/user.go'], {'server', 'community'}),
+            (['community/compose.yaml'], {'community'}),
+            (['frontend/src/pages/support/Inbox.tsx'], {'frontend', 'desktop', 'mobile', 'community'}),
+            (['server/internal/model/user.go', 'apps/admin/src/App.tsx'], {'server', 'community', 'admin'}),
+        ):
+            with self.subTest(paths=paths):
+                self.assertEqual({group for group, selected in select(paths).items() if selected}, expected)
+
     def test_toolchain_pins_match_community_images(self):
         root = Path(__file__).resolve().parents[2]
         dockerfile = (root / 'community/images/Dockerfile').read_text()
