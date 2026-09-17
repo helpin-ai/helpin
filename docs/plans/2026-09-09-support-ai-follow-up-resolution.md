@@ -6,7 +6,7 @@ Status: implemented locally on `feat/support-ai-inactivity-follow-up`. Productio
 
 AI Handling contains conversations that remain pending after the AI answers and the customer stops replying. The desired behavior is to read the context, send one useful check-in, and resolve eligible conversations after a further period without a reply.
 
-On develop, `server/internal/model/support_inbox.go` defines `AIAutoResolveTimeout` (24 hours by default, zero disables it). It is persisted and validated by `support_inbox_settings.go`, but a repository-wide reference search found no runtime consumer. The older `docs/PRD-ai-support-agent.md` describes `support_ai_resolution.go`, which does not exist in this checkout. This is a likely implementation gap, not a verified diagnosis of production.
+On develop, `server/internal/model/support_inbox.go` defines `AIAutoResolveTimeout` (24 hours by default, zero disables it). It is persisted and validated by `support_inbox_settings.go`, but a repository-wide reference search found no runtime consumer. The older `docs/prds/PRD-ai-support-agent.md` describes `support_ai_resolution.go`, which does not exist in this checkout. This is a likely implementation gap, not a verified diagnosis of production.
 
 `internal_command_support_reply.go` marks conversations AI-resolved when a reply has both `ResolvesConversation` and confirmation reply kind. This path writes AI state, resolution type and flow state directly. Audit timestamp, canonical status, events, sidebar projections and ownership consistency before reusing it.
 

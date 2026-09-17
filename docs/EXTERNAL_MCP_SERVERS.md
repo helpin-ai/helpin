@@ -2,7 +2,7 @@
 
 External MCP servers let a Helpin workspace connect systems such as Customer.io and make selected remote tools available to selected Helpin agents. This is the outbound MCP path: Helpin and Agent Runtime are the MCP client.
 
-This is separate from [Helpin Public MCP](./HELPIN_PUBLIC_MCP.md), where Claude, ChatGPT, Cursor, or another outside client connects into Helpin.
+This is separate from [Helpin Public MCP](HELPIN_PUBLIC_MCP.md), where Claude, ChatGPT, Cursor, or another outside client connects into Helpin.
 
 ## Ownership and trust boundary
 

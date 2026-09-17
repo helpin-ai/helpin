@@ -1,9 +1,35 @@
 # Helpin Engineering Documentation
 
 This page is the index for current engineering documentation. Dated files under
-`docs/plans`, `docs/superpowers`, and assessment documents record design history;
+`docs/plans`, `docs/specs`, and assessment documents record design history;
 they are not authoritative descriptions of current runtime behavior unless a
 current document links to them explicitly.
+
+## Start here
+
+- [Local development](development.md)
+- [Contributing](../CONTRIBUTING.md)
+- [AI connections and profiles](ai-connections.md)
+- [Widget architecture and builds](widget-architecture.md)
+- [Email architecture](email-architecture.md)
+
+## Document collections
+
+| Collection | Purpose |
+| --- | --- |
+| [Product requirements](prds/README.md) | PRDs and product contracts |
+| [Implementation plans](plans/README.md) | Dated plans, progress notes, and implementation audits |
+| [Design specifications](specs/README.md) | Detailed feature and interaction designs |
+| [Operations](ops/README.md) | Migration, deployment, and operational runbooks |
+| [Research](research/README.md) | Investigations and comparative assessments |
+| [Strategy](strategy/README.md) | Product direction, backlog, and campaign proposals |
+| [Archive](archive/README.md) | Historical project phases |
+| [Mockups](mockups/README.md) | Standalone HTML design references |
+| [Manual testing](testing/README.md) | Browser test pages |
+
+PRDs, plans, and specs describe intent at the time of writing. They may contain
+superseded decisions; use current engineering guides and implementation for
+present behavior. Filenames are retained where useful for history and search.
 
 ## Core architecture
 
@@ -48,3 +74,14 @@ references describe the inspected branch, not proof of production deployment.
   ingestion and ClickHouse operations.
 - [`../events-pipeline/CAPACITY_BASELINE.md`](../events-pipeline/CAPACITY_BASELINE.md)
   — verified throughput, resource allocation, and JetStream storage sizing.
+
+## Additional references
+
+- [GitLab integration](GITLAB_INTEGRATION.md)
+- [Mattermost integration](mattermost-integration.md)
+- [Widget messenger security](widget-messenger-security-integration-guide.md)
+- [Widget feature parity](widget-feature-parity.md)
+- [AI usage metering](ai-usage-metering.md)
+- [Customer lifecycle campaigns and data contracts](customer-io/README.md)
+- [Notification research](notifications/README.md)
+- [Role and permission analysis](rbac/README.md)

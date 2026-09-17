@@ -2,7 +2,7 @@
 
 Scope: the Support → Coverage page for the ContentStudio workspace (`fb464f68-…`), read-only via the API with a temporary token. No data was changed and no reanalysis was triggered.
 
-Goal of the feature (from the plans in `docs/superpowers/plans/2026-04-29-daily-coverage-gap-analysis.md` and `2026-06-17-coverage-gap-semantic-dedupe.md`): find issues the AI could not resolve, group them into a small number of topics, and propose the fix (article draft / update) so the AI handles the next occurrence.
+Goal of the feature (from the plans in `docs/plans/2026-04-29-daily-coverage-gap-analysis.md` and `2026-06-17-coverage-gap-semantic-dedupe.md`): find issues the AI could not resolve, group them into a small number of topics, and propose the fix (article draft / update) so the AI handles the next occurrence.
 
 ## What the page shows today
 

@@ -50,7 +50,7 @@ Current caveats:
 - Tool-subset picker UI is implemented for known saved agents and blocks dispatch when a step is narrowed to zero tools. Backend `allowed_tools: []` still means "inherit defaults", so the UI intentionally does not dispatch explicit-empty tool sets.
 - Unmet-intent review has a settings UI and redacted-by-default API contract. Still open: final product policy for retention and who may reveal full prompts.
 - Promotion UI is implemented as an explicit dialog with name, description, tool scope, target scope, and provenance. Still open: broader custom-agent registry/versioning UX is outside this plan.
-- CRM one-shot research/update now routes to the Command Agent and can use guarded contact/company enrichment mutation tools. See [Guarded CRM Enrichment Tools Plan](./2026-04-29-guarded-crm-enrichment-tools-plan.md).
+- CRM one-shot research/update now routes to the Command Agent and can use guarded contact/company enrichment mutation tools. See [Guarded CRM Enrichment Tools Plan](2026-04-29-guarded-crm-enrichment-tools-plan.md).
 
 Verification completed:
 
@@ -296,7 +296,7 @@ Tracks A-D are implemented across backend and frontend. Track E single-target on
 - **Track C:** Done. Filtered tool catalog and frontend catalog picker with explicit-empty blocking are implemented.
 - **Track D:** Done. Redaction/review payload and frontend prompt-preview rendering are implemented.
 - **Track E:** Single-target one-shot Command Agent and bounded concrete-target fan-out are implemented.
-- **Track F:** Done. Guarded CRM enrichment tools are implemented and specified in [Guarded CRM Enrichment Tools Plan](./2026-04-29-guarded-crm-enrichment-tools-plan.md).
+- **Track F:** Done. Guarded CRM enrichment tools are implemented and specified in [Guarded CRM Enrichment Tools Plan](2026-04-29-guarded-crm-enrichment-tools-plan.md).
 
 ## Sequenced bets (high-level)
 

@@ -93,7 +93,7 @@ The conversation model is `server/internal/model/support_inbox.go:14`. It carrie
 | Spam | PARTIAL | Status plus manual toggle. No blocklist, no classifier, no auto-spam |
 | Bulk actions | MISSING | No multi-select, no bulk endpoint |
 | Unread tracking | DONE | `SupportConversationUserState` with a relevance mask (`Assignee`, `Opener`, `Mention`) so unread only accrues for relevant agents. The plan doc is marked Superseded because it shipped and evolved |
-| Live translate | PRD-ONLY | `docs/PRD-support-live-translate.md`, 753 lines. No table, no route, no provider |
+| Live translate | PRD-ONLY | `docs/prds/PRD-support-live-translate.md`, 753 lines. No table, no route, no provider |
 | AI rewrite for agents | DONE | Five operations: expand, rephrase, fix_grammar, more_friendly, more_formal |
 | AI summarize thread | MISSING | Notable given handoff is the core flow |
 | Triage and routing | DONE | All four PRD phases. `service/support_inbox_triage.go`, 1,405 lines. Rules layer, AI classifier with JSON schema, auto-move, feedback capture, input hashing for cost control |
@@ -101,7 +101,7 @@ The conversation model is `server/internal/model/support_inbox.go:14`. It carrie
 | Reporting on conversations | MISSING | See section 7 |
 | Realtime WebSocket | DONE | |
 
-**Correction to note.** Two of my sub-audits disagreed on AI stuck detection, so I checked. `docs/PRD-support-ai-stuck-detection-and-handoff.md` describes the feature, and `server/internal/service/support_ai_escalation.go` implements it thoroughly with 665 lines of unit tests. But `evaluatePreLLMEscalation` (line 62) and `detectStuckOnSameIssue` (line 238) have **no production callers**. A repo-wide grep returns only their definitions and their tests. The live pipeline at `service/support_chat.go:144` calls only `checkHardEscalation`, plus turn caps and budget gates. **The headline feature of that PRD is written, tested, and dormant.**
+**Correction to note.** Two of my sub-audits disagreed on AI stuck detection, so I checked. `docs/prds/PRD-support-ai-stuck-detection-and-handoff.md` describes the feature, and `server/internal/service/support_ai_escalation.go` implements it thoroughly with 665 lines of unit tests. But `evaluatePreLLMEscalation` (line 62) and `detectStuckOnSameIssue` (line 238) have **no production callers**. A repo-wide grep returns only their definitions and their tests. The live pipeline at `service/support_chat.go:144` calls only `checkHardEscalation`, plus turn caps and budget gates. **The headline feature of that PRD is written, tested, and dormant.**
 
 ---
 
@@ -117,14 +117,14 @@ Helpin ships **two customer channels**: web widget and email. That is the single
 | WhatsApp, SMS, Instagram, Facebook Messenger, Telegram, Discord, voice, X | MISSING. Every grep hit is an icon name, a user-agent string, or a CRM social-profile URL field |
 | Slack, Mattermost | PRD-ONLY. `docs/plans/2026-08-18-two-way-support-chat-integrations-plan.md` estimates 42 to 55 engineering days. Zero lines written. `docs/mattermost-integration.md` is an older, divergent design that proposes River Queue, which is not in `go.mod`. It should be retired |
 | API channel | Reserved enum, unreachable. `api` appears in the channel comment and in triage logic, but nothing writes it and neither create request exposes a `channel` field |
-| Gmail sync | DONE, but CRM-scoped. Mail lands on contacts and deals, not support conversations (`EMAIL_ARCHITECTURE.md:14-19`) |
+| Gmail sync | DONE, but CRM-scoped. Mail lands on contacts and deals, not support conversations (`docs/email-architecture.md:14-19`) |
 | Outlook / Microsoft 365 / IMAP | MISSING |
 
 **Email is the most mature subsystem in the repo.** Inbound webhook at `handler/webhook_postmark.go`, threading with full `In-Reply-To` and `References` chains (`email_fallback.go:2628`), inbound and outbound attachments with CID inline image rewriting, HTML sanitization via bluemonday with remote images neutered behind a backend proxy (`email/inboundhtml/convert.go`, `EmailImageProxyHandler`), reply-above-the-line stripping with three fallback layers, custom domains with real DKIM and return-path verification through Postmark's Account API, custom sender addresses with a closed-loop forwarding probe, and a delayed-send queue with Redis leases, a poller, a reconciler, and a recovery CLI.
 
-**There is no SMTP.** `grep -rn "net/smtp" server/` returns nothing. `server/internal/email/` contains only `postmark.go`, `postmark_domains.go`, `template.go` and the inbound HTML converter. `go.mod` has no email library at all. Inbound additionally depends on Helpin-owned domains `replies.helpin.email` and `*.on.helpin.email`, so even a self-hoster with their own Postmark account cannot receive support email. This is deliberate: `docs/PRD-custom-support-sender-addresses-mvp.md:13` puts custom SMTP out of scope.
+**There is no SMTP.** `grep -rn "net/smtp" server/` returns nothing. `server/internal/email/` contains only `postmark.go`, `postmark_domains.go`, `template.go` and the inbound HTML converter. `go.mod` has no email library at all. Inbound additionally depends on Helpin-owned domains `replies.helpin.email` and `*.on.helpin.email`, so even a self-hoster with their own Postmark account cannot receive support email. This is deliberate: `docs/prds/PRD-custom-support-sender-addresses-mvp.md:13` puts custom SMTP out of scope.
 
-`docs/PRD-support-live-chat.md` claims Phases 3 to 5 are "Not Started". That is wrong. The functionality shipped. Anyone assessing the product from that doc will materially undercount it.
+`docs/prds/PRD-support-live-chat.md` claims Phases 3 to 5 are "Not Started". That is wrong. The functionality shipped. Anyone assessing the product from that doc will materially undercount it.
 
 ---
 
@@ -144,7 +144,7 @@ This is the strongest part of the product, and it is genuinely customer-facing. 
 
 **Retrieval is sophisticated.** LLM query planning emits route, decision, intent, language, risk and up to N search queries. Chunking is structure-aware and preserves heading paths, with a separate `search_content` field so lexical matching sees the heading while customer-facing evidence stays clean. Hybrid search fuses pgvector cosine with weighted Postgres FTS across three pools (curated guidance, docs chunks, crawled chunks). A cross-encoder reranker speaks the HuggingFace TEI contract with a 250 ms hard timeout that fails open. Neighbor expansion pulls adjacent chunks. Evidence rows get stable IDs that `send_reply` **re-validates server-side**, so fabricated citations simply drop out.
 
-**Knowledge sources.** Docs spaces DONE. URL crawler DONE (`server/internal/crawler`, three backends, sitemap and sitemap-index discovery). File upload DONE for PDF, DOCX, MD, TXT, CSV, JSON. Curated guidance DONE. HelpScout Docs import DONE and complete (paginated, rate-limit aware, image rehosting, resumable, provenance-tracked). Nextra/MDX import DONE. **Notion, Confluence, Zendesk and Intercom import are all MISSING**, which matters because `docs/pricing-strategy.md:128` sells "Import from Jira, Notion, Intercom, HubSpot" as a Growth-plan feature.
+**Knowledge sources.** Docs spaces DONE. URL crawler DONE (`server/internal/crawler`, three backends, sitemap and sitemap-index discovery). File upload DONE for PDF, DOCX, MD, TXT, CSV, JSON. Curated guidance DONE. HelpScout Docs import DONE and complete (paginated, rate-limit aware, image rehosting, resumable, provenance-tracked). Nextra/MDX import DONE. **Notion, Confluence, Zendesk and Intercom import are all MISSING**, which matters because `docs/strategy/pricing-strategy.md:128` sells "Import from Jira, Notion, Intercom, HubSpot" as a Growth-plan feature.
 
 **Confidence is computed server-side, not trusted from the model.** `support_ai_confidence.go:16` weights retrieval quality 0.40, source coverage 0.25, LLM confidence 0.20, and can-answer 0.15, with authority floors of 0.90 for curated guidance and 0.85 for canonical pricing pages. Only chunks the model actually cited contribute. The prompt explicitly tells the model its confidence is a proposal.
 
@@ -158,7 +158,7 @@ Gaps in the AI layer, ranked:
 
 1. **No prompt-injection defense.** Grep for `prompt.?injection` and `jailbreak` returns zero. Crawled third-party pages and uploaded PDFs enter the prompt as evidence with no instruction stripping. The evidence-revalidation gate limits the blast radius but does not prevent behavior or tone manipulation.
 2. **The crawler ignores `robots.txt` Disallow.** `crawler/sitemap.go:88` fetches robots.txt only to harvest `Sitemap:` lines. `crawler/sitemap_test.go:46` uses a fixture containing `Disallow: /` purely to assert no sitemap is found. Customers point this at third-party domains.
-3. **No automated eval harness.** No golden set, no scored offline runs, no CI quality gate. `docs/PRD-knowledge-retrieval-platform.md:17` calls evaluation launch-critical.
+3. **No automated eval harness.** No golden set, no scored offline runs, no CI quality gate. `docs/prds/PRD-knowledge-retrieval-platform.md:17` calls evaluation launch-critical.
 4. **PII redaction is name-based.** `stripConversationPII` redacts the known customer email and phone plus one generic regex, outbound only. Inbound visitor content reaches the model unredacted.
 5. **Preview diverges from production.** `PreviewSupportReply` exercises the legacy in-process pipeline; production runs the agent-runtime path. Admins tune against a system that is not the one answering customers.
 6. **No explicit per-conversation AI on/off.** Takeover is implicit: an agent must reply to silence the AI. They cannot observe while muting it.
@@ -169,7 +169,7 @@ Gaps in the AI layer, ranked:
 
 ## 6. Help center
 
-DONE, and the second most mature module. `help-center/` is a **TanStack Start** app with real SSR, served by a hand-rolled Node server (`help-center/serve.mjs`) doing brotli negotiation, basepath asset rewriting and a shared render cache. `docs/PRD-help-center-ssr-migration.md` is still marked Draft and describes the migration as future work. It shipped. The doc is stale.
+DONE, and the second most mature module. `help-center/` is a **TanStack Start** app with real SSR, served by a hand-rolled Node server (`help-center/serve.mjs`) doing brotli negotiation, basepath asset rewriting and a shared render cache. `docs/prds/PRD-help-center-ssr-migration.md` is still marked Draft and describes the migration as future work. It shipped. The doc is stale.
 
 DONE: collections and spaces, TipTap authoring, multilingual with structure-preserving LLM translation (`server/internal/docsi18n`, with extract, reinsert, protected terms and validation, plus bulk auto-translate), custom domain in three modes including reverse-proxy with on-demand TLS, SEO and sitemap and robots, article feedback that feeds the coverage product, Postgres tsvector search plus pgvector hybrid plus cited AI answers, versioning with snapshots and revert and draft preview, redirects with slug aliases and SSR resolution, and full theming.
 
@@ -185,7 +185,7 @@ MISSING: Zendesk, Intercom, Notion and Confluence import.
 
 "Automation" in this repo means **internal workflow automation that launches AI agent runs**. `docs/AUTOMATION_PRODUCT_MODEL.md` states the model as "When X happens, run Y agent on Z". The full trigger catalog is `server/internal/automationcatalog/triggers.go`: manual runs, PM task state changes, agent lifecycle, doc publish, GitHub and GitLab events, `support.widget_message` (inbound, routes a message to an AI agent), and cron. It never sends a message to a customer.
 
-`docs/customer-io/` is **Helpin's own growth stack, not a product feature**. `service/customer_io.go` ships Helpin's SaaS lifecycle events to Customer.io. The docs are campaign specs to be built in Customer.io's UI. There is an irony visible in `docs/early-access-email-campaign.md`: the pitch names Intercom as a tool Helpin replaces, while the outbound half of Intercom is not built.
+`docs/customer-io/` is **Helpin's own growth stack, not a product feature**. `service/customer_io.go` ships Helpin's SaaS lifecycle events to Customer.io. The docs are campaign specs to be built in Customer.io's UI. There is an irony visible in `docs/strategy/early-access-email-campaign.md`: the pitch names Intercom as a tool Helpin replaces, while the outbound half of Intercom is not built.
 
 **Support reporting: MISSING across the board.**
 
@@ -218,7 +218,7 @@ What does exist is `support_coverage`, roughly 30 service files plus a full UI a
 
 **Audit logs: PARTIAL.** Admin requests produce structured log lines (`middleware/admin_audit.go`), not a queryable table. MCP has its own activity trail. There is no workspace-level audit of who changed a setting or who read a conversation.
 
-**Visitor to lead conversion: DONE**, and beyond its PRD. `matchOrCreateCRMContactIdentityTx` (`service/support_inbox.go:3381`) matches by email, promotes lifecycle without downgrading, backfills prior anonymous conversations by `anonymous_id`, tracks identity provenance and trust, and infers company from email domain with a free-provider blocklist. `docs/PRD-widget-identify-crm-leads.md` is still marked Draft.
+**Visitor to lead conversion: DONE**, and beyond its PRD. `matchOrCreateCRMContactIdentityTx` (`service/support_inbox.go:3381`) matches by email, promotes lifecycle without downgrading, backfills prior anonymous conversations by `anonymous_id`, tracks identity provenance and trust, and infers company from email domain with a free-provider blocklist. `docs/prds/PRD-widget-identify-crm-leads.md` is still marked Draft.
 
 ---
 
@@ -242,7 +242,7 @@ What does exist is `support_coverage`, roughly 30 service files plus a full UI a
 | Observability | PARTIAL. Sentry only. Every OTel entry in `go.mod` is marked indirect. No Prometheus, no `/metrics` |
 | Module access control | DONE for its V1 scope |
 
-**Can support run standalone? No.** `server/internal/authorization/authz.go:134-137` unconditionally grants PM and Docs to every actor, and lines 141-146 give owners and admins all five modules regardless of grants. You can hide CRM, Support and Automation from a member. You cannot hide PM or Docs from anyone, and there is no workspace-level "this tenant bought Support only" entitlement. `docs/module-access-progress.md` confirms this is deliberate V1 scope. Packaging Support standalone requires workspace-level module entitlements tied to the plan, which do not exist.
+**Can support run standalone? No.** `server/internal/authorization/authz.go:134-137` unconditionally grants PM and Docs to every actor, and lines 141-146 give owners and admins all five modules regardless of grants. You can hide CRM, Support and Automation from a member. You cannot hide PM or Docs from anyone, and there is no workspace-level "this tenant bought Support only" entitlement. `docs/plans/module-access-progress.md` confirms this is deliberate V1 scope. Packaging Support standalone requires workspace-level module entitlements tied to the plan, which do not exist.
 
 ---
 
@@ -270,13 +270,13 @@ Realistic verdict: months of work, and the remaining work is architectural rathe
 Useful because it tells you what they know versus what they have not noticed.
 
 - **`docs/widget-feature-parity.md`** (2026-03-22, vs Crisp, stale). Ultra-high: online status, identity verification, push. High: emoji picker, GIF picker, audio messages, article search. Medium: attachments, read receipts, lightbox, message editing, quick replies, carousels, link previews, **GDPR/cookie consent**, conversation search, citation display. Its verdict: "feels like a 2015-era live chat."
-- **`docs/PRD_WIDGET_SDK_FEATURE_PARITY.md`** scores Helpin **17 of 68** against Crisp's 66. Four categories are flagged CRITICAL: Identity and Session, Connection and Transport, Loading and Performance (0 of 7), CSS and DOM Isolation. Eight MUST-have items. The session row is now stale, superseded by a 2026-07-14 amendment.
-- **`docs/TODO-support-availability-and-agent-notifications.md`** self-reports three items not complete: the human live status model, team-specific availability overrides, and availability-aware routing. The status model has since shipped. The other two have not.
+- **`docs/prds/PRD_WIDGET_SDK_FEATURE_PARITY.md`** scores Helpin **17 of 68** against Crisp's 66. Four categories are flagged CRITICAL: Identity and Session, Connection and Transport, Loading and Performance (0 of 7), CSS and DOM Isolation. Eight MUST-have items. The session row is now stale, superseded by a 2026-07-14 amendment.
+- **`docs/plans/TODO-support-availability-and-agent-notifications.md`** self-reports three items not complete: the human live status model, team-specific availability overrides, and availability-aware routing. The status model has since shipped. The other two have not.
 - **`docs/strategy/2026-06-11-coverage-gaps-first-class.md`**: "the detection half is excellent; the resolution half is manual and the loop never closes." Names five gaps including no impact scoring, an unused `SupportCoverageDigestDelivery` model, and an unmetered daily LLM sweep.
 - **`docs/strategy/2026-06-11-product-engineering-assessment.md`**: "a sophisticated, AI-first backend wearing an unfinished product." Its Tier-1 claim that billing is absent is now stale. Still accurate: zero reporting across all modules, no rate limiting, no public API docs, no outbound webhooks, no competitor import ("switching cost kills sales"), no onboarding sample data.
-- **`docs/BACKLOG-and-ideas.md`** (2026-03-03) is badly stale. It is a PM-module backlog written before Support and CRM existed, and several "Open" items have shipped.
-- **`docs/PRD-current-state-review-2026-03-05.md`** is very stale. It describes a codebase with zero Go tests, which is no longer true.
-- **33 docs mention Intercom.** The most substantive: `docs/PRD-ai-support-agent.md` borrows Fin's model wholesale (AI state separate from human status, confirmed versus assumed resolution, reopen deducts from metrics). `docs/PRD-widget-messenger-security-jwt.md` recommends Intercom's JWT Messenger Security as the fix for the identity-verification gap. `docs/plans/2026-06-12-support-triage-fin-level-plan.md` is an explicit Fin gap analysis.
+- **`docs/strategy/backlog-and-ideas.md`** (2026-03-03) is badly stale. It is a PM-module backlog written before Support and CRM existed, and several "Open" items have shipped.
+- **`docs/prds/PRD-current-state-review-2026-03-05.md`** is very stale. It describes a codebase with zero Go tests, which is no longer true.
+- **33 docs mention Intercom.** The most substantive: `docs/prds/PRD-ai-support-agent.md` borrows Fin's model wholesale (AI state separate from human status, confirmed versus assumed resolution, reopen deducts from metrics). `docs/prds/PRD-widget-messenger-security-jwt.md` recommends Intercom's JWT Messenger Security as the fix for the identity-verification gap. `docs/plans/2026-06-12-support-triage-fin-level-plan.md` is an explicit Fin gap analysis.
 
 **Gaps the docs never name**, which this audit surfaced: no unified person record, typed custom attributes shipped as dead tables, no segments, no GDPR export or deletion, no general audit log, and no license.
 

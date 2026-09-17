@@ -1,7 +1,7 @@
 # Shortcut API Import Progress Tracker
 
 **Date:** 2026-04-26
-**PRD:** `docs/prd-shortcut-api-importer.md`
+**PRD:** `docs/prds/prd-shortcut-api-importer.md`
 **Status:** In progress
 
 ## Legend

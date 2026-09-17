@@ -4,9 +4,9 @@
 
 **Status:** Proposed
 
-**PRD:** [Helpin Public MCP Server and Workflow Skills](../PRD-helpin-public-mcp-server.md)
+**PRD:** [Helpin Public MCP Server and Workflow Skills](../prds/PRD-helpin-public-mcp-server.md)
 
-**UI PRD:** [Helpin MCP User Experience](../PRD-helpin-mcp-ui.md)
+**UI PRD:** [Helpin MCP User Experience](../prds/PRD-helpin-mcp-ui.md)
 
 **Primary owners:** Platform, Agent Platform, Security, Infrastructure
 

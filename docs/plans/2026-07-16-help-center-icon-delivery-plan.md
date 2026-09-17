@@ -1,6 +1,6 @@
 # Help Center Icon Delivery Plan
 
-- **Status:** Superseded by [`2026-07-16-help-center-icons-mvp-plan.md`](./2026-07-16-help-center-icons-mvp-plan.md)
+- **Status:** Superseded by [`2026-07-16-help-center-icons-mvp-plan.md`](2026-07-16-help-center-icons-mvp-plan.md)
 - **Date:** 2026-07-16
 - **Owners:** Docs, Help Center, Platform
 - **Scope:** Space, collection, document, and featured-card icons displayed in the Helpin editor and public Help Center, plus application surfaces that consume the shared `IconPicker`, `StoredIcon`, or `ICON_MAP` module

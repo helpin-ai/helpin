@@ -16,7 +16,7 @@ Use the existing built-in CRM Agent, Beacon, by default, with specialized skills
 
 **Delivery contract: one complete product release for the agreed scope.** Playbooks, buying-intent follow-up, sales-to-success handoff, and renewal-risk recovery are release requirements, not a staged roadmap. Engineering tasks have dependencies, but no agreed capability is deferred to another product version or represented by a “coming soon” control. Configuration versioning below means auditable changes to live definitions, not partial product releases.
 
-This supersedes the earlier [Signals information contract](superpowers/specs/2026-09-05-signals-workflow-information-contract.md) where it differs: the working unit is a persistent customer situation, and Review actions belong in the same daily workspace, including standalone recommendations. Retain evidence-level identity, provenance, feedback, permissions, independent requests and truthful counts. The earlier contract and design mock remain historical references, not competing implementation instructions.
+This supersedes the earlier [Signals information contract](specs/2026-09-05-signals-workflow-information-contract.md) where it differs: the working unit is a persistent customer situation, and Review actions belong in the same daily workspace, including standalone recommendations. Retain evidence-level identity, provenance, feedback, permissions, independent requests and truthful counts. The earlier contract and design mock remain historical references, not competing implementation instructions.
 
 Documentation authority:
 

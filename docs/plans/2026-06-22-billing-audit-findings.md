@@ -82,7 +82,7 @@ One org Stripe customer backs **multiple** workspace subscriptions, but `GetBySt
 ## Spec compliance & loose ends
 
 18. **Free plan still live in code despite removal** — `BillingPlanFree = "free"` (`model/billing.go:6`) and ~9 branches still gate on it (`service/billing.go:385,465,554,712,769,1189,1210`, `repository/workspace.go:241`). Migration rewrote rows but left "free" a reachable legacy state. Spec §3/§4 still describe Free as a v1 plan — never reconciled.
-19. **Pricing numbers diverge from the cited source** — spec §4 says Starter $99 / Growth $299; `docs/pricing-strategy.md` says Starter $299 / Growth $799 (+ a Business tier). Confirm actual Stripe prices.
+19. **Pricing numbers diverge from the cited source** — spec §4 says Starter $99 / Growth $299; `docs/strategy/pricing-strategy.md` says Starter $299 / Growth $799 (+ a Business tier). Confirm actual Stripe prices.
 20. **Trial-nudge emails not implemented** — spec §10 requires owner/billing-owner nudges at T-3, T-1, drop. No code (sidebar banner exists; emails don't).
 21. **Standalone in-app card capture is no longer planned for v1** — app-managed trials use **Upgrade** CTAs that route to Stripe Checkout, which creates the subscription and collects/saves the payment method. Stripe Portal remains for existing paid billing management.
 22. **Spec is missing from the branch** — the design spec doesn't exist in the worktree; it lives only on `main` with **uncommitted** edits (the "§17 Implementation Notes" reconciliation). Pending-plan-changes, cancellation state, and payment notices (3 migrations + 4 routes) were added ad hoc with no spec coverage.

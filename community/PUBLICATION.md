@@ -20,7 +20,7 @@ while any item below is unresolved.
   move SaaS runbooks, billing audits, pricing strategy, private customer material,
   and obsolete plans to a private archive before export. In particular review
   docs/2026-09-15-native-release-runbook.md, docs/mattermost-integration.md,
-  docs/BACKLOG-and-ideas.md and docs/pricing-strategy.md if present.
+  docs/strategy/backlog-and-ideas.md and docs/strategy/pricing-strategy.md if present.
 - [ ] Choose sanitized history or a clean export. Review historical
   frontend/src/lib/featureFlags.ts with the people whose personal email addresses
   appear there; a secret scanner does not detect this personal data.

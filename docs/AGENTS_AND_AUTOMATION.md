@@ -329,7 +329,7 @@ is no in-app classifier or inline LLM tool loop anymore — the chat run itself
 answers read-only questions with product command tools and orchestrates durable
 work through the `agents.*` command tools.
 
-Current reference: [ASK_AGENTS_BAR.md](./ASK_AGENTS_BAR.md).
+Current reference: [ASK_AGENTS_BAR.md](ASK_AGENTS_BAR.md).
 
 Important boundaries:
 
