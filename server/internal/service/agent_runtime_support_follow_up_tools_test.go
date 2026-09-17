@@ -135,3 +135,34 @@ func TestSupportFollowUpRuntimeRejectsMissingRequiredTools(t *testing.T) {
 		t.Fatalf("missing read permission should fail projection: %v", err)
 	}
 }
+
+func TestJevWaitingCustomerLaunchesRestrictedRuntimeWriter(t *testing.T) {
+	db := setupAgentRuntimeSupportRunTestDB(t)
+	now := time.Now().UTC()
+	seedAgentRuntimeSupportAgent(t, db, model.InvocationModeAutonomous, now)
+	seedAgentRuntimeSupportConversation(t, db, now)
+	mustExec(t, db, `UPDATE agents SET allowed_tools=? WHERE id='agent-1'`, []byte(`["get_support_conversation","list_conversation_messages","send_support_reply"]`))
+	runtimeClient := &fakeAgentRuntimeSignalClient{}
+	agents := newDelegatedSupportRunService(t, db, runtimeClient)
+	svc := NewSupportFollowUpService(repository.NewSupportFollowUpRepository(db), &SupportChatService{agentService: agents, runRepo: repository.NewAgentRunRepository(db), supportAIService: &SupportAIService{}})
+	settings := model.DefaultSupportInboxSettings()
+	settings.AIAgentID = strPtr("agent-1")
+	episode := model.SupportAIFollowUp{ID: "episode", WorkspaceID: "ws-1", ConversationID: "conv-1", SourceMessageID: "source", RunID: "reserved-run", CloseHours: 1}
+	if err := svc.launch(context.Background(), episode, &model.SupportConversation{ID: "conv-1", WorkspaceID: "ws-1"}, settings, now, "waiting_customer"); err != nil {
+		t.Fatal(err)
+	}
+	if len(runtimeClient.startRunCalls) != 1 {
+		t.Fatal("writer did not launch")
+	}
+	start := runtimeClient.startRunCalls[0]
+	if len(start.AllowedTools) != 3 || !slices.Contains(start.AllowedTools, "finish_support_follow_up") || slices.Contains(start.AllowedTools, "send_support_reply") {
+		t.Fatalf("unsafe writer tools: %v", start.AllowedTools)
+	}
+	saved, err := agents.runRepo.GetByID(context.Background(), "ws-1", "reserved-run")
+	if err != nil || saved == nil {
+		t.Fatalf("persisted writer missing: %v", err)
+	}
+	if !strings.Contains(string(saved.Input), "waiting_customer") || !strings.Contains(string(saved.Input), "contradictory evidence") {
+		t.Fatalf("classification/safety instructions absent: %s", saved.Input)
+	}
+}

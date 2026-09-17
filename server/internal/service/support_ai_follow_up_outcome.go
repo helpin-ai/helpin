@@ -104,24 +104,9 @@ func (s *SupportFollowUpService) Complete(ctx context.Context, run *model.AgentR
 		}
 		if d.Action == "handoff" {
 			status = "handoff"
-			if err := finishFollowUpRow(tx, e, status, d.Reason, now); err != nil {
-				return err
-			}
-			if err := s.handoff(ctx, tx, conv, settings, now); err != nil {
-				return err
-			}
-			history, err := s.chat.messageRepo.WithTx(tx).ListByConversation(ctx, conv.WorkspaceID, conv.ID, false)
-			if err != nil {
-				return err
-			}
-			sent = buildSupportHandoffNote(conv, history, "Follow-up assessment: "+d.Reason, SupportHandoffBrief{}, now)
-			metadata, _ := json.Marshal(map[string]any{"reason": d.Reason, "support_follow_up_id": e.ID, "ai_handoff_brief": true})
-			sent.Metadata = string(metadata)
-			event := &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderDisplayName: strPtr(helpinAIDisplayName), MessageType: "system", SystemEventType: strPtr(model.SystemEventAIEscalated), IsInternal: true, Content: "Follow-up assessment requested a teammate: " + d.Reason, Metadata: string(metadata), CreatedAt: now}
-			if err := s.chat.messageRepo.WithTx(tx).Create(ctx, event); err != nil {
-				return err
-			}
-			return s.chat.messageRepo.WithTx(tx).Create(ctx, sent)
+			var err error
+			sent, err = s.finishHandoff(ctx, tx, conv, e, settings, d.Reason, now)
+			return err
 		}
 		if e.SequenceVersion >= 2 {
 			if err := validateDeadlineFreeFollowUp(d); err != nil {
@@ -270,4 +255,29 @@ func (s *SupportFollowUpService) handoff(ctx context.Context, tx *gorm.DB, conv 
 		}
 	}
 	return repository.NewSupportConversationRepository(tx).UpdateFields(ctx, conv.WorkspaceID, conv.ID, fields)
+}
+
+// finishHandoff applies the existing follow-up handoff and its internal briefing.
+func (s *SupportFollowUpService) finishHandoff(ctx context.Context, tx *gorm.DB, conv *model.SupportConversation, e *model.SupportAIFollowUp, settings model.SupportInboxSettings, reason string, now time.Time) (*model.SupportMessage, error) {
+	if err := finishFollowUpRow(tx, e, "handoff", reason, now); err != nil {
+		return nil, err
+	}
+	if err := s.handoff(ctx, tx, conv, settings, now); err != nil {
+		return nil, err
+	}
+	history, err := s.chat.messageRepo.WithTx(tx).ListByConversation(ctx, conv.WorkspaceID, conv.ID, false)
+	if err != nil {
+		return nil, err
+	}
+	sent := buildSupportHandoffNote(conv, history, "Follow-up assessment: "+reason, SupportHandoffBrief{}, now)
+	metadata, _ := json.Marshal(map[string]any{"reason": reason, "support_follow_up_id": e.ID, "ai_handoff_brief": true})
+	sent.Metadata = string(metadata)
+	event := &model.SupportMessage{WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "ai", SenderDisplayName: strPtr(helpinAIDisplayName), MessageType: "system", SystemEventType: strPtr(model.SystemEventAIEscalated), IsInternal: true, Content: "Follow-up assessment requested a teammate: " + reason, Metadata: string(metadata), CreatedAt: now}
+	if err := s.chat.messageRepo.WithTx(tx).Create(ctx, event); err != nil {
+		return nil, err
+	}
+	if err := s.chat.messageRepo.WithTx(tx).Create(ctx, sent); err != nil {
+		return nil, err
+	}
+	return sent, nil
 }

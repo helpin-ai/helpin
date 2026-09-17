@@ -40,6 +40,7 @@ type SupportChatService struct {
 	evidenceRepo     *repository.SupportRunEvidenceRepository
 	workspaceRepo    *repository.WorkspaceRepository
 	followUpService  *SupportFollowUpService
+	jev              *SupportJevService
 }
 
 // SetResearchEvidenceDependencies wires the stores used to turn completed
@@ -170,6 +171,16 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 		}
 		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
 		return nil
+	}
+
+	if s.jev != nil && err == nil {
+		handled, assessErr := s.assessJevHandoff(ctx, conv, msg, history)
+		if assessErr != nil {
+			return assessErr
+		}
+		if handled {
+			return s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
+		}
 	}
 
 	// Budget gates.

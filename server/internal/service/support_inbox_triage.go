@@ -36,6 +36,8 @@ type SupportInboxTriageService struct {
 	conversationRepo *repository.SupportConversationRepository
 	messageRepo      *repository.SupportMessageRepository
 	llmProvider      llm.Provider
+	localDecision    *SupportDecisionClient
+	jev              *SupportJevService
 	entitlementSvc   EntitlementPolicy
 }
 
@@ -85,6 +87,15 @@ func NewSupportInboxTriageService(
 		messageRepo:      messageRepo,
 		llmProvider:      llmProvider,
 	}
+}
+
+// SetJevService injects typed routing and automatic conversation tagging.
+func (s *SupportInboxTriageService) SetJevService(jev *SupportJevService) { s.jev = jev }
+
+// SetLocalDecisionClient injects optional local-first routing. Configure before serving requests.
+func (s *SupportInboxTriageService) SetLocalDecisionClient(client *SupportDecisionClient) *SupportInboxTriageService {
+	s.localDecision = client
+	return s
 }
 
 func (s *SupportInboxTriageService) SetEntitlementService(entitlementSvc EntitlementPolicy) *SupportInboxTriageService {
@@ -220,6 +231,24 @@ func (s *SupportInboxTriageService) EvaluateAndRoute(ctx context.Context, worksp
 	conversation, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil || conversation == nil {
 		return nil, err
+	}
+	// Tagging is independent of routing ownership/settings, but requires the AI entitlement.
+	if s.jev.enabled(workspaceID) && s.jev.config.TagsMode != "off" {
+		tagAllowed := s.entitlementSvc == nil || s.entitlementSvc.RequireFeature(ctx, workspaceID, EntitlementFeatureAIConversationRouting) == nil
+		if tagAllowed {
+			msg, tagErr := s.messageRepo.GetByID(ctx, messageID)
+			if tagErr == nil && msg != nil && msg.WorkspaceID == workspaceID && msg.ConversationID == conversationID && !msg.IsInternal && msg.SenderType == "customer" && msg.MessageType == "reply" {
+				history, historyErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
+				if historyErr != nil {
+					tagErr = historyErr
+				} else {
+					tagErr = s.jev.TagConversation(ctx, workspaceID, conversationID, msg, history)
+				}
+			}
+			if tagErr != nil {
+				slog.WarnContext(ctx, "Jev tagging unavailable", "workspace_id", workspaceID, "conversation_id", conversationID, "error", tagErr)
+			}
+		}
 	}
 	if supportConversationHumanOwned(conversation) {
 		slog.InfoContext(ctx, "support triage skipped: conversation is human-owned", "workspace_id", workspaceID, "conversation_id", conversationID)
@@ -669,7 +698,7 @@ func (s *SupportInboxTriageService) evaluateAI(ctx context.Context, workspaceID 
 		return nil, nil
 	}
 
-	if settings.TriageDeduplicateFirstMessage && s.triageEventRepo != nil {
+	if settings.TriageDeduplicateFirstMessage && s.triageEventRepo != nil && !s.localDecision.enabled(workspaceID) && !(s.jev.enabled(workspaceID) && s.jev.config.RoutingMode != "off") {
 		cachedEvent, err := s.triageEventRepo.FindLatestEvaluatedByInputHash(ctx, workspaceID, inputHash, time.Now().UTC().Add(-15*time.Minute))
 		if err != nil {
 			return nil, err
@@ -734,6 +763,52 @@ func (s *SupportInboxTriageService) evaluateAI(ctx context.Context, workspaceID 
 		"options", summarizeTriageMailboxOptions(options),
 	)
 
+	if s.jev.enabled(workspaceID) && s.jev.config.RoutingMode != "off" {
+		candidate, accepted, jevErr := s.jev.route(ctx, workspaceID, conversation.ID, inputContent, options)
+		if jevErr != nil {
+			slog.WarnContext(ctx, "Jev routing falling back to LLM", "workspace_id", workspaceID, "conversation_id", conversation.ID, "error", jevErr)
+		}
+		if accepted {
+			if candidate == nil {
+				return nil, nil
+			}
+			if target, ok := handleToID[candidate.SuggestedHandle]; ok {
+				candidate.SuggestedMailboxID = &target
+				return candidate, nil
+			}
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+	}
+	var shadowDecision *supportDecisionResponse
+	if s.localDecision.enabled(workspaceID) && !(s.jev.enabled(workspaceID) && s.jev.config.RoutingMode != "off") {
+		started := time.Now()
+		local, accepted, reason, localErr := s.localDecision.decide(ctx, workspaceID, inputContent, options)
+		if s.localDecision.config.Mode == "shadow" {
+			shadowDecision = local
+		}
+		_, choicesHash := decisionChoices(options)
+		slog.InfoContext(ctx, "support local decision evaluated", "workspace_id", workspaceID, "mode", s.localDecision.config.Mode, "accepted", accepted, "reason", reason, "choices_hash", choicesHash, "latency_ms", time.Since(started).Milliseconds())
+		if localErr != nil {
+			slog.WarnContext(ctx, "support local decision falling back", "workspace_id", workspaceID, "reason", reason)
+		}
+		if accepted && local != nil && local.Choice != nil {
+			handle := *local.Choice
+			if handle == "shared" {
+				return nil, nil
+			}
+			if target, ok := handleToID[handle]; ok {
+				explanation := "Local semantic decision; validated deployment policy " + local.DeploymentFingerprint
+				intent := "local_semantic_routing"
+				return &supportInboxTriageResult{Intent: &intent, Confidence: &local.Confidence, Reason: &explanation, ClassifierSource: model.SupportConversationTriageSourceAI, SuggestedMailboxID: &target, SuggestedHandle: handle}, nil
+			}
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+	}
+
 	prompt := buildSupportTriagePrompt(conversation, inputContent, options)
 	conversationID := ""
 	if conversation != nil {
@@ -778,6 +853,10 @@ func (s *SupportInboxTriageService) evaluateAI(ctx context.Context, workspaceID 
 	}
 
 	handle := strings.ToLower(strings.TrimSpace(parsed.TargetMailboxHandle))
+	if shadowDecision != nil && shadowDecision.Choice != nil {
+		slog.InfoContext(ctx, "support local shadow comparison", "workspace_id", workspaceID, "agrees_with_llm", *shadowDecision.Choice == handle, "local_confidence", shadowDecision.Confidence, "local_abstained", shadowDecision.Abstained, "deployment_fingerprint", shadowDecision.DeploymentFingerprint)
+	}
+
 	slog.InfoContext(ctx, "support triage AI response received",
 		"workspace_id", workspaceID,
 		"conversation_id", derefString(func() *string {
