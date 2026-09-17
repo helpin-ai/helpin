@@ -33,7 +33,7 @@ func (r *PMTriageRepository) Reserve(ctx context.Context, input model.PMTriageAs
 	if input.WorkspaceID == "" || input.ActorID == "" || input.SourceID == "" || strings.TrimSpace(input.SourceHash) == "" || strings.TrimSpace(input.ContextHash) == "" || limit < 1 {
 		return nil, errors.New("invalid triage admission")
 	}
-	if (input.SourceKind != "task" && input.SourceKind != "support_conversation") || (input.Mode != "primary" && input.Mode != "shadow") {
+	if (input.SourceKind != "task" && input.SourceKind != "task_draft" && input.SourceKind != "support_conversation") || (input.Mode != "primary" && input.Mode != "shadow") {
 		return nil, errors.New("invalid triage source or mode")
 	}
 	admission := &PMTriageAdmission{}

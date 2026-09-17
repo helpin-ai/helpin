@@ -1198,6 +1198,8 @@ func main() {
 	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
+	pmTriageHandler := handler.NewPMTriageHandler(pmTriageService)
+	pmTriageHandler.SetReviewer(service.NewPMTriageReviewService(pmTriageService, pmTaskService, associationsService))
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo).SetDealService(crmDealService)
 
@@ -1769,7 +1771,7 @@ func main() {
 		PMAISuggestion:      handler.NewPMAISuggestionHandler(pmAISuggestionService),
 		PMTask:              handler.NewPMTaskHandler(pmTaskService),
 		PMTaskInsights:      handler.NewPMTaskInsightsHandler(pmTaskInsightsService),
-		PMTriage:            handler.NewPMTriageHandler(pmTriageService),
+		PMTriage:            pmTriageHandler,
 		PMComment:           handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment:        handler.NewPMAttachmentHandler(pmAttachmentService),
 		PMObjective:         handler.NewPMObjectiveHandler(pmObjectiveService),

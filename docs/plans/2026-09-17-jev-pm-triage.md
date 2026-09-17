@@ -15,25 +15,36 @@ Authorized scope: task triage, duplicate/related-task suggestions, and support-t
 
 ## Implementation status
 
-Built, with targeted tests:
-- Shared closed-choice classifier, confidence abstention, bounded complete context.
-- Candidate retrieval with workspace/team filtering before ranking.
-- SQL-owned assessment and label-suppression tables (PostgreSQL execution still to verify).
-- Actor-scoped assessment cache, provider admission, failed-attempt daily cap, pending-attempt expiry.
-- Task/public-support source adapters, usage recording and independent configuration.
-- POST task and support assessment endpoints and dependency wiring.
-- Automatic create/edit hooks, transactional label additions and activity provenance.
-- Persistent manual removal suppression for both label actions and task form updates; source edits during provider calls prevent label application.
+Implemented:
+- Shared bounded classifier and permission-scoped candidate retrieval.
+- Task creation/edit hooks with audited automatic labels and persistent manual-removal suppression.
+- Actor-scoped assessment cache, failed-attempt daily cap and abandoned-attempt expiry.
+- Task and unsaved-draft assessment endpoints, reviewed task type/team/relationship actions and persisted dismissals.
+- Task creation duplicate preview and task-detail review section.
+- Support match-first review, editable task draft, and creation of exactly the reviewed fields without a second generation call.
+- Public support evidence fingerprints and stale-draft rejection.
+- Source revision checks for task updates and transactional revision/access checks for task relationships.
 
-Still required:
-- Reviewed actions and persisted dismissals, including stale source/candidate checks.
-- Task creation duplicate preview, task detail triage UI, support match/draft review UI.
-- Support creation compatibility audit and reviewed draft implementation.
-- Integration tests for public-only support evidence, source edits during calls, reviewed mutations, permission changes and provider/usage failures.
-- PostgreSQL migration/concurrency tests, community/enterprise build and vet, frontend tests/build and rendered state checks.
+Support compatibility decisions:
+- With primary PM triage, match/draft review takes precedence over the old skip-dialog preference. The saved team default remains useful. Off/shadow modes retain the original create flow.
+- Preview uses public messages, matching the evidence evaluated by Jev. The legacy create path retains its existing generator behavior.
+- The reviewed create path preserves existing workflow validation, task creation, support linking, CRM association copying and navigation. Priority remains an editable draft field and never comes from Jev probability.
+- Reviewed creation closes after task success even if preference persistence fails, preventing a preference retry from creating another task.
+
+Still required before completion:
+- Final concurrency review of support linking and source changes during reviewed mutations.
+- Dedicated unsaved-draft async/stale-result tests and task-detail review state checks.
+- Final permission/error-path audit and verification after any resulting fixes.
 
 ## Verification ledger
 
-Targeted classifier, repository and task-service tests passed with synthetic evidence and a fake provider. No customer-data provider call has been made.
+- Targeted classifier, repository, task-service and handler tests pass using synthetic evidence and a fake provider.
+- Existing task/support creation regression tests pass.
+- Tests cover reviewed type/team changes without changing priority, relationship acceptance, persisted dismissals, forged/stale choices, public-only support evidence, exact reviewed support creation without regeneration, provider and usage failure, and automatic-label suppression.
+- Actual PostgreSQL tests pass for executing the SQL migration twice, concurrent daily-cap admission, concurrent deduplication, stale revision rejection and manual label removal.
+- Frontend type checking and Community/Enterprise production builds pass.
+- Backend Community/Enterprise API builds and backend vet pass; go mod tidy leaves module files unchanged.
+- Shared review-row tests and existing CreateTaskModal tests pass (23 tests).
+- Chromium full-app support tests pass for desktop/light, mobile/dark, keyboard linking and editable draft retention after a creation error. Screenshots were inspected.
 
-`go run ./cmd/migrate validate` requires a database connection and could not run without DATABASE_URL; this is not evidence that the migration has been applied or validated against PostgreSQL.
+No customer-data provider call, deployment, push or merge has been made. Tests use an isolated PostgreSQL container and mocked browser transport.

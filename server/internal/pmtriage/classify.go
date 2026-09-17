@@ -75,7 +75,7 @@ type Request struct {
 // Build validates complete source context and constructs closed-choice questions.
 // Oversized context is rejected rather than silently truncating customer evidence.
 func Build(input Input) (*Request, error) {
-	if input.SourceKind != "task" && input.SourceKind != "support_conversation" {
+	if input.SourceKind != "task" && input.SourceKind != "task_draft" && input.SourceKind != "support_conversation" {
 		return nil, errors.New("unsupported triage source")
 	}
 	if input.SourceID == "" || strings.TrimSpace(input.Text) == "" || len(input.Text) > 8000 {

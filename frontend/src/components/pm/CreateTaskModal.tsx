@@ -1,3 +1,4 @@
+import { TaskDraftSuggestions } from './TaskDraftSuggestions';
 import { EPIC_PICKER_WIDTH } from '@/components/pm/epicPickerGroups';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
@@ -308,6 +309,7 @@ export function CreateTaskModal({
   const [stateId, setStateId] = useState(initialStateId ?? '');
   const [saveTaskAsTemplate, setSaveTaskAsTemplate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [draftCheckPending, setDraftCheckPending] = useState(false);
   const confirm = useConfirm();
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [descriptionEditorKey, setDescriptionEditorKey] = useState(0);
@@ -857,7 +859,7 @@ export function CreateTaskModal({
   }, [form.team_id, workflow, stateId, workspaceId]);
 
   const submit = useCallback(async (createAnother = false) => {
-    if (!canSubmit || submitting) return;
+    if (!canSubmit || submitting || draftCheckPending) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -1039,6 +1041,7 @@ export function CreateTaskModal({
   }, [
     canSubmit,
     submitting,
+    draftCheckPending,
     form,
     stateId,
     descriptionMode,
@@ -1304,6 +1307,27 @@ export function CreateTaskModal({
                   </button>
                 </div>
               </div>
+
+              {open && !isTemplateMode && currentWorkspace?.slug ? (
+                <TaskDraftSuggestions
+                  workspaceId={workspaceId}
+                  workspaceSlug={currentWorkspace.slug}
+                  name={form.name}
+                  description={descriptionMode === 'markdown' ? sourceMarkdown : form.description}
+                  teamId={form.team_id}
+                  taskType={form.task_type}
+                  disabled={submitting}
+                  onPending={setDraftCheckPending}
+                  onApply={(field, value) => {
+                    setTaskTypeDirty(field === 'task_type');
+                    setForm((previous) => ({ ...previous, ...(field === 'team' ? { team_id: value } : { task_type: value as TaskType }) }));
+                  }}
+                  onOpenTask={(taskId) => {
+                    onOpenChange(false);
+                    void navigate({ to: '/w/$slug/pm/tasks/$taskId', params: { slug: currentWorkspace.slug, taskId }, search: { team: undefined, run: undefined } });
+                  }}
+                />
+              ) : null}
 
               {/* Checklist */}
               {showChecklist && (
@@ -1877,7 +1901,7 @@ export function CreateTaskModal({
                 type="button"
                 variant="ghost"
                 onClick={() => submit(true)}
-                disabled={!canSubmit || submitting}
+                disabled={!canSubmit || submitting || draftCheckPending}
               >
                 Save & create another
               </Button>
@@ -1885,7 +1909,7 @@ export function CreateTaskModal({
             <Button
               type="button"
               onClick={() => submit(false)}
-              disabled={!canSubmit || submitting}
+              disabled={!canSubmit || submitting || draftCheckPending}
             >
               {submitting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : null}
               {submitting ? "Saving..." : assignedAgentId && !isTemplateMode ? "Save & run agent" : "Save"}

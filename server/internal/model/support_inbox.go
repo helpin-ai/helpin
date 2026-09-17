@@ -986,6 +986,8 @@ type LinkTaskRequest struct {
 
 // CreateTaskFromConversationRequest creates a PM task from the current support conversation.
 type CreateTaskFromConversationRequest struct {
+	ReviewedDraft     bool                         `json:"reviewed_draft,omitempty"`
+	SourceHash        string                       `json:"source_hash,omitempty"`
 	Name              *string                      `json:"name,omitempty"`
 	Description       *string                      `json:"description,omitempty"`
 	TaskType          *string                      `json:"task_type,omitempty"`

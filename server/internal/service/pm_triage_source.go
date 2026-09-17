@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -58,21 +57,7 @@ func (s *PMTriageService) loadSource(ctx context.Context, workspaceID, kind, id 
 		if err != nil {
 			return nil, err
 		}
-		var text, revision strings.Builder
-		text.WriteString(conversation.Subject)
-		revision.WriteString(conversation.UpdatedAt.String())
-		for _, message := range messages {
-			if message.IsInternal || message.DeletedAt.Valid || (message.MessageType != "" && message.MessageType != "reply") {
-				continue
-			}
-			text.WriteString("\n")
-			text.WriteString(message.SenderType)
-			text.WriteString(": ")
-			text.WriteString(tiptap.RichTextToMarkdown(message.Content))
-			revision.WriteString(message.ID + message.UpdatedAt.String())
-		}
-		source.input.Text = text.String()
-		source.hash = pmTriageHash(source.input.Text + "\n" + revision.String())
+		source.input.Text, source.hash = supportPMTriageEvidence(conversation, messages)
 	default:
 		return nil, fmt.Errorf("unsupported triage source")
 	}

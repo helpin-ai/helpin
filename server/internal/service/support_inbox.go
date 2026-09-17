@@ -2473,14 +2473,26 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		return nil, fmt.Errorf("conversation not found")
 	}
 
-	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, true)
+	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, !req.ReviewedDraft)
 	if err != nil {
 		return nil, err
 	}
 
-	draft, err := s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
-	if err != nil {
-		return nil, err
+	var draft *supportConversationTaskDraft
+	if req.ReviewedDraft {
+		_, sourceHash := supportPMTriageEvidence(conversation, messages)
+		if req.SourceHash == "" || req.SourceHash != sourceHash {
+			return nil, ErrPMTriageStale
+		}
+		if trimPtrValue(req.Name) == "" || trimPtrValue(req.Description) == "" || !isValidTaskType(trimPtrValue(req.TaskType)) {
+			return nil, fmt.Errorf("reviewed title, description and valid task type are required")
+		}
+		draft = &supportConversationTaskDraft{Title: trimPtrValue(req.Name), Description: trimPtrValue(req.Description), TaskType: trimPtrValue(req.TaskType), Priority: trimPtrValue(req.Priority)}
+	} else {
+		draft, err = s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if trimPtrValue(req.Name) == "" {
 		if err := validateSupportTaskDraft(conversation, messages, draft); err != nil {

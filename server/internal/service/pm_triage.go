@@ -71,6 +71,11 @@ func (s *PMTriageService) Analyze(ctx context.Context, workspaceID, sourceKind, 
 	if err != nil {
 		return nil, err
 	}
+	return s.analyzeSource(ctx, actor, source, view)
+}
+
+func (s *PMTriageService) analyzeSource(ctx context.Context, actor *authorization.Actor, source *pmTriageSource, view *model.PMTriageView) (*model.PMTriageView, error) {
+	workspaceID := actor.WorkspaceID
 	view.SourceHash = source.hash
 	if len(source.input.Text) > 8000 || strings.TrimSpace(source.input.Text) == "" {
 		view.Status = "input_limit"
@@ -98,6 +103,10 @@ func (s *PMTriageService) Analyze(ctx context.Context, workspaceID, sourceKind, 
 		}
 		request = next
 		view.Candidates = append(view.Candidates, model.PMTriageCandidateView{ID: task.ID, Name: task.Name, DisplayID: task.DisplayID})
+	}
+	view.CandidateHashes = map[string]string{}
+	for _, candidate := range source.input.Candidates {
+		view.CandidateHashes[candidate.ID] = pmTriageHash(candidate.Name + "\n" + candidate.Description)
 	}
 	view.Teams = source.input.Teams
 	view.Labels = source.input.Labels
@@ -170,6 +179,7 @@ func (s *PMTriageService) evaluate(ctx context.Context, actor *authorization.Act
 	if callErr == nil {
 		status = "ready"
 		outcome["assessment"] = assessment
+		outcome["candidate_hashes"] = view.CandidateHashes
 		outcome["usage"] = usage
 	}
 	if err := s.assessments.Finish(settle, actor.WorkspaceID, actor.UserID, record.ID, status, outcome); err != nil {

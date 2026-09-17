@@ -1556,6 +1556,11 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		}
 	}
 	if err := s.taskRepo.WithMutationTransaction(ctx, func(tasks *repository.PMTaskRepository, _ *repository.PMChecklistItemRepository) error {
+		if req.ExpectedUpdatedAt != nil {
+			if err := tasks.RequireRevision(ctx, current.ID, *req.ExpectedUpdatedAt); err != nil {
+				return err
+			}
+		}
 		if err := tasks.Update(ctx, current); err != nil {
 			return err
 		}

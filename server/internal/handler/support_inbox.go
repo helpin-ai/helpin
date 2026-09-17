@@ -473,6 +473,10 @@ func (h *SupportInboxHandler) CreateTaskFromConversation(w http.ResponseWriter, 
 
 	response, err := h.supportService.CreateTaskFromConversation(r.Context(), workspaceID, conversationID, actorID, req)
 	if err != nil {
+		if errors.Is(err, service.ErrPMTriageStale) {
+			writeError(w, http.StatusConflict, "The conversation changed. Refresh the draft before creating a task.")
+			return
+		}
 		if errors.Is(err, service.ErrSupportTaskInsufficientContext) {
 			writeError(w, http.StatusUnprocessableEntity, err.Error())
 			return
@@ -1485,4 +1489,14 @@ func (h *SupportInboxHandler) ViewingPresence(w http.ResponseWriter, r *http.Req
 
 	h.supportService.PublishViewingPresence(r.Context(), workspaceID, conversationID, actorID, req.Viewing)
 	writeJSON(w, http.StatusOK, map[string]bool{"success": true})
+}
+
+// PreviewTaskFromConversation handles a reviewed support task draft without creating a task.
+func (h *SupportInboxHandler) PreviewTaskFromConversation(w http.ResponseWriter, r *http.Request) {
+	result, err := h.supportService.PreviewTaskFromConversation(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Unable to prepare a task draft from this conversation.")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

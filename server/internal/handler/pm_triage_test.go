@@ -59,3 +59,7 @@ func TestPMTriageHandlerValidatesIdentifiers(t *testing.T) {
 		t.Fatal("invalid request reached service")
 	}
 }
+
+func (f pmTriageAnalyzerFunc) AnalyzeDraft(ctx context.Context, workspace string, req model.PMTriageDraftRequest) (*model.PMTriageView, error) {
+	return f(ctx, workspace, "task_draft", req.DraftID)
+}

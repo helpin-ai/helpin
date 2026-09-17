@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS pm_triage_assessments (
     id uuid PRIMARY KEY,
     workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     actor_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    source_kind text NOT NULL CHECK (source_kind IN ('task', 'support_conversation')),
+    source_kind text NOT NULL CHECK (source_kind IN ('task', 'task_draft', 'support_conversation')),
     source_id uuid NOT NULL,
     source_hash text NOT NULL,
     context_hash text NOT NULL,

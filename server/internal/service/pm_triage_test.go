@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 )
 
 type pmTriageTestProvider struct {
+	err    error
 	calls  int
 	states []string
 	during func()
@@ -25,6 +27,9 @@ type pmTriageTestProvider struct {
 func (p *pmTriageTestProvider) DecideMany(_ context.Context, state string, questions map[string]decision.Question) (*decision.Result, error) {
 	p.calls++
 	p.states = append(p.states, state)
+	if p.err != nil {
+		return nil, p.err
+	}
 	if p.during != nil {
 		p.during()
 	}
@@ -50,10 +55,16 @@ func (p *pmTriageTestProvider) DecideMany(_ context.Context, state string, quest
 	return result, nil
 }
 
-type pmTriageTestUsage struct{ entries []model.AIExecutionUsage }
+type pmTriageTestUsage struct {
+	entries []model.AIExecutionUsage
+	err     error
+}
 
 func (u *pmTriageTestUsage) RecordExecutionUsage(_ context.Context, entry model.AIExecutionUsage, _ model.JSONBlob) error {
 	u.entries = append(u.entries, entry)
+	if u.err != nil {
+		return u.err
+	}
 	return nil
 }
 
@@ -269,5 +280,70 @@ func TestPMTriageAutomaticLabelsAreIdempotent(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatal("repeated triage duplicated activity")
+	}
+}
+
+func TestPMTriageFailedProviderOrUsageDoesNotExposeSuggestions(t *testing.T) {
+	for _, failure := range []string{"provider", "usage"} {
+		t.Run(failure, func(t *testing.T) {
+			triage, provider, usage, db := setupPMTriageService(t)
+			if failure == "provider" {
+				provider.err = errors.New("provider unavailable")
+			} else {
+				usage.err = errors.New("usage unavailable")
+			}
+			view, err := triage.Analyze(pmTriageMemberContext(), "workspace", "task", "source")
+			if err == nil || view != nil {
+				t.Fatal("failed evaluation exposed actionable suggestions")
+			}
+			var attempts []model.PMTriageAssessment
+			if err := db.Find(&attempts).Error; err != nil {
+				t.Fatal(err)
+			}
+			if len(attempts) != 1 || attempts[0].Status != "failed" {
+				t.Fatal("failed attempt was not finalized")
+			}
+		})
+	}
+}
+func TestPMTriageDraftDoesNotCreateTask(t *testing.T) {
+	triage, provider, _, db := setupPMTriageService(t)
+	team := "mine"
+	view, err := triage.AnalyzeDraft(pmTriageMemberContext(), "workspace", model.PMTriageDraftRequest{DraftID: "draft", Name: "CSV export fails", Description: "Invoice CSV export crashes", TeamID: &team})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Status != "ready" || view.SourceKind != "task_draft" || len(view.Assessment.Matches) == 0 || provider.calls != 1 {
+		t.Fatalf("missing draft suggestions %+v", view)
+	}
+	var count int64
+	if err := db.Model(&model.PMTask{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("preview changed task count: %d", count)
+	}
+}
+func TestPMTriageProviderFailureDoesNotFailTaskCreation(t *testing.T) {
+	env := newTaskTestEnv(t)
+	if err := env.db.AutoMigrate(&model.PMTriageAssessment{}); err != nil {
+		t.Fatal(err)
+	}
+	triage, err := NewPMTriageService(PMTriageConfig{Mode: "primary", Threshold: .95, DailyLimit: 10}, &pmTriageTestProvider{err: errors.New("provider down")}, repository.NewPMTriageRepository(env.db), &pmTriageTestUsage{}, env.svc.taskRepo, env.svc.workspaceRepo, env.svc.labelRepo, &SupportInboxService{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.svc.SetTriageService(triage)
+	ctx := authorization.WithActor(context.Background(), &authorization.Actor{UserID: env.userID, WorkspaceID: env.wsID, Role: model.RoleAdmin})
+	created, err := env.svc.Create(ctx, model.CreateTaskRequest{WorkspaceID: env.wsID, Name: "Fix CSV export", TaskType: "bug", TeamID: &env.teamID, WorkflowID: env.wfID, WorkflowStateID: env.stTodo}, env.userID)
+	if err != nil || created == nil {
+		t.Fatalf("provider failure prevented task creation: %v", err)
+	}
+	var attempts []model.PMTriageAssessment
+	if err := env.db.Find(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 1 || attempts[0].Status != "failed" {
+		t.Fatalf("missing failed provider audit: %+v", attempts)
 	}
 }

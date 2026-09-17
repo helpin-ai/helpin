@@ -1011,8 +1011,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/link-task", h.SupportInbox.LinkConversationTask)
 				r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/create-task", h.SupportInbox.CreateTaskFromConversation)
+				r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/task-draft", h.SupportInbox.PreviewTaskFromConversation)
 				if h.PMTriage != nil {
 					r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/task-triage", h.PMTriage.AnalyzeConversation)
+					r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermPMEdit)).Post("/inbox/conversations/{id}/task-triage/review", h.PMTriage.ReviewConversation)
 				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/assign-agent", h.SupportInbox.AssignConversationAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/ai-control", h.SupportInbox.ChangeConversationAIControl)
@@ -1204,7 +1206,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/display/{displayID}", h.PMTask.GetByDisplayID)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}", h.PMTask.Get)
 				if h.PMTriage != nil {
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/task-drafts/triage", h.PMTriage.AnalyzeDraft)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/triage", h.PMTriage.AnalyzeTask)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/triage/review", h.PMTriage.ReviewTask)
 				}
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/save-as-template", h.PMTask.SaveAsTemplate)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/duplicate", h.PMTask.Duplicate)
