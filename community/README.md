@@ -65,7 +65,7 @@ upgrade one; use a reviewed replacement bundle. Cross-version upgrades start in 
 ### Optional Ask Agent execution
 
 The Community image now includes Python, pip and venv. Compose runs a separate
-`agent-runtime-execution` service on the existing coding queue, concurrency one.
+`agent-runtime-execution` service on the existing coding queue, with concurrency 50 per worker process.
 Shared workers do not poll that queue or mount the execution volume. Enable
 execution explicitly in an owned Ask Agent conversation; the next message after
 a safe transition starts a separately routed run. Existing permissions and
@@ -93,8 +93,8 @@ users trusted to execute in that worker container.
 
 TypeSafe review is optional operator configuration on the runtime workers:
 `TYPESAFE_API_KEY`, `AGENT_RUNTIME_TYPESAFE_ENABLED=true`, and optionally
-`AGENT_RUNTIME_TYPESAFE_ASKED_THRESHOLD` (default minimum 0.90),
-`AGENT_RUNTIME_TYPESAFE_HAZARD_THRESHOLD` (default maximum 0.20), and
+`AGENT_RUNTIME_TYPESAFE_ASKED_THRESHOLD` (default minimum 0.75),
+`AGENT_RUNTIME_TYPESAFE_HAZARD_THRESHOLD` (default maximum 0.25), and
 `AGENT_RUNTIME_TYPESAFE_ESCALATION_THRESHOLD` (prompt above 0.50). Enabling it sends selected
 command/repository context to TypeSafe's official endpoint. Automatic approval
 requires `AGENT_RUNTIME_TYPESAFE_AUTO_APPROVE=true`; keep it off until the runtime's
@@ -110,7 +110,7 @@ summary. The reviewer does not enforce network isolation or package-name safety.
 `AGENT_RUNTIME_TYPESAFE_MODEL` defaults to `jev-latest`, but prompt suppression
 requires the response to match `AGENT_RUNTIME_TYPESAFE_EVALUATED_MODEL` (default
 `jev-1.13.0`). Reevaluate each version before changing that setting. The supplied
-ad hoc trial reported 18/34 benign approvals and 0/44 false approvals at 0.90/0.20;
+ad hoc trial reported 22/34 benign approvals and 0/44 false approvals at 0.75/0.25;
 these are not guarantees or fresh measurements. The runtime release suite contains
 39 reconstructed scenarios, each run twice when live evaluation is enabled.
 Remove the obsolete single-choice `AGENT_RUNTIME_TYPESAFE_THRESHOLD` setting

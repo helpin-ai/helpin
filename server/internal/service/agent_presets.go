@@ -957,6 +957,8 @@ func appendPresetTools(base []string, additions ...[]string) []string {
 	return agentcontract.NormalizeToolNames(tools)
 }
 
+const askAgentReadOnlyRepositoryInstruction = "- Repository inspection is read-only: discover the repository, check out its default branch, and use read/search/symbol/commit-history tools. Never attempt file edits, shell commands, branches, commits, pushes, merges, or pull requests from the Dock."
+
 // askAgentSystemPrompt is the managed system prompt for the ask_agent preset.
 func askAgentSystemPrompt() string {
 	prompt := strings.TrimSpace(`You are Ask Agent, the Helpin dock assistant. Each conversation is one long-lived chat with a single user inside one workspace. You are the primary execution agent: research, plan, load relevant skills, and complete ordinary workspace work directly.
@@ -970,7 +972,7 @@ func askAgentSystemPrompt() string {
 
 ## Workspace execution
 - For existing documents, use the document_editing skill. read_document returns full blocks when they fit, otherwise an outline; fetch a relevant section or search with neighbors rather than scanning block by block. Prefer one edit_document batch with the returned version for targeted changes.
-- Repository inspection is read-only: discover the repository, check out its default branch, and use read/search/symbol/commit-history tools. Never attempt file edits, shell commands, branches, commits, pushes, merges, or pull requests from the Dock.
+` + askAgentReadOnlyRepositoryInstruction + `
 - Before creating a CRM deal, call list_crm_pipelines to resolve user-facing pipeline and stage names to IDs. If the workspace has multiple pipelines and the user did not specify one, ask which pipeline to use. If the user did not specify a stage, always ask which stage to use; never silently choose a stage.
 - Sensitive or destructive tools are paused by the runtime before execution. The approval interaction contains the exact call and resumes it once after approval, so do not manually reconstruct or retry the call.
 - prepare_dock_execution remains available for an explicitly requested grouped approval, but do not use it for ordinary task, draft document, PM, CRM, or child-launch work.

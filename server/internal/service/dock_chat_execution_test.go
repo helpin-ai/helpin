@@ -13,6 +13,16 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+type dockChatAdminMemberRepo struct{}
+
+func (dockChatAdminMemberRepo) GetMembership(_ context.Context, _, userID string) (*authorization.MemberInfo, error) {
+	return &authorization.MemberInfo{ID: "member-" + userID, Role: model.RoleAdmin, Status: "active"}, nil
+}
+
+func (dockChatAdminMemberRepo) GetTeamMemberships(context.Context, string) ([]authorization.TeamRole, error) {
+	return nil, nil
+}
+
 func TestDockExecutionProjectionIsOptInAndSeparate(t *testing.T) {
 	agent := &model.Agent{ID: "ask", PresetKey: model.AgentPresetAskAgent, RuntimeKind: "native_sdk", ApprovalMode: "risk_based", AllowedTools: json.RawMessage(`["read_files"]`), ExecutionConfig: model.JSONBlob(`{}`)}
 	ordinary := runtimeAgentFromHelpinAgent(agent, "helpin")
@@ -99,6 +109,14 @@ func TestDockExecutionRequiresTrustedAuthorization(t *testing.T) {
 	if chat.ExecutionEnabled {
 		t.Fatal("model turn changed settings")
 	}
+	memberService := &DockChatService{authz: authorization.NewAuthzService(nil, dockChatMemberRepo{}, dockChatModuleRepo{})}
+	if err := memberService.authorizeChatExecution(context.Background(), "workspace", "member"); err == nil {
+		t.Fatal("project editor enabled shared-volume execution")
+	}
+	adminService := &DockChatService{authz: authorization.NewAuthzService(nil, dockChatAdminMemberRepo{}, dockChatModuleRepo{})}
+	if err := adminService.authorizeChatExecution(context.Background(), "workspace", "admin"); err != nil {
+		t.Fatalf("workspace settings manager rejected: %v", err)
+	}
 }
 
 func TestInterruptedEffectsReachSuccessorThroughCancellation(t *testing.T) {
@@ -146,7 +164,7 @@ func TestDockExecutionTransitionCancelsWithoutWideningRun(t *testing.T) {
 			}
 			client := &fakeAgentRuntimeSignalClient{}
 			agents := &AgentService{agentRepo: repository.NewAgentRepository(db), runRepo: runs, agentRuntimeClient: client, agentRuntimeProjection: NewAgentRuntimeProjectionService(runs)}
-			svc := &DockChatService{chatRepo: repository.NewDockChatRepository(db), runRepo: runs, agentService: agents, authz: authorization.NewAuthzService(db, dockChatMemberRepo{}, dockChatModuleRepo{})}
+			svc := &DockChatService{chatRepo: repository.NewDockChatRepository(db), runRepo: runs, agentService: agents, authz: authorization.NewAuthzService(db, dockChatAdminMemberRepo{}, dockChatModuleRepo{})}
 			updated, err := svc.UpdateChat(context.Background(), "ws-1", "user-1", chat.ID, model.UpdateDockChatRequest{ExecutionEnabled: &tc.enabled})
 			if tc.wantErr {
 				if err == nil || len(client.cancelCalls) > 0 {

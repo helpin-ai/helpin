@@ -22,8 +22,8 @@ func (s *DockChatService) authorizeChatExecution(ctx context.Context, workspaceI
 	if err != nil {
 		return err
 	}
-	if !s.authz.CanAny(actor, authorization.PermPMEdit, authorization.PermSettingsManage) {
-		return fmt.Errorf("execution requires project editing or workspace settings permission")
+	if !s.authz.Can(actor, authorization.PermSettingsManage) {
+		return fmt.Errorf("execution requires workspace settings permission")
 	}
 	return nil
 }
@@ -60,8 +60,7 @@ func runtimeAgentForDockExecution(run *model.AgentRun, agent AgentRuntimeAgent) 
 	}
 	config["workspace"] = workspaceConfig
 	agent.ExecutionConfig, _ = json.Marshal(config)
-	const readOnly = "- Repository inspection is read-only: discover the repository, check out its default branch, and use read/search/symbol/commit-history tools. Never attempt file edits, shell commands, branches, commits, pushes, merges, or pull requests from the Dock."
-	agent.SystemPrompt = strings.ReplaceAll(agent.SystemPrompt, readOnly, "")
+	agent.SystemPrompt = strings.ReplaceAll(agent.SystemPrompt, askAgentReadOnlyRepositoryInstruction, "")
 	agent.SystemPrompt += `
 
 ## User-enabled direct execution
