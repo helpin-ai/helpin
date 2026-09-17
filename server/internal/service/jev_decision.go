@@ -105,6 +105,25 @@ func (s *JevDecisionService) Enabled(workspaceID, feature string) bool {
 	return exists && policy.Mode != "off" && (len(s.workspaces) == 0 || s.workspaces[workspaceID])
 }
 
+// SemanticConditionAvailability reports whether a workspace can author actionable
+// conditions. Shadow can evaluate evidence but cannot allow a Flow action.
+func (s *JevDecisionService) SemanticConditionAvailability(workspaceID string) model.SemanticConditionAvailability {
+	if s == nil || s.provider == nil {
+		return model.SemanticConditionAvailability{Reason: "not_configured"}
+	}
+	if len(s.workspaces) > 0 && !s.workspaces[workspaceID] {
+		return model.SemanticConditionAvailability{Reason: "workspace_disabled"}
+	}
+	switch s.policies[JevAutomationCondition].Mode {
+	case "primary":
+		return model.SemanticConditionAvailability{Available: true}
+	case "shadow":
+		return model.SemanticConditionAvailability{Reason: "shadow"}
+	default:
+		return model.SemanticConditionAvailability{Reason: "disabled"}
+	}
+}
+
 // Decide evaluates bounded evidence, deduplicates attempts and accounts for usage.
 // Rejected/failed/limited decisions never return an actionable selection.
 func (s *JevDecisionService) Decide(ctx context.Context, req JevDecisionRequest) (*JevDecisionResult, error) {

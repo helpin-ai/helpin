@@ -10,7 +10,7 @@ let root: Root;
 afterEach(() => { act(() => root?.unmount()); container?.remove(); });
 function render(props: React.ComponentProps<typeof FlowSemanticConditionField>) {
  container = document.createElement('div'); document.body.appendChild(container);
- root = createRoot(container); act(() => root.render(<FlowSemanticConditionField {...props} />));
+ root = createRoot(container); act(() => root.render(<FlowSemanticConditionField availability={{ available: true }} {...props} />));
  return container.querySelector('input')!;
 }
 describe('Flow semantic condition', () => {
@@ -41,5 +41,42 @@ describe('Flow semantic condition', () => {
   for (const status of ['no_match', 'uncertain', 'unavailable', 'shadow', 'input_limit', 'stale']) {
    expect(flowConditionOutcomeLabel(status)).toContain('action skipped');
   }
+ });
+});
+
+describe('Jev availability', () => {
+ it.each([
+  [undefined, 'could not be confirmed'],
+  [{ available: false, reason: 'not_configured' } as const, 'configure Jev'],
+  [{ available: false, reason: 'shadow' } as const, 'evaluation mode'],
+  [{ available: false, reason: 'disabled' } as const, 'disabled by your administrator'],
+  [{ available: false, reason: 'workspace_disabled' } as const, 'not enabled for this workspace'],
+ ])('disables unavailable new conditions (%j)', (availability, message) => {
+  const changed = vi.fn();
+  const input = render({ value: '', scheduled: false, availability, onChange: changed });
+  expect(input.disabled).toBe(true);
+  expect(container.textContent).toContain(message);
+  expect(changed).not.toHaveBeenCalled();
+ });
+ it('preserves a saved guard and permits explicit keyboard-accessible removal', () => {
+  const changed = vi.fn();
+  const input = render({ value: 'Saved guard', scheduled: false, availability: { available: false, reason: 'not_configured' }, onChange: changed });
+  expect(input.value).toBe('Saved guard'); expect(input.disabled).toBe(true);
+  expect(changed).not.toHaveBeenCalled();
+  expect(container.textContent).toContain('action will be skipped');
+  const remove = container.querySelector('button')!;
+  remove.focus(); expect(document.activeElement).toBe(remove);
+  act(() => remove.click()); expect(changed).toHaveBeenCalledWith('');
+ });
+ it('does not permit removing a condition from a read-only form', () => {
+  const changed = vi.fn();
+  render({ value: 'Saved guard', scheduled: false, availability: undefined, disabled: true, onChange: changed });
+  const remove = container.querySelector('button')!;
+  expect(remove.disabled).toBe(true);
+  act(() => remove.click()); expect(changed).not.toHaveBeenCalled();
+ });
+ it('disables editing while checking availability, even with a cached response', () => {
+  const input = render({ value: '', scheduled: false, loading: true, availability: { available: true }, onChange: vi.fn() });
+  expect(input.disabled).toBe(true); expect(container.textContent).toContain('Checking semantic condition availability');
  });
 });

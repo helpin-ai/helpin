@@ -21,6 +21,23 @@ func (e *AutomationRuleEngine) SetJevDecisions(decisions *JevDecisionService) *A
 	return e
 }
 
+// validateSemanticConditionChange allows preserving or explicitly removing an
+// existing guard when configuration changes, but refuses unusable new guards.
+func (e *AutomationRuleEngine) validateSemanticConditionChange(workspaceID, trigger string, config json.RawMessage, previousTrigger string, previousConfig json.RawMessage) error {
+	condition, err := parseSemanticFlowCondition(trigger, config)
+	if err != nil || condition == nil {
+		return err
+	}
+	previous, previousErr := parseSemanticFlowCondition(previousTrigger, previousConfig)
+	if previousErr == nil && previous != nil && previous.Text == condition.Text && previousTrigger == trigger {
+		return nil
+	}
+	if !e.jevDecisions.SemanticConditionAvailability(workspaceID).Available {
+		return fmt.Errorf("semantic conditions require Jev to be active for this workspace")
+	}
+	return nil
+}
+
 func parseSemanticFlowCondition(triggerType string, config json.RawMessage) (*model.SemanticFlowCondition, error) {
 	if len(config) == 0 {
 		return nil, nil

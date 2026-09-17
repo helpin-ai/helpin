@@ -13,7 +13,7 @@ func jevProductPolicies() map[string]decision.Policy {
 		prefix := "JEV_" + strings.ToUpper(feature)
 		mode := strings.TrimSpace(os.Getenv(prefix + "_MODE"))
 		if mode == "" {
-			mode = "shadow"
+			mode = "primary"
 		}
 		policies[feature] = decision.Policy{Mode: mode, Threshold: parseJevProbability(os.Getenv(prefix+"_THRESHOLD"), .95), DailyLimit: parsePositiveIntEnv(os.Getenv(prefix+"_DAILY_LIMIT"), 1000)}
 	}

@@ -21,3 +21,25 @@ for (const mode of ['light', 'dark'] as const) {
   await expect(input).toBeDisabled();
  });
 }
+
+for (const mode of ['light', 'dark'] as const) {
+ test(`preserves and explicitly removes an unavailable condition in ${mode} mode`, async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/e2e/automation/harness/semantic-condition.html?missingKey');
+  if (mode === 'dark') await page.evaluate(() => document.documentElement.classList.add('dark'));
+  const input = page.getByLabel('Semantic condition (optional)');
+  await expect(input).toBeDisabled();
+  await expect(input).toHaveValue('The release concerns authentication');
+  await expect(page.getByText('Semantic conditions need Jev.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('output')).toContainText('The release concerns authentication');
+  const remove = page.getByRole('button', { name: 'Remove condition', exact: true });
+  await remove.focus(); await page.keyboard.press('Enter');
+  await expect(input).toHaveValue(''); await expect(input).toBeDisabled();
+  await expect(remove).toHaveCount(0);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('output')).not.toContainText('semantic_condition');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: `/tmp/helpin-jev-unavailable-${mode}.png`, fullPage: true });
+ });
+}
