@@ -1,4 +1,13 @@
-# Help Center Subpath Reverse Proxy Plan And Guide
+# Help-center subpath proxy design and setup
+
+> Status: this page combines an April design plan with integration examples.
+> Subpath context is now implemented in [the SSR server](../../help-center/serve.mjs)
+> and covered by [context tests](../../help-center/src/lib/__tests__/utils.test.ts).
+> [Help-center settings](../../frontend/src/components/settings/HelpcenterTab.tsx)
+> and [model fields](../../server/internal/model/docs.go) include reverse-proxy
+> configuration. Treat the phases below as design history, not unfinished tasks;
+> validate the customer proxy and selected deployment before cutover.
+
 
 **Date:** 2026-04-23
 **Scope:** Public Helpin help centers mounted under a customer's existing website path, for example `https://usermaven.com/docs`, `https://usermaven.com/help`, or `https://usermaven.com/help-center`.
@@ -33,7 +42,10 @@ The proxy must provide three pieces of request context to Helpin:
 | Public host | `usermaven.com` | Builds canonical URLs, Open Graph URLs, sitemap links, alternate locale links, and redirects. |
 | Public base path | `/docs`, `/help`, `/help-center` | Prefixes internal links, assets, API calls, sitemap, robots, and canonical paths. |
 
-Today, `help-center/serve.mjs` and `help-center/src/lib/utils.ts` already carry a `basepath` concept, but hosted and custom-domain help centers currently resolve it to an empty string. First-class subpath proxy support should make that base path explicit.
+The current server resolves explicit tenant/base-path context from the supported
+headers or query parameters, validates tenant selection against the raw host,
+and carries the resulting base path through routing and asset URLs. The
+implementation plan below records the original design.
 
 ---
 

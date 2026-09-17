@@ -1,18 +1,28 @@
 # Codex-Native Interaction Contract Plan
 
+> Source review, 2026-09-17
+
+The `server/internal/worker` tool/executor package referenced below is absent
+from this checkout. Current Helpin provider dispatch lives in
+[agent_runtime_mcp.go](../../server/internal/service/agent_runtime_mcp.go), with
+product operations implemented by internal command services. Runtime-local tool
+execution belongs to the separate Agent Runtime repository. See the
+[current tool guide](../internal-tools-framework.md); do not recreate the old
+worker registry to follow this historical plan.
+
 ## Status
 
 Draft implementation plan for replacing Helpin's flattened human-input and approval layer with a versioned interaction contract that is isomorphic to Codex where Codex already has a first-class protocol.
 
 This plan is based on:
 
-- Current execution ownership: [Coding Agent Runtime Flow](../CODING_AGENT_RUNTIME_FLOW.md). The retired in-process runtime rollout plan is available in Git history.
-- [docs/plans/2026-03-31-coding-session-ui-and-runtime-contract-plan.md](/root/teampulse/docs/plans/2026-03-31-coding-session-ui-and-runtime-contract-plan.md)
+- Current execution ownership: [How coding agents execute work](../coding-agent-execution.md). The retired in-process runtime rollout plan is available in Git history.
+- [docs/plans/2026-03-31-coding-session-ui-and-runtime-contract-plan.md](2026-03-31-coding-session-ui-and-runtime-contract-plan.md)
 - the locally cloned Codex repo at `/tmp/codex`
 - the current Helpin bridge code in:
-  - [server/internal/worker/codex_approval_bridge.go](/root/teampulse/server/internal/worker/codex_approval_bridge.go)
-  - [server/internal/worker/codex_event_mapper.go](/root/teampulse/server/internal/worker/codex_event_mapper.go)
-  - [server/internal/worker/tools_interaction.go](/root/teampulse/server/internal/worker/tools_interaction.go)
+  - `server/internal/worker/codex_approval_bridge.go` (historical path; absent from this checkout)
+  - `server/internal/worker/codex_event_mapper.go` (historical path; absent from this checkout)
+  - `server/internal/worker/tools_interaction.go` (historical path; absent from this checkout)
 
 ## Problem
 
@@ -356,10 +366,10 @@ For model-facing runtime tools in `native_sdk`:
 
 Files to update:
 
-- [server/internal/worker/tools.go](/root/teampulse/server/internal/worker/tools.go)
-- [server/internal/worker/tools_interaction.go](/root/teampulse/server/internal/worker/tools_interaction.go)
-- [server/internal/worker/tool_catalog.go](/root/teampulse/server/internal/worker/tool_catalog.go)
-- [server/internal/worker/runtime_profiles.go](/root/teampulse/server/internal/worker/runtime_profiles.go)
+- `server/internal/worker/tools.go` (historical path; absent from this checkout)
+- `server/internal/worker/tools_interaction.go` (historical path; absent from this checkout)
+- `server/internal/worker/tool_catalog.go` (historical path; absent from this checkout)
+- `server/internal/worker/runtime_profiles.go` (historical path; absent from this checkout)
 - planner prompt docs and examples
 
 ### Replace overloaded `request_human_approval`
@@ -428,8 +438,8 @@ Examples:
 
 Frontend files likely affected:
 
-- [frontend/src/lib/pm-types/codingSession.ts](/root/teampulse/frontend/src/lib/pm-types/codingSession.ts)
-- [frontend/src/components/pm/AgentRunDrawer.tsx](/root/teampulse/frontend/src/components/pm/AgentRunDrawer.tsx)
+- [frontend/src/lib/pm-types/codingSession.ts](../../frontend/src/lib/pm-types/codingSession.ts)
+- `frontend/src/components/pm/AgentRunDrawer.tsx` (historical path; absent from this checkout)
 - new `frontend/src/components/pm/coding-session/interactions/*`
 - any coding-session page components introduced from the broader coding-session plan
 
@@ -483,10 +493,10 @@ Update the Codex adapter to dual-write:
 
 Files:
 
-- [server/internal/worker/codex_event_mapper.go](/root/teampulse/server/internal/worker/codex_event_mapper.go)
-- [server/internal/worker/codex_approval_bridge.go](/root/teampulse/server/internal/worker/codex_approval_bridge.go)
-- [server/internal/worker/codex_session_host.go](/root/teampulse/server/internal/worker/codex_session_host.go)
-- [server/internal/worker/codex_appserver_protocol.go](/root/teampulse/server/internal/worker/codex_appserver_protocol.go)
+- `server/internal/worker/codex_event_mapper.go` (historical path; absent from this checkout)
+- `server/internal/worker/codex_approval_bridge.go` (historical path; absent from this checkout)
+- `server/internal/worker/codex_session_host.go` (historical path; absent from this checkout)
+- `server/internal/worker/codex_appserver_protocol.go` (historical path; absent from this checkout)
 
 Acceptance criteria:
 
@@ -505,9 +515,9 @@ Longer term, if `native_sdk` coding agents gain runtime-managed shell/file permi
 
 Files:
 
-- [server/internal/worker/tools.go](/root/teampulse/server/internal/worker/tools.go)
-- [server/internal/worker/tools_interaction.go](/root/teampulse/server/internal/worker/tools_interaction.go)
-- [server/internal/service/agent_system_prompts.go](/root/teampulse/server/internal/service/agent_system_prompts.go)
+- `server/internal/worker/tools.go` (historical path; absent from this checkout)
+- `server/internal/worker/tools_interaction.go` (historical path; absent from this checkout)
+- [server/internal/service/agent_system_prompts.go](../../server/internal/service/agent_system_prompts.go)
 - planner contract docs
 
 Acceptance criteria:

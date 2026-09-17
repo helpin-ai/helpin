@@ -16,9 +16,10 @@
   get new versioned subjects.
 - Visitor sharding always hashes
   `lower(project_id) + ":" + user_anonymous_id` into 100 shards.
-- Client timestamps are rejected outside `now - 7d` through `now + 1h`; never
-  clamp a timestamp because ClickHouse replacement depends on partition
-  stability.
+- Server-credential custom timestamps are rejected outside `now - 7d` through
+  `now + 1h`; never clamp them because ClickHouse replacement depends on partition
+  stability. Browser-credential events use receive time instead of custom timestamps;
+  credential kind comes from the registry, not token punctuation.
 - Missing MaxMind/IP2Proxy databases fail open with metrics and logs.
 - A retryable NATS work or DLQ failure must reach the fsynced disk fallback
   before capture returns success. The deployment owns encryption of that

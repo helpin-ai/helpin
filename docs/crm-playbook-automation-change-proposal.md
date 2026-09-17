@@ -4,7 +4,7 @@ Date: 2026-09-08 · Branch: `waqar-fixes`
 
 Status: **Implemented on `waqar-fixes`; deployment is separate.** Guided setup, explicit activation, durable execution through the existing Agent Runtime, exact CRM approvals and result inspection are connected on this branch. Ordinary saved Flows and Agents are not rewritten. Application migrations, production activation and live customer sends have not been performed.
 
-This is the agreed implementation direction for the [CRM blueprint](crm-customer-work-blueprint.md). Its filename is retained for existing links; the earlier proposal requiring ordered Flow steps is superseded by this document. The [CRM reference](crm-signals.md) and [Automation reference](AGENTS_AND_AUTOMATION.md) describe implemented behavior. The [Automation product model](AUTOMATION_PRODUCT_MODEL.md) remains the shared foundation. All three customer journeys are required for one complete delivery.
+This is the agreed implementation direction for the [CRM blueprint](crm-customer-work-blueprint.md). Its filename is retained for existing links; the earlier proposal requiring ordered Flow steps is superseded by this document. The [CRM reference](crm-signals.md) and [Automation reference](agents-and-automation.md) describe implemented behavior. The [Automation product model](automation-product-model.md) remains the shared foundation. All three customer journeys are required for one complete delivery.
 
 ## 1. Agreed architecture
 

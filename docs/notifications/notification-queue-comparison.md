@@ -1,5 +1,14 @@
 # Notification System: Background Job Queue Comparison
 
+> **Status: historical evaluation, not the implemented architecture.** Source
+> comparison on 2026-09-17 found no River dependency in `server/go.mod`.
+> Helpin uses its [notification service](../../server/internal/service/notification.go)
+> and delivery records; the [API process](../../server/cmd/api/main.go) starts a
+> digest sweep at startup and every 15 minutes. The recommendation and integration
+> steps below preserve the March evaluation. Do not follow them as setup steps.
+> Library versions, popularity, pricing, and external capability claims have not
+> been reverified in this repository audit.
+
 **Date:** 2026-03-08
 **Context:** Evaluating job queue libraries for a notification system in the Helpin project (Go + GORM + PostgreSQL/Neon + Temporal).
 

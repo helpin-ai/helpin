@@ -1,6 +1,6 @@
 # Design specifications
 
-[Documentation index](../README.md)
+[Documentation index](../README.md) · [Writing and naming guide](../documentation-guide.md)
 
 Feature and interaction designs retained for context. Designs may be superseded by later implementation decisions.
 

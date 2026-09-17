@@ -1,6 +1,9 @@
-# Temporal Worker Debian Package
+# Temporal worker Debian package
 
-This directory contains the Debian packaging assets for the bare-metal Temporal worker deployment.
+This directory contains optional Debian packaging assets for a bare-metal Temporal
+worker. The current production workflow publishes container images; it does not
+build or attach this worker package to releases. Build and distribute the package
+separately if your installation uses systemd.
 
 The package name is `helpin-temporal-worker`. It installs the worker as a `systemd` service, loads runtime secrets through Doppler, and optionally enables unattended upgrades through a timer-driven updater script.
 
@@ -30,20 +33,26 @@ mkdir -p dist
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -trimpath -ldflags="-w -s" -o dist/temporal-worker ./cmd/temporal-worker
 
-VERSION=0.88.0 nfpm package --packager deb \
-  --target "dist/helpin-temporal-worker_${VERSION}_amd64.deb"
+HELPIN_PACKAGE_VERSION=0.88.0 # Example; choose the source release being packaged
+VERSION="$HELPIN_PACKAGE_VERSION" nfpm package --packager deb \
+  --target "dist/helpin-temporal-worker_${HELPIN_PACKAGE_VERSION}_amd64.deb"
 ```
+
+The command above builds Community. For an EE installation, build the worker
+with `-tags ee` so it matches the API edition.
 
 Package metadata and file mappings live in [`server/nfpm.yaml`](../nfpm.yaml).
 
 ## Bare-Metal Install
 
-Download the package from the GitHub Release and install it:
+Install the package you built or an explicitly verified package asset from your
+release process. Do not assume the latest GitHub Release has a worker `.deb`:
 
 ```bash
-gh release download v0.88.0 --pattern '*.deb' --repo helpin-ai/helpin
-sudo apt install ./helpin-temporal-worker_0.88.0_amd64.deb
+sudo apt install ./dist/helpin-temporal-worker_0.88.0_amd64.deb
 ```
+
+Replace the example version with the package you built.
 
 Then configure the host:
 
@@ -89,7 +98,9 @@ Requirements:
 - `GH_TOKEN` set in `/etc/helpin/temporal-worker.conf`
 - sufficient token scope to read private releases for `helpin-ai/helpin`
 
-Enable it only after those prerequisites are configured:
+The current container release workflow does not supply those `.deb` assets.
+Enable the updater only if a separate packaging process publishes the expected
+asset for each selected release and the prerequisites above are configured:
 
 ```bash
 sudo systemctl enable --now helpin-temporal-worker-updater.timer
@@ -105,12 +116,10 @@ systemctl list-timers helpin-temporal-worker-updater.timer
 
 ## CI/CD
 
-The production release workflow in [`.github/workflows/deploy-prod.yml`](../../.github/workflows/deploy-prod.yml):
-
-1. builds `dist/temporal-worker`
-2. packages the `.deb` with `nfpm`
-3. uploads the package as a workflow artifact
-4. attaches the package to the GitHub Release
+The [production release workflow](../../.github/workflows/deploy-prod.yml) builds
+separate API, migration, and Temporal worker container images. It contains no
+`nfpm` step or Temporal worker Debian upload. These packaging assets support a
+manual or separately configured release process.
 
 ## Notes
 

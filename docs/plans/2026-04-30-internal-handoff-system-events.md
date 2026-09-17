@@ -4,6 +4,45 @@
 **Branch:** waqar-work
 **Owner:** Waqar
 
+## Current implementation review
+
+Source-compared on 2026-09-17. This is the historical inbox handoff proposal for
+contributors. The message split exists, with different event naming and broader
+handoff behavior than the original plan.
+
+[Escalation now lives in its own service file](../../server/internal/service/support_ai_escalate.go).
+It creates an internal system message and, when reply policy allows it, a public
+AI reply. Public output can be email-only; a customer-visible widget reply is not
+unconditional. Internal event content remains empty and the staff UI derives its
+label from the event type.
+
+The [reason mapping](../../server/internal/service/support_ai_admin.go) retains
+`ai_escalated` for AI-driven handoffs and uses `customer_requested_human` for the
+two customer-request reasons. The proposed `ai_handoff` rename did not ship.
+The [staff renderer](../../frontend/src/components/support/MessageBubble.tsx)
+labels these “AI escalated to a human” and “Customer requested a human,” respectively.
+
+Customer-request events are persisted and broadcast before the public reply;
+AI-driven events follow it. This contradicts the original reply-first rule.
+[WebSocket payload visibility](../../server/internal/websocket/support_events.go)
+uses `WidgetVisible()`, which is broader than checking `IsInternal` alone.
+Internal events omit hydrated widget payloads.
+
+Escalation now uses `ChangeAIControl` with control-version/state checks, includes
+a handoff note, and cancels the previous controlled run after the transition.
+History deduplication includes internal messages and considers the latest AI resume.
+The old requirement to leave transition logic untouched is historical scope,
+not a current description of the complete escalation path.
+
+The reason is also persisted in an `AgentHandoff` analytics record, and a support
+handoff event is recorded. Thus the final claim that the reason exists only in
+function arguments is obsolete. These post-transition writes have separate failure
+handling and should not be assumed to form one atomic transaction with all effects.
+The original branch, test commands, and UI verification are historical; no runtime
+tests or live handoffs were performed for this review.
+
+## Original proposal
+
 ## Problem
 
 When the AI hands off to a human, the inbox currently shows the

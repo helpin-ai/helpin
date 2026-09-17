@@ -12,8 +12,8 @@ This plan assumes:
 
 Current execution references (the retired in-process rollout plans remain in Git history):
 
-- [Coding Agent Runtime Flow](../CODING_AGENT_RUNTIME_FLOW.md)
-- [Agents and automation](../AGENTS_AND_AUTOMATION.md)
+- [How coding agents execute work](../coding-agent-execution.md)
+- [Agents and automation](../agents-and-automation.md)
 
 ## Goal
 
@@ -93,7 +93,7 @@ If needed later:
 
 ### 3. Build a real `CodingSession` product surface, not a bigger `AgentRunDrawer`
 
-The current drawer in [AgentRunDrawer.tsx](/root/teampulse/frontend/src/components/pm/AgentRunDrawer.tsx) is still a mixed transcript/artifact/log surface.
+The current drawer in `frontend/src/components/pm/AgentRunDrawer.tsx` (historical path; absent from this checkout) is still a mixed transcript/artifact/log surface.
 
 That was useful for rollout, but it is not the right final architecture for coding work.
 
@@ -1168,7 +1168,7 @@ Likely files:
 
 ## Migration Checklist
 
-1. Keep [AgentRunDrawer.tsx](/root/teampulse/frontend/src/components/pm/AgentRunDrawer.tsx) working during migration.
+1. Keep `frontend/src/components/pm/AgentRunDrawer.tsx` (historical path; absent from this checkout) working during migration.
 2. Add a “Open coding session” entry point from existing run surfaces.
 3. Use the new page for Codex first behind a feature flag if needed.
 4. Keep existing run APIs intact until the session page reaches parity.

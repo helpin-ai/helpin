@@ -1,7 +1,47 @@
-# Epic External Links & Attachments Parity
+# Epic external links and attachments design
 
 **Date:** 2026-04-28
-**Status:** Approved
+**Status:** Historical approved design; source-compared 2026-09-18
+
+
+This design records the introduction of epic external links and attachment UI.
+Use the implementation notes below for current maintenance; the original file
+list and layout proposal are not the current diff or an operational runbook.
+
+## Current implementation and limits
+
+- [PMExternalLink](../../server/internal/model/pm_external_link.go) now has entity
+  fields and a nullable `*string` TaskID. Unlike the proposed struct below, the
+  entity fields carry `not null` GORM tags. Generic task/epic operations and
+  parent-aware update/delete events exist in the
+  [service](../../server/internal/service/pm_external_link.go), with generic
+  routes under `/api/pm/entity-links/{entity_type}/{entity_id}` in the
+  [router](../../server/internal/router/router.go).
+- The [original migration](../../server/internal/dbmigrate/sql/202604280001_external_links_entity_type.sql)
+  is followed by an [additive repair](../../server/internal/dbmigrate/sql/202604280010_repair_pm_external_links_entity_backfill.sql)
+  handling blank/invalid legacy task IDs. The repair deletes rows that cannot
+  resolve an entity ID. The embedded SQL and “drop columns” rollback note below
+  are historical sketches, not a safe recovery procedure for current data.
+  This review did not apply migrations or inspect a deployed database.
+- [GlobalCreateEpic](../../frontend/src/components/pm/GlobalCreateModals.tsx)
+  collects external links, then posts them individually after epic creation.
+  The loop catches thrown failures and does not inspect each returned API error.
+  File uploads also happen after creation and are non-blocking. Epic creation
+  therefore does not imply every selected link/file was saved successfully.
+- [EpicDetail](../../frontend/src/pages/pm/EpicDetail.tsx) renders generic external
+  links in its Related section and has description-specific drag handlers and
+  upload callbacks. The original panel-wide overlay and toggle-state layout
+  should not be used as an exact description of today's UI.
+- [Realtime sync](../../frontend/src/hooks/useRealtimeSync.ts) invalidates entity
+  external-link query keys using parent metadata. The original file table's
+  `hooks/queries/useRealtimeSync.ts` path is obsolete; the actual hook lives
+  directly under `hooks/`.
+
+The original absence-of-parity findings are historical. This source review did
+not exercise file uploads, browser drag behavior, live WebSocket delivery, or
+all permission boundaries, and makes no end-to-end parity claim.
+
+## Original design
 
 ## Problem
 

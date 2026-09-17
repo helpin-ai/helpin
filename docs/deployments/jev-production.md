@@ -1,10 +1,14 @@
 # Jev support integration
 
-Implemented on `feat/semantic-decision-engine`, after merging `origin/develop`
-commit `1c7a37de3` (merge `dcf1697b8`). The earlier review's disabled/shadow rollout
-recommendation is superseded by the user's explicit request: **primary routing
-and automatic tagging are the defaults when `JEV_API_KEY` is configured**.
-Production release is prepared on `release/jev-production` from `origin/main` at `b746ff2d9`. Only backend integration files are included; experimental datasets and model artifacts are excluded.
+This guide is for operators configuring Jev support decisions and contributors
+tracing their behavior. The checked-in API enables routing, tagging, handoff, and
+follow-up decisions by default when a valid `JEV_API_KEY` configuration is supplied.
+Source presence and manifests do not establish that the deployed secret contains
+the key or that production is running this code.
+
+The original implementation used `feat/semantic-decision-engine` and a
+`release/jev-production` branch based on `b746ff2d9`; those are historical release
+records, not instructions to switch to or deploy those branches.
 
 ## Behavior
 
@@ -82,6 +86,12 @@ All values are server-side; credentials are never exposed to the browser.
 | `JEV_FOLLOW_UP_THRESHOLD` | 0.95 | Minimum selected follow-up state probability |
 | `JEV_DAILY_LIMIT` | 1000 | Combined API attempts per workspace, per UTC day |
 
+When a key is present, invalid modes, out-of-range thresholds, or a timeout above
+2000 ms fail service/client construction and stop API startup. The timeout is
+rejected, not clamped. The request-failure fallbacks described above apply after
+successful initialization. See [API wiring](../../server/cmd/api/main.go) and
+[configuration validation](../../server/internal/service/support_jev.go).
+
 Thresholds are provisional operational settings, **not** measured 90%/95%
 correctness guarantees. The provider confidence (distribution concentration) is
 stored separately and never substituted for a probability. The model is pinned
@@ -126,7 +136,12 @@ go build ./...
 Tests use fake HTTP transports and SQLite fixture conversations. They do not use
 production credentials or send customer text to Jev. Earlier synthetic API measurements are retained in the semantic-decision-engine research worktree.
 
-## Validation result (2026-09-17)
+## Recorded validation result (2026-09-17)
+
+The following is the implementation author's historical report. This docs audit
+compared source but did not rerun these full suites, access a production cluster,
+or verify the referenced release branches. Use results from the exact revision
+you intend to deploy.
 
 Community and enterprise builds pass, as does `go vet ./...`. Targeted tests pass
 with `-race`. Full service, repository, config and decision package tests pass
@@ -154,12 +169,15 @@ endpoint alone does not prove Jev is active.
 Emergency feature rollback: set `JEV_ROUTING_MODE=off`, `JEV_TAGS_MODE=off`,
 `JEV_HANDOFF_MODE=off` and `JEV_FOLLOW_UP_MODE=off`, then restart the API deployment.
 Existing LLM routing remains available. Already-added tags are not automatically removed.
-The previous server-family release was `server-v0.95.403`; use GitOps to revert
-images if a full binary rollback is needed. No new migrations accompany Jev.
+For binary rollback, select the previously verified release from the current
+GitOps history and deployment record. The original rollout named
+`server-v0.95.403`; it is not a permanently valid rollback target. The checked-in
+[production API manifest](../../k8s/prod/server.yaml) identifies the desired image
+and secret reference, but does not prove cluster state. Jev uses existing schemas.
 
 ## Lifecycle integration verification
 
-The lifecycle extension is developed on `feat/jev-support-lifecycle`. It reuses
+The lifecycle extension was originally developed on `feat/jev-support-lifecycle`. It reuses
 existing schemas and public APIs; there is no new UI, migration or dependency.
 Existing inbox handoff notes, follow-up status/reason and conversation events
 expose the outcomes. Both new controls are independent of routing/tagging.
@@ -191,7 +209,7 @@ wiring and guarded effects, not Jev classification accuracy on customer data.
 Thresholds remain provisional; no live customer transcript evaluation or production
 deployment is part of these local checks.
 
-Lifecycle validation on 2026-09-17 passed: full service, repository, config and
+The original implementation report records lifecycle validation on 2026-09-17 as passing: full service, repository, config and
 provider suites with `TZ=UTC` and `-race`; the targeted PostgreSQL lifecycle and
 control integration suites with `-race`; `go vet ./...`; and community/enterprise
 builds. PostgreSQL tests used a disposable local container, removed afterward.
@@ -220,3 +238,18 @@ changes, task relationships and support task creation require review. Priority i
 not derived from classifier probability. Shadow mode records decisions without
 applying labels or exposing suggestions. Set `JEV_PM_MODE=off` to disable PM
 classification independently of support routing and lifecycle decisions.
+
+## Implementation references
+
+- [Provider contract](../../server/internal/decision/jev.go): endpoint, pinned model,
+  timeout and response validation.
+- [Decision service](../../server/internal/service/support_jev.go) and
+  [admission repository](../../server/internal/repository/support_jev.go): modes,
+  tag batching, usage records, fingerprints and daily cap.
+- [Lifecycle context](../../server/internal/service/support_jev_lifecycle.go),
+  [handoff](../../server/internal/service/support_chat_jev.go), and
+  [follow-up](../../server/internal/service/support_ai_follow_up_jev.go): bounded
+  complete history, guarded outcomes and Runtime fallback.
+- [Production workflow](../../.github/workflows/deploy-prod.yml): server builds
+  depend on detected server changes or an explicit forced release, not every
+  documentation-only push to main.

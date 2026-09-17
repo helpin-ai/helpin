@@ -1,5 +1,12 @@
 # Customer.io Campaign Contract Alignment
 
+> Historical design (2026-08-10). Campaign IDs, segment IDs, and draft-state
+> assertions below are not a current Customer.io inventory. The signup and
+> outbox refresh paths exist, but the proposed browser `module_first_value`
+> emission is absent from current production call sites. Use the current
+> [campaign guides](../customer-io/README.md) for implementation limits; verify
+> hosted state separately before making configuration changes.
+
 ## Goal
 
 Align Helpin's Customer.io draft campaigns and lifecycle segments with the events and attributes the application actually emits. Preserve the existing durable billing outbox, keep every campaign in draft, and avoid dual-emitting legacy aliases.
@@ -17,6 +24,16 @@ Helpin uses these lifecycle event names:
 - `module_first_value`: emitted by the browser after a supported first-value action.
 
 The integration will not emit compatibility aliases such as `workspace_created`, `trial_expiring`, `subscription_started`, `payment_recovered`, or `upgrade_completed`. One name per fact prevents duplicate campaign entry and reduces contract drift.
+
+## Current source comparison
+
+The implemented signup method is `TrackUserSignedUp`, called after new password
+or Google signup. `RefreshWorkspaceForOutbox` returns refresh failures to the
+worker before recipient delivery. Billing producers now live in
+[Enterprise billing](../../server/ee/service/billing.go); signup, payload, stable-ID,
+retry classification, repository fencing, and edition billing tests exist, but the
+historical test and hosted-validation checklist below is not a current passing
+report. No remote campaign or segment state was verified during this docs audit.
 
 ## Application changes
 

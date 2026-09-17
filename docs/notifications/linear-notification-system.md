@@ -1,5 +1,10 @@
 # Linear Notification System — Research
 
+> **Status: historical competitor research.** This page preserves design input,
+> not Helpin's implemented feature set or a current verification of the vendor's
+> product. Vendor limits, settings, shortcuts, and integrations may have changed.
+> Consult the [notification index](README.md) for Helpin's current code entry points.
+
 ## 1. Events That Trigger Notifications
 
 Linear generates notifications for subscribed issues. A user is **automatically subscribed** to an issue when they:

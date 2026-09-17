@@ -1,5 +1,17 @@
 # Chat-Backed Agent Run Sharing
 
+> Historical design, source-compared on 2026-09-17. Implemented in
+> [PublicShareSource](../../server/internal/service/public_share_source.go):
+> standalone runs require a nonempty actor and workspace-scoped run lookup;
+> chat-backed runs additionally call `DockChatService.GetChat`. The authenticated
+> creation route uses the command-bar read gate. Public retrieval uses the active
+> share token and returns an Agent Run projection, not a parent-chat projection.
+> Parent-chat authorization is checked when managing the share; this is not a
+> requirement for a public-token visitor to sign in to the parent chat.
+> [Share menu](../../frontend/src/components/agents/PublicShareMenuActions.tsx)
+> preserves the returned API error when creation returns no data.
+> Verification bullets below describe coverage goals, not a fresh passing report.
+
 ## Goal
 
 Allow a public link to be created for an Agent Run that belongs to an Ask Agent chat without weakening the parent chat's access controls. Preserve direct Ask chat sharing and standalone Agent Run sharing.

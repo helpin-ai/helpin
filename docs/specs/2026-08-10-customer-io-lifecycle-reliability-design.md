@@ -1,5 +1,35 @@
 # Customer.io Lifecycle Reliability Design
 
+> Historical implementation plan/design (2026-08-10), source-compared on
+> 2026-09-17. The outbox, fenced claims, stable recipient IDs, worker, and atomic
+> billing enqueue paths now exist. The checklists below record the original work;
+> they are not a fresh test report or instructions to recreate these components.
+
+## Current implementation differences
+
+- Billing code moved to [Enterprise service](../../server/ee/service/billing.go),
+  [repository](../../server/ee/repository/billing.go), and
+  [handler](../../server/ee/handler/billing.go). Old `internal/.../billing.go`
+  paths below are historical. Enterprise billing tests require the edition build
+  configuration; the generic test commands below are not proof of their coverage.
+- The [worker](../../server/internal/service/customer_io_outbox.go) exposes
+  `ProcessDue`, claims batches of 25 with five-minute leases, and stops retries
+  after ten attempts. API polling is every 15 seconds. Positive `Retry-After`
+  replaces computed exponential delay; all delays are capped at one hour. This
+  differs from the proposed maximum-of-backoff-and-header rule below.
+- Trial expiry selects candidates and conditionally updates each in one
+  transaction, enqueueing only when `RowsAffected` is nonzero. It does not use
+  the literal `UPDATE ... RETURNING` strategy proposed below. Trial initialization
+  uses insert-on-conflict plus `RowsAffected` and reloads an existing trial.
+- Delivery refreshes current workspace/relationship state before filtering the
+  occurrence-time recipient snapshot. Event roles remain occurrence-time roles.
+  Stable event IDs and database fencing support retries; they do not prove
+  end-to-end exactly-once delivery at an external provider.
+- The Go version in the original plan is historical; use the repository's current
+  [development guide](../development.md). Module milestone emission is not wired
+  to production actions; see [campaign limits](../customer-io/module-activation-campaigns.md).
+
+
 ## Goal
 
 Make Customer.io billing lifecycle delivery reliable across multiple API replicas without creating a general-purpose event platform.

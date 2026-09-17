@@ -1,13 +1,12 @@
-# Helpin Support Mobile
+# Helpin Support mobile app
 
-Tauri 2 mobile shell for Helpin Support, targeting Android and iOS. Shares the
-Vite/React frontend at `apps/support-mobile/src` with a thin native shell in
-`src-tauri/`, mirroring the pattern established by `apps/support-desktop`.
+Tauri 2 mobile shell for Helpin Support, targeting Android and iOS. Its Vite/React frontend lives in `apps/support-mobile/src`, with a thin native
+shell in `src-tauri/` and shared product code in `packages/support-core`.
 
 ## Stack
 
 - Frontend: Vite 7 + React 19 + TypeScript, dev server on port `5176`
-- Native shell: Tauri 2.11 (`src-tauri/`), plugins: `tauri-plugin-notification`, `tauri-plugin-store`, `tauri-plugin-deep-link`, `tauri-plugin-opener`
+- Native shell: Tauri 2.11 (`src-tauri/`), plugins include notifications, store, deep links, opener, haptics, and the local Helpin push plugin
 - Rust command: `mobile_shell_info()` returns `{ runtime, platform, app_version }` (mirrors desktop's `desktop_shell_info`)
 
 ## Environment prerequisites
@@ -95,45 +94,40 @@ release instructions.
 
 ## Device handoff checklist
 
-This machine has no Rust toolchain, no Android SDK/NDK, and is Linux (no
-Xcode), so the steps below could not be executed here. The `src-tauri/`
-config and source files are complete and verbatim per spec; a machine with
-the prerequisites above must run the following to finish mobile bring-up.
+The checklist below preserves native device checks from the original bring-up.
+[QA.md](QA.md) records dated web/test results and pending device checks; neither
+source presence nor a Linux `cargo check` proves Android/iOS behavior.
 
-1. **Initialize native projects** (generates `src-tauri/gen/android` and
-   `src-tauri/gen/apple`; these are checked into git, following the same
-   pattern as `apps/support-desktop/src-tauri/gen`, and are not part of this
-   commit since they can't be generated on this machine):
+1. **Initialize native projects when absent**:
    ```bash
    cd apps/support-mobile
-   pnpm tauri android init     # requires ANDROID_HOME + NDK
-   pnpm tauri ios init         # macOS only
+   pnpm tauri android init     # requires Android SDK + NDK
+   pnpm tauri ios init         # macOS + Xcode
    ```
-   Expected result: `src-tauri/gen/android/` and `src-tauri/gen/apple/`
-   appear, each a native project (Gradle / Xcode) wrapping the Rust core.
-   This also generates `src-tauri/gen/schemas/mobile-schema.json`, which
-   `capabilities/default.json`'s `$schema` field points at — that reference
-   is intentionally forward-looking until this step runs.
+   This checkout does not include `src-tauri/gen/android` or `gen/apple`.
+   The TestFlight workflow runs `pnpm tauri ios init --ci` when the Apple
+   project is absent. Generated schemas accompany native project generation.
+   Review any native customizations and signing files before committing generated
+   output; do not assume initialization output is already versioned.
 
 2. **Run on emulator/simulator**:
    ```bash
-   pnpm tauri android dev   # expect: app boots on emulator showing "Helpin Support" centered
-   pnpm tauri ios dev       # expect: same on iOS simulator
+   pnpm tauri android dev   # expect: sign-in or the restored support workspace
+   pnpm tauri ios dev       # verify the same flow on the iOS simulator
    ```
    Verify:
    - Text is visible and legible in both light and dark OS themes.
    - No white flash on boot (splash/background should match the app theme).
-   - The status bar area is not overlapped incorrectly by app content (full
-     safe-area handling arrives in a later task — this is a basic sanity
-     check only, not final polish).
+   - The status bar and keyboard do not overlap controls. Exercise the existing
+     safe-area handling on a device with the relevant insets.
 
 3. **Sanity-check the native command bridge**: from the webview devtools
    console (or a temporary button in the app), call
    `invoke('mobile_shell_info')` and confirm it resolves to
    `{ runtime: "tauri", platform: "android" | "ios", app_version: "0.1.0" }`.
 
-4. **Commit the generated `gen/android` and `gen/apple` directories** once
-   initialized (see point 1 above).
+4. **Review generated project changes** against the release workflow before
+   committing native customizations. Keep credentials out of version control.
 
 If `cargo check` in `src-tauri/` was not previously verified locally (no
 network access to crates.io, or no Rust toolchain), run it once as a first
@@ -161,8 +155,7 @@ before mobile `init`.
    `src/navigation/use-edge-swipe-back.ts`) — these need a real touchscreen or
    at minimum an emulator with touch input; jsdom cannot exercise gestures or
    the reduced-motion media query end-to-end:
-   - Navigate placeholder Inbox → Conversation (temporary `Link` or
-     `router.navigate`) and confirm the new screen slides in from the right
+   - Navigate Inbox → Conversation by opening a conversation and confirm the new screen slides in from the right
      with a spring feel (not linear/robotic), and the previous screen
      partially parallaxes left.
    - From the Conversation screen, swipe right starting within ~28px of the
@@ -174,7 +167,7 @@ before mobile `init`.
    - Enable OS-level "Reduce Motion" (Settings > Accessibility on iOS/Android)
      and confirm push/pop transitions crossfade instead of sliding.
    - Cold-start directly on a conversation deep link (`/w/{slug}/support/{id}`,
-     routine once Task 21 lands) with no prior in-app history, then trigger
+     using the deep-link handling in `src/main.tsx`) with no prior in-app history, then trigger
      back — confirm it lands on the Inbox (`backFallbackPath`), not a dead
      end or a crash from `router.history.back()` on an empty stack.
 
@@ -234,8 +227,7 @@ before mobile `init`.
      skeletons appearing only on the very first load of the screen.
 
 9. **Push plugin (Task 19 — `src-tauri/tauri-plugin-helpin-push/`)**: written
-   pre-spike, entirely unverified — no Rust/Android/iOS toolchain exists in
-   this environment. Full SPIKE-VERIFY list lives in
+   with device verification still pending in the checked-in QA record. Full SPIKE-VERIFY list lives in
    `src-tauri/tauri-plugin-helpin-push/README.md`; do not proceed with any
    of the below until Task 19a's findings doc
    (`docs/superpowers/plans/2026-07-08-push-spike-findings.md`) exists and
@@ -280,8 +272,7 @@ before mobile `init`.
     row)**: `routePushTap`, `shouldShowPriming`, and `registerForPush`/
     `unregisterPush`'s request-shaping logic are unit-tested (mocked
     plugin/API), but the end-to-end device loop needs a real toolchain,
-    real push delivery, and a real backend — none of which exist in this
-    environment. Once Task 19's SPIKE-VERIFY items above are confirmed on
+    real push delivery, and a real backend — which are not established by the source-only checks in this guide. Once Task 19's SPIKE-VERIFY items above are confirmed on
     device:
     - **First-run priming**: sign in fresh (or clear the app's prefs store)
       and land on Inbox; confirm the priming sheet appears once ("Never miss
@@ -324,9 +315,7 @@ before mobile `init`.
 
 11. **OS-level deep links (Task 21 — `tauri-plugin-deep-link`,
     `src/main.tsx`'s `onOpenUrl` + `getCurrent()` wiring, `routeDeepLinkUrl`
-    and `routeColdStartUrls` in `src/push/push-registration.ts`)**: config
-    was added text-only (no Rust toolchain, no `gen/android`/`gen/apple` on
-    this machine — see SPIKE-VERIFY notes below); the pure URL-parsing
+    and `routeColdStartUrls` in `src/push/push-registration.ts`)**: the original config was added without a device run (see SPIKE-VERIFY notes below); the pure URL-parsing
     wrappers are unit-tested, but the OS→app handoff itself needs a real
     device/emulator and generated native projects. Warm opens arrive via
     `onOpenUrl`; cold starts (app launched BY the link) are picked up via a

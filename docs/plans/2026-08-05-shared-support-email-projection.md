@@ -1,4 +1,43 @@
-# Shared Support Email Projection Implementation Plan
+# Shared Support email projection implementation plan
+
+> Historical implementation plan, source-compared on 2026-09-17. This page
+> explains the shared email display projection for contributors. The main path is
+> implemented; unchecked tasks and original test commands are historical.
+
+## Current implementation and limits
+
+The [inbound converter](../../server/internal/email/inboundhtml/convert.go)
+provides `Project` with HTML, full text, and stripped reply inputs, while retaining
+`Process` compatibility. Structural quote markers take precedence over a
+conservative plain-text split. Projection version is currently 1. Sanitized HTML
+and Markdown outputs are capped (`maxHTMLLen = 200000`, `maxMarkdownLen = 50000`),
+so the original “lossless” wording is not an unlimited preservation guarantee.
+Quote detection and confidence describe parser heuristics, not certain authorship.
+
+[Inbound handling](../../server/internal/service/email_fallback.go) stores visible
+and quoted projections and handles forwarded-customer attribution. The columns
+are present in the [core foundation schema](../../server/internal/dbmigrate/sql/000000000001_core_foundation.sql).
+[Hydration](../../server/internal/service/support_inbox.go) uses persisted fields
+at the current version; older versions are reprojected in memory. That fallback
+uses stored stripped text for both text inputs and cannot reconstruct missing
+original content. Forwarded attribution preserves message content as visible and
+clears quoted history in that legacy fallback. Hydration sets an explicit boolean
+pointer even when no quote exists; it does not constitute a persisted backfill.
+
+[Websocket mapping](../../server/internal/websocket/support_events.go) and the
+[SDK](../../packages/sdk-js/src/core/widget.ts) carry the projection fields, including
+explicit false. The [inbox bubble](../../frontend/src/components/support/MessageBubble.tsx)
+uses projected text and collapsed rich HTML. The
+[widget bubble](../../packages/widget-core/src/components/MessageBubble.tsx)
+uses visible text for email and shows a quote toggle only when the quote flag is
+true and quoted text is nonempty. The two renderers share data, not identical HTML
+presentation or an assurance that every provider format is recognized.
+
+No fresh ingestion, provider, browser, or full regression run was performed for
+this source comparison. Schema presence does not establish deployment, and the
+old branch/build limitations below are not current verification results.
+
+## Original implementation record
 
 > **For agentic workers:** REQUIRED: Use `superpowers:executing-plans` to implement this plan. Do not use sub-agents for this task.
 

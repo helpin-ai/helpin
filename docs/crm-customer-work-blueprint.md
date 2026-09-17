@@ -22,8 +22,8 @@ Documentation authority:
 
 - **This blueprint:** agreed product scope, daily experience, customer outcomes and acceptance criteria.
 - **[Playbook automation plan](crm-playbook-automation-change-proposal.md):** agreed Flow/Beacon/skill connection, required extensions, safeguards and engineering order. Its earlier mandatory ordered-step proposal is superseded; the filename is retained for links.
-- **[CRM reference](crm-signals.md) and [Automation reference](AGENTS_AND_AUTOMATION.md):** implemented behavior in the inspected branch, clearly separated from the agreed extension.
-- **[Automation product model](AUTOMATION_PRODUCT_MODEL.md):** shared Flows / Activity / Agents / Library mental model.
+- **[CRM reference](crm-signals.md) and [Automation reference](agents-and-automation.md):** implemented behavior in the inspected branch, clearly separated from the agreed extension.
+- **[Automation product model](automation-product-model.md):** shared Flows / Activity / Agents / Library mental model.
 - **Generated blueprint review page:** derived from this Markdown, not independently maintained policy. Historical mocks/specs do not override these documents.
 
 Boundaries:

@@ -1,15 +1,18 @@
-# Migration Runbook
+# Database migration runbook
 
 ## Purpose
 
 This repo now has two schema-change paths:
 
-- `AutoMigrate` for normal additive model changes
-- `cmd/migrate` for explicit versioned SQL migrations, especially renames, drops, backfills, and contract-changing schema work
+- `AutoMigrate` for additive development schema changes when explicitly enabled
+- `cmd/migrate` for versioned SQL, including additive schema changes needed by
+  installations where AutoMigrate is disabled
 
-Use this file as the operational runbook for the migration runner and ArgoCD hook flow.
+Use this guide for the migration runner and Kubernetes hook flow. Community
+Compose runs a separate `helpin-migrate` service before the API and sets
+`RUN_AUTO_MIGRATE=false`; see [Community operations](../community/deployment.md).
 
-## Latest Finding
+## Historical Story-to-Task finding
 
 During live Story -> Task verification, the first hard-cut migration exposed a real dual-schema edge case:
 
@@ -66,9 +69,8 @@ For destructive renames like Story -> Task, `RUN_AUTO_MIGRATE` must be `false` d
 
 Public MCP tables are an explicit exception: migration
 `202607100003_public_mcp.sql` owns their constraints and indexes, so they are
-excluded from the API's AutoMigrate model list in every environment. The normal
-startup flow and `RUN_AUTO_MIGRATE=true` behavior remain unchanged for all
-other models.
+excluded from the API's AutoMigrate model list in every environment. Consult `server/internal/dbschema/models.go` for the actual model list; do not
+assume that enabling AutoMigrate replaces the versioned migration ledger.
 
 ### ArgoCD / Kubernetes integration
 
@@ -90,11 +92,16 @@ Important:
 
 ### Use `AutoMigrate` for:
 
+Local development with the flag enabled. Also ship versioned SQL for these
+changes so deployments that disable AutoMigrate receive them:
+
 - new tables
 - new nullable columns
 - safe additive indexes/defaults that GORM can express
 
 ### Use `cmd/migrate` SQL for:
+
+- all schema changes required by Community deployments
 
 - table renames
 - column renames
@@ -116,19 +123,21 @@ Rollback scripts must not live under `server/internal/dbmigrate/sql/`, or the ru
 
 ### Normal additive release
 
-1. Merge to `main`
-2. GitHub workflow builds server image from `server/Dockerfile`
-3. ArgoCD sync runs the `PreSync` hook Job
-4. API deploys with `RUN_AUTO_MIGRATE=true`
-
-This is acceptable for non-destructive changes.
+1. Add versioned SQL alongside the model change.
+2. Build the API, migration, and worker images for the same source release.
+   The Docker targets are `api`, `migrate`, and `temporal-worker`.
+3. Deploy the migration image first. Kubernetes uses the `PreSync` hook;
+   Community Compose uses the `helpin-migrate` service completion dependency.
+4. Start the matching API/worker images after migration success. Preserve the
+   deployment's AutoMigrate setting; Community keeps it disabled.
 
 ### Controlled migration release
 
 Use this flow for hard-cut schema changes such as Story -> Task.
 
 1. Add new SQL migration file(s) under `server/internal/dbmigrate/sql/`
-2. Build and publish the server image that contains those files and the `./migrate` binary
+2. Build and publish the migration image containing those files and `./migrate`,
+   plus the matching API and worker images
 3. Update manifests to the exact released server tag
 4. Set API Deployment env `RUN_AUTO_MIGRATE=false`
 5. Let ArgoCD run the `PreSync` hook Job
@@ -149,7 +158,8 @@ git show origin/main:k8s/prod/server-migrate.yaml | sed -n '28,40p'
 git show origin/main:k8s/prod/temporal-worker.yaml | sed -n '30,40p'
 ```
 
-Check that all server-based manifests point at the same released server image tag.
+Check that API, migration, and worker manifests use the same release tag. They
+use different image repositories: `server`, `server-migrate`, and `temporal-worker`.
 
 ### 2. Verify ArgoCD hook execution
 
@@ -176,7 +186,7 @@ kubectl -n helpin get events --sort-by=.lastTimestamp | grep helpin-server-migra
 Success pattern:
 
 - `SuccessfulCreate`
-- `Pulling image "ghcr.io/helpin-ai/helpin/server:<tag>"`
+- `Pulling image "ghcr.io/helpin-ai/helpin/server-migrate:<tag>"`
 - `Started container migrate`
 - `Completed job/helpin-server-migrate`
 
@@ -190,14 +200,14 @@ kubectl -n helpin get deploy temporal-worker -o jsonpath='{.spec.template.spec.c
 
 Interpretation:
 
-- server image and temporal-worker image should match the released server tag
+- API, migration, and worker image tags should match the selected release
 - current non-cutover releases may still show `RUN_AUTO_MIGRATE=true`
 - hard-cut releases should show `RUN_AUTO_MIGRATE=false`
 
-### 5. Verify the image contains the runner
+### 5. Verify the migration image contains the runner
 
 ```bash
-docker run --rm --entrypoint /bin/sh ghcr.io/helpin-ai/helpin/server:<tag> -lc 'test -x ./migrate && echo migrate-present'
+docker run --rm --entrypoint /bin/sh ghcr.io/helpin-ai/helpin/server-migrate:<tag> -lc 'test -x ./migrate && echo migrate-present'
 ```
 
 ### 6. Verify migration ledger
@@ -220,7 +230,7 @@ cd server
 set -a && . .env
 psql "$DATABASE_URL" -P pager=off -c "select version, name, applied_at from schema_migrations order by version;"
 psql "$DATABASE_URL" -P pager=off -c "select count(*) as tasks from pm_tasks;"
-psql "$DATABASE_URL" -P pager=off -c \"select count(*) as legacy_story_tables from pg_tables where schemaname = 'public' and tablename in ('pm_stories','pm_story_owners','pm_story_followers','pm_story_labels','pm_story_links','pm_story_templates','story_delivery_targets','story_git_links');\"
+psql "$DATABASE_URL" -P pager=off -c "select count(*) as legacy_story_tables from pg_tables where schemaname = 'public' and tablename in ('pm_stories','pm_story_owners','pm_story_followers','pm_story_labels','pm_story_links','pm_story_templates','story_delivery_targets','story_git_links');"
 ```
 
 Expected after the reconciliation migration:
@@ -231,19 +241,22 @@ Expected after the reconciliation migration:
 
 ## Findings Confirmed In Production
 
-These were verified during rollout validation:
+Historical observations recorded during the Story-to-Task rollout follow. They
+are not a statement of current production state; inspect the deployed revision
+and environment before a new release:
 
 - ArgoCD `PreSync` hook Jobs were created and completed successfully
 - successful hook Jobs were deleted afterward, so `kubectl get jobs -n helpin` returned nothing
 - event history showed `helpin-server-migrate` running on the released image tag
 - the prod release workflow updated `server.yaml`, `temporal-worker.yaml`, and `server-migrate.yaml` to the same server image tag
-- current prod API is still running with `RUN_AUTO_MIGRATE=true`, which is acceptable for the current non-cutover release
+- the API was reported with `RUN_AUTO_MIGRATE=true` during that validation
 
 ## Before Story -> Task Cutover
 
-These items must be done before the actual rename rollout:
+This is the historical cutover checklist. The SQL files now exist in the
+repository; use it only when assessing an installation that still needs the cutover:
 
-1. Add the Story -> Task SQL migration files under `server/internal/dbmigrate/sql/`
+1. Confirm the release includes the Story -> Task SQL files under `server/internal/dbmigrate/sql/`
 2. Set `RUN_AUTO_MIGRATE=false` on the cutover API Deployment
 3. Rehearse the full flow on staging
 4. Verify `./migrate status` shows the applied Story -> Task migration version

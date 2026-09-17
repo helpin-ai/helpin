@@ -1,8 +1,49 @@
-# Coverage Analyzer v3.1 — Quality Improvements
+# Coverage analyzer v3.1 quality improvements
 
 **Date:** 2026-04-30
-**Status:** Approved
+**Status:** Historical approved design; current analyzer behavior has evolved.
 **Author:** Waqar + Claude
+
+## Current implementation review — 2026-09-18
+
+This design records April quality findings for contributors. The production samples
+and proposed thresholds below are historical, not current measurements.
+
+The [analyzer](../../server/internal/service/support_coverage_daily_analyzer.go)
+is now version `v4`. It retains `HasHumanReply`, the prompt instruction, and the
+programmatic “No human response observed” override. The original no-version-bump
+statement does not describe today's deduplication key, which includes analyzer
+version as well as transcript hash.
+
+The current knowledge relevance floor is **0.015**, not 0.1. The source explains
+that these are reciprocal-rank fusion scores: a lexical-only top hit can be around
+0.016, while a lexical-plus-vector hit can be around 0.033. The original inference
+that a 0.016 score necessarily means irrelevant noise is therefore invalid for
+this scoring system. Scores alone do not establish answer quality.
+
+Current `recommendationRowsForFinding` links target articles and records
+recommendations without automatically calling the proposed draft-creation helper.
+Do not interpret the historical human-reply gate as the complete current policy
+for every draft-generation path. Other suggestion workflows require their own
+source review.
+
+[Event processing](../../server/internal/service/support_coverage.go) can attach
+human-resolution evidence to an existing gap first, then checks completed analysis
+history before creating a new gap. It does not discard all such evidence once an
+analyzer has run. Semantic grouping is now implemented in the
+[materializer](../../server/internal/service/support_coverage_materializer.go),
+so the “deferred” section is historical. Embedding failure can fall back to lexical
+grouping; see the [updated diagnosis](../plans/2026-09-02-coverage-gaps-diagnosis.md)
+for execution and recovery limits.
+
+The [legacy closure migration](../../server/internal/dbmigrate/sql/20260430202658586984_close_v1_legacy_gaps.sql)
+exists. Its predicate checks source signal, unknown category, missing topic, and
+open status. It does **not** explicitly test absence of explanations or
+recommendations, so “only closes gaps that have zero actionable content” is a
+stronger claim than the SQL proves. No live migration, cleanup, reanalysis, or
+runtime tests were performed during this review.
+
+## Original April design
 
 ## Problem Statement
 

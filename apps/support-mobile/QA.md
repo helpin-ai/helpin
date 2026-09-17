@@ -1,5 +1,10 @@
 # Task 22 — Hardening QA: performance, accessibility, lifecycle matrix
 
+> Historical verification record. Test counts, bundle sizes, and environment
+> limitations describe the dated runs below, not a fresh audit of the current
+> checkout. Pending device checks remain pending until a recorded device run.
+
+
 Status: gate executed 2026-07-08 in an environment with **no physical
 devices/emulators/simulators** (confirmed — see README's "Environment
 prerequisites"). Every check that genuinely requires hardware (touch input,

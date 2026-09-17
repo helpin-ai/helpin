@@ -1,4 +1,44 @@
-# PM Task List Team-Scoped Pickers Design
+# PM task list team-scoped picker design
+
+
+This historical proposal describes desired team-aware inline editing. It is not
+an implementation-completion report; several proposed safeguards differ from
+the current task list.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18. No application tests or browser edits were run.
+
+- [TaskListView](../../frontend/src/components/pm/TaskListView.tsx) uses
+  `getVisibleSprintsForTaskScope` for inline sprint options. The
+  [scope helper](../../frontend/src/components/pm/task-detail/taskPlanningScope.ts)
+  filters out closed planning sprints except the current sprint, then applies
+  team matching only when `listTeamId` is defined. An undefined list scope returns
+  the status-filtered list without per-row team filtering.
+- The helper does not universally pin an off-team current sprint: preserving it
+  through the status filter does not bypass a later team filter. Its epic
+  predicate permits teamless epics, while a teamless sprint is selectable only
+  for a teamless task. “Only exact team matches everywhere” is not the contract.
+- `InlineOwnerCell` passes `assignableMembers` directly to a multi-member picker;
+  it does not implement the proposed row-team membership helper. Owners use
+  `owner_member_ids`, not the proposed single-owner clearing field.
+- `InlineTeamCell` sends `{ team_id: newTeamId }`. The proposed impact helper,
+  confirmation dialog, and combined clearing of sprint/epic/owners are not
+  present in that cell. Backend behavior must be checked separately before
+  drawing conclusions about persisted relationship validity.
+- [EpicDetail](../../frontend/src/pages/pm/EpicDetail.tsx) does pass the epic team
+  into its task list. That implemented context wiring does not prove every
+  picker in every other list obeys the proposal.
+- [PMTask](../../server/internal/model/pm_task.go) represents TeamID as nullable.
+  The design's “every task has exactly one team” statement is not a schema-level
+  guarantee. Null/legacy cases remain relevant, and frontend filtering alone is
+  not an integrity or authorization boundary.
+
+The original non-goals and rollout describe the proposed change's scope, not
+proof that current backend validation, legacy data, and all list contexts need
+no work. The test matrix remains acceptance guidance rather than fresh results.
+
+## Original design
 
 ## Summary
 

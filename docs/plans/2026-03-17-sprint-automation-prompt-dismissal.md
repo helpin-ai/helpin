@@ -1,4 +1,35 @@
-# Sprint Automation Prompt Dismissal Implementation Plan
+# Sprint automation prompt dismissal implementation plan
+
+> Historical implementation plan, source-compared on 2026-09-17. Team-wide
+> sprint prompt dismissal is implemented. This record is for contributors tracing
+> the change; its unchecked create-file steps and expected initial failures are
+> not current work instructions.
+
+## Current implementation
+
+The [helper](../../frontend/src/components/pm/sprintAutomationPrompt.ts) suppresses
+prompting whenever the team has a `sprint_auto_create` row, including a disabled
+one. It accepts null/undefined lists, creates a disabled request with the prompt's
+count, duration, and start day, and leaves move-unfinished automation untouched.
+The async helper throws on an API error and returns response **data**, rather
+than the full result object in this plan's sample implementation.
+
+[GlobalCreateModals](../../frontend/src/components/pm/GlobalCreateModals.tsx)
+uses a separate dismissal loading state. Both **No thanks** and closing the
+prompt call the persistence handler; success shows “Sprint automation dismissed”
+and closes, while failure keeps the prompt open with an error toast. The current
+[helper tests](../../frontend/src/components/pm/__tests__/sprintAutomationPrompt.test.ts)
+exist, so the original missing-file RED step no longer describes this checkout.
+
+See the [reviewed design](../specs/2026-03-17-sprint-automation-prompt-dismissal-design.md)
+for the current team-settings location and the fetch-error/overview-label
+limitations. The [frontend manifest](../../frontend/package.json) currently has
+Vitest but does not declare the named DOM-test packages; this narrow dependency
+observation is not a ban on future component tests. Old build failures and the
+npm/npx verification sequence below are historical, not newly reproduced results.
+No application code or automation records were changed in this review.
+
+## Original implementation record
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 

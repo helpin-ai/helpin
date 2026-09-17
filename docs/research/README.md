@@ -13,3 +13,5 @@ Investigations, comparative research, and assessments. Findings reflect the bran
 - [HelpScout Docs Import Research](helpscout-import-research.md)
 - [Paragraph Spacing in Documentation/Help Center Tools](paragraph-spacing-comparison.md)
 - [Research: Rust for Kafka Session Windowing](rust-kafka-session-windowing.md)
+
+- [Documentation and code consistency audit](2026-09-17-documentation-code-audit.md) (in progress)

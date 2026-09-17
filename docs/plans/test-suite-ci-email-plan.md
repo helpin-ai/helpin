@@ -316,7 +316,7 @@ Support inbox:
   - `pnpm --dir frontend exec playwright install --with-deps chromium`
   - `pnpm --dir frontend run test:e2e:support`
 - [ ] Keep `frontend/e2e/support/live/**` ignored from default PR suite.
-- [ ] Add missing P0 cases from `docs/prds/PRD-support-widget-browser-test-coverage.md`.
+- [ ] Add missing P0 cases from `docs/prds/support-widget-browser-test-coverage.md`.
 
 SDK widget:
 

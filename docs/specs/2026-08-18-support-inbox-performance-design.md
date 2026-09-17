@@ -1,10 +1,48 @@
-# Support Inbox Performance Design
+# Support inbox performance design
 
 **Status:** Partially superseded
 **Superseded on:** 2026-09-03
 **Authoritative follow-up:** [First-Class Support Inbox State Design](2026-09-02-first-class-support-inbox-state-design.md)
 
 > The September design and its implementation record are authoritative for inbox list projections, internal personal unread, blue-dot and human-attention semantics, core counters, database indexes, read-triggered invalidation, and rollout. This document remains useful for bounded message history, page-scoped hydration, lazy secondary surfaces, and other thread-loading improvements that the September work did not replace. Do not use this document's narrower index-only or shared read-invalidation assumptions to design new inbox counter work.
+
+## Implementation review (2026-09-17)
+
+For contributors maintaining thread loading, the bounded-history portions of this
+historical design are implemented. The September follow-up above remains the
+reference for list state and counters; this review does not claim measured
+latency improvements or a new browser regression run.
+
+The [message-page service](../../server/internal/service/support_message_page.go)
+checks conversation access, defaults to 20 messages, and accepts limits from 1
+to 100. The [repository](../../server/internal/repository/support_inbox.go) uses
+a `(created_at, id)` boundary, fetches one extra row, and returns chronological
+pages. Attachment hydration and email-log queries are scoped to returned message
+IDs, with hydration errors logged rather than failing the page. Other full-history
+and offset-based methods still exist for separate callers.
+
+The cursor is unsigned Base64url JSON containing a timestamp and ID. The
+[handler](../../server/internal/handler/support_inbox.go) returns a sanitized 400
+for malformed cursor data; the design's “tampered” wording overstates this check.
+A syntactically valid changed cursor is accepted as a different pagination
+boundary. Access enforcement comes from the scoped conversation check and query,
+not cryptographic cursor integrity.
+
+The [infinite-query hook](../../frontend/src/hooks/queries/useSupport.ts) requests
+20-message pages under conversation-specific cache keys. The
+[thread](../../frontend/src/components/support/MessageThread.tsx) loads older pages
+near the top, restores scroll position, stops automatic loads after a page error,
+and exposes **Load earlier messages** for retry. Shared
+[cache helpers](../../frontend/src/lib/supportMessagePages.ts) handle message-page
+updates. Conversation-keyed caches isolate data; they do not themselves prove
+that an in-flight network request is cancelled on every conversation switch.
+
+[SupportInboxLayout](../../frontend/src/components/support/SupportInboxLayout.tsx)
+conditionally mounts lazy detail/agent sidebars; the thread lazily loads its
+composer and create-task dialog. These code boundaries support the loading design,
+but do not establish bundle-size or p50/p95 results. Duration logging is present
+in the page service. The original bottleneck list below is the August baseline,
+not a claim that those same bottlenecks remain today.
 
 ## Goal
 

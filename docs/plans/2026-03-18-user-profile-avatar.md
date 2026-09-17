@@ -1,6 +1,40 @@
-# User Profile Avatar Upload Implementation Plan
+# User profile avatar upload plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical implementation plan explains the original avatar upload work for
+contributors. The feature now exists, with a different profile editor. Use the
+source references below for current behavior; the original steps are historical
+examples, not a pending implementation checklist.
+
+## Source review — 2026-09-18
+
+- The authenticated POST and DELETE `/api/auth/me/avatar` routes exist in the
+  [router](../../server/internal/router/router.go). The
+  [auth service](../../server/internal/service/auth.go) stores uploaded objects
+  under `users/{userID}/avatar/` and saves their public URL on the user record.
+- The [profile page](../../frontend/src/pages/Profile.tsx) uses avatar picker and
+  crop dialogs and also offers generated avatar styles. The original direct file
+  upload overlay is no longer the complete interaction. Removing a photo clears
+  its URL; generated avatar preferences are separate, so initials are not the
+  only possible fallback.
+- The [frontend adapter](../../frontend/src/lib/services/authService.ts) uses
+  `fetchWithSessionAuth` for uploads, rather than the raw localStorage bearer
+  token example below.
+- The picker rejects selected files over 2 MB. However, the
+  [upload handler](../../server/internal/handler/auth.go) calls
+  `ParseMultipartForm(2 << 20)`, which sets the multipart memory threshold, not a
+  total upload size limit. It checks the submitted MIME header against PNG,
+  JPEG, WebP and SVG, without verifying file contents in this handler. The
+  original example must not be treated as server-side size or content validation.
+- Replacement deletes the old object before uploading and saving the new URL.
+  Object deletion errors are ignored; upload or database failures can therefore
+  leave a missing old image or an unreferenced new object. Deletion similarly
+  attempts object removal before clearing the URL. These operations are not
+  atomic across storage and the database.
+
+This review inspected source only. The build commands and manual checks below
+are historical verification instructions, not results from this review.
+
+## Original implementation plan
 
 **Goal:** Allow users to upload, change, and remove their profile avatar from the Profile settings page.
 

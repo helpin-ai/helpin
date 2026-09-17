@@ -139,7 +139,7 @@ Client: `/root/helpin/server/internal/service/agent_runtime_client.go:55-112`, w
 
 Chat-mode config: `/root/helpin/server/internal/service/agent.go:607-660` (`defaultSupportChatIdleTimeoutSeconds = 24*60*60`).
 
-`/root/helpin/docs/AGENT_RUNTIME_LOCAL.md:19-21` confirms the absence of any fallback:
+`/root/helpin/docs/agent-runtime-local-setup.md:19-21` confirms the absence of any fallback:
 
 > `AGENT_RUNTIME_LAUNCH_ENABLED=false` disables new agent execution. It does not restore an in-process executor.
 
@@ -201,7 +201,7 @@ Three providers: Anthropic, OpenAI-compatible, OpenRouter. No Gemini/Bedrock/Ver
 
 Store resolution: `openStore` at `/root/agent-runtime/cmd/agent-runtime/main.go:279-306` — memory store, or GORM SQL with `MigratePostgres` for Postgres and `AutoMigrate` otherwise. Migrations at `/root/agent-runtime/internal/store/migrations.go`; JSON/null-byte sanitization at `/root/agent-runtime/internal/store/sanitize.go`.
 
-Helpin's own local runbook uses SQLite — `/root/helpin/docs/AGENT_RUNTIME_LOCAL.md:49-50`:
+Helpin's own local runbook uses SQLite — `/root/helpin/docs/agent-runtime-local-setup.md:49-50`:
 
 ```bash
 AGENT_RUNTIME_STORE_DRIVER=sqlite

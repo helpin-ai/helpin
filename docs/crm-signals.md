@@ -1259,6 +1259,6 @@ pipeline operations and migration commands.
 - [`crm-entity-summaries.md`](crm-entity-summaries.md) — downstream summary
   refresh and provenance.
 - [`crm-email-sync.md`](crm-email-sync.md) — normalized CRM email source.
-- [`CRM_MODULE.md`](CRM_MODULE.md) — broader CRM architecture.
+- [`crm-overview.md`](crm-overview.md) — broader CRM architecture.
 - [`crm-buyer-signals-assessment.md`](crm-buyer-signals-assessment.md) —
   historical assessment and design rationale; not current status.

@@ -1,5 +1,16 @@
 # Flow Templates (Unified Starters + Templates)
 
+> Source review, 2026-09-17
+
+The `server/internal/worker` tool/executor package referenced below is absent
+from this checkout. Current Helpin provider dispatch lives in
+[agent_runtime_mcp.go](../../server/internal/service/agent_runtime_mcp.go), with
+product operations implemented by internal command services. Runtime-local tool
+execution belongs to the separate Agent Runtime repository. See the
+[current tool guide](../internal-tools-framework.md); do not recreate the old
+worker registry to follow this historical plan.
+Its “not yet implemented” status is the May checkpoint, not a fresh deployment assessment. Current Git fact-tool names include `get_pull_request_diff` and `get_check_run_logs` in the [catalog](../../server/internal/agentcontract/tool_catalog.json); tool availability still depends on the selected runtime profile.
+
 **Date:** 2026-05-10
 **Owner:** Automation simplification
 **Status:** Plan, not yet implemented

@@ -1,5 +1,15 @@
 # PM Team Mentions Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical team-mention design. The shared
+[mention resolver](../../server/internal/service/pm_mention.go) now expands team
+handles within the supplied readable-team scope, excludes the author, and
+deduplicates recipients. [Regression tests](../../server/internal/service/pm_mentions_test.go)
+cover mention behavior. The original assertion that team handles are only
+unresolved text is obsolete; use current callers and permission checks when
+extending a particular surface. PM work items are now named tasks.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement real `@team-handle` mention semantics across PM so team mentions notify current team members with access, support all approved PM surfaces, and render sensibly in the UI.

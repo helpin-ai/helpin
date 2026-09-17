@@ -1,4 +1,28 @@
-# New Home Hero Design
+# New homepage hero experiment design
+
+> Historical design, source-compared on 2026-09-17. For contributors exploring
+> the original marketing experiment: the specified `/new-home` route and
+> `LivingSystemHero` component are absent from this checkout. This is not a guide
+> to an available page or a record of completed browser verification.
+
+## Current website
+
+The current [homepage](../../website/src/app/page.tsx) is a separate implementation
+at `/`, with the headline “Bring every team together. Put AI agents to work.”
+Its conversion controls include trial signup and demo booking; it does not provide
+the proposed `LivingSystemHero` restart control. The
+[footer](../../website/src/components/Footer.tsx) has pricing-specific copy but
+no `/new-home` visibility exception. The
+[Next.js configuration](../../website/next.config.ts) uses static export and does
+not define a redirect for the proposed route.
+
+The current source therefore does not establish the proposed 8.8-second one-shot
+sequence, reduced-motion behavior, viewport fit, or unchanged-homepage requirement.
+The timings, accessibility criteria, and viewport checks below remain design
+requirements for that experiment, not verified properties of the current homepage.
+No website build or browser session was run for this source comparison.
+
+## Original design record
 
 ## Goal
 

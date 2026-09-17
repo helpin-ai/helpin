@@ -1,6 +1,45 @@
-# Docs AI Translation Implementation Plan
+# Docs AI translation implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan records the move from plain-text translation to structured
+TipTap translation. Contributors should start with the current implementation
+notes; unchecked steps and expected failures below are not today's task backlog.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18. The companion
+[design review](../specs/2026-03-26-docs-ai-translation-design.md) describes the
+current preservation contract and its limits.
+
+- [Article generation](../../server/internal/service/docs_helpcenter_translation.go)
+  uses `PrepareArticleTranslationPlan`, sends structured segments, applies the
+  response, requires a nonempty final title, and upserts draft status. Body and
+  metadata use the segment pipeline; generation does not publish the translation.
+- [Apply](../../server/internal/docsi18n/reinsert.go) clones source content,
+  restores protected terms, reinserts approved fields, then validates schema and
+  preservation. Duplicate, missing, and extra response segment IDs are rejected.
+  It does not universally reject empty translated body text, and there is no
+  separate `RenderHTML` check in this generation path.
+- The [registry](../../server/internal/docsi18n/registry.go) rejects unknown node
+  types. Registered preserve-only nodes are different from unsupported nodes;
+  Task 7's proposal to preserve unsupported nodes should not be read as current
+  behavior or as permission to bypass unknown-node validation.
+- Protected-term configuration and placeholder handling exist. The legacy
+  `server/migrations/060_helpcenter_protected_terms.sql` is not the current place
+  to add deployment migrations. The
+  [versioned foundation](../../server/internal/dbmigrate/sql/000000000001_core_foundation.sql)
+  includes `protected_terms`; follow the current migration process for changes.
+- Validation before upsert protects existing content from those validation
+  failures. It does not prove atomic rollback of every persistence or downstream
+  operation, nor linguistic quality. Human review remains necessary.
+
+Current package tests are consolidated in
+[docsi18n_test.go](../../server/internal/docsi18n/docsi18n_test.go), rather than
+all the proposed per-handler/per-schema files below. Historical Go 1.24, npm,
+help-center directory, and commit commands must be reconciled with current
+contributor setup before reuse. No application tests, model calls, or browser
+translation checks were performed for this documentation review.
+
+## Original implementation sequence
 
 **Goal:** Replace the current plain-text article translation path with a schema-aware AI translation pipeline that preserves TipTap structure, marks, and protected terms, and fails closed on any unsafe output.
 

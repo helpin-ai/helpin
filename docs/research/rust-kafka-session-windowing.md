@@ -1,7 +1,22 @@
-# Research: Rust for Kafka Session Windowing
+# Historical research: Rust session windowing with Kafka
 
 **Date**: 2026-03-13
 **Context**: Evaluating whether KStreams sessionization (`SessionEventWindowStream.java`) can be replaced with a Rust implementation.
+
+> Status: superseded architecture research from March 2026. The recommendations,
+> dependency versions, vendor comparisons and performance estimates below record
+> that investigation; they are not current installation or upgrade guidance.
+> Vendor facts have not been refreshed in this review.
+
+As of the September 2026 code review, [Cargo.toml](../../events-pipeline/rust-capture/Cargo.toml)
+uses `async-nats` and has no `rdkafka` dependency. The current
+[sessionizer](../../events-pipeline/rust-capture/src/pipeline.rs) implements a
+30-minute inactivity window in Rust; the
+[writer store](../../events-pipeline/rust-capture/src/writer_store.rs) recovers
+active-session evidence from ClickHouse `session_seed_events`. Kafka compacted
+topics and Java KStreams are not the current recovery path. Start with the
+[pipeline overview](../../events-pipeline/README.md) and
+[capture guide](../../events-pipeline/rust-capture/README.md) for current operations.
 
 ---
 
@@ -94,7 +109,7 @@
 
 If no framework is adopted, session windowing can be built manually on top of `rdkafka`. Here's an assessment:
 
-### What Our Current KStreams Code Does
+### What the KStreams code did at the time
 (from `SessionEventWindowStream.java`):
 1. Consumes from `KAFKA_TRANSFORMATION_TOPIC`
 2. Re-keys events by `project_id:user_anonymous_id`
@@ -173,7 +188,7 @@ rdkafka consumer → re-key → in-memory session state → produce with session
 
 ---
 
-## 6. Recommendations
+## 6. Recommendations from the original investigation
 
 ### Option A: Keep KStreams (Recommended for now)
 - **Effort**: 0

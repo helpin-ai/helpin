@@ -2,6 +2,6 @@
 
 [Documentation index](../README.md)
 
-Role analysis and design context. See also the [RBAC PRD](../prds/PRD-rbac-final-2026-03-08.md).
+Role analysis and design context. See also the [RBAC PRD](../prds/2026-03-08-workspace-access-control.md).
 
-- [Role-Based Access Analysis — PM & Docs Modules](pm-docs-role-analysis.md)
+- [Historical PM and Docs role analysis](pm-docs-role-analysis.md)

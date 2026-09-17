@@ -2,9 +2,9 @@
 
 ## Tech Stack
 
-- **Go 1.24** (latest minor)
+- **Go 1.26.7** (repository toolchain pin in `../.go-version`; module minimum in `go.mod`)
 - **Router**: go-chi/chi/v5
-- **ORM**: GORM (gorm.io/gorm) with PostgreSQL (Neon) / SQLite for tests
+- **ORM**: GORM (gorm.io/gorm) with PostgreSQL / SQLite for tests
 - **Logging**: log/slog (Go stdlib)
 - **Auth**: golang-jwt/jwt/v5
 - **Config**: Environment variables via joho/godotenv
@@ -48,7 +48,7 @@ server/
 │   ├── tiptap/                  # TipTap rich-text processing
 │   ├── websocket/               # WebSocket hub + handler
 │   └── worker/                  # Background job workers
-├── migrations/                  # Sequential SQL migrations (001–032+)
+├── migrations/                  # Legacy SQL references; use internal/dbmigrate/sql for new migrations
 ├── go.mod
 ├── go.sum
 └── .env.example
@@ -71,7 +71,7 @@ Every feature follows strict three-layer separation:
 
 ## Agents And Automation Model
 
-Canonical reference: `../docs/AGENTS_AND_AUTOMATION.md`
+Canonical reference: `../docs/agents-and-automation.md`
 
 Use this taxonomy when changing backend agent or automation behavior:
 
@@ -100,7 +100,7 @@ Current executor model:
   configuration, authorization, triggers, launch surfaces, and product finalizers
 - `runtime_kind` selects the backend adapter (`native_sdk`, `codex`, or `opencode` where configured), not a separate product behavior path
 - planner/review/support behavior is expressed through prompt, skills, allowed tools, targets, and artifact contracts
-- Helpin product and interaction tools are model-facing through MCP runtime names such as `mcp__helpin__update_plan` and `mcp__helpin__request_user_input`; backend policy and persistence still use canonical bare aliases
+- Helpin product and interaction tools use bare canonical names such as `update_plan` and `request_user_input`. Write-side configuration normalization accepts historical aliases; provider calls require exact canonical names
 
 Current trigger surfaces in code:
 
@@ -247,9 +247,13 @@ db.Order(userInput + " ASC").Find(&users)
 
 ### Migrations
 
-**Two migration systems** (both active):
+**Two migration paths**:
 
-1. **GORM AutoMigrate** — runs on startup, handles struct-level schema creation (add tables/columns). Cannot drop columns, change types, or do data migrations.
+Community Compose disables AutoMigrate and applies versioned SQL through its
+migration service. Ship versioned SQL for schema additions as well as destructive
+or data changes; model changes alone do not migrate those installations.
+
+1. **GORM AutoMigrate** — runs on startup only when `RUN_AUTO_MIGRATE=true`, handles struct-level schema creation (add tables/columns). Cannot drop columns, change types, or do data migrations.
 2. **dbmigrate** (`internal/dbmigrate/`) — versioned SQL migrations for everything AutoMigrate cannot do: data migrations, table/column drops, cutover tasks, constraint changes, backfills, renames.
 
 **dbmigrate CLI** (`cmd/migrate/`):
@@ -268,8 +272,8 @@ go run ./cmd/migrate create <name>   # Scaffold new migration file
 **When to use which**:
 | Task | System |
 |------|--------|
-| Add new model/table | AutoMigrate (add GORM struct) |
-| Add column to existing table | AutoMigrate (add struct field) |
+| Add new model/table | GORM model plus versioned SQL for deployments without AutoMigrate |
+| Add column to existing table | GORM field plus versioned SQL for deployments without AutoMigrate |
 | Drop table or column | dbmigrate |
 | Data backfill or transformation | dbmigrate |
 | Add/change constraints or indexes | dbmigrate |

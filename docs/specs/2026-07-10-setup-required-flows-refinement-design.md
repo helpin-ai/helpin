@@ -1,4 +1,38 @@
-# Setup Required Flows Refinement
+# Setup required flows refinement design
+
+> Historical design, source-compared on 2026-09-17. This page explains the
+> setup-flow refinement for contributors. The required-flow catalog and evidence
+> checks are implemented; the original verification list is not a new test run.
+
+## Current implementation
+
+The [catalog](../../server/internal/service/setup_catalog.go) includes all four
+required-flow tasks below as core requirements. The
+[evidence queries](../../server/internal/repository/setup.go) count enabled
+`automation_rules` with the listed template keys, rather than requiring successful
+execution. Custom-agent success excludes system and template-derived agents.
+Actionable CRM deals require an owner member, positive amount, close date, and
+contact association. The seeded pipeline is not a visible core setup requirement.
+
+Flow actions require the Automation module, the Automation Flows entitlement,
+and `pm.admin.automations`; lack of access blocks the action without making the
+core task optional. Agent actions allow the specified editor permissions and
+require Automation. The Support freeze below is the scope constraint for this
+historical change, not a permanent prohibition on later Support changes.
+
+The [action mapping](../../frontend/src/lib/setupActions.ts) links required flows
+with template query parameters and company context to the Knowledge settings
+anchor. The [setup page](../../frontend/src/pages/SetupSuccessPage.tsx) supports
+a one-to-three-goal editor and distinguishes core progress from later value steps.
+The [query hook](../../frontend/src/hooks/queries/useSetup.ts) refetches on mount
+and window focus. Goal updates install the returned view directly in the query
+cache; they do not need a page reload or an additional invalidation request.
+
+See the [reviewed implementation plan](../plans/2026-07-10-setup-required-flows-refinement.md)
+for additional source references and the original rollout record. Code presence
+alone does not establish production availability or all visual/access test results.
+
+## Original design record
 
 **Date:** 2026-07-10
 **Status:** Approved for direct implementation

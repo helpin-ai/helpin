@@ -1,6 +1,39 @@
-# Support Link Security Implementation Plan
+# Support link security implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical implementation plan, source-compared on 2026-09-18. The scanner,
+> enrichment, inbox warning, and widget HTTP cues now exist. Unchecked steps below
+> are the original development sequence, not a current backlog or test report.
+
+## Current implementation and qualifications
+
+The [reviewed design](../specs/2026-08-18-support-link-security-design.md) records
+current scanning scope, cache behavior, deadline limits, and the malformed-expiry
+validation gap. In particular, scanning is customer-only and sequential within
+the enrichment deadline; published limits do not guarantee every candidate gets
+a completed provider lookup. These qualifications also apply to this plan.
+
+[Public widget projection](../../server/internal/model/support_widget_public.go)
+now allowlists visitor metadata and nested preview/source fields. The original
+instruction to remove only `link_security` while preserving every other metadata
+field is superseded by that narrower public contract. The
+[older stripping helper](../../server/internal/model/support_link_metadata.go)
+still exists but should not be used to infer the entire current transport policy.
+The [widget handler](../../server/internal/handler/support_inbox_widget.go) uses
+public message projection.
+
+The [widget message component](../../packages/widget-core/src/components/MessageBubble.tsx)
+shows an HTTP preview cue, with related styling in
+[widget.css](../../packages/widget-core/src/styles/widget.css). Widget display does
+not provide the staff inbox's malicious-link confirmation behavior. Backend and
+frontend source inspection is not an end-to-end transport or browser security test.
+
+Use [server/go.mod](../../server/go.mod) for the current Go requirement (1.25.0),
+not the historical 1.24 line below. The widget package still provides test,
+typecheck and build scripts, but the original RED/GREEN commands, separate backup
+ignore commit, and push steps are historical instructions. No live provider calls,
+runtime test runs, commits, or pushes were performed for this documentation update.
+
+## Original implementation sequence
 
 **Goal:** Add Google Web Risk-backed malicious-link warnings and compact HTTP transport cues to support messages while keeping message delivery and ordinary link opening resilient to provider failures.
 

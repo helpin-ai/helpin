@@ -59,25 +59,25 @@ subdomain is verified for outbound sending.
 Use the current pod name from:
 
 ```bash
-k get pods -n helpin | grep helpin-server
+kubectl get pods -n helpin | grep helpin-server
 ```
 
 Check fallback worker startup:
 
 ```bash
-k logs <server-pod> -n helpin --since=30m | grep -E "email fallback workers|email fallback poller|email fallback reconciler|Postmark support reply"
+kubectl logs <server-pod> -n helpin --since=30m | grep -E "email fallback workers|email fallback poller|email fallback reconciler|Postmark support reply"
 ```
 
 Check send/fallback errors:
 
 ```bash
-k logs <server-pod> -n helpin --since=30m | grep -E "email fallback|postmark|sender signature|status 422"
+kubectl logs <server-pod> -n helpin --since=30m | grep -E "email fallback|postmark|sender signature|status 422"
 ```
 
 Follow useful logs without request noise:
 
 ```bash
-k logs -f <server-pod> -n helpin | grep -Ev "http request|ws|token refreshed"
+kubectl logs -f <server-pod> -n helpin | grep -Ev "http request|ws|token refreshed"
 ```
 
 ## Expected Logs
@@ -156,7 +156,7 @@ address already in use`.
 Dry-run first:
 
 ```bash
-k exec -it <server-pod> -n helpin -- /app/recover-missed-support-emails \
+kubectl exec -it <server-pod> -n helpin -- /app/recover-missed-support-emails \
   --from 2026-05-01T15:37:00Z \
   --to 2026-05-01T16:05:00Z \
   --limit 1000
@@ -165,7 +165,7 @@ k exec -it <server-pod> -n helpin -- /app/recover-missed-support-emails \
 Execute only after the dry-run counts look correct:
 
 ```bash
-k exec -it <server-pod> -n helpin -- /app/recover-missed-support-emails \
+kubectl exec -it <server-pod> -n helpin -- /app/recover-missed-support-emails \
   --from 2026-05-01T15:37:00Z \
   --to 2026-05-01T16:05:00Z \
   --limit 1000 \
@@ -178,7 +178,7 @@ narrow to avoid sending old replies unexpectedly.
 Watch recovery:
 
 ```bash
-k logs -f <server-pod> -n helpin | grep -E "email fallback backfill|email fallback sent|verified sender fallback|send failed|status 422"
+kubectl logs -f <server-pod> -n helpin | grep -E "email fallback backfill|email fallback sent|verified sender fallback|send failed|status 422"
 ```
 
 ## When To Run Backfill

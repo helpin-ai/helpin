@@ -1,5 +1,15 @@
 # PM Recurring Work Design
 
+> Source review, 2026-09-17
+
+Historical recurring-work design. The implemented domain now uses tasks, with
+[recurring templates](../../server/internal/service/pm_recurring_template.go),
+a [scheduler](../../server/internal/service/pm_recurring_template_scheduler.go), and
+[a Temporal workflow](../../server/internal/temporalapp/pm_recurring_workflow.go).
+The workflow declares a five-minute cron interval. The story-named examples and
+proposed file changes below are not a current implementation checklist. Source
+presence does not establish that a deployment's scheduler is running.
+
 ## Summary
 
 Helpin needs a first-class recurring work system for PM, not a single `repeat` checkbox on stories. The correct model is a recurring template that owns recurrence rules and lifecycle state, and generates normal story instances over time.

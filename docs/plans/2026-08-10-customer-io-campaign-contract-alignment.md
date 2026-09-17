@@ -1,5 +1,17 @@
 # Customer.io Campaign Contract Alignment Implementation Plan
 
+> Historical implementation plan (2026-08-10), source-compared on 2026-09-17.
+> Signup now calls `TrackUserSignedUp` (not the proposed `TrackPersonEvent`), and
+> the outbox calls `RefreshWorkspaceForOutbox` before delivery. Billing source
+> and tests moved to `server/ee`; the old `internal/service/billing_test.go` path
+> and generic test commands below do not describe that edition's current layout.
+> Checkboxes and expected RED/GREEN results are original planning text, not a
+> fresh verification report. Campaign/segment IDs and draft states have not been
+> checked remotely. Do not apply the old mutation checklist as current setup.
+> `module_first_value` remains without a production emitter; see the current
+> [campaign guides](../customer-io/README.md) and
+> [identity service](../../server/internal/service/customer_io.go).
+
 > **For agentic workers:** REQUIRED: Use superpowers:executing-plans to implement this plan locally. Do not use subagents. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Helpin's emitted Customer.io events, refreshed workspace state, draft campaign triggers, waits, and lifecycle segment conditions agree on one canonical contract.

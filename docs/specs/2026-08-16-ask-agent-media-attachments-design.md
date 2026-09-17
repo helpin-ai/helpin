@@ -1,5 +1,53 @@
 # Ask Agent media attachments
 
+> Historical design, reviewed against the checkout on 2026-09-17. This page
+> records the original attachment proposal for contributors. Several selection,
+> format, transport, and security requirements below differ from current code;
+> they must not be treated as implemented guarantees.
+
+## Current implementation and gaps
+
+[Dock chat handling](../../server/internal/service/dock_chat.go) accepts media
+plus PDF, DOCX, JSON, plain text, Markdown, and CSV. Explicit attachments must be
+uploaded editor-upload objects belonging to the workspace and sending user, with
+recorded size at most 20 MiB. The [composer](../../frontend/src/components/agents/dock/ChatView.tsx)
+uploads privately, shows upload/failure state, and allows removal. Its image
+preview and temporary “Analyzing” status are not evidence of a durable per-file
+analysis activity with an expandable completion/error record.
+
+Source-context media is not metadata-only: the service gathers attachments from
+supported source entities and passes them alongside explicit attachments to the
+reader before starting or continuing the run. It also discovers hosted images
+from Support message links/previews. Decorative filtering is a filename-marker
+heuristic for files no larger than 15 KiB, not an absolute guarantee that every
+signature, logo, or tracking asset is excluded.
+
+The [reader](../../server/internal/service/dock_chat_media.go) extracts document
+text locally (truncating at 80,000 bytes per document) and requests concise media
+observations with a four-minute timeout and 700-token output limit. Observations
+are text, not a validated structured result. Explicit stored media is read for
+signature checks, then passed to the provider using object URLs; resolved source
+media with an existing URL bypasses that same local signature-check branch.
+The [private read helper](../../server/internal/service/pm_attachment.go) checks
+workspace, uploader, upload completion, and editor-upload origin.
+
+[Hosted-image fetching](../../server/internal/service/dock_chat_remote_media.go)
+requires allowed HTTPS URLs, checks resolved addresses and redirects, caps reads
+at 10 MiB, validates supported image signatures, and supplies transient data URLs
+to the provider. This supersedes the proposal's blanket exclusion of public URLs.
+The inspected Ask path does not establish the proposed fixed attachment count,
+image-resolution limit, video-duration limit, or scheduled deletion of provider
+files and derived analysis. Those remain unproven requirements, not runtime
+promises. Signature checks validate file headers, not full decoding safety.
+
+Analysis failure returns an error before the run starts/continues. The composed
+turn retains attachment metadata and an `attachment_analysis` block; the reader
+prompt and document sections label embedded instructions as untrusted. The
+primary run follows its configured profile/connection/model, so this design's
+DeepSeek-specific wording is not a universal current model contract.
+
+## Original proposal
+
 ## Goal
 
 Let people attach images and short videos directly to an Ask Agent message, while keeping DeepSeek Flash as the primary agent model and tool executor.

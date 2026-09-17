@@ -1,5 +1,13 @@
 # Help Center Article Preview Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical first preview design, superseded by the
+[token-based preview plan](2026-03-24-help-center-preview-v2.md). The current
+[handler](../../server/internal/handler/docs.go) generates and validates preview
+JWTs, and the preview route lives in the Help Center application. Do not recreate
+the separate staff-frontend article renderer proposed below.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Allow users to preview any document (including drafts) as it would appear when published as a help center article, opening in a new browser tab.

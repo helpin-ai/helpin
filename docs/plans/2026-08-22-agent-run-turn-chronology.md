@@ -1,4 +1,37 @@
-# Agent Run Turn Chronology Implementation Plan
+# Agent run turn chronology implementation plan
+
+> Historical plan, reviewed against the checkout on 2026-09-17. Chronology and
+> completed-work rendering are implemented. The unchecked tasks and agent
+> workflow below are retained as the original work record, not current execution
+> instructions or evidence that the listed suites were rerun in this audit.
+
+## Current source comparison
+
+[Event utilities](../../frontend/src/components/pm/CodingSession/codingSessionUtils.ts)
+use the top-level sequence when comparing persisted projections. If either event
+is live/unprojected, valid differing timestamps take precedence; message-shaped
+payload sequences are a fallback. This is more specific than simply preserving
+legacy payload ordering. Persisted pagination cursors are calculated separately
+so a large runtime-local sequence does not skip durable messages after reconnect.
+
+[DockRunView](../../frontend/src/components/agents/dock/DockRunView.tsx) uses the
+latest session state when available and passes completed-run mode only for
+`completed`. [CodingTranscriptPane](../../frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx)
+also applies the shared grouping only to completed sessions; active and
+interrupted sessions retain its flat timeline. The
+[working-group projection](../../frontend/src/components/agents/dock/dockWorkingGroups.ts)
+splits at user/review-decision boundaries and keeps final responses outside
+eligible collapsed work. Direct answers need no work disclosure.
+
+Group duration can use matching turn-state timestamps, otherwise segment/boundary
+timestamps. Negative differences clamp to zero, but the raw calculation does not
+explicitly reject `NaN` from invalid turn-state dates. Preserve that limitation
+rather than treating the original verification list as proof of all timestamp
+edge cases. The [design review](../specs/2026-08-22-agent-run-turn-chronology-design.md)
+records the same qualification. Chat history continues to use its separate lazy
+work-detail path; this plan does not establish complete eager history transfer.
+
+## Original implementation record
 
 > **For agentic workers:** REQUIRED: Use superpowers:executing-plans to implement this plan. Subagents are explicitly disabled for this task.
 

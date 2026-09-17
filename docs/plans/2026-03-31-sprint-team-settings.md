@@ -1,5 +1,14 @@
 # Sprint Team Settings — Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical implementation plan. Team settings now include `SprintsEnabled` in the
+[model](../../server/internal/model/settings.go), with a
+[sprint settings form](../../frontend/src/components/settings/teams/SprintSettingsForm.tsx)
+and save wiring in [TeamsTab](../../frontend/src/components/settings/TeamsTab.tsx).
+The tasks below document the original change, not missing functionality to build
+again. Runtime automation behavior still depends on each team's saved settings.
+
 > **For agentic workers:** Use superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add per-team sprint enable/disable toggle with configuration settings, and convert the global Automations tab sprint section into a read-only overview.

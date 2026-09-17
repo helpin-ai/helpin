@@ -25,14 +25,14 @@
 
 ## Current-State Notes
 
-- Current import UI only exposes HelpScout in [frontend/src/components/settings/ImportTab.tsx](/root/teampulse/frontend/src/components/settings/ImportTab.tsx).
-- Current backend routes are HelpScout-specific in [server/internal/handler/docs_import.go](/root/teampulse/server/internal/handler/docs_import.go).
-- Current import service is HelpScout-specific in [server/internal/service/docs_import.go](/root/teampulse/server/internal/service/docs_import.go).
+- Current import UI only exposes HelpScout in [frontend/src/components/settings/ImportTab.tsx](../../frontend/src/components/settings/ImportTab.tsx).
+- Current backend routes are HelpScout-specific in [server/internal/handler/docs_import.go](../../server/internal/handler/docs_import.go).
+- Current import service is HelpScout-specific in [server/internal/service/docs_import.go](../../server/internal/service/docs_import.go).
 - Existing `docs_import_jobs.source` is a free string and can store `nextra` without a migration.
 - Existing `docs_import_jobs.config`, `summary`, `redirect_map`, and `failures` can carry Nextra-specific metadata and reports.
 - Existing `server/internal/docsimport/collection_tree_mapping.go` already has generic source-group-to-collection-tree mapping with a depth cap.
-- Existing HTML converter in [server/internal/docsimport/html_to_tiptap.go](/root/teampulse/server/internal/docsimport/html_to_tiptap.go) supports common HTML, tables, code, callouts, images, and HTML block fallback.
-- Existing Markdown converter in [server/internal/tiptap/markdown.go](/root/teampulse/server/internal/tiptap/markdown.go) supports GFM but does not understand MDX JSX or produce import warnings.
+- Existing HTML converter in [server/internal/docsimport/html_to_tiptap.go](../../server/internal/docsimport/html_to_tiptap.go) supports common HTML, tables, code, callouts, images, and HTML block fallback.
+- Existing Markdown converter in [server/internal/tiptap/markdown.go](../../server/internal/tiptap/markdown.go) supports GFM but does not understand MDX JSX or produce import warnings.
 
 ## File Structure
 

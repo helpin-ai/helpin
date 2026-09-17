@@ -62,8 +62,8 @@ After changes in this folder, run:
 
 ```bash
 cd frontend
-npx tsc -b
-npm run build
+pnpm exec tsc -b
+pnpm run build
 ```
 
 ## Notes

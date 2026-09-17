@@ -678,8 +678,8 @@ Two further mechanisms belong in the same work:
 
 - `docs/crm-signal-ingestion.md` — update separately for calendar and verification behavior.
 - `docs/crm-entity-summaries.md` — update separately for company summaries.
-- `docs/prds/PRD-widget-identify-crm-leads.md`
-- `docs/prds/PRD_WIDGET_SDK_FEATURE_PARITY.md`
-- `docs/prds/PRD-support-live-chat.md`
-- `docs/prds/PRD-autonomous-support-coverage.md`
+- `docs/prds/widget-identify-crm-leads.md`
+- `docs/prds/widget-sdk-feature-parity.md`
+- `docs/prds/support-live-chat.md`
+- `docs/prds/autonomous-support-coverage.md`
 - `events-pipeline/README.md`

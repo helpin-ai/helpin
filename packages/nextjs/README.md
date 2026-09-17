@@ -27,6 +27,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
         host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
         autoBoot: false,
+        autoPageview: false, // usePageView owns route tracking.
         // Optional: use a staging or pinned runtime.
         // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
       }),
@@ -135,7 +136,7 @@ For migrations from another help-center provider, map each legacy article ID to 
 
 ## `usePageView()`
 
-Tracks client-side route changes automatically. Optionally run setup logic or attach extra data before each pageview fires:
+With `autoPageview: false` on the client, this hook tracks client-side route changes. Optionally run setup logic or attach extra data before each pageview fires:
 
 ```tsx
 'use client';
@@ -145,6 +146,7 @@ import { createClient, usePageView } from '@helpin-ai/nextjs';
 const helpinClient = createClient({
   widgetKey: process.env.NEXT_PUBLIC_HELPIN_WIDGET_KEY!,
   host: process.env.NEXT_PUBLIC_HELPIN_HOST!,
+  autoPageview: false, // usePageView owns route tracking.
   // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
 
@@ -162,6 +164,10 @@ export function PageViewTracker() {
 }
 ```
 
+Mount one pageview hook per application. Disable the SDK’s `autoPageview` tracker
+when using the hook to avoid duplicate route-change events. The `before` callback
+is synchronous; it does not wait for an asynchronous `id()` call to finish.
+
 | Option | Type | Description |
 | --- | --- | --- |
 | `before` | `(helpin) => void` | Runs before each pageview event |
@@ -170,7 +176,7 @@ export function PageViewTracker() {
 
 ## Server-Side Tracking
 
-For server-side analytics in middleware, route handlers, or server actions, pair the core SDK with `middlewareEnv(...)`. It extracts request metadata and manages the anonymous visitor ID cookie:
+For server-side analytics where you have a `NextRequest` and a writable `NextResponse`, pair the core SDK with `middlewareEnv(req, res)`. The helper reads request metadata and writes the anonymous visitor cookie to that response. It is not a standalone Server Action helper:
 
 ```ts
 import { NextRequest, NextResponse } from 'next/server';
@@ -205,12 +211,16 @@ export function middleware(req: NextRequest) {
 | `getSourceIp()` | Extract the client IP from request headers |
 | `describeClient()` | Build a `ClientProperties` object from the request |
 
+Pass `{ disableCookies: true }` as the third argument to `middlewareEnv` to skip
+anonymous-cookie creation. `getSourceIp()` reads forwarded headers; your proxy
+configuration determines whether those values are trustworthy.
+
 ## Client vs. Server
 
 | Context | What to use |
 | --- | --- |
 | Browser (analytics + widget) | `createClient(...)` from `@helpin-ai/nextjs` |
-| Server (middleware, route handlers, server actions) | `helpinClient(...)` from `@helpin-ai/sdk-js` + `middlewareEnv(...)` |
+| Server (middleware or route handler with `NextRequest` / `NextResponse`) | `helpinClient(...)` from `@helpin-ai/sdk-js` + `middlewareEnv(...)` |
 
 The chat widget boots automatically in the browser when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep it dormant until you call `show()`, `open()`, or `openNewMessage()` — useful for custom launchers. Widget UI comes from the hosted runtime by default; analytics and server helpers remain in the npm package.
 

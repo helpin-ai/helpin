@@ -1,11 +1,17 @@
-# Documentation link checks
+# Check documentation names and links
 
 From the repository root:
 
 ```sh
+python3 scripts/docs/check_names.py
 python3 scripts/docs/check_links.py
 python3 -m unittest discover -s scripts/docs -p '*_test.py'
 ```
+
+The naming check covers all tracked Markdown under `docs/` plus new non-ignored
+documents. It enforces lowercase hyphenated names (except `README.md`), rejects
+redundant `prd-` and `todo-` prefixes, and validates date prefixes. See the
+[writing and naming guide](../../docs/documentation-guide.md) for the full convention.
 
 CI runs these in the always-required `workflow-checks` job, including on
 documentation-only PRs. The checker validates all documents listed in

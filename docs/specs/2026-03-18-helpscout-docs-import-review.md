@@ -1,8 +1,54 @@
-# Design Review: HelpScout Help Center Import
+# Help Scout help-center import design review
 
 **Spec**: `docs/specs/2026-03-18-helpscout-docs-import-design.md`
 **Reviewer**: Code Review Agent
 **Date**: 2026-03-18
+
+
+## Current status of the review findings
+
+Source-compared on 2026-09-17. This is a historical review of the March proposal,
+not a current security audit or implementation backlog. Read the original findings
+below with these changes in mind.
+
+The [import service](../../server/internal/service/docs_import.go) now persists a
+`DocsImportJob`, encrypts its request payload with the configured 32-byte key, and
+starts a [Temporal workflow](../../server/internal/temporalapp/docs_import_workflow.go)
+whose input contains only the import ID. It requires a configured worker client
+and encryption key. This supersedes the original in-memory job and unmanaged
+background-goroutine design. Encryption at rest does not mean credentials never
+exist in process memory: the activity must decrypt the payload to call Help Scout.
+
+The workflow has a 48-hour activity timeout, five-minute heartbeat timeout, and
+bounded retries. These mechanisms support durable execution; they do not prove
+that every failure is recoverable without duplicate or partial import effects.
+Starting an import creates the job before submitting the workflow and can create
+a new space first, so it is not a single atomic operation.
+
+The [router](../../server/internal/router/router.go) now requires `docs.import`
+for import routes. Actual paths include `/api/docs/import/helpscout/start` and
+`/api/docs/import/{jobId}/redirect-map`; the proposed workspace-nested paths and
+`/redirects` suffix are not the implemented API. The
+[handler](../../server/internal/handler/docs_import.go) obtains workspace context
+for job operations, while start explicitly reads `workspace_id` from the query.
+Route permission checks alone should not be taken as proof of every target-space
+ownership invariant.
+
+The [Docs model](../../server/internal/model/docs.go) now has collection slugs.
+Source-status/draft selection and redirect generation are implemented in the
+import service; the original “missing” findings are historical. The
+[API client](../../server/internal/helpscout/client.go) uses Basic authentication,
+handles 429 through `Retry-After`, and pauses when remaining quota is low. This
+is not the proposed token-bucket or exponential-backoff algorithm. Vendor limits
+and external API accuracy assertions below were not reverified against live docs.
+
+The original encryption recommendation conflates storage encryption with memory
+exposure, and the “80% complete” assessment has no current measurement behind it.
+Neither should be used as a launch gate today. Current test sources exist for
+import behavior and workflow execution, but this review did not run an import,
+contact Help Scout, or rerun runtime tests.
+
+## Original March review
 
 ---
 

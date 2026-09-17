@@ -1,4 +1,45 @@
-# Dock Chat Lazy Work History
+# Dock chat lazy work history design
+
+> Historical design, reviewed against the checkout on 2026-09-17. This page
+> explains the compact-history feature for contributors. The implementation
+> below is current source evidence; the original design and verification list
+> are not a claim that every proposed guarantee or test has been completed.
+
+## Current implementation
+
+The [history projection](../../server/internal/service/dock_chat_history_projection.go)
+returns a synthetic assistant `status` message with
+[`dock_work_summary`](../../server/internal/model/agent_run_message.go):
+`message_id`, `duration_ms`, and `activity_count`. There is no `has_work_details`
+field. The summary precedes the selected answer, whose turn segments and tool
+invocations are omitted. Explicit progress without an explicit final answer is
+preserved rather than compacted as completed work.
+
+Final selection prefers the last nonempty `assistant_final`, even when tool
+metadata arrives later. Otherwise it searches backward for assistant segment
+content and then message content. This differs from a universal preference for
+the durable message's content. The summary targets the last assistant message
+in the group, which can differ from the visible final answer's ID.
+
+The [service](../../server/internal/service/dock_chat.go) checks chat access for
+both list and work-detail requests. The [repository query](../../server/internal/repository/agent.go)
+scopes the target to the workspace and chat and loads the interval after the
+preceding user message through that target, excluding failed deliveries. Work
+detail can therefore contain multiple persisted messages. Compact projection
+runs on each fetched page; the design should not be read as proof that pagination
+always aligns with whole turns.
+
+[DockTranscript](../../frontend/src/components/agents/dock/DockTranscript.tsx)
+fetches on expansion, shows loading and retry states, and caches successful
+responses in an in-memory map keyed by workspace, chat, and message. Collapsing
+preserves that cache; “instant” means reuse of available cached data, not durable
+offline storage. [ChatView](../../frontend/src/components/agents/dock/ChatView.tsx)
+requests 50 persisted messages per page and refreshes after terminal events.
+[AskAgentsDock](../../frontend/src/components/agents/AskAgentsDock.tsx) still
+imports ChatView eagerly, so the separate bundle and smaller page remain future
+work in this design.
+
+## Original design
 
 ## Goal
 

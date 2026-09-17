@@ -1,8 +1,13 @@
 # Helpin MCP workflow package
 
-See the [complete Helpin Public MCP capability and operations guide](../../docs/HELPIN_PUBLIC_MCP.md) for the architecture, tool catalog, authorization model, UI, limits, and rollout controls.
+See the [complete Helpin Public MCP capability and operations guide](../../docs/public-mcp-server.md) for the architecture, tool catalog, authorization model, UI, limits, and rollout controls.
 
-Connect a remote MCP client to:
+This integration is implemented for controlled beta. The endpoint below is the
+configured hosted destination, not a guarantee that the service is enabled for
+your deployment or workspace. Check the linked guide's enablement requirements
+before connecting. Self-hosted clients use their operator's configured MCP URL.
+
+Connect an authorized remote MCP client to:
 
 ```text
 https://mcp.helpin.ai/mcp

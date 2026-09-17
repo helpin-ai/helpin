@@ -36,7 +36,7 @@ docker compose up -d postgres redis nats temporal
 
 See the [infrastructure guide](../docker/README.md) for database and Redis
 connection values. Temporal listens on port `7233`. AI execution also requires
-[Agent Runtime configuration](AGENT_RUNTIME_LOCAL.md) and
+[Agent Runtime configuration](agent-runtime-local-setup.md) and
 [AI connections and profiles](ai-connections.md).
 
 ## Run the application
@@ -68,7 +68,9 @@ go run ./cmd/temporal-worker
 ```
 
 The [justfile](../justfile) provides shortcuts, including `just dev-full` for the
-API, frontend, and worker. Its backend shortcut requires Air.
+API, frontend, and worker. Its backend shortcut requires Air. These commands
+use the default Community build; use `just backend-ee`, `just worker-ee`, and
+`just frontend-ee` when intentionally developing the EE edition.
 
 ## Validate changes
 
@@ -87,9 +89,17 @@ pnpm --dir frontend build
 
 Some integration tests need configured services. Component test instructions and
 [CI](../.github/workflows/ci.yml) describe additional checks, including EE builds.
-For documentation-only changes, run `python3 scripts/docs/check_links.py` and
-`git diff --check`. See the [link-check guide](../scripts/docs/README.md) for coverage
-and the regression-test command.
+For documentation-only changes, run:
+
+```bash
+python3 scripts/docs/check_names.py
+python3 scripts/docs/check_links.py
+python3 -m unittest discover -s scripts/docs -p '*_test.py'
+git diff --check
+```
+
+See the [documentation check guide](../scripts/docs/README.md) for coverage
+and the operator packaging check when changing bundled guides.
 
 ## Further guides
 

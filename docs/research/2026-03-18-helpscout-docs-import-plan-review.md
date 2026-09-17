@@ -1,9 +1,50 @@
-# Plan Review: HelpScout Docs Import
+# Help Scout Docs import plan review
 
 **Plan:** `docs/plans/2026-03-18-helpscout-docs-import.md`
 **Spec:** `docs/specs/2026-03-18-helpscout-docs-import-design.md`
 **Reviewer:** Code Review Agent
 **Date:** 2026-03-18
+
+
+## Current status of the findings
+
+Source-compared on 2026-09-18. This page preserves the March plan review for
+contributors; its severity labels and completeness table are not a current audit.
+
+The [job model](../../server/internal/model/docs_import.go) now contains
+`StartedBy`, `Error`, `interrupted` status, encrypted payload, and workflow ID.
+The [import handler](../../server/internal/handler/docs_import.go) uses methods on
+`DocsHandler`, and the frontend [permission union](../../frontend/src/lib/types.ts)
+includes `docs.import`. These missing-model/handler/type findings have been addressed.
+The [import service](../../server/internal/service/docs_import.go) passes the
+initiating user to new-space creation.
+
+Durable execution now uses Temporal with an encrypted database job payload, as
+explained in the [reviewed design assessment](../specs/2026-03-18-helpscout-docs-import-review.md).
+The old goroutine/errgroup alternatives are not the current execution design.
+The `interrupted` constant's existence alone does not establish that every restart
+sets that status; Temporal retry and job recovery must be evaluated separately.
+
+Do not allocate `047`/`048` migrations from this review. Current schema management
+uses [versioned migrations](../ops/database-migrations.md); import jobs are included
+in the core foundation and have later additive migrations. Historical migration
+numbers and a model definition do not prove every proposed foreign key exists.
+
+The [image helper](../../server/internal/helpscout/images.go) now depends on an
+`ImageUploader` interface rather than a concrete S3 client. The service preprocesses
+Help Scout HTML and uses the shared `docsimport.ConvertHTML` conversion result;
+the markdown-envelope recommendation is historical, not current implementation
+instructions. Conversion warnings track HTML-block fallbacks and retained image
+URLs, so image handling is not an unconditional guarantee of successful re-upload.
+
+The [Help Center import UI](../../frontend/src/components/settings/HelpCenterImportSection.tsx)
+still uses interval polling. The TanStack Query suggestion below remains a design
+preference, not an implemented change or a requirement to rewrite the UI during
+this documentation review. Service/workflow test files now exist, but test-file
+presence does not establish complete coverage of the original error matrix.
+No imports, provider requests, migrations, or runtime tests were run for this update.
+
+## Original March review
 
 ---
 

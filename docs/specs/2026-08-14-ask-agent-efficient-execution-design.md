@@ -1,4 +1,44 @@
-# Ask Agent Efficient Execution P0 Design
+# Ask Agent efficient execution design
+
+> Historical design, source-compared on 2026-09-17. This page explains the
+> original Ask efficiency change for contributors. The product execution policy
+> exists, but the transcript implementation and opt-in scope have since evolved.
+
+## Current implementation
+
+The [prompt contract](../../server/internal/agentcontract/skill_catalog.go) defines
+`Required Ask Agent execution policy v2` and `EnsureAskAgentExecutionPolicy`.
+It removes exact copies of the current contract before appending it, preserving
+custom text while making the current product policy explicit. The
+[agent launch path](../../server/internal/service/agent.go) applies it to the
+effective prompt. Its smallest-action, evidence, stopping, communication, and
+direct-execution rules are prompt guidance, not proof that every model response
+obeys them. “Current flash model” below describes the original scope, not a fixed
+model guarantee for all current AI profiles.
+
+The [segment collector](../../frontend/src/components/agents/transcript/segments.ts)
+retains a compaction helper, but
+[DockTranscript](../../frontend/src/components/agents/dock/DockTranscript.tsx)
+currently calls the collector with compaction disabled and then uses
+[working groups](../../frontend/src/components/agents/dock/dockWorkingGroups.ts)
+when its presentation option is enabled. It does not simply discard all but the
+latest prose through the original pure transformation. Final-answer handling and
+completed work disclosures are part of the current presentation path.
+
+Both [ChatView](../../frontend/src/components/agents/dock/ChatView.tsx) and
+[DockRunView](../../frontend/src/components/agents/dock/DockRunView.tsx) pass
+`compactAssistantProgress`; therefore the original “only root Ask” call-site
+boundary and “all other consumers unchanged” acceptance claim are outdated.
+The default option remains false, but defaults do not establish actual caller
+behavior. See the [reviewed timeline design](2026-08-15-ask-agent-timeline-ordering-design.md)
+for further changes to disclosure defaults and label content.
+
+The original no-runtime-change constraint describes this P0's intended scope,
+not a guarantee that subsequent projection/history implementations stayed frozen.
+No new model benchmark, runtime execution, browser suite, or build was performed
+for this source comparison. The historical verification matrix follows.
+
+## Original P0 design
 
 ## Goal
 

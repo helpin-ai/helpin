@@ -1,4 +1,47 @@
-# Support Coverage Gaps — Current State & First-Class Roadmap (2026-06-11)
+# Coverage gaps: June assessment and roadmap
+
+> Historical strategy assessment, source-compared on 2026-09-17. This page
+> records June priorities for product and engineering. Its “today” statements,
+> counts, and competitor positioning are not a current feature inventory.
+
+## Changes since the assessment
+
+The [gap repository](../../server/internal/repository/support_coverage.go) now
+computes and sorts by an impact score combining recent distinct-conversation
+counts, unique customers, total evidence, confidence, and knowledge/actionability
+bonuses. This differs from the proposed multiplicative decay formula. The
+[service](../../server/internal/service/support_coverage.go) sets display tiers
+from recent evidence thresholds: high at 10, medium at 3, otherwise low.
+
+Recurrence handling also exists. The
+[materializer](../../server/internal/service/support_coverage_materializer.go)
+can mark a closed gap for recurrence watch, and the repository reopens a `done`
+gap after the post-close evidence counter reaches three. This does not establish
+the proposed multi-day citation-based verification or automatic proof of deflection.
+The original blanket claim that nothing reopens a gap is therefore outdated,
+while the broader closed-loop outcome remains unproven by these mechanisms.
+
+[Cluster rebuilding](../../server/internal/service/support_coverage_cluster_rebuild.go)
+uses embeddings and reports embedding availability/errors. The
+[router](../../server/internal/router/router.go) exposes merge-suggestion review
+and application routes as well as workspace reanalysis. The
+[snapshot service](../../server/internal/service/support_coverage_snapshots.go)
+also contains metric persistence; model existence alone is not the current extent
+of the implementation.
+
+The [daily analyzer](../../server/internal/service/support_coverage_daily_analyzer.go)
+accepts configured provider/model values, so “Claude analysis” is not a fixed
+current contract. The [workflow](../../server/internal/temporalapp/coverage_analysis_workflow.go)
+still declares a maximum of ten workspace children. Historical entity/test counts
+and cost statements were not remeasured here.
+
+Source search found no `coverage.gap_detected` or `coverage.gap_spike` trigger
+implementation, and `CreateDigestDelivery` has repository/test callers only.
+These findings do not establish the proposed agent loop or live weekly digest.
+The competitor claims below remain historical positioning, not verified current
+market facts. No production metrics, provider calls, or live automation were run.
+
+## Original June assessment
 
 ## What exists today (it's already deep)
 
@@ -30,7 +73,7 @@ The detection half is excellent; the **resolution half is manual and the loop ne
 - **Deflection attribution**: count AI-resolved conversations citing a gap-born article. This single number ("articles created from gaps deflected X conversations this month") is the feature's ROI statement and the demo headline.
 
 ### P1 — Wire the agents (this is the product thesis)
-- Add automation-rule trigger `coverage.gap_detected` (and `coverage.gap_spike`) following the existing `story.state_entered` pattern, carrying the minimal trigger payload per the agents taxonomy in `docs/AGENTS_AND_AUTOMATION.md`.
+- Add automation-rule trigger `coverage.gap_detected` (and `coverage.gap_spike`) following the existing `story.state_entered` pattern, carrying the minimal trigger payload per the agents taxonomy in `docs/agents-and-automation.md`.
 - Default rule (autonomy-gated like CRM thresholds): high-confidence `missing_article` gaps → Documentation Agent drafts the article as a docs change proposal → human approves → publish → P0 loop verifies. Confidence below threshold → suggestion stays manual, exactly like CRM's auto_execute/review thresholds.
 - This makes coverage the flagship example of "built-in automation + system agent" working together — the self-healing knowledge base.
 

@@ -122,24 +122,18 @@ Deploy notes:
 - nginx/static hosting for the embed widget must serve `/chunks/`
 - frontend preview depends on `packages/widget-core/dist/index.js`
 
-## Frontend Bundle Size Notes
+## Check bundle output
 
-Current frontend behavior:
+The source shares `loadEmojiCatalog()` between the support composer and widget
+preview, and that helper dynamically imports the catalog. Actual chunk filenames,
+chunk sizes, and deduplication depend on the build; inspect emitted assets after
+changing dependencies or bundler settings. Earlier entry counts and bundle-warning
+observations were measurements from a prior build, not maintained limits.
 
-- The emoji catalog is emitted as one async `emoji-catalog-*.js` chunk.
-- The support composer and widget preview both load that same async catalog path through widget-core.
-- The support route no longer carries a second copy of the catalog.
-
-Important clarification:
-
-- The large `index-*.js` chunk warning in the frontend build is not caused by the emoji catalog.
-- The emoji-related payload is now isolated to the separate `emoji-catalog-*.js` chunk plus the picker UI code.
-
-The shared dataset was also cleaned up:
-
-- per-category duplicate entries were removed
-- malformed entries were removed
-- total catalog entries dropped from 1534 to 1409 without changing category coverage across the file
+The npm SDK entry is built separately by
+[build-esm.mjs](../packages/sdk-js/scripts/build-esm.mjs). Browser widget runtime
+loading and `widgetRuntimeUrl` are documented in the [SDK README](../packages/sdk-js/README.md).
+Do not assume rebuilding a consumer application republishes hosted SDK assets.
 
 ## Quick Rules of Thumb
 

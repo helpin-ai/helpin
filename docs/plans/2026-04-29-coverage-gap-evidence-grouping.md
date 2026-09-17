@@ -1,4 +1,42 @@
-# Coverage Gap Evidence — Group by Conversation + Chat Layout
+# Coverage-gap evidence grouping
+
+> Historical plan, source-compared on 2026-09-17. This page explains the
+> evidence-card grouping change for contributors. Grouping and sender-role
+> enrichment are implemented; the current display differs from several original
+> presentation and counting requirements below.
+
+## Current implementation
+
+The [read-only evidence DTO](../../server/internal/model/support_coverage.go)
+adds `sender_role` without adding it to the persisted evidence model. The
+[detail query](../../server/internal/repository/support_coverage.go) joins messages
+by message ID and workspace ID, uses an empty string for missing senders, returns
+errors, and fetches at most 50 rows ordered by descending creation time. Grouping
+therefore covers the fetched evidence subset, not an entire conversation history.
+
+The [grouping helper](../../frontend/src/components/support/coverage/evidenceGrouping.ts)
+preserves first-seen conversation order and leaves rows without conversations
+standalone. The [conversation card](../../frontend/src/components/support/coverage/EvidenceConversationCard.tsx)
+sorts items oldest to newest but initially shows the **latest three**, with a
+“Show N earlier items” control. Rows with a message ID render Markdown bubbles;
+conversation events without message IDs render compact event rows. User, agent,
+and AI senders align right; other roles align left. There is no separate centered
+`system`-sender branch as proposed below.
+
+[GapDetailPane](../../frontend/src/components/support/coverage/GapDetailPane.tsx)
+uses these groups and displays a conversation count based on `evidence_all`, with
+`evidence_count` as a fallback. Repository aggregate queries also use distinct
+conversation IDs (or evidence IDs for standalone rows) for recent evidence counts.
+The original “still per-message” statement should not be read as the semantics
+of all current displayed counts. Grouping does not itself deduplicate stored rows.
+
+The [repository test](../../server/internal/repository/support_coverage_test.go)
+checks sender-role enrichment, while
+[grouping tests](../../frontend/src/components/support/coverage/__tests__/evidenceGrouping.test.ts)
+cover helper behavior. These are inspected source evidence, not a fresh browser
+or full-suite test run. The original verification steps remain historical.
+
+## Original implementation plan
 
 **Date:** 2026-04-29
 **Branch:** waqar-work

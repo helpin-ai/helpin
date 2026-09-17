@@ -1,6 +1,44 @@
-# Ask Agent Efficient Execution Implementation Plan
+# Ask Agent efficient execution implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains an earlier Ask Agent prompt and transcript change.
+Contributors should use the current notes below before changing execution policy
+or treating progress compaction as removal of stored conversation content.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18; no application tests or live agent runs were used
+for this documentation review.
+
+- [EnsureAskAgentExecutionPolicy](../../server/internal/agentcontract/skill_catalog.go)
+  appends the version-2 policy for the Ask preset, and
+  [runtime agent construction](../../server/internal/service/agent.go) calls it.
+  Deduplication removes exact copies of the current full policy string only;
+  it does not parse and remove arbitrary older or modified policy sections.
+  The contract is prompt guidance, not a mechanical guarantee of efficient work.
+- [DockTranscript](../../frontend/src/components/agents/dock/DockTranscript.tsx)
+  now passes `compactAssistantProgress: false` to segment collection. Its
+  similarly named presentation prop controls a working timeline built through
+  [dockWorkingGroups](../../frontend/src/components/agents/dock/dockWorkingGroups.ts).
+  Do not describe the current dock as simply deleting all earlier assistant
+  progress segments with the helper proposed below.
+- [ChatView](../../frontend/src/components/agents/dock/ChatView.tsx) still opts in,
+  but [DockRunView](../../frontend/src/components/agents/dock/DockRunView.tsx) and
+  expanded historical work in DockTranscript also use this presentation option.
+  The original root-chat-only scope is no longer accurate.
+- [Segment collection](../../frontend/src/components/agents/transcript/segments.ts)
+  retains an optional compaction helper for callers that request it. It respects
+  user/review-decision boundaries and preserves a previous final assistant
+  response over a later non-final progress segment. The original “always keep
+  only the last assistant” pseudocode is incomplete for today's implementation.
+- Live timeline inclusion and active runtime state are separate inputs. The
+  current dock passes `runtimeActive` separately from `includeLive`; terminal
+  presentation should not infer activity merely from retained live segments.
+
+The original expected test outcomes and dependency-error notes are historical,
+not fresh validation. Go 1.24 and the branch-specific rebase/push commands below
+are not current contributor instructions or authorization to deliver this review.
+
+## Original implementation sequence
 
 **Goal:** Keep Ask Agent as the broad flash-model executor while giving it a single evidence-driven operating contract and compacting routine progress prose only in the root Ask chat.
 

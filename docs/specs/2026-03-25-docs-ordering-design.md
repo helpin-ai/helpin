@@ -1,5 +1,15 @@
 # Docs Ordering Design
 
+> Source review, 2026-09-17
+
+Historical ordering design. Current collections/documents have `sort_key` fields,
+and repositories retain configuration-dependent position/sort-key behavior. See
+[collection ordering](../../server/internal/repository/docs_collection.go),
+[configuration](../../server/internal/config/config.go), and
+[ordering parity tests](../../server/internal/service/docs_ordering_parity_test.go).
+Check `DOCS_ORDERING_USE_SORT_KEY` for the target deployment; neither this plan nor
+the presence of the code proves that the flag is enabled there.
+
 ## Summary
 
 Helpin needs a single canonical ordering model for docs spaces, collections, and articles. That order must be shared by:
@@ -46,7 +56,7 @@ If Settings needs to reference structure later, it should deep-link back to Docs
 
 Ordering is managed from:
 
-- [`frontend/src/pages/docs/DocsHome.tsx`](../../../../frontend/src/pages/docs/DocsHome.tsx)
+- [`frontend/src/pages/docs/DocsHome.tsx`](../../frontend/src/pages/docs/DocsHome.tsx)
 
 This page already acts as the highest-level hierarchy view. It shows all spaces and can be expanded to show collections and documents. That makes it the right place to manage information architecture across the whole docs system.
 

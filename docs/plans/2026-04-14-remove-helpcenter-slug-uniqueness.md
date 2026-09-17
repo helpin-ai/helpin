@@ -1,5 +1,18 @@
 # Remove Help Center Slug Uniqueness Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical collection rollout reference. Current models include parent, depth,
+and PublicID fields. The later
+[slug-uniqueness migration](../../server/internal/dbmigrate/sql/202604140002_remove_helpcenter_slug_uniqueness.sql)
+drops collection/article slug uniqueness; space slugs remain unique. Any tests
+below requiring unique collection slugs, a slug-conflict response, or the old
+slug-only canonical URL are obsolete for a fully migrated database. Use
+[current models](../../server/internal/model/docs.go) and
+[PublicID route helpers](../../help-center/src/lib/locale.ts) when adapting this
+checklist. Historical migration-specific tests remain useful at their original
+migration boundary, not as assertions about the final schema.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove collection and article slug uniqueness from the help center while preserving stable public URLs, redirects, in-app fetches, and widget embedded article behavior through PublicIDs.
@@ -686,7 +699,7 @@ git commit -m "docs: document public id article embeds"
 **Files:**
 - Modify: `server/internal/dbmigrate/sql/202604140715_add_docs_redirect_target_paths.sql`
 - Add: `server/internal/service/docs_redirect_backfill_test.go` if service-level backfill is needed
-- Modify: `docs/AGENTS_AND_AUTOMATION.md` only if public help center contract is documented there
+- Modify: `docs/agents-and-automation.md` only if public help center contract is documented there
 - Add: `docs/helpcenter-public-id-contract.md` if no existing docs page fits
 
 - [ ] **Step 1: Backfill redirect target paths before dropping uniqueness**

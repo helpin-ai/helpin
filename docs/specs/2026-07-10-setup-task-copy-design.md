@@ -1,7 +1,47 @@
-# Setup Task Copy Simplification
+# Setup task copy and journey behavior
 
 **Date:** 2026-07-10
 **Status:** Approved direction
+
+
+This design records the approved setup-checklist wording and journey behavior.
+Use the implementation notes to understand what a completed step actually proves.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18; no browser or application tests were run.
+
+- The [setup catalog](../../server/internal/service/setup_catalog.go) contains
+  the plain-language task titles and the nine support milestones. It still
+  stores some descriptions internally; the requirement is about presentation,
+  not deleting every backend description field.
+- [SetupSuccessPage](../../frontend/src/pages/SetupSuccessPage.tsx) renders the
+  task title with wrapping, independent keyed journey toggles, semantic header
+  buttons, `aria-expanded`/`aria-controls`, and mounted task lists using `hidden`.
+  Its state is component-local, initialized on a nonempty journey payload and
+  reset on workspace change. Existing keys survive nonempty refreshes and an
+  empty same-workspace refresh does not itself clear the toggle map.
+- [Support evidence queries](../../server/internal/repository/setup.go) check
+  active email routes, widget installations joined to workspace sessions,
+  published public articles, ready/indexed brand sources, active mailboxes, and
+  configured routing rules/prompts. A session proves a recorded session exists;
+  it does not independently prove a production website installation outside a
+  preview/setup environment.
+- The AI-support completion predicate checks `ai_enabled` and a nonempty
+  `ai_agent_id` in active installation settings. It does not itself prove that
+  the agent still exists, is operational, has usable credentials, or produces
+  accurate answers. Likewise, indexed-source and configured-routing predicates
+  are setup evidence, not quality or delivery guarantees.
+- Current navigation is centralized in
+  [setupActions](../../frontend/src/lib/setupActions.ts). Use that mapping when
+  changing destinations rather than introducing another route table in UI code.
+
+The original regression matrix remains useful acceptance guidance. Exact labels,
+all maturity/prerequisite combinations, assistive-technology behavior, and narrow
+viewport rendering require their respective tests; this source review does not
+report them as freshly passed.
+
+## Original design
 
 ## Goal
 

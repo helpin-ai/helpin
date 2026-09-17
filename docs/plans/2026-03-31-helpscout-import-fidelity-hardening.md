@@ -308,7 +308,7 @@ The tests should verify structure remains present in the DOM and article enhance
 
 - [ ] **Step 2: Extend prose styling conservatively**
 
-Update [app.css](/root/teampulse/help-center/src/app.css) to give imported docs a better visual hierarchy without redesigning the site:
+Update [app.css](../../help-center/src/app.css) to give imported docs a better visual hierarchy without redesigning the site:
 - add `h4`, `h5`, `h6` styles
 - improve vertical rhythm for step-heavy docs
 - improve spacing between headings, paragraphs, callouts, figures, and images
@@ -321,7 +321,7 @@ Constraints:
 
 - [ ] **Step 3: Adjust article enhancement logic only where safe**
 
-In [ArticleContent.tsx](/root/teampulse/help-center/src/components/ArticleContent.tsx):
+In [ArticleContent.tsx](../../help-center/src/components/ArticleContent.tsx):
 - keep copy-button behavior intact
 - keep heading-ID enhancement intact
 - only expand heading enhancement depth if it is needed for imported-doc navigation and does not clutter existing TOC behavior
@@ -363,7 +363,7 @@ Update import/reconvert logic so warning counts are tracked per article and roll
 
 - [ ] **Step 3: Display summary signals in the existing import history UI**
 
-Extend [HelpCenterImportSection.tsx](/root/teampulse/frontend/src/components/settings/HelpCenterImportSection.tsx) so completed jobs can show:
+Extend [HelpCenterImportSection.tsx](../../frontend/src/components/settings/HelpCenterImportSection.tsx) so completed jobs can show:
 - article/collection totals
 - quality warning counts
 - reconvert result context

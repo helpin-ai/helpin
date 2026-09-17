@@ -1,5 +1,16 @@
 # Availability-Aware AI → Human Escalation
 
+> Source review, 2026-09-17
+
+Historical availability design. Current escalation resolves teammate presence and
+office hours, chooses a handoff state, and renders state-specific reply-time and
+next-opening text in [support_ai_escalate.go](../../server/internal/service/support_ai_escalate.go)
+using [handoff helpers](../../server/internal/service/support_handoff_state.go).
+The original missing-behavior diagnosis is not the current implementation.
+Broader notification/assignment proposals below are not certified by that check.
+For schema work, follow the [migration runbook](../ops/database-migrations.md):
+Community disables AutoMigrate, so additive columns also require ledger migrations.
+
 **Date:** 2026-07-02
 **Status:** Approved design, pending implementation plan
 **Owner:** Support module

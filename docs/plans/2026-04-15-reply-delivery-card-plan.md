@@ -1,4 +1,47 @@
-# Reply Delivery Card Plan — 2026-04-15
+# Reply delivery card plan
+
+> Historical proposal, source-compared on 2026-09-17. This page describes a
+> proposed first-message confirmation card for widget contributors. It is not
+> implemented in the current codebase.
+
+## Current status and implementation considerations
+
+Current source contains no `reply_delivery_info` event, `delivery_card` payload,
+`ReplyDeliveryCard` component, or proposed emitter. The
+[event registry](../../server/internal/model/support_system_event.go) does not
+recognize this type, and the [repository guard](../../server/internal/repository/support_inbox.go)
+rejects system messages with an unrecognized event type. The tests listed below
+are proposed coverage, not existing test results.
+
+The adjacent [delayed team reply service](../../server/internal/service/support_delayed_team_reply.go)
+implements a different behavior: a notice after an AI-to-team handoff remains
+unanswered for the configured delay. It applies to open, escalated widget
+conversations, records a marker for the escalation, and uses a transaction and
+row lock. A teammate reply after escalation suppresses the notice. Email capture
+and email-related copy depend on configured fallback services and unsubscribe
+state. None of this provides an immediate first-message confirmation card.
+
+The [widget message renderer](../../packages/widget-core/src/components/MessageBubble.tsx)
+currently permits explicit public system events only for `teammate_joined` and
+`delayed_team_reply`. A new card would need both event registration and deliberate
+rendering/visibility changes. The [staff renderer](../../frontend/src/components/support/MessageBubble.tsx)
+also has event-specific behavior; a one-line hide/show promise is not an adequate
+implementation contract.
+
+Before implementing this proposal, resolve its conflicting timing descriptions:
+the Timing section places the emitter after the customer message is saved, while
+the helper comment places it before. A prior-message scan alone is not a
+concurrency-safe exactly-once guarantee. Specify a transactional marker or another
+atomic deduplication mechanism and test simultaneous first messages. Also make
+email promises conditional on actual delivery configuration, following the existing
+delayed notice's distinction between widget-only and email-capable installations.
+
+Competitor behavior and rollout observations below are historical context, not
+verified current behavior. No runtime tests or live conversations were used for
+this source review.
+
+## Original proposal
+
 
 Ship a persistence-backed "reply delivery" card that
 reassures the customer right after they send their first message on a

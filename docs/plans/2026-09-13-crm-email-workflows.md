@@ -1,6 +1,50 @@
 # CRM email workflows — steps 2–6
 
-Goal: finish templates, sequences, enrollment, monitoring and automatic enrollment without a second general-purpose workflow builder. Work only in waqar-fixes; no subagents.
+> Historical implementation and verification record, source-compared on
+> 2026-09-17. This page explains the CRM outreach work for contributors. Recorded
+> browser/test counts and branch delivery statements are from the original session,
+> not fresh results or instructions to push or deploy the current worktree.
+
+## Current implementation and capacity clarification
+
+The [outreach service](../../server/internal/service/crm_outreach.go),
+[runner](../../server/internal/service/crm_outreach_runner.go), and
+[repository](../../server/internal/repository/crm_outreach.go) implement templates,
+sequences, enrollment snapshots, and delivery progress. The
+[Temporal worker](../../server/cmd/temporal-worker/main.go) wires outreach as an
+additional scheduled-events dispatcher. Source wiring does not verify that a live
+worker or schedule is currently running.
+
+The original 100-sequence-emails description below predates shared mailbox budgets.
+Current [sending policy](../../server/internal/repository/crm_sending.go) defaults
+to 100 total Helpin CRM sends per rolling 24 hours, a manual reserve of 10, and
+60-second automated spacing. Thus automated sequence capacity is constrained by
+both the shared remaining budget and the automated allowance, not an independent
+100-message quota. Owners can configure limits within validation bounds. These
+are Helpin accounting limits and do not count messages sent outside Helpin or
+promise provider acceptance.
+
+[Capacity settings](../../server/internal/service/crm_outreach_capacity.go) check
+mailbox ownership, while the [capacity migration](../../server/internal/dbmigrate/sql/202609140002_crm_sending_capacity.sql)
+provides the schema. Presence of that migration is not evidence it has been applied
+to an installation. First-recipient pacing is separate from total mailbox capacity.
+
+The runner persists delivery intent and reconciles an existing delivery before
+advancing. Unconfirmed delivery moves to `uncertain` with an explicit no-automatic-
+resend message. This limits duplicate-send risk; it is not an exactly-once guarantee
+across the database and Gmail provider. Review-mode email steps pause for review.
+
+The [starter catalog](../../frontend/src/components/crm/outreach/emailStarters.ts)
+validates required context, escapes HTML replacements, and builds review-mode email
+steps. Catalog source and prior browser reports do not establish current rendered
+UI behavior. External vendor research below is historical and was not reverified.
+No outbound messages, migrations, deployments, or runtime tests were performed
+for this documentation review.
+
+## Original implementation record
+
+
+Original goal: finish templates, sequences, enrollment, monitoring and automatic enrollment without a second general-purpose workflow builder. The original session used `waqar-fixes` without subagents.
 
 Design choice: Attio's inline email steps and compact settings; Close's separate recipient activity and review-before-send option. Reviewed their official documentation and screenshots, plus HubSpot's manual task screen. CRM gains one Emails destination with Templates, Sequences and Activity. Contacts/deals expose enrollment with a personalized preview. Reuse Quiet controls and the existing conversation editor.
 

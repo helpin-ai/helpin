@@ -99,7 +99,9 @@ For a migration, map each legacy article ID to its Helpin article key. Use a nor
 
 ## Vue Router pageviews
 
-Pass your Vue Router instance once in a component near the root of the app:
+Set `autoPageview: false` when creating the client, then pass your Vue Router
+instance once in a component near the root of the app. This avoids running both
+the SDK tracker and the router hook for the same navigation:
 
 ```vue
 <script setup lang="ts">

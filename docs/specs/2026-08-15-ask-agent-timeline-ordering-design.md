@@ -1,4 +1,42 @@
-# Ask Agent Timeline Ordering Design
+# Ask Agent timeline ordering design
+
+> Historical design, source-compared on 2026-09-17. This page explains the
+> timeline reconciliation intent for contributors. Current ordering helpers retain
+> the snapshot coverage checks, but several disclosure/presentation guarantees
+> below no longer describe the UI.
+
+## Current implementation and differences
+
+The [timeline helpers](../../frontend/src/components/agents/dock/dockChatTimeline.ts)
+compare retained assistant/tool IDs with the durable current interval and recognize
+user and review/approval decisions as boundaries. They merge persisted messages
+with a newer runtime tail and use stable/client IDs for reconciliation. The
+[transcript](../../frontend/src/components/agents/dock/DockTranscript.tsx) separates
+runtime chronology from active styling and computes final/progress presentation
+and separators per interval. Source inspection does not prove exact runtime order
+for every missing-ID, delayed-event, or malformed-timestamp scenario.
+
+[Work groups](../../frontend/src/components/agents/dock/DockWorkingGroup.tsx)
+start collapsed even when active. Manual toggling is retained across activity
+changes; the design's automatically open running phase is not current behavior.
+Completed groups may show “Worked for …” using a supplied duration, so the old
+blanket prohibition on duration-derived headers is also outdated.
+
+Active group labels use
+[tool-call presentation](../../frontend/src/components/pm/CodingSession/toolCallPresentation.ts),
+which can include argument-derived document titles, search text, file paths, or
+repository context. Therefore the original identity-only/static-metadata label
+rule and its sensitive-string test requirement are not guarantees of current
+rendering. This is a presentation-contract difference, not evidence that an
+unauthorized reader can access a transcript.
+
+[ChatView](../../frontend/src/components/agents/dock/ChatView.tsx) manages persisted
+and pending messages, and the shared timeline merge uses `client_message_id` for
+user identity. The verification list below remains the historical intended test
+matrix, not proof that every current transition or payload-hiding assertion passed.
+No new browser, runtime, or production-build verification was run for this review.
+
+## Original ordering design
 
 ## Goal
 

@@ -12,7 +12,7 @@ When the user shares a URL to an image or screenshot, always download it using `
 
 ## Architecture
 
-- **Backend**: Go 1.24 + Chi router + GORM (PostgreSQL) + Temporal workflows
+- **Backend**: Go 1.26.7 + Chi router + GORM (PostgreSQL) + Temporal workflows
 - **Frontend**: React 19 + Vite 7 + TypeScript 5.9 + TanStack Router + TanStack Query + Zustand + shadcn/ui
 - **Database**: PostgreSQL (pgcrypto for UUIDs) — in-cluster Postgres on stage/prod k8s (`helpin-pg-cluster`, db `app`), Docker Postgres for local dev
 - **Storage**: AWS S3 / MinIO (presigned URLs + direct upload)
@@ -20,7 +20,7 @@ When the user shares a URL to an image or screenshot, always download it using `
 
 ## Monorepo Setup
 
-- **Package manager**: pnpm v10 with workspaces (`packages/*`)
+- **Package manager**: pnpm version pinned in `package.json`; workspace membership is defined in `pnpm-workspace.yaml`
 - **Build orchestrator**: Turborepo (`turbo.json`) — handles dependency ordering across packages
 - **Build order**: `shared` → `widget-core` → `frontend` (turbo resolves via `^build`)
 
@@ -119,7 +119,7 @@ server/                          # Go API server
     temporalapp/                 # Temporal workflow setup
     websocket/                   # WebSocket hub + handler
     worker/                      # Background job workers
-  migrations/                    # Sequential SQL migrations (001–032+)
+  migrations/                    # Legacy SQL references; use internal/dbmigrate/sql for new migrations
 
 frontend/                        # React SPA
   src/
@@ -246,7 +246,7 @@ r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
 
 ### DI Wiring
 All dependencies are wired in `cmd/api/main.go`:
-1. Config → DB connection → AutoMigrate
+1. Config → DB connection → AutoMigrate when enabled
 2. Repositories created from `*gorm.DB`
 3. Services created from repositories + external clients (S3, email, Temporal)
 4. Handlers created from services
@@ -254,9 +254,13 @@ All dependencies are wired in `cmd/api/main.go`:
 
 ### Database Migrations
 
-**Two migration systems** (both active):
+**Two migration paths**:
 
-1. **GORM AutoMigrate** — runs on startup, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
+Community Compose disables AutoMigrate and applies versioned SQL through its
+migration service. Ship versioned SQL for schema additions as well as destructive
+or data changes; model changes alone do not migrate those installations.
+
+1. **GORM AutoMigrate** — runs on startup only when `RUN_AUTO_MIGRATE=true`, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
 2. **dbmigrate** (`server/internal/dbmigrate/`) — versioned SQL migrations for everything AutoMigrate cannot do: data migrations, table drops, cutover tasks, constraint changes, backfills.
 
 **dbmigrate CLI** (`server/cmd/migrate/`):
@@ -273,7 +277,7 @@ go run ./cmd/migrate create <name>   # Scaffold new migration file
 **Migration files**: `server/internal/dbmigrate/sql/YYYYMMDDNNNN_name.sql` (embedded via `//go:embed`)
 
 **When to use which**:
-- **AutoMigrate**: Adding new models/columns (struct changes picked up automatically)
+- **AutoMigrate**: Development schema additions when enabled; also provide versioned SQL for installations where it is disabled
 - **dbmigrate**: Dropping tables/columns, data backfills, constraint changes, renaming, cutover tasks, any DDL that AutoMigrate cannot express
 
 **Rules**:
@@ -420,7 +424,7 @@ matches the version exactly and an unmapped version would silently go quiet.
 
 ### Agents And Automation Model
 
-Canonical reference: `docs/AGENTS_AND_AUTOMATION.md`
+Canonical reference: `docs/agents-and-automation.md`
 
 Use this taxonomy when working on backend agent features:
 

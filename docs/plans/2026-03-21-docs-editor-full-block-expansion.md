@@ -1,15 +1,24 @@
 # Docs Editor Full Block Expansion Plan
 
+> Source review, 2026-09-17
+
+Historical analysis of the editor on 2026-03-21. Its “current-state” inventory
+predates implemented tables, task lists, callouts, HTML blocks, video, toggle
+sections, attachments, table of contents, and embedded entities. See the current
+[editor extension registration](../../frontend/src/components/docs/DocsEditor.tsx).
+The original gap analysis below is design history, not today's feature checklist;
+implementation of these extensions does not prove every proposed feature shipped.
+
 ## 1. Current-State Analysis
 
 ### Current editor architecture
 
-The Docs editor today is a relatively small Tiptap surface in [frontend/src/components/docs/DocsEditor.tsx](/root/teampulse/frontend/src/components/docs/DocsEditor.tsx):
+The Docs editor today is a relatively small Tiptap surface in [frontend/src/components/docs/DocsEditor.tsx](../../frontend/src/components/docs/DocsEditor.tsx):
 
 - `StarterKit`
 - `Placeholder`
 - `tiptap-markdown`
-- one custom `ResizableImageExtension` from [frontend/src/components/ui/resizable-image-extension.ts](/root/teampulse/frontend/src/components/ui/resizable-image-extension.ts)
+- one custom `ResizableImageExtension` from [frontend/src/components/ui/resizable-image-extension.ts](../../frontend/src/components/ui/resizable-image-extension.ts)
 
 Current authoring UX includes:
 
@@ -20,7 +29,7 @@ Current authoring UX includes:
 - `.doc` export and `.docx` import
 - autosave into `docs_contents.content`
 
-Current docs storage is canonical JSON in [server/internal/model/docs.go](/root/teampulse/server/internal/model/docs.go) as `DocsContent.Content json.RawMessage`, with plain-text extraction and word count computed in [server/internal/repository/docs_content.go](/root/teampulse/server/internal/repository/docs_content.go).
+Current docs storage is canonical JSON in [server/internal/model/docs.go](../../server/internal/model/docs.go) as `DocsContent.Content json.RawMessage`, with plain-text extraction and word count computed in [server/internal/repository/docs_content.go](../../server/internal/repository/docs_content.go).
 
 ### What the current editor actually supports
 
@@ -35,7 +44,7 @@ Effective authoring support today is:
 - images via `resizableImage`
 - markdown source editing and markdown import/export
 
-The Go Help Center renderer in [server/internal/tiptap/html.go](/root/teampulse/server/internal/tiptap/html.go) already knows how to render more than the Docs editor exposes:
+The Go Help Center renderer in [server/internal/tiptap/html.go](../../server/internal/tiptap/html.go) already knows how to render more than the Docs editor exposes:
 
 - paragraphs
 - headings
@@ -79,10 +88,10 @@ The blocks that need custom work are:
 
 ### Current import path and why Help Scout content loses fidelity
 
-The current Help Scout import flow is in [server/internal/service/docs_import.go](/root/teampulse/server/internal/service/docs_import.go) and [server/internal/helpscout/convert.go](/root/teampulse/server/internal/helpscout/convert.go):
+The current Help Scout import flow is in [server/internal/service/docs_import.go](../../server/internal/service/docs_import.go) and [server/internal/helpscout/convert.go](../../server/internal/helpscout/convert.go):
 
 1. Fetch article HTML from Help Scout.
-2. Re-upload `<img>` URLs to S3 in [server/internal/helpscout/images.go](/root/teampulse/server/internal/helpscout/images.go).
+2. Re-upload `<img>` URLs to S3 in [server/internal/helpscout/images.go](../../server/internal/helpscout/images.go).
 3. Convert HTML to Markdown.
 4. Save the result as a `_markdown_source` JSON envelope, not as canonical Tiptap JSON.
 
@@ -100,7 +109,7 @@ That causes four major problems:
    - canonical JSON only exists after the document is opened in the frontend editor and re-saved
 
 3. **Public Help Center rendering can fail before a human opens the doc**
-   - [server/internal/service/docs_helpcenter.go](/root/teampulse/server/internal/service/docs_helpcenter.go) renders public articles by calling [server/internal/tiptap/html.go](/root/teampulse/server/internal/tiptap/html.go)
+   - [server/internal/service/docs_helpcenter.go](../../server/internal/service/docs_helpcenter.go) renders public articles by calling [server/internal/tiptap/html.go](../../server/internal/tiptap/html.go)
    - the `_markdown_source` envelope is not a Tiptap doc and therefore renders as empty or incomplete content
 
 4. **Import and public rendering use different contracts**
@@ -114,11 +123,11 @@ This is the single biggest current architecture flaw for Help Scout fidelity.
 
 The in-repo public path today is:
 
-1. Public API routes in [server/internal/handler/docs.go](/root/teampulse/server/internal/handler/docs.go)
-2. Public article assembly in [server/internal/service/docs_helpcenter.go](/root/teampulse/server/internal/service/docs_helpcenter.go)
-3. Tiptap JSON -> HTML in [server/internal/tiptap/html.go](/root/teampulse/server/internal/tiptap/html.go)
-4. HTML injected in the widget view from [packages/widget-core/src/components/HelpArticleView.tsx](/root/teampulse/packages/widget-core/src/components/HelpArticleView.tsx)
-5. styled by [packages/widget-core/src/styles/widget.css](/root/teampulse/packages/widget-core/src/styles/widget.css)
+1. Public API routes in [server/internal/handler/docs.go](../../server/internal/handler/docs.go)
+2. Public article assembly in [server/internal/service/docs_helpcenter.go](../../server/internal/service/docs_helpcenter.go)
+3. Tiptap JSON -> HTML in [server/internal/tiptap/html.go](../../server/internal/tiptap/html.go)
+4. HTML injected in the widget view from [packages/widget-core/src/components/HelpArticleView.tsx](../../packages/widget-core/src/components/HelpArticleView.tsx)
+5. styled by [packages/widget-core/src/styles/widget.css](../../packages/widget-core/src/styles/widget.css)
 
 What that renderer path visibly supports today:
 
@@ -142,7 +151,7 @@ What it does not support today as first-class blocks:
 
 ### Current image model
 
-Docs images currently piggyback the PM attachment upload path in [frontend/src/hooks/useEditorImageUpload.ts](/root/teampulse/frontend/src/hooks/useEditorImageUpload.ts) and [server/internal/service/pm_attachment.go](/root/teampulse/server/internal/service/pm_attachment.go). That works, but it is not a production-grade docs asset model:
+Docs images currently piggyback the PM attachment upload path in [frontend/src/hooks/useEditorImageUpload.ts](../../frontend/src/hooks/useEditorImageUpload.ts) and [server/internal/service/pm_attachment.go](../../server/internal/service/pm_attachment.go). That works, but it is not a production-grade docs asset model:
 
 - it is PM-owned infrastructure used from Docs
 - the stored node is basically URL-first

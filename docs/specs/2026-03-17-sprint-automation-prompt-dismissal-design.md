@@ -1,4 +1,40 @@
-# Sprint Automation Prompt Dismissal Design
+# Sprint automation prompt dismissal design
+
+> Historical design, source-compared on 2026-09-17. This page explains the
+> original dismissal decision for contributors. The core dismissal is implemented;
+> the original settings navigation and fetch-error guarantee below are outdated.
+
+## Current implementation
+
+The [prompt helper](../../frontend/src/components/pm/sprintAutomationPrompt.ts)
+suppresses the prompt when a team has any `sprint_auto_create` row, enabled or
+not. Dismissal saves a disabled row with the selected count, duration, and start
+day; it does not change `sprint_move_unfinished`. The
+[creation dialog](../../frontend/src/components/pm/GlobalCreateModals.tsx) uses
+this handler for both **No thanks** and closing the prompt. It closes after a
+successful save and displays an error without closing if saving fails.
+
+The same dialog catches thrown errors while fetching automations, but ignores
+the API result's `error` field. Missing data makes the helper return true, so
+an error returned without throwing can still display the prompt. The original
+claim that every failed fetch skips prompting is not guaranteed by this code.
+
+Sprint automation is now edited in
+[team Sprint Settings](../../frontend/src/components/settings/TeamsTab.tsx).
+[Automations settings](../../frontend/src/components/settings/AutomationsTab.tsx)
+shows a read-only overview with an Edit link to the team. Its “Auto-create ✓”
+indicator currently checks row existence, not `enabled`, and can therefore appear
+for a dismissed automation. Team settings disables existing rows rather than
+deleting them; the original delete-to-reset UI description is not current.
+The [repository](../../server/internal/repository/pm_automation.go) still supports
+team-scoped deletion, which would remove the suppression marker.
+
+The [helper tests](../../frontend/src/components/pm/__tests__/sprintAutomationPrompt.test.ts)
+cover enabled/disabled suppression, dismissal payloads, and save errors. They
+are not browser coverage of the entire creation flow and were not rerun for this
+source comparison. The original requirements and alternatives follow.
+
+## Original design record
 
 ## Summary
 
@@ -22,7 +58,7 @@ The approved design keeps the prompt team-scoped, but persists dismissal by crea
 - Adding user-level dismissal or cooldown logic.
 - Changing the existing `Move unfinished stories` default.
 
-## Current Behavior
+## Behavior before implementation
 
 - After a sprint is created, the modal fetches PM automations for the workspace.
 - If the selected team has no `sprint_auto_create` row, it opens the sprint automation prompt.

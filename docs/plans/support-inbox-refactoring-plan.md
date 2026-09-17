@@ -1,7 +1,60 @@
-# Support Inbox Module — Refactoring Plan
+# Support inbox refactoring plan
 
 **Date**: 2026-03-16
 **Scope**: Frontend + Backend support inbox, real-time presence, widget WebSocket, drafts
+
+
+This historical assessment records March refactoring ideas for inbox maintainers.
+Use the source review below to distinguish completed changes from remaining
+proposals; the original defect descriptions are not a current bug inventory.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18; application tests and browser performance checks
+were not run for this documentation review.
+
+- [useWebSocket](../../frontend/src/hooks/useWebSocket.ts) exposes `isConnected`,
+  guards sends on `WebSocket.OPEN`, and clears the reconnect timer on cleanup.
+  Closed-connection sends are dropped rather than buffered. The
+  [reply composer](../../frontend/src/components/support/ReplyComposer.tsx)
+  checks the presence connection before sending typing events.
+- Presence is separated through
+  [supportPresenceStore](../../frontend/src/stores/supportPresenceStore.ts), now
+  a re-export from `@helpin-ai/support-core`.
+  [supportInboxStore](../../frontend/src/stores/supportInboxStore.ts) persists
+  nonempty drafts to localStorage with a debounce and handles unavailable or
+  corrupt storage. Debouncing is not a guarantee against losing the most recent
+  edit on abrupt page exit.
+- [ConversationRow](../../frontend/src/components/support/ConversationRow.tsx)
+  and [MessageBubble](../../frontend/src/components/support/MessageBubble.tsx)
+  are memoized. [ConversationList](../../frontend/src/components/support/ConversationList.tsx)
+  still maps its filtered rows directly; the proposed list virtualization is not
+  present there. Memoization alone does not establish measured performance.
+- The [widget handler](../../server/internal/websocket/widget_handler.go) uses
+  typed decoding for several messages, but typing content ignores the decode
+  error and page URL handling still reads the map. Do not describe all payloads
+  as either unchecked maps or strictly validated structs.
+- [CreateConversationMessage](../../server/internal/service/support_inbox.go)
+  persists the reply before publishing its message event. Separate teammate-joined
+  and handoff effects can precede that write, and attachment failures can be
+  logged without aborting the reply. This is not an atomic transaction covering
+  every side effect, but the original phantom-reply diagnosis is outdated.
+- The [conversation repository](../../server/internal/repository/support_inbox.go)
+  has a PostgreSQL transaction advisory-lock helper for display-ID allocation.
+  Its lock execution does not propagate an error. The historical claim that
+  advisory locking inherently permits concurrent allocation races was not proven
+  by this review; assess all allocation paths and failure handling before
+  replacing it. The aggregate-query replacement below is withdrawn.
+- The [HTTP service adapter](../../frontend/src/lib/services/supportService.ts)
+  retains typing/viewing methods with deprecation comments directing callers to
+  WebSocket events. These methods' presence does not prove they are unused.
+
+The remaining error-handling, metrics, logging, and integration-test suggestions
+are historical review prompts, not verified repository-wide defects or completed
+test coverage. Phase durations and the feature-branch file table below describe
+the original proposal, not the current diff.
+
+## Original assessment
 
 ---
 
@@ -40,7 +93,7 @@
 **Problem**: Advisory lock on workspace for display_id, but concurrent transactions can still race.
 
 **Fix**:
-- Use `SELECT COALESCE(MAX(display_id), 0) + 1 FROM support_conversations WHERE workspace_id = ? FOR UPDATE` inside a transaction
+- Withdrawn suggestion: replace allocation with an aggregate `MAX(display_id)` query plus `FOR UPDATE`. Do not use this as a validated allocation recipe; review the current transaction and lock handling first.
 - Or use a PostgreSQL sequence per workspace
 
 **Files**: `repository/support_inbox.go`

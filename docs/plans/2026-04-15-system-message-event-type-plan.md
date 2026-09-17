@@ -1,4 +1,46 @@
-# System Message `event_type` Plan — 2026-04-15
+# Support system-message event types
+
+> Historical plan, source-compared on 2026-09-17. This document explains the
+> original typed-message rollout for contributors. Typed persistence and transport
+> exist, but removal of the admin legacy keyword fallback remains incomplete.
+
+## Current implementation and remaining differences
+
+The [backend constants](../../server/internal/model/support_system_event.go)
+now cover additional events, including mailbox moves, delayed replies, email
+recipient changes, tags, and task creation. Validation is named
+`IsValidSupportSystemEventType`, not the proposed `IsValidSystemEventType`.
+The [shared frontend tuple](../../packages/shared/src/types/message.ts) is narrower:
+it omits backend values such as `customer_requested_human`, `email_recipients_updated`,
+`tag_added`, `tag_removed`, and `task_created`. It is not a complete cross-layer
+single source of truth as the original plan describes.
+
+The actual migrations are
+[202604150004_support_message_system_event_type.sql](../../server/internal/dbmigrate/sql/202604150004_support_message_system_event_type.sql)
+and [202604150005_backfill_support_message_system_event_type.sql](../../server/internal/dbmigrate/sql/202604150005_backfill_support_message_system_event_type.sql).
+The backfill leaves unclassified rows null. The
+[admin renderer](../../frontend/src/components/support/MessageBubble.tsx) still
+contains the explicitly temporary keyword-matching branch; migration files alone
+do not prove deployment or completion of the removal pass.
+
+Visibility is no longer governed solely by `is_internal`.
+[Backend widget visibility](../../server/internal/model/support_delivery.go),
+the [SDK](../../packages/sdk-js/src/core/widget.ts), and the
+[widget renderer](../../packages/widget-core/src/components/MessageBubble.tsx)
+also restrict explicit event types to `teammate_joined` and `delayed_team_reply`.
+The first renders as a pill; delayed replies render through the normal message
+path. Other explicit event types are hidden even when sender context exists,
+contrary to the original general fallback description. A legacy system message
+without an event type can reach the normal bubble path.
+
+[Websocket mapping](../../server/internal/websocket/support_events.go) carries
+the event field. The [service test source](../../server/internal/service/support_message_system_event_test.go)
+checks repository rejection of missing/invalid system types and named constants;
+that invariant is not an exhaustive execution of every future emitter or every
+possible database writer. No live null-row audit, migration application, or new
+runtime test run was performed for this documentation comparison.
+
+## Original rollout plan
 
 ## Problem
 Today the admin `MessageBubble` keyword-matches content ("joined", "assigned", "resolved") to pick a render style. That breaks under i18n, copy tweaks, or third-party callers. The widget does the same implicitly via the `role === 'system'` path. We need a first-class `system_event_type` on support messages so each surface can branch on intent instead of prose.

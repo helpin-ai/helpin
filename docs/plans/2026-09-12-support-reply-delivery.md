@@ -1,5 +1,37 @@
 # Support reply delivery continuation
 
+> Historical implementation record (2026-09-12), source-compared on 2026-09-17.
+> Several composer details below have since changed. Original completion, browser
+> and test claims, branch/push instructions and recovered-session references are
+> not current validation or deployment instructions.
+
+## Current behavior
+
+- [Delivery state](../../frontend/src/components/support/replyDelivery.ts) is
+  scoped to the current draft. Unknown presence defaults to chat for chat-source
+  conversations; email-source conversations default to email. Confirmed offline
+  presence can add eligible email, and returning online does not remove it from
+  the same draft. Explicit manual/restored intent takes precedence.
+- [ReplyComposer](../../frontend/src/components/support/ReplyComposer.tsx) sends
+  explicit `delivery_mode` and channels for public replies and freezes the selected
+  intent for failed retries. **A successful send clears the manual draft choice**,
+  so it does not persist as a preference for every future reply. Undo can restore
+  the prior reply's mode and attachments.
+- The current composer has **no editable subject input and sends no `email_subject`
+  field**. Subject helpers remain in `replyDelivery.ts`, but their presence does
+  not make the old subject UI active. The backend
+  [delivery service](../../server/internal/service/support_delivery.go) still accepts
+  a subject override for public teammate email modes, validates 1–500 characters
+  without control characters, and snapshots it into message metadata. Without an
+  override, it uses the conversation subject or `Support conversation`.
+- [Delivery selector](../../frontend/src/components/support/ReplyDeliverySelector.tsx)
+  exposes chat-only, chat-and-email, and email-only with availability explanations.
+  Backend validation maps an explicit mode to channels; legacy callers without a
+  mode can still use the existing fallback path.
+
+These are source comparisons; no email was sent and the historical browser/test
+results below were not reproduced.
+
 **Goal:** Complete the September 12 agreed composer plan on `waqar-fixes`.
 **Architecture:** Reuse the explicit delivery backend and shared dropdown. Keep manual conversation preferences separate from automatic per-reply state. Persist a draft subject separately from the conversation title and snapshot it into each outgoing email.
 

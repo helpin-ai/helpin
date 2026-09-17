@@ -160,7 +160,7 @@ The following tables are present, backed by GORM models and migrations, but are 
 | `CRMPropertyDefinition`     | `server/internal/model/crm_property.go`   | Every CRM object already has `custom_properties JSONB`. The schema registry adds UI complexity with no customer ask — an AI-first product doesn't need a no-code field builder. |
 | `CRMPropertyGroup`          | `server/internal/model/crm_property.go`   | Only exists to organize property definitions in a settings UI that does not exist.                            |
 | `CRMList` (smart + static)  | `server/internal/model/crm_list.go`       | The query-builder layer (CLAUDE.md "Query Builder Conventions") is the canonical segmentation primitive. Adding a second one bifurcates the story. |
-| `CRMSequence` + enrollments | `server/internal/model/crm_sequence.go`   | Outbound email cadences are a whole product surface. Until a customer asks, the agent/automation layer (`AGENTS_AND_AUTOMATION.md`) is a better substrate for any cadence-like behavior. |
+| `CRMSequence` + enrollments | `server/internal/model/crm_sequence.go`   | Outbound email cadences are a whole product surface. Until a customer asks, the agent/automation layer (`agents-and-automation.md`) is a better substrate for any cadence-like behavior. |
 
 What **stays**:
 
@@ -221,7 +221,7 @@ Both migrations are idempotent. They run through the existing `dbmigrate` runner
 
 ### Automation / Agents
 
-- `docs/AGENTS_AND_AUTOMATION.md` lists `story.state_entered` as an automation trigger. That event already fires on `pm_tasks` post-rename; it will now fire for sales-team tasks too, giving the CRM autonomy layer a native way to react to task state changes without a CRM-specific event type.
+- `docs/agents-and-automation.md` lists `story.state_entered` as an automation trigger. That event already fires on `pm_tasks` post-rename; it will now fire for sales-team tasks too, giving the CRM autonomy layer a native way to react to task state changes without a CRM-specific event type.
 
 ## Frontend Changes
 

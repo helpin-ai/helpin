@@ -1,6 +1,48 @@
-# Kanban Drag-and-Drop Hardening Plan
+# Kanban drag-and-drop hardening plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical audit explains the board ordering problems that motivated later
+changes. Contributors should use the implementation notes below before treating
+its findings as current defects or its checkboxes as unfinished work.
+
+> Source review: 2026-09-18. Original story paths, Go 1.24 references, and execution
+> instructions are historical. No drag simulation or browser QA was performed.
+
+## Current implementation and limits
+
+- The [task repository](../../server/internal/repository/pm_task.go) normalizes
+  sibling positions and performs state move/reorder updates transactionally.
+  Member columns order by workflow state type, state position, task position,
+  and update time; they no longer compare only state-local positions across states.
+- The [board store](../../frontend/src/stores/pmBoardStore.ts) makes same-member
+  moves a no-op. Cross-member moves send only `owner_member_ids`, replacing the
+  owners with the target member or an empty list for unassigned. The dropped
+  index is an optimistic placement, not a persisted member ranking.
+- The store blocks same-state Done reorders and sorts Done by recency. It still
+  sends an index for cross-state moves into Done. For the precise state-board
+  refresh limits, see the [ordering plan](2026-03-24-sprint-board-ordering.md).
+- State and member mutation guards compare workflow ID and team ID. They do not
+  compare workspace, filters, board mode, or a per-view generation token as the
+  original proposal suggests. Do not describe them as protection against every
+  possible view change or overlapping mutation.
+- `moveMemberTask` does not itself refetch truncated columns after reassignment.
+  It splices loaded arrays and updates counts; independent UI/realtime refresh
+  paths must be considered before claiming pagination convergence.
+- [KanbanBoard](../../frontend/src/components/pm/KanbanBoard.tsx) reveals available
+  empty columns during dragging and retains the droppable reference on collapsed
+  state/member sections. This does not prove an unloaded member column exists
+  as a target. Its configured drag sensor is still `PointerSensor`.
+- [TaskCard](../../frontend/src/components/pm/TaskCard.tsx) still attaches drag
+  listeners to the article, with `shouldIgnoreTaskCardDrag` filtering pointer
+  activation from interactive descendants. There is no separate handle in this
+  path; keyboard click-to-open is not keyboard drag support.
+
+Focused [store tests](../../frontend/src/stores/__tests__/pmBoardStore.test.ts),
+[board ordering tests](../../frontend/src/components/pm/__tests__/KanbanBoard.ordering.test.tsx),
+and [repository ordering tests](../../server/internal/repository/pm_task_board_test.go)
+now exist. Their existence is not evidence that every original accessibility,
+concurrency, pagination, or performance criterion has been exercised successfully.
+
+## Original audit and plan
 
 **Goal:** Make PM story-board drag-and-drop correct, predictable, and testable across both "By States" and "By Members" kanban modes.
 

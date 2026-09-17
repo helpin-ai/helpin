@@ -1,6 +1,41 @@
-# Docs Editor Callout Block Implementation Plan
+# Docs editor callout block implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the initial callout implementation. The editor and
+server now use semantic variants; read the current notes before copying the old
+color-only snippets or treating unchecked steps as missing features.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18. No browser rendering or application tests were run.
+
+- [CalloutExtension](../../frontend/src/components/docs/CalloutExtension.ts)
+  supports `info`, `warning`, `tip`, `danger`, and `success`, with legacy aliases:
+  blue maps to info, yellow to warning, green to tip, red to danger, and grey to
+  info. Missing or unknown variants default to info, not grey.
+- The [Go renderer](../../server/internal/tiptap/html.go) uses the same mapping
+  and emits semantic `docs-callout--*` classes on an aside. The
+  [slash commands](../../frontend/src/components/docs/slash-commands.ts) insert
+  semantic variants, and [CalloutNodeView](../../frontend/src/components/docs/CalloutNodeView.tsx)
+  renders the corresponding editor presentation.
+- The inspected [widget stylesheet](../../packages/widget-core/src/styles/widget.css)
+  and [help-center stylesheet](../../help-center/src/app.css) still define the
+  old blue/green/grey/red/yellow variant selectors. No semantic variant selectors
+  were found in CSS under those packages. Their generic callout rule still
+  applies, but these old variant selectors do not match newly rendered semantic
+  classes. Consistent public variant colors are therefore not established.
+- Keyboard handling includes splitting blocks, exiting after trailing empty
+  paragraphs, and removing an empty callout with Backspace/Delete. The original
+  simple manual checklist does not describe all current conditions.
+- [Renderer tests](../../server/internal/tiptap/html_test.go) exist. The filtered
+  TypeScript command below is not a reliable successful-build check: filtering
+  diagnostics can hide unrelated compiler failures. Use the current full
+  frontend typecheck/build instructions and inspect the process exit status.
+
+Original commit commands and expected test outcomes are implementation history,
+not actions or results of this documentation review. The styling mismatch above
+is recorded for follow-up; this task changes documentation only.
+
+## Original implementation sequence
 
 **Goal:** Add a custom callout block node to the Docs editor with 5 color variants (blue, green, grey, red, yellow), Go server-side rendering, and Help Center styling.
 

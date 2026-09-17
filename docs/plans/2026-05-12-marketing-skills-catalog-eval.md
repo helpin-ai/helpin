@@ -122,7 +122,7 @@ Each is a thin preset over existing `native_sdk` agent runtime — same pattern 
 | `launch_coordinator` | launch-strategy + sales-enablement + social-content + release_notes_writer (existing) | manual, `release.published` |
 | `cro_analyst` | page-cro + form-cro + popup-cro + onboarding-cro + paywall-upgrade-cro | manual, `cron` (biweekly) |
 
-All run through the existing generic agent runtime — no special launch paths needed per the canonical `AGENTS_AND_AUTOMATION.md` direction.
+All run through the existing generic agent runtime — no special launch paths needed per the canonical `agents-and-automation.md` direction.
 
 ---
 

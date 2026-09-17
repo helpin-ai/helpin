@@ -6,11 +6,19 @@ Unified platform for project management, CRM, customer support, knowledge, and A
 
 For small, well-scoped fixes, do not create or modify plan, specification, or design documents unless the user explicitly requests them. Inspect the issue, implement the fix, verify it, and commit it directly. Reserve planning, specification, and design documents for substantial multi-step work or explicit user requests.
 
+## Documentation
+
+For documentation creation, explanation, naming, or reorganization, use the
+repo-scoped `$helpin-documentation` skill in `.agents/skills/helpin-documentation/`.
+The shared convention is `docs/documentation-guide.md`. Keep guide names lowercase
+and hyphenated, update incoming references on renames, and validate documentation
+with the checks described there.
+
 ## Architecture
 
-- **Backend**: Go 1.24 + Chi router + GORM (PostgreSQL/Neon) + Temporal workflows
+- **Backend**: Go 1.26.7 + Chi router + GORM (PostgreSQL) + Temporal workflows
 - **Frontend**: React 19 + Vite 7 + TypeScript 5.9 + TanStack Router + TanStack Query + Zustand + shadcn/ui
-- **Database**: Neon PostgreSQL (pgcrypto for UUIDs)
+- **Database**: PostgreSQL with pgvector; see Community Compose for self-hosted defaults
 - **Storage**: AWS S3 / MinIO (presigned URLs + direct upload)
 - **Infra**: Kubernetes with Traefik, Doppler secrets, GHCR container registry
 
@@ -32,9 +40,10 @@ Required for interactive planning sessions and other Temporal-driven realtime up
 
 ### Frontend
 ```bash
-cd frontend
-npm install
-npm run dev
+# From the repository root
+pnpm install --frozen-lockfile
+pnpm --filter @helpin-ai/widget-core build
+pnpm --dir frontend dev
 ```
 Requires: `VITE_API_URL` (defaults to `http://localhost:8080/api`)
 
@@ -50,7 +59,7 @@ cd server
 set -a && . ./.env && set +a && GOCACHE=/tmp/go-build-cache go run ./cmd/api
 
 cd frontend
-VITE_API_URL=http://91.98.85.12:8080/api npm run dev -- --host 0.0.0.0 --port 5173
+VITE_API_URL=http://91.98.85.12:8080/api pnpm dev --host 0.0.0.0 --port 5173
 ```
 
 If the user opens `http://localhost:5173` from the same machine running the server,
@@ -68,7 +77,8 @@ docker compose up
 just dev        # Start both backend + frontend
 just backend    # Backend only
 just frontend   # Frontend only
-just build      # Production build
+just build-server    # API and worker build
+just build-frontend  # Frontend production build
 ```
 
 ## Refactors and Migrations
@@ -100,7 +110,7 @@ server/                          # Go API server
     temporalapp/                 # Temporal workflow setup
     websocket/                   # WebSocket hub + handler
     worker/                      # Background job workers
-  migrations/                    # Sequential SQL migrations (001–032+)
+  migrations/                    # Legacy SQL references; use internal/dbmigrate/sql for new migrations
 
 frontend/                        # React SPA
   src/
@@ -131,7 +141,7 @@ k8s/                             # Kubernetes manifests
   prod/                          # Production (helpin.ai)
 
 .github/workflows/               # CI/CD pipelines
-  ci.yml                         # PR checks (go vet + build, npm build)
+  ci.yml                         # PR checks (Go and pnpm validation)
   deploy-staging.yml             # develop → stage
   deploy-prod.yml                # main → prod
 ```
@@ -212,7 +222,7 @@ r.With(authorization.RequireOwner(authz)).Delete("/", h.Workspace.Delete)
 
 ### DI Wiring
 All dependencies are wired in `cmd/api/main.go`:
-1. Config → DB connection → AutoMigrate
+1. Config → DB connection → AutoMigrate when enabled
 2. Repositories created from `*gorm.DB`
 3. Services created from repositories + external clients (S3, email, Temporal)
 4. Handlers created from services
@@ -220,9 +230,13 @@ All dependencies are wired in `cmd/api/main.go`:
 
 ### Database Migrations
 
-**Two migration systems** (both active):
+**Two migration paths**:
 
-1. **GORM AutoMigrate** — runs on startup, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
+Community Compose disables AutoMigrate and applies versioned SQL through its
+migration service. Ship versioned SQL for schema additions as well as destructive
+or data changes; model changes alone do not migrate those installations.
+
+1. **GORM AutoMigrate** — runs on startup only when `RUN_AUTO_MIGRATE=true`, handles struct-level schema creation (add tables/columns). Cannot drop columns or tables.
 2. **dbmigrate** (`server/internal/dbmigrate/`) — versioned SQL migrations for everything AutoMigrate cannot do: data migrations, table drops, cutover tasks, constraint changes, backfills.
 
 **dbmigrate CLI** (`server/cmd/migrate/`):
@@ -239,7 +253,7 @@ go run ./cmd/migrate create <name>   # Scaffold new migration file
 **Migration files**: `server/internal/dbmigrate/sql/YYYYMMDDNNNN_name.sql` (embedded via `//go:embed`)
 
 **When to use which**:
-- **AutoMigrate**: Adding new models/columns (struct changes picked up automatically)
+- **AutoMigrate**: Development schema additions when enabled; also provide versioned SQL for installations where it is disabled
 - **dbmigrate**: Dropping tables/columns, data backfills, constraint changes, renaming, cutover tasks, any DDL that AutoMigrate cannot express
 
 **Rules**:
@@ -360,7 +374,7 @@ matches the version exactly and an unmapped version would silently go quiet.
 
 ### Agents And Automation Model
 
-Canonical reference: `docs/AGENTS_AND_AUTOMATION.md`
+Canonical reference: `docs/agents-and-automation.md`
 
 Use this taxonomy when working on backend agent features:
 
@@ -391,7 +405,7 @@ Current executor model:
   configuration, authorization, triggers, launch surfaces, and product finalizers
 - `runtime_kind` selects the backend adapter (`native_sdk`, `codex`, or `opencode` where configured), not a separate product behavior path
 - planner/review/support behavior is expressed through prompt, skills, allowed tools, targets, and artifact contracts
-- Helpin product and interaction tools are model-facing through MCP runtime names such as `mcp__helpin__update_plan` and `mcp__helpin__request_user_input`; backend policy and persistence still use canonical bare aliases
+- Helpin product and interaction tools use bare canonical names such as `update_plan` and `request_user_input`. Write-side configuration normalization accepts historical aliases; provider calls require exact canonical names
 
 Current trigger surfaces in code:
 

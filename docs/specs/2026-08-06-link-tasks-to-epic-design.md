@@ -1,4 +1,41 @@
-# Link Existing Tasks to an Epic
+# Link existing tasks to an epic
+
+> Historical design, reviewed against the checkout on 2026-09-17. Batch linking
+> is implemented. This page explains the original interaction and constraints
+> for contributors; the verification checklist is not a newly executed test run.
+
+## Current implementation and boundaries
+
+The [linking dialog](../../frontend/src/components/pm/LinkTasksToEpicDialog.tsx)
+loads same-team, non-archived candidates in pages of 50, excludes tasks already
+in the target epic, and keeps selection across pages. It groups unassigned tasks
+and moves, with a review step for moves. That confirmation is frontend behavior:
+the API accepts task IDs, not a review token or expected prior-epic revision.
+[EpicDetail](../../frontend/src/pages/pm/EpicDetail.tsx) supplies the team context
+and handles successful linking.
+
+The [handler](../../server/internal/handler/pm_epic.go) rejects empty, blank-ID,
+and over-100-entry requests before service deduplication. The
+[service](../../server/internal/service/pm_epic.go) validates workspace, active
+epic, epic team/edit access, task existence, archive state, exact team match,
+and task team access. Already-linked tasks are skipped. Changes to task epic
+membership occur in a transaction, but delivery-target synchronization, activity
+logging, and websocket publication run after commit. A target-sync or log failure
+does not roll back the successful links.
+
+[Delivery-target inheritance](../../server/internal/service/git.go) preserves a
+configured manual target when not forced. Other targets can inherit the new
+epic's repository and branch only when the epic target is configured and the
+post-commit synchronization succeeds; “switch to the new epic” is not an
+unconditional atomic guarantee.
+
+The service intends to change only `epic_id`, but the
+[task repository](../../server/internal/repository/pm_task.go) uses a whole-model
+save. The original wording does not establish protection against overwriting
+concurrent edits to another field. The transaction guarantees rollback of the
+batch's database writes on failure, not an expected-version concurrency contract.
+
+## Original design
 
 ## Goal
 

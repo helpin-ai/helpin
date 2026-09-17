@@ -1,10 +1,54 @@
-# Coverage Gaps diagnosis (ContentStudio, 2026-09-02)
+# Coverage gaps diagnosis (ContentStudio, 2026-09-02)
+
+> Historical production diagnosis, source-compared on 2026-09-17. Workspace
+> counts, dates, billing observations, and incident conclusions below describe
+> the September 2 sample. They are not current production measurements.
+
+## Current source comparison
+
+The [daily workflow](../../server/internal/temporalapp/coverage_analysis_workflow.go)
+now logs child-workspace failures and continues scheduling the other workspaces.
+Child workflow IDs include a timestamp suffix, so the fixed ID in the original
+investigation instructions is not the current naming pattern. The daily input
+window is three hours. The workspace activity still has a ten-minute timeout and
+three retry attempts; a start heartbeat exists, but this is not the proposed
+checkpointed batch-activity architecture.
+
+The [analyzer](../../server/internal/service/support_coverage_daily_analyzer.go)
+uses a successful cursor with overlap, pages candidates, collects item errors,
+and materializes before marking a run failed for collected errors. The old
+first-error `errgroup` description is no longer accurate. Materialization still
+occurs after the page loop, not after each batch.
+
+[Embedding materialization](../../server/internal/service/support_coverage_materializer.go)
+now falls back to lexical grouping when the embedding provider is absent, fails,
+or returns the wrong vector count. The original claim that these conditions
+necessarily fail the whole run is obsolete; degraded grouping is not equivalent
+to successful semantic matching.
+
+The [analysis repository](../../server/internal/repository/support_coverage_analysis.go)
+still selects unmaterialized findings by workspace **and run ID**. Its duplicate
+check excludes failed conversation analyses but does not join the parent run's
+status. The revised ordering helps collected item failures, but does not by itself
+prove recovery of every finding from an interrupted run. The
+[coverage repository](../../server/internal/repository/support_coverage.go) still
+uses row count for `evidence_all` and distinct conversation-or-evidence identity
+for the recent evidence count; those measures should not be described as identical.
+
+The original reanalysis and cluster-rebuild steps are historical recommendations,
+not actions performed by this audit. Expected reductions from 259 buckets are
+hypotheses, not verified outcomes. The SQL and workspace identifiers below are
+incident context and should pass publication review before public distribution.
+No production API, database, or Temporal history was accessed for this update.
+
+## Original September 2 diagnosis
+
 
 Scope: the Support → Coverage page for the ContentStudio workspace (`fb464f68-…`), read-only via the API with a temporary token. No data was changed and no reanalysis was triggered.
 
 Goal of the feature (from the plans in `docs/plans/2026-04-29-daily-coverage-gap-analysis.md` and `2026-06-17-coverage-gap-semantic-dedupe.md`): find issues the AI could not resolve, group them into a small number of topics, and propose the fix (article draft / update) so the AI handles the next occurrence.
 
-## What the page shows today
+## What the page showed on September 2
 
 | Metric | Value |
 |---|---|

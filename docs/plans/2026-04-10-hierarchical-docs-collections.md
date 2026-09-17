@@ -1,5 +1,18 @@
 # Hierarchical Docs Collections Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical collection rollout reference. Current models include parent, depth,
+and PublicID fields. The later
+[slug-uniqueness migration](../../server/internal/dbmigrate/sql/202604140002_remove_helpcenter_slug_uniqueness.sql)
+drops collection/article slug uniqueness; space slugs remain unique. Any tests
+below requiring unique collection slugs, a slug-conflict response, or the old
+slug-only canonical URL are obsolete for a fully migrated database. Use
+[current models](../../server/internal/model/docs.go) and
+[PublicID route helpers](../../help-center/src/lib/locale.ts) when adapting this
+checklist. Historical migration-specific tests remain useful at their original
+migration boundary, not as assertions about the final schema.
+
 **Goal:** Add multi-level docs grouping by turning collections into a bounded tree shared by internal docs, public help center, widget help browsing, imports, translations, redirects, and search, while keeping canonical article URLs in the current `/:collection-slug/:article-slug` format.
 
 **Architecture:** Keep `space` as the top-level boundary and evolve `collection` from a flat list into a tree using `parent_collection_id` and `depth`. Use the collection tree as the single source of truth for internal docs navigation, public help center navigation, and widget help browsing. Preserve current collection/article public path semantics, and extend the existing help center redirect flow so article moves and collection slug changes emit redirects without reinventing a second redirect system.

@@ -1,5 +1,17 @@
 # Agent Run Timeline Parity Design
 
+> Historical design/implementation plan, source-compared on 2026-09-17. The
+> [server projection](../../server/internal/service/coding_session.go) emits
+> `interaction:<id>:<status>` identities. Resolved timestamps use `resolved_at`
+> when available, otherwise `updated_at`, and are forced after creation when needed.
+> [Frontend reconciliation](../../frontend/src/components/pm/CodingSession/codingSessionUtils.ts)
+> collapses semantic duplicates with persisted-event precedence.
+> [DockRunView](../../frontend/src/components/agents/dock/DockRunView.tsx) derives
+> state from `session ?? run`, supplies compact progress/actor/completed-run options,
+> and renders the current work plan. Surface-specific controls remain separate.
+> Checkboxes, old Go version, branch name and test/build claims below belong to
+> the original session; use the current development guide for toolchain setup.
+
 ## Goal
 
 Make Ask Agent Chats, Agent Runs, and the full coding-session surface agree on event identity, causal ordering, interaction state, and run status while preserving the product-specific controls around each surface.

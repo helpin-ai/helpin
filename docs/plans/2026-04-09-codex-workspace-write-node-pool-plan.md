@@ -1,4 +1,39 @@
-# Codex Workspace-Write Node Pool Plan
+# Codex workspace-write node-pool proposal
+
+> Historical infrastructure proposal, source-compared on 2026-09-17. This
+> document records an April sandbox investigation. Its shared Codex worker topology
+> and deployment/rollback commands are not current operating instructions.
+
+## Current deployment boundary
+
+The checked-in [staging](../../k8s/stage/temporal-worker.yaml) and
+[production](../../k8s/prod/temporal-worker.yaml) manifests define
+`helpin-temporal-automation` with the `automation-default` queue. They retain
+non-root execution, a read-only root filesystem, dropped capabilities, and a
+writable `/tmp`, but do not contain a Codex-specific deployment,
+`CODEX_SANDBOX_MODE`, `hostUsers: false`, or the proposed Codex node selector.
+This source comparison does not establish live node/kernel configuration or
+values supplied through external secrets.
+
+Helpin's [configuration](../../server/internal/config/config.go) now exposes
+Agent Runtime connection and launch settings, and the
+[runtime client](../../server/internal/service/agent_runtime_client.go) handles
+remote execution requests. Use the current
+[local setup guide](../agent-runtime-local-setup.md) and
+[staging runbook](../agent-runtime-staging-runbook.md) to identify the execution
+service and its deployment owner before planning sandbox changes. Editing the
+Helpin automation-worker manifest is not evidence that a separate runtime's
+sandbox policy has changed.
+
+The listed kernel/runtime minimums, old Bubblewrap failure, dedicated-pool
+assumptions, and `danger-full-access` workaround below are historical proposal
+material. They were not revalidated as current platform requirements and should
+not be copied into an active rollout or rollback. No cluster inspection, node
+provisioning, service restart, sandbox change, or deployment was performed during
+this documentation review. A future migration needs a new plan based on the
+actual runtime and cluster configuration.
+
+## Original April proposal
 
 ## Status
 

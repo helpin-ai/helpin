@@ -1,5 +1,15 @@
 # Story to Task Hard-Cut Progress Tracker
 
+> Source review, 2026-09-17
+
+Historical April rename plan and checkpoint. The current public model is
+[PMTask](../../server/internal/model/pm_task.go), and current frontend routes use
+`pm/tasks`. The worker executor references and compatibility-shim inventory below
+belong to that checkpoint; they do not describe the current separate Agent Runtime
+execution architecture. Use [coding execution](../coding-agent-execution.md) and
+[current internal tools](../internal-tools-framework.md) for present contracts.
+The historical rollout and staging statuses have not been re-certified here.
+
 > **Tracking rule:** update this file as work lands. Keep statuses limited to `Pending`, `In Progress`, `Blocked`, or `Done`.
 
 ## Overall Status
@@ -12,7 +22,7 @@
 | Agent and automation surfaces | Done | `task_planner` preset family and default target-type slice landed; canonical internal command names are task-first; runtime worker internals (`ExecutionContext`, `ServiceBridge`, tool functions, orchestration helpers) fully renamed to task-era; `agent_planning.go` internal helpers, structs, JSON keys all task-first; `activities.go` `resolvedRunState`, method names, callback wiring, and variable names all task-first; backward-compat shims retained for `ToolPublishStoryPlan`/`ToolPublishStoryPlanDoc` constants and `"story_plan_proposal"` artifact type; model-level fields (`run.StoryID`, `model.PMStory`, etc.) tracked separately in Backend contracts |
 | Frontend routes and PM UI | Done | All canonical type renames completed: `Story`→`Task` in pmTypes.ts with backward-compat aliases, `story_type`→`task_type` field renames, board store functions renamed (`createTask`, `moveTask`, `patchTask`), `StoryFilters` `task_type` field, sidebar config, CRM object types, team preset visibility keys, all component field accesses updated. TypeScript build green. |
 | Cross-product integrations | Done | Backend entity types updated: websocket/notification/activity emit `"task"`, docs/support/CRM link handlers accept both `"task"` and `"story"`, `CRMObjectStory` and `LinkedObjectStory` marked deprecated |
-| Documentation | Done | `CLAUDE.md`, `server/CLAUDE.md`, `AGENTS.md`, `prd-shortcut-importer.md`, `PRD-stories-scale-and-performance.md`, and `frontend/src/lib/pm-types/AGENTS.md` all updated to task terminology |
+| Documentation | Done | `CLAUDE.md`, `server/CLAUDE.md`, `AGENTS.md`, `shortcut-importer.md`, `task-scale-and-performance.md`, and `frontend/src/lib/pm-types/AGENTS.md` all updated to task terminology |
 | Validation and rollout | In Progress | Forward and rollback SQL exist, live environment verification completed, reconciliation migration fixed the dual-schema case, `frontend` and `server` builds are green, and `migrate status`/`migrate up` are clean in the configured environment; staging rehearsal and deployment cutover rules still remain |
 
 ## Checklist
@@ -161,8 +171,8 @@
 - [x] Update `CLAUDE.md` (root) — logging examples, route references updated to task terminology
 - [x] Update `server/CLAUDE.md` — `/tasks` route definition, task creation log examples
 - [x] Update `AGENTS.md` — task references in log output examples
-- [x] Update `docs/prds/prd-shortcut-importer.md` — `pm_tasks` table references, task type/team counts
-- [x] Update `docs/prds/PRD-stories-scale-and-performance.md` — performance requirements terminology updated to tasks
+- [x] Update `docs/prds/shortcut-importer.md` — `pm_tasks` table references, task type/team counts
+- [x] Update `docs/prds/task-scale-and-performance.md` — performance requirements terminology updated to tasks
 - [x] Update internal PRDs and plan docs
 
 ### 7. Validation and rollout

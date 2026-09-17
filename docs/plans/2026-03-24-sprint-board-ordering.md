@@ -1,6 +1,49 @@
-# Sprint Board Ordering Implementation Plan
+# Sprint board ordering implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the ordering decisions for contributors maintaining
+the task board. Read the current implementation notes before using its original
+steps; unchecked boxes do not establish that a feature is missing.
+
+> Source review: 2026-09-18. Core ordering behavior exists. The original commands,
+> story filenames, toolchain versions, and commit steps are historical, not a
+> current execution checklist. No runtime tests or multi-session browser QA were
+> performed for this documentation review.
+
+## Current implementation and limits
+
+- The [task repository](../../server/internal/repository/pm_task.go) sorts Done by
+  `COALESCE(completed_at, moved_at, updated_at) DESC`, then `updated_at DESC` and
+  `position ASC`. Position normalization counts non-archived tasks across the
+  workspace/state, excluding the moved task; it is not scoped to the visible
+  sprint or filtered board. A missing requested position appends to that slice;
+  oversized positions are clamped. Sibling normalization and moves use transactions.
+- The [task service](../../server/internal/service/pm_task.go) publishes `reordered`
+  for reorders. [Realtime sync](../../frontend/src/hooks/useRealtimeSync.ts)
+  schedules a debounced board refresh for both `moved` and `reordered` events.
+- The [board store](../../frontend/src/stores/pmBoardStore.ts) reindexes loaded
+  siblings for optimistic changes and makes same-column Done reorders a no-op.
+  Cross-state moves still send `position: toIndex`, including moves into Done;
+  the proposal to omit that field was not implemented. Done display order is
+  still based on recency.
+- Cross-state moves refresh when either column is truncated or the destination
+  is Done. Same-column reorders return earlier, before this refresh condition;
+  do not describe that condition as covering every reorder. Realtime invalidation
+  is a separate refresh path.
+- The [board component](../../frontend/src/components/pm/KanbanBoard.tsx) prevents
+  same-column Done reordering while allowing cross-state moves. This source
+  inspection does not establish visual drop-preview correctness or convergence
+  across browser sessions.
+
+Current regression test locations include the
+[repository tests](../../server/internal/repository/pm_task_board_test.go),
+[store tests](../../frontend/src/stores/__tests__/pmBoardStore.test.ts),
+[realtime tests](../../frontend/src/hooks/__tests__/useRealtimeSync.test.tsx), and
+[board ordering tests](../../frontend/src/components/pm/__tests__/KanbanBoard.ordering.test.tsx).
+The old `pm_story` paths below were replaced by task paths. Use the repository's
+current contributor setup instead of the historical `/root/teampulse`, Go 1.24,
+and npm commands.
+
+## Original implementation plan
 
 **Goal:** Make sprint board ordering predictable and Trello-like: manual order in active columns, explicit recency order in done, and no silent position shifts after drop.
 

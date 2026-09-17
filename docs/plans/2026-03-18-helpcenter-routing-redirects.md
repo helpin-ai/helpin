@@ -1,5 +1,15 @@
 # Help Center Routing & Redirects Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical March routing design. The public app now lives in this repository at
+[help-center](../../help-center/package.json) and uses TanStack Start SSR.
+Canonical collection/article keys now incorporate PublicIDs; consult
+[locale route helpers](../../help-center/src/lib/locale.ts),
+[collection keys](../../help-center/src/lib/collectionKey.ts), and
+[article keys](../../help-center/src/lib/articleKey.ts). The slug-only URL model
+below is not the current canonical contract.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Establish canonical `/:collectionSlug/:articleSlug` public URLs for the help center, with unified redirect support for imported legacy URLs, slug changes, and manual redirects.

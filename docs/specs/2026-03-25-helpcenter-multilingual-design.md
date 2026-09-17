@@ -1,5 +1,16 @@
 # Help Center Multilingual Design
 
+> Source review, 2026-09-17
+
+Historical multilingual design. Locale routing and translation services now exist
+in [locale helpers](../../help-center/src/lib/locale.ts) and
+[translation service](../../server/internal/service/docs_helpcenter_translation.go).
+The public application now uses [TanStack Start SSR](../../help-center/vite.config.ts),
+not the earlier SPA-only delivery described by these plans. PublicID-based routes
+and publication snapshots further evolved the original model. This source review
+confirms those implementation boundaries, not every proposed acceptance item or
+live locale configuration.
+
 ## Summary
 
 Helpin should support one help center per workspace with multiple public language variants layered on top of the existing docs tree.
@@ -68,9 +79,9 @@ This gives Helpin one uniform public read model across all locales.
 
 This model is the best fit for the current codebase because public help center behavior is already layered on top of the docs module:
 
-- workspace-level help center config lives in [`server/internal/model/docs.go`](../../../../server/internal/model/docs.go)
-- public article publish state currently lives in [`DocsHelpcenterArticle`](../../../../server/internal/model/docs.go)
-- public reads already go through [`server/internal/repository/docs_helpcenter.go`](../../../../server/internal/repository/docs_helpcenter.go) and [`server/internal/service/docs_helpcenter.go`](../../../../server/internal/service/docs_helpcenter.go)
+- workspace-level help center config lives in [`server/internal/model/docs.go`](../../server/internal/model/docs.go)
+- public article publish state currently lives in [`DocsHelpcenterArticle`](../../server/internal/model/docs.go)
+- public reads already go through [`server/internal/repository/docs_helpcenter.go`](../../server/internal/repository/docs_helpcenter.go) and [`server/internal/service/docs_helpcenter.go`](../../server/internal/service/docs_helpcenter.go)
 
 That makes multilingual a public-layer concern, not a reason to duplicate internal docs records.
 
@@ -143,7 +154,7 @@ This preserves public navigation consistency and avoids broken locale trees.
 
 ### Help center config
 
-Extend [`DocsHelpcenterConfig`](../../../../server/internal/model/docs.go) with multilingual settings:
+Extend [`DocsHelpcenterConfig`](../../server/internal/model/docs.go) with multilingual settings:
 
 - `default_locale`
 - `enabled_locales`
@@ -391,11 +402,11 @@ This includes:
 - locale-aware slug resolution
 - locale-aware search
 
-Current public query code in [`server/internal/repository/docs_helpcenter.go`](../../../../server/internal/repository/docs_helpcenter.go) should become translation-aware rather than source-slug aware.
+Current public query code in [`server/internal/repository/docs_helpcenter.go`](../../server/internal/repository/docs_helpcenter.go) should become translation-aware rather than source-slug aware.
 
 ### Publish orchestration
 
-Publishing should create or update locale translation rows instead of relying only on the current 1:1 [`DocsHelpcenterArticle`](../../../../server/internal/model/docs.go) extension.
+Publishing should create or update locale translation rows instead of relying only on the current 1:1 [`DocsHelpcenterArticle`](../../server/internal/model/docs.go) extension.
 
 The existing help-center article table can remain temporarily for migration compatibility, but slug, SEO, publish state, and metrics should move toward locale-specific translation ownership.
 

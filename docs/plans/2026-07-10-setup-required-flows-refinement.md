@@ -1,4 +1,41 @@
-# Setup Required Flows Refinement Implementation Plan
+# Setup required flows refinement plan
+
+> Historical implementation plan, source-compared on 2026-09-17. The required-flow
+> catalog, evidence checks, destinations, and goal editor exist in this checkout.
+> The unchecked tasks and old agent workflow below are the original work record,
+> not current instructions. Use [go.mod](../../server/go.mod) for the current Go
+> requirement rather than the historical Go 1.24 label.
+
+## Current behavior
+
+The [setup catalog](../../server/internal/service/setup_catalog.go) includes
+required-flow tasks for Product, Help Center, Internal Docs, and CRM, with
+prerequisites and module/action permission checks. It appends Automation as a
+featured journey when not selected. The original frozen-Support requirement is
+scope for that change, not a promise that the Support catalog can never evolve.
+
+[Evidence queries](../../server/internal/repository/setup.go) count enabled
+rules with these template keys: Product accepts `release_notes_writer`,
+`stale_task_escalation`, or `advance_on_approval`; the other journeys require
+`public_help_freshness_sweep`, `docs_freshness_sweep`, or `buying_signal_to_task`.
+Enabled installation is not proof of successful execution. Separate success
+checks exclude system/template-derived agents from custom-agent achievements.
+The actionable-deal predicate requires an owner member, positive amount, close
+date, and a contact association; simply having a seeded pipeline does not satisfy it.
+
+[Action destinations](../../frontend/src/lib/setupActions.ts) include template
+query parameters and the Knowledge `company-context` anchor. The
+[onboarding mapping](../../frontend/src/lib/workspaceOnboardingUseCases.ts) exposes
+one “Plan and ship team projects” option mapped to `product_delivery`.
+The [Setup page](../../frontend/src/pages/SetupSuccessPage.tsx) limits the goal
+editor to one through three goals and shows it to users with `workspace.update`.
+Its [query hooks](../../frontend/src/hooks/queries/useSetup.ts) refetch on mount
+and window focus. These are setup guidance and evidence projections, not a
+substitute for authorization at the destination API.
+
+Original build/test steps below were not rerun during this documentation review.
+
+## Original implementation record
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 

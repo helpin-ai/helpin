@@ -1,4 +1,41 @@
-# Widget Messenger Security Implementation Plan
+# Widget messenger security implementation proposal
+
+> Historical JWT proposal, source-compared on 2026-09-17. This page records
+> a possible widget security implementation for contributors. Current widget
+> identity verification uses a different HMAC-proof contract; the milestones
+> below are not an installation guide or evidence of shipped JWT support.
+
+## Current identity contract
+
+The [verifier](../../server/internal/service/support_widget_identity.go) accepts
+`identity_verification` version `v1` with issued/expiry timestamps and a hexadecimal
+HMAC-SHA256 signature. It signs a canonical newline-delimited value containing
+the widget key, normalized email, external user ID, company ID, and timestamps,
+using the installation secret. It permits at most 15 minutes of validity and
+one minute of future issued-time skew. This is not an HS256 JWT with `sub`, `aud`,
+`iss`, and a token refresh callback.
+
+The [model](../../server/internal/model/support_inbox.go) exposes per-installation
+`off`, `report_only`, and `enforced` verification modes. Empty mode defaults to
+report-only in the verifier. Invalid/missing proofs remain untrusted in report-only
+mode and produce a generic identity-required error in enforced mode. The verifier
+alone does not establish the proposed identity-event audit table or rotation UI.
+
+The [SDK identity client](../../packages/sdk-js/src/core/client.ts) and
+[widget transport](../../packages/sdk-js/src/core/widget.ts) carry the structured
+proof. Source search found no current `identityToken`, `getIdentityToken`, or
+`messenger_security_*` contract in the inspected backend/shared/SDK sources.
+The installation model has `SecretKey`, not the proposed encrypted current/previous
+secret-ID fields. Do not assume that the rotation, at-rest encryption, issuer
+auditing, or unified `ApplyWidgetIdentity` milestones are implemented.
+
+The original JWT rollout, sample payloads, callback recommendations, badge/UI
+requirements, and release matrix below remain proposed work. Existing identity
+and CRM matching behavior must be read from current services rather than inferred
+from this checklist. No identity secrets, installation modes, external clients,
+or live sessions were changed or tested during this documentation comparison.
+
+## Original JWT implementation proposal
 
 Status: Draft engineering plan
 Last updated: 2026-05-02

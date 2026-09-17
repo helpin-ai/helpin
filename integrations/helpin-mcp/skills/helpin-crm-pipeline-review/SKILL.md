@@ -6,7 +6,7 @@ description: Review Helpin CRM contacts and deals, identify evidence-backed pipe
 # CRM Pipeline Review
 
 1. Call `get_current_context` and confirm CRM is an enabled module for the connected actor.
-2. Use `list_crm_deals` and `list_crm_contacts` with bounded results. Load individual records only when they affect the review.
+2. Use `list_deals` and `list_contacts` with bounded results. Load individual records only when they affect the review.
 3. Group observations by stage, age, close date, ownership, value, and missing next action. Treat model-generated conclusions as recommendations, not CRM facts.
 4. Search Helpin for linked tasks or documents when product or delivery context affects a deal.
 5. Add a deal note or update a stage only after explicit user confirmation, when the relevant write tool is visible, and with a stable idempotency key.

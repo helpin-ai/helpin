@@ -57,7 +57,7 @@ separate Helpin, Runtime, and Temporal databases with separate credentials.
 | Go API | Authentication, authorization, product APIs, WebSockets, agent admission and event projection | [server/cmd/api/main.go](server/cmd/api/main.go) |
 | Helpin worker | Temporal-backed product work, knowledge indexing, background integrations | [server/cmd/temporal-worker/main.go](server/cmd/temporal-worker/main.go) |
 | Migration job | Versioned application schema changes before API startup | [server/cmd/migrate](server/cmd/migrate/) |
-| Agent Runtime API and worker | Durable agent execution, model calls, tool execution, execution events | [Runtime integration guide](docs/AGENT_RUNTIME_LOCAL.md) |
+| Agent Runtime API and worker | Durable agent execution, model calls, tool execution, execution events | [Runtime integration guide](docs/agent-runtime-local-setup.md) |
 | PostgreSQL / pgvector | Product records, knowledge vectors, separate Runtime and Temporal persistence | [Database initialization](community/postgres/init.sh) |
 | NATS JetStream | Durable event transport, including Runtime events projected into Helpin | [Realtime implementation](server/internal/websocket/) |
 | Redis | Cross-instance WebSocket relay, presence, and help-center caching | [API wiring](server/cmd/api/main.go) |
@@ -174,7 +174,7 @@ service authentication. Keep credentials out of browser-visible metadata and log
 Agent profiles do not configure every AI feature. Knowledge embeddings and some
 support AI features use separate server configuration. See
 [AI profiles](docs/ai-connections.md), [Community configuration](docs/community/configuration.md),
-and [agents and automation](docs/AGENTS_AND_AUTOMATION.md) for the detailed contracts.
+and [agents and automation](docs/agents-and-automation.md) for the detailed contracts.
 
 ## Editions and module availability
 

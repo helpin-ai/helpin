@@ -1,5 +1,12 @@
 # Widget Feature Parity Analysis: Helpin vs Crisp.chat
 
+> Historical comparison from March 2026, not a current feature inventory.
+> For example, widget-core now exports an emoji catalog, image lightbox, and
+> help-center browsing views that this table marks absent or limited. Use
+> [widget architecture](widget-architecture.md) and the
+> [component reference](../packages/widget-core/README.md) for current code.
+
+
 **Date:** 2026-03-22  
 **Reference:** Crisp.chat Widget v4.4.4 (db1a904, March 10, 2026)  
 **Analysis Scope:** Customer support chat widget capabilities

@@ -1,5 +1,34 @@
 # AI Usage Metering Corrections Implementation Plan
 
+> Historical, partially superseded implementation plan (2026-08-11),
+> source-compared on 2026-09-17. Use [current metering](../ai-usage-metering.md)
+> and the [design status](../specs/2026-08-11-ai-usage-metering-corrections-design.md)
+> before changing billing behavior. The central fixed-unit formula described below
+> has been replaced by the edition-selected usage lifecycle and micro-USD policy.
+> Original unchecked steps do not establish that these fixes are still missing.
+
+## Current implementation
+
+- [Runtime support reply delivery](../../server/internal/service/internal_command_support_reply.go)
+  has an intentionally empty `consumeSupportReplyBilling`: model work is accounted
+  for by the agent run rather than charging again for delivery.
+- [CRM summaries](../../server/internal/service/crm_summary.go),
+  [deal automation](../../server/internal/service/crm_deal_automation.go),
+  [support drafting](../../server/internal/service/support_ai_admin.go), and
+  [translation](../../server/internal/service/docs_helpcenter_translation.go)
+  use payload/content hashes in relevant idempotency keys. These are content-based
+  operation identities; they do not universally assign a new key to every request.
+- [Shared metering](../../server/internal/service/ai_usage_meter.go) now calls the
+  usage lifecycle and records action audit results. The old `Consume` wrapper does
+  not implement the former fixed-unit charge. Provider decoders retain cache and
+  reasoning fields, but current pricing is governed by admitted policy.
+- The `agentcontract/claude.go` compatibility adapter still exists; its presence
+  does not make it the current Agent Runtime execution implementation. Follow the
+  [coding execution guide](../coding-agent-execution.md) for ownership boundaries.
+
+The old toolchain and RED/GREEN/build instructions below belong to the original
+plan. No fresh runtime test pass or billing transaction is claimed by this review.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Correct AI usage feature selection, duplicate runtime reply charging, execution idempotency, and cached/reasoning token normalization without adding customer-facing complexity.

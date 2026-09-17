@@ -1,8 +1,41 @@
-# Module Access Progress Tracker
+# Module access implementation progress
+
+> Historical April 7 implementation tracker, reviewed against the checkout on
+> 2026-09-17. This record explains the original access-control rollout for
+> contributors. Checked tasks and test results below are historical evidence,
+> not a current validation run or the complete present-day module policy.
+
+## Current scope
+
+The [module model](../../server/internal/model/module_access.go) now defines
+Agents, PM, Docs, CRM, Support, and Automation. Managed grants cover CRM,
+Support, and Automation. Direct grants still reference `workspace_member.id`;
+team grants reference workspace team IDs. The
+[grant repository](../../server/internal/repository/module_access.go) resolves
+both within the workspace.
+
+The [authorization service](../../server/internal/authorization/authz.go)
+starts with PM and Docs access and gives workspace owners/admins the managed
+modules without explicit grants. However,
+[deployment policy](../../server/internal/authorization/deployment.go) filters
+that result: even an owner cannot enable a deployment-disabled module. With
+configured deployment modules, Automation access also exposes Agents when that
+module is enabled. Module access is an entry gate, not a replacement for action
+permissions or resource-specific checks such as Support mailbox access.
+
+[Grant-management routes](../../server/internal/router/router.go) remain guarded
+by `module_access.manage`. The [Access settings UI](../../frontend/src/components/settings/ModuleAccessTab.tsx)
+manages grants, and its [mutation hooks](../../frontend/src/hooks/queries/useSettings.ts)
+invalidate both grant settings and workspace-access queries after changes.
+Actor resolution reloads active workspace membership and team memberships;
+this does not imply that an already-open browser refreshes immediately after
+another user's change.
+
+## Original progress record
 
 Last updated: 2026-04-07
 Owner: Codex
-Source PRD: `docs/prds/PRD-module-access-control.md`
+Source PRD: `docs/prds/module-access-control.md`
 
 ## Scope
 
