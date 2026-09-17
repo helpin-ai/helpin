@@ -9,29 +9,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-// ---------------------------------------------------------------------------
-// Escalation signal constants
-// ---------------------------------------------------------------------------
-
-const (
-	escalationReasonDecliningSatisfy = "declining_satisfaction"
-
-	// Declining satisfaction: number of recent AI turns to evaluate.
-	satisfactionDeclineWindow = 3
-	// Minimum confidence drop across the window to trigger escalation.
-	satisfactionDeclineMinDrop = 0.20
-)
-
-// ---------------------------------------------------------------------------
-// EscalationSignal
-// ---------------------------------------------------------------------------
-
-// EscalationSignal represents a detected escalation trigger with its reason and severity.
-type EscalationSignal struct {
-	Reason string  // snake_case reason for AgentHandoff
-	Score  float64 // 0.0–1.0 severity
-}
-
 func countAgentAITurns(history []model.SupportMessage, agentID string) int {
 	count := 0
 	for _, msg := range history {
@@ -173,56 +150,6 @@ func parseAIConfidence(metadata string) (float64, bool) {
 		return 0, false
 	}
 	return meta.AIConfidence, true
-}
-
-// ---------------------------------------------------------------------------
-// Post-answer: declining satisfaction
-// ---------------------------------------------------------------------------
-
-// evaluatePostAnswerEscalation checks if the conversation shows declining
-// confidence after the AI has generated a response.
-func evaluatePostAnswerEscalation(
-	history []model.SupportMessage,
-	currentConfidence float64,
-) *EscalationSignal {
-	// Collect recent AI confidence values from history.
-	var confidences []float64
-	for i := len(history) - 1; i >= 0 && len(confidences) < satisfactionDeclineWindow; i-- {
-		msg := history[i]
-		if msg.SenderType != "ai" {
-			continue
-		}
-		conf, ok := parseAIConfidence(msg.Metadata)
-		if !ok {
-			continue
-		}
-		confidences = append(confidences, conf)
-	}
-
-	// Reverse so oldest is first.
-	for i, j := 0, len(confidences)-1; i < j; i, j = i+1, j-1 {
-		confidences[i], confidences[j] = confidences[j], confidences[i]
-	}
-
-	// Append current response confidence.
-	confidences = append(confidences, currentConfidence)
-
-	// Need at least 3 data points for a meaningful trend.
-	if len(confidences) < 3 {
-		return nil
-	}
-
-	first := confidences[0]
-	last := confidences[len(confidences)-1]
-	drop := first - last
-
-	if drop >= satisfactionDeclineMinDrop {
-		return &EscalationSignal{
-			Reason: escalationReasonDecliningSatisfy,
-			Score:  drop,
-		}
-	}
-	return nil
 }
 
 // ---------------------------------------------------------------------------

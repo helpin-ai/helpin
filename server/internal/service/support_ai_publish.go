@@ -177,7 +177,17 @@ func (s *SupportAIService) createSupportAIReply(ctx context.Context, message *mo
 	if s.processingRepo == nil {
 		return fmt.Errorf("support processing repository is not configured")
 	}
-	created, err := s.processingRepo.CreateReply(ctx, processingID[0], message, processingID[1:]...)
+	var metadata AIMessageMetadata
+	if err := json.Unmarshal([]byte(message.Metadata), &metadata); err != nil {
+		return err
+	}
+	var created bool
+	var err error
+	if metadata.AIProgressState == supportAIProgressChecking {
+		created, err = s.processingRepo.CreateProgressReply(ctx, processingID[0], message, processingID[1:]...)
+	} else {
+		created, err = s.processingRepo.CreateReply(ctx, processingID[0], message, processingID[1:]...)
+	}
 	if err != nil {
 		return err
 	}

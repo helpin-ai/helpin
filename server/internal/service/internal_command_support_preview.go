@@ -115,7 +115,7 @@ func (s *InternalCommandService) captureSupportPreviewReply(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	gate := evaluateSupportReplyGate(supportReplyGateInput{Kind: kind, Contract: contract, Evidence: supportEvidenceFromRows(rows), History: previewMessages(snapshot), Threshold: snapshot.ConfidenceThreshold})
+	gate := evaluateSupportReplyGate(supportReplyGateInput{Kind: kind, Contract: contract, Evidence: supportEvidenceFromRows(rows), Threshold: snapshot.ConfidenceThreshold})
 	response := supportPreviewResponse(run, snapshot)
 	response.FinalDecision = "answer"
 	response.FinalReason = "validated_reply"

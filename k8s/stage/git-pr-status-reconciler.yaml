@@ -32,7 +32,7 @@ spec:
             - name: ghcr-helpin-json-key
           containers:
             - name: reconcile
-              image: ghcr.io/helpin-ai/helpin/server:server-v0.95.409-rc.1
+              image: ghcr.io/helpin-ai/helpin/server:server-v0.95.409-rc.3
               command: ["./reconcile-git-pr-status", "--apply", "--limit=200"]
               envFrom:
                 - secretRef:

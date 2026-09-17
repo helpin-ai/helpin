@@ -1938,6 +1938,9 @@ func (s *SupportInboxService) listConversationMessages(ctx context.Context, work
 
 	if widgetOnly {
 		messages = widgetVisibleSupportMessages(messages)
+		if err := s.projectWidgetAIProgress(ctx, conv, messages); err != nil {
+			return nil, err
+		}
 	}
 
 	// Hydrate file attachments onto messages.
