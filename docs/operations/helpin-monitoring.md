@@ -30,9 +30,12 @@ The existing Sentry integration remains responsible for captured exceptions.
 `helpin-widget-smoke` runs every five minutes in the `helpin` namespace using
 Chromium and Firefox, pinned Playwright 1.58.2. It loads the public website and
 CDN widget, waits for a real `session:joined` frame, uploads a synthetic PNG,
-waits for Ready to send, deletes the owned unsent attachment, and revokes its
+waits for Ready to send, reads back and verifies the PNG bytes, deletes the owned
+unsent attachment, and revokes its
 new session. It sends no conversation messages and holds no production secrets.
-Cleanup failure is a failed smoke result. The DELETE endpoint refuses another
+Cleanup failure is a failed smoke result. Session revocation is still attempted
+if attachment deletion fails. Seven local runner tests cover successful readback,
+corrupt data, upload/metadata failures, deletion failures, and browser teardown. The DELETE endpoint refuses another
 session's attachment and any attachment already linked to a message.
 
 Metrics are written to the internal VictoriaMetrics import endpoint. A failed

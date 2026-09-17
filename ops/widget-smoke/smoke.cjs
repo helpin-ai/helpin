@@ -12,7 +12,8 @@ async function publish(browser, success, seconds) {
   if (!response.ok) throw new Error('metrics_publish_failed');
 }
 async function check(kind) {
-  let browser, page, attachment, session, api, failed = false;
+  let browser, page, attachment, session, api, downloadURL, failed = false;
+  let metadataFailed = false;
   let stage = 'launch';
   const start = Date.now();
   const name = `helpin-monitor-${randomUUID()}.png`;
@@ -45,9 +46,10 @@ async function check(kind) {
         if (request.postDataJSON()?.file_name !== name || !response.ok()) return;
         const data = await response.json();
         attachment = data.attachment?.id;
+        downloadURL = data.public_url;
         session = request.headers()['x-session-token'];
         api = url.origin;
-      })());
+      })().catch(() => { metadataFailed = true; }));
     });
     stage = 'page';
     await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 45_000 });
@@ -61,7 +63,14 @@ async function check(kind) {
     await page.locator('.helpin-widget input[type=file]').setInputFiles({ name, mimeType: 'image/png', buffer: png });
     await page.locator('.helpin-widget').getByText('Ready to send', { exact: false }).waitFor();
     await Promise.all(pending);
-    if (!attachment || !session || !api) throw new Error('missing_confirmation_metadata');
+    if (metadataFailed || !attachment || !session || !api || !downloadURL) throw new Error('missing_confirmation_metadata');
+    stage = 'readback';
+    const stored = await page.evaluate(async url => {
+      const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      if (!response.ok) throw new Error('readback_failed');
+      return Array.from(new Uint8Array(await response.arrayBuffer()));
+    }, downloadURL);
+    if (!Buffer.from(stored).equals(png)) throw new Error('readback_mismatch');
   } catch {
     failed = true;
     // Never print browser errors: they can include signed URLs or session credentials.
@@ -71,22 +80,30 @@ async function check(kind) {
     if (session && api && page) {
       try {
         const cleaned = await page.evaluate(async ({ api, attachment, session }) => {
-          if (attachment) {
-          const response = await fetch(`${api}/widget/support/attachments/${attachment}`, {
-            method: 'DELETE', headers: { 'X-Session-Token': session }, signal: AbortSignal.timeout(15_000),
-          });
-          if (!response.ok) return false;
+          let deleted = !attachment;
+          try {
+            if (attachment) {
+              const response = await fetch(`${api}/widget/support/attachments/${attachment}`, {
+                method: 'DELETE', headers: { 'X-Session-Token': session }, signal: AbortSignal.timeout(15_000),
+              });
+              deleted = response.ok;
+            }
+          } finally {
+            // Revoke the synthetic session even if attachment cleanup failed.
+            const revoke = await fetch(`${api}/widget/session/revoke`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ session_token: session }), signal: AbortSignal.timeout(15_000),
+            });
+            if (!revoke.ok) deleted = false;
           }
-          const revoke = await fetch(`${api}/widget/session/revoke`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_token: session }), signal: AbortSignal.timeout(15_000),
-          });
-          return revoke.ok;
+          return deleted;
         }, { api, attachment: attachment || null, session });
         if (!cleaned) throw new Error('cleanup_failed');
       } catch { failed = true; console.error(JSON.stringify({ browser: kind, stage: 'cleanup', outcome: 'failed' })); }
     }
-    if (browser) await browser.close();
+    if (browser) {
+      try { await browser.close(); } catch { failed = true; console.error(JSON.stringify({ browser: kind, stage: 'close', outcome: 'failed' })); }
+    }
   }
   const seconds = (Date.now() - start) / 1000;
   await publish(kind, failed ? 0 : 1, seconds);
