@@ -106,6 +106,10 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 			MaximumOutputTokens: 1024,
 		},
 		{
+			FeatureKey: BillingFeatureSupportAIReply, OperationKey: supportGreetingOperation,
+			Primary: openRouterLunaRoute, MaximumOutputTokens: 256,
+		},
+		{
 			FeatureKey: BillingFeatureSupportTaskDraft, Primary: glm53FlashExactoRoute,
 			Fallbacks: []AICompletionRoute{openRouterLunaRoute}, PreferRequestRoute: true,
 			MaximumOutputTokens: 1200,

@@ -171,6 +171,7 @@ type CoverageFindingUpsertInput struct {
 }
 
 type SupportCoverageDailyAnalyzer struct {
+	jevDecisions      *JevDecisionService
 	llmProvider       llm.Provider
 	providerName      string
 	modelName         string
@@ -413,7 +414,7 @@ func (s *SupportCoverageDailyAnalyzer) reconcileCoverageAssignments(ctx context.
 	}
 	for index := range findings {
 		finding := &findings[index]
-		if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding); err != nil {
+		if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding, s.jevDecisions); err != nil {
 			_ = s.coverageV2Repo.UpdateFindingAssignmentStatus(ctx, workspaceID, finding.ID, "retryable")
 			slog.WarnContext(ctx, "coverage topic assignment retry deferred", "workspace_id", workspaceID, "finding_id", finding.ID, "error", err)
 		}
@@ -1080,17 +1081,23 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal analyzer input: %w", err)
 	}
+	classification := s.classifyCoverageWithJev(ctx, input)
+	schema, prompt := classification.constrain(coverageConversationAnalysisJSONSchema(), coverageConversationAnalysisSystemPrompt())
+	generationKey := aiUsageIdempotencyKey(input.WorkspaceID, BillingFeatureCoverageGapAnalysis, "analyze", input.ConversationID, input.TranscriptHash)
+	if classification != nil {
+		generationKey = aiUsageIdempotencyKey(generationKey, classification.assessmentID)
+	}
 	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
 		WorkspaceID:    input.WorkspaceID,
 		ActionKey:      aipolicy.ActionSupportCoverageAnalyze,
 		FeatureKey:     BillingFeatureCoverageGapAnalysis,
-		IdempotencyKey: aiUsageIdempotencyKey(input.WorkspaceID, BillingFeatureCoverageGapAnalysis, "analyze", input.ConversationID, input.TranscriptHash),
+		IdempotencyKey: generationKey,
 		Metadata: map[string]interface{}{
 			"conversation_id": input.ConversationID,
 			"action":          "analyze",
 		},
 		Chat: llm.ChatRequest{
-			SystemPrompt: coverageConversationAnalysisSystemPrompt(),
+			SystemPrompt: prompt,
 			Messages: []llm.Message{{
 				Role:    "user",
 				Content: string(inputJSON),
@@ -1098,7 +1105,7 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 			Temperature: 0.1,
 			MaxTokens:   1800,
 			JSONMode:    true,
-			JSONSchema:  coverageConversationAnalysisJSONSchema(),
+			JSONSchema:  schema,
 		},
 	})
 	if err != nil {
@@ -1110,6 +1117,9 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 		return nil, nil, fmt.Errorf("parse coverage conversation analyzer response: %w", err)
 	}
 	normalizeCoverageConversationAnalysisResult(&result)
+	if err := classification.validate(result); err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
+	}
 	if err := validateActionableCoverageResult(result); err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", errCoverageLLMContract, err)
 	}
@@ -1199,7 +1209,7 @@ func (s *SupportCoverageDailyAnalyzer) persistCoverageV2Finding(ctx context.Cont
 	}
 	// The durable finding is committed first. Assignment is independently
 	// retryable and must never erase or roll back the analysis result.
-	if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding); err != nil {
+	if err := assignCoverageV2Finding(ctx, s.coverageV2Repo, finding, s.jevDecisions); err != nil {
 		_ = s.coverageV2Repo.UpdateFindingAssignmentStatus(ctx, finding.WorkspaceID, finding.ID, "retryable")
 		slog.WarnContext(ctx, "coverage topic assignment deferred", "finding_id", finding.ID, "error", err)
 	}

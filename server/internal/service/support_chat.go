@@ -173,7 +173,11 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 		return nil
 	}
 
-	if s.jev != nil && err == nil {
+	commonRoute := ""
+	if err == nil {
+		commonRoute = classifySupportCommonMessage(conv, msg, history)
+	}
+	if commonRoute == "" && s.jev != nil && err == nil {
 		handled, assessErr := s.assessJevHandoff(ctx, conv, msg, history)
 		if assessErr != nil {
 			return assessErr
@@ -208,6 +212,13 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 	}
 
 	supportAI.publishTypingIndicator(ctx, workspaceID, conversationID, true)
+	if commonRoute == supportGreetingOperation {
+		handled, err := s.replyToInitialGreeting(ctx, conv, msg, agent, processing, *settings)
+		if err != nil || handled {
+			supportAI.publishTypingIndicator(ctx, workspaceID, conversationID, false)
+			return err
+		}
+	}
 
 	composed := strings.TrimSpace(msg.Content)
 	if feedback := supportVisitorFeedbackContext(history, *msg); feedback != "" {
@@ -272,7 +283,7 @@ func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *mode
 	workspaceID := conv.WorkspaceID
 	additional := composed
 	var parentRunID *string
-	if previousRun != nil || conv.AIResumedAt != nil {
+	if previousRun != nil || conv.AIResumedAt != nil || conv.AITurnCount > 0 {
 		if carry := s.buildCarryForward(ctx, workspaceID, conv.ID, previousRun); carry != "" {
 			additional = carry + "\n\n" + composed
 		}
@@ -341,7 +352,7 @@ func (s *SupportChatService) buildCarryForward(ctx context.Context, workspaceID,
 	if previousRun != nil {
 		b.WriteString(strings.TrimSpace(previousRun.Status))
 	} else {
-		b.WriteString("returned by teammate")
+		b.WriteString("none; earlier replies are in the transcript")
 	}
 	b.WriteString("). Recent transcript:\n")
 	total := 0

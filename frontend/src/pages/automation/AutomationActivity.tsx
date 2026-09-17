@@ -1,3 +1,4 @@
+import { flowConditionOutcomeLabel } from '@/components/automation/FlowSemanticConditionField';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -895,7 +896,7 @@ export function ActivityTableRow({
           <BotIcon className="h-3 w-3" />
         </span>
       )}
-      <span className="min-w-0 truncate">{metadata.subject}</span>
+      <span className="min-w-0 truncate">{item.condition_outcome ? 'Flow condition' : metadata.subject}</span>
     </>
   );
 
@@ -931,6 +932,12 @@ export function ActivityTableRow({
             className="flex-1"
           />
         </div>
+
+        {item.condition_outcome ? (
+          <p className="mt-1 text-sm text-quiet-text-secondary" title={item.condition_assessment_id ? `Assessment ${item.condition_assessment_id}` : undefined}>
+            {flowConditionOutcomeLabel(item.condition_outcome)}
+          </p>
+        ) : null}
 
         <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <div className="flex min-w-0 items-center gap-1.5 text-foreground xl:hidden">

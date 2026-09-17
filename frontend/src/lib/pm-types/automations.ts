@@ -34,6 +34,11 @@ export interface DeleteAutomationRequest {
 
 // ── Automation Rules ────────────────────────────────────────────────
 
+export interface AutomationTriggerConfig extends Record<string, unknown> {
+  state_id?: string;
+  semantic_condition?: { text: string };
+}
+
 export interface AutomationRule {
   id: string;
   workspace_id: string;
@@ -43,7 +48,7 @@ export interface AutomationRule {
   team_id?: string;
   workflow_id?: string;
   trigger_type: string;
-  trigger_config: Record<string, string>;
+  trigger_config: AutomationTriggerConfig;
   action_type: string;
   action_config: Record<string, unknown>;
   template_key?: string;
@@ -154,7 +159,7 @@ export interface CreateAutomationRuleRequest {
   team_id?: string;
   workflow_id?: string;
   trigger_type: string;
-  trigger_config: Record<string, string>;
+  trigger_config: AutomationTriggerConfig;
   action_type: string;
   action_config: Record<string, unknown>;
   position?: number;
@@ -166,7 +171,7 @@ export interface UpdateAutomationRuleRequest {
   description?: string;
   enabled?: boolean;
   trigger_type?: string;
-  trigger_config?: Record<string, string>;
+  trigger_config?: AutomationTriggerConfig;
   action_type?: string;
   action_config?: Record<string, unknown>;
   position?: number;
