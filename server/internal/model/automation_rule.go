@@ -64,6 +64,12 @@ type AutomationRule struct {
 
 func (AutomationRule) TableName() string { return "automation_rules" }
 
+// SemanticFlowCondition is an optional meaning-based filter within trigger_config.
+// Empty text disables it; only supplied event/task evidence is evaluated.
+type SemanticFlowCondition struct {
+	Text string `json:"text"`
+}
+
 // Trigger config shapes (deserialized from JSONB).
 
 // TriggerConfigStateEntered holds config for task.state_entered triggers.

@@ -30,6 +30,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
+	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/meetingcapture"
@@ -656,6 +657,21 @@ func main() {
 		WebhookSecret: cfg.VexaWebhookSecret,
 		HTTPClient:    meetingProviderHTTPClient,
 	})
+	var jevProvider decision.Provider
+	if strings.TrimSpace(cfg.JevAPIKey) != "" {
+		client, err := decision.NewJev(cfg.JevAPIKey, time.Duration(cfg.JevTimeoutMS)*time.Millisecond)
+		if err != nil {
+			fatalWithSentry("configure product Jev", err)
+		}
+		jevProvider = client
+	}
+	jevDecisions, err := service.NewJevDecisionService(jevProvider, repository.NewJevDecisionRepository(db), repository.NewAIExecutionUsageRepository(db), cfg.JevProductPolicies, strings.Split(cfg.JevWorkspaceIDs, ","))
+	if err != nil {
+		fatalWithSentry("configure product decisions", err)
+	}
+	supportCoverageDailyAnalyzer.SetJevDecisions(jevDecisions)
+	commandService.SetJevDecisions(jevDecisions)
+	ruleEngine.SetJevDecisions(jevDecisions)
 	var meetingProcessor *service.CRMMeetingProcessingService
 	if s3Client != nil {
 		meetingProcessor = service.NewCRMMeetingProcessingService(
@@ -668,7 +684,7 @@ func main() {
 			&http.Client{Timeout: 30 * time.Minute}, recallMeetingProvider, vexaMeetingProvider,
 		)
 	}
-	meetingProcessor.SetCRMOutputs(signalDetectionService, crmActivityService, crmSuggestionService).SetFollowUpRoutingStore(crmSuggestionRepo)
+	meetingProcessor.SetCRMOutputs(signalDetectionService, crmActivityService, crmSuggestionService).SetFollowUpRoutingStore(crmSuggestionRepo).SetJevDecisions(jevDecisions)
 	meetingCaptureService := service.NewCRMMeetingService(
 		crmMeetingRepo, nil, nil, recallMeetingProvider, vexaMeetingProvider,
 	).SetCaptureProvider(cfg.CRMMeetingCaptureProvider).

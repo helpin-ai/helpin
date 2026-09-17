@@ -5,6 +5,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   defaultTemplateInputs,
+  draftFromRule,
+  serializeDraft,
+  validateDraft,
   FlowRow,
   flowActionSummary,
   flowDetailsSections,
@@ -471,5 +474,22 @@ describe('flowMetadataPills', () => {
     expect(flowMetadataPills(rule)).not.toContainEqual(
       { key: 'template', label: 'Template', tone: 'info' },
     );
+  });
+});
+
+
+describe('semantic condition persistence', () => {
+  it('round-trips through the create/edit payload and allows removal', () => {
+    const rule = { ...baseRule, trigger_config: { ...baseRule.trigger_config, semantic_condition: { text: 'The release concerns authentication' } } };
+    const draft = draftFromRule(rule, [], 'UTC');
+    expect(draft.semanticCondition).toBe('The release concerns authentication');
+    expect(serializeDraft(draft, rule.workspace_id, 'UTC').trigger_config.semantic_condition).toEqual({ text: draft.semanticCondition });
+    draft.semanticCondition = '';
+    expect(serializeDraft(draft, rule.workspace_id, 'UTC').trigger_config).not.toHaveProperty('semantic_condition');
+  });
+  it('does not silently remove the condition when switching to a schedule', () => {
+    const draft = draftFromRule({ ...baseRule, trigger_config: { semantic_condition: { text: 'Authentication fix' } } }, [], 'UTC');
+    draft.triggerType = 'cron';
+    expect(validateDraft(draft)).toContain('Remove the semantic condition');
   });
 });

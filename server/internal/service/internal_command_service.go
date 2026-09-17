@@ -44,6 +44,7 @@ func (d InternalCommandDefinition) RiskLevel() string {
 }
 
 type InternalCommandService struct {
+	jevDecisions          *JevDecisionService
 	agentService          *AgentService
 	taskService           *PMTaskService
 	labelService          *PMLabelService

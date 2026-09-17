@@ -187,7 +187,7 @@ export const PipelineBuilder = forwardRef<PipelineBuilderHandle, PipelineBuilder
       } else if (targetStateId && existing) {
         const { error } = await automationRuleService.update(workspaceId, existing.id, {
           trigger_type: 'agent_run.completed',
-          trigger_config: { state_id: stateId },
+          trigger_config: { ...existing.trigger_config, state_id: stateId },
           action_type: 'move_to_state',
           action_config: { target_state_id: targetStateId },
         });

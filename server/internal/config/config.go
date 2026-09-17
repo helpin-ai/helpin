@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/deployment"
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -90,6 +91,7 @@ type Config struct {
 	JevTimeoutMS                int
 	JevWorkspaceIDs             string
 	JevDailyLimit               int
+	JevProductPolicies          map[string]decision.Policy
 	JevPMMode                   string
 	JevPMThreshold              float64
 	JevPMDailyLimit             int
@@ -429,6 +431,7 @@ func Load() (*Config, error) {
 		JevRoutingThreshold:                    parseJevProbability(os.Getenv("JEV_ROUTING_THRESHOLD"), 0.9),
 		JevTagThreshold:                        parseJevProbability(os.Getenv("JEV_TAG_THRESHOLD"), 0.95),
 		JevAPIKey:                              os.Getenv("JEV_API_KEY"),
+		JevProductPolicies:                     jevProductPolicies(),
 		JevPMMode:                              strings.TrimSpace(os.Getenv("JEV_PM_MODE")),
 		JevPMThreshold:                         parseJevProbability(os.Getenv("JEV_PM_THRESHOLD"), .95),
 		JevPMDailyLimit:                        parsePositiveIntEnv(os.Getenv("JEV_PM_DAILY_LIMIT"), 1000),
