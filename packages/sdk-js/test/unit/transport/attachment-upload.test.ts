@@ -104,6 +104,41 @@ describe('attachment upload transport', () => {
     await rejected;
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+  it('aborts a storage request with no progress and offers a retry', async () => {
+    vi.useFakeTimers();
+    const result = start();
+    const rejected = expect(result).rejects.toThrow(/stopped making progress.*retry/i);
+    const xhr = await storage();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejected;
+    expect(xhr.abort).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('keeps an active transfer alive when bytes continue arriving', async () => {
+    vi.useFakeTimers();
+    const result = start();
+    const xhr = await storage();
+    await vi.advanceTimersByTimeAsync(20_000);
+    xhr.upload.onprogress?.({ loaded: 2, total: 5, lengthComputable: true } as ProgressEvent);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(xhr.abort).not.toHaveBeenCalled();
+    xhr.onload?.();
+    await expect(result).resolves.toEqual({ attachmentId: 'att-1', url: initialized.public_url });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('does not extend the idle deadline for repeated zero-byte events', async () => {
+    vi.useFakeTimers();
+    const result = start();
+    const rejected = expect(result).rejects.toThrow(/stopped making progress/i);
+    const xhr = await storage();
+    await vi.advanceTimersByTimeAsync(20_000);
+    xhr.upload.onprogress?.({ loaded: 0, total: 5, lengthComputable: true } as ProgressEvent);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await rejected;
+    expect(xhr.abort).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('preserves a helpful API validation error during initiation', async () => {
     fetchMock.mockReset().mockResolvedValue({ ok: false, status: 413, json: async () => ({ error: 'File exceeds the 100 MB limit' }) });
     await expect(start()).rejects.toThrow('File exceeds the 100 MB limit');
