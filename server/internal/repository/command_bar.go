@@ -354,3 +354,13 @@ func (r *CommandBarPlanRepository) ListByDockChat(ctx context.Context, workspace
 	}
 	return plans, nil
 }
+
+// HasPendingSupportResult reports child work whose result has not yet reached
+// the parent. Completed-but-undelivered plans count as pending too.
+func (r *CommandBarPlanRepository) HasPendingSupportResult(ctx context.Context, workspaceID, conversationID, parentRunID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.CommandBarPlanRecord{}).
+		Where("workspace_id = ? AND support_conversation_id = ? AND parent_chat_run_id = ? AND parent_notified_at IS NULL", workspaceID, conversationID, parentRunID).
+		Count(&count).Error
+	return count > 0, err
+}

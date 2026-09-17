@@ -1032,6 +1032,9 @@ export class WidgetManager {
     };
 
     if (parsedMeta) {
+      if (role === 'ai' && parsedMeta.ai_progress_state === 'checking') {
+        message.aiProgressState = 'checking';
+      }
       message.delayedTeamReply = parsedMeta.delayed_team_reply === true;
       message.captureEmail = parsedMeta.capture_email === true;
       if (typeof parsedMeta.visitor_feedback?.helpful === 'boolean') message.answerFeedback = parsedMeta.visitor_feedback.helpful;
@@ -1044,6 +1047,20 @@ export class WidgetManager {
     }
 
     return message;
+  }
+
+  private canShowAIProgress(): boolean {
+    const conversation = this.conversations.find((item) => item.id === this.activeConversationId);
+    return conversation?.aiState !== 'escalated'
+      && !['waiting_for_human', 'queued_for_human', 'after_hours_queue', 'assigned_to_human', 'resolved_by_human'].includes(conversation?.flowState || '');
+  }
+
+  private restoreAIProgress(): void {
+    // History is projected by the server against the current turn/ownership,
+    // so an old acknowledgment cannot restart a completed or handed-off loader.
+    const latestReply = [...this.messages].reverse().find((message) => message.role !== 'customer');
+    this.isAIThinking = latestReply?.aiProgressState === 'checking' && this.canShowAIProgress();
+    this.aiProgressLabel = this.isAIThinking ? AI_PROGRESS_COPY.checking : undefined;
   }
 
   private isPublicMessage(msg: any): boolean {
@@ -1105,8 +1122,8 @@ export class WidgetManager {
 
     if (msg.sender_type !== 'customer') {
       this.isTyping = false;
-      this.isAIThinking = false;
-      this.aiProgressLabel = undefined;
+      this.isAIThinking = newMsg.aiProgressState === 'checking' && this.canShowAIProgress();
+      this.aiProgressLabel = this.isAIThinking ? AI_PROGRESS_COPY.checking : undefined;
       this.playReceivedMessageSound();
     }
 
@@ -1927,6 +1944,7 @@ export class WidgetManager {
           ? payload.messages.filter((message: any) => this.isPublicMessage(message))
           : [];
         this.messages = history.map((message: any) => this.mapSupportMessage(message));
+        this.restoreAIProgress();
         this.reconcilePendingMessagesWithHistory(history);
         this.restorePendingMessagesIntoThread();
 
@@ -2066,7 +2084,7 @@ export class WidgetManager {
         const conversationId = typeof data.data?.conversation_id === 'string'
           ? data.data.conversation_id
           : '';
-        if (conversationId && (!this.activeConversationId || this.activeConversationId === conversationId)) {
+        if (conversationId && (!this.activeConversationId || this.activeConversationId === conversationId) && this.canShowAIProgress()) {
           this.aiProgressLabel = AI_PROGRESS_COPY[stage] || AI_PROGRESS_COPY.looking;
           this.isAIThinking = true;
           this.render();
@@ -2111,12 +2129,14 @@ export class WidgetManager {
         break;
 
       case 'ai:thinking:start':
+        if (data.data?.conversation_id && data.data.conversation_id !== this.activeConversationId) break;
         this.isAIThinking = true;
         this.aiProgressLabel ||= AI_PROGRESS_COPY.looking;
         this.render();
         break;
 
       case 'ai:thinking:stop':
+        if (data.data?.conversation_id && data.data.conversation_id !== this.activeConversationId) break;
         this.isAIThinking = false;
         this.aiProgressLabel = undefined;
         this.render();
@@ -2154,13 +2174,17 @@ export class WidgetManager {
             || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
           this.messages = msgs.filter((m: any) => this.isPublicMessage(m)).map((m: any) => this.mapSupportMessage(m));
           this.isTyping = false;
-          this.isAIThinking = false;
+          this.restoreAIProgress();
           this.render();
         }
         break;
       }
 
       case 'conversation:escalated': {
+        if (!data.data?.conversation_id || data.data.conversation_id === this.activeConversationId) {
+          this.isAIThinking = false;
+          this.aiProgressLabel = undefined;
+        }
         this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate) || this.activeTeammate;
         const conversationId = typeof data.data?.conversation_id === 'string'
           ? data.data.conversation_id
