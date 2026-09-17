@@ -107,11 +107,10 @@ jobs:
           cache_dependency_path: pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build sdk-js
-        run: pnpm --filter helpin-sdk build
       - name: Install Chromium
         run: pnpm --dir packages/sdk-js exec playwright install --with-deps chromium
       - name: Run widget Playwright suite
+        # The package script builds the SDK before starting the browser tests.
         run: pnpm --dir packages/sdk-js run test:e2e:widget
       - name: Upload Playwright artifacts
         if: failure()
