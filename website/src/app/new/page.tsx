@@ -67,40 +67,6 @@ export default function NewHomePage() {
         </div>
       </section>
 
-      {/* 02 Product loop */}
-      <section id="loop">
-        <div className="wrap">
-          <SectionHead eyebrow="From conversation to shipped" title="Keep customer context moving."
-            lede="What customers tell you should shape what product decides, what engineering ships, and what customers hear next." secondaryLede="Helpin connects the whole loop." />
-          <div className="loop4">
-            <div>
-              <span className="k">01 — Hear</span>
-              <h3>Capture what customers are telling you.</h3>
-              <p>Bring conversations, email, meetings, feedback, and buyer signals into one place.</p>
-              <div className="ctrl-card"><b>Conversation received</b><p>“Does SSO work with Okta? We need it before rollout.”</p></div>
-            </div>
-            <div>
-              <span className="k">02 — Decide</span>
-              <h3>Turn the signal into work.</h3>
-              <p>Identify requests, bugs, themes, and next steps. Connect them to the product work that follows.</p>
-              <div className="ctrl-card"><b>Feature request detected</b><p>Okta SAML support</p><span>7 customers asking</span></div>
-            </div>
-            <div>
-              <span className="k">03 — Ship</span>
-              <h3>Give engineering the context.</h3>
-              <p>Move work into projects, issues, coding agents, pull requests, and releases without losing the customer behind it.</p>
-              <div className="ctrl-card"><b>SSO Enterprise Readiness</b><div className="flow"><Arrow /><span>GitHub issue #482</span><Arrow /><span>PR #728</span><Arrow /><span>Shipped</span></div></div>
-            </div>
-            <div>
-              <span className="k">04 — Tell</span>
-              <h3>Close the loop.</h3>
-              <p>When work ships, Helpin knows who was waiting and what they need to hear.</p>
-              <div className="ctrl-card"><b>7 customers affected</b><ul className="steps"><li>Docs updated</li><li>Replies prepared</li><li>Customers notified</li></ul></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* 03 One customer record (dark) */}
       <section id="record" className="dark">
         <div className="wrap">
@@ -130,8 +96,8 @@ export default function NewHomePage() {
             <div className="pm-items">
               <div><h3>See the demand</h3><p>Know who is asking, how often it comes up, and which accounts it matters to.</p></div>
               <div><h3>Plan the work</h3><p>Organize projects, tasks, priorities, owners, and progress in the same workspace.</p></div>
-              <div><h3>Connect engineering</h3><p>Link product work to GitHub, GitLab, issues, pull requests, releases, and coding agents.</p></div>
-              <div><h3>Know who is waiting</h3><p>When something ships, see every customer who asked for it.</p></div>
+              <div><h3>Connect engineering</h3><p>Link product work to GitHub, GitLab, issues, pull requests, releases, and coding agents — with the original customer request attached.</p></div>
+              <div><h3>Know who is waiting</h3><p>When something ships, see every customer who asked for it and prepare their follow-up.</p></div>
             </div>
             <aside className="pm-panel" aria-label="Project SSO Enterprise Readiness with linked customer requests">
               <div className="pm-head"><span className="k">Project</span><b>SSO Enterprise Readiness</b><span className="muted">8 / 12 tasks · owner Sam K. · due Oct 3</span></div>
