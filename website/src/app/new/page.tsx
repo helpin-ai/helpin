@@ -65,7 +65,8 @@ export default function NewHomePage() {
 
       {/* Hero */}
       <section className="hero">
-        <div className="wrap">
+        <div className="wrap hero-wrap">
+          <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
             <span className="eyebrow">Open source, for SaaS teams</span>
             <h1>Where SaaS teams answer customers, ship fixes, and close deals.</h1>

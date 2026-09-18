@@ -272,7 +272,6 @@ export function LoopWire() {
 
   return (
     <div className="wire" ref={wrapRef} role="img" aria-label="One customer question moving through four stages: heard in chat and a meeting, decided into a task, shipped through an agent-opened pull request that a person approves and merges, and told back as a published article and a reply">
-      <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
       <svg className="wire-svg" width={size.vw || 0} height={132} aria-hidden="true" style={{ left: -Math.max(0, (size.vw - size.w) / 2) }}>
         <path ref={pathRef} className="track" d={d} fill="none" strokeWidth={1.5} />
         <path className="head" d={d} fill="none" strokeWidth={1.5} strokeLinecap="round" style={headStyle} />
