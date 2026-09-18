@@ -25,6 +25,13 @@ class PromotionTest(unittest.TestCase):
                     'path': '.github/workflows/community-release.yml',
                     'repository': {'full_name': 'helpin-ai/helpin'},
                     'head_repository': {'full_name': 'helpin-ai/helpin'}, 'head_sha': 'a' * 40}
+        self.metadata['cli_assets'] = {}
+        for name in [f'helpin-{system}-{arch}' for system in ('linux', 'darwin') for arch in ('amd64', 'arm64')] + ['install.sh']:
+            data = ('fixture ' + name).encode()
+            (self.root / name).write_bytes(data)
+            digest = hashlib.sha256(data).hexdigest()
+            self.metadata['cli_assets'][name] = digest
+            (self.root / (name + '.sha256')).write_text(f'{digest}  {name}\n')
         (self.root / 'release.json').write_text(json.dumps(self.metadata))
         archive = self.root / self.metadata['archive']
         archive.write_bytes(b'exact tested artifact')
@@ -46,6 +53,11 @@ class PromotionTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'checksum'):
             promotion.validate(self.root, self.run, 'helpin-ai/helpin')
 
+    def test_rejects_modified_cli_before_publication(self):
+        (self.root / 'helpin-linux-amd64').write_bytes(b'tampered')
+        with self.assertRaisesRegex(ValueError, 'CLI checksum'):
+            promotion.validate(self.root, self.run, 'helpin-ai/helpin')
+
     def test_existing_release_or_network_failure_never_publishes(self):
         for result in (subprocess.CompletedProcess([], 0, '{}'), subprocess.CompletedProcess([], 1, 'unavailable')):
             with patch.object(promotion.subprocess, 'check_output', return_value=json.dumps(self.run).encode()):
@@ -64,6 +76,7 @@ class PromotionTest(unittest.TestCase):
                 self.assertEqual(command[:3], ['gh', 'release', 'create'])
                 self.assertIn(str(self.root / self.metadata['archive']), command)
                 self.assertEqual(command[command.index('--target') + 1], 'a' * 40)
+                self.assertIn(str(self.root / 'helpin-linux-arm64.sha256'), command)
 
 
 if __name__ == '__main__':

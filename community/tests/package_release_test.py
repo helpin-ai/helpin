@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import re
 from pathlib import Path
@@ -22,6 +23,13 @@ class ReleasePackageTest(unittest.TestCase):
                 shutil.copy2(source / name, root / name)
             artifacts = root / 'release-artifacts'
             artifacts.mkdir()
+            assets = {}
+            for name in [f'helpin-{system}-{arch}' for system in ('linux', 'darwin') for arch in ('amd64', 'arm64')] + ['install.sh']:
+                data = ('fixture ' + name).encode()
+                (artifacts / name).write_bytes(data)
+                assets[name] = hashlib.sha256(data).hexdigest()
+                (artifacts / (name + '.sha256')).write_text(f'{assets[name]}  {name}\n')
+            (artifacts / 'cli-assets.json').write_text(json.dumps(assets))
             (artifacts / '.env').write_text('MUST_NOT_SHIP=fixture-only\n')
             (root / 'community/.env').write_text('MUST_NOT_SHIP=fixture-only\n')
             expected = set(re.findall(r'^    image: (ghcr.io/helpin-ai/[a-z-]+):', (root / 'community/compose.yaml').read_text(), re.M))

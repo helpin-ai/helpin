@@ -5,6 +5,11 @@ hostname. It explains the reverse proxy, URL settings, and network boundaries
 required for HTTPS access; use it after a local evaluation succeeds. Run
 commands below from the bundle’s `community/` directory.
 
+The [CLI setup wizard](cli.md) can generate the URL settings and a host Caddy
+configuration with `helpin install --mode server` or `helpin configure --mode
+server`. It keeps services on loopback and leaves DNS and proxy activation to
+the operator. Use `helpin doctor` after configuring HTTPS.
+
 Use an existing HTTPS reverse proxy or adapt `Caddyfile.example`. Configure:
 
 - `APP_BASE_URL=https://inbox.example.com`

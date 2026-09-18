@@ -43,6 +43,32 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           COMMUNITY_RELEASE_TAG: ${{ inputs.tag }}
         run: python3 community/promote-release.py check
+  cli:
+    needs: approved
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: false
+      - name: Test and build operator CLI
+        env:
+          COMMUNITY_RELEASE_TAG: ${{ inputs.tag }}
+          GOWORK: off
+        run: |
+          (cd community/cli && go test -race ./...)
+          python3 -m unittest discover -s community/tests -p 'bootstrap_test.py'
+          docker pull alpine:3.20
+          python3 community/cli/acceptance.py
+          python3 community/build-cli.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: community-cli
+          path: release-artifacts/
+          if-no-files-found: error
   native:
     needs: approved
     strategy:
@@ -94,7 +120,7 @@ jobs:
             community/release-artifacts/source-*.txt
             community/release-artifacts/runtime-*.txt
   bundle:
-    needs: push
+    needs: [push, cli]
     runs-on: ubuntu-24.04
     environment: community-release
     permissions:
@@ -118,6 +144,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: community-cli
+          path: release-artifacts
       - name: Assemble tested manifests and digest-pinned bundle
         run: python3 community/package-release.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -126,5 +156,8 @@ jobs:
           path: |
             release-artifacts/helpin-community-*.tar.gz*
             release-artifacts/release.json
+            release-artifacts/helpin-linux-*
+            release-artifacts/helpin-darwin-*
+            release-artifacts/install.sh*
           if-no-files-found: error
           retention-days: 30

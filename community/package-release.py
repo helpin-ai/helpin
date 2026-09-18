@@ -19,6 +19,16 @@ for name in license_files:
     if not (root / name).is_file() or not (root / name).read_text().strip():
         raise SystemExit(f'Missing release license: {name}')
 artifacts = root / 'release-artifacts'
+cli_assets = json.loads((artifacts / 'cli-assets.json').read_text())
+expected_cli = {'helpin-' + system + '-' + arch for system in ('linux', 'darwin') for arch in ('amd64', 'arm64')} | {'install.sh'}
+if set(cli_assets) != expected_cli:
+    raise SystemExit('Incomplete CLI asset inventory')
+for name, digest in cli_assets.items():
+    if hashlib.sha256((artifacts / name).read_bytes()).hexdigest() != digest:
+        raise SystemExit(f'CLI checksum mismatch: {name}')
+    if (artifacts / (name + '.sha256')).read_text().strip() != f'{digest}  {name}':
+        raise SystemExit(f'CLI checksum file mismatch: {name}')
+
 compose_source = (root / 'community/compose.yaml').read_text()
 expected = set(re.findall(r'^    image: (ghcr.io/helpin-ai/[a-z-]+):', compose_source, re.MULTILINE))
 source_revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
@@ -66,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix='community-bundle-') as temporary:
         shutil.copy2(root / 'community' / name, community / name)
     shutil.copytree(root / 'community/postgres', community / 'postgres')
     (bundle / 'docs/community').mkdir(parents=True)
-    for name in ('configuration.md', 'deployment.md', 'backups.md', 'upstream-images.md', 'widget-identity.md', 'troubleshooting.md'):
+    for name in ('cli.md', 'configuration.md', 'deployment.md', 'backups.md', 'upstream-images.md', 'widget-identity.md', 'troubleshooting.md'):
         shutil.copy2(root / 'docs/community' / name, bundle / 'docs/community' / name)
     # Image references in a release bundle are immutable. Version variables are
     # useful for source builds only and cannot override these digest locks.
@@ -83,7 +93,7 @@ with tempfile.TemporaryDirectory(prefix='community-bundle-') as temporary:
     (community / 'compose.yaml').write_text(re.sub(r'^    image: (.+)$', pinned, compose, flags=re.MULTILINE))
     metadata = {'tag': tag, 'source_revision': source_revision, 'runtime_revision': runtime_revision,
                 'public_host_evidence': evidence, 'architectures': ['amd64', 'arm64'],
-                'archive': f'helpin-{tag}.tar.gz'}
+                'archive': f'helpin-{tag}.tar.gz', 'cli_assets': cli_assets}
     (artifacts / 'release.json').write_text(json.dumps(metadata, indent=2) + '\n')
     (bundle / 'release-evidence/release.json').write_text(json.dumps(metadata, indent=2) + '\n')
     # The archive is self-contained: no source-only relative documentation links.
