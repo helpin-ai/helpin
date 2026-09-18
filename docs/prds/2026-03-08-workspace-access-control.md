@@ -1,11 +1,23 @@
 # Workspace access control requirements
 
-**Product**: TeamPulse  
+**Product**: Helpin (called TeamPulse in the original PRD)
 **Date**: March 8, 2026  
-**Status**: Final PRD  
+**Status**: Historical requirements; implementation has advanced
 **Supersedes**:
 - `docs/PRD-rbac-members-and-roles.md` (historical path; absent from this checkout)
 - `docs/RBAC-final-plan-2026-03-06.md` (historical path; absent from this checkout)
+
+## Source review — 2026-09-18
+
+This PRD preserves the March authorization requirements and gap assessment. Its “missing” tables and vulnerability descriptions are historical observations, not a current security audit.
+
+- `server/internal/authorization` now contains actor resolution, permission constants, RBAC, relation storage, module/deployment access, and middleware. `ResolveActor` rejects non-active memberships and eagerly loads team memberships. The router uses workspace-access and permission guards, and exposes `/workspaces/{id}/me`.
+- `server/internal/websocket/handler.go` resolves membership and checks `ws.connect` before registering authenticated workspace access. The original claim that any valid JWT alone permits an arbitrary workspace subscription is superseded by these checks.
+- The relation engine checks direct user, team, workspace, and public-viewer tuples for a resolved actor. It does not implement the proposed automatic article/collection inheritance in this file, nor does accepting a public tuple by itself provide an anonymous HTTP endpoint. Support inbox visibility also uses dedicated mailbox/team logic; the “all object checks use one engine” acceptance criterion is not an established invariant.
+- Effective module access now includes deployment selection in addition to role/member configuration. The original role matrix is a design baseline; current `permissions.go`, `rbac.go`, and module access methods are authoritative for an individual permission.
+- Canonical member identity remains `workspace_members`. No exhaustive audit of every raw-ID repository call, route, sharing path, or frontend action was performed here, and source inspection is not proof that all of the acceptance criteria are satisfied.
+
+## Original requirements
 
 ## 1. Review Summary
 

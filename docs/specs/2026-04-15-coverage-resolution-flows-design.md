@@ -1,4 +1,19 @@
-# Coverage Resolution Flows — Design Spec
+# Coverage resolution flows design
+
+This historical design describes the original coverage-gap suggestion workflow.
+Use it as context for the retained legacy draft/apply path; current coverage also
+has V2 topic/finding/signal workflows, so this is not the complete product contract.
+
+## Source review — 2026-09-18
+
+- [Draft generation](../../server/internal/service/support_coverage_drafts.go) still converts generated Markdown to TipTap and creates a draft suggestion after a successful model response. [CreateSuggestion](../../server/internal/repository/support_coverage.go) inserts that suggestion without changing the gap to `drafted`; the original transition table is obsolete.
+- Apply creates a document or appends suggestion nodes with [AppendContent](../../server/internal/tiptap/append.go), then updates the suggestion, marks an **open** gap `done`, and links the article. `fixed`/`drafted` remain deprecated model constants. Draft preparation is not evidence that a published help article now resolves the customer issue.
+- These apply operations are sequential service/repository writes, not one transaction or a claimed-idempotent operation. A content write can succeed before a later suggestion/gap/link failure. The update path attempts a snapshot but logs and continues if it fails; it has no content-version compare-and-swap in this method. Do not infer atomic application or guaranteed protection of concurrent edits from append-only node merging.
+- Discard transactionally rejects the suggestion and sets the gap to `open`, but the repository method does not first require a draft suggestion or currently-open gap. The proposed preview-only discard flow is narrower than that backend operation.
+- [Routes](../../server/internal/router/router.go) require both support-edit and docs-edit for generation/apply, and support-edit for discard. [The retained detail pane](../../frontend/src/components/support/coverage/GapDetailPane.tsx) uses current `/docs/documents/{id}` links, generation controls, and suggestion previews. [The coverage page](../../frontend/src/pages/support/coverage/SupportCoveragePage.tsx) additionally exposes V2 flows and documentation-agent investigation.
+- The original approved status records the design decision, not completion of every requirement. No model calls, document writes, live publication checks, or end-to-end acceptance tests were performed in this review. JSON-mode configuration also does not remove the need to validate model output.
+
+## Original design
 
 **Status:** Approved  
 **Date:** 2026-04-15  

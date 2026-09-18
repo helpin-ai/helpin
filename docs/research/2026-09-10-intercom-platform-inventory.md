@@ -1,6 +1,14 @@
-# Intercom Feature Inventory (excluding Fin AI Agent) — as of September 2026
+# Intercom platform inventory — September 2026
 
-**Method note.** Everything below comes from pages fetched during this session. Intercom's marketing site has been partly folded into fin.ai (intercom.com/messenger now 308-redirects to fin.ai; /helpdesk, /outbound, /reporting, /workflows, /channels product pages 404). The help center (intercom.com/help), developer docs, pricing page, and changelog remain the authoritative sources and are what I relied on. Items marked UNVERIFIED could not be confirmed from a fetched page.
+This historical research inventory helps product contributors compare non-Fin-agent Intercom capabilities with Helpin. It records the September 10, 2026 investigation; it does not describe Helpin implementation or promise feature parity.
+
+## Review status — 2026-09-18
+
+The full inventory was reviewed for scope and provenance. External sources were not fetched again: prices, plan gates, SDK versions, release dates, security certifications, redirects, and API limits below remain dated research claims. Recheck the linked official sources before using them for a product or purchasing decision. The original report links sources by section but does not preserve fetched snapshots or claim-level citations, so its assertions cannot all be independently reproduced from this file alone. “Not found” means not found during that investigation, not proof that a feature does not exist.
+
+## Original inventory
+
+**Original method note.** The original researcher reported that the inventory came from pages fetched during the September 10 investigation. Intercom's marketing site has been partly folded into fin.ai (intercom.com/messenger now 308-redirects to fin.ai; /helpdesk, /outbound, /reporting, /workflows, /channels product pages 404). The help center (intercom.com/help), developer docs, pricing page, and changelog remain the authoritative sources and are what I relied on. Items marked UNVERIFIED could not be confirmed from a fetched page.
 
 ---
 
@@ -109,7 +117,7 @@ Sources: https://www.intercom.com/help/en/articles/9955432-channels-explained ·
 - **Phone (Intercom Phone)**: inbound/outbound calls in the inbox, IVR via Workflows, queues with hold music, callbacks, transfer/warm transfer, 3-way calls, barge and whisper (May 27, 2026), recording with consent prompts, transcription and call summaries, voicemail, answering-machine detection, caller OTP verification, CNAM, business-number caller ID, numbers in 35+ countries, porting, per-brand numbers, phone dashboard and 11+ call metrics. Balanced assignment only (no round robin). https://www.intercom.com/help/en/articles/8488925-intercom-phone-faqs
 - **Messenger calls**: browser audio/video calls (no mobile SDK support).
 - **Switch**: deflect phone callers to Messenger via SMS link.
-- **Fin Voice** (AI phone agent; covered by the other agent) — pricing "contact Sales".
+- **Fin Voice** (AI phone agent; detailed evaluation outside this inventory) — pricing "contact Sales".
 - All channels configurable under Settings > Channels and filterable in views; Workflows run across chat, email, SMS, WhatsApp, Instagram, Facebook, Slack, phone.
 
 ---
@@ -260,4 +268,4 @@ Source: https://www.intercom.com/changes/en (pages 1–20 fetched), plus https:/
 
 ---
 
-**Unverified / not found**: App Store app count; collision detection / agent presence in the Inbox; article version history; Flutter and Unity SDKs; exact OAuth scope list; Fin Voice pricing. Everything else above is attributable to a fetched page.
+**Unverified / not found**: App Store app count; collision detection / agent presence in the Inbox; article version history; Flutter and Unity SDKs; exact OAuth scope list; Fin Voice pricing. The original researcher attributed the remaining items to the linked pages; that attribution has not been independently revalidated in this repository review.

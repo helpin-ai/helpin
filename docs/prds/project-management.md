@@ -1,4 +1,18 @@
-# Helpin project management module
+# Project management original requirements
+
+This March 2026 requirements record explains the original PM feature scope and its relationship to the former bonus application. It is useful for design history, not as a current schema, endpoint reference, permission matrix or product roadmap.
+
+## Source review — 2026-09-18
+
+- The implemented work item is [PMTask](../../server/internal/model/pm_task.go), stored in `pm_tasks`, with `task_type`, `sprint_id`, workspace task keys, member-based owner projections and implementation briefs. [PMSprint](../../server/internal/model/pm_sprint.go) uses `pm_sprints`. The `pm_stories`, `pm_iterations`, story service names and corresponding API paths below are historical terminology.
+- Current severity values are `none`, `minor`, `major`, and `critical`, not the proposed low/medium/high set. `blocker` is optional text for an external blocker; dependency flags are derived separately. Do not reconstruct the current model from the sample SQL.
+- [Checklist items](../../server/internal/model/pm_checklist_item.go) attach directly to a task and have assignees and due dates. The proposed separate checklist container and workflow-tracked `pm_sub_tasks` model/routes were not found. Automatic child-estimate rollups, parent-state transitions and checklist-to-subtask promotion below remain original requirements rather than established behavior.
+- [Current routes](../../server/internal/router/router.go) expose `/api/pm/tasks` and `/api/pm/sprints`; Docs and notifications have their own `/api/docs` and `/api/notifications` surfaces. Docs uses structured content/blocks, and notifications use shared entity aggregation plus delivery records, not the proposed `pm_docs` text table or PM-only notification table. See the [notification source review](notifications-system.md).
+- Built-in [workspace roles](../../server/internal/model/common.go) are owner, admin, member and viewer; there is no manager role. Current [task queries](../../server/internal/repository/pm_task.go) and sprint filters support accessible-team restrictions. The original all-members visibility statement is not an authorization guarantee; use current RBAC and service access checks.
+- [PM attachments](../../server/internal/service/pm_attachment.go) retain the 50 MiB size bound but enforce a MIME allowlist. “Any file type” is inaccurate. Frontend server state uses [TanStack Query task hooks](../../frontend/src/hooks/queries/useTasks.ts), not the proposed collection of entity-data Zustand stores.
+- Agent planning, automation, realtime updates and cross-module CRM/Docs integration now exist in the repository, so the original future/non-goal list is not a current availability matrix. Cost savings, migration dates, parity, report coverage and deployment success were not verified here. The SQL and phase estimates below are preserved as a design sketch; use current models and versioned migrations for changes, not this standalone schema.
+
+## Original proposal
 
 **Version**: 1.0
 **Date**: March 3, 2026

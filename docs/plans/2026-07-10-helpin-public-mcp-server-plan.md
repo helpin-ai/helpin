@@ -1,8 +1,8 @@
-# Helpin Public MCP Server Implementation Plan
+# Public MCP server implementation plan
 
 **Date:** 2026-07-10
 
-**Status:** Proposed
+**Status:** Historical implementation plan; core server and UI now exist
 
 **PRD:** [Helpin Public MCP Server and Workflow Skills](../prds/helpin-public-mcp-server.md)
 
@@ -11,6 +11,20 @@
 **Primary owners:** Platform, Agent Platform, Security, Infrastructure
 
 ---
+
+## Source review — 2026-09-18
+
+This plan records the original workstreams and release criteria. Use [the public MCP guide](../public-mcp-server.md) for the current operator contract and [engineering notes](../public-mcp-engineering-notes.md) for source-reviewed implementation limitations.
+
+- The checkout contains the official SDK transport, OAuth/service-principal persistence, catalog and call authorization, settings/consent UI, prompts, resources, and [workflow packages](../../integrations/helpin-mcp/README.md). The “no implementation” baseline below is historical.
+- [go.mod](../../server/go.mod) now specifies Go 1.25.0 and MCP Go SDK v1.4.1. The protocol adapter is concentrated in `internal/mcpserver/server.go`; the proposed multi-file layout is not the actual file inventory.
+- [The catalog](../../server/internal/service/mcp_catalog.go) has 49 tools according to its regression test. CRM and read-only Support are present; public Support drafts and interaction-response tools are not established by the old workstream list. Task batches accept up to 50 tasks, rather than the proposed general 25-item cap.
+- Mutations require idempotency keys, but replay results are persisted after domain execution. The plan's pre-execution reservation and exactly-once implications are not implemented by that replay check alone; concurrent requests and crashes require domain-specific protection.
+- Agent delegation goes through `AgentService` and the current Agent Runtime launch path. The Temporal participant in the original diagram and the retired worker tool-normalization path are historical, not the current agent execution architecture.
+- The checked-in staging/production manifests explicitly enable MCP, and the configuration default is enabled. This is not proof that OAuth conformance, cross-client compatibility, external security review, or production rollout gates passed.
+- UI defaults and routes differ from the proposal; see the [UI source review](../prds/helpin-mcp-ui.md#source-review--2026-09-18). The original dates, staffing assumptions, sign-offs, performance targets, and checklist remain planning records, not completed validation.
+
+## Original implementation plan
 
 ## 1. Outcome
 

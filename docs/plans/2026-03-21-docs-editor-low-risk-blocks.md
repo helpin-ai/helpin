@@ -1,6 +1,16 @@
-# Docs Editor Low-Risk Blocks Implementation Plan
+# Docs editor block insertion implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan describes the first slash-menu UI for quotes, code, dividers, and tables. Contributors can use it to understand the original scope; the current editor has additional blocks and controls, so the snippets below are not replacement implementations.
+
+## Source review — 2026-09-18
+
+- The [editor](../../frontend/src/components/docs/DocsEditor.tsx), [slash command catalog](../../frontend/src/components/docs/slash-commands.ts), and [slash plugin](../../frontend/src/components/docs/SlashMenuExtension.ts) implement the planned entry points. The catalog now includes additional blocks, entity references, and media actions. The plugin opens after `/` at the start of a text block or following a literal space; this is narrower than arbitrary whitespace.
+- StarterKit now disables its code block in favor of the shared `CodeBlockExtension`. Tables use named extension imports and `resizable: true`; the original default imports and non-resizable configuration below no longer match the source. Insertion still requests a 2×2 table with a header row.
+- [TableControls](../../frontend/src/components/docs/TableControls.tsx) supplies dedicated row/column/table controls rather than the original inline toolbar sketch. [SlashMenu](../../frontend/src/components/docs/SlashMenu.tsx) accounts for wrapper scroll position when placing the popup. The [widget stylesheet](../../packages/widget-core/src/styles/widget.css) includes the planned article divider rule.
+- Dependencies are already declared in the [frontend manifest](../../frontend/package.json), with the workspace lockfile at the repository root. Do not rerun historical installation/commit steps or use the filtered build-output command as a success check: it can hide the actual build exit status. No browser persistence or published rendering checks were run during this source review.
+
+## Original implementation plan
+
 
 **Goal:** Add slash menu command palette and expose blockquote, code block, divider, and table blocks in the Docs editor.
 

@@ -2,6 +2,18 @@
 
 Status: implemented locally as a release candidate; publication, native arm64 execution, and the real DNS/TLS host gate remain pending. See [implementation evidence](../community/implementation-status.md). This plan covers the first supported self-hosted Community Edition release for Helpin and Agent Runtime. Existing SaaS/EE deployments, production secrets, and databases have not been changed.
 
+## Source review — 2026-09-18
+
+This is the release design and historical implementation record, not an installer guide or proof of publication. Use [the Community operator guide](../../community/README.md) for commands and [the publication gate](../../community/PUBLICATION.md) for outstanding decisions.
+
+- The Community Compose bundle, installer, proxy example, package assembler, architecture matrix, and release workflows exist. The assembler requires tested image digests. `server/Dockerfile` already uses `TARGETARCH`; later sections saying this work is still absent describe the original starting point.
+- Visitor-origin authorization, Community module defaults, optional SMTP, local verification policy, and public-widget configuration are implemented. Current variables include `AUTH_EMAIL_VERIFICATION_REQUIRED`, `HELPIN_ENABLED_MODULES`, `PUBLIC_WIDGET_URL`, and `SMTP_*`; use `community/.env.example` for the complete contract.
+- Origin handling has a narrow same-origin GET path using browser Fetch Metadata and a single configured public origin, which is still checked against the installation allowlist. The original blanket statement that every missing Origin is rejected does not describe this qualified implementation.
+- The current feature-flag file has no staff-email allowlist. Historical personal-data review remains a publication concern. Root license scopes now exist: AGPL Community, separately licensed EE directories, and component-specific SDK terms. The original “neither repository has a root license” paragraph is historical; legal attribution and publication-method decisions remain in the gate.
+- The linked implementation-status document reports dated local evidence. Native architecture CI definitions do not prove a completed native arm64 run, and this review did not repeat images, integration tests, history scanning, public DNS/TLS checks, or publication. Keep those gates pending until their specific evidence is recorded.
+
+## Original release design
+
 ## v0.1 scope — authoritative first-tag checklist
 
 **Release posture: Community 0.1 beta, not 1.0.** Use a distinct bundle tag such as `community-v0.1.0`, pinning the compatible Helpin and Runtime image versions without resetting existing product/SDK version lines. State the beta limitations in the README and release notes.

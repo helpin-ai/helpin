@@ -1,8 +1,22 @@
 # Widget messenger security with signed identity tokens
 
-Status: Draft
+Status: Historical JWT proposal; current implementation uses a structured HMAC proof
 Owner: Support / Widget / SDK
 Last updated: 2026-05-02
+
+This document preserves the May 2026 proposal for JWT-based widget identity. It is a design discussion, not the current SDK integration contract.
+
+## Source review: September 18, 2026
+
+- The implemented [widget identity verifier](../../server/internal/service/support_widget_identity.go) uses a versioned HMAC-SHA256 proof, not a JWT. The [payload model](../../server/internal/model/support_inbox.go) and [SDK types](../../packages/sdk-js/src/core/types.ts) expose `identity_verification` with `version`, `issued_at`, `expires_at`, and a hexadecimal `signature`. The proposed `identityToken` and `getIdentityToken` examples below must not be copied as supported API usage.
+- The signed message binds the widget key, normalized email, external user ID, company ID, and validity timestamps. It does **not** sign every profile or company attribute: name, phone, job title, and company name/domain are not covered by that message. A verified identity must not be described as proof of all browser-supplied traits.
+- Current installation modes are `off`, `report_only` (the default), and `enforced`. Report-only verification failures return untrusted provenance; enforced failures reject the identity operation. [Widget identity application](../../server/internal/service/support_inbox_widget.go) invokes this verifier for the current identify/upgrade paths.
+- The implementation limits proof validity to fifteen minutes and permits one minute of future issued-at skew. This is a timestamp/signature check, not a JWT audience/issuer parser or a single-use replay cache.
+- Current session provenance uses `identity_method`, `identity_trust`, `identity_verified_at`, and `identity_verifier_version`. The proposed `identity_verified`/`identity_source` schema, two-secret JWT rotation, encrypted-secret fields, JWT audit table, and token-refresh API below are requirements of this proposal, not established implementation facts.
+
+This source review did not run a browser integration or security audit. The original acceptance criteria remain useful design questions; they do not certify the current implementation or vendor comparisons.
+
+## Original proposal
 
 ## 1. Executive Summary
 

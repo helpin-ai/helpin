@@ -1,6 +1,22 @@
-# Helpin Support Surface Inventory
+# Historical Helpin support surface audit
 
-Audit of `/root/helpin`, 2026-09-10. Every claim below is cited to a path. Where two of my sub-audits disagreed, I verified the code myself and note the resolution.
+This is the September 10 product/source audit, preserved as historical research. Its counts, line numbers, competitive comparisons, security conclusions, and implementation verdicts describe that review and must not be used as a current capability or release checklist.
+
+## Source review — 2026-09-18
+
+Several headline findings have changed in this checkout:
+
+- Licensing and contributor policies now exist: [LICENSE](../../LICENSE), [contributing](../../CONTRIBUTING.md), [security](../../SECURITY.md), and [code of conduct](../../CODE_OF_CONDUCT.md). Read the license boundaries rather than the old “no license” conclusion below.
+- [Community deployment](../community/deployment.md), configuration, identity, backup, and troubleshooting guides now accompany the Community packaging. [Publication status](../../community/PUBLICATION.md) separately records what remains unverified; source packaging does not prove public image availability or production readiness.
+- [Widget origin authorization](../../server/internal/service/support_widget_origin.go) and the WebSocket handler now enforce installation origin policy. The old claim that allowed origins are decorative is obsolete. [Widget identity setup](../community/widget-identity.md) also documents the server-side signing integration.
+- [SMTP transport](../../server/internal/email/smtp.go) exists. This does not establish SMTP parity for every Postmark support-email feature; configure the documented transport and inbound capabilities for the chosen deployment.
+- [AI connections](../../server/internal/service/ai_connection.go), credential/access policy, and route selection implement customer-provided provider connections. The old “BYOK is missing” and fixed-tier-only descriptions no longer describe the current AI configuration surface.
+- [Deployment module policy](../../server/internal/deployment/modules.go) filters enabled modules before actor grants. The original conclusion that PM and Docs can never be hidden is obsolete. The router also accepts authenticated API rate-limit middleware; the blanket absence claim below is stale.
+- Several original source symbols and paths have moved or been removed, including the named escalation helpers. Old line references are provenance for this audit, not navigable evidence of today's call graph. See the maintained [architecture overview](../../ARCHITECTURE.md) for current boundaries.
+
+The remaining feature-gap inventory is historical and needs a feature-specific source review before prioritization. This review did not retest the product, perform a security audit, measure bundle sizes, assess legal compliance, or verify external vendor features. The original legal and competitive judgments below are the author's dated opinions, not current conclusions.
+
+## Original audit — 2026-09-10
 
 ## 0. Scale
 

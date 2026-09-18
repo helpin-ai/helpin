@@ -1,6 +1,18 @@
-# Support Message Actions (Crisp-style) Implementation Plan
+# Support message actions implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the original edit-as-undo, delete, copy, quote, and message-info workflow. Use it for design context; the current delivery modes, action eligibility, and cancellation ordering differ from its sketches. Competitor parity and the original test checklist were not revalidated.
+
+## Source review — 2026-09-18
+
+- [Message actions](../../server/internal/service/support_message_actions.go) check workspace and conversation ownership of the message before the sender gate. Undo additionally checks the stored expiry. The implementation cancels queued email **before** soft-deleting, then publishes deletion; the original delete-first ordering below is obsolete. Database and Redis operations are not one transaction, and a cancellation failure prevents the delete.
+- The [repository](../../server/internal/repository/support_inbox.go) requires the owning human's non-internal `message_type = reply` messages; the UI's broader non-system check does not replace that backend predicate. Its soft-delete operation does not reject zero affected rows, so the original concurrent-delete `404` promise is not a compare-and-swap guarantee. Copy, quote, and info availability should not be confused with the sender-only mutation controls.
+- [Email fallback](../../server/internal/service/email_fallback.go) now branches on explicit email and chat-only delivery modes. Ordinary fallback skips online visitors and other ineligible conversations. The Redis conversation score uses `ZADD GT`, so later messages can move the batch's send time beyond an earlier message's stored undo expiry; the countdown does not guarantee the exact eventual delivery time. `CancelForMessage` reports an existing outbound log, propagates lookup errors, and removes only the target pending message, with separate Redis commands rather than an atomic cancellation/send lock.
+- [MessageBubble](../../frontend/src/components/support/MessageBubble.tsx) restores attachment and delivery metadata alongside non-empty returned Markdown. The keyboard shortcut is implemented in [MessageThread](../../frontend/src/components/support/MessageThread.tsx), not the proposed `useUndoLastSend` file, and filters to the current user's messages while respecting editor focus and already-handled events.
+- Message info includes current email delivery labels and external-email/read-status distinctions. It records delivered email only when `DeliveredAt` exists; provider acceptance, delivery, and read receipts are distinct. The original unconditional expiry-to-“Delivered to email” expectation is not a valid verification rule. `Edited` remains false in the info DTO.
+- The original hard-coded developer paths, branch push, and migration validation expectation are historical instructions. No email send, concurrent cancellation, widget propagation, or browser verification was performed by this review.
+
+## Original implementation plan
+
 
 **Goal:** Add a Crisp-style hover action menu to support messages with Edit (within email-fallback window), Copy, Reply (quote), Delete, and Info — plus a "Sent · Undo · M:SS" → "Delivered to email" footer affordance and Cmd/Ctrl+Z shortcut, all wired to the existing Redis email-fallback outbox so the customer-facing chat record matches the email.
 

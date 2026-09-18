@@ -2,8 +2,23 @@
 
 **Author:** Engineering
 **Date:** 2026-04-26
-**Status:** Implementation in progress
+**Status:** Historical requirements; API importer implemented with differences below
 **Supersedes:** `docs/prds/shortcut-importer.md` for new implementation work
+
+This requirements document records the April 2026 move to API-based Shortcut imports. It is useful for migration intent and outstanding quality goals, but its proposed routes, tables, and completeness guarantees are not the current implementation contract.
+
+## Source review: September 18, 2026
+
+- [The API import service](../../server/internal/service/pm_import_shortcut_api.go) now performs scans and execution, reusing the existing [PM import writer](../../server/internal/service/pm_import.go). The proposed `internal/pm/import/` package and generic external-reference/warnings/snapshot tables are not the implemented organization; snapshots and results use the import job machinery.
+- [Registered routes](../../server/internal/router/router.go) use `/import/shortcut/api/preview`, `/api/preview/{scanId}`, `/api/execute`, and `/status/{importId}` with detail, cancel, and retry variants under the Shortcut prefix. Route access requires `pm.import`; the service additionally checks workspace admin membership. The body/path examples below are proposals, not endpoint documentation.
+- Preview starts a process-local goroutine. Execution uses Temporal and an encrypted request payload when the Temporal client and a 32-byte encryption key are configured; otherwise it also falls back to a process-local goroutine. [Stored execution](../../server/internal/service/pm_import_temporal.go) decrypts that payload. Do not promise restart durability for every deployment or every preview.
+- [The API client](../../server/internal/service/shortcut_api.go) implements four attempts with cancellation-aware waits and `Retry-After`, plus a **per-client** 200-per-minute token bucket with burst ten. It is not a global strict minute cap, and its fallback exponential delay has no jitter. Story enumeration queries archived and active stories via `POST /stories/search`, then reloads each story; it does not implement the proposed recursive search partitioning path.
+- Core PM writes still use a database transaction in the existing writer; bounded per-phase transactions and universal generic-ref retry guarantees remain design goals. A successful small import does not establish completeness for a large remote workspace.
+- [Shortcut Docs import](../../server/internal/service/pm_import_shortcut_docs.go) now exists as an option, despite being a non-goal below. [Media import](../../server/internal/service/shortcut_media_import.go) enforces a per-file read limit and requires configured public storage URLs; the original aggregate byte limit and strict-mode controls must not be assumed implemented.
+
+The provider facts and limits below are dated April 26, 2026 and were not revalidated remotely. This review did not call Shortcut, execute an import, or establish that every acceptance criterion passes.
+
+## Original requirements
 
 ## 1. Summary
 
@@ -189,7 +204,7 @@ Options:
 - Rewrite Shortcut app URLs inside descriptions/comments to Helpin task links after import: default on.
 - Preserve original created/updated/completed timestamps: default on.
 
-#### Step 6: Execute And Review
+#### Step 7: Execute And Review
 
 Show:
 

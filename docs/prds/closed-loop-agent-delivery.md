@@ -1,6 +1,6 @@
 # Closed-loop agent task delivery
 
-**Status:** Draft for product and technical review
+**Status:** Historical product proposal; universal completion-contract layer not implemented
 
 **Version:** v1.0
 
@@ -22,6 +22,19 @@
 - [Notifications System](notifications-system.md)
 
 ---
+
+## Source review — 2026-09-18
+
+This proposal separates runtime completion from verified product delivery. That distinction remains useful, but the proposed tables, APIs, event names, and feature flags below are not an available product contract.
+
+- No implementation was found for `agent_run_completion_contracts`, `agent_run_delivery_manifests`, or `agent_run_finalizer_steps`, nor for the proposed delivery/revision API and `agent_run.delivered` event family. Existing repository-delivery fields, artifacts, and message delivery status are narrower features, not this universal manifest system.
+- [Terminal finalizers](../../server/internal/service/agent_runtime_finalizers.go) still use output-summary markers and domain-specific safeguards. They log individual failures and continue; they do not turn every required finalizer error into the proposed failed/partial delivery state. The proposal's durable ledger and atomic/idempotent side-effect guarantees therefore remain requirements.
+- The current execution boundary is the separate Agent Runtime service, with Helpin launch preparation, projection, and finalizers. Local agent Temporal workflows are retired; Temporal remains for background product jobs. The proposed Temporal phase graph below must be reconsidered against [the current architecture](../agents-and-automation.md), not implemented by restoring an obsolete local executor.
+- [The run stream hook](../../frontend/src/components/agents/dock/useAgentRunStream.ts) now checks runtime sequence numbers, buffers gaps, and reconciles snapshots. It still has per-run polling fallback. The July claim that no ordering gate exists is stale; the proposed universal shared workspace stream remains a separate requirement.
+- [CodingSessionSurface](../../frontend/src/components/pm/CodingSession/CodingSessionSurface.tsx) supports existing interaction and continuation flows. [Composer policy](../../frontend/src/components/pm/CodingSession/codingSessionComposer.ts) permits continuation after failed/cancelled runs, disables input while running, and hides it after completion. This does not implement general active steering or post-delivery manifest revisions.
+- Attention notifications and completed-run automation remain distinct from the proposed delivered notifications and contract-driven task completion. No production SLO, cross-runtime compatibility, duplicate-side-effect guarantee, or end-to-end delivery acceptance test was verified in this documentation review.
+
+## Original proposal
 
 ## 1. Executive Summary
 

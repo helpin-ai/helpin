@@ -1,6 +1,6 @@
 # Helpin MCP user experience
 
-**Status:** Draft for product, design, security, and frontend review
+**Status:** Historical UI requirements; core settings and consent surfaces implemented
 
 **Version:** v1.0
 
@@ -11,6 +11,21 @@
 **Related documents:** [Helpin Public MCP Guide](../public-mcp-server.md), [Helpin Public MCP Server PRD](helpin-public-mcp-server.md), [Helpin Public MCP Server Implementation Plan](../plans/2026-07-10-helpin-public-mcp-server-plan.md)
 
 ---
+
+## Source review — 2026-09-18
+
+This PRD preserves the proposed connection-management experience. Use [the public MCP guide](../public-mcp-server.md) for current setup; the proposed routes, labels, and acceptance criteria below are not a claim of complete implementation.
+
+- Settings navigation now labels the page **MCP access** under **Integrations & data**, rather than the proposed AI Clients entry in Workspace.
+- [MCPSettingsPage](../../frontend/src/pages/settings/MCPSettingsPage.tsx) renders [MCPAccessPanel](../../frontend/src/components/settings/mcp/MCPAccessPanel.tsx), which implements setup, connections, service accounts, activity, and Permissions tabs. The source uses one panel file rather than the proposed component-per-panel layout.
+- [OAuth consent](../../frontend/src/pages/oauth/MCPAuthorizePage.tsx) implements workspace selection, requested scope/toolset narrowing, read-only policy, and redirect handling. Separate `/oauth/error` and `/oauth/success` pages from this proposal were not found.
+- [The service adapter](../../frontend/src/lib/services/mcpService.ts) uses an aggregate `/api/mcp/` dashboard, `/policy`, connection revocation, bounded activity listing, and principal-scoped token routes. The proposed `/settings`, connection-detail, cursor-activity, and access-token route inventory is not the implemented API contract.
+- The backend default workspace policy is **enabled and read-only**, with service accounts disabled. This differs from the proposed explicit workspace activation default.
+- The create-account UI selects read-only scopes and does not expose the proposed expiry selector or write-mode controls. “Create another token” leaves existing tokens active until revoked; it is not a timed automatic rotation overlap.
+- The token reveal uses component state, but the create/rotate hooks also return secrets through TanStack Query mutations without explicit reset or immediate collection settings. The proposed strict no-cache/one-time acknowledgement acceptance criteria should not be treated as verified guarantees.
+- Agent Runs displays MCP attribution. Universal task/Docs/CRM activity attribution, advanced connection/activity filters, accessibility results, telemetry coverage, and real-client usability targets remain to be verified separately. No browser, client, or security testing was run for this documentation review.
+
+## Original requirements
 
 ## 1. Summary
 

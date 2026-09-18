@@ -1,6 +1,10 @@
-# Backend – Go HTTP Service
+# Backend contributor instructions
 
-## Tech Stack
+Use this reference when changing the Go API, product workers, or database layer. It describes contributor conventions and current entry points; examples illustrate patterns rather than guaranteeing every existing file conforms. Run commands below from `server/`. For documentation work, follow the [documentation guide](../docs/documentation-guide.md); for a complete local stack, use the [Community development guide](../docs/community/development.md).
+
+Source-reviewed September 18, 2026 against the manifests, router, migration CLI, and test fixtures. No service or database tests were run as part of this documentation review.
+
+## Tech stack
 
 - **Go 1.26.7** (repository toolchain pin in `../.go-version`; module minimum in `go.mod`)
 - **Router**: go-chi/chi/v5
@@ -12,7 +16,7 @@
 - **Workflows**: go.temporal.io/sdk
 - **WebSocket**: nhooyr.io/websocket
 - **Password hashing**: golang.org/x/crypto/bcrypt
-- **Email**: Postmark client
+- **Email**: Postmark and SMTP clients
 - **LLM**: Model-agnostic provider (Claude + OpenAI adapters)
 
 ---
@@ -32,16 +36,16 @@ server/
 │   ├── crmemail/                # CRM email integration (Gmail sync)
 │   ├── crmsignal/               # CRM signal detection types
 │   ├── crypto/                  # AES-256-GCM encryption helpers
-│   ├── email/                   # Postmark email client
+│   ├── email/                   # Postmark/SMTP clients and templates
 │   ├── githubapp/               # GitHub OAuth + App integration
-│   ├── handler/                 # HTTP request handlers (59 files)
+│   ├── handler/                 # HTTP request handlers
 │   ├── llm/                     # Model-agnostic LLM provider interface
 │   ├── middleware/              # Auth, logging, request-scoped middleware
-│   ├── model/                   # GORM struct definitions + DTOs (50+ files)
+│   ├── model/                   # GORM struct definitions + DTOs
 │   ├── oauth/                   # OAuth2 clients (Gmail)
-│   ├── repository/              # Data access layer (86 files, GORM queries)
+│   ├── repository/              # Data access layer
 │   ├── router/router.go         # Chi route registration
-│   ├── service/                 # Business logic layer (111 files)
+│   ├── service/                 # Business logic layer
 │   ├── storage/s3.go            # S3/MinIO storage client
 │   ├── sync/                    # External API sync clients (Gmail)
 │   ├── temporalapp/             # Temporal workflow definitions + activities
@@ -58,14 +62,14 @@ server/
 
 ## Architecture: Handler → Service → Repository
 
-Every feature follows strict three-layer separation:
+Use these responsibilities when adding or changing a feature:
 
 - **Handler** (`internal/handler/`): HTTP request/response only. Decode JSON, extract URL params, call service, write response. No business logic.
 - **Service** (`internal/service/`): Business logic, validation, orchestration, cross-cutting concerns. Never touches `http.Request` or `http.ResponseWriter`.
 - **Repository** (`internal/repository/`): GORM database queries only. Always accepts `context.Context` as first parameter. Returns `nil` (not error) for not-found.
 - **Model** (`internal/model/`): GORM structs + request/response DTOs. DTOs live alongside the model they serve.
 
-**DI Wiring** (`cmd/api/main.go`): Config → DB → Repositories → Services → Handlers → Router. All dependencies are explicit constructor injection — no globals, no service locators.
+**DI Wiring** (`cmd/api/main.go`): Config → DB → Repositories → Services → Handlers → Router. Prefer explicit constructor injection; inspect each existing constructor and its optional setters when wiring a dependency.
 
 ---
 
@@ -155,7 +159,7 @@ Direction:
 
 - `context.Context` is always the **first parameter** in all I/O, handler, service, and repository functions
 - All GORM queries use `db.WithContext(ctx)`
-- Use `slog.InfoContext(ctx, ...)` / `slog.ErrorContext(ctx, ...)` to carry request-scoped fields
+- Use `slog.InfoContext(ctx, ...)` / `slog.ErrorContext(ctx, ...)`; include request-scoped fields explicitly unless the configured handler adds them
 - Always `defer cancel()` after creating cancellable contexts
 
 ### Naming
@@ -253,8 +257,8 @@ Community Compose disables AutoMigrate and applies versioned SQL through its
 migration service. Ship versioned SQL for schema additions as well as destructive
 or data changes; model changes alone do not migrate those installations.
 
-1. **GORM AutoMigrate** — runs on startup only when `RUN_AUTO_MIGRATE=true`, handles struct-level schema creation (add tables/columns). Cannot drop columns, change types, or do data migrations.
-2. **dbmigrate** (`internal/dbmigrate/`) — versioned SQL migrations for everything AutoMigrate cannot do: data migrations, table/column drops, cutover tasks, constraint changes, backfills, renames.
+1. **GORM AutoMigrate** — runs on startup only when `RUN_AUTO_MIGRATE=true`, handles struct-level schema creation (add tables/columns). Do not rely on it for destructive changes or data migrations; type alterations depend on the dialect and schema.
+2. **dbmigrate** (`internal/dbmigrate/`) — versioned SQL for additive schema and for data migrations, table/column drops, cutover tasks, constraint changes, backfills, renames.
 
 **dbmigrate CLI** (`cmd/migrate/`):
 ```bash
@@ -263,7 +267,7 @@ go run ./cmd/migrate status          # Show all migrations (applied/pending)
 go run ./cmd/migrate head            # Show latest applied migration
 go run ./cmd/migrate pending         # List only unapplied migrations
 go run ./cmd/migrate validate        # CI check — exit 1 if issues found
-go run ./cmd/migrate repair          # Fix checksums after post-apply file edits
+go run ./cmd/migrate repair          # Explicit checksum repair; does not replay changed SQL
 go run ./cmd/migrate create <name>   # Scaffold new migration file
 ```
 
@@ -282,7 +286,7 @@ go run ./cmd/migrate create <name>   # Scaffold new migration file
 
 **Rules**:
 - Migrations MUST be idempotent (`IF NOT EXISTS`, `DROP TABLE IF EXISTS`)
-- Never edit an already-applied migration file — create a new one (or run `migrate repair` if unavoidable)
+- Never edit an already-applied migration file — create a new one. Checksum repair changes migration metadata, not the already-applied schema
 - Legacy SQL migrations in `migrations/` are reference docs only — all new migrations go in `internal/dbmigrate/sql/`
 - Never use AutoMigrate to drop columns or change types in production
 
@@ -308,7 +312,9 @@ r.Route("/tasks", func(r chi.Router) {
 })
 ```
 
-### Middleware Stack (order matters)
+### Middleware stack (outline; order matters)
+
+The [router](internal/router/router.go) also installs metrics, Sentry, deployment access, and route-specific rate limits where configured. Consult it before changing middleware; the list below summarizes the main request/authentication stages.
 
 1. `RequestID` — assigns unique request ID
 2. `RealIP` — extracts client IP
@@ -341,7 +347,7 @@ WebSocket handlers bypass Chi's `Recoverer` (it strips `http.Hijacker` interface
 slog.Info("task created", "task_id", task.ID, "workspace_id", task.WorkspaceID)
 slog.Error("failed to save", "error", err, "task_id", id)
 
-// Context-aware (carries request_id, user_id from middleware)
+// Context-aware; attach request/user fields explicitly where needed
 slog.InfoContext(ctx, "comment added", "entity_id", entityID)
 slog.ErrorContext(ctx, "notification emit failed", "error", err)
 
@@ -378,7 +384,7 @@ logger := slog.Default().With("service", "notification")
 
 - **Never fire-and-forget goroutines** — every goroutine must have a stop condition and a way to wait for it
 - Use `context.WithTimeout` / `context.WithCancel` + `defer cancel()` for bounded operations
-- Use `errgroup.Group` for concurrent operations with error handling and first-error cancellation
+- Use `errgroup.WithContext` for concurrent operations that need first-error cancellation; a plain `errgroup.Group` does not cancel sibling work
 - Use `errgroup.SetLimit(n)` to bound concurrency
 - Use `sync.WaitGroup` only when you don't need error propagation
 - Buffered channels: size 0 or 1 only — any other size requires strong justification
@@ -392,7 +398,7 @@ logger := slog.Default().With("service", "notification")
 
 Package: `server/internal/authorization/`
 
-- **Role hierarchy** (additive): `viewer → member → manager → admin → owner`
+- **Role hierarchy** (additive): `viewer → member → admin → owner`
 - **Permission constants**: `PermWorkspaceRead`, `PermPMEdit`, `PermSettingsManage`, etc. (40+)
 - **Middleware chain**: `RequireAuth` → `RequireWorkspaceAccess` → `RequirePermission(perm)`
 - Object-level access via `authorization_relations` table
@@ -406,12 +412,12 @@ Package: `server/internal/authorization/`
 
 - **Test runner**: Go stdlib `testing` package
 - **Database**: In-memory SQLite (`gorm.io/driver/sqlite`) for fast isolated tests
-- **No external test frameworks** (no testify in current codebase) — use stdlib assertions
+- **Assertion convention**: use stdlib assertions for new tests; `testify` exists as an indirect module dependency
 - Tests live alongside source: `foo_test.go` next to `foo.go`
 
 ### Test Database Setup Pattern
 
-Every test file that needs a database follows this pattern:
+A common isolated SQLite fixture pattern is shown below. PostgreSQL-specific behavior needs PostgreSQL fixtures; do not infer production SQL compatibility from SQLite results:
 
 ```go
 func setupXxxTestDB(t *testing.T) *gorm.DB {
@@ -504,13 +510,13 @@ func TestMyFunction(t *testing.T) {
 7. **Use interfaces for dependencies** — enables swapping real implementations for test doubles
 8. **Don't use `t.Parallel()` with shared SQLite databases** — SQLite doesn't handle concurrent writes well
 9. **Avoid conditional assertions** in table-driven tests — if logic varies, split into separate `TestXxx` functions
-10. **Always run with `-race` flag in CI**: `go test -race ./...`
+10. Use `go test -race ./...` when validating concurrency changes. Do not assume every CI job enables the race detector; check its actual command.
 
 ### Coverage
 
 ```bash
 go test ./...                          # Run all tests
-go test -race ./...                    # With race detector (CI)
+go test -race ./...                    # With race detector
 go test -cover ./...                   # Coverage summary
 go test -coverprofile=coverage.out ./... # Coverage profile
 go tool cover -html=coverage.out       # Visual HTML report
@@ -527,7 +533,7 @@ For tests that require real PostgreSQL or external services:
 package mypackage_test
 ```
 
-Run with: `go test -tags=integration ./...`
+Run with: `go test -tags=integration ./...`. Individual fixtures also require their documented environment variables. For example, migration tests use `AI_PROFILES_TEST_DATABASE_URL` or `COMMUNITY_TEST_DATABASE_URL` and skip when missing; enabling the tag alone does not prove they executed. Use disposable databases as required by the fixture.
 
 ---
 
@@ -553,7 +559,7 @@ Run with: `go test -tags=integration ./...`
 
 - **Input validation**: validate all user input at the handler layer before passing to services
 - **SQL injection**: never concatenate user input into queries — always use GORM's `?` placeholders
-- **Secrets**: environment variables via Doppler — never in source code
+- **Secrets**: deployment-provided environment or secret files — never in source code. Doppler is one deployment option; Community setup generates its own local configuration
 - **Passwords**: `golang.org/x/crypto/bcrypt` for hashing
 - **Encryption**: AES-256-GCM via `internal/crypto/` for sensitive data at rest (OAuth tokens)
 - **Error exposure**: never return internal error details, SQL queries, file paths, or dependency names in API responses
@@ -581,6 +587,6 @@ Run with: `go test -tags=integration ./...`
 3. **Implement**: keep functions small and focused
 4. **Test**: write table-driven tests covering happy path + error cases
 5. **Validate**: `go vet ./...` and `go build ./...`
-6. **Tidy**: `go mod tidy`
+6. **Dependencies**: run `go mod tidy` when dependency changes require it and review the resulting diff
 
 Before creating large files: split by responsibility — `handler.go`, `service.go`, `repository.go`, `types.go`.

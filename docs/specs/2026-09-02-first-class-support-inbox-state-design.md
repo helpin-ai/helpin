@@ -1,9 +1,19 @@
-# First-Class Support Inbox State Design
+# First-class support inbox state design
 
 **Date:** 2026-09-02
-**Status:** Approved; core implementation complete on `waqar-fixes`; production cutover pending
+**Status:** Historical design and implementation handoff; production cutover not verified
 **Target branch:** `waqar-fixes`
 **Scale target:** 300,000 conversations and 3,000,000 messages in one workspace, ten times the measured baseline
+
+## Source review — 2026-09-18
+
+This design explains the separation of personal unread state, shared customer response state, and inbox counters. The September 3 implementation record below is a dated handoff, including its reported test results; it is not evidence of the current production rollout.
+
+- [Personal-state persistence](../../server/internal/repository/support_inbox_personal_state.go), [projection models](../../server/internal/model/support_inbox_state.go), versioned schema/trigger/backfill migrations, and rollout-mode reads in the conversation repository are present in this checkout.
+- [The migration runner](../../server/internal/dbmigrate/migrator.go) already supports `-- dbmigrate:no-transaction`; the later instruction to add this capability describes the original work, not a remaining prerequisite.
+- Source references to `support_realtime_outbox` include schema, trigger inserts, and personal-state inserts. No dispatcher consuming those rows was found in the service/startup source. The durable-outbox cutover limitation recorded below therefore remains relevant; direct WebSocket publication does not establish durable delivery of those rows.
+- Custom-view snapshots, filter compilation, access-version rotation, and the complete typed-event contract below remain design requirements unless independently demonstrated by their implementation. The existing tables alone do not establish that contract.
+- The review did not run database backfills, change workspace rollout modes, reproduce the historical test totals, or measure the 300,000-conversation/3,000,000-message acceptance target. Use the release gates below as work to verify in the target environment.
 
 ## Summary
 

@@ -1,5 +1,20 @@
 # Support Email Forwarding Design
 
+This historical design explains the March 2026 decision to route forwarded support email directly into Shared or Team Inboxes. Forwarding intake is implemented, and later sender configuration extends the original scope.
+
+## Source review: September 18, 2026
+
+- [Route management](../../server/internal/service/support_email_route.go) creates or returns a route for a workspace/mailbox and reactivates a disabled existing route. It generates a `route-` token and can present a branded mailbox address under the workspace namespace. The example `inbound.helpin.ai` addresses below are illustrations, not required self-hosted configuration; route creation needs a configured inbound domain.
+- [Current API registration](../../server/internal/router/router.go) offers list, create, send-test, and disable operations under `/api/support/inbox/email-routes`, protected by `support.admin`. The proposed route `PUT` and `/regenerate` endpoints are not registered there.
+- [Inbound handling](../../server/internal/service/email_fallback.go) distinguishes route, conversation, verification, and unsubscribe aliases; it also resolves stored recipient addresses when no mailbox hash is supplied. It checks duplicate inbound messages and stores email metadata/attachments. The original simplified alias diagram omits these later paths.
+- Custom sending addresses and domains are no longer entirely future work. The outbound resolver tries mailbox-default sender, workspace-default sender, active sender domain, then generated route. See the [reviewed sender-address requirements](../prds/custom-support-sender-addresses-mvp.md) and [sender service](../../server/internal/service/support_email_sender.go) for the separate DNS and forwarding verification behavior.
+- [Inbox routing settings](../../frontend/src/pages/settings/InboxesRoutingSettingsPage.tsx) and [the forwarding tab](../../frontend/src/components/settings/SupportEmailForwardingTab.tsx) are current setup surfaces; the ASCII screens preserve the original proposal.
+- The abuse-control list below is a requirement, not a verified security guarantee. [Postmark handlers](../../server/internal/handler/webhook_postmark.go) read request bodies with `io.ReadAll`; this review did not establish an end-to-end body/attachment-count limit through deployment and middleware.
+
+This review did not configure a provider, verify forwarding delivery, send test mail, or inspect a deployment. “We do not yet have” and rollout phases below refer to March 2026, not the current repository.
+
+## Original design
+
 ## Summary
 
 Add first-class inbound support email for Shared Inbox and Team Inboxes using forwarding-based email intake.

@@ -1,6 +1,18 @@
-# Test Suite, CI, and Email E2E Plan
+# Test suites, CI, and email end-to-end test plan
 
 Status date: 2026-04-30
+
+This historical April 2026 plan explains the intended layers of automated testing. Its checkboxes, counts, budgets, and proposed branch-protection settings are not the current CI inventory. Contributors should inspect the workflows and source status below before choosing a validation command.
+
+## Source review — 2026-09-18
+
+- [CI](../../.github/workflows/ci.yml) now runs on pull requests to `main` and `develop` and on manual dispatch, with cancellation and dependency-aware change selection. It includes backend tests/builds, frontend/package/help-center tests, edition checks, documentation checks, and the aggregate `CI required` job. Workflow definitions alone cannot confirm repository branch protection or recent pass rates.
+- The [service test fixture](../../server/internal/service/testdb_test.go) uses in-memory SQLite, contrary to the opening Postgres-default decision. Dedicated [PostgreSQL regression jobs](../../.github/workflows/postgres-check.yml) now exercise migration and fresh-schema/privacy fixtures. `migrate validate` requires a configured database and reports pending migrations; it is not a standalone static check against an empty database.
+- [Nightly](../../.github/workflows/nightly.yml) runs the backend race detector and mocked support/widget Chromium suites. The PR workflow also includes widget upload browser tests. Frontend test scripts exist; the original manual-only/build-only/missing-script statements are obsolete. The root manifest still does not expose one universal test command.
+- [Email E2E](../../.github/workflows/email-e2e.yml) runs daily or by manual dispatch, not automatically before staging deploys or on PRs. The [tagged MailSlurp test](../../server/internal/service/email_fallback_mailslurp_e2e_test.go) implements offline outbound delivery using local SQLite/miniredis fixtures and real Postmark/MailSlurp delivery. It does not implement all A–G scenarios or prove the deployed inbound webhook path. Missing secrets skip the job, and selected provider/network errors skip the test; a green workflow is therefore not sufficient evidence of successful delivery.
+- The proposed hard deadlines for deleting quarantined tests, runtime/cost budgets, required checks, and release gates below are historical policy proposals, not confirmed automation. Provider behavior and purchasing assumptions were not rechecked, and no workflows or live email tests were run during this review.
+
+## Original plan
 
 ## Decisions Made (resolved from earlier Open Questions)
 
@@ -34,7 +46,7 @@ Turn the current collection of local tests into a dependable CI contract:
 
 The immediate gap is not that tests do not exist. The gap is that most tests are not enforced by CI.
 
-## Current State
+## Original baseline
 
 ### CI
 
@@ -321,7 +333,7 @@ Support inbox:
 SDK widget:
 
 - [ ] Run package widget Playwright suite:
-  - `pnpm --dir packages/sdk-js exec playwright test --config=./playwright.widget.config.ts --project=chromium`
+  - `pnpm --dir packages/sdk-js run test:e2e:widget`
 - [ ] Keep live/provider cases separate.
 
 Help center:

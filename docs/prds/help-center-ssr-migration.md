@@ -2,10 +2,44 @@
 
 **Author:** Engineering  
 **Date:** 2026-03-31  
-**Status:** Draft  
+**Status:** Historical proposal; SSR is implemented with the differences below
 **Priority:** High  
 
 ---
+
+This historical PRD records the move from a client-only help center to server
+rendering. Use it for the original goals; current build, caching, and response
+behavior differ from the proposed Vinxi architecture.
+
+## Source review — 2026-09-18
+
+- [Vite configuration](../../help-center/vite.config.ts) uses the TanStack Start
+  Vite plugin alongside React. Vite configuration remains; the proposed Vinxi
+  `app.config.ts` replacement is not the current build. The
+  [Dockerfile](../../help-center/Dockerfile) runs Node 24.21.0 and `serve.mjs` on
+  port 3000, not the proposed Node 22 runtime.
+- [The router factory](../../help-center/src/router.tsx) creates a query client
+  per router and uses `setupRouterSsrQueryIntegration`. The exact dehydration
+  script name shown below is illustrative, not an application-owned contract.
+- [The production wrapper](../../help-center/serve.mjs) buffers successful HTML
+  with `fetchResponse.text()` before asset rewriting, caching, and compression.
+  The framework's streaming capability therefore does not prove progressive
+  shell/article streaming through the production HTML path.
+- The local HTML cache defaults to 120 seconds and the optional
+  [shared Redis cache](../../help-center/serverRenderCache.mjs) to 300 seconds.
+  Cache keys include host, help-center identifier, base path, path, and query.
+  Redis invalidation subscription exists; invalidation is not merely future work.
+  These layers do not establish a universal two-minute freshness bound.
+- [Client query defaults](../../help-center/src/lib/queryClient.ts) use ten-minute
+  stale time, 30-minute garbage collection, and no focus refetch. Public API reads
+  use the policy in [the docs handler](../../server/internal/handler/docs.go):
+  `max-age=60`, `s-maxage=300`, and `stale-while-revalidate=86400`.
+- Sitemap/robots handling and `/healthz` exist in the server wrapper. Performance,
+  search-engine indexing, browser compatibility, and live deployment targets below
+  were not measured in this review. The old fixed-image rollback command must not
+  be treated as a verified current rollback target.
+
+## Original requirements
 
 ## 1. Problem Statement
 
@@ -304,7 +338,9 @@ Final performance polish.
 
 ## 9. Rollback Plan
 
-The previous nginx-based Docker image remains tagged in GHCR. To rollback:
+Historical rollback sketch: image availability and compatibility were not reverified.
+Choose a known-good deployment artifact through the current release procedure;
+do not assume the example tag below remains usable.
 
 ```bash
 # Instant rollback — no code changes needed

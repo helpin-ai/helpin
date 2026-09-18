@@ -4,7 +4,10 @@ These notes explain the decisions behind the first public MCP implementation.
 Use them when maintaining its authorization and transport boundaries; use the
 [public MCP guide](public-mcp-server.md) for connection and configuration details.
 
-**Date:** 2026-07-10
+**Original implementation:** 2026-07-10
+**Source review:** 2026-09-18
+
+Historical test results and rollout lessons below refer to the first implementation. The source review updated catalog, replay, and flag behavior; it did not rerun protocol tests or verify live clients.
 
 **Purpose:** Preserve the architectural decisions, implementation lessons, validation approach, and rollout sequence from the first Helpin Public MCP implementation so future work starts from the correct boundary.
 
@@ -122,10 +125,10 @@ Examples:
 
 - `write_document_content` broadly replaces document content and was removed.
 - run-scoped `draft_support_reply` does not persist the public reviewable draft required by the PRD and was not exposed.
-- opt-in batch/dependency operations were not included without a narrower rollout gate.
+- the original beta omitted batch/dependency operations; the current catalog includes a bounded, idempotency-keyed `create_task_batch` with dependency references.
 - public support reads exclude internal notes even though an internal command can read them.
 
-The resulting catalog is locked to exactly 30 tools by a regression test.
+The current [catalog regression test](../server/internal/service/mcp_oauth_test.go) expects 49 tools. The catalog has grown since the original 30-tool handoff; inspect [the catalog](../server/internal/service/mcp_catalog.go) when changing exposure. Bounded task batches and additional Docs/PM mutations are now included.
 
 For every future tool, answer all of these before adding it:
 
@@ -173,7 +176,7 @@ Tool annotations are useful client hints. They are not an authorization mechanis
 
 Retries are normal for remote AI clients. Every mutation must require a stable `idempotency_key`.
 
-The safe behavior is:
+The intended replay behavior is:
 
 - scope the key to the connection or service principal
 - hash the effective request with the tool name
@@ -182,7 +185,7 @@ The safe behavior is:
 - reject reuse with a different tool or payload
 - expire replay records after a documented period
 
-Adding idempotency later is a breaking contract change. Add it before publishing a mutation.
+[The current executor](../server/internal/service/mcp_tools.go) saves successful results for 24 hours **after** domain execution. Concurrent identical requests or a crash between the domain mutation and replay-record persistence can therefore execute the domain operation more than once unless that operation supplies its own protection. A replay record is not an atomic reservation or an exactly-once guarantee. Adding idempotency later is a breaking contract change; review the transaction boundary before publishing a mutation.
 
 ## 9. Durable work should remain a normal Helpin run
 
@@ -271,13 +274,13 @@ The implementation now has:
 - `MCP_CRM_ENABLED`
 - `MCP_SUPPORT_ENABLED`
 
-The global flag is deliberately false in staging and production manifests.
+The checked-in staging and production manifests currently set `MCP_SERVER_ENABLED` to `"true"`, and configuration defaults it to enabled when absent. This is source configuration, not verification of live rollout or client compatibility.
 
-Operational lesson: explicit Kubernetes `env` values override `envFrom` values supplied by Doppler. Updating Doppler alone will not enable MCP while the manifest contains:
+Operational lesson: explicit Kubernetes `env` values override `envFrom` values supplied by Doppler. An explicit manifest value takes precedence over a conflicting Doppler value, for example:
 
 ```yaml
 - name: MCP_SERVER_ENABLED
-  value: "false"
+  value: "true"
 ```
 
 For rollout, update the explicit deployment value through review after migrations, DNS/TLS, compatibility, and security gates pass.
@@ -551,8 +554,10 @@ npm run build
 ```
 
 ```bash
+# Set this to the validator supplied by your installed skill-creator skill.
+SKILL_VALIDATOR=/absolute/path/to/skill-creator/scripts/quick_validate.py
 for file in integrations/helpin-mcp/skills/*/SKILL.md; do
-  python3 /root/.codex/skills/.system/skill-creator/scripts/quick_validate.py "$(dirname "$file")"
+  python3 "$SKILL_VALIDATOR" "$(dirname "$file")"
 done
 ```
 
@@ -567,7 +572,7 @@ git diff --cached --check
 
 ## 22. Remaining beta and GA work
 
-The implementation is complete for a controlled beta, but the following work should remain explicit rather than being mistaken for completed production validation:
+The original handoff targeted a controlled beta. Repository configuration now enables the endpoint in the checked-in deployment manifests, but that does not establish completion of the following environment and release checks:
 
 - apply and verify the MCP migration in the target environment
 - verify production/staging DNS and certificates
@@ -592,8 +597,8 @@ Keep these rules stable unless a reviewed architecture decision replaces them:
 3. Reuse domain behavior, not the internal run-token trust boundary.
 4. Effective authority is always an intersection of current policy and current RBAC.
 5. Public tools are curated and strict, never a generic API passthrough.
-6. Every mutation is idempotent before publication.
-7. Destructive and customer-visible actions require server-side approval or remain excluded.
+6. Every public mutation requires an idempotency key; domain transactions must supply any stronger duplicate-execution guarantee.
+7. Review destructive and customer-visible actions explicitly. The catalog already includes `cancel_agent_run`; it calls the authorized cancellation service without a separate public-MCP approval workflow. Do not infer that its annotation provides an approval gate.
 8. Durable MCP work is a normal Helpin `agent_run` with attribution.
 9. UI revocation, audit, and policy are part of the security implementation.
 10. Deploy disabled, verify the environment, then enable through reviewed configuration.

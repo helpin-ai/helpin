@@ -1,4 +1,4 @@
-# Helpin as an open-source Intercom alternative (local / BYOK) — verified gap list
+# Open-source support launch: historical gap assessment
 
 Date: 2026-09-10
 Scope: what is missing in `helpin/` (and its hard dependency `agent-runtime/`) to launch as an open-source, self-hostable Intercom + Fin alternative with local or bring-your-own-key LLMs.
@@ -14,9 +14,28 @@ Nothing below is proposed because Intercom has it. Items are included only if (a
 
 ---
 
+## Source review: September 18, 2026
+
+This is a September 10 strategy snapshot, not the current launch blocker list. Read [Community implementation status](../community/implementation-status.md), [publication review](../publication-review.md), and [deployment guidance](../community/deployment.md) before planning release work.
+
+| Original finding | Current repository evidence |
+| --- | --- |
+| No license or contributor policies | [LICENSE](../../LICENSE), [CONTRIBUTING](../../CONTRIBUTING.md), [SECURITY](../../SECURITY.md), and [CODE_OF_CONDUCT](../../CODE_OF_CONDUCT.md) exist. Licensing has component-specific scopes; do not reuse the earlier assumption that every component must have one license. |
+| No application/runtime Compose path or installation guide | [Community Compose](../../community/compose.yaml), [source-build override](../../community/compose.build.yaml), and [Community docs](../community/deployment.md) exist. This does not prove a published release bundle or clean install; publication gates remain separate. |
+| No SMTP | [SMTP transport](../../server/internal/email/smtp.go) exists. Inbound provider configuration remains a separate concern. |
+| Decorative origin checks and enforced identity on every new install | [WebSocket origin authorization](../../server/internal/websocket/widget_handler.go) exists. [Community defaults](../../server/internal/deployment/defaults_community.go) use `report_only`; enterprise defaults differ. See [widget identity setup](../community/widget-identity.md). |
+| Process-only credentials and tier-only model selection | [AI connections](../../server/internal/service/ai_connection.go), [profiles](../../server/internal/service/ai_profile.go), and the [September profiles plan](../plans/2026-09-14-ai-profiles-and-ee-billing-plan.md) supersede those findings. [Community usage](../../server/internal/service/ai_usage_community.go) records telemetry without commercial charges. |
+| Bundled live Sentry destination and plain contact deletion | [The environment example](../../server/.env.example) has an empty Sentry DSN; [contact privacy operations](../../server/internal/repository/crm_contact_privacy.go) now exist. These checks do not certify all telemetry, deletion coverage, or legal compliance. |
+
+The remaining numbered findings below are retained as historical investigation leads. Counts, zero-code assertions, line numbers, sibling-runtime conclusions, and comparative parity claims were not all independently revalidated; a historical finding is neither proof of a current defect nor proof of a fix. The original roadmap sequence should not override current release evidence.
+
+Corporate context also changed: Salesforce [announced completion of the Fin acquisition on September 10, 2026](https://www.salesforce.com/news/press-releases/2026/09/10/salesforce-completes-acquisition-of-fin/). The earlier expected-close date is obsolete. Pricing and competitor capabilities remain dated research; customer switching motivation is a hypothesis, not an observed result.
+
+## Original assessment
+
 ## 0. Context that changes the pitch
 
-- **Intercom renamed itself Fin on 2026-05-12, and Salesforce signed to acquire Fin for ~$3.6B on 2026-06-15** (close expected Salesforce FQ4 2027). Intercom's product marketing pages now redirect to fin.ai or 404. This is a real switching moment for Intercom customers who do not want a Salesforce-owned helpdesk.
+- **Historical corporate context:** Intercom announced the Fin name on May 12 and Salesforce announced an acquisition agreement on June 15. The acquisition completed September 10; see the updated primary source above. Intercom's product marketing pages now redirect to fin.ai or 404. This is a real switching moment for Intercom customers who do not want a Salesforce-owned helpdesk.
 - **Fin's pricing**: $0.99 per outcome (resolution, procedure handoff, disqualification), 50-outcome monthly minimum, seats $29/$85/$132 per seat/month annual, Copilot $29–35/agent, Pro insights add-on from $99/month. A BYOK self-hosted agent competes on cost with no per-resolution fee.
 - **Open-source landscape**: Chatwoot's AI agent (Captain) is Enterprise-Edition-only for self-hosters. Zammad and FreeScout ship agent-assist only. Only Libredesk (AGPL, Go, beta AI) and Tiledesk ship a customer-facing autonomous agent with first-class Ollama. There is no mature open-source "Fin-class" agent. That is the gap Helpin's support core already fills technically.
 
@@ -47,7 +66,7 @@ Correction to the June 2026 assessment: billing is no longer absent and the supp
 
 ## 2. Tier 0 — Cannot ship as open source without these
 
-Ordered. Each is verified missing or broken today.
+Ordered findings from the September 10 audit; see the current source review above.
 
 1. **No LICENSE file** in `helpin/`, `agent-runtime/`, `agent-runtime-go/`, or `agent-runtime-python/`. Also no CONTRIBUTING, SECURITY, or CODE_OF_CONDUCT. Decision needed: AGPL-3.0 (Libredesk, Chatwoot-core style) vs Apache-2.0/MIT; the same choice must cover the runtime and both SDKs because the support agent cannot run without them.
 2. **agent-runtime is a hard dependency of the customer-facing support AI and is not in the monorepo or its compose.** `service/agent.go:6496-6498` removes any local executor and fails loudly. `AGENT_RUNTIME_LAUNCH_ENABLED=false` disables AI entirely (`docs/agent-runtime-local-setup.md:19-21`). Neither `docker-compose.yaml` nor `k8s/` starts it. Fix is small: the runtime's floor config is one container, `AGENT_RUNTIME_STORE_DRIVER=sqlite`, no Temporal, no Postgres (`agent-runtime/cmd/agent-runtime/main.go:279-320`). Either vendor it into the monorepo or add it as a compose service and pin the image. A support-only runtime image should drop the coding toolchain (Go, Node, Rust, Codex, OpenCode, ffmpeg) that `agent-runtime/Dockerfile` bundles.

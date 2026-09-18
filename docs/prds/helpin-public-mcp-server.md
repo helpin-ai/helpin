@@ -1,4 +1,17 @@
-# Helpin public MCP server and workflow skills
+# Public MCP server and workflow skill requirements
+
+This July 2026 requirements record explains the intended public Model Context Protocol (MCP) boundary and rollout. Contributors should use the [implemented capability guide](../public-mcp-server.md) and current source for connection and tool contracts; the original beta checklist is not proof of public availability.
+
+## Source review — 2026-09-18
+
+- The public [HTTP/OAuth handler](../../server/internal/handler/mcp.go), [service boundary](../../server/internal/service/mcp_service.go), [OAuth implementation](../../server/internal/service/mcp_oauth.go), durable migration and workflow skill packages now exist. This is separate from the internal run-token bridge. The original “today agents cannot” baseline is historical.
+- Dynamic client registration, PKCE, refresh rotation and restricted service-token support are implemented rather than still awaiting the original Phase 0 choice. The module pins the official MCP Go SDK at `v1.4.1`; `.go-version` selects Go 1.26.7 while `server/go.mod` declares Go 1.25.0. The old Go 1.24 compatibility assumption no longer applies.
+- Use the [current catalog](../../server/internal/service/mcp_catalog.go) for discovery. It includes additions such as Docs spaces and task checklists; the proposed approximately-30-tool budget is not an authoritative inventory. `draft_support_reply`, whole-document replacement and support sends remain excluded, as checked by [catalog tests](../../server/internal/service/mcp_oauth_test.go). Their appearance in the proposed beta tables does not make them callable.
+- [Configuration](../../server/internal/config/config.go) defaults the `MCP_*_ENABLED` switches to true when unset. Deployment overrides and workspace policy still determine exposure. Neither the planned dedicated hostname nor a guide's historical disabled-by-default statement proves a live environment is enabled or disabled.
+- Source includes a 256 KiB result bound, five-minute authorization codes and 30-day refresh lifetime. The rate-limit, retention, regional handling, SLO, release-date and client-compatibility targets below remain proposal/review material unless separately verified; this review did not run a public endpoint, OAuth flow or conformance suite.
+- Workflow packages live under `integrations/helpin-mcp/skills/helpin-*`; the unprefixed sample paths below are illustrative. Original external research is retained as dated design input and was not refreshed during this repository review.
+
+## Original proposal
 
 **Status:** Draft for product, security, and engineering review
 

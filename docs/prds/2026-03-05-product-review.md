@@ -3,7 +3,38 @@
 **Product**: Helpin  
 **Review date**: March 5, 2026  
 **Reviewer**: Codex  
-**Scope**: Current repository state in `/root/helpin`, including frontend, backend, PM module, and shared auth/workspace infrastructure
+**Scope**: Historical March 5 repository snapshot in `/root/helpin`, including frontend, backend, PM module, and shared auth/workspace infrastructure
+
+This review preserves the March 5 findings and remediation rationale. It is not a
+current release-readiness assessment or a report of checks run against today's
+worktree. The statements and test counts below refer to the dated snapshot.
+
+## Source review — 2026-09-18
+
+- [API startup](../../server/cmd/api/main.go) no longer contains the reported
+  `DROP TABLE IF EXISTS pm_epic_objectives`. AutoMigrate is configuration-gated;
+  versioned migrations also exist under `server/internal/dbmigrate/sql`.
+- [PM and search routes](../../server/internal/router/router.go) now apply
+  workspace access through `wsActive` and permission checks. This supersedes the
+  blanket “workspace membership middleware is missing” finding, but is not proof
+  that every repository operation or object-level access path is safe.
+- [Frontend scripts](../../frontend/package.json) include Vitest, and the backend
+  contains test files including authorization tests. CI includes backend tests,
+  frontend tests, and builds. The historical “no tests” statements and failed
+  build/lint counts do not describe current validation results.
+- Docs and Roadmap have real page implementations. [Reports](../../frontend/src/pages/pm/Reports.tsx)
+  includes sprint closeouts while velocity and cycle-time cards remain unavailable;
+  replacing the blanket placeholder claim does not establish full report coverage.
+- [Task allocation](../../server/internal/repository/pm_task.go) still computes
+  `MAX(display_id) + 1` in create paths. The inspected mutation transaction does
+  not introduce a dedicated per-workspace allocator lock or sequence. The old
+  story filename is gone, but that concurrency concern is not disproved by the
+  rename or by ordinary transaction use. No concurrent-load test was run here.
+- The March 5 release recommendation and npm commands are historical. Use
+  [contributor checks](../../CONTRIBUTING.md) and current release gates for a new
+  readiness decision; this review did not run full application builds or tests.
+
+## Original review
 
 ## 1. Executive Summary
 
@@ -30,7 +61,7 @@ This review used:
   - `npm run lint`
   - `npm test`
 
-Note: the worktree is currently dirty in `frontend/src/pages/Settings.tsx` (historical path; absent from this checkout), [pm_automation.go](../../server/internal/service/pm_automation.go), and `docs/mattermost-integration.md`. Findings below describe the current state on disk.
+Historical note: the March 5 worktree was dirty in `frontend/src/pages/Settings.tsx` (historical path; absent from this checkout), [pm_automation.go](../../server/internal/service/pm_automation.go), and `docs/mattermost-integration.md`. Findings below describe that March 5 state on disk.
 
 ## 3. Validation Results
 

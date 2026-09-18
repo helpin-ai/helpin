@@ -1,13 +1,28 @@
-# Docs Change Proposal Review UI
+# Document change proposal review plan
 
 **Date:** 2026-05-10
 **Owner:** Quill end-to-end shipping work
-**Status:** Plan, not yet implemented
+**Status:** Historical plan; implemented with a different comparison and block-review approach
 **Related work:**
 - `9d43ef69` — Custom agent simplification + Quill (Documentation Agent)
 - `e84976c2` — Snapshot version when applying a Docs change proposal
 
 ---
+
+This historical plan describes the intended review experience for agent-authored document changes. The current UI implements proposal review, but several comparison, safety, and interaction details differ from this design.
+
+## Source review — 2026-09-18
+
+- Single-proposal retrieval, normalized sources, pending counts, and proposal query invalidation exist in the service/model, `DocsDocumentDetail.tsx`, and `useRealtimeSync.ts`. The original “not yet implemented” status and phase checklist are no longer current.
+- Document proposals use `ProposalReviewView.tsx`. Pending block proposals open inline in the document through `InlineProposalReview.tsx`; their deep-link query is cleared after scrolling to the block. They do not use the proposed separate comparison surface with two or three surrounding blocks.
+- The comparison uses `frontend/src/lib/markdownDiff.ts`: a line-based longest-common-subsequence diff with word highlights and a 4,000,000-cell budget after trimming common lines. Over-budget changes become a plain replacement of the middle section. The proposed ProseMirror changeset wrapper, formatting category, moved-block detection, worker, and mostly-new preview thresholds are not this implementation.
+- The document comparison prefers the proposal's captured `base_markdown`, falling back to current text for older proposals. It therefore does not necessarily compare against the latest live document, as the original plan assumes.
+- The standalone header currently says “Quill proposed an update”; it does not resolve arbitrary agent identity or provide the proposed run drawer. Sources use an explicit URL when supplied, or construct links for document/coverage-gap IDs. Other source IDs alone do not become navigation links.
+- Apply is immediate and Discard uses a browser confirmation. The optional discard-reason field and all of the specified resolved-race/stale-warning interactions should not be assumed from this plan. Pending navigation and read-only resolved-proposal rendering are present.
+- Application is not a single transaction covering content, resolution, and version history: the service saves/patches content, then resolves the proposal, then attempts a snapshot. Snapshot failure is logged and non-fatal. Treat the original “reversible” and “prevents double-apply” statements as design intentions, not an unconditional recovery/concurrency guarantee. Block revision checking exists; document-scope saves do not use that block revision check.
+- Performance estimates, WCAG contrast claims, deployed notification flows, and the complete acceptance checklist below were not validated in this documentation review. Relevant source tests exist, but were not run here.
+
+## Original plan
 
 ## 1. Why this matters
 

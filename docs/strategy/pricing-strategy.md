@@ -1,4 +1,16 @@
-# Helpin Pricing Strategy
+# Historical pricing strategy
+
+This document preserves an earlier pricing proposal and draft marketing copy. **It is not the current price list, entitlement reference, or a promise of commercial terms.** Do not publish its tables or FAQs as customer documentation without reconciling them with the current product and approved offer.
+
+## Source review — 2026-09-18
+
+- Current billing model identifiers are `starter`, `growth`, and internal `founder`; Business and Enterprise in this proposal are not corresponding checkout plan identifiers. `server/ee/service/billing_org.go` has price-display constants that differ from these tables. Stripe price IDs are configuration, so source constants alone do not establish live checkout prices.
+- Billing is workspace-scoped with organization context and Founder inheritance. Founder receives special handling, including rejection of extra AI usage billing. The old company-wide user/workspace packaging should not be assumed to match current entitlements.
+- AI metering now has explicit lifecycle, reservation, settlement, provider-route pricing, and BYOK flat-token tariff paths in `server/ee`. The illustrative credits-per-task table is not a deterministic tariff. Limits and on-demand eligibility can block usage; “agents don't stop,” “no throttling,” and automatic overage language below are unapproved draft claims.
+- Community usage recording has no financial effects (`CommunityAIUsage`); the hosted billing proposal does not describe Community self-hosting. Provider inference charges are a separate concern from this repository's financial lifecycle.
+- Annual discounts, support response promises, Slack access, SSO/SAML availability, credit packs, conversion assumptions, and competitor savings below were not verified. They remain strategy hypotheses or proposed packaging, not source-proven product guarantees.
+
+## Original strategy
 
 ## Section 1: Recommended Pricing Strategy
 

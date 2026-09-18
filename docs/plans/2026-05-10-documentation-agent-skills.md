@@ -1,6 +1,17 @@
-# Documentation Agent Skills Implementation Plan
+# Documentation agent skills implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the first eight built-in documentation skills. Contributors should read the actual packages when changing product-agent behavior; this plan predates the documentation preset, target-based activation, and later coverage completion rules. Repository writing conventions are maintained separately in the [documentation guide](../documentation-guide.md).
+
+## Source review — 2026-09-18
+
+- All eight skill directories in the original file list exist under [built-in skills](../../server/skills/system). Their frontmatter and current instructions were reviewed. The loader/catalog now live in [agentcontract](../../server/internal/agentcontract/skill_catalog.go), not `internal/worker`; historical worker test commands do not validate the relocated catalog.
+- Files retain some legacy directory names while their canonical keys changed: `external_help_doc_writing` → `public_help_doc_writing`, `api_doc_writing` → `api_reference_doc_writing`, `docs_information_architecture` → `docs_architecture_review`, `release_to_docs_update` → `post_release_docs_update`, and `support_gap_to_docs` → `support_gap_docs_update`. The catalog preserves aliases; use canonical keys in new configuration.
+- The documentation preset and Quill instructions now exist in the catalog. [Skill activation](../../server/internal/agentskills/activation.go) selects documentation skills by target: document maintenance, support-gap work, or repository/task/epic release work, with broader sets for workspace/other targets. These integrations are no longer merely the follow-up scope described below.
+- The current [support-gap skill](../../server/skills/system/support_gap_to_docs/SKILL.md) requires documentation search, relevant source verification, and `complete_support_coverage_gap` with a durable disposition. It distinguishes verified resolution from `review_ready`, `routed`, and `blocked`; completing a run does not automatically resolve its gap. The earlier completion wording below is superseded.
+- Current skills use runtime workspace context for product naming and preserve explicit publication policy. No product skills were edited or agent runs executed by this review; the original expected test results are not a current validation record.
+
+## Original implementation plan
+
 
 **Goal:** Add the first built-in documentation skill set that a future Documentation system agent can use for internal docs, public help docs, API docs, support gaps, release-driven updates, and docs organization.
 

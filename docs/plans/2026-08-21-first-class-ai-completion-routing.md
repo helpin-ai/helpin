@@ -1,6 +1,19 @@
 # First-Class AI Completion Routing Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:executing-plans to implement this plan. Do not use subagents for this repository task. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan introduced a shared completion-routing boundary and an August tier-only agent configuration model. The completion boundary exists; the later AI profiles and edition split supersede major parts of the product and pricing contract.
+
+## Source review: September 18, 2026
+
+- [AICompletionService](../../server/internal/service/ai_completion.go) validates feature/idempotency identity, applies feature output limits, selects bounded routes, and calls usage preflight before provider execution. It attempts reconciliation before output validation, but reconciliation errors are logged rather than necessarily failing the returned completion; the original exactly-once statement is a design invariant, not proof of every operational settlement.
+- [The current registry](../../server/internal/service/ai_completion_routes.go) primarily uses `z-ai/glm-5.3-flash:exacto` for common jobs, with feature exceptions. The original DeepSeek matrix is historical. CRM route overrides are supported through [configuration](../../server/internal/config/config.go) and documented in [the environment example](../../server/.env.example); the plan's instruction to remove all CRM provider/model overrides no longer describes current behavior.
+- Model capability metadata lives in [internal/aimodel](../../server/internal/aimodel/catalog.go), while commercial rates live in [enterprise pricing](../../server/ee/pricing/catalog.json). [Community usage recording](../../server/internal/service/ai_usage_community.go) has no financial effects. A catalog-priced charge for every edition is not the current contract.
+- [Custom-agent creation](../../frontend/src/pages/automation/CustomAgentCreatePanel.tsx) now uses `AIProfilePicker` and `ai_profile_id`. The [September profiles plan](2026-09-14-ai-profiles-and-ee-billing-plan.md) supersedes the requirement that every customer-facing choice be only Small/Medium/Large/Flagship.
+- Legacy provider compatibility and `MeteredLLMProvider` code remain in [usage metering](../../server/internal/service/ai_usage_meter.go). Production wiring supplies the typed completion service, but the original proposed removal and universal compile-time-interface claim are stronger than the current compatibility boundary.
+- [API startup](../../server/cmd/api/main.go) validates route metadata and availability; requiring configured providers is edition-controlled. The original unconditional fail-fast statement must be read in that context.
+
+This review did not call a provider, validate vendor model availability/prices, run billing settlement, or rerun the historical test suite. [Go requirements](../../server/go.mod) now declare Go 1.25.0 rather than the original 1.24 reference.
+
+## Original implementation plan
 
 **Goal:** Make every production chat-completion call use one typed, metered, catalog-priced routing boundary, while making billing tiers—not providers, exact models, or runtime engines—the customer-facing agent configuration contract.
 

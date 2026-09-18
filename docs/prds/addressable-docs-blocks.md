@@ -1,4 +1,17 @@
-# Addressable docs blocks
+# Addressable documentation block requirements
+
+This April 2026 requirements record explains why documentation needs stable section identities. Contributors should use the source review to distinguish implemented block storage and concurrency checks from the original proposed API and rollout phases.
+
+## Source review — 2026-09-18
+
+- Block storage, reconciliation and editing now exist in the [block service](../../server/internal/service/docs_block.go), [content repository](../../server/internal/repository/docs_content.go), and versioned migration `202604290003_addressable_docs_blocks.sql`. The aggregate-only “current system” below describes the original baseline. Compatibility aggregate and block synchronization are implemented when the block repository is wired.
+- The HTTP contract differs from the examples: [routes](../../server/internal/router/router.go) expose list/create, patch/delete and `POST /documents/{docId}/blocks/reorder`. They do not expose the proposed ordinary single-block GET or `/{blockId}/move` endpoints. Consult current handler/command DTOs instead of copying the proposed payloads.
+- Block patch requires a positive `revision` and rejects stale block content. Mutations save against the aggregate snapshot through [SaveVersioned](../../server/internal/service/docs_content.go), adding document-level conflict detection. A whole-document call to unversioned `Save` still has no expected-version precondition; the presence of block revisions does not make every caller conflict-safe.
+- The [editor extension](../../frontend/src/components/docs/BlockIdExtension.ts) assigns missing/duplicate top-level IDs and emits `data-block-id`, while [embedding sync](../../server/internal/service/docs_embedding.go) uses structured block chunks when available. These are no longer solely future phases. The frontend still accepts whole-document saves; no claim of collaborative or per-character persistence is implied.
+- The proposed `DOCS_BLOCK_*` rollout switches were not found in configuration. Use actual dependency wiring and current migrations, not the flags below. Unknown JSON is not automatically safe editor content: the content service validates TipTap documents, which is stricter than the original opaque-node requirement.
+- This source review did not backfill an application database, run live indexing, or execute the listed test suites. Stable storage and citation metadata do not alone establish production migration completeness or retrieval quality.
+
+## Original proposal
 
 **Status:** Draft
 **Date:** 2026-04-29
@@ -1246,4 +1259,3 @@ The release is done when:
 - Links can target documents or blocks.
 - Embedding chunks can cite blocks or block ranges.
 - Public help center, translations, versions, imports, and support coverage workflows continue working.
-

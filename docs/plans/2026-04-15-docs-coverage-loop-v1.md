@@ -1,6 +1,18 @@
-# Docs Coverage Loop V1 Implementation Plan
+# Documentation coverage loop v1 implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan describes the first documentation coverage loop: record support evidence, identify missing or weak documentation, and propose reviewed article changes. It is not the current task backlog or a deployment checklist.
+
+## Source review — September 18, 2026
+
+- The event ledger, coverage models, original migration, protected routes, draft service, and Coverage page exist. The async recorder is implemented inside `server/internal/service/support_events.go`, not the separate file proposed below. It uses a 250-item default buffer and three-second write timeout; full queues drop events and log each drop. Its `Close()` method exists, but no call from API shutdown was located. This is best-effort telemetry, not guaranteed event delivery.
+- Gap generation has evolved beyond the deterministic-only v1 boundary. The current analyzer and embedding-based materialization are described in the reviewed [coverage redesign](2026-04-27-coverage-gaps-redesign.md) and [analyzer improvements](2026-04-30-coverage-analyzer-quality-improvements.md). `SUPPORT_COVERAGE_V2_MODE` separately controls the newer pipeline and defaults to disabled in API wiring; its default does not disable all legacy coverage.
+- `SupportCoverageRepository.GetSummary` aggregates gaps/evidence and reads the latest completed analysis run. It does **not** read a precomputed snapshot as proposed here. Snapshot/digest models and repository methods exist, but the proposed scheduled coverage snapshot refresh and weekly digest delivery service were not located. The notification digest ticker in API startup is a different feature.
+- Draft generation and explicit apply are separate in `support_coverage_drafts.go`; updating an existing document snapshots it before saving. These operations do not prove a transaction spanning all document and suggestion writes. The UI now uses `GapList` and `GapDetailPane`, superseding the proposed table/panel filenames.
+- Workspace roles in `authorization/rbac.go` are viewer, member, admin, and owner; the proposed manager digest recipient role does not exist. The actual toolchain pin is `.go-version` (1.26.7), with module minimum 1.25.0. Use pnpm and the current development guide for verification commands.
+
+The unchecked tasks and expected test outcomes below are original acceptance criteria. They are not evidence that a feature shipped or that tests passed in this review. No services, migrations, backfills, or application tests were run.
+
+## Original implementation sequence
 
 **Goal:** Build Docs Coverage Loop v1: turn failed support and self-service signals into rule-based docs gaps, article drafts/updates, recurrence measurement, and a weekly digest.
 

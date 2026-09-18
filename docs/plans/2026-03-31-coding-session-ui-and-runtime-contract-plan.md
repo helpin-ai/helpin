@@ -1,8 +1,18 @@
-# Coding Session UI and Runtime Contract Plan
+# Coding session UI and runtime contract plan
 
-## Status
+This historical plan records the proposed coding-session experience and contracts. Several deliverables now exist, while execution ownership and some endpoints differ from the original design.
 
-Draft plan for replacing the current agent-run drawer/log-viewer experience with a first-class Helpin coding session UI.
+## Source review — 2026-09-18
+
+- `CodingSessionPage` and `CodingSessionSurface` exist, along with transcript, activity, interaction, preview, plan, and drawer components. The old `AgentRunDrawer` path is not the current integration point.
+- `server/internal/service/coding_session.go` exposes session, event, repository, diff, and interaction operations over run records. Persisted coding-session state snapshots also have a model and repository; the original “no new persistence” phase boundary is historical.
+- Router registrations include session reads, message, continue, resume, approve, request-changes, cancel, and interaction resolution. The proposed session device-code start/cancel endpoints are absent from the current router; the illustrative API list below is not a complete current reference.
+- The surface subscribes to coding-session events, merges sequence numbers, and requests missing events. It also retains timed refresh and generic run-event listeners. Do not interpret the migration checklist as proof that polling and compatibility behavior have been removed.
+- The current executor is the separate Agent Runtime integration described in [coding-agent execution](../coding-agent-execution.md). The original local worker adapter/Temporal execution layout below is superseded. Runtime-specific capabilities and parity must be checked against the configured runtime; this review did not exercise Codex, OpenCode, or native SDK sessions.
+
+## Original plan
+
+Draft plan for replacing the former agent-run drawer/log-viewer experience with a first-class Helpin coding session UI.
 
 This plan assumes:
 

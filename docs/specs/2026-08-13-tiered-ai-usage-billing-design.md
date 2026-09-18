@@ -1,5 +1,19 @@
 # Tiered AI Usage Billing Design
 
+This historical design explains the August 2026 replacement of credit accounting with token-based AI usage billing. Read the source review below before using its rate card or rollout instructions.
+
+## Source review: September 18, 2026
+
+- Billing is edition-specific. [Community usage recording](../../server/internal/service/ai_usage_community.go) records execution telemetry without financial effects or a price catalog. The enterprise implementation lives in [the AI usage service](../../server/ee/service/ai_usage.go); this document is not a Community billing requirement.
+- The checked-in [pricing catalog](../../server/ee/pricing/catalog.json) has version `2026-09-14`. The August rates and model assignments below are historical, not the current authority. Catalog entries describe repository configuration; provider availability and external prices were not independently verified in this review.
+- Customer-funded execution has evolved beyond the original ten-percent orchestration proposal. [Flat metering](../../server/ee/service/ai_usage_flat.go) validates and snapshots a configured flat token tariff and uses `FundingCustomerFlat`. Consult the [September AI profiles and billing plan](../plans/2026-09-14-ai-profiles-and-ee-billing-plan.md) for that later design.
+- The [cutover migration](../../server/internal/dbmigrate/sql/202608130002_tiered_ai_usage_cutover.sql) creates period, ledger, reservation, settlement, and estimate tables. It renames the old ledger when present and explicitly defers physical removal of legacy columns until mixed-version callers are gone; the original all-at-once removal instruction is not an accurate migration description.
+- [Estimate calculation](../../server/ee/service/ai_usage_estimates.go) requires ten observed samples and trims ten percent from each end. The [reservation sweeper](../../server/ee/service/ai_usage_reservation_sweeper.go) releases stale holds only when durable execution is terminal **or absent**, which is broader than the terminal-only wording below.
+
+This review checked repository behavior, not a deployed migration, paid provider request, or Stripe settlement. The original launch checklist remains a design record, not evidence that those operational checks passed.
+
+## Original design
+
 ## Goal
 
 Replace AI credits, normalized usage units, fixed credit packs, and feature floors with exact

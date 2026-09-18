@@ -1,12 +1,22 @@
 # Platform admin operations console
 
-**Status:** Draft v1  
+**Status:** Historical draft; broader operations console remains proposed
 **Author:** Helpin product/engineering  
 **Date:** 2026-04-29  
 **Related:** `docs/prds/platform-admin-access.md`
 **Target app:** `apps/admin` mounted at `/admin`
 
 ---
+
+## Source review — 2026-09-18
+
+This document describes a proposed expansion, not the current admin feature list. The existing app now has Chat Playground, Email Diagnostics, Webhook Events, and Email Queue. Its sidebar/router do not contain the proposed cross-tenant workspace/user directories, overview, integrations dashboard, or system-health pages.
+
+The `/api/admin` group registers webhook list/detail, email queue, and email diagnostics endpoints, including conversation diagnostics. It applies request audit logging before authentication and requires platform-admin and MFA-satisfied claims. The request logger writes structured `slog` events; it is not the proposed durable `admin_audit_events` store and does not by itself implement the full mutation audit contract.
+
+The proposed disable/enable user, grant/revoke admin, revoke sessions, integration retry, and webhook replay endpoints are not registered in this admin group. Keep them as requirements, not operator instructions. Repository presence does not establish that the admin app is included in a particular Community deployment. Response-time targets, metric completeness, redaction across every diagnostic payload, and live operational health were not tested in this documentation review.
+
+## Original requirements
 
 ## 1. Summary
 

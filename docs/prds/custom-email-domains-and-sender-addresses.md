@@ -3,13 +3,25 @@
 > Superseded for implementation by [custom-support-sender-addresses-mvp.md](custom-support-sender-addresses-mvp.md).
 > This file is retained as the broader parity reference. Use the MVP PRD for engineering scope.
 
+This broader historical PRD is for contributors comparing the original email-branding scope with the narrower sender implementation. The source notes below supersede its “Current State” and gap list; its phased schema and endpoint names remain proposals.
+
+## Source review — 2026-09-18
+
+- Address-level senders now exist as `support_email_senders`, with domain-verification fields, forwarding status, `default_scope`, and mailbox associations in the [model](../../server/internal/model/support_inbox.go). This differs from the proposed `support_email_sender_addresses` table and owner-side default pointers. The legacy sender-domain `active` flag still exists.
+- The [sender service](../../server/internal/service/support_email_sender.go) supports creation, DNS verification, defaults, disabling, forwarding-token handling, and a best-effort DMARC TXT lookup. Selecting a default checks DKIM and Return-Path, but does not require verified forwarding. DNS lookup errors clear DMARC presence/policy; the implementation does not persist the distinct DNS-error diagnostic proposed below.
+- Current [routes](../../server/internal/router/router.go) use `/api/support/inbox/email-senders` and `/{senderId}/verify-dns`, guarded by `support.admin`. The proposed `email-sender-addresses` and branded `email-reply-domains` routes below are not the implemented API.
+- [Outbound resolution](../../server/internal/service/support_email_route.go) receives workspace and mailbox IDs. The [fallback caller](../../server/internal/service/email_fallback.go) does not pass an inbound-recipient address, so this is not the proposed “reply from inbound address” implementation. The fallback sender comes from deployment email configuration, not an unconditional `support@helpin.email` address. Sender-signature retry remains separate from successful delivery guarantees.
+- Deployment SMTP support exists in the [email package](../../server/internal/email/smtp.go); this does not establish a workspace-managed custom SMTP product. Branded Reply-To domains, automatic DNS setup, the proposed migration sequence, competitor parity, and success metrics should not be treated as shipped or measured. No DNS/provider requests or deliveries were performed in this review.
+
+## Original requirements
+
 ## Summary
 
 Helpin should support branded support email sending at Intercom-level parity, with a path toward Crisp-style full custom reply domains.
 
 Workspace admins should be able to configure support addresses such as `support@company.com`, authenticate the sending domain, verify forwarding, and choose how support replies are sent. Customers should receive emails from addresses they recognize, and replies should route back into Helpin reliably.
 
-The current implementation is a production-safe foundation: custom sender domains can be created through Postmark, DKIM and return-path records can be verified, and outbound fallback emails can send from the active verified custom domain with a `support@helpin.email` fallback. This PRD defines the complete product surface required to close the remaining parity gaps.
+The original foundation described by this PRD was: custom sender domains can be created through Postmark, DKIM and return-path records can be verified, and outbound fallback emails can send from the active verified custom domain with a `support@helpin.email` fallback. This PRD defines the complete product surface required to close the remaining parity gaps.
 
 ## Goals
 
@@ -65,7 +77,7 @@ Use two product concepts:
 
 The dedicated subdomain option is better for full reply-domain ownership because it avoids conflicts with Google Workspace, Outlook, and other existing mail providers on the root domain. It should be recommended for advanced branded routing, not required for basic sender address setup.
 
-## Current State
+## Original implementation baseline
 
 Implemented foundation:
 

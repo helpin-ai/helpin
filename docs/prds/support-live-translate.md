@@ -1,12 +1,22 @@
 # Support inbox live translate
 
-**Status:** Draft, ready for design review  
+**Status:** Proposed; dedicated live-translation implementation not found in this checkout
 **Version:** v1.1  
 **Date:** 2026-04-30  
 **Owners:** Support, AI Platform, Frontend  
 **Primary areas:** `server/internal/model/support_inbox.go`, `server/internal/service/support_inbox_settings.go`, `server/internal/service/support_translation.go`, `server/internal/repository/support_translation.go`, `server/internal/handler/support_translation.go`, `server/internal/router/router.go`, `server/internal/translate/`, `server/internal/dbmigrate/sql/`, `frontend/src/components/support/MessageThread.tsx`, `frontend/src/components/support/MessageBubble.tsx`, `frontend/src/components/support/ReplyComposer.tsx`, `frontend/src/hooks/queries/useSupport.ts`, `frontend/src/lib/services/supportService.ts`, `frontend/src/lib/supportTypes.ts`
 
 ---
+
+## Source review — 2026-09-18
+
+This is a proposed support feature, not a setup guide. The planned `support_translation` service/repository/handler, `server/internal/translate/` provider package, support translation routes, `live_translate_*` settings, quota tables, and `support.translate` permissions were not found in the current application source. The current ReplyComposer does not implement this proposed translation-preview contract.
+
+Help-center article translations and support AI language metadata exist, but they do not supply the per-conversation inbound/outbound human translation workflow described here. Azure environment names, rollout flags, provider limits, and APIs below are proposed contracts; setting them does not enable an implemented feature.
+
+The competitor/provider research is retained as historical input and was not checked against live vendor documentation. Provider privacy/contract statements, performance targets, exactly-once cache behavior, and quota/concurrency acceptance criteria remain work to validate if the feature is built. No provider call or translation test was run for this review.
+
+## Original requirements
 
 ## 1. Context
 

@@ -1,4 +1,6 @@
-# Backend – Go HTTP Service
+# Backend contributor guide
+
+Use this guide when changing the Go API or Temporal worker. These are contribution conventions, not a claim that every existing file conforms. Start with [local development](../docs/development.md); Community is the default build and Enterprise uses `-tags ee`.
 
 ## Tech Stack
 
@@ -12,7 +14,7 @@
 - **Workflows**: go.temporal.io/sdk
 - **WebSocket**: nhooyr.io/websocket
 - **Password hashing**: golang.org/x/crypto/bcrypt
-- **Email**: Postmark client
+- **Email**: Application email abstraction with SMTP and Postmark providers
 - **LLM**: Model-agnostic provider (Claude + OpenAI adapters)
 
 ---
@@ -32,22 +34,21 @@ server/
 │   ├── crmemail/                # CRM email integration (Gmail sync)
 │   ├── crmsignal/               # CRM signal detection types
 │   ├── crypto/                  # AES-256-GCM encryption helpers
-│   ├── email/                   # Postmark email client
+│   ├── email/                   # Application email abstraction, SMTP, and Postmark
 │   ├── githubapp/               # GitHub OAuth + App integration
-│   ├── handler/                 # HTTP request handlers (59 files)
+│   ├── handler/                 # HTTP request handlers
 │   ├── llm/                     # Model-agnostic LLM provider interface
 │   ├── middleware/              # Auth, logging, request-scoped middleware
-│   ├── model/                   # GORM struct definitions + DTOs (50+ files)
+│   ├── model/                   # GORM struct definitions + DTOs
 │   ├── oauth/                   # OAuth2 clients (Gmail)
-│   ├── repository/              # Data access layer (86 files, GORM queries)
+│   ├── repository/              # Data access layer (GORM queries)
 │   ├── router/router.go         # Chi route registration
-│   ├── service/                 # Business logic layer (111 files)
+│   ├── service/                 # Business logic layer
 │   ├── storage/s3.go            # S3/MinIO storage client
 │   ├── sync/                    # External API sync clients (Gmail)
 │   ├── temporalapp/             # Temporal workflow definitions + activities
 │   ├── tiptap/                  # TipTap rich-text processing
 │   ├── websocket/               # WebSocket hub + handler
-│   └── worker/                  # Background job workers
 ├── migrations/                  # Legacy SQL references; use internal/dbmigrate/sql for new migrations
 ├── go.mod
 ├── go.sum
@@ -58,14 +59,14 @@ server/
 
 ## Architecture: Handler → Service → Repository
 
-Every feature follows strict three-layer separation:
+Follow this three-layer separation when adding or changing features:
 
 - **Handler** (`internal/handler/`): HTTP request/response only. Decode JSON, extract URL params, call service, write response. No business logic.
 - **Service** (`internal/service/`): Business logic, validation, orchestration, cross-cutting concerns. Never touches `http.Request` or `http.ResponseWriter`.
-- **Repository** (`internal/repository/`): GORM database queries only. Always accepts `context.Context` as first parameter. Returns `nil` (not error) for not-found.
+- **Repository** (`internal/repository/`): GORM database queries only. Always accepts `context.Context` as first parameter. Make the not-found contract explicit and follow the existing method’s callers.
 - **Model** (`internal/model/`): GORM structs + request/response DTOs. DTOs live alongside the model they serve.
 
-**DI Wiring** (`cmd/api/main.go`): Config → DB → Repositories → Services → Handlers → Router. All dependencies are explicit constructor injection — no globals, no service locators.
+**DI Wiring** (`cmd/api/main.go`): Config → DB → Repositories → Services → Handlers → Router. Prefer explicit constructor injection. The Temporal worker has a separate composition root in `cmd/temporal-worker/main.go`.
 
 ---
 
@@ -220,7 +221,7 @@ db.Order(userInput + " ASC").Find(&users)
 
 ### Repository Conventions
 
-- Repository returns `nil` (not error) for not-found cases — let the service layer decide how to handle
+- Follow the repository method’s documented not-found contract; many return a nil model, while others return an error. Keep callers and tests consistent when changing that contract
 - For rule-builder style filtering, use a shared query-builder package around GORM instead of screen-specific condition code scattered across handlers and repositories
 - Keep entity field mappings in separate files from the generic query-builder implementation so future lists can reuse the same operator engine
 - Canonical operators:
@@ -276,7 +277,7 @@ go run ./cmd/migrate create <name>   # Scaffold new migration file
 
 **Rules**:
 - Migrations MUST be idempotent (`IF NOT EXISTS`, `DROP TABLE IF EXISTS`)
-- Never edit an already-applied migration file — create a new one (or run `migrate repair` if unavoidable)
+- Never edit an already-applied migration file — create a new one (use `migrate repair` only for a reviewed checksum recovery; it does not execute changed SQL)
 - Legacy SQL migrations in `migrations/` are reference docs only — all new migrations go in `internal/dbmigrate/sql/`
 - Never use AutoMigrate to drop columns or change types in production
 
@@ -335,7 +336,7 @@ WebSocket handlers bypass Chi's `Recoverer` (it strips `http.Hijacker` interface
 slog.Info("task created", "task_id", task.ID, "workspace_id", task.WorkspaceID)
 slog.Error("failed to save", "error", err, "task_id", id)
 
-// Context-aware (carries request_id, user_id from middleware)
+// Context-aware; attach required safe fields explicitly if the handler does not supply them
 slog.InfoContext(ctx, "comment added", "entity_id", entityID)
 slog.ErrorContext(ctx, "notification emit failed", "error", err)
 
@@ -386,7 +387,7 @@ logger := slog.Default().With("service", "notification")
 
 Package: `server/internal/authorization/`
 
-- **Role hierarchy** (additive): `viewer → member → manager → admin → owner`
+- **Role hierarchy** (additive): `viewer → member → admin → owner`
 - **Permission constants**: `PermWorkspaceRead`, `PermPMEdit`, `PermSettingsManage`, etc. (40+)
 - **Middleware chain**: `RequireAuth` → `RequireWorkspaceAccess` → `RequirePermission(perm)`
 - Object-level access via `authorization_relations` table
@@ -400,12 +401,12 @@ Package: `server/internal/authorization/`
 
 - **Test runner**: Go stdlib `testing` package
 - **Database**: In-memory SQLite (`gorm.io/driver/sqlite`) for fast isolated tests
-- **No external test frameworks** (no testify in current codebase) — use stdlib assertions
+- Prefer stdlib assertions; `testify` is an indirect module dependency, not a required assertion framework
 - Tests live alongside source: `foo_test.go` next to `foo.go`
 
 ### Test Database Setup Pattern
 
-Every test file that needs a database follows this pattern:
+A typical isolated SQLite test uses this pattern; PostgreSQL-specific behavior needs a disposable PostgreSQL fixture:
 
 ```go
 func setupXxxTestDB(t *testing.T) *gorm.DB {
@@ -498,13 +499,13 @@ func TestMyFunction(t *testing.T) {
 7. **Use interfaces for dependencies** — enables swapping real implementations for test doubles
 8. **Don't use `t.Parallel()` with shared SQLite databases** — SQLite doesn't handle concurrent writes well
 9. **Avoid conditional assertions** in table-driven tests — if logic varies, split into separate `TestXxx` functions
-10. **Always run with `-race` flag in CI**: `go test -race ./...`
+10. Use `-race` for concurrency changes. Current CI runs `go test -tags ee ./...` plus separate Community checks; do not assume the full suite runs with the race detector.
 
 ### Coverage
 
 ```bash
 go test ./...                          # Run all tests
-go test -race ./...                    # With race detector (CI)
+go test -race ./...                    # With race detector
 go test -cover ./...                   # Coverage summary
 go test -coverprofile=coverage.out ./... # Coverage profile
 go tool cover -html=coverage.out       # Visual HTML report
@@ -521,7 +522,7 @@ For tests that require real PostgreSQL or external services:
 package mypackage_test
 ```
 
-Run with: `go test -tags=integration ./...`
+Run build-tagged integration tests with `go test -tags=integration ./...`. Some PostgreSQL fixtures instead use environment variables and skip when unset; read each fixture and provision a disposable database. Never point these tests at production.
 
 ---
 
@@ -547,7 +548,7 @@ Run with: `go test -tags=integration ./...`
 
 - **Input validation**: validate all user input at the handler layer before passing to services
 - **SQL injection**: never concatenate user input into queries — always use GORM's `?` placeholders
-- **Secrets**: environment variables via Doppler — never in source code
+- **Secrets**: environment variables or the deployment’s secret manager; Doppler is used by managed infrastructure, not required for Community development
 - **Passwords**: `golang.org/x/crypto/bcrypt` for hashing
 - **Encryption**: AES-256-GCM via `internal/crypto/` for sensitive data at rest (OAuth tokens)
 - **Error exposure**: never return internal error details, SQL queries, file paths, or dependency names in API responses
@@ -575,6 +576,6 @@ Run with: `go test -tags=integration ./...`
 3. **Implement**: keep functions small and focused
 4. **Test**: write table-driven tests covering happy path + error cases
 5. **Validate**: `go vet ./...` and `go build ./...`
-6. **Tidy**: `go mod tidy`
+6. **Dependencies**: run `go mod tidy` when dependency changes require it; avoid unrelated module churn
 
 Before creating large files: split by responsibility — `handler.go`, `service.go`, `repository.go`, `types.go`.

@@ -1,6 +1,21 @@
 # Coverage Gaps Redesign Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan records the April 2026 implementation sequence for topic-based coverage gaps. The feature and later analysis paths exist; unchecked tasks and expected failures below do not represent today's backlog.
+
+## Source review: September 18, 2026
+
+Start with the [reviewed design](../specs/2026-04-27-coverage-gaps-redesign-design.md) for current differences in embedding materialization, ranking, agent-assisted closure, schedules, and workspace access.
+
+- Actual schema migrations start at [202604270006](../../server/internal/dbmigrate/sql/202604270006_coverage_topics_cluster_columns.sql), followed by lifecycle `007`, suggestion versioning `008`, status migration `009`, and [the rebuild marker `010`](../../server/internal/dbmigrate/sql/202604270010_coverage_cluster_rebuild.sql). The proposed filenames below do not match the migration registry.
+- [The migrate command](../../server/cmd/migrate/main.go) supports `cluster-rebuild`, but this review did not run it. Neither a marker migration nor a historical expected-output line proves that the operational rebuild ran on a deployment.
+- Regeneration is implemented in [SupportCoverageHandler](../../server/internal/handler/support_coverage.go), not a separate `support_coverage_regenerate.go`. It applies a per-process, per-user/gap thirty-second debounce and delegates to the service before returning HTTP 202; the pseudocode below is not the current handler signature.
+- [The current clusterer](../../server/internal/service/support_coverage_clusterer.go) removes `how`, `i`, and `my` as stopwords. The Task 6 sample's expected value has been corrected to `password reset`; deterministic token sorting handles word-order variants, not arbitrary semantic paraphrases.
+- [Editor handoff](../../frontend/src/components/support/coverage/coverageHandoff.ts) stores Tiptap JSON in session storage under the gap/suggestion key and consumes it once. This is more specific than the proposed generic `initialContent` handoff.
+- [Frontend scripts](../../frontend/package.json) now include a Vitest `test` command. The [edition-aware build script](../../frontend/scripts/build.mjs) runs TypeScript and Vite; the repeated claim below that no unit-test script exists is historical. [The backend module](../../server/go.mod) declares Go 1.25.0, not the original Go 1.24 reference.
+
+No application tests, migration execution, provider calls, or browser smoke scenarios were rerun for this prose review. Treat the original commit, push, and deployment commands as historical implementation instructions.
+
+## Original implementation plan
 
 **Goal:** Replace per-event-hash dedupe + rule-based classifier with topic-scoped clustering and LLM enrichment, behind a redesigned UI with a clean `Open → Done | Rejected` lifecycle. Surfaces fewer, more actionable gaps; produces published/updated KB articles as the explicit outcome.
 
@@ -323,7 +338,7 @@ func TestNormalizeForCluster(t *testing.T) {
 		want string
 	}{
 		{"empty", "", ""},
-		{"lowercases and strips punct", "How DO I reset, my password?!", "how i my password reset"},
+		{"lowercases and strips punct", "How DO I reset, my password?!", "password reset"},
 		{"sorts tokens", "billing late charge", "billing charge late"},
 		{"removes stopwords", "the quick brown fox over the lazy dog", "brown dog fox lazy over quick"},
 		{"deduplicates tokens", "password password password", "password"},
@@ -373,8 +388,7 @@ var stopwords = map[string]struct{}{
 }
 
 // normalizeForCluster lowercases, strips punctuation, removes stopwords,
-// dedupes, and token-sorts so semantically equivalent (but lexically
-// distinct) phrasings cluster together. Pure, deterministic.
+// dedupes, and token-sorts so simple word-order variants cluster together. Pure, deterministic.
 func normalizeForCluster(s string) string {
 	if s == "" {
 		return ""

@@ -1,4 +1,31 @@
-# Help Center Icon Delivery Plan
+# Help center icon delivery plan
+
+This superseded proposal records the larger icon delivery architecture considered
+before the smaller MVP. Maintainers should use the linked successor and current
+source when changing delivery; the phases below do not describe shipped behavior.
+
+## Source review — 2026-09-18
+
+- [The generator](../../help-center/scripts/generate-icons.mjs) and frontend/help
+  center package scripts generate static assets under `/assets/helpin-icons/`.
+  The proposed S3-backed `/_helpin/icons/` API and workspace sprite pipeline are
+  not the implemented delivery path.
+- [PublicIcon](../../help-center/src/components/PublicIcon.tsx) uses a base-path
+  aware CSS mask for canonical IDs and text for display values. `PhIcon` and the
+  old manual public icon map are no longer the current renderer.
+- [The editor picker](../../frontend/src/components/ui/icon-picker.tsx) fetches a
+  cached manifest on picker intent and displays at most 60 results. It does not
+  import the whole Hugeicons package as a module-scope side effect, nor implement
+  the virtualized full result grid proposed here.
+- [The backend catalog](../../server/internal/iconcatalog/catalog.go) resolves
+  legacy values, bounds new Unicode display text, and supports bounded search.
+  `NormalizeUpdate` tolerates an unchanged historical value; the strict new-write
+  rule must not be described as retroactively rejecting every legacy value.
+- Package 4.1.1, performance estimates, inventory counts, license assertions,
+  deployment gates, and benchmark targets below belong to the dated proposal.
+  This source review does not verify production measurements or legal approval.
+
+## Original proposal
 
 - **Status:** Superseded by [`2026-07-16-help-center-icons-mvp-plan.md`](2026-07-16-help-center-icons-mvp-plan.md)
 - **Date:** 2026-07-16

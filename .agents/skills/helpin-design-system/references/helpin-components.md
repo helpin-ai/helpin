@@ -1,6 +1,10 @@
 # Helpin component map
 
-Use this map for product UI under `frontend/`. Inspect the live source before extending a component.
+Use this map to choose shared components for product UI under `frontend/`. It describes the design contract to follow when creating or updating a surface; it does not certify that every existing page already follows it. Inspect the source before extending a component.
+
+Source review: 2026-09-18. The component exports, title sizes, dropdown token and search modes, relationship-dialog widths, settings disclosure behavior, and document width selection were checked against the current source. Responsive, keyboard, contrast, and save-failure behavior still need verification on the surface being changed.
+
+Start with `frontend/src/components/design-system/quiet.tsx` for shared page primitives, `quiet-dropdown.tsx` and `quiet-dropdown-select.tsx` in the same directory for selection, and `frontend/src/components/settings/SettingsSection.tsx` for settings disclosures. Component names below are exported symbols; source filenames can differ (for example, `EpicDetailPage` is in `frontend/src/pages/pm/EpicDetail.tsx`).
 
 ## Centralized Quiet primitives
 

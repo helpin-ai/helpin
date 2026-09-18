@@ -2,9 +2,20 @@
 
 Created: 2026-09-05 · Reconciled: 2026-09-08 · Branch: `waqar-fixes`
 
-Status: **Implemented on `waqar-fixes`; deployment is separate.** Unified Signals, Playbooks, guided Flow/Beacon connections, explicit activation, durable checks, exact action approvals and inspected-result recovery are connected on this branch. Ordinary saved Flow/Agent settings are preserved. No application migration, production activation or live customer send has been performed.
+Status: **Implementation recorded on `waqar-fixes` as of September 8, 2026; deployment is separate.** Unified Signals, Playbooks, guided Flow/Beacon connections, explicit activation, durable checks, exact action approvals and inspected-result recovery are connected on this branch. Ordinary saved Flow/Agent settings are preserved. No application migration, production activation or live customer send has been performed.
 
 Scope: Unified Signals/Review experience, a dedicated CRM Playbooks page, customer-process tracking, all three defined sales/success journeys, and integration with existing Automation. Current implementation status is recorded below. No saved customer Flow/Agent changes, automatic enrollment, activation or deployment are implied by this plan.
+
+## Source review: September 18, 2026
+
+The inspected checkout contains the three [Playbook definitions](../server/internal/service/crm_playbook_definition.go), [Playbooks page](../frontend/src/pages/crm/Playbooks.tsx), [detail/setup surface](../frontend/src/pages/crm/PlaybookDetail.tsx), and [shared situation categories](../server/internal/model/crm_situation.go). The earlier branch name is historical provenance, not a claim about the reader's checkout or deployed environment.
+
+- [API routes](../server/internal/router/router.go) distinguish CRM read/edit/admin access; connection setup/publication additionally requires Automation module access and `pm.admin.automations`. Publishing a connection and enabling customer work remain separate operations.
+- [Run boundaries](../server/internal/service/crm_playbook_run_boundary.go) reject reserved Playbook context on ordinary launch paths and derive immutable runtime configuration identity from workspace, connection, and fingerprint. [Maintenance](../server/internal/service/crm_playbook_maintenance.go) uses the shared scheduled-event worker, consistent with the blueprint's ownership model.
+- [Action handling](../server/internal/service/crm_playbook_actions.go) claims approved actions and stores execution results; human inspection is a separately attributed recovery operation. These source contracts do not by themselves prove exactly-once behavior at every external provider.
+- A later dependency is [shared AI profile review](../server/internal/service/crm_playbook_ai_profile.go), wired in [the API](../server/cmd/api/main.go). New reviewed connections capture a workspace-scoped profile revision and route; private profiles are rejected. The original configuration checklist should therefore include a usable shared AI profile.
+
+The verification counts and deployment statements later in this document belong to the September 8 implementation record. This documentation pass did not rerun those suites, inspect a deployed database, activate a Playbook, or send customer messages. Retain the acceptance criteria as requirements to verify for a release, not a blanket current certification.
 
 ## 1. Product promise and boundaries
 

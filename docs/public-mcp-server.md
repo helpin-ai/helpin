@@ -4,7 +4,7 @@ This guide is for developers connecting external clients to Helpin through the
 Model Context Protocol (MCP). It covers authentication, workspace access, tools,
 and deployment configuration. Beta availability and enablement are stated below.
 
-**Status:** Implemented for controlled beta; disabled by default in staging and production
+**Status:** Implemented for controlled beta; enabled in checked-in staging and production manifests. Live deployment availability is not verified by this review.
 
 **Production endpoint:** `https://mcp.helpin.ai/mcp`
 
@@ -671,11 +671,14 @@ The normal authenticated Helpin API also provides consent-model and workspace-ma
 | `MCP_CRM_ENABLED` | Enables CRM discovery and execution |
 | `MCP_SUPPORT_ENABLED` | Enables Support discovery and execution |
 
-Staging and production manifests currently set `MCP_SERVER_ENABLED=false` explicitly. That explicit Kubernetes environment value takes precedence over a value supplied through `envFrom`/Doppler. Enabling an environment therefore requires a reviewed manifest/configuration change, not only a Doppler update.
+The [staging](../k8s/stage/server.yaml) and [production](../k8s/prod/server.yaml) manifests set `MCP_SERVER_ENABLED=true`. The public MCP flags also default to true when unset in [configuration](../server/internal/config/config.go). Explicit Kubernetes environment values take precedence over `envFrom`/Doppler values. These are source defaults and desired configuration, not evidence of live deployment state.
 
 The global switch stops OAuth issuance and MCP execution while leaving authenticated Helpin settings and revocation controls available.
 
 ## 20. Deployment flow
+
+The following is a controlled-rollout procedure for a new environment, not a
+record of the current staging or production rollout.
 
 ```mermaid
 flowchart TD

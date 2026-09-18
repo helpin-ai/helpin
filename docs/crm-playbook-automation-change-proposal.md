@@ -1,10 +1,16 @@
-# Connecting Playbooks, Flows, and Beacon
+# Connect playbooks, flows, and Beacon
 
 Date: 2026-09-08 · Branch: `waqar-fixes`
 
-Status: **Implemented on `waqar-fixes`; deployment is separate.** Guided setup, explicit activation, durable execution through the existing Agent Runtime, exact CRM approvals and result inspection are connected on this branch. Ordinary saved Flows and Agents are not rewritten. Application migrations, production activation and live customer sends have not been performed.
+Status: **Implementation record from `waqar-fixes`; deployment is separate.** Guided setup, explicit activation, durable execution through the existing Agent Runtime, exact CRM approvals and result inspection are connected on this branch. Ordinary saved Flows and Agents are not rewritten. Application migrations, production activation and live customer sends have not been performed.
 
 This is the agreed implementation direction for the [CRM blueprint](crm-customer-work-blueprint.md). Its filename is retained for existing links; the earlier proposal requiring ordered Flow steps is superseded by this document. The [CRM reference](crm-signals.md) and [Automation reference](agents-and-automation.md) describe implemented behavior. The [Automation product model](automation-product-model.md) remains the shared foundation. All three customer journeys are required for one complete delivery.
+
+## Source review — 2026-09-18
+
+The connection, execution, runtime-host, action, maintenance, and native deal-entry implementations linked below are present. The connection migration enforces `execution_enabled = false`; activation is a separate contract. The current Playbook detail UI has **Signals / Setup / Automation / Activity** tabs, with `PlaybookAutomation` in the Automation tab. This supersedes the original instruction to keep automation inside Setup.
+
+The September 8 test counts and branch verification below are historical author reports, not checks rerun for this documentation review. Existing source tests cover entry, frozen configuration, waits, permission checks, and task/email recovery, but this review does not establish all concurrency or provider guarantees, current build success, deployment state, or live sends.
 
 ## 1. Agreed architecture
 
@@ -51,7 +57,7 @@ Code anchors: [execution](../server/internal/service/crm_playbook_execution.go),
 
 ### Playbooks: guided setup, not another builder
 
-Keep the existing **Signals / Setup / Activity** tabs. Add an **Automation** section inside Setup; no additional tab or “Customer work” category.
+The current tabs are **Signals / Setup / Automation / Activity**. Business policy stays in Setup; connection, enrollment, and automation controls live in Automation.
 
 | Control | Behavior |
 | --- | --- |

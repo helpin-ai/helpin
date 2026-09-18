@@ -2,11 +2,24 @@
 
 **Product**: Helpin PM Module  
 **Date**: March 5, 2026  
-**Status**: Draft  
+**Status**: Historical requirements; incremental loading implemented, scale acceptance unverified
 **Author**: Codex  
 **Scope**: Tasks board, tasks list/table, realtime updates, supporting PM APIs, and frontend performance readiness for large workspaces
 
 ---
+
+## Source review — 2026-09-18
+
+This PRD records the original scaling problems and performance targets. Several loading changes are now implemented; it is not a current benchmark or evidence that the 10,000-task acceptance criteria pass.
+
+- [The board store](../../frontend/src/stores/pmBoardStore.ts) requests 50 tasks per column, supports column continuation, and can patch individual task events. [KanbanBoard](../../frontend/src/components/pm/KanbanBoard.tsx) uses intersection observers to load additional state/member-column pages.
+- [TaskListView](../../frontend/src/components/pm/TaskListView.tsx) now uses 50-row pages, row virtualization, and incremental loading. Workflow-state grouping has per-group continuation; other groupings still derive from loaded rows. The original fixed first-500 limitation no longer describes the normal list fetch.
+- [The handler](../../server/internal/handler/pm_task.go) exposes `/api/pm/tasks/board/column` with `state_id`, `offset`, and `limit`, plus member-column variants. The proposed plural `/columns/{stateId}` and cursor response are not the implemented contract.
+- Board pagination is optional at the backend: a zero `per_state_limit` means unlimited in the service. The UI's 50-card request is not a universal API bound. Loaded board cards still render through mapped `TaskCard` elements; incremental fetch is not proof of full card virtualization or bounded DOM after extensive scrolling.
+- Local patching can decline ambiguous membership/order changes and request a refresh. Treat the proposed no-broad-refresh, collapsed-payload, constant-time lookup, and instrumentation guarantees as acceptance work to verify, not universal current behavior.
+- No large-workspace browser profiling, seeded load test, or performance-budget measurement was run in this documentation review.
+
+## Original requirements
 
 ## 1. Executive Summary
 

@@ -2,9 +2,23 @@
 
 **Author:** Engineering
 **Date:** 2026-03-06
-**Status:** Draft
+**Status:** Historical CSV requirements; importer now includes API-based migration
 
 ---
+
+## Source review — 2026-09-18
+
+This PRD records the initial CSV migration design and sample dataset. The current importer has a broader API-based workflow; the original wireframes, estimates, and all-or-nothing guarantees below are not current operating instructions.
+
+- [ShortcutImportWizard](../../frontend/src/components/pm/ShortcutImportWizard.tsx) starts from an API-token preview and has five stages: source preview, teams, workflows, users, and import. It uses the API execution endpoint, not the original four-step CSV-only flow.
+- [The handler](../../server/internal/handler/pm_import.go) retains CSV preview/execute and adds API preview scans, execution, status history/detail, cancellation, and retry. CSV uploads are limited to 50 MiB. Routes also require `pm.import`; the service requires workspace owner/admin membership.
+- [The import service](../../server/internal/service/pm_import.go) commits core PM entity creation in a transaction, then imports media and comments outside it. API migration also has [Docs import support](../../server/internal/service/pm_import_shortcut_docs.go). The entire migration, uploaded assets, and invitations are **not** one atomic transaction; failure or cancellation must not be described as undoing every side effect.
+- Invitations are sent when the wizard's invite action runs, before import execution. They are not deferred until the import transaction and do not roll back with imported records.
+- The CSV execute endpoint starts an in-process goroutine. API imports use a stored encrypted payload and [Temporal workflow](../../server/internal/temporalapp/pm_import_workflow.go). Do not infer durable restart/retry behavior for the CSV path from the API workflow.
+- Existing external IDs support repeat imports; the task path can update placement for an existing imported task. “Always skip without changes” and “one active import per workspace” are not universal guarantees demonstrated by the CSV entry point.
+- The original 1,626-row sample counts and sub-ten-second estimate are historical, not a tested capacity limit or current benchmark. No import, invitation, external Shortcut request, or vendor-export-format verification was performed in this review.
+
+## Original requirements
 
 ## 1. Problem Statement
 
@@ -254,8 +268,8 @@ file: <csv file>
     "duplicate_tasks": 0
   },
   "users": [
-    { "email": "azhar@contentstudio.io", "matched_user_id": "uuid-or-null", "matched_name": "Azhar K" },
-    { "email": "sheharyar.khalid@d4interactive.io", "matched_user_id": null, "matched_name": null }
+    { "email": "alex@example.com", "matched_user_id": "uuid-or-null", "matched_name": "Alex C" },
+    { "email": "sam@example.com", "matched_user_id": null, "matched_name": null }
   ],
   "teams": [
     { "name": "Dev Team", "task_count": 1500 },
@@ -304,7 +318,7 @@ Accepts the CSV file plus user mappings and configuration. Runs the import.
 Content-Type: multipart/form-data
 file: <csv file>
 user_mappings: JSON string — { "shortcut_email": "helpin_user_id", ... }
-invite_emails: JSON string — ["john@oldcompany.com", "jane.contractor@gmail.com"]
+invite_emails: JSON string — ["pat@example.com", "lee@example.com"]
 workflow_state_mappings: JSON string — see below
 options: JSON string — {
   "import_archived": true,
@@ -833,21 +847,21 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  ┌──────────────────────────────────┬────────┬──────────────────┐   │     │
 │  │  │ Shortcut User                    │  Tasks │ Helpin Member     │   │     │
 │  │  ├──────────────────────────────────┼────────┼──────────────────┤   │     │
-│  │  │ ✓ azhar@contentstudio.io         │    312 │ Azhar Khan       │   │     │
-│  │  │ ✓ amad.ali@usermaven.com         │    287 │ Amad Ali         │   │     │
-│  │  │ ✓ sheharyar.khalid@d4int...      │    245 │ Sheharyar K.     │   │     │
-│  │  │ ✓ abdurrehman.afridi@d4int...    │    198 │ Abdur Rehman     │   │     │
-│  │  │ ✓ adeel.khan@d4interactive.io    │    156 │ Adeel Khan       │   │     │
-│  │  │ ✓ ali.raza@d4interactive.io      │    134 │ Ali Raza         │   │     │
-│  │  │ ✓ waqar@d4interactive.io         │     98 │ Waqar Ahmed      │   │     │
+│  │  │ ✓ alex@example.com         │    312 │ Alex Chen       │   │     │
+│  │  │ ✓ morgan@example.com         │    287 │ Morgan Park         │   │     │
+│  │  │ ✓ sam@example.com      │    245 │ Sam Lee     │   │     │
+│  │  │ ✓ taylor@example.com    │    198 │ Taylor Reed     │   │     │
+│  │  │ ✓ jordan@example.com    │    156 │ Jordan Gray       │   │     │
+│  │  │ ✓ casey@example.com      │    134 │ Casey Lane         │   │     │
+│  │  │ ✓ robin@example.com         │     98 │ Robin Stone      │   │     │
 │  │  └──────────────────────────────────┴────────┴──────────────────┘   │     │
 │  │                                                                     │     │
 │  │  Unmatched Users (2)                                                │     │
 │  │  ┌──────────────────────────────────┬────────┬──────────────────┐   │     │
 │  │  │ Shortcut User                    │  Tasks │ Action            │   │     │
 │  │  ├──────────────────────────────────┼────────┼──────────────────┤   │     │
-│  │  │ ⚠ john@oldcompany.com            │     42 │ [▾ Select...   ] │   │     │
-│  │  │ ⚠ jane.contractor@gmail.com      │     12 │ [▾ Select...   ] │   │     │
+│  │  │ ⚠ pat@example.com            │     42 │ [▾ Select...   ] │   │     │
+│  │  │ ⚠ lee@example.com      │     12 │ [▾ Select...   ] │   │     │
 │  │  └──────────────────────────────────┴────────┴──────────────────┘   │     │
 │  │                                                                     │     │
 │  └─────────────────────────────────────────────────────────────────────┘     │
@@ -860,11 +874,11 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 #### Step 3 — Unmatched User Dropdown (expanded)
 
 ```
-│  │ ⚠ john@oldcompany.com            │     42 │ [▾              ] │   │
+│  │ ⚠ pat@example.com            │     42 │ [▾              ] │   │
 │  │                                           │ ── Existing ───  │   │
-│  │                                           │  Azhar Khan      │   │
-│  │                                           │  Amad Ali        │   │
-│  │                                           │  Sheharyar K.    │   │
+│  │                                           │  Alex Chen      │   │
+│  │                                           │  Morgan Park        │   │
+│  │                                           │  Sam Lee    │   │
 │  │                                           │  ...             │   │
 │  │                                           │ ─────────────── │   │
 │  │                                           │  ✉ Invite & Map  │   │
@@ -880,8 +894,8 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │  ┌──────────────────────────────────┬────────┬──────────────────┐   │     │
 │  │  │ Shortcut User                    │  Tasks │ Status            │   │     │
 │  │  ├──────────────────────────────────┼────────┼──────────────────┤   │     │
-│  │  │ ✉ john@oldcompany.com            │     42 │ Invited (pending)│   │     │
-│  │  │ ✉ jane.contractor@gmail.com      │     12 │ Invited (pending)│   │     │
+│  │  │ ✉ pat@example.com            │     42 │ Invited (pending)│   │     │
+│  │  │ ✉ lee@example.com      │     12 │ Invited (pending)│   │     │
 │  │  └──────────────────────────────────┴────────┴──────────────────┘   │     │
 │  │                                                                     │     │
 │  │  Invitations will be sent when the import starts. Tasks will         │     │
@@ -1024,8 +1038,8 @@ Getting this wrong would make the entire board and reporting layer incorrect for
 │  │                                                                     │     │
 │  │  Warnings (3)                                                       │     │
 │  │  ┌─────────────────────────────────────────────────────────────┐     │     │
-│  │  │  ✉ 2 invitations sent: john@oldcompany.com,                  │     │     │
-│  │  │    jane.contractor@gmail.com — tasks assigned, awaiting     │     │     │
+│  │  │  ✉ 2 invitations sent: pat@example.com,                  │     │     │
+│  │  │    lee@example.com — tasks assigned, awaiting     │     │     │
 │  │  │    invite acceptance.                                       │     │     │
 │  │  │  ⚠ 11 sprints imported with null dates (unparseable         │     │     │
 │  │  │    iteration names).                                        │     │     │
@@ -1082,7 +1096,7 @@ src/components/import/
 Use local React state within the wizard (not a Zustand store) since import is a transient operation. The wizard holds:
 
 ```typescript
-interface WorkflowStateMapping =
+type WorkflowStateMapping =
   | {
       shortcutWorkflowName: string;
       mode: "create_new";

@@ -1,4 +1,19 @@
-# Support Conversation Company Context Design
+# Support conversation company context design
+
+This historical design explains explicit company context for support conversations.
+Use it when maintaining widget identity, CRM matching, and the inbox sidebar;
+several original guarantees differ from the current implementation.
+
+## Source review — 2026-09-18
+
+- The [migration](../../server/internal/dbmigrate/sql/202608050001_support_conversation_company_context.sql) adds session/conversation company fields, backfills only a single distinct company membership, and installs deletion-to-null foreign keys. [Repository updates](../../server/internal/repository/support_inbox.go) fill conversation company only when unset and limit anonymous-ID company updates to unexpired, non-revoked sessions.
+- [Company matching](../../server/internal/service/support_inbox.go) uses an external-ID lookup when supplied. However, domain/name fallback calls [repository lookups](../../server/internal/repository/crm_company.go) that select the first match without excluding external-ID companies or rejecting multiple matches. The original guarantee that fallback never updates an external-ID company is not established. A later email-domain inference path also runs when no declared company is supplied, so “never guess without widget context” is not the current rule.
+- [SDK `id` and `group`](../../packages/sdk-js/src/core/client.ts) merge/persist active company context and attempt backend identity synchronization. `group` requires `id`, `name`, and `created_at`; it synchronizes only when an email is available. Its `sendIdentifyToBackend` returns `void`, so awaiting `group()` does not confirm the backend company update has completed.
+- The manual correction service validates workspace ownership and ensures membership before updating the conversation. Those writes are not wrapped in one transaction here; activity-log errors are logged after the update. The support-edit route exists, but successful company correction is not a guarantee of successful activity persistence.
+- [Visitor context](../../server/internal/service/support_inbox_visitor.go) loads the current company strictly from the conversation link. Company-load errors produce the explicit error state; membership-option lookup failures are logged/skipped and do not necessarily set that state. [The sidebar](../../frontend/src/components/support/SidebarCompanyDetails.tsx) implements selection, search, typed subscription fields, a three-item extra-attribute preview, and expansion.
+- The vendor comparison below is dated research, not a current competitor inventory. This review inspected source, not live identity delivery, migration rollout, visual behavior, or the full proposed test matrix.
+
+## Original design
 
 ## Context
 

@@ -1,4 +1,17 @@
-# Agent assignment on task/epic create
+# Assign agents when creating tasks and epics
+
+This historical plan is for contributors investigating the original implementation. Use the source review below to distinguish the current behavior from the original proposal; the remaining checklist is historical, not a fresh execution instruction.
+
+## Source review — 2026-09-18
+
+- Assignment fields, `run_on_create`, wrapped create responses, and the [epic assignment migration](../../server/internal/dbmigrate/sql/202605150001_pm_epics_assigned_agent.sql) now exist. The “gaps to close” section is a May snapshot.
+- [Task](../../server/internal/service/pm_task.go) and [epic](../../server/internal/service/pm_epic.go) services validate assigned agents when their agent-service dependency exists, create the entity first, then optionally launch through `RunTaskAgent` or `RunEpicAgent`. A launch failure populates `agent_run_error` while preserving the created entity. When that dependency is absent, assignment validation is skipped and a requested launch returns a configuration error after creation; do not interpret the original prevalidation proposal as an unconditional guarantee.
+- [AgentPickerCard](../../frontend/src/components/pm/AgentPickerCard.tsx) exists and filters by allowed target and team. It offers “No agent,” uses current avatar/persona components, and displays a missing-repository warning. Its default-selection helper prefers system preset, matching preset, matching name, then the first runnable agent; name fallback is not restricted to records missing preset keys.
+- The task and epic create callers do not enable `autoSelectDefault`, so the proposed automatic Scribe/Atlas selection is not current behavior. The task action says “Save & run agent”; epic creation says “Create & run agent.”
+- The card is used in `GlobalEpicPanel`, but `TaskDetailPanel` and the full `EpicDetail` page do not directly render it. Existing run surfaces and assignment state must be assessed independently; the proposed identical card on every detail surface is not proven complete.
+- This review inspected code only. The original pending-approval status, line references, Temporal side-effect explanation, visual specification, and test checklist are historical; they do not establish release status or fresh test results.
+
+## Original plan
 
 **Date:** 2026-05-15
 **Branch:** develop

@@ -1,6 +1,38 @@
-# Coverage Analyzer v3.1 Quality Improvements Implementation Plan
+# Coverage analyzer quality improvements implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan records quality guards proposed for the v3.1 coverage
+analyzer. Use it for the reasoning behind those guards; the current analyzer and
+materialization pipeline have evolved beyond the snippets below.
+
+## Source review — 2026-09-18
+
+- [The analyzer](../../server/internal/service/support_coverage_daily_analyzer.go)
+  uses version `v4` and a three-hour cron, despite the historical “daily” name.
+  Its knowledge-score floor is **0.015**, on reciprocal-rank-fusion scores, not
+  the proposed 0.1 cosine-like assumption. Do not reuse the old production-score
+  rationale as evidence for the present threshold.
+- `HasHumanReply` is computed from the retained analysis messages after the
+  80-message cap. It means a human reply is visible in that input, not that the
+  full conversation never had a human response. The no-response override updates
+  both the result and its marshaled raw output.
+- The old `CoverageFindingUpsertInput`, `recommendationRowsForFinding`, and
+  `createDocsSuggestionForFix` implementation points no longer exist in the
+  inspected service sources. Findings now pass through
+  [materialization](../../server/internal/service/support_coverage_materializer.go),
+  with human-reply information retained in analysis metadata. The proposed
+  article-draft gate must not be claimed as a current guard merely from this plan.
+- [The coverage event service](../../server/internal/service/support_coverage.go)
+  enriches an existing gap before suppressing new gaps for the two human-response
+  signals when a completed analysis run exists. A lookup failure is logged and
+  does not itself suppress creation.
+- The actual [legacy-gap migration](../../server/internal/dbmigrate/sql/20260430202658586984_close_v1_legacy_gaps.sql)
+  filters source signal, unknown category, absent topic, and open status. It does
+  **not** check confidence or absence of recommendations/explanation despite the
+  historical descriptive comments. This review did not execute a migration.
+- Go 1.24, no-version-bump rationale, and expected test results below are dated
+  implementation assumptions; `server/go.mod` currently declares Go 1.25.0.
+
+## Original implementation plan
 
 **Goal:** Fix five quality issues in the daily coverage gap analyzer: hallucinated article suggestions, wasted LLM calls on junk knowledge matches, speculative human_resolution, noisy v1 legacy gaps, and v1 gap creation for analyzed workspaces.
 

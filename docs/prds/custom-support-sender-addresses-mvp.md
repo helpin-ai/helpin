@@ -1,5 +1,42 @@
 # Custom support sender addresses MVP
 
+This historical PRD explains the intended sender-address and forwarding setup.
+Parts are implemented, but the proposed API, pricing, token model, and reply
+precedence are not a current operator contract.
+
+## Source review — 2026-09-18
+
+- [Sender management](../../server/internal/service/support_email_sender.go) and
+  [sender models](../../server/internal/model/support_inbox.go) exist alongside the
+  legacy domain model. Legacy domain create/verify/activate routes still exist;
+  the read-only migration phase below is not enforced by the current route set.
+- Defaults require verified DKIM and return-path records. Forwarding verification
+  is tracked separately and is **not** required by `SetDefaultEmailSender`.
+  DMARC TXT lookup is best effort; the saved DKIM flag is not an independent
+  per-message proof of DMARC alignment or delivery.
+- Forwarding verification uses `verify-{token}@{configured inbound domain}`,
+  not `fwd-{sender_id}-{token}`. The model stores a unique token hidden from JSON,
+  rather than the proposed token-hash field. Verification checks the token plus
+  a sender-address mention in selected payload fields/headers, including subject;
+  it is not a full provider-specific deliverability check.
+- [Outbound resolution](../../server/internal/service/support_email_route.go)
+  prefers mailbox default, workspace default, active legacy domain, then generated
+  route address. Its input is workspace/mailbox, not the proposed conversation
+  `inbound_sender_id`. The proposed inbound-recipient precedence remains absent
+  from this resolver.
+- [The router](../../server/internal/router/router.go) uses `PUT` for sender updates,
+  with support-admin permission. The four separate Phase 2 endpoints listed below
+  are not registered there. A sender can now be assigned to multiple mailboxes
+  through the sender-mailbox model.
+- [Email fallback](../../server/internal/service/email_fallback.go) retries with a
+  configured distinct fallback address specifically for sender-signature errors;
+  arbitrary provider failures do not trigger that retry. The paid-tier decision
+  below is a proposal, not evidence of an implemented sender-specific entitlement.
+- Provider setup instructions, live DNS, commercial availability, and delivery
+  acceptance were not tested in this repository-source review.
+
+## Original requirements
+
 ## Summary
 
 Helpin should let support teams configure usable sender addresses such as `support@company.com` and `billing@company.com`, map them to inboxes, verify that inbound forwarding works, and send replies from those addresses safely.

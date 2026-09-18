@@ -1,9 +1,23 @@
 # Email fallback for offline visitors
 
-**Status**: Implemented; unread/offline delivery amendments planned
+**Status**: Historical requirements; implementation has evolved
 **Date**: 2026-03-20
 **Updated**: 2026-04-25
 **Author**: Engineering
+
+## Source review — 2026-09-18
+
+This PRD records the original email fallback design and its April amendments. Read the following differences before using the original requirements as an implementation reference.
+
+- [The fallback service](../../server/internal/service/email_fallback.go) now filters unread messages using the contact read timestamp, applies a freshness limit, and postpones automatic fallback while the visitor is online. These are implemented paths, not outstanding April proposals.
+- [Default inbox settings](../../server/internal/model/support_inbox.go) use a **10-second** delay and a 600-second maximum delivery age. The service accepts delays from 10 to 600 seconds; the original 120-second default and 30-second minimum below are historical.
+- Automatic fallback suppresses resolved and spam conversations. Inbound customer replies can reopen resolved conversations; spam remains terminal for inbound replies. Explicit teammate email sends have separate validation and delivery rules.
+- The service supports inbound attachment storage, outbound attachments, unsubscribe handling, mailbox routing, and explicit email delivery. The original text-only and shared-domain scope is no longer a complete description of the feature.
+- [The Postmark sender](../../server/internal/email/postmark.go) enables open tracking. The original “no tracking pixels” requirement below does not describe that configuration. Provider acceptance, delivery, and opens are distinct events; an accepted send is not proof that a recipient read it.
+- Schema evolution includes versioned SQL migrations under [dbmigrate](../../server/internal/dbmigrate/), alongside startup model/schema work. The original claim that SQL migration files are only reference documentation is obsolete.
+- Redis leases and message tracking reduce duplicate processing but do not establish exactly-once delivery across the provider/database boundary. No live Postmark configuration, webhook rate limits, delivery guarantee, or production timing was verified in this review.
+
+## Original requirements
 
 ## 1. Problem Statement
 

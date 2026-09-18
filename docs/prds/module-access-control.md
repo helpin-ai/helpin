@@ -2,8 +2,22 @@
 
 **Product**: Helpin  
 **Date**: April 7, 2026  
-**Status**: Draft  
+**Status**: Historical requirements; core grants implemented with expanded module scope
 **Owner**: Product / Engineering
+
+## Source review — 2026-09-18
+
+This PRD preserves the original CRM/Support rollout scope. Current implementation differs in these ways:
+
+- The code-defined catalog also includes `automation` and `agents`. CRM, Support, and Automation are managed grant modules. PM and Docs start as broadly allowed modules, then deployment selection filters the result.
+- `AuthzService.AccessibleModules` combines owner/admin access or current member/team grants with deployment policy. Owners/admins cannot bypass a deployment-disabled module. The original “allow all modules” diagram omits this outer boundary.
+- `RequireDeploymentAccess` returns 404 for a disabled installation surface; module permission denial is a separate path. Thus not every inaccessible route returns the proposed 403. Agents can be exposed through the deployment's independent Agents surface without enabling generic Automation navigation.
+- `workspace_module_grants`, `module_access.manage` routes, `ModuleAccessTab`, and the Access settings page exist. Grant validation uses workspace-member/team identities, and settings deletion paths call `DeleteBySubject` for cleanup. The former frontend staff-email allowlist has been removed.
+- Support mailbox visibility remains a separate service/repository boundary. A module grant does not grant every mailbox or conversation. Request-time authorization and frontend cache invalidation also remain different concerns; this review does not prove immediate revocation on every already-open connection.
+
+These findings come from the module model, authorization/deployment code, settings grant service, router, and management UI. The complete route/connection acceptance matrix below was not executed during documentation review.
+
+## Original requirements
 
 ## 1. Summary
 

@@ -1,8 +1,19 @@
-# Go code organization & refactoring
+# Go code organization and refactoring proposal
 
-## Executive Summary
+This historical March 2026 proposal helps backend contributors understand earlier refactoring concerns. It is not the current package map or an approved eleven-week delivery schedule. Follow the [backend contributor instructions](../../server/AGENTS.md) for current conventions.
 
-This document provides a comprehensive analysis and refactoring plan for the Helpin Go backend codebase. The application has grown to **309 Go source files** with significant code organization challenges that impact maintainability, developer velocity, and system reliability.
+## Source review — 2026-09-18
+
+- The old `temporalapp/activities.go`, `worker/opencode.go`, and PM story service/repository paths no longer exist. [Agent launch](../../server/internal/service/agent.go) delegates execution to Agent Runtime; recreating the proposed local runtime/activity hierarchy would conflict with that boundary.
+- The proposed `internal/agent`, `internal/notification`, `internal/temporal/activities`, and `internal/repository/settings` packages are absent. [Notification service](../../server/internal/service/notification.go), [settings repository](../../server/internal/repository/settings.go), and [PM import service](../../server/internal/service/pm_import.go) remain in the layered packages. PM imports also use [Temporal workflow orchestration](../../server/internal/temporalapp/pm_import_workflow.go), and PM entities use task naming. Do not infer that the proposed phases shipped from a few similarly named split files.
+- Original file counts, line counts, dependency counts, developer-experience claims, coverage percentages, and effort estimates are historical and were not remeasured or substantiated as current metrics. The proposed linter snippet is not evidence of an enforced file-size gate; `funlen` measures functions, and `lll` measures line length.
+- Split by a concrete responsibility when making a scoped change. The duplicate old/new `notification/` directory sketch below is conceptual, not a valid migration map; an adapter would need a distinct existing package and an acyclic dependency direction. No refactoring, benchmark, or test execution was performed in this review.
+
+## Original proposal
+
+## Executive summary
+
+The original analysis estimated **309 Go source files** and proposed reducing large files and broad dependencies. Those measurements describe the original assessment, not this checkout.
 
 ---
 
@@ -694,14 +705,9 @@ import (
 
 ## 10. Appendix: Industry Standards
 
-### 10.1 Ideal LOC Guidelines
+### 10.1 Proposed size guidelines
 
-| Source | Recommendation |
-|--------|---------------|
-| Google Go Style | "Files should not exceed a few hundred lines" |
-| Uber Go Style | "Limit file length to a few hundred lines" |
-| Go Code Review Comments | "Keep files small and focused" |
-| Practical Experience | 200-300 LOC average |
+The numeric limits in this proposal are project heuristics. Earlier drafts attributed unsourced file-size quotations to Google, Uber, and Go Code Review Comments; those quotations have been removed because this document did not supply supporting references. Use cohesion, dependencies, and testability alongside size when deciding whether to split a file.
 
 ### 10.2 When to Split
 

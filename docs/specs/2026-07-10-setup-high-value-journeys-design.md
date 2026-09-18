@@ -1,7 +1,22 @@
 # High-value Setup Journeys
 
 **Date:** 2026-07-10
-**Status:** Approved direction
+**Status:** Historical approved direction; current catalog differs
+
+This design explains why setup measures useful capabilities and outcomes rather than repeated activity. It records the July 2026 task catalog; it is not an exact list of today's steps or entitlement behavior.
+
+## Source review: September 18, 2026
+
+- [The current catalog](../../server/internal/service/setup_catalog.go) implements goal alias normalization, deduplication before the three-goal limit, shared Help Center/Support evidence, and progress-based maturity. Its task definitions and action checks are the current authority.
+- Product setup now has the core `product.required_flow_enabled` task; sprint closeout is a power task and the original release-notes task is absent from that journey. Help Center and Internal Docs each add a core `required_flow_enabled` freshness task. CRM also adds a required-flow task. The original task counts, denominators, and prerequisite table below must not be treated as current acceptance criteria.
+- Automation now makes first assisted value and enabled flow core; triggered success is a power task, and the custom-agent task appears last. That differs from the original three-core-task calculation.
+- [Evidence queries](../../server/internal/repository/setup.go) require a succeeded, timestamped CRM suggestion linked to an existing workspace deal for signal value. [Suggestion execution](../../server/internal/service/crm_suggestion.go) also has in-progress and manual-required states beyond the proposal's pending/succeeded/failed list. The schema is present in [the foundation migration](../../server/internal/dbmigrate/sql/000000000001_core_foundation.sql); do not rely on the original AutoMigrate-only instruction.
+- [The setup page](../../frontend/src/pages/SetupSuccessPage.tsx) renders collapsible journeys and task state. [Frontend action mapping](../../frontend/src/lib/setupActions.ts) and server `setupActionAllowed` must be checked together when changing routes or permissions; the expanded required-flow actions are absent from the original matrix.
+- Setup visibility is opt-in through `VITE_SETUP_SUCCESS_ENABLED=true` in [frontend flags](../../frontend/src/lib/featureFlags.ts), coordinated with `SETUP_SUCCESS_ENABLED=true` in [API wiring](../../server/cmd/api/main.go). Existence of the feature does not imply every deployment enables it.
+
+This review checked catalog and evidence code, not a live workspace or the historical test checklist. Product labels, task ordering, and entitlement copy below remain the approved July snapshot.
+
+## Original design
 
 ## Goal
 

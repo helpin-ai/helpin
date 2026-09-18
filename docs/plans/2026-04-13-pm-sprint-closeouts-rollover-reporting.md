@@ -1,6 +1,18 @@
 # PM Sprint Closeouts And Rollover Reporting Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains how sprint closeouts preserve pre-rollover counts for reporting. The schema, automation, API, and report UI now exist; the unchecked tasks below preserve the original implementation sequence.
+
+## Source review: September 18, 2026
+
+- [The migration](../../server/internal/dbmigrate/sql/202604130001_add_pm_sprint_closeouts.sql) references `workspace_teams`, not the original example's `teams`. [Closeout persistence](../../server/internal/repository/pm_sprint_closeout.go) stores the snapshot and task rows in a transaction and returns an existing snapshot on a normal repeated call.
+- [Rollover automation](../../server/internal/service/pm_automation.go) chooses the most recently ended eligible sprint within a two-day UTC catch window for each configured team. It creates the snapshot before attempting task moves; this is not a historical backfill or an unconditional closeout for every ended sprint.
+- Snapshot creation and individual task moves are **not one atomic transaction**. The mover rereads live tasks and skips done states; it does not drive moves from stored outcome rows. Failed moves can therefore leave a snapshot's rolled-over count different from actual successful moves. The historical acceptance criteria should not be read as a guarantee that all recorded rollover outcomes were executed.
+- [The single-sprint service](../../server/internal/service/pm_sprint.go) returns a response with a nullable closeout and inbound rollover data when the sprint exists but has no snapshot. [The handler](../../server/internal/handler/pm_sprint.go) returns HTTP 200 for that response, rather than the proposed missing-closeout 404.
+- [Reports](../../frontend/src/pages/pm/Reports.tsx) now offers a Sprint Closeouts view with team/time filtering and summaries. Team Velocity and Cycle Time remain unavailable cards; the report route is no longer wholly a placeholder.
+
+Commands below assume the repository root; developer-specific `/root/teampulse` paths have been removed. Go 1.24 is the original toolchain reference; [the module](../../server/go.mod) now declares Go 1.25.0. Tests, database execution, and the browser rollover scenario were not rerun for this documentation review.
+
+## Original implementation plan
 
 **Goal:** Preserve historical sprint results before rollover mutates task membership, then surface completed, unfinished, and rolled-over work in sprint detail and PM reports.
 
@@ -188,7 +200,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/repository -run 'TestPMSprintCloseoutRepository'
+cd server && go test ./internal/repository -run 'TestPMSprintCloseoutRepository'
 ```
 
 Expected: FAIL because closeout tables/models/repository methods do not exist yet.
@@ -202,7 +214,7 @@ CREATE TABLE IF NOT EXISTS pm_sprint_closeouts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sprint_id UUID NOT NULL UNIQUE REFERENCES pm_sprints(id) ON DELETE CASCADE,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  team_id UUID NULL REFERENCES teams(id) ON DELETE SET NULL,
+  team_id UUID NULL REFERENCES workspace_teams(id) ON DELETE SET NULL,
   rolled_to_sprint_id UUID NULL REFERENCES pm_sprints(id) ON DELETE SET NULL,
   committed_count INTEGER NOT NULL DEFAULT 0,
   completed_count INTEGER NOT NULL DEFAULT 0,
@@ -270,9 +282,9 @@ In `server/internal/repository/pm_sprint_closeout.go`, add:
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/repository -run 'TestPMSprintCloseoutRepository'
-cd /root/teampulse/server && go build ./cmd/api
-cd /root/teampulse/server && go build ./cmd/temporal-worker
+cd server && go test ./internal/repository -run 'TestPMSprintCloseoutRepository'
+cd server && go build ./cmd/api
+cd server && go build ./cmd/temporal-worker
 ```
 
 - [ ] **Step 6: Commit**
@@ -302,7 +314,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/service -run 'TestPMAutomationService_SprintCloseouts'
+cd server && go test ./internal/service -run 'TestPMAutomationService_SprintCloseouts'
 ```
 
 Expected: FAIL because closeout creation is not wired into automations yet.
@@ -349,8 +361,8 @@ Do not broaden the current catch-window behavior in this plan. This remains a pr
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/service -run 'TestPMAutomationService_SprintCloseouts'
-cd /root/teampulse/server && go test ./internal/temporalapp -run 'TestSprintAutomationCronWorkflow'
+cd server && go test ./internal/service -run 'TestPMAutomationService_SprintCloseouts'
+cd server && go test ./internal/temporalapp -run 'TestSprintAutomationCronWorkflow'
 ```
 
 - [ ] **Step 6: Commit**
@@ -384,8 +396,8 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/service -run 'TestPMSprintService_Closeouts'
-cd /root/teampulse/server && go test ./internal/handler -run 'TestPMSprintHandler_Closeouts'
+cd server && go test ./internal/service -run 'TestPMSprintService_Closeouts'
+cd server && go test ./internal/handler -run 'TestPMSprintHandler_Closeouts'
 ```
 
 Expected: FAIL because the service/handler path does not exist yet.
@@ -418,9 +430,9 @@ Do not place `/sprints/{id}` before `/sprints/closeouts`, or `closeouts` will be
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/service -run 'TestPMSprintService_Closeouts'
-cd /root/teampulse/server && go test ./internal/handler -run 'TestPMSprintHandler_Closeouts'
-cd /root/teampulse/server && go build ./cmd/api
+cd server && go test ./internal/service -run 'TestPMSprintService_Closeouts'
+cd server && go test ./internal/handler -run 'TestPMSprintHandler_Closeouts'
+cd server && go build ./cmd/api
 ```
 
 - [ ] **Step 5: Commit**
@@ -450,7 +462,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintCloseouts.test.tsx
+cd frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintCloseouts.test.tsx
 ```
 
 Expected: FAIL because closeout types/services/hooks do not exist yet.
@@ -490,8 +502,8 @@ Use `placeholderData: previous => previous` for the list hook so filter changes 
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintCloseouts.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintCloseouts.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 6: Commit**
@@ -520,7 +532,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintCloseoutSummary.test.tsx src/components/pm/sprints/__tests__/SprintRolledInBanner.test.tsx
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintCloseoutSummary.test.tsx src/components/pm/sprints/__tests__/SprintRolledInBanner.test.tsx
 ```
 
 Expected: FAIL because the components do not exist yet.
@@ -554,8 +566,8 @@ Keep the page additive. Do not refactor SprintDetail beyond what is required to 
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintCloseoutSummary.test.tsx src/components/pm/sprints/__tests__/SprintRolledInBanner.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintCloseoutSummary.test.tsx src/components/pm/sprints/__tests__/SprintRolledInBanner.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 5: Commit**
@@ -584,7 +596,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/reports/__tests__/SprintCloseoutTable.test.tsx
+cd frontend && npm exec vitest run src/components/pm/reports/__tests__/SprintCloseoutTable.test.tsx
 ```
 
 Expected: FAIL because the reports page/table do not exist yet.
@@ -620,8 +632,8 @@ In `frontend/src/routes/_authenticated/w/$slug/pm/reports.tsx`, import and rende
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/reports/__tests__/SprintCloseoutTable.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/components/pm/reports/__tests__/SprintCloseoutTable.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 5: Commit**
@@ -638,16 +650,16 @@ git commit -m "feat: add sprint closeout reports page"
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/repository ./internal/service ./internal/handler ./internal/temporalapp
-cd /root/teampulse/server && go build ./cmd/api
+cd server && go test ./internal/repository ./internal/service ./internal/handler ./internal/temporalapp
+cd server && go build ./cmd/api
 ```
 
 - [ ] **Step 2: Run frontend verification**
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintCloseouts.test.tsx src/components/pm/sprints/__tests__/SprintCloseoutSummary.test.tsx src/components/pm/sprints/__tests__/SprintRolledInBanner.test.tsx src/components/pm/reports/__tests__/SprintCloseoutTable.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintCloseouts.test.tsx src/components/pm/sprints/__tests__/SprintCloseoutSummary.test.tsx src/components/pm/sprints/__tests__/SprintRolledInBanner.test.tsx src/components/pm/reports/__tests__/SprintCloseoutTable.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 3: Manual verification**

@@ -1,7 +1,20 @@
-# Command Bar Agent Architecture
+# Command-bar agent architecture: April design
+
+This historical architecture explains the original command-bar planner and dispatcher for contributors tracing its evolution. It is not the current Ask Agents or runtime contract: chat routes, execution ownership, and plan limits have changed.
+
+## Source review — 2026-09-18
+
+- [Current routes](../../server/internal/router/router.go) expose `/dock/chats/{chatID}/messages` for chat and retain command-bar plan dispatch, retry, resume, cancel, and promotion routes. The original `/command-bar/chat/turns` and `/command-bar/intents/parse` endpoints are absent.
+- [DockChatService](../../server/internal/service/dock_chat.go) starts a backing agent run for a first message or an ended previous run, and sends follow-up messages to an eligible paused run. Therefore “simple answers create no AgentRun” is an old architecture claim, not the current chat lifecycle.
+- [Dispatch](../../server/internal/service/command_bar_dispatch.go) starts ready DAG/task-pipeline steps through an in-process scheduler. Delegated runtime terminal events invoke the [command-plan finalizer](../../server/internal/service/agent_runtime_finalizers.go), and a [periodic sweep](../../server/internal/service/command_bar_plan_orchestration.go) retries stalled DAG/pipeline scheduling. The local `AgentRunWorkflow` and parent `CommandBarPlanWorkflow` described below are retired; the diagrams do not describe current execution ownership.
+- Plan kinds now also include `dag` and `task_pipeline`. The [service constants](../../server/internal/service/command_bar.go) allow up to 50 plan steps and limit DAGs to 10 initially runnable steps. The former five-target ceiling is not the current dispatch limit. Fan-out starts are issued in a loop, so “started together” means independently runnable work, not atomic simultaneous submission.
+- Step runs still receive command-bar trigger metadata and use persisted plan/run state. [Step orchestration](../../server/internal/service/command_bar_orchestration_steps.go) owns dependency advancement; a child should not duplicate scheduler work. Some orchestration steps represent repository operations rather than ordinary agent execution, so “one step always equals one normal workflow” is too broad.
+- The old non-goals contradict even the original summary about a parent workflow. Both are retained only as historical design evolution. Approval, promotion, cancellation, and retry descriptions below are not fresh end-to-end verification; this review did not run agents or services.
+
+## Original architecture
 
 **Date:** 2026-04-28
-**Status:** Working architecture reference for Ask Agents chat, command-bar plans, Temporal runs, saved agents, one-shot Command Agent runs, reusable-agent proposals, and bounded fan-out.
+**Original status:** Working architecture reference in April 2026; superseded by the current dock and delegated runtime implementation.
 
 ## Summary
 

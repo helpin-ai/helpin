@@ -1,6 +1,18 @@
-# Email Replies Reopen Resolved Conversations Implementation Plan
+# Reopen support conversations from email replies
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan is for contributors investigating the original implementation. Use the source review below to distinguish the current behavior from the original proposal; the remaining checklist is historical, not a fresh execution instruction.
+
+## Source review — 2026-09-18
+
+- [The email service](../../server/internal/service/email_fallback.go) now accepts inbound replies to resolved conversations. Customer replies reopen both `resolved` and `waiting_on_customer` conversations; detected email notices do not trigger that transition. Teammate replies to resolved conversations instead move them to `waiting_on_customer`.
+- The customer message, email log, state update, and resolved-only internal reopened message use transaction-scoped repositories. The update clears `resolved_at`, `closed_at`, `ai_resolved_at`, and `ai_resolution_type`. Attachments and post-commit notifications/events have separate side effects; this is not an atomic guarantee for all external work.
+- Reopened flow defaults to human assignment when an assigned/opening user or human-assigned flow exists, otherwise waiting for a human. Eligible automatic AI processing can select `ai_handling`; the helper in the original proposal is no longer the exact implementation.
+- Spam remains inbound-terminal; resolved and spam remain outbound-terminal for delayed fallback. Message and conversation WebSocket updates happen after the transaction. AI dispatch can return a retry error after the message is saved.
+- [Coverage analysis](../../server/internal/service/support_coverage_daily_analyzer.go) already selects the latest lifecycle segment and includes segment boundaries in its transcript hash. The follow-up at the end is historical, not an unimplemented prerequisite.
+- [Regression tests](../../server/internal/service/email_fallback_test.go) cover resolved/waiting reopen and spam behavior. They were inspected, not executed in this documentation review. The current [Go module](../../server/go.mod) declares Go 1.25.0; the Go 1.24 label and expected failures below describe the original plan.
+
+## Original plan
+
 
 **Goal:** Customer email replies to resolved support conversations should be accepted, appended to the same conversation, and reopen it instead of being silently ignored.
 

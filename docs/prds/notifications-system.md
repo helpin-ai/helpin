@@ -1,4 +1,18 @@
-# Notifications system
+# Notification system requirements and original queue design
+
+This March 2026 requirements record explains the original notification inbox, follower and delivery design. Contributors should use the source review below before changing delivery or preferences: several core implementation choices differ from the proposed River architecture.
+
+## Source review — 2026-09-18
+
+- [NotificationService](../../server/internal/service/notification.go) implements entity aggregation, event/delivery records and recipient WebSocket updates directly. River is not a module dependency, and `Emit(ctx, event)` does not accept the proposed business transaction. Its separate writes and delivery side effects do not provide the proposal's same-transaction enqueue guarantee; do not copy the River startup example as current setup.
+- Immediate emails are selected by mention/support-mention/agent-attention category or the user's immediate frequency, rather than a universal urgent/high priority rule. Routine daily/weekly mail uses persisted digest deliveries. [API startup](../../server/cmd/api/main.go) runs digest sweeps immediately and every 15 minutes; application email supports configured SMTP or Postmark. The proposed River workers and approximately-50-ms claim are not current behavior.
+- [Preferences](../../server/internal/repository/notification_preference.go) check account DND/email settings, workspace mute, then team/workspace category overrides and legacy exact-event keys. The proposed workspace `notifications_enabled` master switch is not the gate used by this service. When both channels are suppressed, Emit can skip the recipient entirely, so the original “always record events for audit” statement is not a guarantee.
+- Current [event taxonomy](../../server/internal/model/notification.go) uses task names such as `task.assigned` and `task.mention` and includes Docs, Support and Agent categories. The old `story.*` tables are historical, not valid configuration examples for every producer.
+- Actual [routes](../../server/internal/router/router.go) are under `/api/notifications` with workspace selection, using `notifications.read`/`notifications.manage` and recipient scoping, rather than the proposed `/api/workspaces/{id}/notifications` paths and `PermWorkspaceRead` permission.
+- Current state transitions retain archived items unless an urgent event arrives, but both **high and urgent** events break snooze. The original urgent-only snooze rule is obsolete. Email-only rows preserve delivery history without appearing in the inbox. The [notification page](../../frontend/src/pages/notifications/NotificationsPage.tsx) supplies a full inbox in addition to the header center.
+- The phase schedule, scale target, provider extensions and test checklist below are requirements/history, not verified delivery results. No email, queue worker, application migration or live notification was triggered by this review.
+
+## Original proposal
 
 **Date:** 2026-03-08
 **Status:** Draft

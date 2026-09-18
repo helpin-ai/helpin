@@ -1,4 +1,20 @@
-# Temporal worker debian package
+# Temporal worker Debian package requirements
+
+This historical requirements document records the original native worker package
+proposal. Operators should follow the [current packaging guide](../../server/packaging/README.md)
+for local builds; the release integration and autonomous queue assumptions below
+are not current installation guarantees.
+
+## Source review — 2026-09-18
+
+- [The nFPM manifest](../../server/nfpm.yaml), service, updater, timer, and lifecycle scripts exist. The manifest targets amd64, installs the environment file as `0600` with `config|noreplace`, and recommends Doppler and GitHub CLI. Packaging source does not prove that an install/upgrade test has passed.
+- [Current defaults](../../server/packaging/temporal-worker.conf) leave queue selection unset. [The worker](../../server/cmd/temporal-worker/main.go) accepts only its registered product queues; agent execution belongs to the separate Agent Runtime. The old Codex/OpenCode autonomous queues are not valid defaults for this worker. The post-install message still mentions those old runtimes and should not be treated as the current architecture contract.
+- [Post-install behavior](../../server/packaging/postinstall.sh) reloads systemd and conditionally restarts an active worker or enabled/active timer on upgrade; it does not enable them on first install. The [service](../../server/packaging/helpin-temporal-worker.service) uses Doppler and the documented moderate hardening, with no explicit non-root user configured.
+- [The updater](../../server/packaging/helpin-temporal-worker-update.sh) requires `gh`, `apt`, `dpkg-query`, and `GH_TOKEN`, compares the latest release tag, and downloads an exact amd64 asset name. Missing prerequisites skip the check, but an absent matching asset at a newer release fails the download. Optional timer installation does not establish a supported package distribution channel.
+- [The current production workflow](../../.github/workflows/deploy-prod.yml) does not contain `build-worker-deb`, nFPM packaging, or worker `.deb` release attachment. Requirements 1–2 in the old acceptance list remain unproven by this checkout. The `v0.88.0` command below is a historical example, not a verified available release asset.
+- The current Go module declares Go 1.25.0, rather than the old Go 1.24 build sketch. Community and EE builds must match the API edition as explained in the maintained guide. No package build, installation, service start, release download, or live update was performed for this documentation review.
+
+## Original requirements
 
 **Status:** Draft
 **Date:** 2026-03-26

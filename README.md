@@ -5,10 +5,11 @@ a shared staff inbox, a public help center, and AI agents using your own AI
 connections. Keep support conversations and knowledge in one installation,
 without requiring a Helpin account.
 
-**Status: Community 0.1 beta, pre-release.** The release candidate is local and
-unpublished. Public installation artifacts are not yet available; publication
-requires the [release gates](community/PUBLICATION.md) to pass. Contributors with
-access to both source repositories can use the source-build path below.
+**Status: Community 0.1 beta, pre-release.** The repository release record as of
+2026-09-18 describes a local, unpublished candidate with open
+[release gates](community/PUBLICATION.md). Use the source-build path below while
+those gates remain open; a Compose image tag alone does not establish that a
+public installation bundle is available.
 
 [Help docs — coming soon](https://helpin.ai/docs) · [Get started](#get-started) · [Architecture](ARCHITECTURE.md) ·
 [Contribute](CONTRIBUTING.md) · [Known limitations](ROADMAP.md)
@@ -21,8 +22,9 @@ access to both source repositories can use the source-build path below.
 - **Publish answers:** create articles and serve them through your public help center.
 - **Use AI assistance:** connect your own provider credentials or an approved local
   model endpoint, then select a workspace AI profile for support agents.
-- **Self-host the stack:** run the Community services with Docker Compose. There
-  is no telemetry endpoint or Helpin account requirement by default.
+- **Self-host the stack:** run the Community services with Docker Compose. The
+  default bundle does not configure an external telemetry destination or require
+  a Helpin account.
 
 A typical support workflow:
 

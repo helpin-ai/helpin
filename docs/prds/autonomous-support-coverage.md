@@ -1,11 +1,26 @@
 # Autonomous support coverage
 
-**Status:** Initial draft
+**Status:** Historical product direction; implementation and roadmap must be distinguished
 **Date:** 2026-04-15
 **Owners:** Support, Docs, AI Platform
 **Primary areas:** Support, Docs, Automation, CRM
 
 ---
+
+This April 2026 product proposal explains the long-term ambition behind Support Coverage. It combines implemented foundations with future ideas; it is not a shipped-feature inventory or evidence of measured resolution lift.
+
+## Source review: September 18, 2026
+
+- [The support event service](../../server/internal/service/support_events.go), [coverage models](../../server/internal/model/support_coverage.go), [draft service](../../server/internal/service/support_coverage_drafts.go), and [coverage routes](../../server/internal/router/router.go) implement events, gaps, evidence, suggestions, article fixes, feedback, and merge operations. The later [redesign](../specs/2026-04-27-coverage-gaps-redesign-design.md) supersedes the original v1 grouping and lifecycle assumptions.
+- Classification is no longer limited to the proposed deterministic-first v1 loop. [Conversation analysis](../../server/internal/service/support_coverage_daily_analyzer.go) uses analyzer version `v4`, and [materialization](../../server/internal/service/support_coverage_materializer.go) embeds findings and matches or groups them into gaps. Broader policy/action/workflow aspirations below do not follow automatically from those implementations.
+- The original rule for human-resolved conversations is still visible in [coverage rules](../../server/internal/service/support_coverage_rules.go), but self-service feedback, visitor answer feedback, and later analysis are separate paths. The statement that gaps are reserved only for conversations where a human intervened is an original policy simplification, not a description of every present signal path.
+- [Current ranking](../../server/internal/repository/support_coverage.go) uses evidence, distinct customers, confidence, knowledge matches, and actionable work. It is not the proposed multiplicative human-minutes/customer-value formula, and it does not establish causal deflection or financial savings.
+- [Coverage v2](../../server/internal/service/support_coverage_v2.go) adds topic/signal reads, rollout-aware health, and an attempt replay operation. [Replay state transitions](../../server/internal/service/support_coverage_pipeline.go) requeue failed or configuration-paused analysis; this is not the proposed counterfactual simulation of resolution lift after a fix.
+- Digest-delivery models and repository methods exist, but this review did not locate a scheduled weekly digest sender. Table existence is not evidence that Monday emails, recipients, or unsubscribe behavior are operational. Executive opportunity percentages, cross-workspace intelligence, and the full readiness profile remain roadmap statements here unless supported by a separate implementation review.
+
+No live support outcomes, emails, vendor comparisons, or causal effectiveness claims were validated. Use the original six-week release language as product intent, not as public marketing claims.
+
+## Original product proposal
 
 ## 1. Product Thesis
 

@@ -1,4 +1,17 @@
-# Reply Expectations Plan — 2026-04-15
+# Reply expectations plan
+
+This historical plan describes configurable widget reply expectations and notices. Preset support is implemented; the dynamic analytics section remains a proposal.
+
+## Source review — 2026-09-18
+
+- Presets, mailbox overrides, and special notices are present in the support models, availability resolver, settings UI, and widget. Formatting lives in `server/internal/service/support_reply_expectations.go` and `packages/shared/src/reply-time.ts`; parity fixtures live in `packages/shared/test-data/reply-time-cases.json`.
+- Workspace settings are stored in the widget installation's JSON settings, not a dedicated `support_inbox_settings` table. Migration `202604160001_support_reply_time_constraints.sql` adds and constrains mailbox columns; workspace validation is in the service. Do not run the illustrative workspace-table SQL below.
+- Public widget availability JSON uses camelCase (`replyTimeText`, `replyTimePreset`, `replyTimeMinutes`, `specialNoticeText`), unlike the proposed snake_case payload. Update requests have explicit clear flags for nullable settings and mailbox overrides; sending JSON null is not the whole clearing contract.
+- Custom minutes are validated within 1–10080; invalid values are rejected rather than silently clamped by the settings service. The shared formatter rounds hours and days at their halfway points.
+- `SpecialNoticeBanner.tsx` stores dismissal in **localStorage**, so it persists across browser sessions until storage is cleared or the workspace/text key changes. The text key uses a small deterministic rolling hash, not SHA. The original “per-session” dismissal language is inaccurate.
+- No `reply_time_mode`, computed reply-minute settings, or proposed latency sample table was found in the inspected application source. Dynamic-mode phases and their acceptance criteria remain future work. Source and fixture tests were inspected; no widget/browser rollout was exercised here.
+
+## Original plan
 
 Ship reply-time expectations and a delay/outage notice for
 the support widget, without cloning every Intercom surface. Phase 1 is a

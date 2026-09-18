@@ -1,4 +1,18 @@
-# Support Team Inboxes Design
+# Support team inboxes: original access and routing design
+
+This historical specification records the March team-inbox proposal for contributors investigating support routing and access. Current membership, navigation, setup, and archive behavior differ materially; use the source review below instead of treating the original access rules as a current security contract.
+
+## Source review — 2026-09-18
+
+- Nullable `mailbox_id`, mailbox records, membership records, assignment modes, and routing settings exist in [support models](../../server/internal/model/support_inbox.go). The shared scope remains represented by a null mailbox ID, but the [frontend store](../../frontend/src/stores/supportInboxStore.ts) now defaults to `all` and migrates older persisted `shared` selections to `all`.
+- Linked-team membership is now part of live access, not merely a one-time import helper. [Repository access conditions](../../server/internal/repository/support_mailbox.go) admit active explicit members **or active linked-team members**, and count the union. Removing an explicit membership does not revoke access if that person still belongs to the linked team.
+- The [mailbox service](../../server/internal/service/support_mailbox.go) grants elevated mailbox access to workspace owner/admin roles. Route-level `support.read`, `support.edit`, and `support.admin` checks are separate. Do not equate a permission name with the role bypass used by the repository/service helpers.
+- `ArchiveMailbox` currently sets `active=false` without checking for or moving active conversations. Ordinary membership checks require an active mailbox; elevated access is handled separately. The proposed requirement to move active conversations before archive is not implemented by this method.
+- The AI handoff mailbox helper uses an explicitly configured `ai_handoff_mailbox_id`, otherwise returns no override. It does not implement the original helper-level fallback to `default_mailbox_id`; later routing behavior depends on its caller. Default inbound mailbox resolution remains a separate helper.
+- [TeamInboxDialog](../../frontend/src/components/support/TeamInboxDialog.tsx) includes linked-team members automatically and accepts extra members. Its [three-step flow](../../frontend/src/components/support/teamInboxDialogFlow.ts) covers details, members/assignment, and routing, superseding the single compact form proposal. [SupportRailNav](../../frontend/src/components/layout/sidebar/SupportRailNav.tsx) contains current team-inbox navigation.
+- List/detail query access uses mailbox-aware conditions, and administration/move routes exist. This source review does not establish complete parity across notifications, mentions, realtime delivery, or all clients. Those cross-surface requirements and the manual UX expectations below remain historical acceptance criteria, not a fresh security or browser test result.
+
+## Original specification
 
 ## Summary
 

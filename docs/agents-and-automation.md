@@ -15,6 +15,8 @@ For the product-facing explanation of flows and agents, see
 
 For repository work, see [coding-agent execution](coding-agent-execution.md).
 
+**Source review:** 2026-09-18. The launch and policy references below describe this checkout. Agent Runtime is a separate component; its deployed adapters, browser lifecycle, and external service configuration were not exercised by this review.
+
 ## Architectural summary
 
 Helpin has one agent abstraction and one execution boundary.
@@ -26,8 +28,9 @@ Helpin has one agent abstraction and one execution boundary.
   tool invocation, workspaces, transcripts, interactions, artifacts, and usage.
 - `is_system` describes who owns an agent's configuration. It does not select
   an executor.
-- `runtime_kind` selects an Agent Runtime adapter (`native_sdk`, `codex`, or
-  `opencode`). It does not select product behavior or ownership.
+- `runtime_kind` records the execution adapter. New Helpin runs currently require
+  `native_sdk`; `codex` and `opencode` survive in historical/configuration contracts.
+  It does not select product behavior or ownership.
 - Every real agent execution creates the normal Helpin `agent_run`, is projected
   to Agent Runtime, and returns through the same event/projection lifecycle.
 
@@ -160,7 +163,7 @@ This is the main separation to keep in mind:
 
 ## Trigger families
 
-Current trigger families in code:
+Examples of trigger families in code (not an exhaustive catalog):
 
 - manual launches
   - `manual.task_run`
@@ -182,7 +185,7 @@ Current trigger families in code:
   - `support.widget_message`
   - `task.assigned_agent_state_change`
 
-Canonical trigger and binding identity now lives in `server/internal/automationcatalog/triggers.go`.
+Canonical trigger and binding identity lives in [the trigger catalog](../server/internal/automationcatalog/triggers.go). It also includes GitLab events, document publication, agent completion, AI-section events, and additional manual target bindings.
 
 ## Built-in automations vs flows
 
@@ -249,9 +252,9 @@ The current execution architecture is intentionally generic:
 ```text
 agent record
   -> agent_run
-  -> AgentRunWorkflow
-  -> generic execution context
-  -> backend adapter: native_sdk | codex | opencode
+  -> Helpin runtime launch preparation
+  -> Agent Runtime StartRun
+  -> native_sdk execution adapter
   -> messages, tool calls, interactions, artifacts
 ```
 
@@ -260,11 +263,7 @@ agent type. System agents and custom agents both create normal `agent_run` recor
 and both flow through the same workflow, interaction, artifact, and transcript
 surfaces.
 
-The backend adapters are responsible for execution mechanics only:
-
-- `native_sdk` runs the Eino/model-loop backend.
-- `codex` runs the Codex app-server backend.
-- `opencode` remains a supported backend where configured.
+Execution mechanics belong to Agent Runtime. Helpin's [launch policy](../server/internal/service/agent_policy.go) rejects new non-`native_sdk` runs, and [preset policy](../server/internal/service/agent_presets.go) allows only that runtime for current presets. Historical Codex/OpenCode adapter descriptions are not a promise that those runs can be started from this checkout.
 
 Product behavior is expressed through agent configuration:
 
@@ -277,8 +276,7 @@ Product behavior is expressed through agent configuration:
 - trigger or flow configuration
 
 There is no separate native planner controller. Planner behavior is a preset plus
-skills plus Helpin MCP tools. The same planner contract is available through
-`native_sdk` and `codex`.
+skills plus Helpin MCP tools. Planner contracts remain separate from runtime selection; current launch validation permits `native_sdk` only.
 
 ## Tool contract
 
@@ -305,7 +303,7 @@ should go through MCP for both `native_sdk` and `codex`.
 
 Authenticated browser automation is also runtime-owned. The canonical browser
 bundle is `browser_open`, `browser_snapshot`, `browser_act`, and
-`browser_screenshot`. Agent Runtime executes the bounded contracts through the
+`browser_screenshot`, plus `browser_record` for bounded recordings. The host-side [browser contracts](../server/internal/agentcontract/browser_tool_catalog.json) describe these tools. Agent Runtime executes the bounded contracts through the
 pinned `agent-browser` CLI and Kernel; Helpin owns selection metadata and the
 durable S3-backed screenshot asset endpoint. Each app/run receives an isolated,
 short-lived browser session without a persistent Kernel profile. Paused turns
@@ -344,8 +342,11 @@ Important boundaries:
   pause. Helpin also sends this policy on dock-run resumes so pre-policy paused
   runs upgrade in place. Other chat-mode hosts retain implicit completion unless
   they opt in.
-- mutating `agents.*` launches require a server-verified `dock_plan_confirm`
-  approval interaction (canonical action hash, single-use)
+- launch tools accept complete direct requests under the runtime approval policy
+  as well as legacy approved launch interactions. Reusable-agent creation and
+  other operations retain operation-specific `dock_plan_confirm` checks; inspect
+  [the orchestration handlers](../server/internal/service/internal_command_agents.go)
+  rather than assuming every mutation requires the same interaction
 - durable work still creates `agent_run` records, grouped by
   `command_bar_plans` when orchestration is needed; plans launched from a chat
   carry `parent_chat_run_id` / `dock_chat_id` and deliver a
@@ -454,7 +455,7 @@ older pending claims, and the consumer rechecks lifecycle, revision, due time, a
 lease under the CRM workspace lock. `delivered` means the check was processed,
 not that the customer objective succeeded. `cancelled` means event delivery was
 revoked, not that an already-started Agent or message was cancelled. Current
-checkpoint failures are available to CRM's Needs attention projection. Playbook-specific entry/check consumers and maintenance now use this same worker for bound normal Agent Runtime launch, cancellation and recovery. See `crm-signals.md` for the checkpoint contract.
+checkpoint failures are available to CRM's Needs attention projection. Playbook-specific entry/check consumers and maintenance now use this same worker for bound normal Agent Runtime launch, cancellation and recovery. See the [CRM reference](crm-signals.md) for the checkpoint contract.
 
 ## CRM Playbook policy and execution boundary
 
@@ -544,7 +545,7 @@ Characteristics:
 Preset contract behavior:
 
 - presets are configuration contracts, not separate execution paths
-- `epic_planner` on epic targets and `task_planner` on task targets use planner tool/artifact contracts regardless of whether the backend is `native_sdk` or `codex`
+- `epic_planner` on epic targets and `task_planner` on task targets use planner tool/artifact contracts without introducing a separate planner executor
 - phase guidance, active skill contracts, repair instructions, and active skill policy are prompt/tool-contract inputs to a generic run, not a separate planner controller
 - canonical mutations such as approved PRD persistence, task creation, task-plan-doc persistence, and replay protection remain backend-owned and runtime-neutral
 - backend-specific code should only handle execution mechanics such as Codex sessions/auth/workspace handling or native model-loop/provider configuration
@@ -621,7 +622,7 @@ Agents can be limited to one or more teams through `team_ids`.
 
 Current intended semantics:
 
-- team-scoped agents are visible and usable only by actors whose workspace membership includes one of those teams
+- ordinary members need membership in one of a team-scoped agent’s teams; workspace owners and admins bypass that team visibility/use restriction
 - workspace-scoped agents have no `team_ids` and are available across the workspace subject to normal permissions
 - team access is an agent access boundary, not a new agent category
 - direct run, update, and delete paths should enforce the same team boundary as list and create/update UI paths
@@ -633,20 +634,9 @@ Target interaction:
 
 ## Runtime kinds
 
-Current runtime kinds:
+New runs currently use `native_sdk`. Legacy `codex` and `opencode` values and queue mappings remain in compatibility contracts, but they do not establish available launch options.
 
-- `native_sdk`
-- `opencode`
-- `codex`
-
-Current queue mapping:
-
-- `native_sdk + interactive` -> `agent-native-interactive`
-- `native_sdk + autonomous` -> `agent-native-autonomous`
-- `opencode` -> `agent-opencode-autonomous`
-- `codex + interactive` -> `agent-codex-interactive`
-- `codex + autonomous` -> `agent-codex-autonomous`
-- non-agent background automations -> `automation-default`
+The historical `agent-native-*`, `agent-codex-*`, and `agent-opencode-*` queue names in [contract resolution](../server/internal/agentcontract/resolve.go) are not instructions to deploy local agent workers. Helpin calls the separate Agent Runtime service. Non-agent scheduled product work still uses Temporal's `automation-default` queue through [temporalapp](../server/internal/temporalapp/scheduled_events_workflow.go).
 
 Runtime differences should remain below the generic executor boundary. A new
 feature should not add one path for "system agents" and another for "custom
@@ -672,7 +662,7 @@ can consume.
 - some legacy PM and settings routes still exist as redirects or compatibility aliases
 - some backend package and model names still use older PM-era terminology
 - some product-owned automations still have domain-specific orchestration paths, especially in support
-- some historical design docs still describe native-only planner paths or bare model-facing tool names; treat this file and `docs/internal-tools-framework.md` as the current contract
+- some historical design docs still describe retired local agent workflows or legacy prefixed tool names; treat this file and `docs/internal-tools-framework.md` as the current contract
 
 Those do not change the current product direction:
 

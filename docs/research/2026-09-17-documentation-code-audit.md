@@ -1,8 +1,7 @@
 # Documentation and code consistency audit
 
 This audit compares repository documentation with the checked-out code to identify
-obsolete instructions and distinguish current guides from proposals. It is in
-progress. Source inspection establishes what this checkout implements; it does
+obsolete instructions and distinguish current guides from proposals. The inventoried source-review pass is complete. Source inspection establishes what this checkout implements; it does
 not establish what is deployed or prove that a documented procedure runs successfully.
 
 ## Coverage and method
@@ -18,8 +17,8 @@ lists every inventoried Markdown file. “Source-compared findings” means the 
 claims were checked, not that every assertion on the page was proven. “Screened;
 content review pending” is an explicit remaining item. Source-path candidates are
 automatically extracted and can include examples or proposed files; unresolved
-references are leads for investigation, not confirmed broken links. This initial
-ledger is conservative: comparisons not yet entered remain pending.
+references are leads for investigation, not confirmed broken links. The ledger now includes the final parallel review results; no existing inventoried
+document remains marked pending.
 
 The table below records findings verified against source. Filename and link
 validation is a separate check and does not establish factual accuracy.
@@ -1007,12 +1006,26 @@ avatar UI from the original overlay. It corrects the implied server-side 2 MB
 limit and records MIME-header validation and non-atomic object replacement,
 without presenting historical build or manual checks as fresh results.
 
-## Remaining review
+## Final review consolidation
 
-- Review remaining current guides and component READMEs beyond path existence,
-  including configuration defaults, commands, routes, and feature availability.
-- Review plans, requirements, research, and specifications for misleading status
-  or presentation as current behavior. Preserve historical decisions; age alone
-  does not justify deletion.
+Three reviewers completed the final 122 documents against the current source.
+The per-file coverage record contains their evidence. This includes the root
+README and architecture, contributor instructions, current technical guides,
+and remaining historical plans, requirements and research. Historical acceptance
+criteria remain requirements unless source evidence supports implementation.
+
+The final integration also corrected the public MCP guide: checked-in staging
+and production manifests enable MCP, and public MCP configuration flags default
+to true. The disabled-first diagram is a procedure for new rollouts, not a claim
+about current deployment state.
+
+## Verification boundaries
+
+This completes the inventoried documentation source review, not product QA or
+publication. External links, vendor claims, hosted docs, production state and
+historical test reports are not generally reverified. Individual documents
+identify behavior gaps and operational assumptions; documentation changes do
+not fix those application limitations. The ledger's screened vendored references
+are explicitly distinguished from source-reviewed Helpin documentation.
 
 The unrelated, pre-existing untracked CRM sales audit is left unchanged.

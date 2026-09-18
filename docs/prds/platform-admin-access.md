@@ -1,11 +1,47 @@
 # Platform admin access for Helpin admin panel
 
-**Status:** Draft v2 (incorporates security review)
+**Status:** Historical v2 requirements; core gate implemented with differences below
 **Author:** azhar
 **Date:** 2026-04-28
 **Target:** before deploying `apps/admin` to `ctrl.helpin.ai`
 
 ---
+
+This PRD records the original platform-admin security boundary and rollout design.
+Use the source notes below to understand today's gate; the original problem and
+unchecked rollout items do not establish the current deployment state.
+
+## Source review — 2026-09-18
+
+- [RequirePlatformAdmin](../../server/internal/authorization/platform_admin.go)
+  requires an access token with both platform-admin and MFA claims. The
+  [router](../../server/internal/router/router.go) wraps admin routes with audit,
+  authentication, optional authenticated rate limiting, then that gate. The old
+  “any signed-in customer” route description is historical.
+- [JWT issuance](../../server/internal/auth/jwt.go) distinguishes access/refresh
+  use and carries MFA/admin claims. `RequireAuth` rejects non-access tokens.
+  [Refresh](../../server/internal/service/auth.go) reloads the user and reissues
+  admin status while preserving the MFA claim. The gate itself remains
+  claim-only, so revocation does not invalidate an already issued access token.
+- Legacy untyped refresh acceptance is based on token expiry exceeding
+  `legacyRefreshFloor`; the inspected helper has no explicit deployment-date
+  deadline. Do not describe the proposed bounded migration window as a current
+  calendar cutoff enforced by that helper.
+- Startup grants admin status to **existing** users matching configured emails;
+  [the repository method](../../server/internal/repository/user.go) does not create
+  accounts or revoke omitted addresses. Leaving a revoked email in the grant list
+  can grant it again on a subsequent startup.
+- [The admin login](../../apps/admin/src/pages/login-page.tsx) includes password,
+  TOTP/recovery-code, and passkey flows. It did not adopt the proposed passkey-only
+  Option B. The auth store validates admin/MFA status before keeping a session.
+- [Audit middleware](../../server/internal/middleware/admin_audit.go) logs request
+  metadata without bodies and can parse token claims independently after the
+  inner handler. This is not a verified durable audit store or proof that every
+  panic/unmatched route produces an audit event.
+- This source review did not inspect live grants, deployed origins, passkey
+  compatibility, or production audit retention, and did not rerun security tests.
+
+## Original requirements
 
 ## 1. Problem
 
@@ -94,7 +130,8 @@ The admin panel must guarantee that a session reaching `/api/admin/*` was authen
 - TOTP via `POST /api/auth/2fa/verify-signin` (after `requires_2fa` from signin).
 - Passkey signin where `credential.Flags.UserVerified` is true (`server/internal/service/passkey.go:234`).
 
-Passkey-with-UV is hardware-backed, phishing-resistant, and at least as strong as TOTP. **We treat both as MFA-satisfying for platform admins.** A passkey **without** UV does not satisfy MFA.
+The proposal treats passkey-with-UV and TOTP as MFA-satisfying for platform admins.
+User verification alone does not establish that a credential is hardware-backed. A passkey **without** UV does not satisfy MFA.
 
 #### `mfa_satisfied` claim
 

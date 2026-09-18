@@ -1,7 +1,37 @@
-# TanStack query migration
+# TanStack Query migration requirements
+
+This historical requirements document explains the intended migration of server
+state from Zustand to TanStack Query. Use it to assess remaining migration work;
+its completion criteria are not a description of every current frontend store.
+
+## Source review — 2026-09-18
+
+- [QueryClient](../../frontend/src/lib/queryClient.ts), key factories, query hooks,
+  and the provider/devtools in `frontend/src/main.tsx` are implemented. The query
+  defaults match the 30-second stale time, five-minute garbage collection, and
+  retry/focus/reconnect settings proposed below.
+- [The board store](../../frontend/src/stores/pmBoardStore.ts) still owns loaded
+  columns, workflows, views, loading/error state, pagination, and mutations.
+  [Auth state](../../frontend/src/stores/authStore.ts) still includes the current
+  user and API-backed authentication operations. Zustand is not client-UI-only.
+- [Realtime synchronization](../../frontend/src/hooks/useRealtimeSync.ts) uses both
+  query invalidation and board-store actions, and still dispatches custom DOM
+  events. The cleanup success criteria therefore remain incomplete.
+- [Objective hooks](../../frontend/src/hooks/queries/useObjectives.ts) include
+  filters in list query keys and unwrap API responses. The earlier example omits
+  filters from its key and must not be copied as a cache-safe implementation.
+  Current PM query keys use `tasks`, not the historical `stories` terminology.
+- [Query utilities](../../frontend/src/lib/queryUtils.ts) export `unwrap` and
+  `unwrapRequired`, not `unwrapResponse`. Only the latter rejects a null data
+  payload when no API error was returned.
+- Proposed bundle-size estimates and regression criteria below were not measured
+  or run in this documentation review. Mutations invalidate data only through
+  their configured callbacks; this is not automatic for arbitrary mutations.
+
+## Original requirements
 
 **Date:** 2026-03-08
-**Status:** Draft
+**Status:** Historical requirements; migration remains partial
 
 ---
 

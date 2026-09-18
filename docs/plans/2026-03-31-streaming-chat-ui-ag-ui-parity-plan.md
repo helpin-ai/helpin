@@ -1,8 +1,8 @@
-# Streaming Chat UI AG-UI Parity Plan
+# Streaming chat UI parity plan
 
 ## Status
 
-Draft implementation plan for bringing Helpin's coding-session streaming chat UX closer to `/tmp/ag-ui`.
+Historical implementation plan comparing the March 31 coding-session UI with a local AG-UI checkout. The temporary `/tmp/ag-ui` paths are original research references, not repository dependencies.
 
 This plan is specifically about:
 
@@ -16,6 +16,39 @@ This plan is not primarily about approvals and human-input interruptions. That w
 
 - [docs/plans/2026-03-31-codex-native-interaction-contract-plan.md](2026-03-31-codex-native-interaction-contract-plan.md)
 - [docs/plans/2026-03-31-coding-session-ui-and-runtime-contract-plan.md](2026-03-31-coding-session-ui-and-runtime-contract-plan.md)
+
+This plan explains the original structured streaming model for assistant text,
+reasoning, and tool calls. Use it for design rationale; current rendering and
+runtime ownership have moved beyond the worker adapters proposed below.
+
+## Source review — 2026-09-18
+
+- [Stream payloads](../../server/internal/model/agent_run_message.go) contain the
+  proposed parent-message, argument, activity, and reasoning fields. Current
+  [Runtime projection](../../server/internal/service/agent_runtime_projection.go)
+  maps assistant/reasoning lifecycle and tool argument/result events, including
+  failure on a finished tool event with an error.
+- The Eino/Codex/OpenCode worker adapter files named below are absent. Their
+  historical rollout checklist is not the current executor architecture or proof
+  that every external runtime produces every event variant.
+- [The stream builder](../../frontend/src/components/pm/CodingSession/codingSessionStream.ts)
+  maintains structured live assistant, reasoning, and tool-call state. Its public
+  builder is `buildCodingSessionStreamState`; the suggested parser/function names
+  below are sketches. `plan.updated`/`activity.updated` are recognized; the
+  proposed `activity.snapshot`/`activity.delta` pair is not the current mapping.
+- [The page](../../frontend/src/pages/pm/CodingSession.tsx) delegates to
+  `CodingSessionSurface`. The old page-owned flat `liveAssistantText` problem no
+  longer describes this entry point.
+- Shared transcript rendering is described in the
+  [later renderer plan](2026-06-15-unified-agent-transcript-renderer-plan.md).
+  [CodingActivityRail](../../frontend/src/components/pm/CodingSession/CodingActivityRail.tsx)
+  still supports completed tool calls alongside events, so its component contract
+  is not strictly the sidecar-only rail proposed here.
+- No AG-UI checkout comparison, provider stream run, or browser parity test was
+  performed during this source review. The acceptance cases below remain dated
+  intent rather than fresh validation results.
+
+## Original plan
 
 ## Reference Model
 

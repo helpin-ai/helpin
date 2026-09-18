@@ -1,5 +1,17 @@
 # Support and widget browser test coverage
 
+This historical requirements document helps contributors understand the intended support-presence and widget regression matrix. Its March 2026 `Existing` and `Planned` labels are a baseline, not a current test result or complete inventory.
+
+## Source review — 2026-09-18
+
+- The suites remain separated from live backend tests by `testIgnore: ['**/live/**']` in the [support config](../../frontend/playwright.support.config.ts) and [widget config](../../packages/sdk-js/playwright.widget.config.ts). The support harness and full-app tests moved into `harness/` and `app-mocked/`; widget mocks moved into `mock/`. The corrected paths below are present.
+- The [presence tests](../../frontend/e2e/support/harness/support-presence.spec.ts) and [full-app tests](../../frontend/e2e/support/app-mocked/support-full-app.spec.ts) encode typing precedence and reconnect snapshots. The current [widget tests](../../packages/sdk-js/test/e2e/widget/mock/widget.spec.ts) also cover offline recovery, while [upload tests](../../packages/sdk-js/test/e2e/widget/mock/uploads.spec.ts) cover failed uploads, cancellation, and retry. Some originally planned cases therefore have implementations; the original matrix has not been recertified case by case.
+- Support config defines Chromium only. Widget config defines Chromium and Firefox, but the standard package script and [nightly workflow](../../.github/workflows/nightly.yml) select Chromium. The widget package script builds the SDK before tests; use it instead of invoking Playwright against potentially stale build output.
+- A separate [Community live smoke test](../../packages/sdk-js/test/e2e/widget/live/community.spec.ts) now exercises the packaged loader, outside-origin visitor, reply delivery, reload, upload, and rejected origin. It is run through the Community acceptance harness and is excluded from the default mocked suites. Live coverage is no longer wholly future work.
+- This review inspected configuration and test source. It did not run browsers or certify the exit criteria below.
+
+## Original requirements
+
 **Status:** Draft  
 **Version:** v1  
 **Date:** 2026-03-27  
@@ -120,15 +132,15 @@ They must never replace the deterministic mocked suites as the main regression h
 
 - Config: [playwright.support.config.ts](../../frontend/playwright.support.config.ts)
 - App surface:
-  - harness: `frontend/e2e/support-presence-harness.tsx` (historical path; absent from this checkout)
-  - full route: `frontend/e2e/support-full-app.spec.ts` (historical path; absent from this checkout)
+  - harness: [support presence harness](../../frontend/e2e/support/harness/support-presence-harness.tsx)
+  - full route: [full-app mocked suite](../../frontend/e2e/support/app-mocked/support-full-app.spec.ts)
 - Browser: Chromium only
 
 ### 6.2 Default Widget Browser Suite
 
 - App surface:
-  - spec: `packages/sdk-js/test/e2e/widget/widget.spec.ts` (historical path; absent from this checkout)
-  - mocks: `packages/sdk-js/test/e2e/widget/widgetE2E.ts` (historical path; absent from this checkout)
+  - spec: [widget mock suite](../../packages/sdk-js/test/e2e/widget/mock/widget.spec.ts)
+  - mocks: [widget fixtures](../../packages/sdk-js/test/e2e/widget/mock/widgetE2E.ts)
 - Browser: Chromium only
 
 ### 6.3 Opt-In Real Backend Suite
@@ -172,7 +184,7 @@ For a conversation row in the support inbox:
 
 ---
 
-## 8. Current Coverage Snapshot
+## 8. Original coverage snapshot
 
 ### 8.1 Support
 
@@ -390,7 +402,7 @@ pnpm --dir frontend run test:e2e:support
 
 ```bash
 pnpm --dir packages/sdk-js exec playwright install chromium
-pnpm --dir packages/sdk-js exec playwright test --config=./playwright.widget.config.ts --project=chromium
+pnpm --dir packages/sdk-js run test:e2e:widget
 ```
 
 ### Build Verification

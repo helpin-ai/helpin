@@ -1,6 +1,6 @@
 # Support live chat, inbox, and AI messenger
 
-**Status:** In Progress — Phase 2 Complete
+**Status:** Historical March 2026 PRD; phase tracker is not current delivery status
 **Version:** Draft v15
 **Date:** 2026-03-11
 **Module:** Support
@@ -8,7 +8,29 @@
 
 ---
 
-## Phase Progress Tracker
+## Source review — September 18, 2026
+
+This document preserves the original conversation-first support design and migration rationale. It is not an SDK installation guide, API reference, current backlog, or release certification. Customer-facing instructions belong at [Helpin documentation](https://helpin.ai/docs); repository integration details begin with the [SDK README](../../packages/sdk-js/README.md).
+
+| Topic | Current implementation and limits |
+|---|---|
+| Product status | The inbox, widget integration, realtime, AI knowledge retrieval, email routing, and task escalation have implementation paths. The Phase 3–5 “Not Started” cells below describe March, not current absence. Historical test counts and bundle sizes have not been reproduced. |
+| Database names | `model/support_inbox.go` maps conversations to `support_conversations`, messages to **`support_messages`**, installations to **`support_widget_installations`**, and sessions to **`support_widget_sessions`**. The full rename target in Sections 3–4 was not adopted. Do not rename live tables from this PRD. |
+| Permissions | Support has `support.read`, `support.edit`, and `support.admin` route permissions. Task creation additionally requires `pm.edit`; workspace roles are viewer/member/admin/owner, without the proposed manager role. |
+| PM escalation | The current action is **Create task**, using `POST /api/support/inbox/conversations/{id}/create-task`, with an explicit team and task-linked context. “Story” and `create-story` below are historical terminology. Status changes use `PUT .../{id}/status`; user assignment uses `POST .../{id}/assign-user`. Consult `router/router.go` for exact methods. |
+| SDK transport | `packages/sdk-js/src/core/config.ts` defaults to `https://client.helpin.ai` and the hosted widget runtime `https://cdn.helpin.ai/lib.js`. The SDK uses `/widget/...`; `k8s/prod/ingress-client-helpin.yaml` routes that prefix to Go and `/api/v1/` to the Rust event pipeline. The proposed `sdk.helpin.ai/v1` rewrite deployment below is not the current manifest. |
+| Identity | Sessions initially expire after seven days and have activity-extension logic (`support_inbox_widget.go`). The identity proof is HMAC-based `identity_verification`, with edition-dependent off/report-only/enforced policy, not merely a public key plus asserted email. See the reviewed [identity security PRD](widget-messenger-security-jwt.md) for the current contract versus its original proposal. |
+| Defaults and settings | `DefaultSupportInboxSettings` requires email, but defaults **AI and CSAT to false**. Settings are typed and validated; current UI includes `ChatGeneralTab`, `InboxesRoutingSettingsPage`, sender settings, and agent configuration. The three-page screenshots and listed defaults below are design history. |
+| Config caching | Public `GetConfig`/`GetConfigByID` write JSON without the proposed public 60-second cache/ETag policy. The private ETag in that handler belongs to the internal widget-token inventory. Settings updates publish `config_updated` with entity `support_widget` and config data. No sub-two-second propagation or 95% cache-hit claim is established by this code review. |
+| Realtime | Widget WebSocket handling and shared `packages/support-core` realtime integration exist. Widget typing uses `typing:start`/`typing:stop` commands and `typing_started`/`typing_stopped` events; the old `typing_on/off` proposal is not an integration contract. |
+| AI | API startup feeds visitor messages through NATS into `SupportChatService` and Agent Runtime chat runs. Search and send-reply tools use agent-scoped hybrid retrieval, stored evidence, validation, and confidence gates. This supersedes the proposed standalone Temporal answer flow. See the reviewed [knowledge retrieval PRD](knowledge-retrieval-platform.md) for implemented and proposed behavior. |
+| Ancillary features | Canned response, typing, and transcript paths exist. CSAT settings/models/components alone do not establish the proposed automatic survey-on-resolution workflow: no corresponding service emission/submission path was located. SLA, CSAT reporting, social channels, and all performance targets need their own implementation and operational evidence. |
+
+Review sources include the model, router, widget handler/service, settings service, `support_chat.go`, runtime knowledge/reply tools, SDK config/widget client, shared support-core package, and production ingress manifest. No live endpoint, provider, deployment, or application test was exercised. References to the former external checkout below describe migration history; new contributors do not need that checkout. Vendor comparison claims in Section 6.6 are unverified historical research, not current product comparisons.
+
+## Historical March phase tracker
+
+### Recorded phase status
 
 | Phase | Name | Status | Deliverables |
 |-------|------|--------|-------------|
@@ -278,7 +300,7 @@
 
 ## 1. Overview
 
-Build an Intercom Finn-like support inbox for Helpin where customers can start conversations from an embeddable website widget, receive AI-first responses grounded in Helpin Docs and externally published help center content, and seamlessly hand off to human agents inside the Helpin dashboard.
+Build an AI-assisted support inbox for Helpin where customers can start conversations from an embeddable website widget, receive AI-first responses grounded in Helpin Docs and externally published help center content, and seamlessly hand off to human agents inside the Helpin dashboard.
 
 The support product should be modeled around a single **inbox conversation** object. The system should not present or evolve two separate domain concepts, `chat` and `ticket`, with a later conversion from one to the other. In Helpin, the correct coupling is:
 
@@ -2009,7 +2031,7 @@ Redis becomes justified later if Helpin needs sub-second config reads under sust
 | **Zendesk** | Boot-time fetch | Cookies + localStorage + sessionStorage | Client-side JS API for dynamic changes | Until next page load |
 | **Helpin** (recommended) | Boot-time fetch + HTTP cache | sessionStorage + browser HTTP cache | **WebSocket push** + HTTP cache expiry | **Instant** (WS open) / **<60s** (WS closed) |
 
-Helpin's approach matches Crisp's instant propagation (the best in the industry) while being simpler to implement — Crisp built a dedicated RTM protocol, whereas Helpin reuses the existing WebSocket hub that's already running for chat messages.
+This table records an unverified comparison used in the original design. The proposed propagation delays require measurement; they are not service guarantees or verified statements about other vendors.
 
 ### 6.7 Additional Widget and Inbox Features
 
@@ -2547,7 +2569,7 @@ Current code already supports human approval of drafted support replies. That pa
 
 ## 12. Implementation Plan
 
-> **Note:** Phase progress is tracked at the top of this document. See the **Phase Progress Tracker** section for current status with checkboxes. The subsections below describe the original deliverables and exit criteria for each phase.
+> These subsections and the phase tracker record original deliverables and March progress. Use the source review above for current implementation differences.
 
 ### 12.1 Phase 0: Product and Naming Alignment ✅
 
@@ -2732,9 +2754,9 @@ Deliverables:
 
 ---
 
-## 14. Known Gaps from Current Implementation
+## 14. Historical March implementation gaps
 
-> **Note:** Action items marked `[x]` have been completed in the indicated phase. Remaining `[ ]` items are assigned to future phases. See the **Phase Progress Tracker** at the top for a consolidated view.
+> Checkboxes record the March review. Unchecked items do not establish that the feature is missing today; some were implemented differently or superseded.
 
 The current codebase has a working MVP based on ticket terminology. The following gaps must be addressed to meet PRD requirements:
 

@@ -1,4 +1,16 @@
-# PM Agent Tool Surface Design
+# PM agent tool surface design
+
+This historical design explains the expansion of project-management tools available to agents. Use the source review below to distinguish the original proposal from the current implementation; the original acceptance criteria are not a record of completed runtime testing.
+
+## Source review — 2026-09-18
+
+- The discovery, task/checklist, epic, sprint, objective, and key-result command families now have implementations in `server/internal/service/internal_command_pm_*.go`. The opening description of a narrow catalog predates these changes. Delivery-target update commands also exist beyond this design's original list.
+- List pagination accepts canonical `limit`/`offset` or legacy `page`/`per_page`, rejects mixed styles, defaults to 50, and caps a page at 100. Results include pagination metadata. Workspace-member discovery returns active assignable members with IDs, display name, role, and team IDs; its projection omits email.
+- The original target matrix is historical. For example, current shared discovery targets also include `support_coverage_gap`. Consult `server/internal/commandtools/metadata.go` and command registration for each command's allowed targets. Task mutation validation checks the current task, epic, or sprint relationship and the agent's team scope.
+- The runtime host resolves sprint and objective context and passes the resolved authorization actor into command execution. Sprint and objective services enforce management access through the shared team helpers: owner/admin actors bypass the team-manager check; other eligible actors must manage a linked team. These helpers allow calls without an actor, so the host's actor propagation remains part of the authorization boundary.
+- Catalog and command tests cover schemas, projections, pagination, task/checklist behavior, and parent/child relationships. The catalog retains `assign_task_agent` as a deprecated compatibility entry. Tests were inspected, not executed, for this documentation review; the end-to-end agent journeys and every preset/UI combination below remain acceptance criteria rather than verified outcomes.
+
+## Original design
 
 ## Summary
 

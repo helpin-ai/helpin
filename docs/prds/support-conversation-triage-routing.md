@@ -1,4 +1,18 @@
-# Support conversation triage and inbox routing
+# Support conversation triage and inbox routing requirements
+
+This March 2026 requirements record explains intent-based inbox routing and its ordering before support AI. Contributors should use the current implementation notes below; triage is now implemented, and several defaults and classifier paths differ from the original staged proposal.
+
+## Source review — 2026-09-18
+
+- The [triage service](../../server/internal/service/support_inbox_triage.go), [repositories](../../server/internal/repository/support_triage.go), [routing settings](../../frontend/src/components/settings/ConversationRoutingTab.tsx) and thread suggestion UI exist. The opening “not supported yet” statements and implementation phases are historical. Settings live in the Inboxes and routing page rather than only Chat Widget settings.
+- [Default settings](../../server/internal/model/support_inbox.go) enable triage **and auto-move**, with confidence `0.8`, widget/email enabled, internal disabled, a daily budget of 250, spam skipping and duplicate suppression enabled, and reruns disabled. These replace the proposed auto-move-off/0.90 defaults; workspace configuration and AI-routing entitlement still apply.
+- Active rules run in priority/creation order and the first valid match wins without a model call. Classifier fallback can use Jev or the local decision client before the LLM. Auto-move currently accepts only `rule` or `ai` sources, excludes human-owned/replied conversations and internal/API channels, and requires Shared/default origin plus the confidence threshold.
+- [Widget processing](../../server/internal/service/support_inbox_widget.go) runs triage in background post-message automation, then reloads ownership before publishing support AI work. [Inbound email](../../server/internal/service/email_fallback.go) runs triage inline after persistence and before AI publication. Thus both order routing before AI, but the original promise of universally asynchronous/nonblocking email classification is too broad. Triage errors are logged and the remaining AI eligibility checks can still proceed.
+- Shared Inbox appears as a classifier option, but a nil suggested mailbox yields no persisted suggestion/move. No-match does not forcibly relocate an existing conversation to Shared. Mailbox guidance falls back from `routing_prompt` to description/name. The 15-minute cache is disabled for configured Jev/local-decision routing paths.
+- The daily budget counts persisted, noncached AI evaluation events since UTC midnight. It is not an atomic reservation of every attempted model call: failures/no-destination results and concurrent evaluations mean it is not a strict provider-call cap. Triage state, history and mailbox movement are separate writes rather than one all-or-nothing transaction.
+- Dismissal stores `locked_at` and hides the pending banner. With default reruns disabled, an existing result is retained; enabling reruns does not provide a permanent lock check in `EvaluateAndRoute`. Treat permanent-dismissal semantics as unresolved rather than promising them. No live routing, provider request, model evaluation or listed test suite was run for this review.
+
+## Original proposal
 
 **Status:** Draft → Ready for implementation  
 **Version:** v1.2 (solidified)  
