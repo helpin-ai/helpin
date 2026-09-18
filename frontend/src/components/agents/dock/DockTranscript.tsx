@@ -434,6 +434,7 @@ export function DockTranscript({
                       && (entry.segment.kind !== 'assistant' || entry.segment.id !== latestAssistantSegmentId),
                     assistantPresentation: assistantPresentation?.presentation,
                     fallbackUserLabel: 'You',
+                    userPresentation: 'signature',
                     resolveActor: (message) => {
                       const attributedUserId = message.resolver_user_id ?? message.actor_user_id;
                       if (attributedUserId) {

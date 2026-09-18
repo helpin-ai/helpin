@@ -759,11 +759,11 @@ describe('DockTranscript', () => {
     expect(text.indexOf('Sub-agent runs')).toBeLessThan(text.indexOf('Beacon failed to start.'));
   });
 
-  it('uses the signed-in user\'s configured avatar for persisted messages', () => {
+  it('shows the sender below the persisted message without an avatar', () => {
     act(() => {
       root.render(
         <DockTranscript
-          stream={streamWithMessages([userMessage('user-1', 'Show my avatar.', 1, 'user-1')])}
+          stream={streamWithMessages([userMessage('user-1', 'Show my message.', 1, 'user-1')])}
           active={false}
           workspaceId="ws-1"
         />,
@@ -771,14 +771,9 @@ describe('DockTranscript', () => {
     });
 
     expect(container.textContent).toContain('Alice Johnson');
-    expect(mocks.resolveTeamMemberAvatarSrc).toHaveBeenCalledWith({
-      avatarUrl: undefined,
-      avatarStyle: 'personas',
-      avatarSeed: 'alice-seed',
-      avatarBackgroundMode: 'color',
-      avatarBackgroundColor: '#fbbf24',
-      fallbackSeed: 'Alice Johnson',
-    });
+    expect(mocks.resolveTeamMemberAvatarSrc).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-message-sender]')?.textContent).toBe('Alice Johnson');
+    expect(container.textContent!.indexOf('Show my message.')).toBeLessThan(container.textContent!.indexOf('Alice Johnson'));
   });
 
   it('shows the teammate who authored each persisted message', () => {

@@ -34,6 +34,8 @@ export interface RenderSegmentOptions {
   resolveActor?: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
   /** Surface-specific label when actor details are intentionally unavailable. */
   fallbackUserLabel?: string;
+  /** Compact dock attribution below the bubble, without an avatar. */
+  userPresentation?: 'avatar' | 'signature';
   /** Dock-only aggregation metadata for adjacent calls to the same tool. */
   toolGroup?: TranscriptToolGroupPresentation;
   /** Show the original tool input/result/error inline inside a working group. */
@@ -91,6 +93,7 @@ export function TranscriptSegmentView({
           message={segment.message}
           actor={options.resolveActor?.(segment.message) ?? null}
           fallbackLabel={options.fallbackUserLabel}
+          presentation={options.userPresentation}
         />
       );
     case 'review_decision':
@@ -350,15 +353,17 @@ function UserSegment({
   message,
   actor,
   fallbackLabel = 'User',
+  presentation = 'avatar',
 }: {
   message: CodingSessionTranscriptMessage;
   actor: CodingSessionActor | null;
   fallbackLabel?: string;
+  presentation?: 'avatar' | 'signature';
 }) {
   const actorLabel = actor?.full_name || actor?.email || fallbackLabel;
   return (
-    <div className="flex flex-col items-end gap-2">
-      <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
+    <div className="flex min-w-0 flex-col items-end gap-1.5">
+      {presentation === 'avatar' && <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(message.timestamp)}</span>
         {message.delivery_status === 'pending' ? <span className="sr-only">Sending…</span> : null}
         <span className="font-medium">{actorLabel}</span>
@@ -372,7 +377,7 @@ function UserSegment({
           className="h-6 w-6"
           fallbackClassName="text-[10px]"
         />
-      </div>
+      </div>}
       {message.content.trim() ? <UserMessageBubble content={message.content} /> : null}
       {message.attachments?.length ? (
         <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
@@ -395,6 +400,12 @@ function UserSegment({
           ))}
         </div>
       ) : null}
+      {presentation === 'signature' && (
+        <div data-message-sender className="max-w-[90%] px-1 text-right text-[11px] leading-4 text-muted-foreground" title={formatCodingSessionRelative(message.timestamp)}>
+          <span className="break-words">{actorLabel}</span>
+          {message.delivery_status === 'pending' ? <span className="sr-only"> · Sending…</span> : null}
+        </div>
+      )}
     </div>
   );
 }
