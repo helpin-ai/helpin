@@ -166,6 +166,16 @@ export function LoopWire() {
   const replay = useCallback(() => setRun((r) => r + 1), []);
   const on = (at: number) => (t >= at ? 'on' : undefined);
 
+  // Stage badges are always visible. A badge fills as the dark line closes in on it
+  // (two ticks after departure, so the fill lands with the arrival), stays filled while
+  // the stage runs, and settles to a done state when the line leaves for the next stage.
+  const departs = [S.depart1, S.depart2, S.depart3, S.depart4, S.exit];
+  const badge = (i: number) => {
+    if (t >= departs[i + 1]) return 'wlabel done';
+    if (t >= departs[i] + 2) return 'wlabel running';
+    return 'wlabel';
+  };
+
   // Where the dark line's head should be for the current tick.
   let target = 0;
   if (marks.length === 4 && len) {
@@ -192,7 +202,7 @@ export function LoopWire() {
       <div className="wire-nodes" aria-hidden="true">
         {/* 01 Hear: chat bubbles and a transcript line */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(0)] }}>
-          <div className={`wlabel ${on(S.hear) ?? ''}`}><i /><span>01 Hear</span></div>
+          <div className={badge(0)}><i /><span>01 Hear</span></div>
           <div className="wart hear">
             <div className={`bub ${on(S.hearBubble) ?? ''}`}>
               <span className="bav">M</span>
@@ -211,7 +221,7 @@ export function LoopWire() {
 
         {/* 02 Decide: bare checklist of pills, then the task row */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(1)] }}>
-          <div className={`wlabel ${on(S.decide) ?? ''}`}><i /><span>02 Decide</span></div>
+          <div className={badge(1)}><i /><span>02 Decide</span></div>
           <div className={`wart decide ${on(S.decideCard) ?? ''}`}>
             <Checklist items={DECIDE} t={t} cardAt={S.decideCard} />
             <div className={`trow ${on(S.taskRow) ?? ''}`}>
@@ -224,7 +234,7 @@ export function LoopWire() {
 
         {/* 03 Ship: a dark run log */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(2)] }}>
-          <div className={`wlabel ${on(S.ship) ?? ''}`}><i /><span>03 Ship</span></div>
+          <div className={badge(2)}><i /><span>03 Ship</span></div>
           <div className={`wart log ${on(S.shipCard) ?? ''}`}>
             <div className="lhead"><span>agent run · HLP-142</span><span className="mono">HLP-142-okta-saml-mapping</span></div>
             <Checklist items={SHIP} t={t} cardAt={S.shipCard} />
@@ -233,7 +243,7 @@ export function LoopWire() {
 
         {/* 04 Tell: document preview, a reply bubble, the deal */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(3)] }}>
-          <div className={`wlabel ${on(S.tell) ?? ''}`}><i /><span>04 Tell</span></div>
+          <div className={badge(3)}><i /><span>04 Tell</span></div>
           <div className="wart tell">
             <div className={`docp ${on(S.doc) ?? ''}`}>
               <div className="dtitle">Set up SSO with Okta</div>
