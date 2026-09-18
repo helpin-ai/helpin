@@ -9,7 +9,7 @@ import (
 
 func jevProductPolicies() map[string]decision.Policy {
 	policies := map[string]decision.Policy{}
-	for _, feature := range []string{"meeting_routing", "coverage_classification", "coverage_topic_matching", "automation_condition", "answer_evidence"} {
+	for _, feature := range []string{"meeting_routing", "coverage_classification", "coverage_topic_matching", "automation_condition", "answer_evidence", "translation_review"} {
 		prefix := "JEV_" + strings.ToUpper(feature)
 		mode := strings.TrimSpace(os.Getenv(prefix + "_MODE"))
 		if mode == "" {

@@ -3,7 +3,7 @@ package config
 import "testing"
 
 func TestJevProductPoliciesDefaultToPrimaryWithIndependentOverrides(t *testing.T) {
-	for _, prefix := range []string{"JEV_MEETING_ROUTING", "JEV_COVERAGE_CLASSIFICATION", "JEV_COVERAGE_TOPIC_MATCHING", "JEV_AUTOMATION_CONDITION", "JEV_ANSWER_EVIDENCE"} {
+	for _, prefix := range []string{"JEV_MEETING_ROUTING", "JEV_COVERAGE_CLASSIFICATION", "JEV_COVERAGE_TOPIC_MATCHING", "JEV_AUTOMATION_CONDITION", "JEV_ANSWER_EVIDENCE", "JEV_TRANSLATION_REVIEW"} {
 		t.Setenv(prefix+"_MODE", "")
 		t.Setenv(prefix+"_THRESHOLD", "")
 		t.Setenv(prefix+"_DAILY_LIMIT", "")
@@ -13,7 +13,7 @@ func TestJevProductPoliciesDefaultToPrimaryWithIndependentOverrides(t *testing.T
 	t.Setenv("JEV_MEETING_ROUTING_THRESHOLD", "0.98")
 	t.Setenv("JEV_MEETING_ROUTING_DAILY_LIMIT", "75")
 	policies := jevProductPolicies()
-	if len(policies) != 5 {
+	if len(policies) != 6 {
 		t.Fatal("missing feature policy")
 	}
 	for name, policy := range policies {

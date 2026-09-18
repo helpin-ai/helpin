@@ -326,6 +326,7 @@ type SupportConversationSearchParams struct {
 
 // SupportMessage represents a message within a support conversation.
 type SupportMessage struct {
+	TranslationID     string     `json:"-" gorm:"-"`
 	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID       string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	ConversationID    string     `json:"conversation_id" gorm:"type:uuid;index"`
@@ -966,17 +967,19 @@ type CreateConversationWithMessageResponse struct {
 
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
-	Content         string   `json:"content"`
-	ClientMessageID string   `json:"client_message_id,omitempty"`
-	IsInternal      bool     `json:"is_internal"`
-	AIAssisted      bool     `json:"ai_assisted,omitempty"`
-	MessageType     string   `json:"message_type"` // reply, csat_survey, system, email_notice
-	AttachmentIDs   []string `json:"attachment_ids,omitempty"`
-	Channels        []string `json:"channels,omitempty"`
-	DeliveryMode    string   `json:"delivery_mode,omitempty"`
-	EmailSubject    *string  `json:"email_subject,omitempty"`
-	CCEmails        []string `json:"cc_emails,omitempty"`
-	BCCEmails       []string `json:"bcc_emails,omitempty"`
+	AutoTranslate             bool     `json:"auto_translate,omitempty"`
+	TranslationTargetLanguage string   `json:"translation_target_language,omitempty"`
+	Content                   string   `json:"content"`
+	ClientMessageID           string   `json:"client_message_id,omitempty"`
+	IsInternal                bool     `json:"is_internal"`
+	AIAssisted                bool     `json:"ai_assisted,omitempty"`
+	MessageType               string   `json:"message_type"` // reply, csat_survey, system, email_notice
+	AttachmentIDs             []string `json:"attachment_ids,omitempty"`
+	Channels                  []string `json:"channels,omitempty"`
+	DeliveryMode              string   `json:"delivery_mode,omitempty"`
+	EmailSubject              *string  `json:"email_subject,omitempty"`
+	CCEmails                  []string `json:"cc_emails,omitempty"`
+	BCCEmails                 []string `json:"bcc_emails,omitempty"`
 }
 
 // LinkTaskRequest links a conversation to a task.
@@ -1273,6 +1276,8 @@ const (
 
 // SupportInboxSettings holds all widget configuration stored as JSONB.
 type SupportInboxSettings struct {
+	TranslationEnabled   bool   `json:"translation_enabled"`
+	DefaultAgentLanguage string `json:"default_agent_language"`
 	// Identity Capture
 	RequireEmailBeforeChat bool   `json:"require_email_before_chat"`
 	RequirePhoneAfterEmail bool   `json:"require_phone_after_email"`
@@ -1391,6 +1396,8 @@ type SupportRoutingUsageStatus struct {
 // DefaultSupportInboxSettings returns settings with sensible defaults.
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
+		TranslationEnabled:             true,
+		DefaultAgentLanguage:           "en",
 		RequireEmailBeforeChat:         true,
 		RequirePhoneAfterEmail:         false,
 		WelcomeMessage:                 "Hi there! How can we help you today?",
@@ -1473,6 +1480,8 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
+	TranslationEnabled              *bool                       `json:"translation_enabled,omitempty"`
+	DefaultAgentLanguage            *string                     `json:"default_agent_language,omitempty"`
 	AllowedOrigins                  *[]string                   `json:"allowed_origins,omitempty"`
 	IdentityVerificationMode        *string                     `json:"identity_verification_mode,omitempty"`
 	RequireEmailBeforeChat          *bool                       `json:"require_email_before_chat,omitempty"`

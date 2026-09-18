@@ -288,7 +288,8 @@ function findTrailingAIContractStart(content: string): number {
   return -1;
 }
 
-interface MessageBubbleProps {
+export interface MessageBubbleProps {
+ translatedContent?: string;
   message: SupportMessage;
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
@@ -303,6 +304,7 @@ interface MessageBubbleProps {
 }
 
 export const MessageBubble = memo(function MessageBubble({
+  translatedContent,
   message,
   isConsecutive,
   isLastInGroup = true,
@@ -413,7 +415,7 @@ export const MessageBubble = memo(function MessageBubble({
   const projectedEmailVisibleContent = message.via_channel === 'email'
     ? message.email_visible_text?.trim() ?? ''
     : '';
-  const visibleContent = forwardedDisplayContent || projectedEmailVisibleContent || displayContent;
+  const visibleContent = translatedContent ?? (forwardedDisplayContent || projectedEmailVisibleContent || displayContent);
   const hasTableContent = useMemo(() => containsMarkdownTable(visibleContent), [visibleContent]);
 
   // Highlight @mentions in internal notes
@@ -432,7 +434,7 @@ export const MessageBubble = memo(function MessageBubble({
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
   const hasDisplayContent = visibleContent.trim().length > 0;
   const showBubble = !!visibleContent || fileAttachments.length > 0 || imageAttachments.length > 0 || linkPreviews.length > 0;
-  const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
+  const hasEmailBody = translatedContent === undefined && message.via_channel === 'email' && !!message.html_body;
   const renderEmailBodyAsForwardedText = hasEmailBody && !!forwardedDisplayContent;
 
   const verb = isCustomer ? 'Received' : 'Sent';
