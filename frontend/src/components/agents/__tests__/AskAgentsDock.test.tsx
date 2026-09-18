@@ -1789,7 +1789,7 @@ describe('AskAgentsDock', () => {
     });
 
     expect(panel?.getAttribute('data-maximized')).toBeNull();
-    expect(panel?.className).toContain('w-[min(900px,92vw)]');
+    expect(panel?.className).toContain('w-[min(1120px,92vw)]');
     expect(document.body.querySelector('[aria-label="Maximize agent dock"]')).not.toBeNull();
   });
 
