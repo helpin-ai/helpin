@@ -1,6 +1,42 @@
-# Safe Agent Operational Tools Implementation Plan
+# Safe agent operational tools implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents are available and authorized) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking. This execution is local because the user explicitly requested no subagents.
+> Historical implementation plan, source-compared on 2026-09-17. The command
+> adapters described here now exist. Unchecked steps record the original sequence;
+> they are not evidence that the work is absent or an instruction to recreate it.
+
+## Current implementation and review limits
+
+Existing adapters include [PM delivery targets](../../server/internal/service/internal_command_pm_delivery.go),
+[Docs metadata](../../server/internal/service/internal_command_docs_metadata.go),
+[CRM operations](../../server/internal/service/internal_command_crm_operational.go),
+[CRM associations](../../server/internal/service/internal_command_crm_associations.go),
+and [Support operations](../../server/internal/service/internal_command_support_operational.go).
+Use current [metadata](../../server/internal/commandtools/metadata.go) and the
+[embedded catalog](../../server/internal/agentcontract/tool_catalog.json) for exact
+aliases and schemas. Current backend Go requirements come from
+[go.mod](../../server/go.mod), which declares Go 1.25.0; the original Go 1.24 line
+below is historical.
+
+Strict published schemas do not establish strict adapter decoding. PM delivery,
+Docs metadata, and CRM operational inputs use `json.Unmarshal`, which ignores
+unknown fields. The Docs adapter explicitly checks document workspace and loads
+the space with actor context; such checks must be assessed per adapter rather
+than inferred from the architecture paragraph. Explicit owner-clear conflicts are
+rejected in CRM contact/company updates, but that does not prove every field
+combination in the original test matrix.
+
+The [reviewed design](../specs/2026-08-06-safe-agent-operational-tools-design.md)
+documents central authorization preconditions, varying discovery limits, and the
+limits of broad transaction/scope claims. This companion plan shares those
+qualifications. The non-goals apply to this proposed tool batch, not to every tool
+in today's larger catalog.
+
+Operational test files exist beside these adapters. Their presence and the original
+RED/GREEN instructions do not constitute a fresh full backend test run. The branch
+and commit steps below are historical delivery instructions; this documentation
+review changes no runtime code or release state.
+
+## Original implementation sequence
 
 **Goal:** Expand Automation > Allowed tools with bounded, workspace-scoped operational tools for the remaining PM, Docs, CRM, and Support surfaces while keeping destructive, administrative, identity-changing, and self-modifying actions unavailable.
 

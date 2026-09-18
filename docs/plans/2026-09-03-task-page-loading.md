@@ -1,4 +1,36 @@
-# Task Page Loading Implementation Plan
+# Task page loading implementation plan
+
+> Historical implementation plan, source-compared on 2026-09-17. For
+> contributors investigating collection payloads: the summary-read, compression,
+> workflow reuse, and shared reference-query changes are present. Checked tasks
+> below record the original work, not a fresh regression or performance run.
+
+## Current implementation
+
+The [HTTP list handler](../../server/internal/handler/pm_task.go) calls
+`ListSummary`. The [repository](../../server/internal/repository/pm_task.go)
+omits `description` and `implementation_brief` for summary and board collection
+queries. Full `List` and task-detail reads remain separate and retain body data.
+The first original test step below incorrectly includes full `List` among the
+summary paths; the later implementation step correctly preserves it. Search can
+still match descriptions even when the returned summary omits them.
+
+The [compression middleware](../../server/internal/middleware/compress_json.go)
+uses Chi compression at level 5 for JSON when the client advertises a supported
+encoding. The [router](../../server/internal/router/router.go) attaches it to the
+five task collection GET routes listed below. This is scoped middleware, not a
+claim that every task response is always compressed.
+
+The [board store](../../frontend/src/stores/pmBoardStore.ts) first uses a loaded
+team workflow and calls the server resolver only if one is missing.
+[KanbanBoard](../../frontend/src/components/pm/KanbanBoard.tsx) consumes store
+workflows and the shared label, epic, and sprint hooks. The
+[repository tests](../../server/internal/repository/pm_task_member_board_test.go)
+cover summary projection and preserved detail bodies; test source inspection does
+not establish a fresh full-suite pass, production latency improvement, or complete
+interaction parity. The old Go/npm commands are historical verification records.
+
+## Original implementation record
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 

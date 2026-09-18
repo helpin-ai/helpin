@@ -36,8 +36,8 @@ excluded from the inventory.
 | Root README, architecture, contribution/support/security/license documents | Public-facing entry points and policies | Retain; verify public URLs and policy ownership |
 | `docs/community/` operator guides | Installation, configuration, deployment, identity, backups, troubleshooting | Retain with release-specific validation; preserve bundle links |
 | [Community implementation status](community/implementation-status.md) | Historical branch and acceptance evidence; already described as maintainer-only | Keep out of public help-center imports and operator bundles; review repository inclusion separately |
-| [Local development](development.md), [local Runtime](AGENT_RUNTIME_LOCAL.md), [widget architecture](widget-architecture.md) | Contributor setup and build contracts | Retain; verify against a clean checkout and published dependencies |
-| [Staging Runtime runbook](AGENT_RUNTIME_STAGING.md) | Deployment topology, environment-specific secret-store configuration, and shared-service operational assumptions; projection ownership also differs from current API wiring | Move to a private operational knowledge base or replace with a sanitized generic guide before export |
+| [Local development](development.md), [local Runtime](agent-runtime-local-setup.md), [widget architecture](widget-architecture.md) | Contributor setup and build contracts | Retain; verify against a clean checkout and published dependencies |
+| [Staging Runtime runbook](agent-runtime-staging-runbook.md) | Deployment topology, environment-specific secret-store configuration, and shared-service operational assumptions | Move to a private operational knowledge base or replace with a sanitized generic guide before export |
 | [Native release runbook](ops/native-release-runbook.md) | Coordinated SaaS deployment, release inventory, and canary instructions | Private operational material; retain only generic contributor instructions publicly |
 | [Support email operations](ops/support-email-fallback-runbook.md) | Deployment-specific operational procedures | Review and sanitize; separate public configuration from internal response procedures |
 | [Pricing strategy](strategy/pricing-strategy.md), [backlog](strategy/backlog-and-ideas.md), and other `docs/strategy/` pages | Pricing options, competitive positioning, campaign planning, and uncommitted product direction | Default to private strategy material; publish only an explicitly approved roadmap |
@@ -75,8 +75,8 @@ in Git history. Incoming index links and retained-plan references were updated.
 | Removed group | Why it was removed | Current reference |
 | --- | --- | --- |
 | Eight original PM phase plans and the archive index | Initial story/iteration-era implementation checklists still marked “Not Started”; the application has since moved to task-based APIs, routes, and modules | [Architecture](../ARCHITECTURE.md), [development](development.md), and [migration guide](ops/database-migrations.md) |
-| Four March 23–27 in-process native/Codex/OpenCode runtime rollout plans | They target retired Helpin worker executors and local machine paths; execution now belongs to the separate Runtime service | [Coding execution](CODING_AGENT_RUNTIME_FLOW.md) and [agent architecture](AGENTS_AND_AUTOMATION.md) |
-| Historical product-spec planning-pipeline PRD stub | It explicitly says its orchestration no longer matches the active runtime and only redirects readers | [Agents and automation](AGENTS_AND_AUTOMATION.md) |
+| Four March 23–27 in-process native/Codex/OpenCode runtime rollout plans | They target retired Helpin worker executors and local machine paths; execution now belongs to the separate Runtime service | [Coding execution](coding-agent-execution.md) and [agent architecture](agents-and-automation.md) |
+| Historical product-spec planning-pipeline PRD stub | It explicitly says its orchestration no longer matches the active runtime and only redirects readers | [Agents and automation](agents-and-automation.md) |
 | September 14 AI-profile implementation checkpoint | Explicitly superseded completion snapshot with old branch/version and session-specific instructions | [AI connections](ai-connections.md) and [review corrections](plans/2026-09-14-ai-profiles-review-fixes.md) |
 
 Partially superseded inbox-performance and custom-sender requirements were kept

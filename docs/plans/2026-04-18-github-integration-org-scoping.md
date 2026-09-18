@@ -1,12 +1,26 @@
-# PRD: Org-Scoped GitHub Integrations with Per-Workspace Repo Mapping
+# Organization-scoped GitHub integrations plan
 
-**Status**: Draft
+**Status**: Historical proposal; superseded in part by shared repository catalogs
 **Author**: Azhar
 **Date**: 2026-04-18
 **Target branch**: `feature/github-integration-org-scoping`
 **Related**: Builds on the GitHub App install flow introduced in `internal/githubapp/` and `internal/service/git.go`.
 
 ---
+
+This historical plan explains why GitHub installations moved to the organization boundary. Its original one-repository/one-workspace restriction and rollout checklist no longer describe the full implementation. Read the source review before using the original proposal for engineering work.
+
+## Source review — 2026-09-18
+
+- Organization ownership, repository lifecycle fields, installation reuse, repository wiring, and agent-run scope validation exist in `server/internal/model/git.go` and `server/internal/service/git.go`. `ResolveForAgentRun` rejects repositories outside the run workspace and inactive repositories or integrations.
+- **A repository can now be enabled in multiple workspace catalogs.** Migration `202605210002_org_level_git_connections.sql` replaces the original organization-wide live-claim uniqueness with `(workspace_id, integration_id, external_id)`. The original cross-workspace conflict behavior, disabled sibling claims, and one-live-workspace invariant below are superseded.
+- Repository webhooks resolve a list of active workspace mappings. The handler still has a legacy fallback to `integration.workspace_id` when there are no claims. The model retains this nullable legacy column; the proposed Phase 3 column removal is not complete in source.
+- The additive migrations are dated `20260423`, not the proposed `20260418_000*` filenames. Use the checked-in migration sequence, including later changes, rather than executing the illustrative SQL below as an upgrade procedure.
+- Installation deletion/removal and suspend/unsuspend handling exist. The 30-day tombstone cleanup is implemented in `server/internal/service/git_grace_cleanup.go` and started by the Temporal worker; it runs immediately and then every 24 hours. Failed repository deletions are logged and skipped. This is not evidence that a deployed worker has run cleanup or that every reinstall restores every historical mapping.
+- Workspace teardown deletes that workspace's repository rows and deactivates organization integrations when no sibling workspaces remain. The available-repository access helper accepts an organization owner or an owner/admin of a visible workspace in the organization; the historical table's broad reference to any workspace member should not be read as the implemented permission rule.
+- `ProjectDeliveryTab.tsx` now points to workspace repository settings instead of hosting the proposed install/picker flow. Organization-level integration routes and GitLab wiring also exist beyond this plan's original scope. Rollout dates, production metrics, migration execution, and manual QA outcomes were not verified in this source review.
+
+## Original proposal
 
 ## 1. Context
 

@@ -1,5 +1,20 @@
 # Widget Composer Brand Alignment Implementation Plan
 
+> Historical design/implementation plan, source-compared on 2026-09-17. Branding
+> alignment is implemented and has since moved into the shared
+> [BrandAttribution](../../packages/widget-core/src/components/BrandAttribution.tsx)
+> component. The whole attribution (label and brand) is one link, not a label
+> beside a separate link. Shared CSS uses a 5px gap, rather than the proposed 4px;
+> the hover underline remains on the name. ComposeBar retains its branding flag
+> and mobile CSS hides the footer. The link is built by the
+> [attribution URL helper](../../packages/widget-core/src/utils/helpinAttribution.ts).
+>
+> Current [markup tests](../../packages/widget-core/src/__tests__/ComposeBar.test.tsx)
+> and [style tests](../../packages/widget-core/src/__tests__/widgetStyles.test.ts)
+> describe the shared component. Checkboxes and the old `waqar-fixes` merge step
+> below are historical records, not current branch instructions or a fresh
+> test/build/visual validation report.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Align the composer’s “We run on Helpin” attribution and keep its hover underline strictly beneath the Helpin name.

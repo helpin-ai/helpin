@@ -1,4 +1,19 @@
-# Helpin Quiet Hairline
+# Helpin quiet hairline design reference
+
+
+Use this reference when designing or reviewing Helpin's web interface. It defines
+shared visual conventions and intentional exceptions; it is not a claim that
+every existing screen already conforms. Preserve behavior and accessibility when
+applying the conventions.
+
+The implementation sources are the [theme tokens](../../../../frontend/src/index.css),
+[Quiet components](../../../../frontend/src/components/design-system/quiet.tsx),
+[shared buttons](../../../../frontend/src/components/ui/button.tsx), and
+[conversation composer primitives](../../../../frontend/src/components/design-system/conversation-composer.tsx).
+Source review on 2026-09-18 confirmed the listed light palette, 93.75% root scale,
+12.2px dropdown token, compact headers, and blue composer-border exception.
+Dark tokens map to shared dark semantics; contrast and interaction accessibility
+still require verification in the rendered screen.
 
 ## The one rule
 
@@ -42,7 +57,7 @@ The interface reads like a well-set working document, not a form. Use one or two
 | Lifecycle | `#7c5cff` |
 | Dark action | `#1c1a17`, hover `#3b3733` |
 
-Use the `quiet-*` semantic Tailwind tokens rather than these literals. In dark mode, the tokens map to Helpin's existing accessible dark semantics.
+Use the `quiet-*` semantic Tailwind tokens rather than these literals. In dark mode, the tokens map to Helpin's existing dark semantics.
 
 Avatar fallback pairs, selected by the centralized avatar seed, are:
 
@@ -167,4 +182,4 @@ Use bubbles only for genuine turn-taking. Inbound is warm hover neutral and outb
 
 ## Anti-patterns
 
-Do not introduce bordered data-entry inputs, rounded field boxes, decorative section cards outside the settings pattern, decorative pills/chips for ordinary status or filter tabs, tinted enrichment cards, blue focus treatments, blue send buttons, centered empty illustrations, raw function names without an outcome sentence, emoji, gradients, ornamental metrics, or more than two dark actions per screen. Preserve the functional exceptions above, including shared settings sections. Do not flatten meaningful settings groups to satisfy the general preference for fewer containers.
+Do not introduce bordered data-entry inputs, rounded field boxes, decorative section cards outside the settings pattern, decorative pills/chips for ordinary status or filter tabs, tinted enrichment cards, blue focus treatments outside the shared conversation-composer exception, blue send buttons, centered empty illustrations, raw function names without an outcome sentence, emoji, gradients, ornamental metrics, or more than two dark actions per screen. Preserve the functional exceptions above, including shared settings sections. Do not flatten meaningful settings groups to satisfy the general preference for fewer containers.

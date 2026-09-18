@@ -1,4 +1,18 @@
-# Docs Space Detail — Collection-as-Page Refactor
+# Show documentation collections as pages
+
+This historical frontend plan explains the April collection-page refactor for contributors tracing documentation navigation. The current implementation has since changed document scoping, depth controls, and translation entry points. Use the source review before interpreting the original design or checklist.
+
+## Source review — 2026-09-18
+
+- [DocsSpaceDetail](../../frontend/src/pages/docs/DocsSpaceDetail.tsx) uses typed route search, `buildCollectionTree`, extracted layout components, and a missing-collection toast with replacement navigation. [The shared helpers](../../frontend/src/pages/docs/spaceDetail/nodeSelection.ts) resolve root, collection, uncategorized, and loading views.
+- A collection view now recursively includes documents from its descendants. The original direct-only table/header contract and its test expectations below are superseded. Root view includes all tree documents and uncategorized documents; cards count recursively, while child-collection counts remain direct.
+- Status selection is sent in the document query as well as applied by the helper; `include_archived` remains true. Without a status filter, archived documents are included. The table is rendered only when scoped documents are nonempty, so the proposed always-available table filter empty state is not guaranteed by this layout.
+- Create controls currently hide child-collection creation at `depth >= 1`, rather than the proposed depth-2 threshold. This describes frontend affordances, not an independent backend depth guarantee.
+- `initialParentCollectionId` is implemented in the global create store and forwarded to the collection dialog. The [card](../../frontend/src/pages/docs/spaceDetail/CollectionCard.tsx) uses a wrapper with sibling navigation and overflow buttons, avoiding the original nested-button sketch.
+- There is no separate `SpaceBreadcrumb.tsx`; the header uses `QuietBreadcrumbs`. Translation controls were moved out of this page to settings. The current page also includes API reference content for external-capable spaces, beyond this plan's initial scope.
+- Tests and the manual matrix below are historical verification instructions. No browser, accessibility, realtime, or typecheck result is claimed by this source review. Original screenshots, commit references, and line numbers provide historical context only.
+
+## Original plan
 
 **Date:** 2026-04-11
 **Owner:** frontend / docs module

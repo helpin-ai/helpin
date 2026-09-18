@@ -1,5 +1,62 @@
 # Deal creation implementation plan
 
+> Historical implementation record, compared with the checkout on
+> 2026-09-17. Creation, stage/filter, and shared display-control sources were
+> inspected; visual/browser results below were not rerun. Original branch
+> instructions and test counts below are historical, not current verification.
+
+## Verified creation differences
+
+The [create form](../../frontend/src/components/crm/CreateDealDialog.tsx) mounts
+only while open, keeps an editable generated name, remembers currency per
+workspace after successful creation, and defaults a new deal to annual revenue
+and a close date 30 days ahead. It does **not** currently render or submit a
+probability override or custom-property editor. The original completion and
+compatibility claims for those fields are therefore not the current UI contract.
+
+The [service](../../server/internal/service/crm_deal.go) defaults an omitted
+revenue type to `one_time`, unlike the form's explicit `annual` default. The
+[creation repository](../../server/internal/repository/crm_deal.go) creates the
+deal and canonical customer/participant associations in one transaction and
+checks additional contacts against the workspace. The
+[revenue helpers](../../frontend/src/components/crm/dealCreationDefaults.ts)
+calculate potential MRR/ARR from monthly/annual amounts; these are arithmetic
+projections, not recorded subscription revenue. Totals are omitted for mixed
+currencies or revenue periods.
+
+[Deal updates](../../frontend/src/lib/services/crmService.ts) use a client-side
+queue keyed by workspace and record. This serializes calls through that client
+helper; it is not a distributed concurrency guarantee across users or browsers.
+
+## Verified follow-up implementation
+
+The [stage-color migration](../../server/internal/dbmigrate/sql/202609120003_crm_stage_colors.sql)
+backfills only null colors and enforces six-digit hex values. Pipeline updates
+preserve omitted existing colors; duplication copies them. The
+[stage picker](../../frontend/src/components/crm/DealStageSelect.tsx) uses shared
+state content and a popover selector, with fallback colors for missing values.
+
+[Deal filter definitions](../../server/internal/repository/crm_deal_query_builder.go)
+feed the reusable server query builder, including numeric amount/probability and
+date fields. [Deals](../../frontend/src/pages/crm/Deals.tsx) stores serialized
+filters in route search and forwards them to list queries.
+
+[Board dragging](../../frontend/src/components/crm/DealBoard.tsx) reuses task-board
+drop targeting/commit helpers. [Shared deal edits](../../frontend/src/components/crm/useDealEdits.ts)
+keep optimistic patches per record and refuse another edit to the same record
+while pending in that hook scope. Success updates cached rows; failure removes
+that record's optimistic patch, preserving other records' changes. Old-scope
+completions do not invoke current UI callbacks. This is client-side coordination,
+not server-side conflict detection.
+
+[Deal display controls](../../frontend/src/components/crm/DealDisplayMenu.tsx),
+CRM column controls, and PM display adapters use the shared display-settings
+component. That source reuse does not by itself prove visual parity on every
+screen, theme, or viewport. The original browser counts, screenshots, full build,
+and disposable PostgreSQL checks remain historical results.
+
+## Original implementation record
+
 Implement directly in waqar-fixes with no sub-agents. This is the single plan for the approved form.
 
 Goal: all fields visible in this order: company, contacts, editable generated name, amount/currency/revenue type, pipeline/stage, owner/close date, probability; no heading subtext.

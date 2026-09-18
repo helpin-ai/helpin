@@ -1,5 +1,16 @@
 # Availability-Aware AI → Human Escalation — Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical availability design. Current escalation resolves teammate presence and
+office hours, chooses a handoff state, and renders state-specific reply-time and
+next-opening text in [support_ai_escalate.go](../../server/internal/service/support_ai_escalate.go)
+using [handoff helpers](../../server/internal/service/support_handoff_state.go).
+The original missing-behavior diagnosis is not the current implementation.
+Broader notification/assignment proposals below are not certified by that check.
+For schema work, follow the [migration runbook](../ops/database-migrations.md):
+Community disables AutoMigrate, so additive columns also require ledger migrations.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the AI's escalation message reflect real availability (live / busy / after-hours), capture an email when nobody can respond, and close the loop so an offline customer still gets a reply.

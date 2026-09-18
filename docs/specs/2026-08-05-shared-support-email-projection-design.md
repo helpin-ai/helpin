@@ -1,4 +1,49 @@
-# Shared Support Email Projection Design
+# Shared Support email projection design
+
+> Historical design, source-compared on 2026-09-17. This page explains the
+> shared email display contract for contributors. The main projection path exists;
+> the original baseline and unlimited preservation assumptions are not current
+> guarantees.
+
+## Current implementation and qualifications
+
+The [converter](../../server/internal/email/inboundhtml/convert.go) implements
+versioned HTML/visible/quoted projections and confidence values. Plain-text
+splitting requires stripped reply text to be a unique prefix of the full text,
+with a nonempty remainder, rather than an arbitrary matching substring. Converted
+HTML and Markdown have configured size caps, so “complete”/“never discard” below
+must not be read as unlimited display-output preservation. Retaining a raw log
+is separate from what a UI projection can show.
+
+[Ingestion](../../server/internal/service/email_fallback.go) also recognizes
+Helpin's own reply delimiter and has empty-visible-text fallbacks. Forwarded
+attribution uses the customer body as visible content. The
+[hydration path](../../server/internal/service/support_inbox.go) reprojects stale
+logs in memory from available stored HTML/stripped text; it does not rewrite old
+rows or recover content that was never retained. See the
+[reviewed implementation plan](../plans/2026-08-05-shared-support-email-projection.md)
+for detailed bounds and current source links.
+
+The [core foundation migration](../../server/internal/dbmigrate/sql/000000000001_core_foundation.sql)
+contains projection columns. The original AutoMigrate-only statement is not a
+valid migration policy for all deployments: installations with AutoMigrate disabled
+need versioned schema changes. Do not edit an already-applied foundation migration
+to deliver future projection changes.
+
+The [inbox iframe renderer](../../frontend/src/components/support/EmailBodyRenderer.tsx)
+receives HTML and collapse options, not `email_has_quoted_content`; it derives
+quote presentation from the document/DOM path. The
+[widget renderer](../../packages/widget-core/src/components/MessageBubble.tsx)
+uses the explicit flag and nonempty quoted Markdown for its toggle.
+[Websocket payload mapping](../../server/internal/websocket/support_events.go)
+passes projection fields without an HTML body. These are related but distinct
+rendering contracts, not identical presentation across every transport and client.
+
+The test matrix and “no production build required” statement below describe the
+original change scope, not permanent validation policy or fresh test results.
+No provider ingestion, browser rendering, or database migration was run here.
+
+## Original design record
 
 ## Context
 

@@ -1,7 +1,7 @@
 # Support execution through Agent Runtime
 
 Current implementation reference for the Helpin support backend. This describes
-code ownership, not deployment status.
+code ownership, not deployment status. Source-compared on 2026-09-17.
 
 ## Live conversation path
 
@@ -11,6 +11,9 @@ code ownership, not deployment status.
 2. Helpin checks workspace/channel settings, conversation ownership and AI
    control, message idempotency, conversation locking, explicit human requests,
    turn limits, and usage budgets before starting or resuming an `agent_run`.
+   When configured, a Jev lifecycle assessment can request handoff before reply
+   generation. Unavailable or uncertain assessments leave the agent path in charge;
+   accepted handoffs recheck message, history, and human-control state.
 3. Agent Runtime executes the support agent as a chat-mode run. It owns the
    model/tool loop and execution state. Messages arriving during an active turn
    are deferred and drained through the pause/reconciliation lifecycle.
@@ -18,9 +21,12 @@ code ownership, not deployment status.
    retrieves workspace-scoped evidence. `send_support_reply` checks the stored
    evidence, numeric grounding, confidence and recent confidence trend before
    publishing. `escalate_to_human` applies Helpin's handoff and routing rules.
-5. Reply publication and turn settlement are atomic. Human takeover revokes
-   delivery rights even if Runtime cancellation needs a retry. Runtime events
-   are projected into Helpin's run records.
+5. For the processing-ID-bound Runtime reply path, storing the message and
+   settling the turn share a database transaction. It rechecks conversation
+   control, active run, settings, and source-message eligibility. Websocket
+   publication follows that transaction; this is not atomic end-to-end network
+   delivery. Human takeover revokes delivery rights even if Runtime cancellation
+   fails. Runtime events are projected into Helpin's run records.
 
 The API wiring is in [`server/cmd/api/main.go`](../server/cmd/api/main.go).
 The Helpin worker still handles background jobs such as knowledge indexing; it
@@ -34,6 +40,8 @@ is not the support conversation executor.
 | Chat lifecycle and deterministic admission gates | [`support_chat.go`](../server/internal/service/support_chat.go) and adjacent `support_chat_*` files |
 | Knowledge tools and persisted run evidence | [`internal_command_support_knowledge.go`](../server/internal/service/internal_command_support_knowledge.go) |
 | Reply validation and delivery | [`internal_command_support_reply.go`](../server/internal/service/internal_command_support_reply.go), `support_ai_evidence.go`, `support_ai_confidence.go`, `support_ai_publish.go` |
+| Optional pre-reply lifecycle assessment | [`support_chat_jev.go`](../server/internal/service/support_chat_jev.go) |
+| Transactional reply/turn persistence | [`ai_message_processing.go`](../server/internal/repository/ai_message_processing.go) |
 | Human control and handoff | [`support_ai_control.go`](../server/internal/service/support_ai_control.go), [`support_ai_escalate.go`](../server/internal/service/support_ai_escalate.go) |
 | Isolated Runtime previews | [`support_preview.go`](../server/internal/service/support_preview.go) |
 | Scheduled follow-up runs | [`support_ai_follow_up.go`](../server/internal/service/support_ai_follow_up.go) and adjacent follow-up files |
@@ -53,16 +61,17 @@ answer-prompt builder, planner normalizers and conversation-state builder have
 no live callers and have been removed. The pre-model repetition, frustration
 and issue-stall heuristic chain was also disconnected from the Runtime path;
 its tests did not demonstrate live protection. Current deterministic checks are
-those in `SupportChatService` and the reply gate. Reply-turn counting, explicit
+those in `SupportChatService` and the reply gate; the optional Jev assessment is
+a separate model-backed lifecycle decision, not restoration of that heuristic chain. Reply-turn counting, explicit
 human-request handling, confidence validation and human-control fencing remain.
 
 Persisted message metadata, retrieval trace contracts, migrations and current
 API payloads are retained. Historical records may still contain planner-era
 fields; cleanup does not rewrite those records or remove their schema.
 
-The original [AI-first PRD](prds/PRD-ai-support-agent.md),
+The original [AI-first PRD](prds/ai-support-agent.md),
 [native tool extraction proposal](plans/2026-04-24-support-native-tool-extraction-plan.md),
-and [same-issue handoff PRD](prds/PRD-support-ai-stuck-detection-and-handoff.md)
+and [same-issue handoff PRD](prds/support-ai-stuck-detection-and-handoff.md)
 are historical design references, not instructions to restore a second executor.
 
 ## Related behavior and checks
@@ -71,7 +80,7 @@ are historical design references, not instructions to restore a second executor.
   retrieval-only option.
 - [Human control](support-ai-human-control.md) documents pause/return, takeover
   races and deployment requirements.
-- [Agents and automation](AGENTS_AND_AUTOMATION.md) describes the shared runtime
+- [Agents and automation](agents-and-automation.md) describes the shared runtime
   contract.
 
 Relevant service tests include `support_chat*_test.go`, `support_preview_test.go`,

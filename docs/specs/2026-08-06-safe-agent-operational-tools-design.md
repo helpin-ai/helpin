@@ -1,4 +1,47 @@
-# Safe Agent Operational Tools Design
+# Safe agent operational tools design
+
+
+> Historical design, source-compared on 2026-09-17. This page describes the
+> intended boundaries of operational agent tools. Core command families are
+> implemented; the safety requirements below are not a completed security audit.
+
+## Current implementation and qualifications
+
+The [command service](../../server/internal/service/internal_command_service.go)
+registers focused PM, Docs, CRM, and Support command families. Current aliases and
+schemas live in [shared metadata](../../server/internal/commandtools/metadata.go)
+and the [Automation catalog](../../server/internal/agentcontract/tool_catalog.json).
+For example, the label discovery alias is `list_pm_labels`, not the proposed
+`list_task_labels`. CRM operational registration also includes deal creation.
+
+The common unknown-property rejection rule is not uniform. Some adapters use
+strict decoding, while [CRM contact updates](../../server/internal/service/internal_command_crm_operational.go)
+and several [Support operations](../../server/internal/service/internal_command_support_operational.go)
+use `json.Unmarshal`, which ignores unknown fields. Central `Execute` does not
+perform general JSON-schema validation before invoking the adapter. A bounded
+published schema alone therefore does not establish rejection on every internal
+entry path. Ignored fields do not automatically become editable fields.
+
+Actor authorization also has preconditions: `authorizeCommandActor` returns
+without checking permissions when the authorization service is absent or
+`ActorRole` is empty. Merely having an actor ID is insufficient for the statement
+below that module permissions are enforced “when an actor is present.” Runtime
+policy, Dock mutation checks, and domain validations provide other layers, whose
+coverage must be verified for the actual caller. These observations do not prove
+that an untrusted caller can reach an unguarded operation.
+
+Discovery pagination varies by command family; use each tool's current schema
+and adapter rather than treating default 50/cap 100 as a universal rule. Likewise,
+transactionality and side effects depend on the specific delegated service.
+The requirements that cross-workspace IDs are never accepted and all scope rules
+match the UI remain invariants to test, not guarantees established by this design.
+
+The branch/commit delivery statement below records the original author's context;
+it is not evidence of today's branch, release availability, or clean worktree.
+Test files exist for operational commands, but no full backend regression run or
+end-to-end permission audit was performed during this documentation comparison.
+
+## Original design
 
 ## Summary
 

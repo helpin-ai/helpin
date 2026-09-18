@@ -1,4 +1,4 @@
-# Helpin as an open-source Intercom alternative (local / BYOK) — verified gap list
+# Open-source support launch: historical gap assessment
 
 Date: 2026-09-10
 Scope: what is missing in `helpin/` (and its hard dependency `agent-runtime/`) to launch as an open-source, self-hostable Intercom + Fin alternative with local or bring-your-own-key LLMs.
@@ -14,9 +14,28 @@ Nothing below is proposed because Intercom has it. Items are included only if (a
 
 ---
 
+## Source review: September 18, 2026
+
+This is a September 10 strategy snapshot, not the current launch blocker list. Read [Community implementation status](../community/implementation-status.md), [publication review](../publication-review.md), and [deployment guidance](../community/deployment.md) before planning release work.
+
+| Original finding | Current repository evidence |
+| --- | --- |
+| No license or contributor policies | [LICENSE](../../LICENSE), [CONTRIBUTING](../../CONTRIBUTING.md), [SECURITY](../../SECURITY.md), and [CODE_OF_CONDUCT](../../CODE_OF_CONDUCT.md) exist. Licensing has component-specific scopes; do not reuse the earlier assumption that every component must have one license. |
+| No application/runtime Compose path or installation guide | [Community Compose](../../community/compose.yaml), [source-build override](../../community/compose.build.yaml), and [Community docs](../community/deployment.md) exist. This does not prove a published release bundle or clean install; publication gates remain separate. |
+| No SMTP | [SMTP transport](../../server/internal/email/smtp.go) exists. Inbound provider configuration remains a separate concern. |
+| Decorative origin checks and enforced identity on every new install | [WebSocket origin authorization](../../server/internal/websocket/widget_handler.go) exists. [Community defaults](../../server/internal/deployment/defaults_community.go) use `report_only`; enterprise defaults differ. See [widget identity setup](../community/widget-identity.md). |
+| Process-only credentials and tier-only model selection | [AI connections](../../server/internal/service/ai_connection.go), [profiles](../../server/internal/service/ai_profile.go), and the [September profiles plan](../plans/2026-09-14-ai-profiles-and-ee-billing-plan.md) supersede those findings. [Community usage](../../server/internal/service/ai_usage_community.go) records telemetry without commercial charges. |
+| Bundled live Sentry destination and plain contact deletion | [The environment example](../../server/.env.example) has an empty Sentry DSN; [contact privacy operations](../../server/internal/repository/crm_contact_privacy.go) now exist. These checks do not certify all telemetry, deletion coverage, or legal compliance. |
+
+The remaining numbered findings below are retained as historical investigation leads. Counts, zero-code assertions, line numbers, sibling-runtime conclusions, and comparative parity claims were not all independently revalidated; a historical finding is neither proof of a current defect nor proof of a fix. The original roadmap sequence should not override current release evidence.
+
+Corporate context also changed: Salesforce [announced completion of the Fin acquisition on September 10, 2026](https://www.salesforce.com/news/press-releases/2026/09/10/salesforce-completes-acquisition-of-fin/). The earlier expected-close date is obsolete. Pricing and competitor capabilities remain dated research; customer switching motivation is a hypothesis, not an observed result.
+
+## Original assessment
+
 ## 0. Context that changes the pitch
 
-- **Intercom renamed itself Fin on 2026-05-12, and Salesforce signed to acquire Fin for ~$3.6B on 2026-06-15** (close expected Salesforce FQ4 2027). Intercom's product marketing pages now redirect to fin.ai or 404. This is a real switching moment for Intercom customers who do not want a Salesforce-owned helpdesk.
+- **Historical corporate context:** Intercom announced the Fin name on May 12 and Salesforce announced an acquisition agreement on June 15. The acquisition completed September 10; see the updated primary source above. Intercom's product marketing pages now redirect to fin.ai or 404. This is a real switching moment for Intercom customers who do not want a Salesforce-owned helpdesk.
 - **Fin's pricing**: $0.99 per outcome (resolution, procedure handoff, disqualification), 50-outcome monthly minimum, seats $29/$85/$132 per seat/month annual, Copilot $29–35/agent, Pro insights add-on from $99/month. A BYOK self-hosted agent competes on cost with no per-resolution fee.
 - **Open-source landscape**: Chatwoot's AI agent (Captain) is Enterprise-Edition-only for self-hosters. Zammad and FreeScout ship agent-assist only. Only Libredesk (AGPL, Go, beta AI) and Tiledesk ship a customer-facing autonomous agent with first-class Ollama. There is no mature open-source "Fin-class" agent. That is the gap Helpin's support core already fills technically.
 
@@ -29,7 +48,7 @@ Verified in code; these are the assets the launch should lead with.
 | Customer-facing AI agent on widget and email | `service/support_chat.go`, JetStream `SUPPORT_AI` stream, `internal_command_support_reply.go` |
 | Retrieval: LLM query planning, structure-aware chunking, pgvector + Postgres FTS hybrid, TEI-compatible cross-encoder rerank, neighbor expansion | `service/support_knowledge_search.go` and neighbours |
 | Server-side confidence (weights 0.40/0.25/0.20/0.15) and citation re-validation that drops fabricated evidence | `service/support_ai_confidence.go:16`, `internal_command_support_reply.go:57-84` |
-| Resolution accounting identical to Fin's model: confirmed vs assumed after 24h idle, distinction stored | `docs/prds/PRD-ai-support-agent.md`, service layer |
+| Resolution accounting identical to Fin's model: confirmed vs assumed after 24h idle, distinction stored | `docs/prds/ai-support-agent.md`, service layer |
 | Layered escalation: hard phrases, turn caps, budget, post-answer grounding gate, model-initiated handoff, mid-turn human takeover suppresses in-flight reply | `support_chat.go:82-194` |
 | AI usage metering with immutable pricing catalog, preflight + settlement, idempotency, Stripe rollback | `internal/aiusage`, `docs/ai-usage-metering.md` |
 | Coverage gaps loop (unanswered questions → clustered gaps → AI-drafted article fixes → review UI). Fin sells this as the Pro add-on. | `service/support_coverage_*`, `/support/coverage` |
@@ -47,10 +66,10 @@ Correction to the June 2026 assessment: billing is no longer absent and the supp
 
 ## 2. Tier 0 — Cannot ship as open source without these
 
-Ordered. Each is verified missing or broken today.
+Ordered findings from the September 10 audit; see the current source review above.
 
 1. **No LICENSE file** in `helpin/`, `agent-runtime/`, `agent-runtime-go/`, or `agent-runtime-python/`. Also no CONTRIBUTING, SECURITY, or CODE_OF_CONDUCT. Decision needed: AGPL-3.0 (Libredesk, Chatwoot-core style) vs Apache-2.0/MIT; the same choice must cover the runtime and both SDKs because the support agent cannot run without them.
-2. **agent-runtime is a hard dependency of the customer-facing support AI and is not in the monorepo or its compose.** `service/agent.go:6496-6498` removes any local executor and fails loudly. `AGENT_RUNTIME_LAUNCH_ENABLED=false` disables AI entirely (`docs/AGENT_RUNTIME_LOCAL.md:19-21`). Neither `docker-compose.yaml` nor `k8s/` starts it. Fix is small: the runtime's floor config is one container, `AGENT_RUNTIME_STORE_DRIVER=sqlite`, no Temporal, no Postgres (`agent-runtime/cmd/agent-runtime/main.go:279-320`). Either vendor it into the monorepo or add it as a compose service and pin the image. A support-only runtime image should drop the coding toolchain (Go, Node, Rust, Codex, OpenCode, ffmpeg) that `agent-runtime/Dockerfile` bundles.
+2. **agent-runtime is a hard dependency of the customer-facing support AI and is not in the monorepo or its compose.** `service/agent.go:6496-6498` removes any local executor and fails loudly. `AGENT_RUNTIME_LAUNCH_ENABLED=false` disables AI entirely (`docs/agent-runtime-local-setup.md:19-21`). Neither `docker-compose.yaml` nor `k8s/` starts it. Fix is small: the runtime's floor config is one container, `AGENT_RUNTIME_STORE_DRIVER=sqlite`, no Temporal, no Postgres (`agent-runtime/cmd/agent-runtime/main.go:279-320`). Either vendor it into the monorepo or add it as a compose service and pin the image. A support-only runtime image should drop the coding toolchain (Go, Node, Rust, Codex, OpenCode, ffmpeg) that `agent-runtime/Dockerfile` bundles.
 3. **`docker compose up` starts no application.** `server` and `frontend` are commented out at `docker-compose.yaml:142` and `:170`. You get Postgres ×2, Temporal, Temporal UI, pgAdmin, NATS, Redis, temporal-worker. Need a single-command path: app + runtime + Postgres + NATS + Redis (+ Temporal only if required; audit whether the support path needs Temporal at all, since support durability comes from JetStream).
 4. **No SMTP.** `grep -rn net/smtp server/` is empty; `internal/email/` is Postmark-only and `go.mod` has no mail library. Inbound additionally requires Helpin-owned domains (`replies.helpin.email`, `*.on.helpin.email`). Minimum: an outbound transport interface with SMTP + Postmark implementations so auth emails, notifications, and support replies work on any host. Inbound via generic webhook/IMAP can be phase two; keep Postmark inbound as an optional provider.
 5. **Widget origin allow-list is decorative.** `allowed_origins` is validated and stored (`service/support_widget_identity.go:121`) and only echoed back in `handler/support_inbox.go:1344,1377,1404`; all widget routes use `AllowedOrigins: "*"` (`router.go:168,185,228,373,405,418`) and the WS upgrader sets `InsecureSkipVerify: true` (`websocket/widget_handler.go:76,130`). Any site can boot any workspace's widget. Must be enforced before strangers self-host.
@@ -94,12 +113,12 @@ Each verified missing, partial, or dormant. Grouped, ordered by leverage.
 9. **AI summary of a thread on handoff**: missing, despite handoff being the core loop. `draft_support_reply` and rewrite exist; summarise does not.
 10. **Per-conversation AI mute**: takeover is implicit (an agent must reply to silence the AI). Add an explicit "pause AI on this conversation" toggle.
 11. **Keyboard shortcuts** beyond the composer (`j/k`, assign, resolve, cheatsheet). Intercom's inbox is Command-K driven.
-12. **Availability-aware routing**: round-robin (`repository/support_mailbox.go:581-621`) ignores presence and only fires on mailbox move or AI handoff. The status model shipped; routing does not consult it (`docs/plans/TODO-support-availability-and-agent-notifications.md`).
+12. **Availability-aware routing**: round-robin (`repository/support_mailbox.go:581-621`) ignores presence and only fires on mailbox move or AI handoff. The status model shipped; routing does not consult it (`docs/plans/support-availability-and-notifications.md`).
 13. **SLA policies are sold and unbuilt.** `EntitlementFeatureSLAPolicies` is gated as a Growth feature (`service/entitlements.go:134`) and shown on the pricing page; nothing consumes it. Either build first-response/next-response/time-to-close targets with breach events, or remove it from pricing before an OSS audience reads the code.
 
 ### 4c. Widget correctness and parity
 14. **Custom visitor attributes are dropped.** `WidgetUser.metadata` is declared (`widget.ts:34`) and never serialised; the identity payload is a fixed field set (`model/support_inbox.go:1128-1139`). Intercom custom data attributes are the basis of targeting, routing, and Fin context.
-15. **JWT messenger security.** Only HMAC v1 exists; Intercom's current recommendation is JWT with expiry and trusted domains, and `docs/prds/PRD-widget-messenger-security-jwt.md` already specifies it. Pairs with Tier 0 item 6.
+15. **JWT messenger security.** Only HMAC v1 exists; Intercom's current recommendation is JWT with expiry and trusted domains, and `docs/prds/widget-messenger-security-jwt.md` already specifies it. Pairs with Tier 0 item 6.
 16. **Widget i18n**: every string is an English literal; `navigator.language` is captured and unused. Intercom ships 45 languages, and Helpin's help center is already multilingual.
 17. **Launcher `bottom-left` is broken** (`widget.css:324-327` hardcodes `right: 20px`).
 18. **SDK ships unminified at 426 KB** (`packages/sdk-js/vite.config.ts:50` `minify: false`).
@@ -123,7 +142,7 @@ Post-launch, but these are what Fin buyers compare on. Ordered by cost-to-value 
 
 1. **Workspace-attached external tools for the support agent (Fin Data Connectors / MCP connectors).** The runtime's run-scoped MCP with OAuth and encrypted credentials is fully plumbed (`agent-runtime/internal/mcp/run_config.go`, `helpin service/agent.go:6541-6584`, `externalmcp/oauth.go`) but the `support_agent` preset ships zero `mcp__*` tools (`agentcontract/runtime_profiles.go:44`). Exposing "attach MCP servers to the support agent" in settings is the cheapest Fin-parity win in the codebase. A simple HTTP action builder (URL, auth, when-to-use description) can follow.
 2. **Guidance as structured settings.** Fin: natural-language guardrails in categories with limits (100 items, 2,500 chars), tone (5 presets), answer length (3), per-guidance usage metrics, audience targeting. Helpin has curated guidance for retrieval but no structured behaviour/tone settings; workspaces edit raw prompt text.
-3. **Evaluation harness.** No golden set, no scored offline runs, no CI gate; `docs/prds/PRD-knowledge-retrieval-platform.md:17` calls it launch-critical. Fin ships Previews, Batch tests (50 questions, CSV), Simulations, and since Aug 2026 Evals + Releases (staged rollout, A/B, rollback). Start with batch tests over a CSV and a retrieval-quality score; it also gives BYOK users a way to compare local models.
+3. **Evaluation harness.** No golden set, no scored offline runs, no CI gate; `docs/prds/knowledge-retrieval-platform.md:17` calls it launch-critical. Fin ships Previews, Batch tests (50 questions, CSV), Simulations, and since Aug 2026 Evals + Releases (staged rollout, A/B, rollback). Start with batch tests over a CSV and a retrieval-quality score; it also gives BYOK users a way to compare local models.
 4. **Knowledge imports from Intercom, Zendesk, Notion, Confluence.** All missing, while `docs/strategy/pricing-strategy.md:128` sells "Import from Notion, Intercom". An **Intercom articles + conversations importer** is the single highest-leverage switching tool given the Salesforce acquisition. The HelpScout importer is a complete template to copy.
 5. **Procedures-lite.** Fin 3 replaced Tasks with Procedures (NL steps, conditions, connector calls, handoff, wait-for-webhook). Helpin's agent is already tool-driven; a workspace-authored "procedure" is a skill package plus allowed tools. Do after 1 and 2.
 6. **Fin-style outcome attributes and escalation reporting**: Fin classifies issue type, sentiment, urgency, escalation reason per conversation for reporting. Helpin's triage classifier already emits structured JSON; persist and surface it.
@@ -155,15 +174,15 @@ Listed so nobody re-derives it. Ranked within the group by how soon it will be a
 Anyone reading the repo will be misled by these.
 
 - `docs/strategy/2026-06-11-product-engineering-assessment.md`: billing is present; support UI is more than one page.
-- `docs/prds/PRD-support-live-chat.md`: claims Phases 3–5 not started; they shipped.
-- `docs/prds/PRD-help-center-ssr-migration.md`: marked Draft for a shipped migration.
-- `docs/prds/PRD-widget-identify-crm-leads.md`: marked Draft; shipped beyond spec.
-- `docs/prds/PRD-support-ai-stuck-detection-and-handoff.md`: describes a feature that is implemented but not wired.
+- `docs/prds/support-live-chat.md`: claims Phases 3–5 not started; they shipped.
+- `docs/prds/help-center-ssr-migration.md`: marked Draft for a shipped migration.
+- `docs/prds/widget-identify-crm-leads.md`: marked Draft; shipped beyond spec.
+- `docs/prds/support-ai-stuck-detection-and-handoff.md`: describes a feature that is implemented but not wired.
 - `docs/mattermost-integration.md`: divergent design, proposes a dependency not in `go.mod`.
-- `docs/strategy/backlog-and-ideas.md` (March 2026) and `docs/prds/PRD-current-state-review-2026-03-05.md`: pre-support-module, several "Open" items shipped, "zero Go tests" no longer true.
-- `docs/widget-feature-parity.md` and `docs/prds/PRD_WIDGET_SDK_FEATURE_PARITY.md`: benchmarked against Crisp; emoji picker and article search have since shipped. Reframe against Intercom if kept.
+- `docs/strategy/backlog-and-ideas.md` (March 2026) and `docs/prds/2026-03-05-product-review.md`: pre-support-module, several "Open" items shipped, "zero Go tests" no longer true.
+- `docs/widget-feature-parity.md` and `docs/prds/widget-sdk-feature-parity.md`: benchmarked against Crisp; emoji picker and article search have since shipped. Reframe against Intercom if kept.
 - `docs/strategy/pricing-strategy.md:128`: sells importers that do not exist.
-- `docs/prds/PRD-custom-support-sender-addresses-mvp.md:13`: puts SMTP out of scope; must be reversed for self-hosting.
+- `docs/prds/custom-support-sender-addresses-mvp.md:13`: puts SMTP out of scope; must be reversed for self-hosting.
 - Dead code to remove before publishing: `widget/` (2,132-line vanilla predecessor, built by nothing), `packages/widget-embed` (abandoned).
 
 ---

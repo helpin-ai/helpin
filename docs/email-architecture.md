@@ -51,7 +51,6 @@ Purpose:
 - invites
 - password reset / auth mail
 - notifications
-- weekly support coverage digest
 - other product/system email
 
 Recommended sender examples:
@@ -166,9 +165,10 @@ These use the app email client:
 - notification service
   - notification email delivery
   - `server/internal/service/notification.go`
-- support coverage digest service
-  - weekly coverage digest emails
-  - `server/internal/service/support_coverage_digest.go`
+The former support coverage digest sender is no longer present or wired into the
+API/worker. Its delivery model and repository records remain, but those records
+alone do not implement scheduled weekly coverage emails. Notification digests are
+a separate flow in the notification service.
 
 ## Support Email Flows
 

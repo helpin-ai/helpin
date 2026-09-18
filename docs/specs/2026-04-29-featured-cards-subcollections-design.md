@@ -1,4 +1,37 @@
-# Featured Cards: Sub-Collection Support via Tree Picker
+# Featured cards with subcollections
+
+> Historical design, source-compared on 2026-09-17. This page explains the
+> original nested-collection picker for contributors. Subcollection selection is
+> implemented, with ordering and breadcrumb differences from the proposal below.
+
+## Current implementation
+
+[HelpcenterTab](../../frontend/src/components/settings/HelpcenterTab.tsx) contains
+the inline searchable `CollectionTreeMultiSelect`. It passes all loaded space
+collections through [tree options](../../frontend/src/components/docs/CollectionTreePicker.tsx),
+uses 12px depth indentation, toggles each collection independently, and keeps the
+popover open. Only selected collections render as sortable featured rows.
+
+The zero-selection trigger reads **Select collections**, not **Add collections**.
+An empty space displays “No collections in this space.” outside the picker.
+Although the sortable row accepts an optional `pathLabel`, the current call site
+does not pass it; ancestor breadcrumbs are therefore not shown above selected
+row names. Tree paths are still used for picker search.
+
+Newly selected cards are inserted according to the space's natural collection
+order, rather than always appended. Existing featured cards are still ordered
+through `orderCollectionsForFeaturedCards`, and drag reordering remains available.
+The original append-only and selected-row breadcrumb requirements are not accurate
+descriptions of this implementation.
+
+The [backend resolver](../../server/internal/service/docs_helpcenter.go) resolves
+collection cards by ID or by space plus ID/slug, without excluding subcollections.
+The [tree migration](../../server/internal/dbmigrate/sql/202604100004_docs_collection_tree.sql)
+defines the non-deleted workspace/slug unique index; its presence does not prove
+it has been applied to a particular deployment. No browser or deployment check
+was performed for this source comparison.
+
+## Original design record
 
 **Date:** 2026-04-29
 **Status:** Approved

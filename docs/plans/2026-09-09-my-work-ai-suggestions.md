@@ -1,5 +1,33 @@
 # My Work AI suggestions implementation plan
 
+> Historical implementation record (2026-09-09), source-compared on 2026-09-17.
+> The feature exists; the completed checkboxes, test totals, screenshots/review
+> claims, agent assignments and `waqar-fixes` push below describe the original
+> session, not fresh validation or instructions for this audit.
+
+## Current implementation references
+
+- [Routes](../../server/internal/router/router.go) require `pm.read` for list/detail
+  and `pm.edit` for decisions. The [service](../../server/internal/service/pm_ai_suggestion.go)
+  also requires an active member in the requested workspace and a valid revision.
+- The [repository](../../server/internal/repository/pm_ai_suggestion.go) filters
+  explicit internal meeting follow-ups by suggestion recipient, otherwise meeting
+  owner, otherwise creator, plus meeting visibility. Lists are 25 items per page.
+  Adopted customer work is excluded. Decisions recheck access and canonical revision
+  under transaction locks; accepting records `accepted` / `manual_required`, not
+  execution of the draft. Review markers keep completed work out of the CRM queue.
+- [Routing](../../server/internal/service/meeting_follow_up_routing.go) processes
+  at most three historical suggestions per batch, with a 90-second batch deadline
+  and 30-second classification deadline. Missing AI/transcripts or failed evidence
+  validation leave work available in CRM. Transcript input is capped at 120,000
+  bytes for this classification; it is not a full-transcript guarantee.
+- The [Temporal workflow](../../server/internal/temporalapp/crm_meeting_follow_up_routing.go)
+  is scheduled every five minutes by worker startup. This describes configured
+  code, not proof that a deployed worker or schedule is healthy.
+- [My Work suggestions](../../frontend/src/components/pm/my-work/AISuggestions.tsx)
+  implements pagination, detail/review UI, and stale-decision messages. Current
+  source inspection does not reproduce the historical browser or test results.
+
 > Use independent subagents for the bounded backend changes and review, with the primary agent implementing the UI and integration.
 
 **Goal:** Route explicitly internal meeting follow-up suggestions to My Work, retain customer and uncertain suggestions in CRM, and present a minimal personal review queue.

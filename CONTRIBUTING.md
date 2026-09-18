@@ -58,6 +58,10 @@ the code; `AGENTS.md` describes repository conventions.
 
 ## Documentation conventions
 
+Follow the [documentation writing and naming guide](docs/documentation-guide.md).
+Use lowercase hyphenated filenames, descriptive page titles, and a short opening
+that explains the reader, purpose, and scope.
+
 - Current behavior and setup belong in engineering guides linked from
   [docs/README.md](docs/README.md).
 - Product requirements belong in `docs/prds/`; implementation plans in
@@ -83,6 +87,7 @@ version-sensitive setup, architecture, and API contracts alongside code. The
 For documentation changes, run:
 
 ```sh
+python3 scripts/docs/check_names.py
 python3 scripts/docs/check_links.py
 python3 -m unittest discover -s scripts/docs -p '*_test.py'
 git diff --check

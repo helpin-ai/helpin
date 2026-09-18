@@ -1,8 +1,18 @@
-# Coding Session UI and Runtime Contract Plan
+# Coding session UI and runtime contract plan
 
-## Status
+This historical plan records the proposed coding-session experience and contracts. Several deliverables now exist, while execution ownership and some endpoints differ from the original design.
 
-Draft plan for replacing the current agent-run drawer/log-viewer experience with a first-class Helpin coding session UI.
+## Source review — 2026-09-18
+
+- `CodingSessionPage` and `CodingSessionSurface` exist, along with transcript, activity, interaction, preview, plan, and drawer components. The old `AgentRunDrawer` path is not the current integration point.
+- `server/internal/service/coding_session.go` exposes session, event, repository, diff, and interaction operations over run records. Persisted coding-session state snapshots also have a model and repository; the original “no new persistence” phase boundary is historical.
+- Router registrations include session reads, message, continue, resume, approve, request-changes, cancel, and interaction resolution. The proposed session device-code start/cancel endpoints are absent from the current router; the illustrative API list below is not a complete current reference.
+- The surface subscribes to coding-session events, merges sequence numbers, and requests missing events. It also retains timed refresh and generic run-event listeners. Do not interpret the migration checklist as proof that polling and compatibility behavior have been removed.
+- The current executor is the separate Agent Runtime integration described in [coding-agent execution](../coding-agent-execution.md). The original local worker adapter/Temporal execution layout below is superseded. Runtime-specific capabilities and parity must be checked against the configured runtime; this review did not exercise Codex, OpenCode, or native SDK sessions.
+
+## Original plan
+
+Draft plan for replacing the former agent-run drawer/log-viewer experience with a first-class Helpin coding session UI.
 
 This plan assumes:
 
@@ -12,8 +22,8 @@ This plan assumes:
 
 Current execution references (the retired in-process rollout plans remain in Git history):
 
-- [Coding Agent Runtime Flow](../CODING_AGENT_RUNTIME_FLOW.md)
-- [Agents and automation](../AGENTS_AND_AUTOMATION.md)
+- [How coding agents execute work](../coding-agent-execution.md)
+- [Agents and automation](../agents-and-automation.md)
 
 ## Goal
 
@@ -93,7 +103,7 @@ If needed later:
 
 ### 3. Build a real `CodingSession` product surface, not a bigger `AgentRunDrawer`
 
-The current drawer in [AgentRunDrawer.tsx](/root/teampulse/frontend/src/components/pm/AgentRunDrawer.tsx) is still a mixed transcript/artifact/log surface.
+The current drawer in `frontend/src/components/pm/AgentRunDrawer.tsx` (historical path; absent from this checkout) is still a mixed transcript/artifact/log surface.
 
 That was useful for rollout, but it is not the right final architecture for coding work.
 
@@ -1168,7 +1178,7 @@ Likely files:
 
 ## Migration Checklist
 
-1. Keep [AgentRunDrawer.tsx](/root/teampulse/frontend/src/components/pm/AgentRunDrawer.tsx) working during migration.
+1. Keep `frontend/src/components/pm/AgentRunDrawer.tsx` (historical path; absent from this checkout) working during migration.
 2. Add a “Open coding session” entry point from existing run surfaces.
 3. Use the new page for Codex first behind a feature flag if needed.
 4. Keep existing run APIs intact until the session page reaches parity.

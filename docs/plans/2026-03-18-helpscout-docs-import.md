@@ -1,6 +1,39 @@
-# HelpScout Docs Import Implementation Plan
+# Help Scout docs import implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan records the first Help Scout help-center importer. Use it to
+understand source mapping and UI intent; current execution and content storage
+have changed substantially from the original snippets.
+
+## Source review — 2026-09-18
+
+- [Start and retry](../../server/internal/service/docs_import.go) now launch a
+  Temporal workflow and require the worker client plus a 32-byte encryption key.
+  The request payload is encrypted in the job record. The proposed untracked
+  goroutine execution is superseded by the
+  [durable import migration](../../server/internal/dbmigrate/sql/202608100003_docs_import_temporal.sql).
+- Article import saves canonical Tiptap JSON from the shared converter, retains
+  source HTML/provenance, and records conversion warnings. `_markdown_source`
+  envelopes and the old Markdown-only pipeline below are not current storage.
+- Image failures retain original URLs and produce warnings. The current
+  [image downloader](../../server/internal/helpscout/images.go) uses an HTTP
+  client; these snippets do not prove URL isolation, download bounds, or complete
+  image preservation. Imported documents can still depend on external image URLs.
+- [Status/retry/redirect handlers](../../server/internal/handler/docs_import.go)
+  pass a job ID without a workspace argument to their service lookups. The
+  [repository](../../server/internal/repository/docs_import.go) fetches by raw ID;
+  unlike Cancel, these inspected paths do not compare job workspace. Route-level
+  `docs.import` permission alone must not be described as object-level isolation.
+- The redirect map is a JSON download (`redirect-map.json`), not CSV. The
+  [frontend import section](../../frontend/src/components/settings/HelpCenterImportSection.tsx)
+  polls progress and downloads the map through the API service; list/cancel and
+  reconversion endpoints also exist.
+- `server/migrations/047_docs_import.sql`, Go 1.24, and the filtered TypeScript
+  command below are historical implementation references. New schema work uses
+  versioned SQL under `internal/dbmigrate/sql`. A filtered compiler-output pipe
+  cannot establish a passing frontend build. No import, credentials, migration,
+  or external Help Scout API was exercised in this review.
+
+## Original implementation plan
 
 **Goal:** Import help center articles from HelpScout into Helpin's Docs module with progress tracking, image re-upload, slug preservation, and retry.
 

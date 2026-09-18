@@ -1,6 +1,18 @@
 # PM Sprint Planning Workspace Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the sprint planning workspace: view sprint contents, browse backlog work, and move tasks without leaving the page. The feature exists; “story” in the original examples is older terminology for today's task model.
+
+## Source review: September 18, 2026
+
+- [Current DTOs](../../server/internal/model/pm_sprint.go) use `SprintPlanningTaskPreview`, `preview_tasks`, `task_preview_overflow`, and `backlog_tasks`. The proposed story-named JSON examples are not the current wire contract.
+- [The planning repository](../../server/internal/repository/pm_sprint.go) filters workspace/team access, excludes archived sprints, and batches statistics and previews using a per-sprint window query. Defaults are twenty preview tasks per sprint and fifty backlog tasks. The sprint set itself is loaded before grouping; “bounded preview” does not mean the entire planning response has a fixed sprint count.
+- [Current routes](../../server/internal/router/router.go) include `GET /api/pm/sprints/planning` and the dedicated `GET /api/pm/sprints/backlog-tasks` under `pm.read`. The [client service](../../frontend/src/lib/services/pmSprintService.ts) and query hooks support backlog paging rather than the proposed `pmStoryService` fallback.
+- [The Sprints page](../../frontend/src/pages/pm/Sprints.tsx) performs optimistic assignment through `pmTaskService.update`, clears membership with an empty `sprint_id`, restores caches on failure, and invalidates related task/board/sprint queries. [The workspace component](../../frontend/src/components/pm/sprints/SprintPlanningWorkspace.tsx) supplies drag-and-drop and the backlog panel; its card is `SprintPlanningTaskCard`, not the proposed story component.
+- Rollover and historical reporting subsequently gained their own implementation, described in the [closeout plan](2026-04-13-pm-sprint-closeouts-rollover-reporting.md). Their original placement in this plan's follow-up list does not mean they are still wholly unimplemented.
+
+Commands below assume the repository root; developer-specific paths were removed. [Go module requirements](../../server/go.mod) now declare Go 1.25.0. This review did not rerun application tests or browser drag-and-drop checks, and the unchecked historical steps do not represent a current backlog.
+
+## Original implementation plan
 
 **Goal:** Turn the top-level Sprint page into a real planning workspace with grouped sprint columns, visible sprint contents, and a backlog side panel for assigning stories without leaving the page.
 
@@ -98,7 +110,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/repository -run 'TestPMSprintPlanningRepository'
+cd server && go test ./internal/repository -run 'TestPMSprintPlanningRepository'
 ```
 
 Expected: FAIL because no planning DTO/query exists yet.
@@ -156,7 +168,7 @@ In `server/internal/repository/pm_sprint.go`:
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/repository -run 'TestPMSprintPlanningRepository'
+cd server && go test ./internal/repository -run 'TestPMSprintPlanningRepository'
 ```
 
 - [ ] **Step 5: Commit**
@@ -188,8 +200,8 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/service -run 'TestPMSprintService_ListPlanningWorkspace'
-cd /root/teampulse/server && go test ./internal/handler -run 'TestPMSprintHandler_ListPlanningWorkspace'
+cd server && go test ./internal/service -run 'TestPMSprintService_ListPlanningWorkspace'
+cd server && go test ./internal/handler -run 'TestPMSprintHandler_ListPlanningWorkspace'
 ```
 
 Expected: FAIL because the service/handler path does not exist yet.
@@ -217,9 +229,9 @@ In `server/internal/router/router.go`, register it near the existing sprint rout
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/service -run 'TestPMSprintService_ListPlanningWorkspace'
-cd /root/teampulse/server && go test ./internal/handler -run 'TestPMSprintHandler_ListPlanningWorkspace'
-cd /root/teampulse/server && go build ./cmd/api
+cd server && go test ./internal/service -run 'TestPMSprintService_ListPlanningWorkspace'
+cd server && go test ./internal/handler -run 'TestPMSprintHandler_ListPlanningWorkspace'
+cd server && go build ./cmd/api
 ```
 
 - [ ] **Step 5: Commit**
@@ -248,7 +260,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintPlanningWorkspace.test.tsx
+cd frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintPlanningWorkspace.test.tsx
 ```
 
 Expected: FAIL because the service and hook do not exist yet.
@@ -287,8 +299,8 @@ In `frontend/src/hooks/queries/useSprints.ts`, add:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintPlanningWorkspace.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintPlanningWorkspace.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 5: Commit**
@@ -318,7 +330,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningWorkspace.test.tsx
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningWorkspace.test.tsx
 ```
 
 Expected: FAIL because the new planning components do not exist yet.
@@ -345,8 +357,8 @@ In `frontend/src/pages/pm/Sprints.tsx`:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningWorkspace.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningWorkspace.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 4: Commit**
@@ -376,7 +388,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningColumn.test.tsx
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningColumn.test.tsx
 ```
 
 Expected: FAIL because the column/story preview components do not exist yet.
@@ -407,8 +419,8 @@ In `SprintPlanningStoryCard.tsx`:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningColumn.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningColumn.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 4: Commit**
@@ -437,7 +449,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningBacklogPanel.test.tsx
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningBacklogPanel.test.tsx
 ```
 
 Expected: FAIL because the backlog panel and explicit unassigned-story handling do not exist yet.
@@ -472,8 +484,8 @@ In `SprintPlanningBacklogPanel.tsx`:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningBacklogPanel.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningBacklogPanel.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 5: Commit**
@@ -503,7 +515,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningDnD.test.tsx
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningDnD.test.tsx
 ```
 
 Expected: FAIL because DnD wiring does not exist yet.
@@ -524,8 +536,8 @@ Do not introduce bulk carry-forward yet.
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningDnD.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/components/pm/sprints/__tests__/SprintPlanningDnD.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 4: Commit**
@@ -553,7 +565,7 @@ Add coverage for:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/pages/pm/__tests__/SprintNavigation.test.tsx
+cd frontend && npm exec vitest run src/pages/pm/__tests__/SprintNavigation.test.tsx
 ```
 
 Expected: FAIL if navigation assumptions are hard-coded to the old list view.
@@ -570,8 +582,8 @@ Only make small changes if needed:
 
 Run:
 ```bash
-cd /root/teampulse/frontend && npm exec vitest run src/pages/pm/__tests__/SprintNavigation.test.tsx
-cd /root/teampulse/frontend && npm exec tsc --noEmit
+cd frontend && npm exec vitest run src/pages/pm/__tests__/SprintNavigation.test.tsx
+cd frontend && npm exec tsc --noEmit
 ```
 
 - [ ] **Step 4: Commit**
@@ -591,19 +603,19 @@ git commit -m "fix: preserve sprint detail navigation from planning workspace"
 
 Run:
 ```bash
-cd /root/teampulse/server && go test ./internal/repository -run 'TestPMSprintPlanningRepository'
-cd /root/teampulse/server && go test ./internal/service -run 'TestPMSprintService_ListPlanningWorkspace'
-cd /root/teampulse/server && go test ./internal/handler -run 'TestPMSprintHandler_ListPlanningWorkspace'
-cd /root/teampulse/frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintPlanningWorkspace.test.tsx src/components/pm/sprints/__tests__/SprintPlanningWorkspace.test.tsx src/components/pm/sprints/__tests__/SprintPlanningColumn.test.tsx src/components/pm/sprints/__tests__/SprintPlanningBacklogPanel.test.tsx src/components/pm/sprints/__tests__/SprintPlanningDnD.test.tsx src/pages/pm/__tests__/SprintNavigation.test.tsx
+cd server && go test ./internal/repository -run 'TestPMSprintPlanningRepository'
+cd server && go test ./internal/service -run 'TestPMSprintService_ListPlanningWorkspace'
+cd server && go test ./internal/handler -run 'TestPMSprintHandler_ListPlanningWorkspace'
+cd frontend && npm exec vitest run src/hooks/queries/__tests__/useSprintPlanningWorkspace.test.tsx src/components/pm/sprints/__tests__/SprintPlanningWorkspace.test.tsx src/components/pm/sprints/__tests__/SprintPlanningColumn.test.tsx src/components/pm/sprints/__tests__/SprintPlanningBacklogPanel.test.tsx src/components/pm/sprints/__tests__/SprintPlanningDnD.test.tsx src/pages/pm/__tests__/SprintNavigation.test.tsx
 ```
 
 - [ ] **Step 2: Run broader verification**
 
 Run:
 ```bash
-cd /root/teampulse/server && go build ./cmd/api
-cd /root/teampulse/frontend && npm exec tsc --noEmit
-cd /root/teampulse/frontend && npm run build
+cd server && go build ./cmd/api
+cd frontend && npm exec tsc --noEmit
+cd frontend && npm run build
 ```
 
 - [ ] **Step 3: Manual QA checklist**

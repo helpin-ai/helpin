@@ -12,7 +12,12 @@ The existing admin retrieval-only option calls the shared search function withou
 
 ## API and lifecycle
 
-All routes require `support.admin` and a workspace actor:
+All routes require `support.admin` and a workspace actor. The message and each
+explicit history turn are limited to 16,000 bytes, with at most 100 history
+turns. These are backend byte limits, so non-ASCII input can reach them before
+the text field’s character limit.
+
+Available routes:
 
 - `POST /api/pm/agents/{id}/support-preview?workspace_id=…` starts a test and returns `run_id` and `final_decision: pending`, or an immediate retrieval/hard-handoff result.
 - `GET /api/pm/agents/{id}/support-preview/{runId}?workspace_id=…` polls the captured outcome. Only its initiating user can read it. Generic run-detail, transcript and artifact endpoints apply the same owner check; list payloads omit preview text and preview transcript events are not broadcast to the workspace.
@@ -25,3 +30,13 @@ Model and retrieval calls are billed/metered under the normal edition policy. A 
 ## Verification
 
 Tests cover resolved profile credentials, isolated target context, restricted tool projection, cross-target and cross-user rejection, shared reply validation, duplicate outcome capture, evidence retention, model failure, expiry and cancellation. Existing service/handler/repository/router suites cover unchanged live support paths. UI verification covers asynchronous result polling and clearly displaying rejected proposals. A real provider smoke after restarting Helpin remains a deployment check; deterministic tests use a fake Runtime transport and never send customer messages.
+
+## Source references
+
+The [preview service](../server/internal/service/support_preview.go) owns
+admission, snapshots, result access, and timeout reporting. The
+[preview command handler](../server/internal/service/internal_command_support_preview.go)
+restricts tools and captures outcomes. The
+[settings component](../frontend/src/components/settings/SupportAIPreview.tsx)
+polls results, and [service tests](../server/internal/service/support_preview_test.go)
+exercise isolation with a fake Runtime transport.

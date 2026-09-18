@@ -228,7 +228,7 @@ func TestSupportPreviewFailureExpiryAndCancellation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		mustExec(t, db, `UPDATE agent_runs SET created_at=?,updated_at=? WHERE id=?`, time.Now().Add(-5*time.Minute), time.Now(), started.RunID)
+		mustExec(t, db, `UPDATE agent_runs SET created_at=?,updated_at=? WHERE id=?`, time.Now().UTC().Add(-5*time.Minute), time.Now().UTC(), started.RunID)
 		meta := model.InternalCommandContext{WorkspaceID: "workspace", AgentID: "agent-1", RunID: "run_runtime_1", TargetType: supportPreviewTarget, TargetID: started.RunID}
 		if _, err = commands.Execute(ctx, meta, "support.escalate_to_human", json.RawMessage(`{"reason":"late"}`)); err == nil {
 			t.Fatal("expired tool call accepted")

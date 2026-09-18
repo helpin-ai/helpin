@@ -1,5 +1,16 @@
 # Release Notes Agent Template Plan
 
+> Source review, 2026-09-17
+
+The `server/internal/worker` tool/executor package referenced below is absent
+from this checkout. Current Helpin provider dispatch lives in
+[agent_runtime_mcp.go](../../server/internal/service/agent_runtime_mcp.go), with
+product operations implemented by internal command services. Runtime-local tool
+execution belongs to the separate Agent Runtime repository. See the
+[current tool guide](../internal-tools-framework.md); do not recreate the old
+worker registry to follow this historical plan.
+Current release context is implemented in [release facts](../../server/internal/service/release_facts.go) and [release commands](../../server/internal/service/internal_command_release.go). This does not prove every proposed automation-template behavior.
+
 ## Purpose
 
 Create a reusable release-notes automation path that runs when a GitHub release is published, gathers deterministic release/task/docs context, and creates a release notes document.

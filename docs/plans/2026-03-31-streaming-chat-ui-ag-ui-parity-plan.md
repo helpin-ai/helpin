@@ -1,8 +1,8 @@
-# Streaming Chat UI AG-UI Parity Plan
+# Streaming chat UI parity plan
 
 ## Status
 
-Draft implementation plan for bringing Helpin's coding-session streaming chat UX closer to `/tmp/ag-ui`.
+Historical implementation plan comparing the March 31 coding-session UI with a local AG-UI checkout. The temporary `/tmp/ag-ui` paths are original research references, not repository dependencies.
 
 This plan is specifically about:
 
@@ -14,8 +14,41 @@ This plan is specifically about:
 
 This plan is not primarily about approvals and human-input interruptions. That work is already covered by:
 
-- [docs/plans/2026-03-31-codex-native-interaction-contract-plan.md](/root/teampulse/docs/plans/2026-03-31-codex-native-interaction-contract-plan.md)
-- [docs/plans/2026-03-31-coding-session-ui-and-runtime-contract-plan.md](/root/teampulse/docs/plans/2026-03-31-coding-session-ui-and-runtime-contract-plan.md)
+- [docs/plans/2026-03-31-codex-native-interaction-contract-plan.md](2026-03-31-codex-native-interaction-contract-plan.md)
+- [docs/plans/2026-03-31-coding-session-ui-and-runtime-contract-plan.md](2026-03-31-coding-session-ui-and-runtime-contract-plan.md)
+
+This plan explains the original structured streaming model for assistant text,
+reasoning, and tool calls. Use it for design rationale; current rendering and
+runtime ownership have moved beyond the worker adapters proposed below.
+
+## Source review — 2026-09-18
+
+- [Stream payloads](../../server/internal/model/agent_run_message.go) contain the
+  proposed parent-message, argument, activity, and reasoning fields. Current
+  [Runtime projection](../../server/internal/service/agent_runtime_projection.go)
+  maps assistant/reasoning lifecycle and tool argument/result events, including
+  failure on a finished tool event with an error.
+- The Eino/Codex/OpenCode worker adapter files named below are absent. Their
+  historical rollout checklist is not the current executor architecture or proof
+  that every external runtime produces every event variant.
+- [The stream builder](../../frontend/src/components/pm/CodingSession/codingSessionStream.ts)
+  maintains structured live assistant, reasoning, and tool-call state. Its public
+  builder is `buildCodingSessionStreamState`; the suggested parser/function names
+  below are sketches. `plan.updated`/`activity.updated` are recognized; the
+  proposed `activity.snapshot`/`activity.delta` pair is not the current mapping.
+- [The page](../../frontend/src/pages/pm/CodingSession.tsx) delegates to
+  `CodingSessionSurface`. The old page-owned flat `liveAssistantText` problem no
+  longer describes this entry point.
+- Shared transcript rendering is described in the
+  [later renderer plan](2026-06-15-unified-agent-transcript-renderer-plan.md).
+  [CodingActivityRail](../../frontend/src/components/pm/CodingSession/CodingActivityRail.tsx)
+  still supports completed tool calls alongside events, so its component contract
+  is not strictly the sidecar-only rail proposed here.
+- No AG-UI checkout comparison, provider stream run, or browser parity test was
+  performed during this source review. The acceptance cases below remain dated
+  intent rather than fresh validation results.
+
+## Original plan
 
 ## Reference Model
 
@@ -41,7 +74,7 @@ Helpin now has typed interruption cards, but the streaming chat model is still t
 
 Current backend state:
 
-- live stream events are published from [server/internal/temporalapp/activities.go](/root/teampulse/server/internal/temporalapp/activities.go)
+- live stream events are published from `server/internal/temporalapp/activities.go` (historical path; absent from this checkout)
 - `codingSessionEventTypeFromExecutionEvent` currently emits:
   - `assistant.message.started`
   - `assistant.message.delta`
@@ -49,14 +82,14 @@ Current backend state:
   - `tool.call.started`
   - `tool.call.completed`
   - `tool.call.failed`
-- stream payloads are currently too thin in [server/internal/model/agent_run_message.go](/root/teampulse/server/internal/model/agent_run_message.go)
+- stream payloads are currently too thin in [server/internal/model/agent_run_message.go](../../server/internal/model/agent_run_message.go)
 
 Current frontend state:
 
-- [frontend/src/pages/pm/CodingSession.tsx](/root/teampulse/frontend/src/pages/pm/CodingSession.tsx) keeps one flat `liveAssistantText`
+- [frontend/src/pages/pm/CodingSession.tsx](../../frontend/src/pages/pm/CodingSession.tsx) keeps one flat `liveAssistantText`
 - transcript only uses completed messages
-- [frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx](/root/teampulse/frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx) renders streaming text as one global block
-- [frontend/src/components/pm/CodingSession/CodingActivityRail.tsx](/root/teampulse/frontend/src/components/pm/CodingSession/CodingActivityRail.tsx) renders all non-completed events in one side rail
+- [frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx](../../frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx) renders streaming text as one global block
+- [frontend/src/components/pm/CodingSession/CodingActivityRail.tsx](../../frontend/src/components/pm/CodingSession/CodingActivityRail.tsx) renders all non-completed events in one side rail
 
 This loses the turn structure that makes AG-UI feel correct:
 
@@ -173,7 +206,7 @@ Rules:
 
 ### 1. Expand stream payload shape
 
-Update [server/internal/model/agent_run_message.go](/root/teampulse/server/internal/model/agent_run_message.go).
+Update [server/internal/model/agent_run_message.go](../../server/internal/model/agent_run_message.go).
 
 Add fields to `AgentRunStreamEvent`:
 
@@ -203,7 +236,7 @@ Recommendation:
 
 ### 2. Expand internal execution event contract
 
-Update [server/internal/worker/eino_exec.go](/root/teampulse/server/internal/worker/eino_exec.go).
+Update `server/internal/worker/eino_exec.go` (historical path; absent from this checkout).
 
 Expand `ExecutionEvent` so the worker layer can express:
 
@@ -224,7 +257,7 @@ This should become the normalized live event structure shared by:
 
 ### 3. Make Codex emit structured tool and message ids
 
-Update [server/internal/worker/codex_event_mapper.go](/root/teampulse/server/internal/worker/codex_event_mapper.go).
+Update `server/internal/worker/codex_event_mapper.go` (historical path; absent from this checkout).
 
 Current behavior:
 
@@ -244,7 +277,7 @@ Required changes:
 
 ### 4. Make Eino emit the same structure
 
-Update [server/internal/worker/eino_exec.go](/root/teampulse/server/internal/worker/eino_exec.go).
+Update `server/internal/worker/eino_exec.go` (historical path; absent from this checkout).
 
 Current behavior:
 
@@ -261,7 +294,7 @@ Required changes:
 
 ### 5. Make OpenCode conform to the same event shape
 
-Update [server/internal/worker/opencode_stream.go](/root/teampulse/server/internal/worker/opencode_stream.go).
+Update `server/internal/worker/opencode_stream.go` (historical path; absent from this checkout).
 
 Goal:
 
@@ -269,7 +302,7 @@ Goal:
 
 ### 6. Publish the richer live event contract into coding sessions
 
-Update [server/internal/temporalapp/activities.go](/root/teampulse/server/internal/temporalapp/activities.go).
+Update `server/internal/temporalapp/activities.go` (historical path; absent from this checkout).
 
 Required changes:
 
@@ -295,7 +328,7 @@ Replace the coarse mapping with:
 
 ### 7. Keep persisted session event reconstruction compatible
 
-Update [server/internal/service/coding_session.go](/root/teampulse/server/internal/service/coding_session.go).
+Update [server/internal/service/coding_session.go](../../server/internal/service/coding_session.go).
 
 This file should continue to reconstruct durable history from:
 
@@ -369,7 +402,7 @@ type CodingSessionStreamState = {
 
 ### 2. Expand frontend session types
 
-Update [frontend/src/lib/pm-types/codingSession.ts](/root/teampulse/frontend/src/lib/pm-types/codingSession.ts).
+Update [frontend/src/lib/pm-types/codingSession.ts](../../frontend/src/lib/pm-types/codingSession.ts).
 
 Add typed stream event payload shapes for:
 
@@ -383,7 +416,7 @@ Avoid using only `Record<string, unknown>` for the live-render path.
 
 ### 3. Add stream event parsers
 
-Update [frontend/src/components/pm/CodingSession/codingSessionUtils.ts](/root/teampulse/frontend/src/components/pm/CodingSession/codingSessionUtils.ts).
+Update [frontend/src/components/pm/CodingSession/codingSessionUtils.ts](../../frontend/src/components/pm/CodingSession/codingSessionUtils.ts).
 
 Add helpers:
 
@@ -397,7 +430,7 @@ Add helpers:
 
 ### 4. Refactor the page state model
 
-Update [frontend/src/pages/pm/CodingSession.tsx](/root/teampulse/frontend/src/pages/pm/CodingSession.tsx).
+Update [frontend/src/pages/pm/CodingSession.tsx](../../frontend/src/pages/pm/CodingSession.tsx).
 
 Remove:
 
@@ -418,7 +451,7 @@ Recommended page responsibilities:
 
 ### 5. Replace transcript rendering
 
-Update [frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx](/root/teampulse/frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx).
+Update [frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx](../../frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx).
 
 New behavior:
 
@@ -432,7 +465,7 @@ Do not render tool results as plain assistant prose.
 
 ### 6. Narrow the activity rail
 
-Update [frontend/src/components/pm/CodingSession/CodingActivityRail.tsx](/root/teampulse/frontend/src/components/pm/CodingSession/CodingActivityRail.tsx).
+Update [frontend/src/components/pm/CodingSession/CodingActivityRail.tsx](../../frontend/src/components/pm/CodingSession/CodingActivityRail.tsx).
 
 New behavior:
 
@@ -446,7 +479,7 @@ Do not use the rail as the catch-all destination for tool execution or live assi
 
 ### 7. Keep interruptions separate
 
-Keep [frontend/src/components/pm/CodingSession/CodingInterruptionPanel.tsx](/root/teampulse/frontend/src/components/pm/CodingSession/CodingInterruptionPanel.tsx) focused on:
+Keep `frontend/src/components/pm/CodingSession/CodingInterruptionPanel.tsx` (historical path; absent from this checkout) focused on:
 
 - auth
 - typed interactions
@@ -503,11 +536,11 @@ Keep it for:
 
 Files:
 
-- [server/internal/model/agent_run_message.go](/root/teampulse/server/internal/model/agent_run_message.go)
-- [server/internal/worker/eino_exec.go](/root/teampulse/server/internal/worker/eino_exec.go)
-- [server/internal/worker/codex_event_mapper.go](/root/teampulse/server/internal/worker/codex_event_mapper.go)
-- [server/internal/worker/opencode_stream.go](/root/teampulse/server/internal/worker/opencode_stream.go)
-- [server/internal/temporalapp/activities.go](/root/teampulse/server/internal/temporalapp/activities.go)
+- [server/internal/model/agent_run_message.go](../../server/internal/model/agent_run_message.go)
+- `server/internal/worker/eino_exec.go` (historical path; absent from this checkout)
+- `server/internal/worker/codex_event_mapper.go` (historical path; absent from this checkout)
+- `server/internal/worker/opencode_stream.go` (historical path; absent from this checkout)
+- `server/internal/temporalapp/activities.go` (historical path; absent from this checkout)
 
 Outcome:
 
@@ -517,10 +550,10 @@ Outcome:
 
 Files:
 
-- [frontend/src/lib/pm-types/codingSession.ts](/root/teampulse/frontend/src/lib/pm-types/codingSession.ts)
-- [frontend/src/components/pm/CodingSession/codingSessionUtils.ts](/root/teampulse/frontend/src/components/pm/CodingSession/codingSessionUtils.ts)
+- [frontend/src/lib/pm-types/codingSession.ts](../../frontend/src/lib/pm-types/codingSession.ts)
+- [frontend/src/components/pm/CodingSession/codingSessionUtils.ts](../../frontend/src/components/pm/CodingSession/codingSessionUtils.ts)
 - new `codingSessionStream.ts`
-- [frontend/src/pages/pm/CodingSession.tsx](/root/teampulse/frontend/src/pages/pm/CodingSession.tsx)
+- [frontend/src/pages/pm/CodingSession.tsx](../../frontend/src/pages/pm/CodingSession.tsx)
 
 Outcome:
 
@@ -530,8 +563,8 @@ Outcome:
 
 Files:
 
-- [frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx](/root/teampulse/frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx)
-- [frontend/src/components/pm/CodingSession/CodingActivityRail.tsx](/root/teampulse/frontend/src/components/pm/CodingSession/CodingActivityRail.tsx)
+- [frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx](../../frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx)
+- [frontend/src/components/pm/CodingSession/CodingActivityRail.tsx](../../frontend/src/components/pm/CodingSession/CodingActivityRail.tsx)
 
 Optional new components:
 

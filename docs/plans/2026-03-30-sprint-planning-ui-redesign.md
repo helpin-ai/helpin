@@ -1,4 +1,43 @@
-# Sprint Planning UI Redesign Plan
+# Sprint planning UI redesign plan
+
+> Historical redesign plan, source-compared on 2026-09-17. This page records
+> early sprint-planning UI ideas for contributors. The current interface has
+> evolved; unchecked tasks below are not a current implementation checklist.
+
+## Current implementation
+
+The [empty state](../../frontend/src/components/pm/sprints/SprintPlanningEmptyState.tsx)
+has the proposed heading, explanation, and three feature cards, but contains no
+Create Sprint button or animated ring. Page-level controls belong to
+[Sprints](../../frontend/src/pages/pm/Sprints.tsx), rather than this component.
+
+The [workspace](../../frontend/src/components/pm/sprints/SprintPlanningWorkspace.tsx)
+flattens upcoming, active, and completed buckets into horizontally scrolling
+columns. It does not render the proposed per-bucket section headers and empty
+boxes. Drag callbacks assign tasks to a sprint or the backlog, with the page
+coordinating optimistic state; source inspection alone does not prove complete
+interaction parity or successful browser drag tests.
+
+[Sprint columns](../../frontend/src/components/pm/sprints/SprintPlanningColumn.tsx)
+use virtualized task loading rather than a fixed story preview plus “more stories”
+link. [Progress](../../frontend/src/components/pm/sprints/sprintProgress.ts) uses
+historical closeout totals when available and live stats otherwise. The old
+`SprintPlanningStoryCard.tsx` filename is now
+[SprintPlanningTaskCard.tsx](../../frontend/src/components/pm/sprints/SprintPlanningTaskCard.tsx):
+it uses a two-line title, task key/state, priority icon, estimate, and owner avatar,
+not the exact one-line/dot arrangement below.
+
+The [backlog panel](../../frontend/src/components/pm/sprints/SprintPlanningBacklogPanel.tsx)
+has collapsible filters and a create-task action. On smaller screens it opens as
+a fixed overlay; it is not simply hidden on mobile. The
+[filter component](../../frontend/src/components/pm/sprints/SprintPlanningFilters.tsx)
+now owns search and sprint-status filtering through shared controls, not the page
+heading, team selector, and create button described in Task 6.
+
+No browser, responsive-layout, or runtime test run was performed for this review.
+The original visual targets and verification checklist follow as historical context.
+
+## Original redesign record
 
 > **For agentic workers:** Use superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 

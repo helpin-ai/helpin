@@ -1,4 +1,40 @@
-# Support Inbox Global Search Implementation Plan
+# Support inbox global search implementation plan
+
+> Historical plan, source-compared on 2026-09-17. Global Support search is
+> implemented. This page is for contributors tracing the original feature;
+> unchecked tasks, proposed filenames, old toolchain versions, and test commands
+> below are historical rather than a current setup or verification checklist.
+
+## Current implementation
+
+The UI lives in [SupportSearch](../../frontend/src/pages/pm/SupportSearch.tsx),
+not the proposed `SupportGlobalSearchPage.tsx`. Its
+[route](../../frontend/src/routes/_authenticated/w/$slug/support/search.tsx)
+uses URL-backed query/filter/sort/page state. Parsing helpers are implemented
+with the page/route rather than the proposed standalone `supportSearchRouting.ts`.
+The actual migration is
+[202606300001_support_inbox_global_search.sql](../../server/internal/dbmigrate/sql/202606300001_support_inbox_global_search.sql),
+not the proposed `support_inbox_search_vectors.sql` name.
+
+The [service](../../server/internal/service/support_inbox.go) requires a query
+or at least one filter, limits queries to 256 Unicode characters and six quoted
+phrases, and checks explicitly selected mailboxes. The
+[repository](../../server/internal/repository/support_inbox.go) applies the
+caller's mailbox scope to search results. “Global” therefore means searching
+across permitted conversations, not bypassing access restrictions.
+
+PostgreSQL uses generated search vectors with text-field substring alternatives;
+the SQLite path uses substring matching and does not prove identical full-text
+ranking or syntax. Message-body search includes nondeleted `reply` and
+`email_notice` messages without a system event. Totals are capped at 1,000 and
+reported with `total_capped`; that total is not an exact count above the cap.
+
+The UI clamps/sorts highlight ranges and renders text slices inside React
+`mark` elements, rather than injecting server-supplied highlight HTML. Existing
+scoped inbox-list search remains a separate path. The original test/build steps
+below were not rerun, and migration presence does not establish deployment.
+
+## Original implementation record
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 

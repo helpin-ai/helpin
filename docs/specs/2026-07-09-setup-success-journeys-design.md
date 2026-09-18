@@ -1,8 +1,21 @@
-# Setup and Success Journeys Design
+# Setup and success journeys design
 
 **Date:** 2026-07-09
 **Status:** Approved design and spec review
 **Product:** Helpin workspace application
+
+This historical approved design describes the intended outcome-based onboarding program. Use it to understand product decisions, then consult the source review below: the implemented guide differs substantially from the proposed catalog, evidence model, and first-release scope. Approval is not evidence that every requirement shipped.
+
+## Source review — 2026-09-18
+
+- A [Setup page](../../frontend/src/pages/SetupSuccessPage.tsx), sidebar entry, and backend service exist. The current [catalog](../../server/internal/service/setup_catalog.go) uses `Core` and `Power` task groups and count-based progress, rather than implementing the five-stage tables below as written. It includes help-center, internal-docs, and CRM journeys; the placeholder catalog is empty, and `team_project_management` normalizes to `product_delivery`.
+- Support now has separate core email and live-chat tasks, plus knowledge, AI activation, inbox, and routing configuration. It does not use the proposed channel alternative group or real-conversation first-value requirement as its displayed catalog. Product tasks cover planned epics/sprints, ownership, and an enabled flow. Therefore the original promise that configuration alone never earns progress is not a description of current behavior.
+- The [models](../../server/internal/model/setup.go) store goals, onboarding intents, durable achievements, action intents, and sidebar preferences. A catalog-version field exists, but the view builder reads the current in-memory definitions rather than dispatching by the stored version. Do not assume historical goals are protected from future catalog changes by version pinning alone.
+- The [service](../../server/internal/service/setup.go) caches evidence per time window during a read, preserves achievements, and projects member evidence. Evidence-load failures return an error for the view; the proposed per-task `verification_pending` behavior is not established by this path. Inference follows a fixed sequence capped at three goals, not the proposed strength/recency ranking with extra candidates persisted as paused.
+- The [router](../../server/internal/router/router.go) provides read, goal update, `PATCH /setup/me`, and recommendation-start endpoints. It does not expose the proposed `/setup/preferences` or task-dismiss endpoint. The [action registry](../../frontend/src/lib/setupActions.ts) maps keys to routes, often module/settings destinations, rather than the proposed typed contextual launch descriptors. The page also computes an overall progress percentage.
+- The original capability audit is dated July 9 and should not be used as the current feature-availability matrix. This review did not exercise onboarding, analytics, billing, browser accessibility, or live evidence transitions.
+
+## Original design
 
 ## Summary
 

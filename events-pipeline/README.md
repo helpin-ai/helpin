@@ -137,8 +137,8 @@ signal generation. The complete local sustained and split-host capacity-test run
 including enrichment inputs, result files, interpretation, and cleanup, is in
 [`e2e/README.md`](e2e/README.md).
 
-The verified 15,000 events/second ceiling, 300 events/second production
-qualification, compression measurements, per-layer resources, and six-hour
+The recorded August 2026 15,000 events/second benchmark, 300 events/second
+production-semantics qualification, compression measurements, per-layer resources, and six-hour
 JetStream capacity calculation are in
 [`CAPACITY_BASELINE.md`](CAPACITY_BASELINE.md). That document is the canonical
 deployment-sizing reference; the benchmark's durability caveats apply.
@@ -194,7 +194,7 @@ testing a different SLO.
 | Area | Location |
 |---|---|
 | capture and processing | `rust-capture/` |
-| local orchestration | `scripts/`, `../docker-compose.yaml` |
+| local orchestration | `scripts/`, `local/compose.yaml` |
 | browser signal lab | `../frontend/public/event-test/`, `../frontend/e2e/event-pipeline/` |
 | ClickHouse migrations | `../server/internal/chmigrate/sql/` |
 | ClickHouse migration CLI | `../server/cmd/clickhouse-migrate/` |

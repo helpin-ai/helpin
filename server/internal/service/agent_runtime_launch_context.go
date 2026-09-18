@@ -240,7 +240,7 @@ func planningStageForDelegatedRun(agent *model.Agent, task *model.PMTask, epic *
 // skipped so a launch never fails on optional context.
 //
 // Known parity gaps versus the Temporal path (documented in
-// docs/AGENT_RUNTIME_LOCAL.md): checklist items and task-linked docs other
+// docs/agent-runtime-local-setup.md): checklist items and task-linked docs other
 // than the plan document are not included.
 func (s *AgentService) buildDelegatedTaskLaunchContext(ctx context.Context, task *model.PMTask, delivery *model.TaskDeliveryTarget, req model.StartAgentRunRequest) string {
 	operatorNotes := strings.TrimSpace(derefString(req.AdditionalContext))

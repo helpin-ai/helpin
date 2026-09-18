@@ -1,6 +1,46 @@
-# Agent Startup Progress Implementation Plan
+# Agent startup progress implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical proposal explains the intended separation between startup status
+and an agent-authored plan. Contributors should use the current implementation
+notes below before changing the coding-session UI.
+
+> Source review: 2026-09-18. The current implementation differs from this plan.
+> Original checkboxes and expected test results are historical instructions,
+> not evidence of completed work or fresh validation.
+
+## Current implementation and limits
+
+- [CodingSessionSurface](../../frontend/src/components/pm/CodingSession/CodingSessionSurface.tsx)
+  uses the [layout helper](../../frontend/src/components/pm/CodingSession/codingSessionLayout.ts)
+  to show the plan panel only when the plan contains at least one step. This
+  applies to terminal runs too. A preview or review-history entry can independently
+  make the side panel visible; it is not exclusively an Agent Plan panel.
+- [CodingPlanPanel](../../frontend/src/components/pm/CodingSession/CodingPlanPanel.tsx)
+  itself still renders waiting text for an empty non-terminal plan and the
+  no-plan explanation for an empty terminal plan. The parent's gate normally
+  prevents either empty state from appearing in this surface. The proposed
+  component-level early return and terminal empty-state behavior are therefore
+  not the current end-to-end contract.
+- [CodingTranscriptPane](../../frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx)
+  appends a streaming-status row when the session is running and no assistant,
+  tool, or reasoning segment is actively streaming/running. It does not implement
+  this plan's stage-derived startup item before prompt content, and queued
+  sessions do not meet that row's visibility condition.
+- The shared [live-status helper](../../frontend/src/components/agents/transcript/liveStatus.ts)
+  derives labels from live content and run status. This pane does not pass
+  `execution_stage` to it. Do not promise the proposed loading-context,
+  workspace-preparation, or branch-sync labels based on this plan.
+- `server/internal/temporalapp/activities.go` no longer exists. The proposed
+  `AgentRunActivities` checkpoints and helper are not current implementation
+  entry points; inspect the present runtime integration before designing stage
+  updates. The proposed stage strings were not found in `server/internal` during
+  this review. This does not establish what an external runtime emits.
+
+The original Go 1.24 and npm commands below are dated examples. Use current
+repository setup instructions. This review did not run application tests, start
+an agent, or verify the UI in a browser.
+
+## Original implementation plan
 
 **Goal:** Move agent startup progress into the left transcript section and show the right-side Agent Plan panel only after a real agent plan is available.
 

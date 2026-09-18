@@ -1,4 +1,16 @@
-# CRM Buyer Signals — Assessment and Implementation Roadmap
+# CRM buyer signals assessment and roadmap
+
+This historical August 2026 assessment explains the trust and attribution problems behind the CRM signal redesign. Use it for decision history; use [CRM signal architecture and operations](crm-signals.md) for the current implementation. The phase gates, open questions, deployment sequence, and source line numbers below describe the assessment period.
+
+## Source review — 2026-09-18
+
+- The proposed token-registry extension now exists: [token generation](../server/internal/service/support_inbox_widget.go) returns canonical workspace IDs and configured origins, and the [handler](../server/internal/handler/support_inbox_widget.go) implements ETag/304 responses. The historical hardcoded-origin description is no longer current.
+- [Rust enrichment](../events-pipeline/rust-capture/src/enrichment/handler.rs) takes the authorized workspace as `project_id` and writes the installation ID, not the raw credential, into `api_key`. A legacy no-authorization fallback still derives the project from the event key; this inspection does not establish that every deployed ingestion path uses the new context or that historical secrets were rotated.
+- [Signed widget identity](../server/internal/service/support_widget_identity.go), the [tenant-scoped ClickHouse reader](../server/internal/repository/event_clickhouse.go), and the [rule evaluator](../server/internal/service/crm_signal_rule_evaluator.go) are implemented. The statements that Go has no ClickHouse repository and these components must first be added are historical findings.
+- The current architecture includes motion-aware observations/interpretations, customer-state rules, and canonical customer situations. The original seven types remain an axis of that larger contract; phase completion cannot be inferred from this checklist alone.
+- Production cutover, downstream analytics compatibility, credential rotation, retention configuration, rule precision and the external market references were not verified in this repository review. Do not treat their original discussion as evidence of deployment or calibrated outcomes.
+
+## Original assessment — 2026-08-23
 
 > **Historical design record.** This assessment preserves the decisions and
 > implementation plan used to build the system; phase language and open-item
@@ -8,7 +20,7 @@
 
 Assessed: 2026-08-23. Updated after the CRM signal reliability fixes and review of Helpin's vendored events pipeline and the upstream Usermaven implementation.
 
-This document describes the current buyer-signal system and defines the implementation sequence for turning it into a trustworthy cross-product signal system. Phase 0 is a decision-complete implementation specification. Later phases define product direction; their detector thresholds and score weights must be calibrated with production evidence.
+This assessment originally described the buyer-signal system and defines the implementation sequence for turning it into a trustworthy cross-product signal system. Phase 0 is a decision-complete implementation specification. Later phases define product direction; their detector thresholds and score weights must be calibrated with production evidence.
 
 Two tracks start immediately and in parallel: Phase 0 (event tenancy and identity) and Phase 1a (cross-module Postgres signals). Phase 1a is not gated on Phase 0 — see §4.
 
@@ -678,8 +690,8 @@ Two further mechanisms belong in the same work:
 
 - `docs/crm-signal-ingestion.md` — update separately for calendar and verification behavior.
 - `docs/crm-entity-summaries.md` — update separately for company summaries.
-- `docs/prds/PRD-widget-identify-crm-leads.md`
-- `docs/prds/PRD_WIDGET_SDK_FEATURE_PARITY.md`
-- `docs/prds/PRD-support-live-chat.md`
-- `docs/prds/PRD-autonomous-support-coverage.md`
+- `docs/prds/widget-identify-crm-leads.md`
+- `docs/prds/widget-sdk-feature-parity.md`
+- `docs/prds/support-live-chat.md`
+- `docs/prds/autonomous-support-coverage.md`
 - `events-pipeline/README.md`

@@ -1,4 +1,39 @@
-# Early Access Welcome Sequence — Customer.io Campaign
+# Early-access welcome email campaign
+
+> Historical campaign draft, source-compared on 2026-09-17. This page preserves
+> early-access messaging for the marketing team. Its trigger, exit event, product
+> promises, sender ID, and launch steps are not a verified current campaign setup.
+
+## Current integration and required revisions
+
+The [Customer.io integration](../../server/internal/service/customer_io.go)
+emits `user_signed_up` after account identity exists. It does not emit the
+`signed_up` event used by this draft's conversion and exit conditions. Signup
+event delivery is best-effort and depends on the integration being enabled.
+A source search across the current backend, frontend, and website found no
+`early_access_signup` emitter; an external campaign or event source cannot be
+established from this repository.
+
+Use the [current lifecycle documentation](../customer-io/README.md) and
+[workspace data contract](../customer-io/workspace-lifecycle-data-contract.md)
+when designing an active sequence. Confirm audience identity and trigger delivery
+before substituting event names: correcting an exit event alone does not create
+an early-access enrollment source or establish that existing subscribers map to
+application user IDs. The actual Customer.io campaign state was not inspected.
+
+The invite's blanket import promise is not a current capability contract. The
+[router](../../server/internal/router/router.go) exposes named Docs import flows
+for Help Scout and Nextra, while [CRM import](../../server/internal/service/crm_import.go)
+defaults to CSV. Those sources do not establish the advertised Jira, Notion,
+Intercom, and HubSpot import coverage. Unlimited-seat, free-access, and automatic
+agent-work promises also need edition and entitlement checks before reuse.
+
+The timing diagram is a proposed schedule: day 3 followed by a four-day delay to
+day 7. Sender ID `1`, personal outreach commitments, and historical launch language
+must be revalidated by the campaign owner. No campaign was created, changed,
+started, or sent during this documentation review. The original copy follows.
+
+## Original campaign draft
 
 ## Setup Instructions
 

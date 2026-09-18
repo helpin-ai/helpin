@@ -1,4 +1,41 @@
-# Email Forwarding Round-Trip Verification Implementation Plan
+# Email forwarding round-trip verification implementation plan
+
+> Historical design and implementation record, reviewed against the checkout on
+> 2026-09-17. This page explains the original forwarding verification work for
+> contributors. Its task instructions, branch name, and validation checklist are
+> historical; they do not establish current deployment or test results.
+
+## Current behavior and design differences
+
+The [send-test service](../../server/internal/service/support_email_route.go)
+validates the source address, requires an active workspace-scoped route, saves a
+new pending token before sending, and records delivery errors. The
+[route registration](../../server/internal/router/router.go) requires
+`support.admin` for `POST /api/support/inbox/email-routes/{routeId}/send-test`.
+
+[Inbound processing](../../server/internal/service/email_fallback.go) recognizes
+Google/Zoho confirmation patterns before test matching. Detected confirmations
+remain available as conversations and do not verify forwarding. A subject containing
+`Helpin forwarding test` is consumed even if its bracketed token is absent or
+wrong; only a match with the route's pending token records test success. This is
+broader consumption than the original “that exact message” wording suggests.
+Non-confirmation ordinary mail mentioning the configured source address can also
+verify an unverified route and continues through normal conversation processing.
+These are inbound-message checks, not proof of ongoing provider access.
+
+Verification uses the [repository's ordinary row save](../../server/internal/repository/support_email_route.go).
+The original “atomically” wording should not be read as a token-conditional update
+or concurrency guarantee: the read/match/save sequence has no compare-and-swap
+predicate. The matching code also does not expire a token based on its sent time.
+
+The current [setup component](../../frontend/src/components/settings/EmailForwardingSetup.tsx)
+is a four-step flow. The [route query](../../frontend/src/hooks/queries/useSupport.ts)
+polls every three seconds while setup is open with an unverified route; outside
+that condition, pending tests poll for up to ten minutes. That UI polling window
+is not a server-side verification-token lifetime. Existing-route behavior also
+includes the later [verification backfill](2026-08-11-forwarding-verification-backfill.md).
+
+## Original record
 
 > **For agentic workers:** Execute locally with TDD. The user explicitly requested no subagents.
 

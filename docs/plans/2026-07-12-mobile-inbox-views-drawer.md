@@ -1,6 +1,17 @@
-# Mobile Inbox Views Drawer + Filter Parity — Implementation Plan
+# Mobile inbox views drawer implementation plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the mobile inbox drawer and shared web filtering approach for contributors. The drawer is implemented; use the source review below to distinguish current behavior from the original task checklist. The old worktree, commit instructions, and device checks are historical, not current execution instructions.
+
+## Source review — 2026-09-18
+
+- [The filter bridge](../../apps/support-mobile/src/inbox/use-inbox-filters.ts) reuses the web request builder for builtin, mailbox, and custom views. It now also accepts editable filter overrides. Matching request parameters does not prove byte-identical responses across different users, times, permissions, or caches.
+- [The drawer model](../../apps/support-mobile/src/inbox/view-list-config.ts) shows **total workload counts plus unread dots**, rather than numeric unread badges. Inbox, Mine, Waiting, and AI Handling use unread-stat totals; Resolved, Spam, and AI Resolved omit badges. Custom views use view counts; team inboxes use scope totals with an unread fallback.
+- [The store](../../apps/support-mobile/src/stores/support-view-store.ts) persists both selection and filter overrides in `sessionStorage`, under one storage key. Changing selection clears overrides. Persistence follows browser session-storage behavior; it is not a promise about every native app restart.
+- [The inbox screen](../../apps/support-mobile/src/screens/inbox-screen.tsx) mounts the drawer, an edge-swipe opening strip, and a filter sheet. [The drawer](../../apps/support-mobile/src/inbox/views-drawer.tsx) also includes workspace switching and settings callbacks, beyond the original proposal.
+- [Realtime handling](../../apps/support-mobile/src/lib/use-mobile-realtime.ts) invalidates view counts. Narrow web-file aliases remain in the mobile build configuration. Source inspection does not establish live web/mobile list parity, bundle size, device accessibility, or passing runtime tests; the original verification checklist still requires those checks when changing behavior.
+
+## Original record
+
 
 **Goal:** Replace the mobile inbox's Mine/Unassigned/All segmented control with a left slide-out drawer that mirrors the web support sidebar (Inbox/Mine/Waiting/Resolved/Spam · AI Handling/AI Resolved · Custom views · Team inboxes) with per-view unread counts, where each view returns byte-identical conversations to web.
 

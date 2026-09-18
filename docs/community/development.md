@@ -53,7 +53,7 @@ Stop preserves data volumes. See [configuration](configuration.md) for mail and
 AI settings, [deployment](deployment.md) for public access, and
 [backup/restore](backups.md) before working with persistent data. For host-process
 editing rather than container builds, use [local development](../development.md)
-and the [Runtime integration guide](../AGENT_RUNTIME_LOCAL.md).
+and the [Runtime integration guide](../agent-runtime-local-setup.md).
 
 For tests, run from the Helpin repository root:
 

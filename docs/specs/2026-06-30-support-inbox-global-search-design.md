@@ -1,4 +1,19 @@
-# Support Inbox Global Search Design
+# Global support conversation search
+
+This historical specification explains the June global-search proposal for contributors maintaining support search. A dedicated search API and page now exist, but query limits, message matching, snippets, and indexes differ from the original requirements below.
+
+## Source review — 2026-09-18
+
+- [SupportSearchPage](../../frontend/src/pages/pm/SupportSearch.tsx) uses route search state, a draft filter form, a dedicated query hook, and local `<mark>` elements over plain text. It does not reuse the scoped inbox query as its source of truth. The proposed separate component files were consolidated into this page.
+- [The handler](../../server/internal/handler/support_inbox.go) accepts the listed filters and dates in RFC3339 or date-only form. [Service validation](../../server/internal/service/support_inbox.go) requires a query or filter and caps `q` at 256 Unicode code points, but allows up to six quoted pairs, not one phrase. It does not apply that same length cap to `title` or `customer_email`.
+- [Repository search](../../server/internal/repository/support_inbox.go) reuses mailbox access and scope predicates. PostgreSQL uses `websearch_to_tsquery` plus partial subject/customer matches, exact display ID, and UUID alternatives. SQLite uses substring matching and is not proof of PostgreSQL phrase semantics. The customer-email filter is partial matching; the title filter is an additional subject condition, not a mode that confines `q` to titles.
+- Message matching includes undeleted `reply` and `email_notice` rows without a system event. There is no separate `is_internal` visibility switch in this search path; it relies on support route and conversation access. The original hypothetical note-redaction behavior must not be claimed as implemented.
+- Totals are capped at 1,000 after reading up to 1,001 IDs, and page size is capped at 50. Snippets prefer title, email, then customer name, otherwise the latest substring-matching message. They are not selected with `ts_headline` or the highest FTS rank, so a full-text match may have no matching message snippet.
+- Highlight offsets are produced with Go byte indexes but consumed with JavaScript string slicing. That mismatch can affect text containing non-ASCII characters; universal Unicode highlight correctness is not established. This review records the limitation without changing application code.
+- [The search migration](../../server/internal/dbmigrate/sql/202606300001_support_inbox_global_search.sql) creates generated vectors, GIN vector indexes, and selected B-tree/partial indexes. It does not create the proposed trigram indexes. Query-plan and production latency goals below remain unverified; generated columns do not by themselves prove all partial searches are indexed.
+- Source and existing test cases were inspected only. The June “current behavior,” implementation status, screenshot comparison, and rollout checklist are historical, not fresh runtime or browser acceptance evidence.
+
+## Original specification
 
 **Date:** 2026-06-30
 **Status:** Approved for implementation planning

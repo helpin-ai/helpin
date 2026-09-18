@@ -1,6 +1,16 @@
-# Tiered AI Usage Billing Implementation Plan
+# Tiered AI usage billing plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan records the August billing cutover design. Use it for rationale, not as a current migration, pricing, or deployment checklist.
+
+## Source review — 2026-09-18
+
+- Pricing, financial repositories/services, handlers, and Stripe integration now live under `server/ee`; shared lifecycle types and Community recording remain under `server/internal`. The pricing command requires the `ee` build tag. Most original package paths and untagged financial test commands below are obsolete.
+- The embedded catalog is `server/ee/pricing/catalog.json`, currently version `2026-09-14`. The actual original cutover migration is `202608130002_tiered_ai_usage_cutover.sql`; `202608130001` is a different migration. Never apply the proposed filenames or repeat the zero-usage reset from this historical recipe.
+- Exact token accounting, reservations, settlement/period workers, and Founder soft-budget support exist. The current catalog still lists a 150,000,000 micro-USD Founder allowance, but “never blocks” refers to the allowance policy, not exemption from authentication, model, or execution errors.
+- Customer-funded pricing now has multiple funding modes. In addition to the historical ten-percent mode, the calculator handles a versioned flat-token tariff and platform mode. `server/ee/migrations/sql/202609140006_byok_tariffs.sql` stores immutable tariffs and workspace opt-in settings. The original universal BYOK ten-percent explanation is no longer sufficient.
+- Legacy credit fields remain in `WorkspaceBilling` and compatibility billing code. Therefore the original requirement that all application credit names disappear is not an accomplished repository invariant.
+- Community usage recording does not reserve credits or charge money. Commercial pricing constraints do not define which custom models Community can record. Current agent/model configuration must also be read with the AI profile and execution policy implementation, rather than the original fixed preset examples.
+- This review inspected source and tests; it did not run financial acceptance suites, migrate a database, verify Stripe configuration, call a provider, or establish live runtime budget capability. The original activation, exactly-once settlement, customer UI, and rollout acceptance statements remain requirements to verify, not deployment evidence.
 
 **Goal:** Replace credits and fixed packs with immediately active, exact token-priced AI usage, a percentage-first customer meter, a $150 Founder soft budget, reservations, and idempotent exact Stripe overage settlement.
 

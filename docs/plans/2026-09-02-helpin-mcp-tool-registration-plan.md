@@ -1,4 +1,42 @@
-# Single-Release Plan — Helpin MCP Tool Registration
+# Helpin MCP tool registration release plan
+
+> Historical release record, reviewed against the checkout on 2026-09-17.
+> This page explains the internal runtime-provider transition for contributors.
+> Statements about launch state, persisted data, test results, and deployment
+> order below describe that release; they are not current operational evidence.
+
+## Current source comparison
+
+The [router](../../server/internal/router/router.go) exposes the authenticated
+internal Helpin provider list/call endpoints below. The
+[catalog service](../../server/internal/service/agent_runtime_mcp.go) publishes
+sorted canonical names, risk metadata, and input schemas, omitting supported
+target metadata. Dispatch trims surrounding whitespace and requires a published
+name; unknown aliases return a tool error. Execution still passes through the
+host command path rather than treating discovery as authorization.
+
+Catalog validation checks nonempty canonical names, unique aliases, executable
+commands, command-name consistency, and schemas that are present and can be
+JSON-marshaled. “Valid input schemas” below should not be read as full JSON Schema
+metaschema validation. The [focused tests](../../server/internal/service/agent_runtime_mcp_test.go)
+cover catalog membership, alias rejection, structured results, and malformed
+metadata; they were inspected, not rerun as a three-repository release gate.
+
+The available adjacent runtime checkout contains required-provider startup
+retry (90-second default), refresh/last-known-good handling, and readiness state.
+It pins SDK v0.5.0, whereas this Helpin checkout pins v0.6.0 in
+[go.mod](../../server/go.mod). That source comparison does not prove that the
+current released runtime, SDK, and Helpin combination passes every provider
+matrix or startup test listed below. Revalidate the selected runtime revision
+and deployment configuration for a new release. Refresh intervals are provider
+configuration, not a universal hard-coded Helpin/Usermaven guarantee.
+
+The configuration block below is a provider-entry fragment for an app's
+`mcp_providers`, not a complete runtime configuration file. The “no persisted
+allowlists” and “no migrations” statements apply to the original cutover and must
+not justify dropping current stored agent data or skipping later migrations.
+
+## Original release record
 
 **Date:** 2026-09-02
 **Status:** Implemented

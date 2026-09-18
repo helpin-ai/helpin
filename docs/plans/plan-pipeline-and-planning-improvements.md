@@ -1,4 +1,17 @@
-# Pipeline & Planning Improvements Plan
+# Agent pipeline and planning improvement proposal
+
+This undated historical proposal records six possible improvements to agent planning and review. Use it to understand the original ideas, then compare each item with the current task model and Agent Runtime contract before implementing follow-up work.
+
+## Source review — 2026-09-18
+
+- The old `PMStory`, `worker/prompt.go` and `worker/planning_prompt_pack.go` design no longer describes the runtime boundary. Current [agent models](../../server/internal/model/agent.go) use `AgentRunInputPayload` with target, event, workspace, attached-context and task fields. The proposed `StoryRunContext` model and standalone `run_context` field were not found; do not treat the sample persistence code as current or replayable context guarantees.
+- Vertical slicing is partially represented in current source: [ProposedTask and orchestration models](../../server/internal/model/agent_planning.go) contain `slice_type` and `vertical_coverage`; [planning service](../../server/internal/service/agent_planning.go) handles task briefs and warns about enabler ratios. Tasks replace stories. These fields do not mechanically prove a slice delivers an end-to-end behavior.
+- The proposed four-action approval request and approval audit fields were not found. `ApproveAgentRunRequest` currently accepts `content` and `send_message`; request-changes is a separate resume intent handled through current run interactions in the [agent service](../../server/internal/service/agent.go). Copying the proposed switch would bypass that newer lifecycle.
+- Repository searches did not find `PipelineStatusStrip`, `RunContextView`, or `planning_output_format`. Those UI/format concepts remain proposals, not options users can assume are available.
+- `merge_branch` remains an action in the [automation rule engine](../../server/internal/service/automation_rule_engine.go), which calls the Git service after resolving the configured target. The suggested auto-created done-state rule and alternative `merge_on_done` migration are not established by this proposal.
+- The “no SQL migration needed” and “all independent” statements below are historical assumptions. Deployed schema changes must follow current versioned migration ownership, and any run/review change must integrate with current Runtime authorization and interaction contracts. No run, merge, model call or test suite was executed for this review.
+
+## Original proposal
 
 Six changes to the agent pipeline and planning system, ordered by priority. Each is independent and can be implemented separately.
 

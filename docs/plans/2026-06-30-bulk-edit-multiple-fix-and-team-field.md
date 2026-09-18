@@ -1,4 +1,38 @@
-# Bulk Edit: Fix "Multiple" fields + add Team field (Phase 1 + 2)
+# Bulk task editing and team changes
+
+> Historical implementation record, source-compared on 2026-09-17. This page
+> explains the original mixed-value dropdown fix and bulk team editing. The old
+> test count, branch, source line numbers, and Radix diagnosis are historical.
+
+## Current implementation
+
+[TaskBulkActionsBar](../../frontend/src/components/pm/TaskBulkActionsBar.tsx)
+now imports the shared [QuietDropdown Select adapter](../../frontend/src/components/design-system/quiet-dropdown-select.tsx),
+not the legacy Radix Select implementation. Mixed fields retain `SelectValue`
+placeholders. The original Radix placement diagnosis should not be used as a
+current explanation of how this adapter opens its menu.
+
+Choosing a team resets staged status, epic, sprint, and label changes, then
+loads options for that team. Apply requires an explicitly selected status; there
+is no default-state fallback. `buildBulkPatch` clears old epic/sprint links unless
+replacements were selected, sends the new workflow/state, and replaces old labels
+with newly selected labels. Therefore `label_ids` is empty only when no new labels
+were chosen. The original testing bullet about retaining old shared labels or
+falling back to a default state contradicts the current helper and UI.
+
+Owner, priority, severity, and deadline changes are not reset by choosing a team;
+unchanged owners are omitted from the patch. The
+[task service](../../server/internal/service/pm_task.go) validates workflow/state
+and labels, with [scope helpers](../../server/internal/service/pm_task_scope.go)
+checking epic and sprint compatibility. Bulk Apply issues separate requests using
+`Promise.allSettled` and reports partial success; it is not an atomic batch.
+
+The [test source](../../frontend/src/components/pm/__tests__/TaskBulkActionsBar.test.tsx)
+covers patch construction, including newly selected labels. Its presence does not
+verify the original 23-test/typecheck claim for this checkout; those checks were
+not rerun during this documentation review.
+
+## Original implementation record
 
 Status: IMPLEMENTED (2026-06-30) — Phase 1 + 2 complete, 23 tests passing, tsc clean.
 Date: 2026-06-30

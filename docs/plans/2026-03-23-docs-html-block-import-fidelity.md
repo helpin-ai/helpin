@@ -1,5 +1,14 @@
 # Docs HTML Block Import-Fidelity Plan
 
+> Source review, 2026-09-17
+
+Historical recommendation from 2026-03-23. HTML blocks are now registered in the
+[editor](../../frontend/src/components/docs/DocsEditor.tsx), and
+[Help Scout import](../../server/internal/service/docs_import.go) converts HTML to
+canonical Tiptap JSON. The missing-block and `_markdown_source` claims below
+refer to the earlier implementation; they are not current setup or prioritization
+instructions. Import fidelity still depends on the supported conversion rules.
+
 ## Recommendation
 
 Add the `HTML` block next.
@@ -18,15 +27,15 @@ Why:
 
 ### What already exists
 
-- Authoring supports slash-inserted blockquote, code block, divider, callout, table, image, and video in [frontend/src/components/docs/DocsEditor.tsx](/root/teampulse/frontend/src/components/docs/DocsEditor.tsx), [frontend/src/components/docs/slash-commands.ts](/root/teampulse/frontend/src/components/docs/slash-commands.ts), [frontend/src/components/docs/CalloutExtension.ts](/root/teampulse/frontend/src/components/docs/CalloutExtension.ts), and [frontend/src/components/docs/VideoEmbedExtension.ts](/root/teampulse/frontend/src/components/docs/VideoEmbedExtension.ts).
-- Public Help Center rendering supports those same major blocks in [server/internal/tiptap/html.go](/root/teampulse/server/internal/tiptap/html.go).
-- Help Scout import still converts article HTML into Markdown and stores a `_markdown_source` envelope in [server/internal/service/docs_import.go](/root/teampulse/server/internal/service/docs_import.go) and [server/internal/helpscout/convert.go](/root/teampulse/server/internal/helpscout/convert.go).
+- Authoring supports slash-inserted blockquote, code block, divider, callout, table, image, and video in [frontend/src/components/docs/DocsEditor.tsx](../../frontend/src/components/docs/DocsEditor.tsx), [frontend/src/components/docs/slash-commands.ts](../../frontend/src/components/docs/slash-commands.ts), [frontend/src/components/docs/CalloutExtension.ts](../../frontend/src/components/docs/CalloutExtension.ts), and [frontend/src/components/docs/VideoEmbedExtension.ts](../../frontend/src/components/docs/VideoEmbedExtension.ts).
+- Public Help Center rendering supports those same major blocks in [server/internal/tiptap/html.go](../../server/internal/tiptap/html.go).
+- Help Scout import still converts article HTML into Markdown and stores a `_markdown_source` envelope in [server/internal/service/docs_import.go](../../server/internal/service/docs_import.go) and [server/internal/helpscout/convert.go](../../server/internal/helpscout/convert.go).
 
 ### Why this is the next bottleneck
 
 - unsupported imported fragments still have nowhere first-class to go
 - unknown or custom embeds/layout fragments are still forced through a lossy HTML-to-Markdown path
-- Help Scout iframes are still rewritten to links in [server/internal/helpscout/convert.go](/root/teampulse/server/internal/helpscout/convert.go)
+- Help Scout iframes are still rewritten to links in [server/internal/helpscout/convert.go](../../server/internal/helpscout/convert.go)
 - without an `htmlBlock`, the importer has to either flatten content or silently lose styling
 
 ## What Other Help-Docs Tools Do
@@ -131,7 +140,7 @@ Recommended disallowed baseline:
 
 Add a dedicated HTML block authoring flow in the editor.
 
-- Add `HTML` to the slash menu in [frontend/src/components/docs/slash-commands.ts](/root/teampulse/frontend/src/components/docs/slash-commands.ts).
+- Add `HTML` to the slash menu in [frontend/src/components/docs/slash-commands.ts](../../frontend/src/components/docs/slash-commands.ts).
 - Insert an empty `htmlBlock` node from slash menu.
 - Open a focused modal or side-sheet editor for editing the block’s HTML.
 - Render a block placeholder/preview in the editor canvas.
@@ -164,7 +173,7 @@ Recommended behavior:
 
 ### Phase 4: Add public Help Center rendering
 
-Extend [server/internal/tiptap/html.go](/root/teampulse/server/internal/tiptap/html.go) to render `htmlBlock`.
+Extend [server/internal/tiptap/html.go](../../server/internal/tiptap/html.go) to render `htmlBlock`.
 
 Recommended render contract:
 

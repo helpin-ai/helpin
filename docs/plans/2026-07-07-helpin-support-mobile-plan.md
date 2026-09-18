@@ -1,6 +1,19 @@
-# Helpin Support Mobile App Implementation Plan
+# Helpin Support mobile implementation plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the original mobile support app: an independent Tauri interface using shared support data and actions. It preserves the initial design and acceptance criteria; use the [mobile README](../../apps/support-mobile/README.md) for current setup and the [QA record](../../apps/support-mobile/QA.md) for dated validation and pending device checks.
+
+## Source review — September 18, 2026
+
+- The app, shared mutations, Rust shell, native push plugin, registration API, and Firebase sender exist. Current manifests request Tauri `2.11.1`; the app product name is `Helpin`, identifier `ai.helpin.mobile`, and development port 5176. Treat dependency versions in the scaffold below as historical examples.
+- Current navigation has Inbox, Mine, Search, and Settings tabs. Search, canned responses, AI rewrite, attachments, tag actions, contacts/CRM context, linked tasks, and agent interactions have expanded the original scope. The deferred-feature list below is not a current missing-feature inventory; see `src/router.tsx`, `src/navigation/tab-bar.tsx`, and `src/thread/composer.tsx`.
+- UI remains independently implemented, but `vite.config.ts` now explicitly aliases selected pure web support logic and widget emoji helpers. The original claim that only support-core/shared imports are allowed is obsolete; there is still no blanket alias to the web UI.
+- Native session storage uses `LazyStore` at `auth/session.json`, backed by an in-memory adapter. This code does not establish Keychain/Keystore encryption. Browser development uses the browser session adapter. Do not equate the Tauri store with a secure credential vault.
+- Push registration routes are authenticated and user-scoped. `support_notification.go` checks recipient access and existing `in_app` preferences before delivery. `push-registration.ts` unregisters before logout but allows failures or a three-second timeout; sign-out therefore does not guarantee immediate device-row deletion or cessation of all queued notifications.
+- `push_devices` is included in the versioned core foundation schema. Community installations use versioned migrations; adding an AutoMigrate model alone is insufficient. The plan's native push spike findings file was not located. Source files and a desktop-host Cargo CI check do not prove signed iOS/Android builds, store publication, hardware push delivery, or the performance/accessibility budgets below.
+
+This review inspected source and CI configuration only. No native build, hardware test, Firebase request, app-store check, or release operation was performed. Original checkboxes and expected results remain historical requirements, not completed-test evidence.
+
+## Original implementation sequence
 
 **Goal:** Ship a first-class native mobile app (iOS + Android) for Helpin Support agents — triage, read, and reply to support conversations from a phone with push notifications — with UI/UX quality on par with the best-built consumer apps.
 
@@ -172,7 +185,8 @@ Phases 5, 6, and 8 are independently shippable checkpoints: after Phase 6 the ap
 - [ ] **Step 1: Create branch**
 
 ```bash
-cd /root/teampulse && git checkout develop && git pull origin develop && git checkout -b feat/support-mobile
+# From the repository root
+git checkout develop && git pull origin develop && git checkout -b feat/support-mobile
 ```
 
 - [ ] **Step 2: Write package.json**
@@ -348,7 +362,8 @@ Note: `main.tsx` calls `createRoot` at module scope; for the test to import `App
 - [ ] **Step 7: Install, verify test fails then passes, typecheck**
 
 ```bash
-cd /root/teampulse && pnpm install
+# From the repository root
+pnpm install
 cd apps/support-mobile && pnpm test    # expect: 1 passed
 pnpm typecheck                          # expect: exit 0
 ```
@@ -498,7 +513,7 @@ fn main() {
 - [ ] **Step 4: Initialize mobile targets**
 
 ```bash
-cd /root/teampulse/apps/support-mobile
+cd apps/support-mobile
 pnpm tauri android init     # requires ANDROID_HOME + NDK; generates src-tauri/gen/android
 pnpm tauri ios init         # macOS only; generates src-tauri/gen/apple
 ```
@@ -1394,7 +1409,7 @@ DI in `main.go`: repo from `*gorm.DB`, service from repo, handler from service; 
 ### Task 19a (spike — run before Task 19): Prove push delivery on real hardware
 
 **Files:**
-- Create: `docs/superpowers/plans/2026-07-08-push-spike-findings.md` — findings write-up (the only merged artifact)
+- Create: `docs/research/2026-07-08-push-spike-findings.md` — findings write-up (the only merged artifact)
 - Scratch code on a throwaway branch off `feat/support-mobile`; none of it merges
 
 Push is the highest-integration-risk item in this plan: Firebase SDK versions, Gradle/Xcode wiring, notification permission states, APNs token handoff, and cold-start payload delivery each have failure modes that are invisible until tried on hardware. De-risk before building the real plugin.

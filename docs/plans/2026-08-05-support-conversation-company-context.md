@@ -1,6 +1,18 @@
 # Support Conversation Company Context Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical implementation plan explains how support conversations retain an account association while the visitor switches active companies. The core feature exists; the unchecked tasks below preserve the original work breakdown.
+
+## Source review: September 18, 2026
+
+- The [company-context migration](../../server/internal/dbmigrate/sql/202608050001_support_conversation_company_context.sql) adds nullable references with delete-to-null foreign keys. Its historical backfill requires exactly one **distinct** company per workspace/contact, including associations in either direction, and never overwrites an existing conversation company.
+- [Widget identity application](../../server/internal/service/support_inbox_widget.go) updates active session company and uses `SetCRMCompanyIfUnset` for current conversations. The [repository helpers](../../server/internal/repository/support_inbox.go) restrict anonymous-ID fallback to non-revoked, unexpired sessions and scope company writes by workspace. Stable conversation association does not mean the underlying company attributes are snapshotted.
+- [Company matching](../../server/internal/service/support_inbox.go) keeps a declared external ID authoritative and locks that lookup. Later behavior also attempts email-domain matching when no company is declared, recording a separate match method. That inference is weaker than a declared or verified account claim and is not described by the original plan's matching rules.
+- The manual `PUT /api/support/inbox/conversations/{id}/crm-company` route is registered under `PermSupportEdit`. The service validates the selected company's workspace, and [visitor context](../../server/internal/service/support_inbox_visitor.go) loads the current company by the conversation's direct ID with partial-failure status.
+- [The SDK client](../../packages/sdk-js/src/core/client.ts) persists active company context and merges inline/persisted company data. [The sidebar](../../frontend/src/components/support/ConversationDetailSidebar.tsx) renders Company Details between contact details and other conversations; [company editing](../../frontend/src/components/support/SidebarCompanyDetails.tsx) is gated by `support.edit`.
+
+The Go 1.24 reference and expected test results below belong to the original plan; [the module](../../server/go.mod) now declares Go 1.25.0. This documentation review did not rerun application tests or the manual account-switching scenario.
+
+## Original implementation plan
 
 **Goal:** Capture the visitor's active CRM company on each support conversation, keep that company identity stable, and show its live subscription/account details in the inbox sidebar after the consolidated Contact Details section.
 

@@ -1,12 +1,12 @@
-# CRM Email Sync
+# CRM email synchronization
 
-This document explains how CRM email sync currently works in Teampulse as implemented in the backend today. It is an internal engineering reference for people debugging mailbox lifecycle, contact creation, message association, and inbox freshness.
+This document explains how CRM email sync currently works in Helpin as implemented in the backend today. It is an internal engineering reference for people debugging mailbox lifecycle, contact creation, message association, and inbox freshness.
 
 ## Source of truth
 
 Gmail is the external source of truth for mailbox contents and mailbox history cursors.
 
-Postgres stores Teampulse-owned normalized records for:
+Postgres stores Helpin-owned normalized records for:
 
 - connected mailbox accounts and lifecycle state
 - durable Gmail history checkpoints
@@ -18,7 +18,7 @@ The CRM UI reads from those CRM tables. It does not read directly from Gmail.
 
 `crm_email_accounts.sync_state` is now also the persisted operational diagnostics record for sync runtime state. It stores the current phase, last attempt/success/failure timestamps, consecutive failure count, last error, last cycle summary, and the most recently persisted Gmail history checkpoint.
 
-The canonical taxonomy and platform model for agents, built-in automations, and automation rules now lives in `docs/AGENTS_AND_AUTOMATION.md`.
+The canonical taxonomy and platform model for agents, built-in automations, and automation rules now lives in `docs/agents-and-automation.md`.
 
 This document focuses only on mailbox lifecycle, contact creation, message association, and inbox freshness.
 
@@ -80,7 +80,7 @@ Important distinction:
 4. The mailbox email is normalized and used as the workspace mailbox identity.
 5. If the same normalized mailbox already exists in the same workspace and provider, that existing row is reused instead of creating a duplicate mailbox.
 6. The reused or newly completed mailbox row is updated with fresh tokens, active state, normalized email, and connected status.
-7. If the mailbox row does not already have a checkpoint, the Gmail profile `historyId` is stored as `last_history_id`.
+7. For a new mailbox, the OAuth-time Gmail `historyId` is saved as `sync_state.initial_history_id`, leaving `last_history_id` empty so the first historical import runs. Reconnected mailbox checkpoints are preserved.
 8. The sync workflow is started for that mailbox account ID.
 
 Important consequence: reconnect is mailbox reuse, not mailbox recreation. The same mailbox record can be reactivated by another member in the same workspace.
@@ -98,7 +98,7 @@ On disconnect, the service:
 - sets `status = disconnected`
 - sets `disconnected_at`
 - preserves synced threads, messages, associations, calendar artifacts, and `last_history_id`
-- cancels the running Temporal sync workflow for that mailbox
+- requests cancellation of the running Temporal sync workflow; cancellation errors are logged and do not prevent saving disconnected state
 
 ### Purge
 
@@ -107,18 +107,26 @@ Purge is separate from disconnect and is destructive.
 On purge, the service:
 
 - requires admin authorization
-- cancels the running sync workflow
+- requests cancellation of the running sync workflow (errors are logged)
 - deletes the mailbox row
-- relies on database cascades to delete synced mailbox-owned email/calendar data
+- relies on database cascades for related rows; it does not explicitly delete each email/calendar table
 
 Purge does not delete CRM contacts, companies, or deals that were previously linked or created from synced emails.
+
+**Schema limitation:** the current versioned foundation creates email threads,
+messages and calendar events without mailbox foreign-key cascades. Older
+`server/migrations/027_crm_email_calendar.sql` and lifecycle test fixtures include
+those constraints, so their purge behavior is not proof of the foundation
+installation’s behavior. Do not treat mailbox deletion as verified removal of all
+synced content. Inspect the installation’s constraints and remaining rows; the
+schema/cleanup gap needs a separate implementation fix.
 
 ## First sync and historical backfill
 
 The Temporal workflow does two things:
 
 1. run initial backfill once
-2. then enter an infinite incremental sync loop that sleeps for 5 minutes between sync cycles
+2. then wait up to 5 minutes between incremental cycles, waking earlier for an `email-sync-now` signal. An explicit initial mode can select incremental or historical sync instead of the normal first backfill.
 
 ### Backfill flow
 
@@ -139,7 +147,9 @@ Then the backfill logic branches:
 
 The activity then queries Gmail with `after:<unix timestamp>` and pages through message results. Each Gmail message is fetched in full and passed through `storeMessage`.
 
-After the backfill finishes, the activity fetches the Gmail mailbox profile and persists the latest Gmail `historyId` as `last_history_id`. That becomes the durable checkpoint for future incremental sync.
+After backfill, the activity fetches the mailbox profile and selects the checkpoint in this order: an existing `last_history_id`, the saved `sync_state.initial_history_id`, then the latest profile `historyId`. Keeping the OAuth-time cursor allows incremental sync to catch messages arriving during the initial import.
+
+A manual `historical` sync uses `HistoricalBackfillEmailsActivity`: it processes the configured history window even when a checkpoint exists, without shortening that window to `last_synced_at` or replacing a healthy checkpoint. Existing message IDs still prevent duplicate inserts.
 
 ## How messages are ingested on sync
 
@@ -150,7 +160,7 @@ Every synced Gmail message goes through `storeMessage`.
 Before anything is stored:
 
 - duplicate messages are skipped if a message with the same `(email_account_id, message_external_id)` already exists
-- sender-based filtering is applied through sync settings
+- allow/block filtering is applied to external participants through sync settings, including outbound recipients
 - internal-email exclusion is applied if all participants share the mailbox domain and the workspace setting says to exclude internal email
 
 ### Direction detection
@@ -257,7 +267,7 @@ The join table is the real source of truth for multi-contact emails.
 
 After message associations are written, the repository rebuilds the thread’s `contact_ids` cache from all message-contact links in that thread.
 
-That cache exists to support thread filtering and fast UI reads, but it is derived state. Message-contact association rows remain the source of truth.
+That cache exists to support thread filtering and fast UI reads, but it is derived state. Message-contact association rows remain the source of truth. Cache refresh is a separate step whose failures are logged; it is not atomic with the message insert.
 
 ### Query behavior
 
@@ -289,7 +299,11 @@ Each sync cycle:
 9. passes each message through the same `storeMessage` pipeline used by backfill
 10. persists the newest Gmail `historyId` after the cycle completes
 
-The workflow currently sleeps 5 minutes between incremental cycles.
+The workflow waits up to 5 minutes between incremental cycles.
+`POST /api/crm/email/accounts/{id}/sync` accepts `incremental` (the default) or
+`historical` mode. It requires CRM edit permission plus mailbox ownership or
+admin access, and the mailbox must be connected. The request signals the workflow
+or starts it if needed; queued status does not mean synchronization has completed.
 
 ### Recovery when Gmail history expires
 
@@ -341,12 +355,10 @@ Key diagnostics fields:
 
 The diagnostics payload intentionally avoids storing email subject/body or raw participant lists.
 
-### Admin backend endpoints
+### Diagnostics and repair endpoints
 
-There are now two admin-only backend endpoints for mailbox operations:
-
-- `GET /api/crm/email/accounts/{id}/diagnostics`
-- `POST /api/crm/email/accounts/{id}/maintenance/rebuild-associations`
+- `GET /api/crm/email/accounts/{id}/diagnostics` requires CRM read permission and mailbox ownership or admin access.
+- `POST /api/crm/email/accounts/{id}/maintenance/rebuild-associations` requires CRM admin permission.
 
 The diagnostics endpoint returns:
 
@@ -363,6 +375,10 @@ The maintenance endpoint repairs mailbox consistency by:
 - recomputing legacy `contact_id`
 - rebuilding affected thread `contact_ids`
 
+This repair selects messages missing associations and refreshes threads touched
+by those repairs. It is not a general rebuild of every stale thread cache, and
+participant resolution can create contacts under the workspace’s creation policy.
+
 ## What happens after sync
 
 After a successful message store or sync cycle, there is more bookkeeping than just inserting rows.
@@ -372,6 +388,17 @@ After a successful message store or sync cycle, there is more bookkeeping than j
 - the message is inserted once per mailbox external message ID
 - participant-contact association rows are replaced for that message
 - the thread contact cache is refreshed if the message belongs to a thread
+
+Message insertion and association replacement are separate writes. If association
+replacement fails after insertion, a retry can skip the existing message; use
+the association repair endpoint to investigate missing links. Thread-count/cache
+updates, signal enqueue and summary-refresh failures are logged separately and
+do not necessarily fail the sync cycle. A stored email is not proof that these
+downstream effects completed.
+
+Summary refresh chooses a linked deal first, otherwise a single associated
+contact. Multi-contact synced mail without a deal does not automatically request
+a summary for every participant.
 
 ### Per-account effects
 
@@ -440,7 +467,9 @@ Look at:
 - `sync.last_success_at`
 - `sync.last_cycle`
 
-If sync data exists but message-contact associations are missing or thread caches look stale, run the rebuild-associations maintenance endpoint before considering a broader re-sync.
+If stored messages are missing associations, use the admin rebuild-associations
+endpoint and inspect its repaired-message and refreshed-thread counts. A stale
+cache on a thread with complete associations may not be touched by this repair.
 
 ## Related implementation files
 
@@ -453,3 +482,8 @@ If sync data exists but message-contact associations are missing or thread cache
 - `server/internal/sync/gmail.go`
 - `server/internal/model/crm_email.go`
 - `server/internal/model/crm_email_sync_settings.go`
+
+Source comparison: [mailbox lifecycle](../server/internal/service/crm_email.go),
+[workflow scheduling](../server/internal/temporalapp/email_sync_workflow.go),
+[sync activities](../server/internal/temporalapp/email_sync_activities.go), and
+[route permissions](../server/internal/router/router.go).

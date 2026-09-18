@@ -1,8 +1,21 @@
-# Helpin Support Desktop Plan
+# Build the Helpin support desktop app
+
+This historical plan explains the support-focused Tauri desktop host and shared web integration. Contributors can use it to trace implemented shell features and remaining release work; its original completion labels do not establish successful installed-app testing today.
+
+## Source review — 2026-09-18
+
+- [The Tauri shell](../../apps/support-desktop/src-tauri/src/lib.rs) implements tray open/quit, close-to-hide behavior, theme menu events, notifications, and the store plugin. [Cargo configuration](../../apps/support-desktop/src-tauri/Cargo.toml) does not include deep-link, single-instance, or updater plugins. Those proposed capabilities remain absent from the inspected shell.
+- [Session storage](../../apps/support-desktop/src/lib/sessionStorage.ts) persists access and refresh tokens through `LazyStore` at `auth/session.json`, backed by a memory adapter during use. It contains no keychain/credential-vault integration or application-level encryption. Native store persistence alone must not be described as secure credential storage.
+- [SupportWorkspacePage](../../apps/support-desktop/src/pages/support-workspace-page.tsx) mounts the shared `SupportInboxLayout` and `support-core` realtime hook. Shared core contains session/auth, support service/query/cache, presence and realtime modules; the app still imports frontend UI rather than a separately extracted support UI package.
+- [Desktop notifications](../../apps/support-desktop/src/lib/desktopNotifications.ts) implement permission checks, deduplication reservations, cooldown, focused-thread suppression and a click listener. This source review does not prove notification delivery or cold-start routing on installed systems.
+- [The artifact workflow](../../.github/workflows/build-support-desktop.yml) already builds macOS arm64, Windows x64, and Linux x64 installers and uploads short-lived artifacts. Therefore “add build/packaging automation” is no longer wholly pending. It selects the Enterprise frontend build and uses ad-hoc macOS signing; it does not establish production signing, notarization, an updater channel, or a Community desktop release.
+- Browser handoff helpers exist for broader product routes, and the support-core realtime implementation includes recovery logic. All-day stability, sleep/wake behavior, bundle-size improvement, and full web parity require the original manual/platform checks; none were executed in this documentation review.
+
+## Original plan and progress record
 
 ## Status
 
-Active implementation plan for a dedicated Helpin desktop application focused on support operations on macOS and Windows.
+Original April implementation status for a dedicated support desktop app; read the source review above for the current boundary.
 
 Primary decisions:
 

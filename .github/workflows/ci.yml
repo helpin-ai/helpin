@@ -64,9 +64,10 @@ jobs:
         with:
           package-manager-cache: false
           node-version-file: .node-version
-      - name: Check maintained documentation links
+      - name: Check documentation names and links
         run: |
           python3 -m unittest discover -s scripts/docs -p '*_test.py'
+          python3 scripts/docs/check_names.py
           python3 scripts/docs/check_links.py
       - name: Validate CI policy and workflows
         run: |

@@ -1,5 +1,16 @@
 # Public Help Center Multilingual Plan
 
+> Source review, 2026-09-17
+
+Historical multilingual design. Locale routing and translation services now exist
+in [locale helpers](../../help-center/src/lib/locale.ts) and
+[translation service](../../server/internal/service/docs_helpcenter_translation.go).
+The public application now uses [TanStack Start SSR](../../help-center/vite.config.ts),
+not the earlier SPA-only delivery described by these plans. PublicID-based routes
+and publication snapshots further evolved the original model. This source review
+confirms those implementation boundaries, not every proposed acceptance item or
+live locale configuration.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add production-grade multilingual support to the public Help Center so one Help Center can serve multiple languages with locale-aware URLs, translated content, manual language switching, browser-based locale selection, search, and SEO-safe alternate pages.
@@ -14,22 +25,22 @@
 
 ### Current codebase shape
 
-- Help Center config is one row per workspace in [server/internal/model/docs.go](/root/teampulse/server/internal/model/docs.go).
-- Public article publishing is one row per document in `docs_helpcenter_articles`, also in [server/internal/model/docs.go](/root/teampulse/server/internal/model/docs.go).
+- Help Center config is one row per workspace in [server/internal/model/docs.go](../../server/internal/model/docs.go).
+- Public article publishing is one row per document in `docs_helpcenter_articles`, also in [server/internal/model/docs.go](../../server/internal/model/docs.go).
 - Public routes are single-locale today:
   - `GET /hc/{subdomain}/config`
   - `GET /hc/{subdomain}/spaces`
   - `GET /hc/{subdomain}/spaces/{spaceSlug}/navigation`
   - `GET /hc/{subdomain}/spaces/{spaceSlug}/articles/{articleSlug}`
   - `GET /hc/{subdomain}/search`
-  in [server/internal/handler/docs.go](/root/teampulse/server/internal/handler/docs.go).
+  in [server/internal/handler/docs.go](../../server/internal/handler/docs.go).
 - Public SPA routes also have no locale segment:
   - `/`
   - `/$spaceSlug`
   - `/$spaceSlug/$articleSlug`
-  in [help-center/src/routes/index.tsx](/root/teampulse/help-center/src/routes/index.tsx), [help-center/src/routes/$spaceSlug.tsx](/root/teampulse/help-center/src/routes/$spaceSlug.tsx), and [help-center/src/routes/$spaceSlug/$articleSlug.tsx](/root/teampulse/help-center/src/routes/$spaceSlug/$articleSlug.tsx).
-- Public search is hard-coded to Postgres `english` full-text search in [server/internal/repository/docs_search.go](/root/teampulse/server/internal/repository/docs_search.go).
-- Public content rendering is locale-agnostic TipTap JSON -> HTML in [server/internal/service/docs_helpcenter.go](/root/teampulse/server/internal/service/docs_helpcenter.go) and [server/internal/tiptap/html.go](/root/teampulse/server/internal/tiptap/html.go).
+  in [help-center/src/routes/index.tsx](../../help-center/src/routes/index.tsx), [help-center/src/routes/$spaceSlug.tsx](../../help-center/src/routes/$spaceSlug.tsx), and [help-center/src/routes/$spaceSlug/$articleSlug.tsx](../../help-center/src/routes/$spaceSlug/$articleSlug.tsx).
+- Public search is hard-coded to Postgres `english` full-text search in [server/internal/repository/docs_search.go](../../server/internal/repository/docs_search.go).
+- Public content rendering is locale-agnostic TipTap JSON -> HTML in [server/internal/service/docs_helpcenter.go](../../server/internal/service/docs_helpcenter.go) and [server/internal/tiptap/html.go](../../server/internal/tiptap/html.go).
 
 ### What this means
 
@@ -482,7 +493,7 @@ The SPA needs this before it can resolve `/`.
 
 ### Current weakness
 
-Current search uses Postgres `english` tsvector in [server/internal/repository/docs_search.go](/root/teampulse/server/internal/repository/docs_search.go). That is not viable for a multilingual Help Center.
+Current search uses Postgres `english` tsvector in [server/internal/repository/docs_search.go](../../server/internal/repository/docs_search.go). That is not viable for a multilingual Help Center.
 
 ### Recommendation
 

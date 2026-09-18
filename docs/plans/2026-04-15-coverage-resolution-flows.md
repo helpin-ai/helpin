@@ -1,6 +1,17 @@
-# Coverage Resolution Flows — Implementation Plan
+# Coverage resolution flows implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the original draft, apply, and discard workflow for support coverage gaps. Contributors should use the source review below when comparing its example code with the current implementation; its commands and unchecked steps are not a current setup guide.
+
+## Source review — 2026-09-18
+
+- The [draft service](../../server/internal/service/support_coverage_drafts.go) implements Markdown-to-TipTap generation and append-based updates. The existing-article prompt truncates content at 2,000 bytes, not characters. The [append helper](../../server/internal/tiptap/append.go) preserves child nodes but reconstructs the document root with only `type` and `content`; it does not preserve arbitrary root attributes or validate the complete TipTap schema.
+- The [repository](../../server/internal/repository/support_coverage.go) inserts a generated suggestion without setting the gap to `drafted`. Applying updates article content, marks the suggestion applied, and marks an open gap `done` through separate operations. These writes are not one transaction, and a later failure can leave earlier writes persisted. The original `fixed` terminology is historical.
+- Discard updates the suggestion and reopens its gap in a transaction, but does not enforce the original draft-only/current-gap-state guards. Apply and generation require support and documentation editing permissions; discard requires support editing permission in the [router](../../server/internal/router/router.go).
+- The current [gap detail pane](../../frontend/src/components/support/coverage/GapDetailPane.tsx) links to `/docs/documents/:id`. The [coverage page](../../frontend/src/pages/support/coverage/SupportCoveragePage.tsx) also includes the newer topic/finding workflow, so the inline page implementation below is incomplete as a map of the current UI.
+- Treat the hard-coded developer directories, Go version, branch pushes, and test expectations below as a historical implementation record. This review inspected source only; it did not generate drafts, mutate articles, or verify a deployed workflow.
+
+## Original implementation plan
+
 
 **Goal:** Transform the coverage gap detail panel into a resolution workspace with LLM-powered draft generation, inline preview, append-based content updates, and editor links.
 

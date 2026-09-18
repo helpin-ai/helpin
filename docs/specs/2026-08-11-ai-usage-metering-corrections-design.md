@@ -1,5 +1,23 @@
 # AI Usage Metering Corrections Design
 
+> Superseded billing design (2026-08-11), source-compared on 2026-09-17. The
+> fixed-unit prices, universal cache discount, and “no reservations” scope below
+> describe an earlier system. Use [current AI usage metering](../ai-usage-metering.md).
+>
+> The [edition-neutral lifecycle](../../server/internal/aiusage/lifecycle.go)
+> separates telemetry from financial policy. Enterprise
+> [usage service](../../server/ee/service/ai_usage.go) reserves and settles micro-USD
+> using the admitted pricing context; Community records telemetry without financial
+> reservation/settlement. Legacy `AIUsageMeter.Consume` wrappers no longer implement
+> the old fixed-unit charge. Current cache-read/write pricing follows admitted
+> rates or flat tariff, not the blanket 10% rule in this design.
+>
+> Provider normalization remains relevant: [OpenAI decoding](../../server/internal/llm/openai.go)
+> separates reasoning from completion totals, and
+> [Anthropic decoding](../../server/internal/llm/claude.go) retains cache read/write
+> counts. These implemented pieces do not make the old financial model current.
+> This review did not execute charges or verify deployed billing configuration.
+
 ## Goal
 
 Keep customer AI usage simple while correcting surprising or incomplete billing behavior.

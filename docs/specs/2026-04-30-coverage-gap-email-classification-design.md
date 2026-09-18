@@ -1,7 +1,48 @@
-# Coverage Gap Email Classification
+# Coverage-gap email classification design
 
 **Date**: 2026-04-30
-**Status**: Draft
+**Status**: Historical design; source-compared 2026-09-18
+
+
+This design explains the intended filtering of non-support conversations before
+coverage-gap creation. Maintainers should read the current rules below when
+investigating false positives or missed customer requests.
+
+## Current implementation and limits
+
+- The [daily analyzer](../../server/internal/service/support_coverage_daily_analyzer.go)
+  implements local classification, classification in the existing analysis result,
+  normalization, and persisted skip records. The current analyzer version is
+  `v4`, not the proposed `v2`.
+- Local auto-reply detection matches phrases anywhere in the lowercased subject,
+  not just at its start. It does not first check whether a customer is asking for
+  help about that subject. This can skip a real request about an undeliverable
+  message or automatic reply; conservative behavior is a design goal, not a
+  proven property of the heuristic.
+- Newsletter and cold-outreach checks use the first customer message and treat
+  a question mark there as the exception. Cold-outreach signals also inspect the
+  subject. They do not scan later customer messages for a genuine request, nor
+  recognize every request phrased without a question mark. The proposed
+  “transactional email followed by help request remains support” guarantee is
+  therefore not established by this local filter.
+- Conversations with no customer sender are locally skipped. Local skips store
+  the classification reason and raw classification payload without invoking
+  `AnalyzeConversation`. LLM-classified non-support results are also skipped;
+  normalization derives `IsSupportQuery` from the type and clears gap/retrieval
+  fields. Blank types default to `support_query`; unknown types become `other`.
+- Classification columns and the type index are supplied by the
+  [versioned migration](../../server/internal/dbmigrate/sql/202604300001_coverage_analysis_classification.sql).
+  Migration presence does not prove application to an installation or that older
+  rows have been reclassified. Existing defaults are not historical classification
+  evidence.
+
+This review inspected source without running the analyzer, model calls, or
+application tests. The original cost controls apply to classification; they do
+not establish that the entire later coverage/retrieval/materialization pipeline
+uses only one model call. The testing scenarios below remain requirements to
+verify, especially mixed-message conversations that the local rules may skip.
+
+## Original design
 
 ## Problem
 

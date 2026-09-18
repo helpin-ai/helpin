@@ -1,8 +1,10 @@
 # Community 0.1 implementation and verification
 
-Historical implementation evidence, updated September 16, 2026. Community work
-is now consolidated into Helpin `feat/local-cli-admission` and Runtime
-`feat/host-neutral-local-cli`; both branches have been pushed. This document is
+Historical implementation evidence recorded September 16, 2026. At that time,
+Community work was reported as consolidated into Helpin `feat/local-cli-admission`
+and Runtime `feat/host-neutral-local-cli`, with both branches pushed. Branch
+locations, test totals, scan findings and migration heads below are a dated
+record, not current checkout or release verification. This document is
 maintainer-only and is excluded from operator bundles. Publication still requires
 [the publication checklist](../../community/PUBLICATION.md). Current CI and
 release commands are in [the development guide](development.md).

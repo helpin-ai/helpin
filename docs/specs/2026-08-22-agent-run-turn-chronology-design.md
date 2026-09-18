@@ -1,5 +1,22 @@
 # Agent Run Turn Chronology Design
 
+> Historical design, source-compared on 2026-09-17. Current
+> [event utilities](../../frontend/src/components/pm/CodingSession/codingSessionUtils.ts)
+> use projected top-level sequence numbers when both events have persisted source
+> metadata. When either event is live/unprojected, valid differing timestamps take
+> precedence; payload sequence is only a fallback for message-shaped events.
+> This is more specific than the original legacy-ordering description below.
+>
+> [Working groups](../../frontend/src/components/agents/dock/dockWorkingGroups.ts)
+> collapse progress before final responses and leave direct answers visible.
+> Duration prefers matching authoritative turn-state timestamps, otherwise the
+> conversation boundary/work and final-response timestamps. Negative differences
+> clamp to zero. The raw calculation does not explicitly reject `NaN` from invalid
+> turn-state timestamps, so the original blanket invalid-timestamp guarantee below
+> is not established by that function. This is a code limitation to test/fix
+> separately, not a behavior corrected in this docs audit.
+> Original verification steps are not fresh browser/build/test results.
+
 ## Goal
 
 Make standalone agent-run threads preserve the same human/agent chronology and completed-work disclosure behavior as Ask Agent chats.

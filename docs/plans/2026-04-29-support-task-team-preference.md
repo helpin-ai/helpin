@@ -1,6 +1,33 @@
-# Support Task Team Preference Implementation Plan
+# Support task team preference implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the original per-member team preference for creating
+PM tasks from support conversations. Use the source notes below when changing the
+current flow; the implementation checklist is retained as design history.
+
+## Source review — 2026-09-18
+
+- [Workspace preferences](../../server/internal/service/workspace.go) validate a
+  nonempty team against the caller's workspace. The model, repository, `/me`
+  response, and PATCH route contain the preference fields. They are also present
+  in the versioned core foundation SQL; AutoMigrate is optional, not a universal
+  installation mechanism.
+- [MessageThread](../../frontend/src/components/support/MessageThread.tsx) first
+  attempts PM task matching. An enabled review result can replace the legacy
+  one-click path. In that legacy path, the dialog opens if either dismissal or
+  a saved team is missing; it is not automatically a one-time dialog.
+- Dialog confirmation creates the task **before** saving the preference. Those
+  requests are separate: a preference failure does not roll back the task. The
+  reviewed-draft path explicitly reports a preference-save failure after creation.
+- [CreateTaskDialog](../../frontend/src/components/support/CreateTaskDialog.tsx)
+  handles asynchronously loaded defaults without overwriting a user selection.
+  The parent prefers the saved team, then the first membership; the dialog can
+  fall back to the first available team.
+- [CreateTaskFromConversation](../../server/internal/service/support_inbox.go)
+  requires an explicit `team_id`. The proposed backend saved-preference/first-team
+  fallback in Task 11 is not implemented. The historical snippets and build/push
+  commands below are not current instructions or proof of passing checks.
+
+## Original implementation plan
 
 **Goal:** When creating a task from a support conversation, show a one-time info dialog with team picker, save the team preference per-user on the backend, and use it for all subsequent one-click task creation.
 

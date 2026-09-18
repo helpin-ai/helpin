@@ -1,5 +1,11 @@
 # Native runtime and AI profiles release runbook
 
+> Historical release-preparation snapshot. Commit IDs, branch publication status,
+> and validation results below describe that preparation session, not current
+> branch or deployment state. Recheck the selected release before using this
+> checklist. [AI connections](../ai-connections.md) describes the host contract.
+
+
 Status: preparation only. Staging and production configuration, inventories, and live canaries remain to be verified. This document does not authorize deployment or disposal of existing runs.
 
 SDK `v0.6.0` is already published at `37fb03755c8108444730953f100b7a6783285173`. Runtime release preparation is at `a1e1e38`; Helpin code preparation is at `531572a46`. Both consume the stable SDK. Runtime and Helpin have not been pushed to `develop`. Keep the SDK tag unchanged; deployment images have their own release versions.
@@ -43,7 +49,8 @@ The API, worker, and migration images must be built with `GO_BUILD_TAGS=ee`; the
 Use package entrypoints for manual EE builds/runs:
 
 ```bash
-cd /root/helpin/server
+# From the Helpin repository root
+cd server
 GOWORK=off go run -tags ee ./cmd/api
 # In a separate process, only when manually operating the worker:
 GOWORK=off go run -tags ee ./cmd/temporal-worker
@@ -179,7 +186,8 @@ Helpin's forward migrations run through its normal EE runner during the deployme
 For an explicitly manual migration instead of the deployment job, use the release source and injected target Helpin database configuration:
 
 ```bash
-cd /root/helpin/server
+# From the Helpin repository root
+cd server
 GOWORK=off go run -tags ee ./cmd/migrate up
 GOWORK=off go run -tags ee ./cmd/migrate validate
 GOWORK=off go run -tags ee ./cmd/migrate status
@@ -221,7 +229,8 @@ SaaS BYOK needs a workspace policy and an explicit immutable flat token tariff i
 Build the EE operator command:
 
 ```bash
-cd /root/helpin/server
+# From the Helpin repository root
+cd server
 GOWORK=off go build -tags ee -o /tmp/helpin-ai-byok-policy ./cmd/ai-byok-policy
 ```
 

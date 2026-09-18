@@ -1,12 +1,25 @@
 # Contextual AI support follow-up and inactivity resolution
 
+> Source review, 2026-09-17
+
+Historical September 9 design and rollout checkpoint. Current defaults enable
+follow-ups with a 24-hour first delay, 24-hour second delay, and one-hour close
+delay; see [settings](../../server/internal/model/support_inbox.go).
+The [sequence migration](../../server/internal/dbmigrate/sql/202609090003_support_follow_up_sequences.sql)
+preserves existing single-reminder episodes and introduces version 2. The
+[sequence service](../../server/internal/service/support_ai_follow_up_sequence.go)
+gates progress on delivery and handles failures. The original opt-in/single-reminder
+statements below are not current defaults. Saved installation settings and episode
+versions still matter; this source review makes no claim about messages sent or
+production enablement.
+
 Status: implemented locally on `feat/support-ai-inactivity-follow-up`. Production rollout remains opt-in; no customer messages have been sent.
 
 ## Problem and current evidence
 
 AI Handling contains conversations that remain pending after the AI answers and the customer stops replying. The desired behavior is to read the context, send one useful check-in, and resolve eligible conversations after a further period without a reply.
 
-On develop, `server/internal/model/support_inbox.go` defines `AIAutoResolveTimeout` (24 hours by default, zero disables it). It is persisted and validated by `support_inbox_settings.go`, but a repository-wide reference search found no runtime consumer. The older `docs/prds/PRD-ai-support-agent.md` describes `support_ai_resolution.go`, which does not exist in this checkout. This is a likely implementation gap, not a verified diagnosis of production.
+On develop, `server/internal/model/support_inbox.go` defines `AIAutoResolveTimeout` (24 hours by default, zero disables it). It is persisted and validated by `support_inbox_settings.go`, but a repository-wide reference search found no runtime consumer. The older `docs/prds/ai-support-agent.md` describes `support_ai_resolution.go`, which does not exist in this checkout. This is a likely implementation gap, not a verified diagnosis of production.
 
 `internal_command_support_reply.go` marks conversations AI-resolved when a reply has both `ResolvesConversation` and confirmation reply kind. This path writes AI state, resolution type and flow state directly. Audit timestamp, canonical status, events, sidebar projections and ownership consistency before reusing it.
 

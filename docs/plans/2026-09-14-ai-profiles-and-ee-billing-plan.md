@@ -4,6 +4,20 @@ Status: review corrections implemented and verified locally; live deployment acc
 
 Split delivery into a standalone catalog prerequisite, **Plan A: AI configuration and execution**, and **Plan B: commercial billing extraction**. Plan A can use an adapter to the existing commercial implementation while Plan B proceeds separately. A clean community distribution requires both plans.
 
+## Source review — September 18, 2026
+
+This is the delivery history for profiles, customer-supplied credentials (BYOK), and Enterprise billing extraction. Its numbered steps and checkpoints describe the implementation sequence, not remaining tasks or the state of a live deployment. Use the linked configuration guide for operator actions.
+
+- The current module uses `github.com/helpin-ai/agent-runtime-go v0.6.0` (`server/go.mod`), superseding the alpha release recorded below. Sibling Runtime commits and prior live test results were not revalidated in this repository review.
+- Community and Enterprise composition roots exist in both API and Temporal worker binaries. Community installs the zero-charge lifecycle; commercial pricing and policy live under `server/ee`. The source-distribution checks are `scripts/check-community-backend.sh` and `scripts/check-community-frontend.sh`; historical test counts below are not a fresh test run.
+- Standard Small, Medium, Large, and Flagship profiles are now provisioned in **both** editions by `server/internal/service/ai_standard_profiles.go`. Community connections have customer funding; Enterprise supplies managed funding. The Small profile becomes the default when initialization requires one. Missing credentials leave connections unconfigured. These names no longer imply an Enterprise-only profile implementation or a charge.
+- `ai_profile_resolver.go` resolves authorized profiles before execution, permits the configured fallback only for an unavailable primary connection, and restores accepted selections without re-reading editable profiles or selecting fallback. Personal ownership and workspace authorization still apply. CRM's reviewed profile binding is handled separately by `crm_playbook_ai_profile.go`.
+- Later profile liveness, standard-default, and managed-connection reuse migrations follow the original migration set. Consult the current migration inventory rather than replaying the checkpoint commands as a rollout recipe.
+
+No database, provider, Runtime, billing flag, or deployment was accessed for this review. Statements below about local commits, unpublished changes, disabled flags, and migrations not yet applied describe their original checkpoint only; they do not establish today's external state.
+
+## Original delivery plan
+
 ## Product decisions
 
 Named AI profiles are the common configuration mechanism. Helpin owns its connections, model selection, authorization, and fallback before launch. For Helpin runs, Agent Runtime receives the resolved model configuration and run-scoped credentials. Runtime remains independently usable with its existing provider keys and defaults; Usermaven and other apps retain that behavior unless their trusted app configuration explicitly disables it.

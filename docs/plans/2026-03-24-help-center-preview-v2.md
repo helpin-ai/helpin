@@ -1,5 +1,14 @@
 # Help Center Article Preview v2 — Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical implementation plan. The token-based preview path exists in the
+[Docs handler](../../server/internal/handler/docs.go),
+[JWT manager](../../server/internal/auth/jwt.go), and
+[Help Center preview route](../../help-center/src/routes/preview.$docId.tsx).
+Preview JWTs have a 15-minute validity. The tasks below record the original build
+sequence, not an instruction to implement the same path again.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Preview any document (including drafts) inside the actual help-center app using a short-lived JWT preview token, so the preview uses real help center styling with zero CSS duplication.

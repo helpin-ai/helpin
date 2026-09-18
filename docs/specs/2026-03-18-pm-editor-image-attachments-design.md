@@ -1,4 +1,49 @@
-# PM Editor Image Attachments Design
+# PM editor image attachments design
+
+
+This historical design explains attachment-backed inline images for PM editors.
+Core metadata and upload paths exist; use the current notes before relying on
+its original save, delete, and ownership guarantees.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18. See the
+[implementation review](../plans/2026-03-18-pm-editor-image-attachments.md) for
+current create-flow entry points. Historical “story” filenames and entity names
+below now correspond to tasks in these paths.
+
+- [The editor upload helper](../../frontend/src/hooks/useEditorImageUpload.ts)
+  returns `attachmentId` and `publicUrl`. Despite the latter name, the returned
+  value is a stable application content URL, whose backend resolves a download
+  URL; do not assume it is a permanently public object-store URL. Private uploads
+  omit the public-read ACL. Image uploads check image MIME type and a 50 MB limit.
+- [The image extension](../../frontend/src/components/ui/resizable-image-extension.ts)
+  preserves `attachmentId` as `data-attachment-id`, and
+  [HTML helpers](../../frontend/src/components/pm/editorImageAttachments.ts)
+  extract/remove references. URL-only legacy images remain distinguishable.
+- [Task creation](../../server/internal/service/pm_task.go),
+  [epic creation](../../server/internal/service/pm_epic.go),
+  [objective creation](../../server/internal/service/pm_objective.go), and
+  [sprint creation](../../server/internal/service/pm_sprint.go) log attachment
+  reassignment errors after entity creation. They do not implement the proposed
+  “fail create and keep the draft open” guarantee. In contrast,
+  [comment creation/update](../../server/internal/service/pm_comment.go) performs
+  reassignment within its database transaction.
+- [Generic reassignment](../../server/internal/repository/pm_attachment.go)
+  filters by attachment IDs and validates affected counts; it does not itself
+  constrain workspace ownership. Its existence alone does not verify permission
+  enforcement across all callers.
+- [CommentThread](../../frontend/src/components/pm/CommentThread.tsx) hides an
+  image from the compact strip only when its attachment ID appears inline.
+  Standalone image attachments remain visible. Pending draft cleanup uses
+  `pendingOnly`; it is distinct from removal of an already-owned attachment.
+
+The original all-editor acceptance matrix and delete-failure guarantees are
+requirements, not proof of current end-to-end behavior. This review did not run
+application tests, upload files, or perform browser QA. Competitor descriptions
+below are historical design context, not newly verified product comparisons.
+
+## Original design
 
 ## Summary
 

@@ -1,14 +1,28 @@
-# Coverage Gap Semantic Dedupe Implementation Plan
+# Coverage gap semantic deduplication plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make support coverage gaps durable semantic problem records that dedupe correctly during daily ingestion, rank by explainable impact, and distinguish missing content from retrieval/content-routing failures.
 
 **Architecture:** Use the existing `support_coverage_conversation_analyses` table as the staging/materialization surface. Store canonical embeddings on both findings and gaps with provider/model/version/dimension metadata, use pgvector for gap-to-gap nearest-neighbor search, cluster same-run findings before persistence, and make evidence insertion the only source of evidence-count increments. Keep historical gap merges conservative and use gap-to-KB matching to classify coverage failure modes.
 
-**Tech Stack:** Go 1.24, GORM, PostgreSQL/pgvector, Temporal activities, OpenAI embeddings through `llm.EmbeddingProvider`, Chi handlers, React/Vite/TypeScript coverage UI.
+**Original stack (current Go baseline is 1.25.0):** Go 1.24, GORM, PostgreSQL/pgvector, Temporal activities, OpenAI embeddings through `llm.EmbeddingProvider`, Chi handlers, React/Vite/TypeScript coverage UI.
 
 ---
+
+## Source review — 2026-09-18
+
+This is the original implementation checklist, not an outstanding task list or a migration runbook. The schema, materializer, semantic helpers, repository methods, daily-analysis wiring, rebuild service, and coverage UI exist in this checkout. Do not recreate an applied migration from the illustrative SQL below.
+
+- [Semantic constants](../../server/internal/service/support_coverage_semantic.go) use 0.90 attachment, 0.78 suggestion, and 0.88 same-run thresholds, with canonical semantic fields and compatibility gates. Same-run union additionally checks all member-pair compatibility to avoid transitive over-merging.
+- [The materializer](../../server/internal/service/support_coverage_materializer.go) reads at most 1,000 unmaterialized findings per invocation. Contrary to the original fail-and-retry requirement, a missing provider, embedding error, or response-count mismatch produces degraded findings without vectors and continues. Exact normalized customer needs can still group; this is not equivalent to semantic nearest-neighbor matching.
+- The historical cluster rebuild has a stricter embedding-failure path and reports failure metadata. Do not infer the daily materializer's behavior from rebuild status, or vice versa.
+- Evidence keys prevent duplicate insertion, but evidence insertion, count increment, analysis stamping, and recurrence updates are separate calls. The proposed one-transaction materialization boundary is not present in this path; the source does not justify an all-or-nothing retry guarantee across those steps.
+- Closed-gap matching uses a 90-day window. Recurrence reopens a done gap after three post-close evidence increments; the proposed alternative threshold of two distinct customers is not implemented by that counter. Split-review detection samples up to 20 analysis embeddings and requires at least six vectors; it only flags review.
+- [Impact ranking](../../server/internal/repository/support_coverage.go) currently uses a linear weighted formula: recent distinct conversations × 4, recent distinct customers × 12, total evidence, confidence × 2, and knowledge/actionability bonuses. The logarithmic formula below is illustrative, not current scoring.
+- Knowledge proximity can classify a sufficiently relevant Docs match as `no_retrieval`, or another content match as `weak_retrieval`. This is a heuristic; proximity alone is not proof of the historical retrieval failure. The run's gap count tracks findings, not necessarily newly created gaps.
+- No embedding request, database migration, historical backfill, cluster merge, or runtime test was executed for this review. Historical expected test results and rollout steps below are not current verification evidence.
+
+## Original implementation checklist
 
 ## Core Decisions
 
@@ -1516,7 +1530,7 @@ set -a && . ./.env && set +a && GOCACHE=/tmp/go-build-cache go run ./cmd/api
 
 ```bash
 cd frontend
-VITE_API_URL=http://91.98.85.12:8080/api npm run dev -- --host 0.0.0.0 --port 5173
+VITE_API_URL=http://localhost:8080/api npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 Check:

@@ -1,5 +1,14 @@
 # Route-Backed Story Panel Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical route-overlay plan. The canonical work-item route now uses
+`/w/:slug/pm/tasks/:taskId`, with a
+[task route shell](../../frontend/src/routes/_authenticated/w/$slug/pm/tasks/$taskId.tsx)
+and [task detail panel](../../frontend/src/components/pm/TaskDetailPanel.tsx).
+Do not use the story route or old component names below as current integration
+contracts. This note does not certify every original overlay acceptance case.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the duplicated story page + panel implementation with one canonical, route-backed story detail surface that opens as an overlay, preserves direct URLs, and does not break current PM workflows.

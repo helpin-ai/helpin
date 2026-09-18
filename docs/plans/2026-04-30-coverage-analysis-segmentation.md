@@ -1,6 +1,16 @@
-# Coverage Analysis Segmentation Implementation Plan
+# Coverage analysis segmentation implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains why coverage analysis selects the latest resolved/reopened lifecycle segment instead of treating a long conversation as one issue. The core segmentation helpers exist; use the source notes below for current limits and execution semantics.
+
+## Source review — 2026-09-18
+
+- The [analyzer](../../server/internal/service/support_coverage_daily_analyzer.go) loads internal messages for boundary detection, closes a segment on a `resolved` system event, and starts the next segment at its first public message. A `reopened` event is not a hard boundary, preserving customer replies written before that event. With no resolved events, all public messages form one segment; equal timestamps are ordered by message ID.
+- The input builder excludes internal/system content again, keeps the latest 80 public messages, and filters retrieval traces to those retained IDs. The hash covers the full selected segment plus boundaries and timestamps before the input is truncated. Changes outside the retained 80 messages can therefore trigger another analysis even if the model-visible message slice is unchanged.
+- Analyzer version is now `v4`, not the proposed `v3`. The current execution path combines the existing analysis hash/version lookup with V2 batch/attempt leases and a logical work key. The old “no new table” decision applied to segmentation itself; it does not describe the later coverage execution/storage architecture.
+- The [tests](../../server/internal/service/support_coverage_daily_analyzer_test.go) include the reopened ordering, latest closed segment, segment hash, and retained-trace cases. They are source evidence, not a fresh passing test run. This review did not execute analysis, backfill missing lifecycle events, or validate deployed model outputs.
+
+## Original implementation plan
+
 
 **Goal:** Make daily coverage-gap analysis operate on the latest lifecycle segment of a support conversation instead of the entire reopened thread, so unrelated issues in the same conversation do not contaminate gap detection.
 

@@ -1,5 +1,17 @@
 # Agent Run Timeline Parity Implementation Plan
 
+> Historical design/implementation plan, source-compared on 2026-09-17. The
+> [server projection](../../server/internal/service/coding_session.go) emits
+> `interaction:<id>:<status>` identities. Resolved timestamps use `resolved_at`
+> when available, otherwise `updated_at`, and are forced after creation when needed.
+> [Frontend reconciliation](../../frontend/src/components/pm/CodingSession/codingSessionUtils.ts)
+> collapses semantic duplicates with persisted-event precedence.
+> [DockRunView](../../frontend/src/components/agents/dock/DockRunView.tsx) derives
+> state from `session ?? run`, supplies compact progress/actor/completed-run options,
+> and renders the current work plan. Surface-specific controls remain separate.
+> Checkboxes, old Go version, branch name and test/build claims below belong to
+> the original session; use the current development guide for toolchain setup.
+
 > **For agentic workers:** REQUIRED: Use superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give every agent execution surface one stable, causally ordered timeline and consistent live interaction presentation.

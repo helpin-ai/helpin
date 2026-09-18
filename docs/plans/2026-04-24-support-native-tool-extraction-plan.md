@@ -883,9 +883,9 @@ That means a gap-analysis agent should primarily use `support_coverage` tools, n
 
 The backend already has:
 
-- gap and evidence models in [support_coverage.go](/root/helpin/server/internal/model/support_coverage.go:87)
-- read/query service methods in [support_coverage.go](/root/helpin/server/internal/service/support_coverage.go:135)
-- docs-suggestion generation and apply flows in [support_coverage_drafts.go](/root/helpin/server/internal/service/support_coverage_drafts.go:59)
+- gap and evidence models in [support_coverage.go](../../server/internal/model/support_coverage.go)
+- read/query service methods in [support_coverage.go](../../server/internal/service/support_coverage.go)
+- docs-suggestion generation and apply flows in [support_coverage_drafts.go](../../server/internal/service/support_coverage_drafts.go)
 
 This is exactly the durable product layer a native gap-analysis agent should build on.
 

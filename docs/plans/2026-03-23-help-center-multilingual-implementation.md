@@ -1,5 +1,16 @@
 # Multilingual Help Center Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical multilingual design. Locale routing and translation services now exist
+in [locale helpers](../../help-center/src/lib/locale.ts) and
+[translation service](../../server/internal/service/docs_helpcenter_translation.go).
+The public application now uses [TanStack Start SSR](../../help-center/vite.config.ts),
+not the earlier SPA-only delivery described by these plans. PublicID-based routes
+and publication snapshots further evolved the original model. This source review
+confirms those implementation boundaries, not every proposed acceptance item or
+live locale configuration.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship complete multilingual support for the public Help Center with locale-aware content, URLs, switching, redirects, SEO, search, admin tooling, widget parity, and migration of all existing public docs.

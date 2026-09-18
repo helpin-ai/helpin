@@ -1,5 +1,13 @@
 # Docs First-Class Article Publishing Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical implementation plan. Publication snapshots and draft/live comparison
+now exist in the [Help Center service](../../server/internal/service/docs_helpcenter.go),
+with [snapshot regression tests](../../server/internal/service/docs_helpcenter_publication_snapshot_test.go).
+Use those sources for the current contract. This note does not claim every
+historical acceptance item was rerun or that a particular deployment has it.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a real draft-vs-live publishing system for docs articles so `Publish` and `Update` are meaningful, public help center reads are stable, and slug changes only go live when the user explicitly publishes or updates.

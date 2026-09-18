@@ -1,5 +1,15 @@
 # Docs Change Proposal Review — Preserve Formatting in Diff
 
+> Source review, 2026-09-17
+
+Historical May proposal-review analysis. The current
+[review component](../../frontend/src/components/docs/proposals/ProposalReviewView.tsx)
+uses `buildMarkdownDiff` and prefers the saved `base_markdown`, falling back to
+plain text for older proposals. The described unconditional plain-text baseline
+and `buildSimpleMarkdownDiff` call are obsolete. Worker-tool paths below are also
+historical; consult the [tool guide](../internal-tools-framework.md). This check
+does not assert lossless rendering of every rich-text construct.
+
 **Date:** 2026-05-10
 **Owner:** Follow-up to docs change proposal review UI
 **Status:** Plan, not yet implemented

@@ -1,4 +1,43 @@
-# Support Custom Views Implementation Plan
+# Support custom views implementation plan
+
+> Historical implementation plan, reviewed against the checkout on 2026-09-17.
+> Custom views are implemented. The unchecked steps below preserve the original
+> work plan for contributors; they are not an outstanding implementation queue
+> or instructions to execute the old agent workflow.
+
+## Current behavior and differences
+
+The [model](../../server/internal/model/support_inbox_view.go) supports custom,
+default, and team view types. The [repository](../../server/internal/repository/support_inbox_view.go)
+lists custom views visible to the caller (shared or created by them), ordered by
+case-insensitive name and creation time. Built-in overrides are stored separately
+by user/type/key.
+
+The [service](../../server/internal/service/support_inbox_view_service.go) allows
+only owners/admins to create or enable shared views. Private views can be edited
+or deleted by their creator; shared views by their creator or an owner/admin.
+These checks sit behind [route permissions](../../server/internal/router/router.go):
+reads require `support.read`, while create/update/delete require `support.edit`,
+in addition to Support module/workspace access. “Anyone can create private” in
+the original plan therefore does not include every workspace role. Sharing a
+filter preset does not grant access to otherwise restricted conversations;
+count queries still receive the caller's membership and role.
+
+The [store](../../frontend/src/stores/supportInboxStore.ts) now keeps the active
+custom-view ID when search, status, or list filters change and sets
+`customViewDirty`. This supersedes the original clear-on-edit requirement.
+Switching built-in navigation or resetting filters can clear the active view.
+[ConversationList](../../frontend/src/components/support/ConversationList.tsx)
+provides save/update behavior, while the
+[Support sidebar](../../frontend/src/components/layout/sidebar/SupportRailNav.tsx)
+shows the custom-view section and shared indicator.
+
+The original npm/npx commands and unchecked verification tasks below are
+historical. Use the repository's current pnpm workspace and targeted test setup
+when changing this feature; this review inspected sources rather than rerunning
+the original broad suites or applying migrations.
+
+## Original implementation record
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 

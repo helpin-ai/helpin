@@ -53,15 +53,6 @@ func (s *SupportAIService) RewriteSupportDraft(
 	return s.rewriteSupportDraftWithHistory(ctx, workspaceID, history, req)
 }
 
-// RewriteSupportDraftWithoutConversation rewrites a support draft before a conversation exists.
-func (s *SupportAIService) RewriteSupportDraftWithoutConversation(
-	ctx context.Context,
-	workspaceID string,
-	req model.SupportAIRewriteDraftRequest,
-) (*model.SupportAIRewriteDraftResponse, error) {
-	return s.rewriteDraftWithHistory(ctx, workspaceID, nil, "support reply", BillingFeatureSupportReplyRewrite, req)
-}
-
 // RewriteDraftForSurface applies the shared conversation-composer rewrite contract
 // without requiring Support conversation context.
 func (s *SupportAIService) RewriteDraftForSurface(

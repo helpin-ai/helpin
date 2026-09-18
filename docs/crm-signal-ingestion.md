@@ -1,11 +1,11 @@
-# CRM Conversation Signal Ingestion
+# CRM conversation signal ingestion
 
 This is the implementation-detail reference for conversation and email signal
 extraction. The canonical cross-domain CRM-signals architecture, rule
 catalogue, scoring, and activation model lives in
 [`crm-signals.md`](crm-signals.md). The canonical platform model for
 agents, built-in automations, and automation rules lives in
-[`AGENTS_AND_AUTOMATION.md`](AGENTS_AND_AUTOMATION.md).
+[`agents-and-automation.md`](agents-and-automation.md).
 
 This document explains how synced CRM email becomes stored LLM-extracted CRM
 signals, where idempotency is enforced, what gets skipped, and which product
@@ -42,7 +42,8 @@ CRM-signal ingestion does **not** read raw Gmail payloads directly. It runs from
 
 The CRM-signal records themselves are stored in:
 
-- `crm_signals`
+- `crm_signal_observations` for detector evidence
+- `crm_signals` for interpreted commercial meaning
 
 ## Main components
 
@@ -71,7 +72,7 @@ CRM-signal ingestion is triggered only after a CRM email message has been succes
 Current trigger points:
 
 - Gmail sync path in `EmailSyncActivities.storeMessage`
-- manual outbound send in `CRMEmailService.SendEmail`
+- manual outbound send and thread replies through `CRMEmailService`
 - manual message create in `CRMEmailService.CreateMessage`
 
 It is intentionally **not** triggered from:
@@ -142,10 +143,11 @@ For email messages it includes:
 The body selection rule is:
 
 1. `body_text` if present
-2. otherwise `body_html`
-3. truncate to 3000 characters
+2. otherwise convert `body_html` to plain text, excluding script, style and head content
+3. collapse whitespace and truncate to 3,000 Unicode code points
 
-Note: the current implementation falls back to stored HTML string directly. It does **not** yet sanitize or convert HTML to plain text before LLM use.
+The shared `crmtext` helpers normalize HTML and evidence text. This text
+conversion is not a guarantee against prompt injection.
 
 ### Participants
 
@@ -184,12 +186,23 @@ The LLM is asked to return a JSON array of detected signals with:
 - `summary`
 - `confidence`
 - `raw_evidence`
+- `source_type` and `source_id` matching an input source (filled from the input when omitted for a single payload)
+- `commercial`, including relevance, event, offering match and commercial consequence
+- optional `timeline_date` for timeline signals
 
-Very low-confidence signals are dropped before persistence.
+The detector loads seller/product and customer relationship context before
+calling the model. A signal must qualify as commercially relevant, match the
+offering, and have a specific commercial consequence. Missing product context
+or an uncertain/irrelevant assessment prevents persistence. English narrative
+validation applies to summaries and relevant commercial consequences.
+
+Low-confidence signals are dropped before persistence.
 
 Current threshold:
 
-- ignore detections with confidence `< 0.3`
+- ignore detections with confidence `< 0.6`
+- require a nonempty evidence excerpt that matches normalized subject, body or
+  thread context; the evidence excerpt is capped at 500 bytes before comparison
 
 ### Stored provenance
 
@@ -206,7 +219,11 @@ Current metadata contents:
 - `message_direction`
 - `participant_count`
 - `thread_external_id`
-- `ingestion_version = phase1a`
+- `ingestion_version` and `detector_version` = `commercial-v4-en`
+- `source_content_hash` and `evidence_verified`
+- commercial relevance, event, consequence, offering match, relationship, motion
+  and suggested action
+- a valid parsed `timeline_date`, when supplied for a timeline signal
 
 This makes runtime-generated signals auditable back to the CRM message and thread that produced them.
 
@@ -216,17 +233,19 @@ There are two layers of duplicate control.
 
 ### 1. Source-level idempotency
 
-`CRMSignalRepository.CreateSignalIfAbsent` prevents storing the same signal type twice for the same source message.
+`CRMSignalRepository.CreateSignalIfAbsent` uses the current observation and
+interpretation path when the schema contains `commercial_motion`. It stores
+fingerprinted detector evidence, resolves detection-time motion and a matching
+versioned interpretation, then inserts interpreted signals with conflict
+suppression. An observation without a matching interpretation can remain stored
+without a visible signal.
 
-Logical uniqueness is:
-
-- `(workspace_id, source_type, source_id, signal_type)`
-
-This protects against:
-
-- workflow retries
-- reconnect/recovery reprocessing
-- repeated enqueue attempts for the same message
+Current uniqueness includes meaning fingerprints and entity identity, plus
+rule/version, motion and evidence-fingerprint dimensions. Changed evidence or
+interpretation can therefore produce a distinct result for the same source.
+The older `(workspace_id, source_type, source_id, signal_type)` lookup belongs
+to the compatibility path for schemas without `commercial_motion`; it is not
+the full current contract.
 
 ### 2. Same-thread short-window suppression
 
@@ -242,8 +261,15 @@ This is implemented conservatively and only checks:
 - same `source_thread_id`
 - same `signal_type`
 - `detected_at >= now - 24h`
+- the current conversation-extraction rule/version and matching commercial event
+- a different source message (the current source ID is excluded)
 
-This reduces repeated budget/timeline/champion/risk events from noisy active threads.
+This reduces repeated events from noisy active threads.
+
+After successful analysis, source reconciliation can supersede automated signal
+types that were not retained. It preserves manual signals. Missing seller
+context, uncertain relevance, unverified evidence or thread suppression can
+disable reconciliation for that source rather than removing earlier evidence.
 
 ## Failure behavior
 
@@ -253,7 +279,9 @@ Important rules:
 
 - if enqueue fails, the CRM email message is still stored
 - if workflow execution fails, mailbox sync still succeeds
-- if LLM detection fails, no signal row is written, but the email remains durable
+- an LLM call or response-validation failure happens before signal writes; later
+  persistence/reconciliation errors can occur after earlier signals were written
+- mailbox email remains stored independently of detection success
 - retries should not create duplicate CRM signals because persistence is idempotent
 
 This separation is intentional. CRM email sync is the durability path. Signal detection is derived automation.
@@ -278,8 +306,10 @@ The frontend now reads and renders provenance fields including:
 - score factors and activation blockers
 
 Rule feedback is available through the precision endpoint and evaluator runs are
-persisted. There is no separate system-automation diagnostics UI for the
-conversation workflow itself.
+persisted. Detection activities also record success/failure through the automation
+health observer under `crm.buyer_signal_ingestion`; the automation overview
+displays built-in CRM health. This is aggregate health, not a per-message
+Temporal execution inspector.
 
 ## Scope boundary
 
@@ -305,7 +335,9 @@ These are real current constraints, not future aspirations:
 - skipped-message instrumentation currently relies on structured logs, not durable counters
 - repeated-thread suppression remains deliberately conservative; evidence
   fingerprints provide an additional material-change boundary
-- workflow execution is async and auditable through code/logs, but not yet exposed through a dedicated admin automation UI
+- workflow execution is asynchronous; the automation overview exposes aggregate
+  health, while individual execution diagnosis still requires workflow details
+  and logs
 
 ## How to debug this pipeline
 
@@ -319,7 +351,10 @@ When a signal is missing:
    - `crm CRM signal ingestion skipped`
    - `crm CRM signal ingestion enqueued`
    - `failed to enqueue crm CRM signal detection`
-6. check whether a same-thread same-type signal already exists in the last 24 hours
+6. verify commercial context, qualification, confidence and evidence matching
+7. check same-thread suppression and whether a matching rule interpretation exists
+8. inspect automation health and the Temporal execution; queued detection alone
+   does not prove a signal was stored
 
 When duplicate signals appear:
 
@@ -332,3 +367,13 @@ When duplicate signals appear:
 - [`crm-signals.md`](crm-signals.md)
 - [`crm-email-sync.md`](crm-email-sync.md)
 - [`crm-entity-summaries.md`](crm-entity-summaries.md)
+
+Implementation references: [ingestion](../server/internal/crmsignal/ingestion.go),
+[text conversion](../server/internal/crmtext/plain.go),
+[detector](../server/internal/service/crm_signal_detection.go),
+[commercial qualification](../server/internal/crmsignal/commercial.go), and
+[Temporal workflow](../server/internal/temporalapp/signal_detection_workflow.go).
+
+Persistence references: [signal repository](../server/internal/repository/crm_signal.go),
+[interpretations](../server/internal/repository/crm_signal_interpretation.go), and
+[automation overview](../frontend/src/components/automation/AutomationOverviewPanel.tsx).

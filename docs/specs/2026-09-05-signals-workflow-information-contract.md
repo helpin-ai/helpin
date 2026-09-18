@@ -8,6 +8,16 @@ Status: **Historical contract; superseded where it differs from the agreed CRM b
 
 Use the [CRM blueprint](../crm-customer-work-blueprint.md) for agreed product scope and the [Flow/Beacon/skill connection plan](../crm-playbook-automation-change-proposal.md) for automation direction. In particular, the earlier individual-signal queue model, separate Review assumptions and proposed workflow behavior must not override the unified customer-situation/standalone-recommendation workspace or the Playbooks → Flows → Beacon + skills direction. The [CRM reference](../crm-signals.md) describes implemented branch behavior.
 
+## Source review — 2026-09-18
+
+The supersession note above remains necessary. [The current Signals page](../../frontend/src/pages/crm/Signals.tsx) consumes the unified inbox and opens different drawers for customer situations, standalone recommendations, and grouped evidence. It does not paginate exclusively by individual raw signal as section 1 originally proposed.
+
+[Current navigation](../../frontend/src/lib/crmSignalInboxQueryBuilder.ts) offers Everyone, Assigned to me, My teams, and Unassigned; the [inbox service](../../server/internal/service/crm_signal_inbox.go) defaults an omitted scope to `all`, not Mine. Supported work filters include attention, approval, open, waiting, paused, and closed. The old review/handled dimensions below must not be substituted for the current API.
+
+[Situation records](../../server/internal/model/crm_situation.go) persist workspace-member ownership, lifecycle, attention, and a revision. [Recommendation decisions](../../server/internal/service/crm_situation_actions.go) require the original action revision and delegate acceptance/dismissal to the canonical action service. This is evidence of those implementation boundaries, not a claim that every historical acceptance scenario, source authorization case, or keyboard interaction has been tested in this review.
+
+The competitor references remain historical research; their current product behavior was not rechecked. Retain the old contract as design context while using the linked blueprint and current source for implementation work.
+
 ## Purpose and scope
 
 Signals helps a team member find relevant customer situations, evaluate the evidence, and decide what needs action. Success means the right person can find an important situation, understand it, and record a decision without searching the entire workspace feed.

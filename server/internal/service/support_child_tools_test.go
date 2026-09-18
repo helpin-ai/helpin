@@ -107,7 +107,7 @@ func TestChildRunResultEvidenceID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !childRunResultHasSummary(block) {
+	if childRunResultEvidenceContent(block) == "" {
 		t.Fatal("expected child summary to remain available")
 	}
 	evidenceContent := childRunResultEvidenceContent(block)

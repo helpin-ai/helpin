@@ -1,6 +1,42 @@
-# Ask Agent Timeline Ordering Implementation Plan
+# Ask Agent timeline ordering implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical implementation plan, source-compared on 2026-09-18. This page
+> records the ordering and disclosure work for contributors. Current helpers
+> implement much of the reconciliation design, but the unchecked sequence and
+> privacy/presentation assertions below are not a current acceptance report.
+
+## Current implementation and differences
+
+The [timeline helper](../../frontend/src/components/agents/dock/dockChatTimeline.ts)
+retains matching snapshot segments and checks durable identity coverage before
+using retained chronology. [DockTranscript](../../frontend/src/components/agents/dock/DockTranscript.tsx)
+passes runtime chronology and active styling separately, then derives final-answer
+presentation and separators by conversational interval. These mechanisms do not
+prove every delayed or malformed event sequence preserves exact execution order.
+
+[DockWorkingGroup](../../frontend/src/components/agents/dock/DockWorkingGroup.tsx)
+starts collapsed even while active; activity changes keep it collapsed unless the
+user has manually toggled it. Completed groups can display “Worked for …” from
+provided duration. The planned auto-open behavior and blanket ban on timing-derived
+headers therefore no longer describe the implementation.
+
+[Tool rendering](../../frontend/src/components/agents/transcript/segmentRenderers.tsx)
+can use `describeToolCall` when context presentation is enabled, and active group
+headers use its latest-tool label. Such labels can derive from arguments or results;
+the original payload-independent privacy assertions are not universal current
+behavior. This concerns presentation, not proof of unauthorized data access.
+
+[ChatView](../../frontend/src/components/agents/dock/ChatView.tsx) reconciles a
+pending echo using `client_message_id` and non-pending delivery status. The exact
+proposed `visiblePendingEcho` implementation is not the current contract; test the
+current durable/pending state transitions when changing this path.
+
+See the [reviewed design](../specs/2026-08-15-ask-agent-timeline-ordering-design.md)
+for the same scope qualifications. The original RED/GREEN steps, full-suite/build
+expectations, and push instructions are historical. No browser/runtime tests or
+Git delivery actions were performed for this documentation update.
+
+## Original implementation sequence
 
 **Goal:** Preserve the Ask agent's runtime execution order after pause/completion and render a compact, privacy-safe work timeline that visually separates internal work from the final answer.
 

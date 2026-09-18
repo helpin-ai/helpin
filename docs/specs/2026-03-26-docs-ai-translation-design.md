@@ -1,12 +1,60 @@
-# Docs AI Translation Design
+# Docs AI translation design
+
+
+> Historical design, source-compared on 2026-09-17. This page explains the
+> structured article-translation pipeline for contributors. The main design is
+> implemented; the original plain-text baseline and phase list are historical.
+
+## Current implementation and limits
+
+[Article generation](../../server/internal/service/docs_helpcenter_translation.go)
+parses source TipTap JSON and calls
+[PrepareArticleTranslationPlan](../../server/internal/docsi18n/extract.go). The
+model receives segments for approved content and article metadata, including the
+title, excerpt, and SEO fields. [Apply](../../server/internal/docsi18n/reinsert.go)
+clones the source tree, restores protected terms, reinserts translated fields, and
+validates schema and preservation before the service saves a draft. The current
+article-generation path does not rebuild the document from plain text.
+
+The [registry](../../server/internal/docsi18n/registry.go) also supports `aiSection`,
+`taskList`, `taskItem`, and preserve-only `entityEmbed` and `citationBlock`, beyond
+the original matrix below. Unknown nodes fail. Handler signatures and file layout
+have evolved; use the registry as the implementation reference rather than copying
+the proposed interface verbatim.
+
+[Protected terms](../../server/internal/docsi18n/protected_terms.go) come from
+help-center configuration and use placeholders whose occurrence counts must survive
+translation. This enforces configured terms; prompt instructions about all other
+proper nouns and technical tokens are not equivalent deterministic guarantees.
+
+Response validation rejects duplicate, missing, and extra segment IDs. It does
+not explicitly reject every empty `translated_text`: the service checks the final
+title, while the [translation schema](../../server/internal/docsi18n/schema.go)
+does not require nonempty text-node contents. The general “no empty translations”
+requirement below is therefore not fully implemented. This validator is a maintained
+backend schema, not proof of automatic parity with every editor extension.
+
+The generation pipeline does not include the proposed separate HTML render check
+or HTML-block review metadata in its draft result. Structural preservation is
+validated, but linguistic quality still needs review. Generation sets draft status;
+it does not publish the result. Validation errors before upsert leave existing
+translation content untouched; that is a narrower guarantee than rollback of every
+possible persistence or downstream failure.
+
+[Structural test source](../../server/internal/docsi18n/docsi18n_test.go) covers
+preservation and protected terms. These tests were inspected, not rerun during
+this documentation review. The original phases and test matrix below are design
+history, not an outstanding implementation checklist or current test report.
+
+## Original design
 
 ## Goal
 
 Replace the current plain-text help-center article translation flow with a schema-aware AI translation pipeline that preserves TipTap document structure by construction, translates only approved text-bearing fields, validates aggressively, and fails closed on any structural or schema mismatch.
 
-## Why The Current Approach Must Be Replaced
+## Why the original approach needed replacement
 
-The current AI translation path in [`server/internal/service/docs_helpcenter_translation.go`](/root/teampulse/server/internal/service/docs_helpcenter_translation.go) translates `DocsContent.ContentText` and then rebuilds content with `plainTextToTipTapDoc(...)`. This destroys structure before translation begins and guarantees loss of:
+At the time of this design, the AI translation path in [`server/internal/service/docs_helpcenter_translation.go`](../../server/internal/service/docs_helpcenter_translation.go) translated `DocsContent.ContentText` and then rebuilt content with `plainTextToTipTapDoc(...)`. This destroys structure before translation begins and guarantees loss of:
 
 - rich-text marks
 - tables and table cell layout
@@ -41,7 +89,7 @@ It does not change:
 
 ## Architecture Overview
 
-The new pipeline operates on TipTap JSON using the existing typed node model in [`server/internal/tiptap/html.go`](/root/teampulse/server/internal/tiptap/html.go).
+The new pipeline operates on TipTap JSON using the existing typed node model in [`server/internal/tiptap/html.go`](../../server/internal/tiptap/html.go).
 
 High-level flow:
 
@@ -243,13 +291,13 @@ Protected terms cover:
 
 ### Schema validation
 
-Add a server-side TipTap schema validator that mirrors the editor’s supported nodes and attrs from [`frontend/src/components/docs/DocsEditor.tsx`](/root/teampulse/frontend/src/components/docs/DocsEditor.tsx).
+Add a server-side TipTap schema validator that mirrors the editor’s supported nodes and attrs from [`frontend/src/components/docs/DocsEditor.tsx`](../../frontend/src/components/docs/DocsEditor.tsx).
 
 The final translated tree must validate before save.
 
 ### Render validation
 
-The translated document must also render through [`server/internal/tiptap/html.go`](/root/teampulse/server/internal/tiptap/html.go) without error.
+The translated document must also render through [`server/internal/tiptap/html.go`](../../server/internal/tiptap/html.go) without error.
 
 ## Failure Behavior
 

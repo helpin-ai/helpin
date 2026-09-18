@@ -1,6 +1,19 @@
-# useEffect Audit and Remediation Plan
+# Audit React effects and state ownership
 
-> **For agentic workers:** REQUIRED: Use superpowers:executing-plans or superpowers:subagent-driven-development before implementing this plan. This document is an audit plus a prioritized remediation plan, not a mandate to delete every `useEffect`.
+This historical audit helps frontend contributors identify effects that mix server data, routing, drafts, and subscriptions. Its recommendations are a backlog, not a mandate to delete effects or proof that every listed component still has the reported pattern. Recheck each owner and its lifecycle before implementing a change.
+
+## Source review — 2026-09-18
+
+- [Assignable members](../../frontend/src/hooks/useAssignableWorkspaceMembers.ts), [workspace members](../../frontend/src/hooks/useWorkspaceMembers.ts), and [workspace teams](../../frontend/src/hooks/useWorkspaceTeams.ts) still use module-level caches and effect-driven loading. The first-priority query conversion is therefore not complete. The teams hook now catches transient load failures and clears its shared promise; that improvement is narrower than replacing its cache.
+- `MyWork`, `Roadmap`, `SharedDocumentView`, `GlobalTaskPanel`, and `TaskDeliveryPanel` still contain manual loading flows. Existing query hooks elsewhere do not establish that these consumers have migrated.
+- [DocsSpaceDetail](../../frontend/src/pages/docs/DocsSpaceDetail.tsx) now reads collection selection directly from typed router search. The workspace route still mirrors workspace/organization query data into stores through effects. Treat the routing audit as partially addressed.
+- [CompaniesTable](../../frontend/src/components/crm/CompaniesTable.tsx) still mirrors the company array into local state. Contacts use per-record optimistic patches/removals; deals use [useDealEdits](../../frontend/src/components/crm/useDealEdits.ts), which overlays patches on current input and updates query caches. The original blanket claim that all three tables copy whole datasets is stale.
+- [React pageview](../../packages/react/src/usePageView.ts) and [Next.js pageview](../../packages/nextjs/src/usePageView.ts) hooks still wrap browser history methods inside effects. Widget article/collection/space views still contain their own effect-driven fetches. No shared `useSyncExternalStore` migration is established here.
+- Historical `Story*` component names now correspond to `Task*` components, including `TaskDetailPanel`, `GlobalTaskPanel`, `CreateTaskModal`, `TaskListView`, and `TaskDeliveryPanel`. The old full-page `StoryDetail.tsx`, monolithic `pages/Settings.tsx`, and `usePlanningStream.ts` paths are not current files; settings now have dedicated pages under `pages/settings/`.
+- The remaining form, reset, focus, and subscription recommendations require component-specific regression checks. This review sampled the identified implementation areas and preserves unverified items as historical work; it did not execute the proposed frontend/package test matrix or prove every effect safe or defective.
+
+## Original audit and remediation plan
+
 
 **Goal:** Reduce render-after-render synchronization, manual async state machines, and prop-to-state mirroring across the frontend and widget packages. Replace those cases with the owning primitive: TanStack Query for server data, TanStack Router for route state, derived values for pure computations, keyed remounts or form resets for draft state, and `useSyncExternalStore` for browser-history subscriptions.
 

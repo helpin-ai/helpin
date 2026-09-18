@@ -1,4 +1,31 @@
-# Link Tasks to Epic Implementation Plan
+# Link tasks to an epic implementation plan
+
+> Historical implementation plan, source-compared on 2026-09-17. Batch epic
+> linking is implemented. This record is for contributors tracing the change;
+> unchecked tasks and the branch/test commands below are not current work orders.
+
+## Current implementation
+
+The [dialog](../../frontend/src/components/pm/LinkTasksToEpicDialog.tsx) searches
+same-team, non-archived tasks in pages of 50, excludes the target epic's tasks,
+preserves selections on API errors, and asks for review before moving tasks.
+[EpicDetail](../../frontend/src/pages/pm/EpicDetail.tsx) supplies team context and
+handles success. Review is client-side; the API does not require a review token.
+
+The [handler](../../server/internal/handler/pm_epic.go) validates the request,
+and the [route](../../server/internal/router/router.go) requires `pm.edit`.
+The [service](../../server/internal/service/pm_epic.go) checks workspace, active
+epic, team/edit access, task existence, archive status, and same-team membership.
+Task membership writes are transactional. Delivery-target inheritance, activity
+logging, and websocket publication happen after commit, so their failures do not
+roll back successful links. This is not an atomic guarantee across all side effects.
+
+See the [reviewed design](../specs/2026-08-06-link-tasks-to-epic-design.md) for
+manual-target preservation and the whole-model-save concurrency limitation.
+The old Go version, npm build command, branch name, and verification checklist
+remain historical; no feature test run or deployment is claimed by this review.
+
+## Original implementation record
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 

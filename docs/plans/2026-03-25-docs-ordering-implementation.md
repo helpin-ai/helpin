@@ -1,5 +1,15 @@
 # Docs Ordering Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical ordering design. Current collections/documents have `sort_key` fields,
+and repositories retain configuration-dependent position/sort-key behavior. See
+[collection ordering](../../server/internal/repository/docs_collection.go),
+[configuration](../../server/internal/config/config.go), and
+[ordering parity tests](../../server/internal/service/docs_ordering_parity_test.go).
+Check `DOCS_ORDERING_USE_SORT_KEY` for the target deployment; neither this plan nor
+the presence of the code proves that the flag is enabled there.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add canonical ordering for docs spaces, collections, and articles, managed from `All Docs`, with the same order reflected in internal docs hierarchy surfaces and the public help center.

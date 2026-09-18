@@ -1,5 +1,15 @@
 # Support Inbox Sidebar Views Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical sidebar design, predating the September personal-read and shared
+attention model. Consult the
+[inbox-state design and implementation record](../specs/2026-09-02-first-class-support-inbox-state-design.md)
+and [current repository](../../server/internal/repository/support_inbox.go).
+The V2 path uses per-user unread state and materialized counters; rollout state
+determines whether a workspace uses it. Do not infer shared unread semantics or
+current production cutover from the older views described below.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the current overlapping support sidebar/status filter model with simple built-in saved views: Inbox, Mine, Waiting, Resolved, Spam, plus the existing Helpin AI views.

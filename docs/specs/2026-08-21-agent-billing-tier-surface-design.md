@@ -1,4 +1,51 @@
-# Agent Billing-Tier Surface Design
+# Agent billing-tier interface design
+
+
+This design records the intended customer interface for model sizes. Use the
+implementation notes below when maintaining tier selection or investigating
+legacy records; the acceptance criteria are not a release-verification report.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18. These are repository configuration observations,
+not verification of external model availability, vendor prices, or deployed data.
+
+- [AgentModelTierResolver](../../server/internal/service/agent_model_tiers.go)
+  implements catalog-validated tier resolution. Its policy is a Go map validated
+  against the catalog, not a route chosen dynamically from any enabled catalog
+  entry. Medium currently maps to OpenRouter `google/gemini-3.8-flash`, Large to
+  direct OpenAI `gpt-5.6-terra`, and Flagship to direct Anthropic `claude-sonnet-5`.
+  Small uses the shared fast OpenRouter model constant. The original table below
+  is a dated proposal, not the current mapping.
+- `ResolveCustom` returns `native_sdk` for every supported tier. It does not take
+  target/capability inputs to select different adapters as the runtime policy
+  proposes. Existing route derivation and new custom resolution are separate
+  operations; derivation may return an empty tier for unresolved legacy data.
+- The [frontend tier helper](../../frontend/src/lib/agentModelTier.ts) reads labels
+  and descriptions from generated `AI_MODELS` data. Unknown/missing tier labels
+  display “Managed.” It does not derive display labels from provider names.
+- The [model definitions](../../server/internal/model/agent.go) contain tier fields,
+  and [agent service](../../server/internal/service/agent.go) run construction
+  copies the billing agent's tier. This does not by itself verify every historical
+  record or every mutation/read surface against all acceptance criteria below.
+- The [versioned migration](../../server/internal/dbmigrate/sql/202608210001_agent_model_tiers.sql)
+  adds the four tier columns and fills empty agent/version tiers using model-name
+  substring rules. Runs fall back through agent versions and owning agents.
+  It does not implement the proposed priority of durable usage snapshots or
+  exact provider/model/service-tier catalog resolution. Unmatched records may
+  retain an empty tier. The file's existence does not prove it ran in an installation.
+- Both [API startup](../../server/cmd/api/main.go) and
+  [worker startup](../../server/cmd/temporal-worker/main.go) call selectable-tier
+  validation, but enforce its issues only when the edition requires configured
+  providers. Do not describe this as an unconditional startup rejection.
+
+The universal provider-label hiding, snapshot immutability, public mutation
+restrictions, and source-guard requirements remain acceptance criteria to check
+at their respective boundaries. This review did not run application tests or
+perform a browser/public-share audit, and does not claim those universal checks
+passed.
+
+## Original design
 
 ## Objective
 

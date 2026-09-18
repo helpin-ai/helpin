@@ -1,5 +1,13 @@
 # Docs Import Pipeline Canonical-JSON Plan
 
+> Source review, 2026-09-17
+
+Historical plan from 2026-03-23. The main conversion path described as a goal
+now exists: [Help Scout import](../../server/internal/service/docs_import.go) calls
+`docsimport.ConvertHTML` and saves canonical Tiptap JSON. Retain the findings below
+as the original motivation, not as a current defect list. This status note does
+not assert that every proposed importer edge case or acceptance test is complete.
+
 ## Goal
 
 Rebuild the Docs import pipeline so imported content lands as **canonical Tiptap JSON**, not as a `_markdown_source` envelope.
@@ -8,12 +16,12 @@ The import path should preserve formatting as much as the current editor + Help 
 
 This plan is based on the current code in:
 
-- [server/internal/service/docs_import.go](/root/teampulse/server/internal/service/docs_import.go)
-- [server/internal/helpscout/convert.go](/root/teampulse/server/internal/helpscout/convert.go)
-- [server/internal/helpscout/images.go](/root/teampulse/server/internal/helpscout/images.go)
-- [server/internal/service/docs_helpcenter.go](/root/teampulse/server/internal/service/docs_helpcenter.go)
-- [server/internal/repository/docs_content.go](/root/teampulse/server/internal/repository/docs_content.go)
-- [frontend/src/components/docs/DocsEditor.tsx](/root/teampulse/frontend/src/components/docs/DocsEditor.tsx)
+- [server/internal/service/docs_import.go](../../server/internal/service/docs_import.go)
+- [server/internal/helpscout/convert.go](../../server/internal/helpscout/convert.go)
+- [server/internal/helpscout/images.go](../../server/internal/helpscout/images.go)
+- [server/internal/service/docs_helpcenter.go](../../server/internal/service/docs_helpcenter.go)
+- [server/internal/repository/docs_content.go](../../server/internal/repository/docs_content.go)
+- [frontend/src/components/docs/DocsEditor.tsx](../../frontend/src/components/docs/DocsEditor.tsx)
 
 ## Current Findings
 
@@ -26,19 +34,19 @@ Today the import pipeline does this:
 3. convert HTML to Markdown
 4. store `{"_markdown_source":"..."}` in `docs_contents.content`
 
-That happens in [docs_import.go](/root/teampulse/server/internal/service/docs_import.go) and [convert.go](/root/teampulse/server/internal/helpscout/convert.go).
+That happens in [docs_import.go](../../server/internal/service/docs_import.go) and [convert.go](../../server/internal/helpscout/convert.go).
 
 But the rest of the system expects canonical Tiptap JSON:
 
-- public Help Center rendering in [docs_helpcenter.go](/root/teampulse/server/internal/service/docs_helpcenter.go) calls [html.go](/root/teampulse/server/internal/tiptap/html.go)
-- search in [docs_search.go](/root/teampulse/server/internal/repository/docs_search.go) depends on `content_text`
-- text extraction and word count in [docs_content.go](/root/teampulse/server/internal/repository/docs_content.go) walk Tiptap JSON nodes
+- public Help Center rendering in [docs_helpcenter.go](../../server/internal/service/docs_helpcenter.go) calls [html.go](../../server/internal/tiptap/html.go)
+- search in [docs_search.go](../../server/internal/repository/docs_search.go) depends on `content_text`
+- text extraction and word count in [docs_content.go](../../server/internal/repository/docs_content.go) walk Tiptap JSON nodes
 
-So imports are not first-class until a human opens the doc in [DocsEditor.tsx](/root/teampulse/frontend/src/components/docs/DocsEditor.tsx), which detects `_markdown_source` and re-saves JSON.
+So imports are not first-class until a human opens the doc in [DocsEditor.tsx](../../frontend/src/components/docs/DocsEditor.tsx), which detects `_markdown_source` and re-saves JSON.
 
 ### 2. The current converter is intentionally lossy
 
-[convert.go](/root/teampulse/server/internal/helpscout/convert.go) currently:
+[convert.go](../../server/internal/helpscout/convert.go) currently:
 
 - rewrites Help Scout callouts into generic blockquotes
 - rewrites iframes into plain links
@@ -62,7 +70,7 @@ Because `_markdown_source` is not canonical Tiptap JSON:
 
 ### 4. Images are rehosted correctly, but only at string-rewrite level
 
-[images.go](/root/teampulse/server/internal/helpscout/images.go) is useful and should stay, but it currently rewrites image URLs in the raw HTML string before conversion.
+[images.go](../../server/internal/helpscout/images.go) is useful and should stay, but it currently rewrites image URLs in the raw HTML string before conversion.
 
 That is fine as a preprocessing step, but the next pipeline should operate on structured HTML/DOM after image rewriting, not on Markdown text.
 
@@ -216,7 +224,7 @@ Examples:
 
 ### Phase 4: Change `DocsImportService` to store canonical JSON
 
-Update [docs_import.go](/root/teampulse/server/internal/service/docs_import.go):
+Update [docs_import.go](../../server/internal/service/docs_import.go):
 
 - remove the HTML-to-Markdown step
 - call the new HTML-to-Tiptap converter instead
@@ -239,7 +247,7 @@ Imported docs should not rely on the frontend editor to become valid.
 Required changes:
 
 - Help Scout import stops generating markdown envelopes
-- `_markdown_source` detection in [DocsEditor.tsx](/root/teampulse/frontend/src/components/docs/DocsEditor.tsx) can remain temporarily for backwards compatibility
+- `_markdown_source` detection in [DocsEditor.tsx](../../frontend/src/components/docs/DocsEditor.tsx) can remain temporarily for backwards compatibility
 - new imports must never produce `_markdown_source`
 
 ### Phase 6: Backfill previously imported docs
@@ -262,7 +270,7 @@ Pragmatic recommendation:
 
 ### Phase 7: Improve image preprocessing
 
-Keep [images.go](/root/teampulse/server/internal/helpscout/images.go), but treat it as preprocessing, not conversion.
+Keep [images.go](../../server/internal/helpscout/images.go), but treat it as preprocessing, not conversion.
 
 Recommended improvements:
 
@@ -289,10 +297,10 @@ This will make the import preview and retry flow much more useful.
 
 ### New or heavily changed backend files
 
-- Modify: [server/internal/service/docs_import.go](/root/teampulse/server/internal/service/docs_import.go)
-- Replace or deprecate: [server/internal/helpscout/convert.go](/root/teampulse/server/internal/helpscout/convert.go)
-- Modify: [server/internal/helpscout/convert_test.go](/root/teampulse/server/internal/helpscout/convert_test.go)
-- Keep and potentially extend: [server/internal/helpscout/images.go](/root/teampulse/server/internal/helpscout/images.go)
+- Modify: [server/internal/service/docs_import.go](../../server/internal/service/docs_import.go)
+- Replace or deprecate: [server/internal/helpscout/convert.go](../../server/internal/helpscout/convert.go)
+- Modify: [server/internal/helpscout/convert_test.go](../../server/internal/helpscout/convert_test.go)
+- Keep and potentially extend: [server/internal/helpscout/images.go](../../server/internal/helpscout/images.go)
 - Create: `server/internal/docsimport/html_to_tiptap.go`
 - Create: `server/internal/docsimport/helpscout_normalize.go`
 - Create: `server/internal/docsimport/node_builders.go`
@@ -300,10 +308,10 @@ This will make the import preview and retry flow much more useful.
 
 ### Existing files that should remain compatible
 
-- [server/internal/service/docs_helpcenter.go](/root/teampulse/server/internal/service/docs_helpcenter.go)
-- [server/internal/repository/docs_content.go](/root/teampulse/server/internal/repository/docs_content.go)
-- [server/internal/repository/docs_search.go](/root/teampulse/server/internal/repository/docs_search.go)
-- [frontend/src/components/docs/DocsEditor.tsx](/root/teampulse/frontend/src/components/docs/DocsEditor.tsx)
+- [server/internal/service/docs_helpcenter.go](../../server/internal/service/docs_helpcenter.go)
+- [server/internal/repository/docs_content.go](../../server/internal/repository/docs_content.go)
+- [server/internal/repository/docs_search.go](../../server/internal/repository/docs_search.go)
+- [frontend/src/components/docs/DocsEditor.tsx](../../frontend/src/components/docs/DocsEditor.tsx)
 
 ## Testing Plan
 

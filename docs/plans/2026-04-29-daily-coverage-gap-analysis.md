@@ -1,6 +1,18 @@
-# Daily Coverage Gap Analysis Implementation Plan
+# Scheduled support coverage analysis implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the April 2026 design for turning support conversations into coverage findings and recommended fixes. Contributors investigating the analyzer should start with the source review below; the original checklist is not the current schedule, schema, or UI contract.
+
+## Source review — 2026-09-18
+
+- The [analyzer](../../server/internal/service/support_coverage_daily_analyzer.go) now uses workflow ID `coverage-analysis-v2`, analyzer version `v4`, and cron `0 */3 * * *` (every three hours), replacing the proposed daily 04:30 UTC run. Its two-hour cursor overlap and ten-minute settle delay remain. The [workflow](../../server/internal/temporalapp/coverage_analysis_workflow.go) supplies a three-hour initial window; the service's 30-day bootstrap applies only when no starting window is supplied. A first scheduled run therefore does not automatically analyze 30 days.
+- Processing uses paginated candidates with four concurrent conversations per page. The current loop has no proposed 1,000-conversation run cap; the 1,000 constant limits workspace discovery. Workspace selection merges changed-conversation workspaces with queued workspaces and respects rollout policy. Workspace-child failures are logged by the parent workflow; they do not make its final return an error, although each child activity has retries.
+- Input is the latest issue segment, not the full lifetime conversation: resolution events establish boundaries, internal messages are excluded from model input, and only the latest 80 public messages are retained. See the [segmentation review](2026-04-30-coverage-analysis-segmentation.md). Deterministic classification can skip non-support conversations before a model call; code also replaces invented human-resolution text when no human replied.
+- V2 batches, leased analysis attempts, findings, and deferred materialization now supplement the legacy analysis records described below. Their logical keys include segment and policy information. Do not recreate only this plan's tables or assume its topic/gap writes describe the complete persistence contract.
+- Conditional knowledge matching remains, but refinement runs only when current matches are nonempty; refinement failure logs a warning and retains the first recommendations. The [matcher](../../server/internal/service/support_coverage_knowledge_matcher.go) supports lexical fallback when embeddings fail and deduplicates document candidates by document **and block** when a block ID is available, rather than always by document.
+- Commands and expected results below are historical implementation instructions, not results of this documentation review. No Temporal workflow, provider call, database migration, or model execution was run. Use current source and the current coverage UI before planning further work.
+
+## Original implementation plan
+
 
 **Goal:** Make Coverage Gaps a daily, evidence-backed AI improvement workflow that analyzes all recent support conversations, identifies why AI did not resolve or could resolve better, and recommends concrete fixes across docs, website content, data, actions, workflow, and policy.
 

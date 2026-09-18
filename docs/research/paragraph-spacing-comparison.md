@@ -1,5 +1,14 @@
 # Paragraph Spacing in Documentation/Help Center Tools
 
+> **Status: historical design research.** Vendor measurements below were not
+> reverified in this audit and are not a specification of Helpin's CSS.
+> As of the 2026-09-17 source comparison, the
+> [editor stylesheet](../../frontend/src/index.css) uses paragraph bottom margin
+> `1.05rem` and line height `1.7`; the
+> [help-center stylesheet](../../help-center/src/app.css) uses `1.1rem` and `1.7`.
+> Both have more-specific contextual rules. Inspect rendered pages when assessing
+> visual parity; these declarations alone do not prove identical layout.
+
 Research comparing how major documentation platforms handle paragraph spacing in their public-facing knowledge base views.
 
 ## Comparison Table
@@ -134,7 +143,7 @@ body {
 7. **Editor-published parity varies**: Notion has perfect parity; others have approximate parity
 8. **Empty paragraphs**: All tools maintain some height for empty paragraphs (typically one line height)
 
-## Recommendation for Help Center Implementation
+## Historical recommendation for help-center implementation
 
 Based on this research, a **16-20px margin-bottom** on `<p>` tags in published help center articles is the industry standard sweet spot:
 - `1em` (browser default) for minimal styling overhead

@@ -1,6 +1,18 @@
 # PM Automation Access And Task Autosave Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan addressed repeated failed task saves and PM access to automation metadata. The autosave and validation fixes exist, but the agent-access policy differs from the original goal.
+
+## Source review: September 18, 2026
+
+- [PM automation-rule requests](../../frontend/src/lib/services/automationRuleService.ts) and [their hooks](../../frontend/src/hooks/queries/useAutomationRules.ts) use `/pm/automation-rules`. [The router](../../server/internal/router/router.go) allows those reads with `pm.read` and mutations with `pm.admin.automations`.
+- Agent metadata is different: [useAgents](../../frontend/src/hooks/queries/useAgents.ts) currently calls `automationService.listAgents` with an Automation query key. Although [agentService](../../frontend/src/lib/services/agentService.ts) exposes PM-prefixed methods, the router explicitly gates the PM Agents group with `ModuleAutomation` as well as PM permissions. The original promise that PM-only users can read all agent metadata is therefore not current behavior; changing the URL alone does not bypass that gate.
+- [The stable-patch helper](../../frontend/src/components/pm/task-detail/taskAutosaveFailure.ts) and [TaskDetailPanel](../../frontend/src/components/pm/TaskDetailPanel.tsx) block an identical failed autosave payload, retain pending values, and permit a materially different patch. This is in-memory retry suppression, not durable offline storage or a general retry policy for every request path.
+- [Task update error mapping](../../server/internal/handler/pm_task.go) returns HTTP 403 for `model.ErrForbidden`. [Task validation](../../server/internal/service/pm_task.go) checks workflow/state membership when either field is **supplied** in the request, even if its value is unchanged; unrelated edits do not run that particular check.
+- PM-prefixed recent-run, agent-run, and snapshot methods now exist in the client service. Their existence does not establish PM-only access: inspect the current route group and execution authorization for each operation instead of relying on the old screenshot-based follow-up.
+
+The historical tests and browser acceptance checks below were not rerun. Go 1.24 is the original toolchain reference; [the current module](../../server/go.mod) declares Go 1.25.0. Do not use this plan as authorization to weaken current module access.
+
+## Original implementation plan
 
 **Goal:** PM task, board, and list views can consume PM-relevant automation data without requiring direct Automation module access, and failed task autosaves no longer loop forever.
 

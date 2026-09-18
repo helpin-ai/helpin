@@ -1,5 +1,35 @@
 # OG Images and Metadata Design
 
+> Historical design/implementation record (2026-08-03), source-compared on
+> 2026-09-17. Marketing metadata, generated images, app-shell metadata and the
+> Netlify share transformer are implemented. Original “current state”, checkboxes,
+> test passes and image inspections below describe the earlier session.
+
+## Current behavior and deployment limits
+
+- [Marketing metadata](../../website/src/lib/metadata.ts) is used by root, pricing,
+  privacy and terms layouts; the root supplies `metadataBase`. This four-page
+  contract does not establish unique metadata for every future marketing route.
+- [Image generation](../../website/scripts/generate-og-images.mjs) runs through
+  the website prebuild script. The six committed PNG assets currently have
+  1200×630 headers; this audit did not visually inspect or regenerate them.
+- The [Vite shell](../../frontend/index.html) contains the marked generic noindex
+  metadata block. [Share middleware](../../frontend/netlify/edge-functions/share-meta.ts)
+  fetches the existing public document response, then uses only `document.title`.
+  It does not request a title-only projection. The title is HTML-escaped and
+  truncated to 80 Unicode code points including the ellipsis.
+- The preview URL is origin plus pathname, without query parameters or fragment.
+  The transformer recognizes `app.helpin.ai`, `app.stage.helpin.ai`, `localhost`,
+  and `127.0.0.1`; other hosts keep generic metadata. The upstream deadline is two
+  seconds, and failures preserve the original response. Successfully transformed
+  HTML receives `private, no-store` and `X-Robots-Tag` headers.
+- [Netlify configuration](../../frontend/netlify.toml) registers the edge-functions
+  directory and the function declares `/share/*` with bypass-on-error. A generic
+  static server or Community container does not execute this Netlify middleware
+  merely because the source file exists. No deployed preview/cache behavior was
+  checked during this review.
+
+
 **Date:** 2026-08-03
 
 ## Goal

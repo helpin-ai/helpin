@@ -1,5 +1,15 @@
 # PM Recurring Work System Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical recurring-work design. The implemented domain now uses tasks, with
+[recurring templates](../../server/internal/service/pm_recurring_template.go),
+a [scheduler](../../server/internal/service/pm_recurring_template_scheduler.go), and
+[a Temporal workflow](../../server/internal/temporalapp/pm_recurring_workflow.go).
+The workflow declares a five-minute cron interval. The story-named examples and
+proposed file changes below are not a current implementation checklist. Source
+presence does not establish that a deployment's scheduler is running.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a first-class recurring work system for PM that lets users define recurring story templates, generate normal story instances from them, and manage lifecycle state from both story UI and a dedicated settings screen.

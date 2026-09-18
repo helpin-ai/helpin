@@ -1,8 +1,34 @@
 # PM shared dropdown migration plan
 
-Status: implemented, including bulk edit. Final validation is recorded below.
+Status: historical implementation record, including bulk edit. The September 9 validation record is preserved below; it is not a fresh test result.
 
-Baseline: local `develop` at `9f52f1f2d`, 2026-09-09. The adaptive-search implementation passes TypeScript checks and 2,481 frontend tests across 415 files.
+Baseline: local `develop` at `9f52f1f2d`, 2026-09-09. The baseline record reported passing TypeScript checks and 2,481 frontend tests across 415 files.
+
+This plan explains the shared PM option-picker contract and the migration completed
+in the dated implementation record. Use the current source and linked audit when
+adding a selector; checked boxes are historical evidence, not current page QA.
+
+## Source review — 2026-09-18
+
+- [QuietDropdown](../../frontend/src/components/design-system/quiet-dropdown.tsx)
+  supplies shared search/list primitives with explicit `auto`, `always`, and `off`
+  search modes. `QuietFilterDropdown` delegates to it, while the declarative
+  `quiet-dropdown-select` adapter supports existing form-style consumers.
+- [Global creation](../../frontend/src/components/pm/GlobalCreateModals.tsx)
+  imports that shared Select adapter. A component named `Select` is therefore
+  not evidence that a caller still uses the legacy primitive; inspect imports.
+- [The migration regression test](../../frontend/src/components/pm/__tests__/pmDropdownMigration.test.ts)
+  scans production TSX in `components/pm` and `pages/pm` for particular direct
+  legacy imports and native `<select>` syntax. It does not prove all indirect
+  wrappers, keyboard behavior, or authenticated page flows are correct.
+- [Bulk actions](../../frontend/src/components/pm/TaskBulkActionsBar.tsx) retain
+  staging and per-task operations using `Promise.allSettled`, including partial
+  failure feedback. Shared selectors do not make Apply transactional.
+- The historical test counts, Chromium checks, and production build below were
+  not rerun for this documentation review. The recorded absence of authenticated
+  deployed-page walkthroughs remains an explicit validation limit.
+
+## Original implementation record
 
 ## Outcome
 

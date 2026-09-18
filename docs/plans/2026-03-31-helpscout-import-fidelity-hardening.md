@@ -1,6 +1,21 @@
-# Help Scout Import Fidelity Hardening Implementation Plan
+# Help Scout import fidelity hardening plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains conversion and presentation improvements for Help
+Scout imports. Use it to understand the regression cases; current reconversion
+scope and optional AI formatting differ from the original rollout assumptions.
+
+## Source review — 2026-09-18
+
+- [Help Scout preprocessing](../../server/internal/docsimport/helpscout_preprocess.go) and the three named regression fixtures exist. It normalizes known aside/step patterns, trims boundary whitespace, and removes empty headings/paragraphs before the generic converter. The stored content is canonical TipTap JSON.
+- [Category mapping](../../server/internal/service/docs_import.go) tries ID, slug, then normalized name **for each category value in source order**. Thus an earlier name match can win before a later category ID is examined. Unmatched articles retain a nil collection with an `uncategorized` slug fallback; this does not create a dedicated Uncategorized collection.
+- [Image rewriting](../../server/internal/helpscout/images.go) walks parsed HTML, deduplicates URLs, and prefers `src` over `data-src`. It does not process `srcset` or skip already-rewritten storage URLs in this function. Failed downloads keep source URLs and contribute warnings; the proposed fully idempotent image rewrite is not established.
+- Reconvert selects **all content with stored import HTML in the job's space**, through [ListBySpaceWithImportHTML](../../server/internal/repository/docs_content.go), not only articles from that job or Help Scout. Nextra uses its own branch; other HTML sources use the Help Scout conversion path. It saves new bodies and can overwrite manual edits. The [current confirmation](../../frontend/src/components/settings/ImportHistory.tsx) says “from this job,” which is narrower than the actual query.
+- Reconvert shares conversion, but does not rerun fresh-import image downloads, category assignment, or redirect creation. It updates only warning/fallback/note summary counters when an existing summary decodes; summary-write failure is ignored. The original whole-pipeline repair claim is too broad.
+- [Optional AI formatting](../../server/internal/service/docs_import_ai.go) can convert HTML through Markdown before TipTap; disabled mode and supported video/GIF content take the deterministic converter. Model prompts are not proof of lossless output. [Public styling](../../help-center/src/app.css) includes h4–h6, while [article enhancement](../../help-center/src/components/ArticleContent.tsx) still adds heading IDs only to h2/h3.
+- Proposed Go test regexes below do not match every current helper-test name. No runtime tests, sample-space reconversion, deployment, or visual acceptance were performed here. Commands and rollout steps remain historical verification guidance.
+
+## Original implementation plan
+
 
 **Goal:** Make Help Scout imports render as close to the original as possible in one rollout by fixing structural conversion gaps, source-noise cleanup, category mapping, image rewriting coverage, import diagnostics, and public article styling without regressing already-working docs.
 
@@ -308,7 +323,7 @@ The tests should verify structure remains present in the DOM and article enhance
 
 - [ ] **Step 2: Extend prose styling conservatively**
 
-Update [app.css](/root/teampulse/help-center/src/app.css) to give imported docs a better visual hierarchy without redesigning the site:
+Update [app.css](../../help-center/src/app.css) to give imported docs a better visual hierarchy without redesigning the site:
 - add `h4`, `h5`, `h6` styles
 - improve vertical rhythm for step-heavy docs
 - improve spacing between headings, paragraphs, callouts, figures, and images
@@ -321,7 +336,7 @@ Constraints:
 
 - [ ] **Step 3: Adjust article enhancement logic only where safe**
 
-In [ArticleContent.tsx](/root/teampulse/help-center/src/components/ArticleContent.tsx):
+In [ArticleContent.tsx](../../help-center/src/components/ArticleContent.tsx):
 - keep copy-button behavior intact
 - keep heading-ID enhancement intact
 - only expand heading enhancement depth if it is needed for imported-doc navigation and does not clutter existing TOC behavior
@@ -363,7 +378,7 @@ Update import/reconvert logic so warning counts are tracked per article and roll
 
 - [ ] **Step 3: Display summary signals in the existing import history UI**
 
-Extend [HelpCenterImportSection.tsx](/root/teampulse/frontend/src/components/settings/HelpCenterImportSection.tsx) so completed jobs can show:
+Extend [HelpCenterImportSection.tsx](../../frontend/src/components/settings/HelpCenterImportSection.tsx) so completed jobs can show:
 - article/collection totals
 - quality warning counts
 - reconvert result context
@@ -472,9 +487,7 @@ Recommended commit sequence:
 
 ## Execution Notes
 
-- Use `@superpowers/test-driven-development` before each implementation task.
 - Keep Help Scout logic isolated to the import/reconvert path; do not bleed source-specific heuristics into generic docs authoring behavior.
 - Prefer deterministic mapping and conservative normalization over “smart” fuzzy behavior.
 - If a source pattern cannot be safely transformed, preserve it and emit a warning rather than guessing.
 - Do not skip the reconvert/remediation work; this rollout is incomplete if it only improves future imports.
-

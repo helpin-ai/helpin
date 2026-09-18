@@ -55,6 +55,8 @@ waqar-images/
 .agents/skills/*
 !.agents/skills/helpin-design-system/
 !.agents/skills/helpin-design-system/**
+!.agents/skills/helpin-documentation/
+!.agents/skills/helpin-documentation/**
 .worktrees/
 node_modules/
 .pnpm-store/

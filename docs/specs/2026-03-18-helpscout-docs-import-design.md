@@ -1,4 +1,20 @@
-# HelpScout Help Center Import
+# Help Scout documentation import design
+
+This historical design explains the first Help Scout import proposal. Contributors
+should use the source review below for the current execution, credential, content,
+and redirect contracts; the original schema and API sketches are not setup steps.
+
+## Source review — 2026-09-18
+
+- [Import startup](../../server/internal/service/docs_import.go) now requires a Temporal client and a 32-byte encryption key. It encrypts the stored request, including the API key, into `PayloadEncrypted` and starts a workflow with the import ID. [The activity adapter](../../server/internal/service/docs_import_temporal.go) loads and decrypts that payload. The original memory-only API-key and managed-goroutine claims are obsolete; do not promise terminal credential erasure from this design.
+- The deterministic path preprocesses article HTML and converts it into canonical TipTap JSON, then saves through the content service. Optional AI formatting can take an HTML-to-Markdown-to-TipTap path. It no longer takes the proposed HTML → Markdown → `_markdown_source` path. Conversion warnings and source metadata support later reconversion; a conversion error fails that article instead of implementing the proposed raw-HTML code-block fallback.
+- Imported images are rewritten only when an uploader is configured and the fetch/upload succeeds. Failed image processing can preserve the original HTML or source URLs, so independence from the source CDN is an objective, not a guarantee.
+- Published and match-source modes preserve a published article's published version even when a draft exists; draft mode can request the draft. `published` makes imported articles publishable rather than filtering the list to source-published articles. The original draft rules below differ from these helpers.
+- [The redirect handler](../../server/internal/handler/docs_import.go) downloads `redirect-map.json`, not CSV. The import service also creates imported redirect records, beyond the original download-only design. Configuring an external domain/CDN remains separate work.
+- [The Help Scout client](../../server/internal/helpscout/client.go) uses Basic auth and pagination and retries 429 responses using `Retry-After` until context cancellation. It returns transport and other HTTP failures rather than implementing the claimed three-attempt exponential retry loop. Current vendor rate limits were not reverified.
+- Import routes remain under `/api/docs/import/...`, protected by `docs.import`, with retry, cancellation, and reconversion routes. Old `server/migrations/033...` and `034...` paths are historical; current schema is managed under `server/internal/dbmigrate/sql`, including the [Temporal import migration](../../server/internal/dbmigrate/sql/202608100003_docs_import_temporal.sql). This review did not run a live import or the original UI acceptance matrix.
+
+## Original design
 
 ## Overview
 

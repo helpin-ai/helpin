@@ -1,6 +1,6 @@
 # Implementation plans
 
-[Documentation index](../README.md)
+[Documentation index](../README.md) · [Writing and naming guide](../documentation-guide.md)
 
 Implementation plans, progress notes, and audits. Dated documents record the state of a particular change; consult current engineering guides for present behavior.
 
@@ -168,8 +168,8 @@ Implementation plans, progress notes, and audits. Dated documents record the sta
 - [AI profiles, community BYOK, and optional SaaS BYOK](2026-09-14-ai-profiles-and-ee-billing-plan.md)
 - [AI profiles and edition isolation: review corrections](2026-09-14-ai-profiles-review-fixes.md)
 - [AI settings pages: restyle and UX plan](2026-09-14-ai-settings-ux-plan.md)
-- [Agent Authorization Architecture](AGENT_AUTHORIZATION_PLAN.md)
-- [TODO PRD: Support Availability and Agent Notifications](TODO-support-availability-and-agent-notifications.md)
+- [Agent authorization design](agent-authorization.md)
+- [Support availability and agent notifications](support-availability-and-notifications.md)
 - [Module Access Progress Tracker](module-access-progress.md)
 - [Pipeline & Planning Improvements Plan](plan-pipeline-and-planning-improvements.md)
 - [Planner Tool Contract Reference](planner-tool-contract-reference.md)

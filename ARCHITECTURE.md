@@ -10,6 +10,11 @@ monorepo also contains CRM, project management, automation, analytics, and nativ
 apps. Read [Community scope](ROADMAP.md) before treating a source module as a
 supported beta feature.
 
+**Source review:** 2026-09-18, against the checked-in Community Compose, API and
+worker entry points, frontend build configuration, and Runtime integration. This
+map describes repository wiring; it does not establish that publication gates or
+live deployment acceptance have passed.
+
 ## System overview
 
 The diagram follows [Community Compose](community/compose.yaml). Arrows show
@@ -57,7 +62,7 @@ separate Helpin, Runtime, and Temporal databases with separate credentials.
 | Go API | Authentication, authorization, product APIs, WebSockets, agent admission and event projection | [server/cmd/api/main.go](server/cmd/api/main.go) |
 | Helpin worker | Temporal-backed product work, knowledge indexing, background integrations | [server/cmd/temporal-worker/main.go](server/cmd/temporal-worker/main.go) |
 | Migration job | Versioned application schema changes before API startup | [server/cmd/migrate](server/cmd/migrate/) |
-| Agent Runtime API and worker | Durable agent execution, model calls, tool execution, execution events | [Runtime integration guide](docs/AGENT_RUNTIME_LOCAL.md) |
+| Agent Runtime API and worker | Durable agent execution, model calls, tool execution, execution events | [Runtime integration guide](docs/agent-runtime-local-setup.md) |
 | PostgreSQL / pgvector | Product records, knowledge vectors, separate Runtime and Temporal persistence | [Database initialization](community/postgres/init.sh) |
 | NATS JetStream | Durable event transport, including Runtime events projected into Helpin | [Realtime implementation](server/internal/websocket/) |
 | Redis | Cross-instance WebSocket relay, presence, and help-center caching | [API wiring](server/cmd/api/main.go) |
@@ -166,7 +171,11 @@ is coordinated through PostgreSQL. Diagnose stale runs across Runtime, NATS, and
 the API projection consumer before assuming a frontend cache problem.
 
 Connections contain encrypted credentials; profiles select a connection, provider,
-model, and controls. Accepted runs retain their route and policy across retries.
+model, and controls. Accepted runs persist their selected route and policy.
+[Restoring an accepted selection](server/internal/service/ai_profile_resolver.go)
+reauthorizes the connection without consulting editable profiles or choosing a
+fallback; revoked membership, disconnected credentials, or incompatible route
+changes can still prevent execution.
 The Community [Runtime app configuration](community/apps.example.json) declares
 context, MCP tools, skills, and credential-refresh callbacks. These use internal
 service authentication. Keep credentials out of browser-visible metadata and logs.
@@ -174,7 +183,7 @@ service authentication. Keep credentials out of browser-visible metadata and log
 Agent profiles do not configure every AI feature. Knowledge embeddings and some
 support AI features use separate server configuration. See
 [AI profiles](docs/ai-connections.md), [Community configuration](docs/community/configuration.md),
-and [agents and automation](docs/AGENTS_AND_AUTOMATION.md) for the detailed contracts.
+and [agents and automation](docs/agents-and-automation.md) for the detailed contracts.
 
 ## Editions and module availability
 
@@ -223,8 +232,12 @@ Runtime callbacks reach the API internally, bypassing the public nginx boundary.
 Public hosting needs a configured HTTPS reverse proxy, public origins, and a
 browser-reachable storage URL for signed object requests. Follow the
 [deployment guide](docs/community/deployment.md); the Compose bundle does not
-provision public DNS or certificates. Published bundles pin image digests, and
-[publication gates](community/PUBLICATION.md) track release validation.
+provision public DNS or certificates. The
+[bundle packager](community/package-release.py) pins image digests; checked-in
+Compose still uses tags for application images.
+[Publication gates](community/PUBLICATION.md) record pending decisions and release
+validation, so the packaging implementation alone is not proof of a published
+bundle.
 
 The root development Compose files, Community Compose, and Kubernetes manifests
 serve different environments. Do not substitute one set of ports, secrets, or

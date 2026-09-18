@@ -1,6 +1,6 @@
 # Native SDK Dynamic Skill Activation Plan
 
-Historical note: this document describes the former native-only selective planner rollout. The current architecture treats planner behavior as a generic preset/tool contract shared by `native_sdk` and `codex`; see `docs/AGENTS_AND_AUTOMATION.md` and `docs/plans/planner-tool-contract-reference.md` for current behavior.
+Historical note: this document describes the former native-only selective planner rollout. The current architecture treats planner behavior as a generic preset/tool contract shared by `native_sdk` and `codex`; see [agents and automation](../agents-and-automation.md) and the [internal tool guide](../internal-tools-framework.md) for current behavior. The planner-tool-contract reference is itself historical.
 
 ## Status
 

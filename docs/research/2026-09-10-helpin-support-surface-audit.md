@@ -1,6 +1,22 @@
-# Helpin Support Surface Inventory
+# Historical Helpin support surface audit
 
-Audit of `/root/helpin`, 2026-09-10. Every claim below is cited to a path. Where two of my sub-audits disagreed, I verified the code myself and note the resolution.
+This is the September 10 product/source audit, preserved as historical research. Its counts, line numbers, competitive comparisons, security conclusions, and implementation verdicts describe that review and must not be used as a current capability or release checklist.
+
+## Source review — 2026-09-18
+
+Several headline findings have changed in this checkout:
+
+- Licensing and contributor policies now exist: [LICENSE](../../LICENSE), [contributing](../../CONTRIBUTING.md), [security](../../SECURITY.md), and [code of conduct](../../CODE_OF_CONDUCT.md). Read the license boundaries rather than the old “no license” conclusion below.
+- [Community deployment](../community/deployment.md), configuration, identity, backup, and troubleshooting guides now accompany the Community packaging. [Publication status](../../community/PUBLICATION.md) separately records what remains unverified; source packaging does not prove public image availability or production readiness.
+- [Widget origin authorization](../../server/internal/service/support_widget_origin.go) and the WebSocket handler now enforce installation origin policy. The old claim that allowed origins are decorative is obsolete. [Widget identity setup](../community/widget-identity.md) also documents the server-side signing integration.
+- [SMTP transport](../../server/internal/email/smtp.go) exists. This does not establish SMTP parity for every Postmark support-email feature; configure the documented transport and inbound capabilities for the chosen deployment.
+- [AI connections](../../server/internal/service/ai_connection.go), credential/access policy, and route selection implement customer-provided provider connections. The old “BYOK is missing” and fixed-tier-only descriptions no longer describe the current AI configuration surface.
+- [Deployment module policy](../../server/internal/deployment/modules.go) filters enabled modules before actor grants. The original conclusion that PM and Docs can never be hidden is obsolete. The router also accepts authenticated API rate-limit middleware; the blanket absence claim below is stale.
+- Several original source symbols and paths have moved or been removed, including the named escalation helpers. Old line references are provenance for this audit, not navigable evidence of today's call graph. See the maintained [architecture overview](../../ARCHITECTURE.md) for current boundaries.
+
+The remaining feature-gap inventory is historical and needs a feature-specific source review before prioritization. This review did not retest the product, perform a security audit, measure bundle sizes, assess legal compliance, or verify external vendor features. The original legal and competitive judgments below are the author's dated opinions, not current conclusions.
+
+## Original audit — 2026-09-10
 
 ## 0. Scale
 
@@ -73,7 +89,7 @@ The conversation model is `server/internal/model/support_inbox.go:14`. It carrie
 | Manual assignment (user and AI agent) | DONE | `router.go:933-934` |
 | Round-robin | PARTIAL | `repository/support_mailbox.go:581-621`. Entitlement-gated, fires only on mailbox move or AI handoff, and does **not** consult agent presence |
 | Load-balanced assignment | MISSING | |
-| Assignment rules targeting a user | MISSING | Triage rules target mailboxes only, deliberately (`PRD-support-conversation-triage-routing.md:238`) |
+| Assignment rules targeting a user | MISSING | Triage rules target mailboxes only, deliberately (`support-conversation-triage-routing.md:238`) |
 | Teams / mailboxes | DONE | `migrations/064_support_team_inboxes.sql`, `frontend/src/pages/settings/InboxesRoutingSettingsPage.tsx` |
 | SLAs | PARTIAL | Reply-time *expectation* only. `EntitlementFeatureSLAPolicies` is billed as a Growth feature at `service/entitlements.go:134` and shown on the pricing page, and **nothing consumes it** |
 | Snooze | MISSING | Zero hits on support conversations |
@@ -93,7 +109,7 @@ The conversation model is `server/internal/model/support_inbox.go:14`. It carrie
 | Spam | PARTIAL | Status plus manual toggle. No blocklist, no classifier, no auto-spam |
 | Bulk actions | MISSING | No multi-select, no bulk endpoint |
 | Unread tracking | DONE | `SupportConversationUserState` with a relevance mask (`Assignee`, `Opener`, `Mention`) so unread only accrues for relevant agents. The plan doc is marked Superseded because it shipped and evolved |
-| Live translate | PRD-ONLY | `docs/prds/PRD-support-live-translate.md`, 753 lines. No table, no route, no provider |
+| Live translate | PRD-ONLY | `docs/prds/support-live-translate.md`, 753 lines. No table, no route, no provider |
 | AI rewrite for agents | DONE | Five operations: expand, rephrase, fix_grammar, more_friendly, more_formal |
 | AI summarize thread | MISSING | Notable given handoff is the core flow |
 | Triage and routing | DONE | All four PRD phases. `service/support_inbox_triage.go`, 1,405 lines. Rules layer, AI classifier with JSON schema, auto-move, feedback capture, input hashing for cost control |
@@ -101,7 +117,7 @@ The conversation model is `server/internal/model/support_inbox.go:14`. It carrie
 | Reporting on conversations | MISSING | See section 7 |
 | Realtime WebSocket | DONE | |
 
-**Correction to note.** Two of my sub-audits disagreed on AI stuck detection, so I checked. `docs/prds/PRD-support-ai-stuck-detection-and-handoff.md` describes the feature, and `server/internal/service/support_ai_escalation.go` implements it thoroughly with 665 lines of unit tests. But `evaluatePreLLMEscalation` (line 62) and `detectStuckOnSameIssue` (line 238) have **no production callers**. A repo-wide grep returns only their definitions and their tests. The live pipeline at `service/support_chat.go:144` calls only `checkHardEscalation`, plus turn caps and budget gates. **The headline feature of that PRD is written, tested, and dormant.**
+**Correction to note.** Two of my sub-audits disagreed on AI stuck detection, so I checked. `docs/prds/support-ai-stuck-detection-and-handoff.md` describes the feature, and `server/internal/service/support_ai_escalation.go` implements it thoroughly with 665 lines of unit tests. But `evaluatePreLLMEscalation` (line 62) and `detectStuckOnSameIssue` (line 238) have **no production callers**. A repo-wide grep returns only their definitions and their tests. The live pipeline at `service/support_chat.go:144` calls only `checkHardEscalation`, plus turn caps and budget gates. **The headline feature of that PRD is written, tested, and dormant.**
 
 ---
 
@@ -122,9 +138,9 @@ Helpin ships **two customer channels**: web widget and email. That is the single
 
 **Email is the most mature subsystem in the repo.** Inbound webhook at `handler/webhook_postmark.go`, threading with full `In-Reply-To` and `References` chains (`email_fallback.go:2628`), inbound and outbound attachments with CID inline image rewriting, HTML sanitization via bluemonday with remote images neutered behind a backend proxy (`email/inboundhtml/convert.go`, `EmailImageProxyHandler`), reply-above-the-line stripping with three fallback layers, custom domains with real DKIM and return-path verification through Postmark's Account API, custom sender addresses with a closed-loop forwarding probe, and a delayed-send queue with Redis leases, a poller, a reconciler, and a recovery CLI.
 
-**There is no SMTP.** `grep -rn "net/smtp" server/` returns nothing. `server/internal/email/` contains only `postmark.go`, `postmark_domains.go`, `template.go` and the inbound HTML converter. `go.mod` has no email library at all. Inbound additionally depends on Helpin-owned domains `replies.helpin.email` and `*.on.helpin.email`, so even a self-hoster with their own Postmark account cannot receive support email. This is deliberate: `docs/prds/PRD-custom-support-sender-addresses-mvp.md:13` puts custom SMTP out of scope.
+**There is no SMTP.** `grep -rn "net/smtp" server/` returns nothing. `server/internal/email/` contains only `postmark.go`, `postmark_domains.go`, `template.go` and the inbound HTML converter. `go.mod` has no email library at all. Inbound additionally depends on Helpin-owned domains `replies.helpin.email` and `*.on.helpin.email`, so even a self-hoster with their own Postmark account cannot receive support email. This is deliberate: `docs/prds/custom-support-sender-addresses-mvp.md:13` puts custom SMTP out of scope.
 
-`docs/prds/PRD-support-live-chat.md` claims Phases 3 to 5 are "Not Started". That is wrong. The functionality shipped. Anyone assessing the product from that doc will materially undercount it.
+`docs/prds/support-live-chat.md` claims Phases 3 to 5 are "Not Started". That is wrong. The functionality shipped. Anyone assessing the product from that doc will materially undercount it.
 
 ---
 
@@ -158,7 +174,7 @@ Gaps in the AI layer, ranked:
 
 1. **No prompt-injection defense.** Grep for `prompt.?injection` and `jailbreak` returns zero. Crawled third-party pages and uploaded PDFs enter the prompt as evidence with no instruction stripping. The evidence-revalidation gate limits the blast radius but does not prevent behavior or tone manipulation.
 2. **The crawler ignores `robots.txt` Disallow.** `crawler/sitemap.go:88` fetches robots.txt only to harvest `Sitemap:` lines. `crawler/sitemap_test.go:46` uses a fixture containing `Disallow: /` purely to assert no sitemap is found. Customers point this at third-party domains.
-3. **No automated eval harness.** No golden set, no scored offline runs, no CI quality gate. `docs/prds/PRD-knowledge-retrieval-platform.md:17` calls evaluation launch-critical.
+3. **No automated eval harness.** No golden set, no scored offline runs, no CI quality gate. `docs/prds/knowledge-retrieval-platform.md:17` calls evaluation launch-critical.
 4. **PII redaction is name-based.** `stripConversationPII` redacts the known customer email and phone plus one generic regex, outbound only. Inbound visitor content reaches the model unredacted.
 5. **Preview diverges from production.** `PreviewSupportReply` exercises the legacy in-process pipeline; production runs the agent-runtime path. Admins tune against a system that is not the one answering customers.
 6. **No explicit per-conversation AI on/off.** Takeover is implicit: an agent must reply to silence the AI. They cannot observe while muting it.
@@ -169,7 +185,7 @@ Gaps in the AI layer, ranked:
 
 ## 6. Help center
 
-DONE, and the second most mature module. `help-center/` is a **TanStack Start** app with real SSR, served by a hand-rolled Node server (`help-center/serve.mjs`) doing brotli negotiation, basepath asset rewriting and a shared render cache. `docs/prds/PRD-help-center-ssr-migration.md` is still marked Draft and describes the migration as future work. It shipped. The doc is stale.
+DONE, and the second most mature module. `help-center/` is a **TanStack Start** app with real SSR, served by a hand-rolled Node server (`help-center/serve.mjs`) doing brotli negotiation, basepath asset rewriting and a shared render cache. `docs/prds/help-center-ssr-migration.md` is still marked Draft and describes the migration as future work. It shipped. The doc is stale.
 
 DONE: collections and spaces, TipTap authoring, multilingual with structure-preserving LLM translation (`server/internal/docsi18n`, with extract, reinsert, protected terms and validation, plus bulk auto-translate), custom domain in three modes including reverse-proxy with on-demand TLS, SEO and sitemap and robots, article feedback that feeds the coverage product, Postgres tsvector search plus pgvector hybrid plus cited AI answers, versioning with snapshots and revert and draft preview, redirects with slug aliases and SSR resolution, and full theming.
 
@@ -183,7 +199,7 @@ MISSING: Zendesk, Intercom, Notion and Confluence import.
 
 **Outbound messaging: MISSING, entirely.** No in-app posts, no banners, no tours, no checklists, no surveys, no chat campaigns, no email campaigns, no series or journeys. Confirmed by keyword sweeps across `server/internal`, `frontend/src` and `widget/src`. Every hit is unrelated: websocket broadcast, PM task checklists, UI banners. The only proactive thing is a static greeting bubble in the dead legacy widget.
 
-"Automation" in this repo means **internal workflow automation that launches AI agent runs**. `docs/AUTOMATION_PRODUCT_MODEL.md` states the model as "When X happens, run Y agent on Z". The full trigger catalog is `server/internal/automationcatalog/triggers.go`: manual runs, PM task state changes, agent lifecycle, doc publish, GitHub and GitLab events, `support.widget_message` (inbound, routes a message to an AI agent), and cron. It never sends a message to a customer.
+"Automation" in this repo means **internal workflow automation that launches AI agent runs**. `docs/automation-product-model.md` states the model as "When X happens, run Y agent on Z". The full trigger catalog is `server/internal/automationcatalog/triggers.go`: manual runs, PM task state changes, agent lifecycle, doc publish, GitHub and GitLab events, `support.widget_message` (inbound, routes a message to an AI agent), and cron. It never sends a message to a customer.
 
 `docs/customer-io/` is **Helpin's own growth stack, not a product feature**. `service/customer_io.go` ships Helpin's SaaS lifecycle events to Customer.io. The docs are campaign specs to be built in Customer.io's UI. There is an irony visible in `docs/strategy/early-access-email-campaign.md`: the pitch names Intercom as a tool Helpin replaces, while the outbound half of Intercom is not built.
 
@@ -218,7 +234,7 @@ What does exist is `support_coverage`, roughly 30 service files plus a full UI a
 
 **Audit logs: PARTIAL.** Admin requests produce structured log lines (`middleware/admin_audit.go`), not a queryable table. MCP has its own activity trail. There is no workspace-level audit of who changed a setting or who read a conversation.
 
-**Visitor to lead conversion: DONE**, and beyond its PRD. `matchOrCreateCRMContactIdentityTx` (`service/support_inbox.go:3381`) matches by email, promotes lifecycle without downgrading, backfills prior anonymous conversations by `anonymous_id`, tracks identity provenance and trust, and infers company from email domain with a free-provider blocklist. `docs/prds/PRD-widget-identify-crm-leads.md` is still marked Draft.
+**Visitor to lead conversion: DONE**, and beyond its PRD. `matchOrCreateCRMContactIdentityTx` (`service/support_inbox.go:3381`) matches by email, promotes lifecycle without downgrading, backfills prior anonymous conversations by `anonymous_id`, tracks identity provenance and trust, and infers company from email domain with a free-provider blocklist. `docs/prds/widget-identify-crm-leads.md` is still marked Draft.
 
 ---
 
@@ -252,7 +268,7 @@ What does exist is `support_coverage`, roughly 30 service files plus a full UI a
 
 Blockers after that, in order:
 
-1. **`agent-runtime` is not in this repo.** `docs/AGENT_RUNTIME_LOCAL.md:4` states it is "the only agent executor" and `:41` points to a separate repository. `AGENT_RUNTIME_LAUNCH_ENABLED=false` disables agent execution and explicitly does not restore an in-process fallback. **Every AI feature, including the AI support agent, is unavailable to a self-hoster.**
+1. **`agent-runtime` is not in this repo.** `docs/agent-runtime-local-setup.md:4` states it is "the only agent executor" and `:41` points to a separate repository. `AGENT_RUNTIME_LAUNCH_ENABLED=false` disables agent execution and explicitly does not restore an in-process fallback. **Every AI feature, including the AI support agent, is unavailable to a self-hoster.**
 2. **Postmark is the only email transport.** No SMTP, no provider interface for support email. Inbound also needs Helpin-owned domains.
 3. **`docker compose up` gives you no application.** `server` and `frontend` are commented out at `docker-compose.yaml:142-190`. You get Postgres, a second Postgres for Temporal, Temporal, its UI, pgAdmin, NATS and Redis, plus a temporal-worker.
 4. **Roughly 180 hardcoded `helpin.ai` and `helpin.email` references**, including `email/template.go` (logo and two brand links in every outbound email) and the widget install snippet handed to customers in `ChatGeneralTab.tsx`.
@@ -270,13 +286,13 @@ Realistic verdict: months of work, and the remaining work is architectural rathe
 Useful because it tells you what they know versus what they have not noticed.
 
 - **`docs/widget-feature-parity.md`** (2026-03-22, vs Crisp, stale). Ultra-high: online status, identity verification, push. High: emoji picker, GIF picker, audio messages, article search. Medium: attachments, read receipts, lightbox, message editing, quick replies, carousels, link previews, **GDPR/cookie consent**, conversation search, citation display. Its verdict: "feels like a 2015-era live chat."
-- **`docs/prds/PRD_WIDGET_SDK_FEATURE_PARITY.md`** scores Helpin **17 of 68** against Crisp's 66. Four categories are flagged CRITICAL: Identity and Session, Connection and Transport, Loading and Performance (0 of 7), CSS and DOM Isolation. Eight MUST-have items. The session row is now stale, superseded by a 2026-07-14 amendment.
-- **`docs/plans/TODO-support-availability-and-agent-notifications.md`** self-reports three items not complete: the human live status model, team-specific availability overrides, and availability-aware routing. The status model has since shipped. The other two have not.
+- **`docs/prds/widget-sdk-feature-parity.md`** scores Helpin **17 of 68** against Crisp's 66. Four categories are flagged CRITICAL: Identity and Session, Connection and Transport, Loading and Performance (0 of 7), CSS and DOM Isolation. Eight MUST-have items. The session row is now stale, superseded by a 2026-07-14 amendment.
+- **`docs/plans/support-availability-and-notifications.md`** self-reports three items not complete: the human live status model, team-specific availability overrides, and availability-aware routing. The status model has since shipped. The other two have not.
 - **`docs/strategy/2026-06-11-coverage-gaps-first-class.md`**: "the detection half is excellent; the resolution half is manual and the loop never closes." Names five gaps including no impact scoring, an unused `SupportCoverageDigestDelivery` model, and an unmetered daily LLM sweep.
 - **`docs/strategy/2026-06-11-product-engineering-assessment.md`**: "a sophisticated, AI-first backend wearing an unfinished product." Its Tier-1 claim that billing is absent is now stale. Still accurate: zero reporting across all modules, no rate limiting, no public API docs, no outbound webhooks, no competitor import ("switching cost kills sales"), no onboarding sample data.
 - **`docs/strategy/backlog-and-ideas.md`** (2026-03-03) is badly stale. It is a PM-module backlog written before Support and CRM existed, and several "Open" items have shipped.
-- **`docs/prds/PRD-current-state-review-2026-03-05.md`** is very stale. It describes a codebase with zero Go tests, which is no longer true.
-- **33 docs mention Intercom.** The most substantive: `docs/prds/PRD-ai-support-agent.md` borrows Fin's model wholesale (AI state separate from human status, confirmed versus assumed resolution, reopen deducts from metrics). `docs/prds/PRD-widget-messenger-security-jwt.md` recommends Intercom's JWT Messenger Security as the fix for the identity-verification gap. `docs/plans/2026-06-12-support-triage-fin-level-plan.md` is an explicit Fin gap analysis.
+- **`docs/prds/2026-03-05-product-review.md`** is very stale. It describes a codebase with zero Go tests, which is no longer true.
+- **33 docs mention Intercom.** The most substantive: `docs/prds/ai-support-agent.md` borrows Fin's model wholesale (AI state separate from human status, confirmed versus assumed resolution, reopen deducts from metrics). `docs/prds/widget-messenger-security-jwt.md` recommends Intercom's JWT Messenger Security as the fix for the identity-verification gap. `docs/plans/2026-06-12-support-triage-fin-level-plan.md` is an explicit Fin gap analysis.
 
 **Gaps the docs never name**, which this audit surfaced: no unified person record, typed custom attributes shipped as dead tables, no segments, no GDPR export or deletion, no general audit log, and no license.
 
@@ -293,6 +309,6 @@ Useful because it tells you what they know versus what they have not noticed.
 7. **Zero support reporting.** No CSAT, no first response time, no resolution time, no volume, no agent performance, no AI resolution rate, no export. CSAT capture itself dead-ends in an analytics event behind a disabled toggle.
 8. **New widget installs default to `identity_verification_mode = enforced`** with no UI to see the secret key, no UI to change the mode, and no public documentation of the HMAC construction.
 9. **Priority is write-once.** Settable on create, filterable in search, with no update route.
-10. **Three stale docs will mislead anyone assessing the product**: `PRD-support-live-chat.md` claims Phase 3+ not started, `PRD-help-center-ssr-migration.md` is marked Draft for a shipped migration, and `docs/mattermost-integration.md` proposes a queue library that is not a dependency.
+10. **Three stale docs will mislead anyone assessing the product**: `support-live-chat.md` claims Phase 3+ not started, `help-center-ssr-migration.md` is marked Draft for a shipped migration, and `docs/mattermost-integration.md` proposes a queue library that is not a dependency.
 
 Versus Intercom specifically, the shape is clear. Helpin's AI answering engine, retrieval pipeline and coverage loop are competitive or ahead. It is missing Intercom's breadth: channels beyond widget and email, the entire outbound messaging product, all support reporting, CSAT, ticket types, side conversations, merge, bulk actions, snooze, macros with side effects, conversation custom attributes, SSO, and a public API with outbound webhooks.

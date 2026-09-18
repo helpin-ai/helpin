@@ -104,8 +104,8 @@ expired-token refresh, reconnect, and revocation are separate release gates.
 ChatGPT strips the previous-response identifier and does not support lossless
 provider-state replay, although ordinary transcript continuation is supported.
 
-Helpin and Runtime pin the published SDK `v0.6.0`, verified without Go
-workspace substitution. Explicit empty model controls clear inherited controls
+Helpin pins SDK `v0.6.0` in [the server module](../server/go.mod).
+Check the selected Runtime revision separately when verifying pair compatibility. Explicit empty model controls clear inherited controls
 while preserving execution limits. Chat Completions and the real local-model
 adapter validation are implemented; deployed Helpin canaries remain pending.
 
@@ -170,8 +170,8 @@ redirect their credentials. Compatible routes have transcript continuation, not
 lossless Responses replay or provider-specific reasoning/service-tier controls.
 
 See Runtime `docs/2026-09-14-compatible-models.md` for the real local Qwen test and
-`docs/2026-09-14-helpin-deployment.md` for fresh host/compose templates. SDK
-`v0.6.0-alpha.2` is released and pinned in both consumers.
+`docs/2026-09-14-helpin-deployment.md` for fresh host/compose templates. Helpin currently pins SDK `v0.6.0`; the earlier `v0.6.0-alpha.2`
+rollout reference is historical.
 
 Host SaaS development commands are `just backend-ee`, `just worker-ee`, and
 `just frontend-ee` in separate terminals. Community uses the existing commands

@@ -1,13 +1,48 @@
-# Backlog & Ideas
+# Historical backlog and ideas
 
 **Purpose**: Capture features, improvements, bugs, and ideas that come up during development.
-**Updated**: March 3, 2026
+**Original snapshot**: March 3, 2026
+**Source review**: September 18, 2026
+
+
+This page preserves early product ideas for contributors researching decisions.
+It is not the current roadmap or issue tracker. Priorities, phase labels, “Open”
+statuses, and the empty bug section below describe the original planning snapshot.
+Use the [current roadmap](../../ROADMAP.md) for Community scope and known limits.
+
+## Implementation changes since this snapshot
+
+- An [automation rule engine](../../server/internal/service/automation_rule_engine.go)
+  now exists. This does not establish support for every example or every edition.
+- Shortcut API import is implemented; the [reviewed progress record](../plans/2026-04-26-shortcut-api-import-progress.md)
+  explains current execution, preview and media limits. It is no longer merely a
+  future import idea.
+- [Realtime synchronization](../../frontend/src/hooks/useRealtimeSync.ts) uses
+  WebSocket events, with [fallback polling](../../frontend/src/hooks/useRealtimeFallbackPolling.ts).
+  The old polling-only baseline is obsolete; these mechanisms do not guarantee
+  instantaneous updates under all connection conditions.
+- [Team estimate settings](../../server/internal/service/settings.go) support
+  exponential, Fibonacci, linear, T-shirt and hours scales. The original
+  workspace-only/custom-scale proposal is not the exact current contract.
+
+Other entries remain historical ideas or assessment questions. Their presence here
+is neither evidence of absence from today's code nor a commitment to deliver them.
+In particular, generic API tokens, Slack replies, capacity/PTO planning, retention,
+and universal pagination need separate scope and acceptance decisions rather than
+being marked complete based on nearby features.
+
+The decisions log records original rationale. “Zero risk” is not an engineering
+guarantee, and GORM usage does not replace the current
+[versioned migration process](../ops/database-migrations.md). External comparisons
+and library claims were not reverified in this review. No runtime tests were run.
+
+## Original planning snapshot
 
 ---
 
 ## How to Use This Document
 
-As development progresses, add items here that:
+The original instructions invited contributors to add items that:
 - Are discovered during implementation but not in the current phase scope
 - Come from team feedback during usage
 - Are ideas for future improvement

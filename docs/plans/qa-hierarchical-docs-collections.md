@@ -1,5 +1,18 @@
 # Hierarchical Docs Collections — Manual QA Checklist
 
+> Source review, 2026-09-17
+
+Historical collection rollout reference. Current models include parent, depth,
+and PublicID fields. The later
+[slug-uniqueness migration](../../server/internal/dbmigrate/sql/202604140002_remove_helpcenter_slug_uniqueness.sql)
+drops collection/article slug uniqueness; space slugs remain unique. Any tests
+below requiring unique collection slugs, a slug-conflict response, or the old
+slug-only canonical URL are obsolete for a fully migrated database. Use
+[current models](../../server/internal/model/docs.go) and
+[PublicID route helpers](../../help-center/src/lib/locale.ts) when adapting this
+checklist. Historical migration-specific tests remain useful at their original
+migration boundary, not as assertions about the final schema.
+
 This is the reusable QA checklist for the hierarchical docs collections
 rollout (plan `2026-04-10-hierarchical-docs-collections.md`). Run the
 checklist on staging after every merge that touches docs, help center,

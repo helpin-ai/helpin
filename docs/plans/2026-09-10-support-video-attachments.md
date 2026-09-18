@@ -1,5 +1,25 @@
 # Support video attachments implementation plan
 
+> Historical implementation record, source-compared on 2026-09-17. The
+> [support attachment service](../../server/internal/service/support_attachment.go)
+> enforces 100 MiB (104,857,600 bytes), displayed as 100 MB, and retains private
+> storage and uploader checks. The [SDK transport](../../packages/sdk-js/src/transport/attachment-upload.ts)
+> initializes the upload, sends storage bytes with XHR, then confirms it; progress
+> reaches 100 only after confirmation. It accepts cancellation and progress options.
+>
+> The [widget upload hook](../../packages/widget-core/src/hooks/useAttachmentUploads.ts)
+> retains files for retry and aborts removed/inactive uploads; ComposeBar blocks
+> sending until every pending attachment is uploaded. Current
+> [inbox composer](../../frontend/src/components/support/ReplyComposer.tsx) also
+> batches pending entries and gates Send. Widget MessageBubble and the
+> [inbox gallery](../../frontend/src/components/support/SupportAttachmentGallery.tsx)
+> use native video controls and download fallbacks; supported uploads do not
+> guarantee browser codec playback.
+>
+> Test totals, screenshots, build results, branch names and agent assignments below
+> are records of the original implementation session. They were not reproduced and
+> are not instructions to delegate or merge during this documentation review.
+
 Goal: Allow support files up to 100 MB with video playback and reliable uploads.
 
 1. Backend and inbox: isolate the support upload limit at 100 MiB (displayed as 100 MB), retain other modules' limits; align validation/errors, inbox picker and video playback. Test size boundaries and existing upload ownership behavior.

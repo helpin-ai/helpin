@@ -36,6 +36,12 @@ This folder is the domain-split home for the old `@/lib/pmTypes` monolith.
 - `visitor.ts`
   - Support visitor context payloads.
 
+Additional exported domains:
+
+- `codingSession.ts`: coding-session interaction and artifact contracts.
+- `skills.ts`: agent skill references and skill-catalog records.
+- `taskInsights.ts`: task detail views and activity/update entries.
+
 ## Editing Rules
 
 - Put new types in the domain file that owns the feature, not in `pmTypes.ts`.
@@ -64,6 +70,6 @@ This folder is the domain-split home for the old `@/lib/pmTypes` monolith.
 
 ```bash
 cd frontend
-npx tsc -b
-npm run build
+pnpm exec tsc -b
+pnpm run build
 ```

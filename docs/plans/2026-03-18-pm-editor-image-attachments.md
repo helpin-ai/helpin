@@ -1,6 +1,43 @@
-# PM Editor Image Attachments Implementation Plan
+# PM editor image attachments implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical implementation plan, source-compared on 2026-09-17. This page
+> explains the original attachment work for contributors. Core upload and
+> reassignment paths now exist; the unchecked steps below are the original work
+> sequence, not a current backlog or evidence of passing tests.
+
+## Current implementation and limits
+
+The [upload hook](../../frontend/src/hooks/useEditorImageUpload.ts) returns
+attachment metadata, and the [image extension](../../frontend/src/components/ui/resizable-image-extension.ts)
+preserves `data-attachment-id`. [HTML helpers](../../frontend/src/components/pm/editorImageAttachments.ts)
+extract/remove inline attachment IDs. Create flows in
+[CreateTaskModal](../../frontend/src/components/pm/CreateTaskModal.tsx) and
+[GlobalCreateModals](../../frontend/src/components/pm/GlobalCreateModals.tsx)
+stage uploads as `editor_upload`. Historical `Story`/`pm_story` filenames below
+now correspond to `Task`/`pm_task`; use current source paths when implementing fixes.
+
+The [repository reassignment helper](../../server/internal/repository/pm_attachment.go)
+checks that all supplied IDs exist and were updated. That helper alone does not
+validate workspace ownership: it filters by attachment IDs. Do not treat its
+presence as proof that every calling path enforces ownership.
+
+Task, epic, objective, and sprint creation invoke reassignment after creating the
+entity and log reassignment errors. The entity can therefore exist even when
+attachment reassignment fails. By contrast, [comment creation and updates](../../server/internal/service/pm_comment.go)
+perform reassignment inside their database transaction. The original goal of
+correct ownership should not be read as a universal atomicity guarantee.
+
+[CommentThread](../../frontend/src/components/pm/CommentThread.tsx) stages pending
+uploads and hides an image attachment from the strip only when its ID also occurs
+inline in the body. Standalone image attachments still appear. Pending cleanup
+uses `pendingOnly`; this is distinct from deleting an already-owned attachment.
+
+The original verification matrix remains historical. Source inspection does not
+establish that every editor interaction passes today. Use the repository's pnpm
+workflow, run Go commands from `server/`, and resolve renamed test files before
+reusing the old commands.
+
+## Original implementation sequence
 
 **Goal:** Add paste/drop image upload to all current PM rich-text editors, store those images as PM attachments, render them inline, and keep create-flow/comment-flow attachment ownership correct.
 

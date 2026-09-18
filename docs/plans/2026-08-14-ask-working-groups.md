@@ -1,4 +1,39 @@
-# Ask Working Groups Implementation Plan
+# Ask working groups implementation plan
+
+> Historical implementation record, reviewed against the checkout on 2026-09-17.
+> This page explains the original transcript work for contributors. Later UI and
+> compact-history changes supersede several checked tasks below; the original
+> test/build/commit checklist is not a fresh verification record.
+
+## Current presentation and differences
+
+The [grouping function](../../frontend/src/components/agents/dock/dockWorkingGroups.ts)
+preserves the normalized segments it receives, but live grouping now combines
+adjacent tool segments only when there are at least two. Non-tool segments remain
+separate. Completed-turn grouping can collect preceding work into a disclosure
+while keeping the selected final response outside it.
+
+[DockWorkingGroup](../../frontend/src/components/agents/dock/DockWorkingGroup.tsx)
+starts collapsed even when active. Its label can show the latest tool while
+working; users open details manually, and manual disclosure state survives active
+state transitions for the mounted group. Bodies are mounted only while open.
+This supersedes the original automatic expansion of the current activity.
+
+The [tool renderer](../../frontend/src/components/agents/transcript/segmentRenderers.tsx)
+uses concise tool rows and an expandable error presentation. The original promise
+to display all arguments, successful results, and timing without summarization
+is not the current rendering contract. Keeping segment data in the grouping pass
+does not establish that every field is visible or was transferred to the browser.
+Completed chat history also uses the later
+[lazy work-detail design](../specs/2026-08-18-dock-chat-lazy-work-history-design.md).
+
+[Live progress](../../frontend/src/components/agents/dock/agentProgress.ts) gives
+optimistic sends `Starting…` priority and suppresses status after an answered
+turn. Pause reasons are handled separately: user-message waiting can be silent,
+while interaction and authentication pauses can show waiting text. The old
+“suppress Waiting for your reply” task is not a blanket ban on all waiting labels.
+
+## Original implementation record
 
 **Goal:** Preserve and disclose the Ask agent's full recorded work while keeping only the current activity expanded during live execution.
 

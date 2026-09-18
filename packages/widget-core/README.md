@@ -1,12 +1,23 @@
 # @helpin-ai/widget-core
 
-The low-level React/Preact component library that powers the Helpin chat widget. Used internally by `@helpin-ai/sdk-js`, but can also be used directly when you need full control over how the widget is mounted and rendered.
+The internal Preact component library that powers the Helpin chat widget. Used internally by `@helpin-ai/sdk-js`, but can also be used directly when you need full control over how the widget is mounted and rendered.
 
-## Installation
+## Use in this repository
+
+This package is marked `private: true`; it is an internal workspace dependency,
+not a public npm installation target. For an application integration, start with
+the [JavaScript SDK](../sdk-js/README.md) or a framework wrapper.
+
+From the repository root:
 
 ```bash
-npm install @helpin-ai/widget-core
+pnpm install --frozen-lockfile
+pnpm --filter @helpin-ai/widget-core build
 ```
+
+The build bundles Preact. Use the mount API below when embedding in a React host
+to avoid mixing renderer instances. Supply your own `WidgetConfig`, state, and
+callbacks; widget-core does not create an authenticated support session for you.
 
 ## Components
 
@@ -47,6 +58,7 @@ npm install @helpin-ai/widget-core
 | `StreamingText` | Streaming text display |
 | `BottomNav` | Bottom navigation (home / messages / help) |
 | `ImageLightbox` | Full-screen image preview |
+| `SpecialNoticeBanner` | Conversation notice banner |
 
 ## Types
 
@@ -91,7 +103,10 @@ mountWidget(container, {
 unmountWidget(container);
 ```
 
-### `mountWidget` options
+### Common `mountWidget` options
+
+See [`MountWidgetOptions`](src/index.ts) for the complete contract, including
+contact capture, answer feedback, escalation, and customer satisfaction callbacks.
 
 **Required**
 

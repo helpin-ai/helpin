@@ -1,6 +1,20 @@
-# Help Center Icons MVP Plan
+# Deliver static help-center icons and icon discovery
 
-- **Status:** Implemented on the working branch; pending rollout
+This historical plan explains the static icon catalog, public rendering, write validation, and picker loading design. Contributors should use the current-source review below to identify implemented behavior and separate it from rollout, backfill, and performance acceptance work.
+
+## Source review — 2026-09-18
+
+- [The generator](../../help-center/scripts/generate-icons.mjs) and committed [Go catalog](../../server/internal/iconcatalog/catalog_generated.go) exist. The pinned catalog remains version 4.1.1 with 5,784 canonical entries. The generator writes per-icon SVGs, catalog metadata, and a license notice; current dependency metadata and generated files are the source of truth for counts, not the historical manifest-size estimate.
+- [PublicIcon](../../help-center/src/components/PublicIcon.tsx) uses basepath-aware CSS masks for identifier-shaped values and text for compatible display values. It does not itself consult the complete catalog or load a fallback after a missing SVG; server projection resolves unknown values, while old/raw identifier responses can remain invisible. Empty input returns no element. Fixed-size mask styling is not a measurement of zero layout shift across all content.
+- [Catalog normalization](../../server/internal/iconcatalog/catalog.go) is used by docs space, collection, document, and help-center card writes. It preserves the unchanged-invalid update tolerance. Stored-value resolution includes legacy heuristics, whereas changed/new writes use stricter canonical/alias and bounded non-ASCII text rules. The cache namespace is `hc-icons-v2`.
+- `search_icons` is registered in [the MCP catalog](../../server/internal/service/mcp_catalog.go) with Docs read scope/permission and dispatched by the service. Search defaults to 20 and caps at 50. Its `total` is the number returned after the limit, not an uncapped match count.
+- [The editor picker](../../frontend/src/components/ui/icon-picker.tsx) loads its manifest on pointer enter, focus, or open and caches the promise, retrying after failures. It slices results to 60; this is bounded rendering, not a virtualized full result list. Stored icons can compute asset URLs without fetching the manifest.
+- CI's catalog check compares generated current server and frontend alias outputs. The inspected generator does not load the previously deployed server catalog, so the proposed rolling-upgrade compatibility gate is not established by that check alone.
+- [The backfill command](../../server/cmd/backfill-helpcenter-icons/main.go) defaults to dry-run and requires explicit flags for writing/clearing values. It was not run here, so no clean persisted-icon inventory or completed rollout is claimed. Bundle size, SSR/browser behavior, cache headers in deployment, LCP, and installed-customer compatibility remain acceptance work unless independently evidenced.
+
+## Original plan
+
+- **Original status:** Implemented on the July working branch; rollout status was not reverified.
 - **Date:** 2026-07-16
 - **Scope:** Correct icon rendering in the public Help Center, valid icon discovery for public MCP tools, and lazy editor icon loading
 - **Supersedes:** `2026-07-16-help-center-icon-delivery-plan.md`

@@ -1,4 +1,41 @@
-# Ask Agents Orchestration Chat Plan
+# Ask Agents orchestration chat plan
+
+> Historical architecture plan, source-compared on 2026-09-17. This page
+> explains an earlier Ask Agents proposal flow. Current Dock chat uses a different
+> storage/API/runtime path; the original production-slice claim is historical.
+
+## Current architecture
+
+The [router](../../server/internal/router/router.go) registers chat operations
+under `/api/dock/chats`, including messages, run events, interactions, cancellation,
+and per-message work detail. It does not register the proposed
+`/command-bar/chat/turns` or `/command-bar/chat/threads` routes. Command-bar plan
+listing, dispatch, cancel/resume/retry, and run promotion remain separate routes.
+
+[DockChatService](../../server/internal/service/dock_chat.go) owns private or
+explicitly shared chats backed by Agent Runtime chat-mode execution using the
+`ask_agent` preset. Creating an empty chat does not start its run; sending a
+message starts, resumes, or replaces the backing run as appropriate. The
+[model](../../server/internal/model/dock_chat.go) persists `dock_chats`, and the
+service uses agent-run message storage. The old thread/message table names and
+proposal response types below are not the current Dock API contract.
+
+[AskAgentsDock](../../frontend/src/components/agents/AskAgentsDock.tsx) renders
+[ChatView](../../frontend/src/components/agents/dock/ChatView.tsx), which sends
+messages through the Dock service. The old statement that a simple inline answer
+necessarily avoids creating an agent run is not valid for this runtime-backed
+chat path. Likewise, the former universal proposal-card confirmation sequence
+should not be treated as the current authorization contract.
+
+Tool availability is narrowed by `scopedChatTools` in the service using the
+requesting user's current workspace permissions. Visibility, launch authorization,
+and runtime interaction resolution remain separate checks; a chat route alone
+does not authorize every tool mutation. Read the current
+[agent documentation](../agents-and-automation.md) alongside source when changing
+these boundaries. This review does not claim that every old proposal variant or
+acceptance test remains available, nor that a new runtime test was executed.
+
+## Original May implementation record
 
 ## Summary
 
@@ -89,7 +126,7 @@ Implementation status: the first production slice is implemented. It adds durabl
   - renders clarification.
   - does not create or dispatch anything before explicit confirmation.
 - Docs:
-  - update `docs/AGENTS_AND_AUTOMATION.md` with Ask Agents as the orchestration chat layer.
+  - update `docs/agents-and-automation.md` with Ask Agents as the orchestration chat layer.
   - update command-bar architecture docs to include inline read-only answers and proposal confirmation.
 
 ## Assumptions

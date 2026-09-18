@@ -1,7 +1,7 @@
-# Coverage Gaps Redesign — Design Spec
+# Coverage gaps redesign design
 
 **Date:** 2026-04-27
-**Status:** Proposed (v1.2, post-review)
+**Status:** Historical design (v1.2); implementation has evolved
 **Module:** Support → Coverage Gaps
 
 **Revision log:**
@@ -10,6 +10,20 @@
 - 2026-04-27 v1.2: addressed second-round review — spike trigger SQL uses `gap_id` (no `topic_id` on evidence); partial unique index on open gaps only (allows future gaps on same topic after rejection/Done); fixed env var to `TEMPORAL_ADDRESS` and dropped the invalid "disabled fallback" — Temporal is now declared a hard dependency matching CRM workflows; §6.6 confirms `DocsDocumentService.Create` defaults to `DocStatusDraft` (open question #1 resolved); switched to existing constants `create_article` / `update_article` (instead of invented `create_new` / `update_existing`); confirmed `support_gap_evidence.created_at` exists (`server/internal/model/support_coverage.go:152`), closing open question #4.
 
 ---
+
+This design records the April 2026 move from event-by-event coverage findings to a topic-based improvement inbox. It explains the original tradeoffs; use the source review for current behavior.
+
+## Source review: September 18, 2026
+
+- The original [token-sort clusterer](../../server/internal/service/support_coverage_clusterer.go) and [topic enrichment](../../server/internal/service/support_coverage_enrichment.go) exist, but they are not the whole pipeline. The [conversation analyzer](../../server/internal/service/support_coverage_daily_analyzer.go) runs on `0 */3 * * *`, while topic enrichment retains `0 3 * * *` in [the coverage service](../../server/internal/service/support_coverage.go).
+- [Finding materialization](../../server/internal/service/support_coverage_materializer.go) now embeds analysis findings, matches existing gaps, merges related findings, and marks recurrence on recent closed gaps. Embedding-based grouping is therefore no longer wholly deferred, and the original token-hash diagram is incomplete.
+- Current [coverage queries](../../server/internal/repository/support_coverage.go) count distinct conversations (falling back to evidence IDs), not raw evidence rows, for the thirty-day metric. Ranking also considers distinct customers, overall evidence, confidence, knowledge matches, and actionable recommendations; the original three-tier-only SQL is a historical simplification.
+- Open, done, and rejected states remain, but closure is no longer exclusively manual. `RecordAgentOutcome` in the coverage service can resolve an open gap when a durable agent result supplies a document. Review-ready and proposal-submitted outcomes link the document without closing the gap.
+- The rollout assumption that Support is restricted to four internal email addresses is obsolete. [Module visibility](../../frontend/src/lib/featureFlags.ts) no longer ships a staff email allowlist; server workspace access is the authority. Do not use the original rollout section to estimate deployment exposure.
+
+This review checked source, not production clustering quality, schedule execution, document publication, or concurrency tests. The original SQL, rollout sequence, and expected outcomes below remain design history rather than instructions to rerun against a current database.
+
+## Original design
 
 ## 0. Relationship to prior work
 

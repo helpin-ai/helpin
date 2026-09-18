@@ -1,5 +1,16 @@
 # Redis WebSocket Scaling Plan — Multi-Pod Event Broadcasting & Shared State
 
+> Source review, 2026-09-17
+
+Historical design from 2026-03-17. The opening single-pod diagnosis is no longer
+a description of the current code. The [API startup](../../server/cmd/api/main.go)
+wires a Redis relay and shared Redis presence when Redis is configured; the
+[publisher](../../server/internal/websocket/publisher.go),
+[relay](../../server/internal/websocket/redis_relay.go), and
+[presence provider](../../server/internal/websocket/redis_presence.go) exist.
+Without Redis, the local-only path remains. This source check does not certify
+production replica configuration or every acceptance item below.
+
 **Status:** Proposed
 **Date:** 2026-03-17
 **Scope:** Entire WebSocket system — all modules (Support, PM, CRM, Docs, Notifications, Agents)

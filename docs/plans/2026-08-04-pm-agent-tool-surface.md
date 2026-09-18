@@ -1,6 +1,22 @@
-# PM Agent Tool Surface Implementation Plan
+# PM agent tool surface implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan records the expansion of agent tools for project management
+(PM). Contributors can use its scenarios as design context, but the current tool
+files, preset grants, schema installation, and pagination contract are described
+below rather than by the original unchecked implementation steps.
+
+## Source review — 2026-09-18
+
+- [Operational commands](../../server/internal/service/internal_command_pm_tools.go) register member/label/workflow discovery and task operations, with separate [epic](../../server/internal/service/internal_command_pm_epics.go), [sprint](../../server/internal/service/internal_command_pm_sprints.go), and [objective](../../server/internal/service/internal_command_pm_objectives.go) files. API startup wires the PM services. Member discovery requires both workspace-read and PM-read permissions.
+- [Runtime host execution](../../server/internal/service/agent_runtime_host.go) resolves/enriches the actor and propagates it with `authorization.WithActor` before command execution. Sprint/objective context and direct run branches exist; frontend custom-agent target choices include both. This establishes source wiring, not a blanket authorization proof for every command.
+- Pagination now supports canonical `limit`/`offset` with legacy `page`/`per_page`; mixing both forms fails. Result size is capped at 100, and response metadata includes `has_more`/`next_offset`. The original page-oriented contract is incomplete.
+- Parent-task validation checks exact task, epic, and sprint relationships and agent team scope. It does not perform an objective-parent relationship check in `validateTaskWithinTarget`; avoid generalizing the original parent-child requirement to every objective-targeted task operation.
+- Checklist tool dates use strict `YYYY-MM-DD`, with an empty update value clearing the date and omission preserving it. The [model](../../server/internal/model/pm_checklist_item.go) and [foundation schema](../../server/internal/dbmigrate/sql/000000000001_core_foundation.sql) contain the nullable date column. The old AutoMigrate-only installation instruction is superseded by versioned schema management.
+- [Current presets](../../server/internal/service/agent_presets.go) give Ask Agent both new PM read and write aliases, as well as Command Agent. The original “Ask Agent gets no new writes” matrix is obsolete; tool availability remains separate from actor permissions and execution approval policy.
+- The original RED/GREEN results and full acceptance matrix were not rerun. Current Go source declares 1.25.0, and file-split/test naming differences mean historical commands need checking before reuse. No agent execution or mutations were performed for this review.
+
+## Original implementation plan
+
 
 **Goal:** Give Helpin agents a safe, executable PM tool surface for discovering and operating on tasks, epics, sprints, objectives, comments, checklists, labels, dependencies, and key results, including direct sprint/objective runs.
 

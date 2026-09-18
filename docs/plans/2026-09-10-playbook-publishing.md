@@ -1,5 +1,34 @@
 # Playbook publishing implementation plan
 
+> Historical implementation record (2026-09-10), source-compared on 2026-09-17.
+> The four-step setup, separate Automation tab and save-before-confirmation path
+> are implemented. Old test totals, screenshots, review and commit/push directions
+> below belong to that session; they are not fresh validation or current workflow
+> instructions.
+
+## Current publication boundary
+
+[Setup readiness](../../frontend/src/lib/crmPlaybookSetup.ts) covers Purpose & scope,
+Milestones, Team & permissions, and Monitoring. The
+[editor](../../frontend/src/components/crm/playbooks/PlaybookEditor.tsx) serializes
+saves, preserves edits on failure, and passes the returned saved revision to the
+[detail confirmation](../../frontend/src/pages/crm/PlaybookDetail.tsx). The
+[publish action](../../frontend/src/components/crm/playbooks/PlaybookPublishAction.tsx)
+uses `aria-disabled` with tooltip feedback; handlers also prevent blocked actions.
+
+Publishing a Playbook version, publishing an automation connection, allowing
+customer enrollment, and enabling automation are distinct operations. A ready
+form or successful publication does not start work. The
+[Playbook service](../../server/internal/service/crm_playbook.go) and repository
+validate version publication separately from enrollment. The
+[execution service](../../server/internal/service/crm_playbook_execution.go)
+requires confirmed configuration of a published connection, revision/limit checks,
+permissions and applicable entitlements before enabling automation. Consult the
+[automation product model](../automation-product-model.md) for that runtime boundary.
+
+Source inspection verifies these paths exist; it does not verify a deployed
+Playbook, enabled connection, or the historical browser/test results below.
+
 User-approved scope: four setup steps ending with Monitoring, a separate Automation tab, live required-field feedback on a disabled Publish action, and automatic draft saving before publish confirmation. Keep all changes local.
 
 - [x] Cover four-step navigation, live missing-field feedback, touch/keyboard access, save-before-confirmation, saved revision, failure preservation, and automation settings persistence with browser regressions; observe failures first.

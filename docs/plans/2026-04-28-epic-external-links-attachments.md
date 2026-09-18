@@ -1,6 +1,32 @@
-# Epic External Links & Attachments Parity — Implementation Plan
+# Epic external links and attachments implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical implementation plan records how task external links were extended
+to epics. Use it to understand the original change; consult the source notes below
+for current schema and UI behavior before implementing further work.
+
+## Source review — 2026-09-18
+
+- [The model](../../server/internal/model/pm_external_link.go) now has nullable
+  `TaskID` and **not-null** `EntityType`/`EntityID` tags. The original nullable-tag
+  staging instructions below no longer describe the model.
+- The original migration is accompanied by the additive
+  [legacy backfill repair](../../server/internal/dbmigrate/sql/202604280010_repair_pm_external_links_entity_backfill.sql).
+  It fills valid UUID task references and deletes rows whose entity cannot be
+  recovered from a null or invalid legacy task ID. The SQL sketch below is not a
+  replacement migration or an instruction to edit applied checksums.
+- [The service](../../server/internal/service/pm_external_link.go) supports task
+  and epic entities and publishes the entity parent with link events. Generic
+  handlers/routes and frontend entity query keys are present.
+- [Epic creation](../../frontend/src/components/pm/GlobalCreateModals.tsx) creates
+  external links after the epic. These writes are not atomic with creation; the
+  loop catches thrown failures but does not inspect each returned API error.
+- [Epic detail](../../frontend/src/pages/pm/EpicDetail.tsx) displays links in its
+  Related section and handles file drops at the description. The planned
+  panel-wide overlay and toggle layout are historical UI instructions.
+- Absolute `/root/teampulse` paths, checkbox status, commit commands, and expected
+  build output below are historical examples, not current validation results.
+
+## Original implementation plan
 
 **Goal:** Bring Epics to parity with Tasks for external links and file attachments — generalize the external link backend to support multiple entity types, then wire external links and improved attachment UX into Epic creation and detail views.
 

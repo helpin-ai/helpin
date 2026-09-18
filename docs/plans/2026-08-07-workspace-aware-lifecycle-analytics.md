@@ -1,12 +1,20 @@
-# Workspace-Aware Lifecycle Analytics Implementation Plan
+# Workspace-aware lifecycle analytics plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical implementation plan describes workspace-scoped analytics and campaign data. Its unchecked task list is not a current implementation inventory.
+
+## Source review — 2026-09-18
+
+- Frontend analytics and the activation milestone registry exist. Backend delivery is implemented in `server/internal/service/product_analytics*.go`, `customer_io.go`, and `customer_io_outbox.go`, with durable outbox models/repositories and August migrations. The proposed `server/internal/analytics/` file layout is not the implementation layout.
+- Customer.io defaults remain workspace object type `1` and organization type `2`; identity, event, and relationship methods are present. Both outbox workers use bounded batches, leases, and a ten-attempt ceiling. Disabled Customer.io credentials leave queued rows and attempt counts untouched. These are retryable delivery mechanisms, not proof of exactly-once provider receipt.
+- Product analytics defaults its source to `server`, rather than the proposed `backend` enum spelling. Use the current model/emitter contract for integration work.
+- The milestone registry lists the proposed module outcomes, but a registry entry alone does not prove every action boundary emits or deduplicates that event. Campaign and data-contract documents exist under `docs/customer-io`; provider setup, campaign activation, complete historical backfill, and all aggregate reconciliation outcomes were not checked against a live account.
+- The repository uses Go 1.25.0. The original “deployed frontend-only” statement and production-enablement tasks are historical deployment assumptions, not findings from this review. No credentials, campaigns, provider calls, or deployment settings were changed.
 
 **Goal:** Create a workspace-aware activation and billing event system that feeds Usermaven for user/company analytics and Customer.io for behavioral campaigns without confusing users who belong to multiple workspaces.
 
 **Architecture:** Keep one canonical person identity per user. Treat each workspace as the behavioral and billing context on events; represent the parent organization as the Usermaven company and as a Customer.io object. Customer.io object type `1` is the workspace and object type `2` is the organization. The repository has an optional backend Customer.io Track API path, but the deployed integration is currently frontend-only; the plan enables and extends the backend path so all memberships and authoritative lifecycle events are synchronized. Retain frontend tracking for interaction and module behavior, with both providers receiving the same normalized event contract.
 
-**Tech Stack:** Go 1.24, Chi, GORM, PostgreSQL, Stripe billing/webhooks, React 19, TypeScript, TanStack Query, Usermaven SDK/server API, Customer.io Pipelines/Track API, Vitest, Go tests.
+**Tech Stack (original plan):** Go 1.24, Chi, GORM, PostgreSQL, Stripe billing/webhooks, React 19, TypeScript, TanStack Query, Usermaven SDK/server API, Customer.io Pipelines/Track API, Vitest, Go tests.
 
 ---
 

@@ -1,6 +1,18 @@
-# Nextra Docs Importer Implementation Plan
+# Nextra documentation importer implementation plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+This historical plan explains the Nextra ZIP import design for contributors maintaining import fidelity. Its checklist records intended work; use the current adapter, executor and wizard linked below when debugging an import.
+
+## Source review — 2026-09-18
+
+- The [wizard](../../frontend/src/components/settings/NextraImportWizard.tsx) and Nextra preview/start handlers exist. The original HelpScout-only current-state notes are obsolete. Preview stores the archive and a pending job; execution is in [docs_import_nextra.go](../../server/internal/service/docs_import_nextra.go), not a fully shared HelpScout/Nextra executor.
+- The [handler](../../server/internal/handler/docs_import.go) caps the entire multipart request at 100 MiB. The [archive reader](../../server/internal/docsimport/nextra_archive.go) caps entries at 10,000 and applies a 500 MiB cumulative declared-size limit to retained files. It parses ZIP content in memory; these are implementation bounds, not a guarantee that arbitrary archives are cheap to process.
+- Start launches a process-local background goroutine after marking the job running. It does not use the durable HelpScout Temporal execution path, and the pending read/status update is not an atomic claim. Do not infer restart recovery or concurrent-start idempotency from the job record.
+- The [MDX preprocessor](../../server/internal/docsimport/nextra_mdx.go) uses static component transformations, warnings and placeholders. The executor then calls `tiptap.MarkdownToJSON` after converting image tags, not the proposed Goldmark-to-`ConvertHTML` pipeline. Arbitrary React execution and perfect component fidelity remain outside this importer.
+- Articles are created before canonical links are rewritten; publishing follows the rewrite. Hidden pages stay drafts even in published mode. Redirects are created when a source route and help-center article exist; the executor does not implement the proposed `create_redirects` toggle. Some redirect/help-center/publish failures are logged without failing the entire job, so `done` is not proof that every imported route and asset works.
+- The fixed `/root/teampulse` paths below belonged to the original environment. Run current checks from this repository's `server` or `frontend` directory. No archive import, storage request, provider call or listed test suite was executed for this documentation review.
+
+## Original proposal
+
 
 **Goal:** Build a one-time Nextra repository zip importer that previews and imports Nextra docs into Helpin external docs spaces, collections, articles, assets, redirects, and import reports with high fidelity.
 
@@ -25,14 +37,14 @@
 
 ## Current-State Notes
 
-- Current import UI only exposes HelpScout in [frontend/src/components/settings/ImportTab.tsx](/root/teampulse/frontend/src/components/settings/ImportTab.tsx).
-- Current backend routes are HelpScout-specific in [server/internal/handler/docs_import.go](/root/teampulse/server/internal/handler/docs_import.go).
-- Current import service is HelpScout-specific in [server/internal/service/docs_import.go](/root/teampulse/server/internal/service/docs_import.go).
+- Current import UI only exposes HelpScout in [frontend/src/components/settings/ImportTab.tsx](../../frontend/src/components/settings/ImportTab.tsx).
+- Current backend routes are HelpScout-specific in [server/internal/handler/docs_import.go](../../server/internal/handler/docs_import.go).
+- Current import service is HelpScout-specific in [server/internal/service/docs_import.go](../../server/internal/service/docs_import.go).
 - Existing `docs_import_jobs.source` is a free string and can store `nextra` without a migration.
 - Existing `docs_import_jobs.config`, `summary`, `redirect_map`, and `failures` can carry Nextra-specific metadata and reports.
 - Existing `server/internal/docsimport/collection_tree_mapping.go` already has generic source-group-to-collection-tree mapping with a depth cap.
-- Existing HTML converter in [server/internal/docsimport/html_to_tiptap.go](/root/teampulse/server/internal/docsimport/html_to_tiptap.go) supports common HTML, tables, code, callouts, images, and HTML block fallback.
-- Existing Markdown converter in [server/internal/tiptap/markdown.go](/root/teampulse/server/internal/tiptap/markdown.go) supports GFM but does not understand MDX JSX or produce import warnings.
+- Existing HTML converter in [server/internal/docsimport/html_to_tiptap.go](../../server/internal/docsimport/html_to_tiptap.go) supports common HTML, tables, code, callouts, images, and HTML block fallback.
+- Existing Markdown converter in [server/internal/tiptap/markdown.go](../../server/internal/tiptap/markdown.go) supports GFM but does not understand MDX JSX or produce import warnings.
 
 ## File Structure
 
@@ -1233,4 +1245,3 @@ go test ./internal/docsimport ./internal/service ./internal/handler
 - Full arbitrary React component execution/rendering.
 - Native Helpin tabs/cards component implementation unless already available.
 - Historical import from live crawled public Nextra site.
-

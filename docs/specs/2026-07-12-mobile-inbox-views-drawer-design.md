@@ -1,8 +1,45 @@
-# Mobile Support Inbox — Views Drawer & Filter Parity Design
+# Mobile Support inbox views drawer and filter parity design
 
 **Date:** 2026-07-12
-**Status:** Approved in brainstorming; pending spec review → implementation plan
+**Status:** Historical design; drawer and shared-filter integration implemented.
 **Branch:** `feat/support-mobile`
+
+## Current implementation review — 2026-09-18
+
+This page explains the original mobile navigation design for contributors. The
+[drawer](../../apps/support-mobile/src/inbox/views-drawer.tsx) and
+[filter bridge](../../apps/support-mobile/src/inbox/use-inbox-filters.ts) exist.
+The bridge imports web filter defaults, custom-view parsing, and
+`buildConversationListRequestFilters` through explicit build aliases. Shared
+conversion reduces drift, but does not prove identical live results across
+sessions with different permissions, timing, or filter overrides.
+
+The [view configuration](../../apps/support-mobile/src/inbox/view-list-config.ts)
+uses a **total workload count** for the numeric badge and unread state for a dot.
+Inbox, Mine, Waiting and AI Handling use unread-stats totals; Resolved, Spam and
+AI Resolved intentionally have no badge. Custom views use view-count entries,
+while team inboxes use inbox scopes. The original assertion that every numeric
+badge is an unread count from one endpoint is incorrect for current code.
+
+The [selection store](../../apps/support-mobile/src/stores/support-view-store.ts)
+persists selection and filter overrides to `sessionStorage`; selecting a new view
+clears overrides. This is more than transient component state. Session lifetime
+and app-restoration behavior depend on the host, so do not promise reset after
+every native restart based on the storage choice alone. Extra filters have also
+entered the store/bridge despite being outside this original change's scope.
+
+The drawer retains the 82%/360px panel and reduced-motion handling. Its source
+contains drag dismissal; source inspection is not an on-device gesture or
+accessibility acceptance test. The [build aliases](../../apps/support-mobile/vite.config.ts)
+now include additional shared web helpers beyond the original list. Imports can
+fail loudly when files move, but compatible semantic changes can still require
+parity tests; compilation alone cannot guarantee that navigation never diverges.
+
+The original no-web/no-backend-change constraints describe the historical task,
+not a permanent architecture rule. Test files exist for drawer, configuration and
+filter conversion, but no browser/device or runtime tests were run in this review.
+
+## Original design
 
 ## Plain-language summary (for the product owner)
 

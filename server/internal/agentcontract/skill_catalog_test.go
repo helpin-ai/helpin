@@ -301,8 +301,8 @@ func TestSecurityTriageSkillReferencesScannerWorkflow(t *testing.T) {
 		"Let the scanner tools handle bundled rules, caches, and scanner-native fallbacks",
 		"Scanner output is evidence, not truth",
 		"Create tasks only for findings classified as `applicable`",
-		"prewarms Trivy vulnerability databases",
-		"seed writable runtime caches under `/tmp/helpin-security-cache`",
+		"Do not assume scanner binaries, prewarmed databases, or bundled rules are installed",
+		"A zero-finding result with an execution or parsing warning is not evidence",
 	} {
 		if !strings.Contains(skill.Instructions, snippet) {
 			t.Fatalf("expected security triage instructions to contain %q\n%s", snippet, skill.Instructions)

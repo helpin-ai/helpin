@@ -1,8 +1,14 @@
 # Planner Tool Contract Reference
 
+> Historical planner reference. Worker tool implementations and test paths
+> below have been removed. Revalidate payload examples against the current
+> Runtime contract before using them; use the [internal tool guide](../internal-tools-framework.md)
+> for current Helpin command registration and authorization.
+
+
 ## Purpose
 
-This is the compact source of truth for planner tool payloads.
+This preserves the earlier planner payload design and its validation rationale.
 
 Use it when changing:
 

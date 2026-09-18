@@ -1,6 +1,47 @@
-# Support Link Security Design
+# Support link security design
 
 **Date:** 2026-08-18
+
+## Implementation review — 2026-09-18
+
+This design explains support-link protection for contributors. Core scanning,
+preview hardening, and inbox warnings exist, with the qualifications below.
+
+The [scanner](../../server/internal/service/support_link_security.go) implements
+the three verdicts, two-second provider timeout, five-minute no-match TTL,
+30-second unknown TTL, provider expiry for malicious results, and a bounded
+2048-entry process cache. Configuration is wired by the API. This is source
+confirmation, not evidence of an enabled provider or a live security assessment.
+
+[Enrichment](../../server/internal/service/support_link_preview.go) limits previews
+to three and scan candidates to ten, but invokes reputation scanning only for
+**customer** messages. The broader non-internal/non-system wording below should
+not be read as scanning every staff or AI reply. Scans run sequentially within
+the shared enrichment deadline while preview fetching runs independently; ten
+candidates do not guarantee ten completed provider lookups.
+
+The [inbox parser](../../frontend/src/components/support/helpers.ts) checks status,
+URL, checked time and expiry before matching verdicts. However, its expiry check
+compares `Date.parse(expires_at) <= now` without explicitly rejecting `NaN`.
+A malformed expiry string can therefore pass that predicate. The design's
+blanket claim that invalid timestamps always become unknown is not fully enforced
+by this parser. Normal backend-generated verdicts carry structured timestamps.
+
+The [warning component](../../frontend/src/components/support/SupportLink.tsx)
+requires acknowledgment before opening a malicious destination. This is a
+presentation safeguard, not proof that the destination is safe after acknowledgment.
+[Widget metadata sanitization](../../server/internal/model/support_link_metadata.go)
+removes reputation entries; the widget is not an equivalent malicious-link warning
+surface.
+
+The proposed outcome/latency/cache-hit metrics are not implemented in the focused
+scanner. Preview failures log an error class, while invalid proxy configuration
+logs the configured proxy URL. Do not extend the no-scanned-URL logging statement
+to a universal guarantee that configuration URLs or credentials cannot enter logs.
+The original test matrix and staged rollout remain requirements; no live provider
+requests, deployments, or runtime tests were performed during this source review.
+
+## Original design
 
 ## Goal
 

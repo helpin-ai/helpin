@@ -1,5 +1,39 @@
 # Settings save feedback implementation plan
 
+> Historical implementation plan, reviewed against the checkout on 2026-09-17.
+> This page records the settings feedback change for contributors; the audit and
+> steps below describe the original work, not outstanding setup instructions.
+> The test counts and browser observations are historical results, not checks
+> rerun during this documentation review.
+
+## Current implementation
+
+[ChatGeneralTab](../../frontend/src/components/settings/ChatGeneralTab.tsx) uses
+[serialized autosave](../../frontend/src/hooks/useSettingsAutosave.ts) with an
+800 ms debounce. The hook keeps one request in flight per active scope, coalesces
+later edits, and retains an error for the failed value until Retry or a new edit.
+Scope changes and unmounts cancel queued timers and ignore old completions; they
+do not cancel a request already sent to the server.
+
+The [navigation guard](../../frontend/src/components/settings/SettingsAutosaveGuard.tsx)
+blocks navigation while dirty and continues after persistence. After a failure,
+it also offers an explicit **Leave without saving** action. Browser unload uses
+a warning; it does not guarantee persistence before the tab closes.
+
+[Shared save controls](../../frontend/src/components/settings/SettingsSaveBar.tsx)
+are sticky at the top of their scroll area. Routing, CRM email/meeting, workspace
+identity, and Help Center forms retain explicit save controls. The
+[global toaster](../../frontend/src/components/ui/sonner.tsx) defaults to top-center,
+with caller props able to override it.
+
+The [settings mutation](../../frontend/src/hooks/queries/useSupport.ts) seeds the
+installation query cache with the server response before awaiting invalidation.
+That is distinct from replacing the open editor's draft with server-normalized
+values: autosave tracks the submitted JSON as its saved baseline, and the editor
+avoids rehydrating its draft on background refreshes.
+
+## Original implementation record
+
 Goal: Keep settings save controls and feedback clear of the Helpin launcher without changing transactional settings into autosave.
 
 Approved approach: Shared save feedback near panel headings; top-center global toasts; preserve explicit Save for related configuration and consequential actions. No broad autosave conversion in this change.

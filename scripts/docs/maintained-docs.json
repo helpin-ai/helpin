@@ -12,8 +12,8 @@
   "community/PUBLICATION.md",
   "docs/README.md",
   "docs/development.md",
-  "docs/AGENT_RUNTIME_LOCAL.md",
-  "docs/AGENTS_AND_AUTOMATION.md",
+  "docs/agent-runtime-local-setup.md",
+  "docs/agents-and-automation.md",
   "docs/ai-connections.md",
   "docs/widget-architecture.md",
   "docs/email-architecture.md",
@@ -25,5 +25,7 @@
   "docs/community/widget-identity.md",
   "docs/community/upstream-images.md",
   "docs/publication-review.md",
-  "scripts/docs/README.md"
+  "scripts/docs/README.md",
+  "docs/documentation-guide.md",
+  ".agents/skills/helpin-documentation/SKILL.md"
 ]

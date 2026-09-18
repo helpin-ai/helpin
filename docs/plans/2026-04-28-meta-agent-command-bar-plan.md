@@ -1,10 +1,20 @@
-# Meta-Agent Command Bar — PRD Plan
+# Meta-agent command bar plan
 
 **Date:** 2026-04-28
 **Status:** v1 command-bar launcher, durable multi-step plan controls, frontend contract alignment, one-shot Command Agent, and bounded fan-out implemented
-**Altitude:** Product / architecture, grounded in current codebase. Also tracks implementation status.
+**Scope:** Historical product and architecture record; implementation status below describes the original branch.
 
 ---
+
+## Source review — 2026-09-18
+
+The original v1 status lists and verification commands below are historical. Current command-bar plan routes retain list/get, dispatch, cancel, retry, tool lookup, and promotion, and add resume/dismiss. The old `/intents/parse` and unmet-intent routes are absent from the current router. Conversational entry now uses Dock chat routes backed by Agent Runtime runs and the `AskAgentsDock` UI.
+
+Current orchestration supports DAG and task-pipeline plans through `command_bar_plan_orchestration.go`, not the retired local `AgentRunWorkflow` completion activity described below. Limits are 50 plan steps and 10 initially ready DAG steps, not five runs. The initial DAG limit is not a universal lifetime concurrency ceiling. The historical sequential-only non-goals and checklists therefore do not describe all current plan behavior.
+
+Use [command-bar agent architecture](2026-04-28-command-bar-agent-architecture.md), [DAG orchestration](2026-04-30-command-dag-orchestration-plan.md), and [agent execution](../coding-agent-execution.md) with their source-review notes for the current boundaries. The historical tests, fixture failures, production migration instructions, and provider behavior were not rerun or verified here.
+
+## Original plan
 
 ## Summary
 

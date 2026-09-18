@@ -1,5 +1,15 @@
 # Help Center Routing & Redirects
 
+> Source review, 2026-09-17
+
+Historical March routing design. The public app now lives in this repository at
+[help-center](../../help-center/package.json) and uses TanStack Start SSR.
+Canonical collection/article keys now incorporate PublicIDs; consult
+[locale route helpers](../../help-center/src/lib/locale.ts),
+[collection keys](../../help-center/src/lib/collectionKey.ts), and
+[article keys](../../help-center/src/lib/articleKey.ts). The slug-only URL model
+below is not the current canonical contract.
+
 ## Overview
 
 Establish a canonical public URL model for Helpin's help center, support 301 redirects for imported legacy URLs and native slug changes, and add a Redirects management page for admins.

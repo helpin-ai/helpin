@@ -1,5 +1,13 @@
 # Follow-up failure isolation
 
+> Source review, 2026-09-17
+
+Historical implementation/validation receipt. Current failure handling is in the
+[sequence service](../../server/internal/service/support_ai_follow_up_sequence.go),
+including bounded assessment retries and `stopWithFailure`; required completion
+tools are covered by [runtime tool tests](../../server/internal/service/agent_runtime_support_follow_up_tools_test.go).
+The reported tests below describe that work session, not a fresh audit run.
+
 1. Trace and test the real runtime tool catalog so scheduled assessments can call finish_support_follow_up.
 2. Separate technical failure from an intentional assessment handoff: bounded retries, then failed episode with private explanation; preserve conversation ownership and escalation state and prevent automatic closure.
 3. Make genuine handoffs visible with a normal escalation event; show readable failure explanations in support inbox.
