@@ -33,17 +33,6 @@ export function Flag({ children }: { children: React.ReactNode }) {
   return <span className="tag">{children}</span>;
 }
 
-export function ReviewBanner() {
-  const { shown } = useContext(Ctx);
-  if (!shown) return null;
-  return (
-    <div className="banner">
-      Homepage preview, September 18, 2026. Amber notes explain each section and flag what still needs a decision or a
-      check. Frames are placeholders until screenshots from the seeded workspace replace them.
-    </div>
-  );
-}
-
 export function ReviewToggle() {
   const { shown, toggle } = useContext(Ctx);
   if (!NOTES_ENABLED) return null;

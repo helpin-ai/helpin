@@ -4,7 +4,7 @@ import { PreviewFooter } from './_components/PreviewFooter';
 import { LiveRecord } from './_components/LiveRecord';
 import { LoopWire } from './_components/LoopWire';
 import { LoopSection } from './_components/LoopSection';
-import { ReviewBanner, ReviewNote, Flag } from './_components/ReviewNotes';
+import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { Chip, CtaRow, GithubIcon, SectionHead, SIGNUP_URL, GITHUB_URL } from './_components/ui';
 
 const RECORD_FACTS = [
@@ -60,7 +60,6 @@ const FAQS: [string, string][] = [
 export default function NewHomePage() {
   return (
     <>
-      <ReviewBanner />
       <PreviewNav />
 
       {/* Hero */}
