@@ -7,6 +7,8 @@ import type { SupportConversation } from '@/lib/pmTypes'
 import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { ConversationActionsMenu } from '../ConversationActionsMenu'
 
+vi.mock('../SupportAIControl', () => ({ useSupportAIControl: () => ({ item: null, confirmation: null }) }))
+
 const mockUpdateStatusMutate = vi.fn()
 
 vi.mock('@/hooks/queries/useSupport', () => ({

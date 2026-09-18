@@ -20,7 +20,7 @@ test('AI reply channels save and survive reload on desktop and narrow screens', 
   // Wait for the page to be ready before checking the saved value.
   await expect(channels).toBeVisible({ timeout: 45_000 });
   await expect(channels).toHaveText('Chat');
-  for (const [label, value] of [['Email', 'email'], ['Both', 'both'], ['Chat', 'chat']] as const) {
+  for (const [label, value] of [['Email', 'email'], ['Chat and email', 'both'], ['Chat', 'chat']] as const) {
     await channels.click();
     await page.getByRole('option', { name: label, exact: true }).click();
     await expect.poll(() => writes.at(-1)?.ai_reply_channels).toBe(value);
