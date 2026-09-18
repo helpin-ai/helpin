@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func TestAuthorizeWidgetOrigin(t *testing.T) {
 	for _, statement := range []string{
 		`CREATE TABLE support_widget_installations (id TEXT PRIMARY KEY, workspace_id TEXT, widget_key TEXT, allowed_origins TEXT, active BOOLEAN)`,
 		`CREATE TABLE support_widget_sessions (id TEXT PRIMARY KEY, workspace_id TEXT, session_token TEXT, expires_at DATETIME, revoked_at DATETIME, last_active_at DATETIME)`,
-		`INSERT INTO support_widget_installations VALUES ('one','workspace-one','key-one','{"https://site.example"}',true), ('two','workspace-two','key-two','{"https://site.example"}',true), ('off','workspace-off','key-off','{"https://site.example"}',false), ('empty','workspace-empty','key-empty','{}',true)`,
+		`INSERT INTO support_widget_installations VALUES ('one','workspace-one','key-one','{"https://site.example","tauri://localhost"}',true), ('two','workspace-two','key-two','{"https://site.example"}',true), ('off','workspace-off','key-off','{"https://site.example"}',false), ('empty','workspace-empty','key-empty','{}',true)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
@@ -53,6 +54,9 @@ func TestAuthorizeWidgetOrigin(t *testing.T) {
 		ref          widgetorigin.Reference
 		allowed      bool
 	}{
+		{"tauri key", "tauri://localhost", widgetorigin.Reference{WidgetKey: "key-one"}, true},
+		{"tauri restored session", "tauri://localhost", widgetorigin.Reference{SessionToken: "valid"}, true},
+		{"tauri unconfigured", "tauri://localhost", widgetorigin.Reference{WidgetKey: "key-two"}, false},
 		{"key", "https://site.example", widgetorigin.Reference{WidgetKey: "key-one"}, true},
 		{"id", "https://site.example", widgetorigin.Reference{InstallationID: "one"}, true},
 		{"session", "https://site.example", widgetorigin.Reference{SessionToken: "valid"}, true},
@@ -73,6 +77,11 @@ func TestAuthorizeWidgetOrigin(t *testing.T) {
 				t.Fatalf("authorize: %v", err)
 			}
 		})
+	}
+	err = svc.AuthorizeWidgetOrigin(context.Background(), "tauri://localhost", widgetorigin.Reference{WidgetKey: "key-two"})
+	var denied *widgetorigin.DeniedError
+	if !errors.As(err, &denied) || denied.InstallationID != "two" {
+		t.Fatalf("missing safe installation context: %v", err)
 	}
 	var touched int64
 	if err := db.Table("support_widget_sessions").Where("last_active_at IS NOT NULL").Count(&touched).Error; err != nil {

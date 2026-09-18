@@ -10,7 +10,7 @@ vi.mock('@/hooks/queries/useSupport', () => ({ useUpdateChatSettings: () => ({ m
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 afterEach(() => vi.clearAllMocks());
 
-describe('widget website settings', () => {
+describe('widget origin settings', () => {
   it('normalizes exact origins and rejects paths, credentials and wildcards', () => {
     expect(parseWidgetOrigins('https://EXAMPLE.com:443\n\nhttps://example.com\nhttp://localhost:3000')).toEqual(['http://localhost:3000', 'https://example.com']);
     for (const input of ['*', 'https://*.example.com', 'https://example.com/path', 'https://example.com//', 'https://user@example.com', 'https://example.com?', 'https://example.com#', 'null']) {
@@ -19,21 +19,29 @@ describe('widget website settings', () => {
     expect(parseWidgetOrigins('')).toEqual([]);
     expect(parseWidgetOrigins(' https://example.com/\nhttp://localhost:3000/')).toEqual(['http://localhost:3000', 'https://example.com']);
   });
+  it('preserves Tauri custom origins and keeps platform variants distinct', () => {
+    expect(parseWidgetOrigins('tauri://LOCALHOST/\nTAURI://localhost\nhttp://tauri.localhost\nhttps://tauri.localhost')).toEqual([
+      'http://tauri.localhost', 'https://tauri.localhost', 'tauri://localhost',
+    ]);
+    for (const input of ['tauri://', 'tauri://other', 'tauri://localhost.evil', 'tauri://localhost:1420', 'tauri://user@localhost', 'tauri://localhost/path', 'tauri://localhost//', 'tauri://localhost?', 'tauri://localhost#', 'tauri://*', 'app://localhost', 'file:///app', 'null']) {
+      expect(() => parseWidgetOrigins(input)).toThrow();
+    }
+  });
   it('shows the origin-first setup state and saves an explicit allowlist', async () => {
     const installation = { allowed_origins: [], identity_verification_mode: 'report_only' } as unknown as SupportInstallationResponse;
     const container = document.createElement('div'); document.body.append(container);
     const root = createRoot(container);
     try {
       await act(async () => root.render(<WidgetOriginSettings workspaceId="ws" installation={installation} />));
-      expect(container.querySelector('[role="status"]')?.textContent).toContain('Add your website origin');
+      expect(container.querySelector('[role="status"]')?.textContent).toContain('Add your website or desktop app origin');
       const input = container.querySelector('textarea')!;
       await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'https://site.example');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'https://site.example\ntauri://localhost');
         input.dispatchEvent(new Event('input', { bubbles: true }));
       });
-      const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save website settings')!;
+      const save = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save origin settings')!;
       await act(async () => save.click());
-      expect(mocks.save).toHaveBeenCalledWith({ allowed_origins: ['https://site.example'], identity_verification_mode: 'report_only' });
+      expect(mocks.save).toHaveBeenCalledWith({ allowed_origins: ['https://site.example', 'tauri://localhost'], identity_verification_mode: 'report_only' });
     } finally { await act(async () => root.unmount()); container.remove(); }
   });
 });

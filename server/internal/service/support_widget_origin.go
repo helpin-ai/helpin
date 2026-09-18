@@ -52,8 +52,11 @@ func (s *SupportInboxService) AuthorizeWidgetOrigin(ctx context.Context, origin 
 			return err
 		}
 	}
-	if installation == nil || !widgetorigin.Allowed(origin, installation.AllowedOrigins) {
+	if installation == nil {
 		return denied
+	}
+	if !widgetorigin.Allowed(origin, installation.AllowedOrigins) {
+		return &widgetorigin.DeniedError{InstallationID: installation.ID}
 	}
 	return nil
 }

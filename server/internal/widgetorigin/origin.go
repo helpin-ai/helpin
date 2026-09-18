@@ -18,14 +18,19 @@ type Reference struct {
 	InstallationID string
 }
 
-// Normalize accepts a single HTTP origin, including an optional non-default port.
+// Normalize accepts HTTP(S) origins and the exact local Tauri application origin.
 func Normalize(raw string) (string, error) {
+	// Tauri's custom protocol must remain distinct from its HTTP(S) variants.
+	// No arbitrary custom schemes, hosts, ports, paths, or opaque origins.
+	if strings.ToLower(raw) == "tauri://localhost" {
+		return "tauri://localhost", nil
+	}
 	u, err := url.Parse(raw)
 	if err != nil || raw != strings.TrimSpace(raw) || u == nil ||
 		(u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" ||
 		u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery ||
 		u.Fragment != "" || strings.ContainsAny(u.Host, "* ,\\") || strings.Contains(raw, "#") {
-		return "", fmt.Errorf("origin must contain only an HTTP scheme and host")
+		return "", fmt.Errorf("origin must be an HTTP(S) scheme and host or tauri://localhost")
 	}
 	host := strings.ToLower(u.Hostname())
 	port := u.Port()

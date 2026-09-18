@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 	"github.com/helpin-ai/helpin/server/internal/widgetorigin"
 )
 
@@ -25,6 +26,9 @@ func TestWidgetOriginMiddleware(t *testing.T) {
 		status                                   int
 		ref                                      widgetorigin.Reference
 	}{
+		{"tauri config", "GET", "/config?widget_key=key", "", "tauri://localhost", "", 200, widgetorigin.Reference{WidgetKey: "key"}},
+		{"tauri identify", "POST", "/identify", `{"api_key":"key"}`, "tauri://localhost", "", 200, widgetorigin.Reference{WidgetKey: "key"}},
+		{"opaque", "GET", "/config?widget_key=key", "", "null", "", 403, widgetorigin.Reference{WidgetKey: "key"}},
 		{"config", "GET", "/config?widget_key=key", "", "https://site.example", "", 200, widgetorigin.Reference{WidgetKey: "key"}},
 		{"installation", "GET", "/settings/install", "", "https://site.example", "", 200, widgetorigin.Reference{InstallationID: "install"}},
 		{"identify", "POST", "/identify", `{"api_key":"key","email":"a@example.com"}`, "https://site.example", "", 200, widgetorigin.Reference{WidgetKey: "key"}},
@@ -44,7 +48,7 @@ func TestWidgetOriginMiddleware(t *testing.T) {
 				if ref != tc.ref {
 					t.Fatalf("reference = %#v, want %#v", ref, tc.ref)
 				}
-				if !widgetorigin.Allowed(origin, []string{"https://site.example"}) {
+				if !widgetorigin.Allowed(origin, []string{"https://site.example", "tauri://localhost"}) {
 					return fmt.Errorf("denied")
 				}
 				return nil
@@ -72,6 +76,9 @@ func TestWidgetOriginMiddleware(t *testing.T) {
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, r)
 			if tc.status == 200 {
+				if got := w.Header().Get("Access-Control-Allow-Origin"); got != tc.origin {
+					t.Fatalf("CORS origin = %q, want %q", got, tc.origin)
+				}
 				wantCache := ""
 				if tc.method != "GET" || tc.ref.SessionToken != "" {
 					wantCache = "no-store"
@@ -115,6 +122,36 @@ func TestWidgetOriginSameOriginGETStillRequiresInstallationAdmission(t *testing.
 			h.ServeHTTP(w, r)
 			if w.Code != tc.want {
 				t.Fatalf("status=%d want=%d", w.Code, tc.want)
+			}
+		})
+	}
+}
+
+func TestWidgetOriginTauriCORS(t *testing.T) {
+	authorizer := testWidgetOriginAuthorizer(func(_ context.Context, origin string, _ widgetorigin.Reference) error {
+		if !widgetorigin.Allowed(origin, []string{"tauri://localhost"}) {
+			return fmt.Errorf("denied")
+		}
+		return nil
+	})
+	router := chi.NewRouter()
+	router.Use(cors.Handler(cors.Options{AllowedOrigins: []string{"*"}, AllowedMethods: []string{"GET", "OPTIONS"}, AllowedHeaders: []string{"Content-Type", "X-Session-Token"}}))
+	router.Handle("/config", requireWidgetOrigin(authorizer, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })))
+	for _, method := range []string{"OPTIONS", "GET"} {
+		t.Run(method, func(t *testing.T) {
+			r := httptest.NewRequest(method, "/config?widget_key=key", nil)
+			r.Header.Set("Origin", "tauri://localhost")
+			if method == "OPTIONS" {
+				r.Header.Set("Access-Control-Request-Method", "GET")
+				r.Header.Set("Access-Control-Request-Headers", "X-Session-Token")
+			}
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+			if w.Code != http.StatusOK {
+				t.Fatalf("CORS status %d", w.Code)
+			}
+			if got := w.Header().Get("Access-Control-Allow-Origin"); got != "tauri://localhost" && got != "*" {
+				t.Fatalf("CORS origin %q", got)
 			}
 		})
 	}
