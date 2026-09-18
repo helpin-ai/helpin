@@ -221,7 +221,7 @@
 .hp3 .wire-svg { position: absolute; top: 0; height: 132px; color: var(--ink); pointer-events: none; overflow: visible; }
 .hp3 .wire-svg path.track { stroke: var(--border-2); }
 .hp3 .wire-svg path.head { stroke: var(--ink); }
-.hp3 .wire-nodes { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; }
+.hp3 .wire-nodes { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 40px; }
 .hp3 .wnode { display: grid; gap: 18px; align-content: start; }
 .hp3 .wlabel { justify-self: start; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 10px; border-radius: 999px; background: var(--bg2); border: 1px solid var(--border-2); font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--t2); position: relative; z-index: 1; transition: background-color .35s cubic-bezier(.16,1,.3,1), color .35s cubic-bezier(.16,1,.3,1), border-color .35s cubic-bezier(.16,1,.3,1); }
 .hp3 .wlabel i { width: 7px; height: 7px; border-radius: 50%; background: var(--border-2); display: inline-block; transition: background-color .35s ease; }
@@ -245,7 +245,8 @@
 .hp3 .wl li.done { color: var(--ink); }
 .hp3 .wl li.active { color: var(--ink); }
 .hp3 .wl .approve { margin-left: auto; letter-spacing: .01em; font-style: normal; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--ink); color: #fff; animation: hp3-pulse 1.2s ease-in-out infinite; }
-.hp3 .ck { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--border-2); display: inline-grid; place-items: center; font-size: 9px; font-style: normal; flex: none; }
+.hp3 .ck { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--border-2); display: inline-grid; place-items: center; font-style: normal; flex: none; line-height: 0; }
+.hp3 .ck svg { display: block; }
 .hp3 .ck.done { border-color: var(--em); background: var(--em); color: #fff; }
 .hp3 .ck.active { border-color: var(--em); border-top-color: transparent; animation: hp3-spin 1s linear infinite; }
 .hp3 .record-frame { margin-top: 48px; }
@@ -342,7 +343,7 @@
 @media (prefers-reduced-motion: reduce) { .hp3 .receipt { transition: none; } }
 /* Column guides: the five real column boundaries of the hero grid, behind the copy and the wire, fading out below. */
 .hp3 .hero-wrap { position: relative; }
-.hp3 .wgrid { position: absolute; left: 24px; right: 24px; top: -72px; bottom: -72px; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; pointer-events: none; -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 160px), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 160px), transparent 100%); }
+.hp3 .wgrid { position: absolute; left: 24px; right: 24px; top: -72px; bottom: -72px; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 40px; pointer-events: none; -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 160px), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 160px), transparent 100%); }
 .hp3 .wgrid { opacity: .45; }
 .hp3 .wgrid i { display: block; border-left: 1px solid var(--border); }
 .hp3 .wgrid i:last-child { position: absolute; right: 0; top: 0; bottom: 0; border-left: 0; border-right: 1px solid var(--border); }

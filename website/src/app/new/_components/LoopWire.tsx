@@ -97,7 +97,7 @@ function shipItems(sc: Scenario): Item[] {
 
 // Stepped wire geometry. Stage labels alternate between an upper and a lower level and the
 // line moves between them with an S-curve, entering and leaving at the viewport edges.
-const GAP = 24;
+const GAP = 40;
 const LEVEL_Y = [15, 100]; // y of the wire on each level; badges sit centred on it
 const LEVEL_TOP = [0, 85]; // padding-top for nodes on each level so the 30px badge is centred on the wire
 const levelOf = (i: number) => i % 2;
@@ -147,7 +147,13 @@ function wirePath(w: number, vw: number): string {
 }
 
 function Check({ state }: { state: 'todo' | 'active' | 'done' }) {
-  if (state === 'done') return <i className="ck done" aria-hidden="true">✓</i>;
+  if (state === 'done') {
+    return (
+      <i className="ck done" aria-hidden="true">
+        <svg viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 6.5 5 9l4.5-6" /></svg>
+      </i>
+    );
+  }
   if (state === 'active') return <i className="ck active" aria-hidden="true" />;
   return <i className="ck" aria-hidden="true" />;
 }
