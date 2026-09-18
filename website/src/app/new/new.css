@@ -339,3 +339,16 @@
 .hp3 .wgrid i:last-child { position: absolute; right: 0; top: 0; bottom: 0; border-left: 0; border-right: 1px solid var(--border); }
 .hp3 .hero-inner, .hp3 .wire { position: relative; z-index: 1; }
 @media (max-width: 960px) { .hp3 .wgrid { display: none; } }
+/* Fixes from the screenshot round. */
+/* Hero above the fold at 1440x900: tighter vertical rhythm, two-line headline. */
+.hp3 section.hero { padding-block: 52px 64px; }
+.hp3 .hero-inner { gap: 18px; max-width: 940px; }
+.hp3 .hero h1 { font-size: clamp(2.4rem, 4.4vw, 3.5rem); }
+.hp3 .hero .lede { font-size: 18px; max-width: 64ch; }
+.hp3 .wire { margin-top: 44px; }
+/* Phone: the record must never widen the page. A late rule had reset it to two columns. */
+@media (max-width: 960px) {
+  .hp3 .record { grid-template-columns: minmax(0, 1fr); }
+  .hp3 .record > * { min-width: 0; }
+  .hp3 .tabs { -webkit-overflow-scrolling: touch; }
+}

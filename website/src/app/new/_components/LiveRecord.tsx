@@ -118,7 +118,6 @@ export function LiveRecord() {
       {shown ? (
         <div className="replay-row">
           <button type="button" className="replay" onClick={replay}>Replay animation</button>
-          <span>step {step} of {LAST_STEP}</span>
         </div>
       ) : null}
     </div>
