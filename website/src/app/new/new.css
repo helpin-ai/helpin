@@ -219,7 +219,8 @@
 }
 .hp3 .wire { position: relative; margin-top: 64px; }
 .hp3 .wire-svg { position: absolute; top: 0; height: 96px; color: var(--ink); pointer-events: none; overflow: visible; }
-.hp3 .wire-svg path { transition: stroke-dashoffset 1.9s cubic-bezier(.2,.7,.2,1); }
+.hp3 .wire-svg path.track { stroke: var(--border-2); }
+.hp3 .wire-svg path.head { stroke: var(--ink); }
 .hp3 .wire-nodes { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; }
 .hp3 .wnode { display: grid; gap: 22px; align-content: start; }
 .hp3 .wlabel { justify-self: start; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 10px; border-radius: 999px; background: var(--bg2); border: 1px solid var(--border-2); font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); position: relative; z-index: 1; opacity: 0; transform: translateY(6px); transition: opacity .5s cubic-bezier(.16,1,.3,1), transform .5s cubic-bezier(.16,1,.3,1); }
@@ -255,7 +256,7 @@
   .hp3 .wcard { min-height: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hp3 .wire-svg path, .hp3 .wlabel, .hp3 .wcard, .hp3 .witem { transition: none; }
+  .hp3 .wlabel, .hp3 .wcard, .hp3 .witem { transition: none; }
   .hp3 .ck.active, .hp3 .wl .approve { animation: none; }
 }
 @keyframes hp3-flip { 0% { background: var(--em-t); } 100% { background: transparent; } }
