@@ -135,54 +135,64 @@ export function LoopWire() {
         />
       </svg>
       <div className="wire-nodes">
-        {/* 01 Hear */}
+        {/* 01 Hear: chat bubbles and a transcript line */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(0)] }}>
           <div className={`wlabel ${on(2) ?? ''}`}><i /><span>01 Hear</span></div>
-          <div className={`wcard ${on(3) ?? ''}`}>
-            <div className={`witem ${on(3) ?? ''}`}>
-              <div className="wq">“We're moving to Okta next month. Does SSO work with it?”</div>
-              <div className="wmeta">Maya R. · Acme Corp · website chat</div>
+          <div className="wart hear">
+            <div className={`bub ${on(3) ?? ''}`}>
+              <span className="bav">M</span>
+              <div>
+                <p>We're moving to Okta next month. Does SSO work with it?</p>
+                <small>Maya R. · Acme Corp · website chat</small>
+              </div>
             </div>
-            <div className={`witem ${on(5) ?? ''}`}>
-              <div className="wq"><b>Renewal call</b> · next step: send Okta SAML mapping steps</div>
-              <div className="wmeta"><span className="wchip am">Timeline identified</span> from the transcript</div>
+            <div className={`tline ${on(5) ?? ''}`}>
+              <span className="mono tt">14:02</span>
+              <div><b>Maya:</b> “…security wants the Okta mapping steps before we sign.”</div>
+              <span className="wchip am">Timeline identified</span>
             </div>
           </div>
         </div>
 
-        {/* 02 Decide */}
+        {/* 02 Decide: bare checklist of pills, then the task row */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(1)] }}>
           <div className={`wlabel ${on(3) ?? ''}`}><i /><span>02 Decide</span></div>
-          <div className={`wcard ${on(7) ?? ''}`}>
+          <div className={`wart decide ${on(7) ?? ''}`}>
             <Checklist items={DECIDE} t={t} cardAt={7} />
-            <div className={`wmeta witem ${on(12) ?? ''}`}>Task linked to the chat, the meeting, and the deal</div>
+            <div className={`trow ${on(12) ?? ''}`}>
+              <span className="tkey">HLP-142</span>
+              <span className="tname">Verify and document Okta SAML mapping</span>
+              <span className="tstate"><i />Todo</span>
+            </div>
           </div>
         </div>
 
-        {/* 03 Ship */}
+        {/* 03 Ship: a dark run log */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(2)] }}>
           <div className={`wlabel ${on(4) ?? ''}`}><i /><span>03 Ship</span></div>
-          <div className={`wcard ${on(13) ?? ''}`}>
-            <div className="wmeta" style={{ marginBottom: 6 }}>HLP-142 · Run agent · <span className="mono">HLP-142-okta-saml-mapping</span></div>
+          <div className={`wart log ${on(13) ?? ''}`}>
+            <div className="lhead"><span>agent run · HLP-142</span><span className="mono">HLP-142-okta-saml-mapping</span></div>
             <Checklist items={SHIP} t={t} cardAt={13} />
           </div>
         </div>
 
-        {/* 04 Tell */}
+        {/* 04 Tell: document preview, a reply bubble, the deal */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(3)] }}>
           <div className={`wlabel ${on(5) ?? ''}`}><i /><span>04 Tell</span></div>
-          <div className={`wcard ${on(25) ?? ''}`}>
-            <div className={`witem wdoc ${on(26) ?? ''}`}>
-              <b>Set up SSO with Okta</b>
-              <div className="wmeta">Help center · drafted from the coverage gap · <span className="wchip em">Published</span></div>
+          <div className="wart tell">
+            <div className={`docp ${on(26) ?? ''}`}>
+              <div className="dtitle">Set up SSO with Okta</div>
+              <div className="dline" style={{ width: '92%' }} /><div className="dline" style={{ width: '76%' }} /><div className="dline" style={{ width: '84%' }} />
+              <div className="dfoot"><span>Help center · Security</span><span className="wchip em">Published</span></div>
             </div>
-            <div className={`witem ${on(28) ?? ''}`}>
-              <div className="wq">“Okta is verified and documented. Here are the exact steps.”</div>
-              <div className="wmeta">Reply to Maya · source: Set up SSO with Okta</div>
+            <div className={`bub reply ${on(28) ?? ''}`}>
+              <div>
+                <p>Okta is verified and documented. Here are the exact steps.</p>
+                <small>Sam · source: Set up SSO with Okta</small>
+              </div>
+              <span className="bav">S</span>
             </div>
-            <div className={`witem ${on(30) ?? ''}`}>
-              <span className="wchip em">Renewal signed · $48k</span>
-            </div>
+            <div className={`deal ${on(30) ?? ''}`}><i /><b>Growth renewal · $48k</b><span>Renewal signed</span></div>
           </div>
         </div>
       </div>
