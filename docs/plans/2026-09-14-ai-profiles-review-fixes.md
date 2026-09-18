@@ -1,5 +1,45 @@
 # AI profiles and edition isolation: review corrections
 
+
+This historical correction record explains AI profile authorization and edition
+isolation work. Its commit IDs and test totals record earlier local verification;
+they are not fresh evidence about the present worktree or a deployed installation.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18. No credentials, live services, tariffs, deployments,
+or database migrations were changed for this documentation review.
+
+- [Profile validation](../../server/internal/service/ai_profile.go) requires a
+  personal primary connection owned by the caller and permits an authorized
+  shared fallback through the separate route validator. However, the current
+  [profile editor](../../frontend/src/components/agents/AIProfileEditor.tsx) filters
+  both primary and fallback choices to the page scope. The backend capability
+  is therefore not fully exposed by this editor for personal profiles.
+- [Accepted selection restoration](../../server/internal/service/ai_profile_resolver.go)
+  reauthorizes membership, personal ownership, model validity, connection scope,
+  provider, and endpoint without consulting editable profiles or trying fallback.
+  Preserving the accepted route does not promise continued execution after
+  disconnection or authorization changes.
+- [Profile deletion](../../server/internal/repository/ai_profile.go) has an in-use
+  guard, and the [liveness migration](../../server/internal/dbmigrate/sql/202609140009_agent_ai_profile_liveness.sql)
+  adds an active shared-profile assignment trigger. These are source artifacts,
+  not proof that a deployment has applied the trigger.
+- [server/go.mod](../../server/go.mod) currently consumes
+  `github.com/helpin-ai/agent-runtime-go v0.6.0`, superseding the alpha version
+  recorded in the progress history. The current dependency file is authoritative
+  for rebuilding this checkout.
+- [CI](../../.github/workflows/ci.yml) includes an AI-profile PostgreSQL job using
+  the shared PostgreSQL workflow. Workflow/test presence is not a fresh passing
+  run, nor proof of Community artifact isolation for all subsequent changes.
+
+The historical clean-tree, build, test-count, SDK-publication, and live-acceptance
+statements below must remain dated observations. This review did not rerun those
+application checks or establish today's SaaS activation state. Deployment handoff
+steps describe a separate operational task, not actions performed by this audit.
+
+## Original correction record
+
 Status: implemented and verified locally. This correction plan supersedes the earlier code-complete
 assessment in `2026-09-14-ai-profiles-and-ee-billing-plan.md`. Live acceptance is
 still pending; SaaS BYOK remains disabled until its release gates pass.
@@ -45,7 +85,7 @@ still pending; SaaS BYOK remains disabled until its release gates pass.
    fix discovered issues, and commit verified steps separately.
 5. **Final verification and handoff.** Run affected backend tests, vet, Community
    and EE builds/checks, desktop type checks, frontend launch regressions, and
-   isolated PostgreSQL integration. Update this plan and the main checkpoint with
+   isolated PostgreSQL integration. Update this plan and the current AI connections guide with
    exact results and remaining live gates; leave working trees clean.
 
 ## Progress

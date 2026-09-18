@@ -33,6 +33,7 @@ type DocsHelpcenterService struct {
 	redirectRepo    *repository.DocsRedirectRepository
 	searchRepo      *repository.DocsHelpcenterSearchRepository
 	s3Client        *storage.S3Client
+	attachmentRepo  publicationAttachmentRepository
 	artifactRepo    publicationArtifactRepository
 	artifactStore   publicationArtifactStore
 	translationSvc  *DocsHelpcenterTranslationService
@@ -1098,6 +1099,10 @@ func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Contex
 	}
 	if len(publishedContent) > 0 {
 		publication.Content = publishedContent
+	}
+	publication.Content, err = materializePublicationImages(ctx, s.artifactStore, s.attachmentRepo, doc.WorkspaceID, doc.ID, publication.Content)
+	if err != nil {
+		return nil, err
 	}
 	publication.Content, err = materializePublicationArtifactReferences(ctx, s.artifactRepo, s.artifactStore, doc.WorkspaceID, doc.ID, publication.Content)
 	if err != nil {
@@ -3090,4 +3095,8 @@ func buildCanonicalHomePath(locale string, multilingual bool) string {
 		return "/" + strings.Trim(strings.TrimSpace(locale), "/")
 	}
 	return "/"
+}
+
+func (s *DocsHelpcenterService) SetPublicationAttachmentRepository(repo *repository.PMAttachmentRepository) {
+	s.attachmentRepo = repo
 }

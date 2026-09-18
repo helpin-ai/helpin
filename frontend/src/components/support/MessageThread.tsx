@@ -1,3 +1,6 @@
+import { pmTriageService, type TriageView, type SupportTaskDraft } from '@/lib/services/pmTriageService';
+import { unwrapRequired } from '@/lib/queryUtils';
+import { SupportAIControl } from './SupportAIControl';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -58,6 +61,7 @@ interface MessageThreadProps {
 }
 
 const LazyCreateTaskDialog = lazy(() => import('./CreateTaskDialog').then((module) => ({ default: module.CreateTaskDialog })));
+const LazySupportTaskTriageDialog = lazy(() => import('./SupportTaskTriageDialog').then((module) => ({ default: module.SupportTaskTriageDialog })));
 const loadReplyComposer = () => import('./ReplyComposer').then((module) => ({ default: module.ReplyComposer }));
 const LazyReplyComposer = lazy(loadReplyComposer);
 
@@ -331,6 +335,11 @@ export function MessageThread({
   const isThreadLoading = !!conversationId && (!conversationFetched || isLoading);
 
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
+  const [taskReview, setTaskReview] = useState<{ conversationId: string; view: TriageView | null; error?: string } | null>(null);
+  const [analyzingTask, setAnalyzingTask] = useState(false);
+  const taskReviewSourceRef = useRef(`${workspaceId}:${conversationId}`);
+  taskReviewSourceRef.current = `${workspaceId}:${conversationId}`;
+
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const [isThreadTransitioning, setIsThreadTransitioning] = useState(false);
@@ -535,7 +544,20 @@ export function MessageThread({
   };
 
   const handleCreateTask = async () => {
-    if (!conversationId || !workspaceSlug) return;
+    if (!conversationId || !workspaceSlug || analyzingTask) return;
+    const sourceKey = `${workspaceId}:${conversationId}`;
+    setAnalyzingTask(true);
+    try {
+      const view = unwrapRequired(await pmTriageService.analyze(workspaceId, 'support_conversation', conversationId), 'Task matching');
+      if (taskReviewSourceRef.current !== sourceKey) return;
+      if (view.status !== 'disabled' && view.status !== 'shadow') {
+        setTaskReview({ conversationId, view });
+        return;
+      }
+    } catch (error) {
+      if (taskReviewSourceRef.current === sourceKey) setTaskReview({ conversationId, view: null, error: error instanceof Error ? error.message : 'Task matching is unavailable.' });
+      return;
+    } finally { setAnalyzingTask(false); }
 
     const dismissed = access?.membership?.support_task_dialog_dismissed;
     const savedTeamId = access?.membership?.support_default_team_id;
@@ -574,6 +596,16 @@ export function MessageThread({
     toast.success(`Created ${created.task_key ?? 'task'}`, {
       description: created.summary || created.task_name,
     });
+    openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
+  };
+
+  const handleReviewedTaskCreate = async (teamId: string, draft: SupportTaskDraft) => {
+    if (!conversationId || !workspaceSlug) return;
+    const created = await createTaskFromConversation.mutateAsync({ conversationId, teamId, draft: { ...draft, reviewed_draft: true } });
+    setTaskReview(null);
+    try { await updatePreferences.mutateAsync({ support_default_team_id: teamId }); }
+    catch { toast.error('Task created, but the default team preference could not be saved.'); }
+    toast.success(`Created ${created.task_key ?? 'task'}`, { description: created.summary || created.task_name });
     openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
   };
 
@@ -913,13 +945,15 @@ export function MessageThread({
             variant="ghost"
             size="icon"
             className="h-11 w-11 shrink-0"
-            disabled={createTaskFromConversation.isPending}
+            disabled={createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
             onClick={handleCreateTask}
             aria-label="Create task"
             title="Create task"
           >
-            {createTaskFromConversation.isPending ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
+            {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
           </Button>
+
+          <SupportAIControl key={conversation.id} conversation={conversation} compact />
 
           <Button
             type="button"
@@ -971,12 +1005,14 @@ export function MessageThread({
               size="sm"
               variant="outline"
               className="h-7 gap-1 text-xs"
-              disabled={createTaskFromConversation.isPending}
+              disabled={createTaskFromConversation.isPending || analyzingTask || !access?.permissions?.includes('pm.edit')}
               onClick={handleCreateTask}
             >
-              {createTaskFromConversation.isPending ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
+              {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
               Create Task
             </Button>
+
+            <SupportAIControl key={conversation.id} conversation={conversation} />
 
             {/* Resolve / Unresolve */}
             {conversation.status === 'resolved' ? (
@@ -1198,7 +1234,11 @@ export function MessageThread({
 
       {/* Reserve the editor's space immediately. Its key isolates drafts and
           attachments when switching between already cached conversations. */}
-      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (
+      {conversationId && (conversation?.id === conversationId && !isThreadLoading ? (conversation.anonymized_at ? (
+        <div className="px-4 py-3 text-sm text-muted-foreground" role="status">
+          This customer was deleted. Messages and comments are retained; this conversation is read-only.
+        </div>
+      ) : (
         <Suspense fallback={<ReplyComposerLoading />}>
           <LazyReplyComposer
             key={`${workspaceId}:${conversationId}`}
@@ -1208,8 +1248,24 @@ export function MessageThread({
             onUpgradeRequired={setUpgradeDialogReason}
           />
         </Suspense>
-      ) : <ReplyComposerLoading />)}
+      )) : <ReplyComposerLoading />)}
 
+      {taskReview && taskReview.conversationId === conversationId ? (
+        <Suspense fallback={null}><LazySupportTaskTriageDialog
+          key={`${workspaceId}:${conversationId}`}
+          workspaceId={workspaceId}
+          workspaceSlug={workspaceSlug}
+          conversationId={taskReview.conversationId}
+          initialView={taskReview.view}
+          initialError={taskReview.error}
+          teams={wsSettings?.teams ?? []}
+          defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
+          isCreating={createTaskFromConversation.isPending}
+          onOpenChange={(open) => { if (!open) setTaskReview(null); }}
+          onCreate={handleReviewedTaskCreate}
+          onLinked={() => { setTaskReview(null); toast.success('Conversation linked to existing task'); }}
+        /></Suspense>
+      ) : null}
       {showCreateTaskDialog ? (
         <Suspense fallback={null}>
           <LazyCreateTaskDialog

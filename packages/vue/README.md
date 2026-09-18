@@ -87,7 +87,7 @@ import { useHelpin } from '@helpin-ai/vue';
 
 const helpin = useHelpin();
 const openGuide = () =>
-  helpin.openArticle('how-to-add-first-comment-2906b16e');
+  helpin.openArticle('getting-started-2906b16e');
 </script>
 
 <template>
@@ -99,7 +99,9 @@ For a migration, map each legacy article ID to its Helpin article key. Use a nor
 
 ## Vue Router pageviews
 
-Pass your Vue Router instance once in a component near the root of the app:
+Set `autoPageview: false` when creating the client, then pass your Vue Router
+instance once in a component near the root of the app. This avoids running both
+the SDK tracker and the router hook for the same navigation:
 
 ```vue
 <script setup lang="ts">
@@ -140,9 +142,9 @@ The `.client.ts` suffix ensures initialization only runs in the browser. `create
 ## Configuration notes
 
 - `widgetKey` must be the public key for the intended in-app widget. It can differ from the key embedded in a public help center.
-- `host` is the Helpin application/API origin, for example `https://client.helpin.ai`.
+- `host` is the Helpin application/API origin, for example `https://client.helpin.ai` for Helpin Cloud or your `PUBLIC_WIDGET_URL` for a Community installation.
 - The widget boots automatically when `widgetKey` and `host` are present. Set `autoBoot: false` for a custom launcher.
-- Widget UI is loaded from `https://cdn.helpin.ai/lib.js` by default. Override `widgetRuntimeUrl` only for a custom, staging, or pinned runtime.
+- Widget UI is loaded from `https://cdn.helpin.ai/lib.js` by default. Self-hosted Community installations set `widgetRuntimeUrl` to their `PUBLIC_SDK_URL` (`<PUBLIC_WIDGET_URL>/sdk/lib.js`); otherwise override it only for a custom, staging, or pinned runtime.
 
 The client returned by `createClient()` also exposes the complete JavaScript SDK API, including events and lower-level lifecycle methods. See the [JavaScript SDK reference](../sdk-js/README.md#client-api).
 

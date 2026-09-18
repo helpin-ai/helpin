@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Public DNS names for the local event lab; override to use your own domain and Caddy TLS.
+export HELPIN_EVENT_API_HOST="${HELPIN_EVENT_API_HOST:-helpin-dev.localhost}"
+export HELPIN_EVENT_LAB_HOST="${HELPIN_EVENT_LAB_HOST:-helpin-dev-fe.localhost}"
+
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 set -a
@@ -243,20 +247,20 @@ print(token["workspace_id"])
     pnpm --dir "$repo_root/frontend" dev -- --host 0.0.0.0 --port 5173
   wait_http "event frontend" http://127.0.0.1:5173/event-test/
 
-  if curl --fail --silent https://helpin-dev.tryunhide.com/sdk/lib.js >/dev/null 2>&1; then
-    echo "Reloading the Caddy process already serving the Helpin development DNS"
+  if curl --fail --silent https://$HELPIN_EVENT_API_HOST/sdk/lib.js >/dev/null 2>&1; then
+    echo "Reloading the Caddy process already serving the event lab DNS names"
     "$caddy_bin" reload --config - --adapter caddyfile <"$repo_root/Caddyfile.dev"
   else
     start_process_with_stdin dev-caddy "$repo_root/Caddyfile.dev" \
       "$caddy_bin" run --config - --adapter caddyfile
   fi
-  wait_http "Caddy event route" https://helpin-dev.tryunhide.com/sdk/lib.js 120
+  wait_http "Caddy event route" https://$HELPIN_EVENT_API_HOST/sdk/lib.js 120
 
   echo
   echo "Local NATS event pipeline is ready."
-  echo "Event lab: https://helpin-dev-fe.tryunhide.com/event-test/?key=$event_test_widget_key&host=https%3A%2F%2Fhelpin-dev.tryunhide.com"
+  echo "Event lab: https://$HELPIN_EVENT_LAB_HOST/event-test/?key=$event_test_widget_key&host=https%3A%2F%2F$HELPIN_EVENT_API_HOST"
   echo "Workspace: $event_test_project_id"
-  echo "Event API: https://helpin-dev.tryunhide.com"
+  echo "Event API: https://$HELPIN_EVENT_API_HOST"
 
   if [[ "${HELPIN_EVENTS_FOREGROUND:-false}" == "true" ]]; then
     echo "Keeping local event processes attached; press Ctrl-C to stop them."
@@ -305,7 +309,7 @@ show_status() {
     printf '%-18s not running\n' event-replay
     failed=1
   fi
-  if curl --fail --silent https://helpin-dev.tryunhide.com/sdk/lib.js >/dev/null 2>&1; then
+  if curl --fail --silent https://$HELPIN_EVENT_API_HOST/sdk/lib.js >/dev/null 2>&1; then
     printf '%-18s ready (HTTPS/DNS)\n' dev-caddy
   else
     printf '%-18s not ready\n' dev-caddy

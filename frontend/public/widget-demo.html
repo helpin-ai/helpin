@@ -113,17 +113,18 @@
   <body>
     <main>
       <section class="card">
-        <p class="eyebrow">Live development environment</p>
+        <p class="eyebrow">Local development environment</p>
         <h1>Helpin chat widget</h1>
         <p class="intro">
-          This page loads the real SDK, widget API, and WebSocket connection from
-          <strong>azhar.dev.helpin.ai</strong> using the active <strong>Test</strong> workspace installation.
+          This page loads the real SDK, widget API, and WebSocket connection from a
+          local Helpin installation at <strong>localhost:8085</strong>. Replace the widget key
+          below with one from your own workspace installation.
         </p>
 
         <ul class="details">
-          <li><span class="check">✓</span>SDK served from <code>/lib.js</code></li>
+          <li><span class="check">✓</span>SDK served from <code>/sdk/lib.js</code></li>
           <li><span class="check">✓</span>API and WebSocket served from the same HTTPS origin</li>
-          <li><span class="check">✓</span>Valid widget key configured for the Test workspace</li>
+          <li><span class="check">✓</span>Widget key from your workspace installation</li>
         </ul>
 
         <p class="hint">
@@ -133,9 +134,9 @@
     </main>
 
     <script
-      src="https://azhar.dev.helpin.ai/lib.js?v=20260813-stable-send-scroll"
-      data-key="098a3ba559c67440669b4e885266ad4d"
-      data-host="https://azhar.dev.helpin.ai"
+      src="http://localhost:8085/sdk/lib.js"
+      data-widget-key="your-widget-key"
+      data-host="http://localhost:8085"
     ></script>
   </body>
 </html>

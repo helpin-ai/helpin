@@ -207,7 +207,7 @@ export type Permission =
   | 'search.read'
   | 'ws.connect';
 
-export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support' | 'automation';
+export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support' | 'automation' | 'agents';
 export type ManagedWorkspaceModule = Extract<WorkspaceModule, 'crm' | 'support' | 'automation'>;
 export type ModuleGrantSubjectType = 'team' | 'workspace_member';
 
@@ -523,7 +523,13 @@ export interface AutomationTriggerCatalogEntry {
   create_rule_search?: WorkflowRuleSearchPreset;
 }
 
+export interface SemanticConditionAvailability {
+  available: boolean;
+  reason?: 'not_configured' | 'workspace_disabled' | 'disabled' | 'shadow';
+}
+
 export interface AutomationInventoryResponse {
+  semantic_conditions?: SemanticConditionAvailability;
   groups: AutomationInventoryGroup[];
   items: AutomationInventoryItem[];
   trigger_catalog: AutomationTriggerCatalogEntry[];
@@ -594,6 +600,8 @@ export interface AutomationTriggerExecutionListItem {
   target_title?: string;
   target_key?: string;
   run_id?: string;
+  condition_outcome?: string;
+  condition_assessment_id?: string;
   status: string;
   error_message?: string;
   fired_at: string;

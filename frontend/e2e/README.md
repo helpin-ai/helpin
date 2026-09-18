@@ -18,7 +18,13 @@ This directory contains browser-level Playwright coverage for `frontend`.
 
 ## Commands
 
+Run from the repository root. The Playwright web server starts Vite directly,
+so prepare generated icons and the widget package before the first run:
+
 ```bash
+pnpm install --frozen-lockfile
+pnpm --filter @helpin-ai/widget-core build
+pnpm --dir frontend run generate:icons
 pnpm --dir frontend run test:e2e:support:install
 pnpm --dir frontend run test:e2e:support
 pnpm --dir frontend run build

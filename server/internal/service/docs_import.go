@@ -97,7 +97,7 @@ func (u *s3ImageUploader) UploadImage(ctx context.Context, workspaceID, filename
 		return "", fmt.Errorf("read image %q: %w", filename, err)
 	}
 	key := fmt.Sprintf("docs-import/%s/%s-%s", workspaceID, uuid.New().String(), filename)
-	if err := u.store.PutObject(ctx, key, contentType, int64(len(payload)), bytes.NewReader(payload), true); err != nil {
+	if err := u.store.PutObject(ctx, key, contentType, int64(len(payload)), bytes.NewReader(payload), docsImportsPublicRead(u.store)); err != nil {
 		return "", fmt.Errorf("upload image %q: %w", filename, err)
 	}
 	return u.store.PublicURL(key), nil
@@ -125,6 +125,9 @@ func (s *DocsImportService) importExternalImageWithUploader(ctx context.Context,
 	}
 
 	if s.s3Client != nil {
+		if _, ok := s.s3Client.DocsImageKeyFromURL(imageURL, workspaceID); ok {
+			return imageURL, nil
+		}
 		publicPrefix := s.s3Client.PublicURL("")
 		if publicPrefix != "" && strings.HasPrefix(imageURL, publicPrefix) {
 			return imageURL, nil
@@ -1061,4 +1064,11 @@ func shouldPublishImportedArticle(ref helpscout.ArticleRef, importStatus string)
 	default:
 		return ref.Status == "published"
 	}
+}
+
+// Keep existing ACL/CDN deployments unchanged. The Community private-bucket
+// contract requires authenticated imports and public copies only on publication.
+func docsImportsPublicRead(store docsImageObjectStore) bool {
+	mode, ok := store.(interface{ PrivateBucket() bool })
+	return !ok || !mode.PrivateBucket()
 }

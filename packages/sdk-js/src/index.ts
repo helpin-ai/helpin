@@ -16,6 +16,7 @@ function helpinClient(config: Partial<Config>): HelpinClient | null {
 
 function initFromScript(script: HTMLScriptElement): HelpinClient | null {
   const config: Partial<Config> = {
+    supportOnly: script.getAttribute('data-support-only') === 'true',
     widgetKey: script.getAttribute('data-widget-key') || script.getAttribute('data-key') || undefined,
     host:
       script.getAttribute('data-host') || script.getAttribute('data-tracking-host') || undefined,
@@ -167,14 +168,6 @@ function initializeNamespacedClient(
     if (!isReady) {
       queue.push(args);
       return;
-    }
-
-    // identify() guard: shutdown widget if user email changes to prevent conversation leakage
-    if (method === 'id') {
-      const userData = args[1];
-      if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
-        client.shutdown();
-      }
     }
 
     if (typeof client[method] === 'function') {
@@ -367,7 +360,7 @@ if (isWindowAvailable()) {
 
         // Widget methods
         const widgetMethods: Record<string, Function> = {
-          boot: (settings: WidgetSettings) => widgetManager.boot(settings),
+          boot: (settings: WidgetSettings) => widgetManager.boot({ ...settings, ...(currentScript?.getAttribute('data-support-only') === 'true' ? { supportOnly: true } : {}) }),
           shutdown: () => analyticsClient ? analyticsClient.shutdown() : widgetManager.shutdown(),
           show: () => widgetManager.show(),
           hide: () => widgetManager.hide(),
@@ -400,13 +393,6 @@ if (isWindowAvailable()) {
 
         // Analytics methods — forward to client if initialized
         if (analyticsClient && typeof (analyticsClient as any)[method] === 'function') {
-          // identify() guard: shutdown widget if user email changes
-          if (method === 'id') {
-            const userData = args[1];
-            if (userData?.email && widgetManager.isActive() && widgetManager.getCurrentEmail() !== userData.email) {
-              analyticsClient.shutdown();
-            }
-          }
           return (analyticsClient as any)[method].apply(analyticsClient, args.slice(1));
         }
 

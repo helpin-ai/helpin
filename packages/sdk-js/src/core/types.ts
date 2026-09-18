@@ -108,6 +108,8 @@ export type ClientProperties = {
 };
 
 type CamelCaseConfig = {
+  /** Support chat and identification only; no analytics collector or event queue. */
+  supportOnly?: boolean;
   widgetKey: string;
   host: string;
   autoBoot?: boolean;
@@ -144,6 +146,7 @@ type CamelCaseConfig = {
 };
 
 type SnakeCaseConfig = {
+  support_only?: boolean;
   widget_key: string;
   host: string;
   auto_boot?: boolean;

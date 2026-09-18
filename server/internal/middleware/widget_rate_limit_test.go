@@ -92,3 +92,16 @@ func TestWidgetRateLimitFailsOpenWithoutRedis(t *testing.T) {
 		t.Fatalf("nil-redis POST = %d, want 200", rec.Code)
 	}
 }
+
+func TestTelemetryDoesNotConsumeCustomerWriteAllowance(t *testing.T) {
+	handler := setupWidgetRateLimitTest(t)
+	for i := 0; i < widgetIPLimitPerMinute+1; i++ {
+		r := httptest.NewRequest(http.MethodPost, "/widget/telemetry", nil)
+		handler.ServeHTTP(httptest.NewRecorder(), r)
+	}
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/widget/messages", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("telemetry exhausted message budget: %d", w.Code)
+	}
+}

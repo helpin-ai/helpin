@@ -1,5 +1,6 @@
+import { workspaceSurface, workspaceHome } from "@/lib/workspaceSurface";
 import { memo, useEffect, type CSSProperties } from "react";
-import { createFileRoute, Outlet, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Outlet, Navigate, useLocation } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useWorkspaceBySlug,
@@ -44,6 +45,7 @@ export const Route = createFileRoute("/_authenticated/w/$slug")({
 
 function WorkspaceLayout() {
   const { slug } = Route.useParams();
+  const location = useLocation();
 
   // TanStack Query for all data fetching
   const { data: workspace, isLoading: wsLoading } = useWorkspaceBySlug(slug);
@@ -178,6 +180,13 @@ function WorkspaceLayout() {
     );
   }
 
+  const surface = workspaceSurface(location.pathname);
+  const accessibleModules = access?.modules ?? [];
+  const home = workspaceHome(slug, accessibleModules);
+  if (surface && !accessibleModules.includes(surface)) {
+    return home ? <Navigate to={home} replace /> : <p className="p-6">No product modules are available. Ask your workspace administrator for access.</p>;
+  }
+
   return (
     <WorkspaceBillingGate billing={billing} slug={slug}>
       <div
@@ -203,7 +212,7 @@ function WorkspaceLayout() {
                 <div className="flex min-h-0 flex-1 overflow-hidden">
                   <WorkspaceMainContent>
                     <Outlet />
-                    <RouteAwareAskAgentsDock />
+                    {accessibleModules.includes('agents') && <RouteAwareAskAgentsDock />}
                   </WorkspaceMainContent>
                 </div>
                 <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />

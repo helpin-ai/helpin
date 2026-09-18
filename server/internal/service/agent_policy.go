@@ -493,29 +493,6 @@ func validateRuntimeForAgentWithPreset(agent *model.Agent, presetOverride *model
 	return nil
 }
 
-func stringSliceSetEqual(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	set := make(map[string]int, len(left))
-	for _, value := range left {
-		set[strings.TrimSpace(value)]++
-	}
-	for _, value := range right {
-		normalized := strings.TrimSpace(value)
-		if set[normalized] == 0 {
-			return false
-		}
-		set[normalized]--
-	}
-	for _, remaining := range set {
-		if remaining != 0 {
-			return false
-		}
-	}
-	return true
-}
-
 func validateModelProvider(provider string) error {
 	switch normalizeModelProvider(provider) {
 	case model.AgentModelProviderAnthropic, model.AgentModelProviderOpenAI, model.AgentModelProviderOpenRouter, model.AgentModelProviderOpenRouterResponses:

@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func TestActivationStalledPostgresFiltersCommercialState(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set CRM_SIGNAL_TEST_POSTGRES_DSN to run PostgreSQL signal rule tests")
 	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open postgres: %v", err)
 	}
@@ -78,4 +79,67 @@ func TestActivationStalledPostgresFiltersCommercialState(t *testing.T) {
 	if len(candidates) != 1 || candidates[0].CompanyID == nil || *candidates[0].CompanyID != "stalled" {
 		t.Fatalf("candidates = %#v, want only stalled company at the seven-day cutoff", candidates)
 	}
+}
+
+func TestSupportSignalPostgresQueries(t *testing.T) {
+	dsn := os.Getenv("CRM_SIGNAL_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set CRM_SIGNAL_TEST_POSTGRES_DSN")
+	}
+	db, err := gorm.Open(postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	defer sqlDB.Close()
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`CREATE TEMP TABLE support_conversations (id text,workspace_id text,crm_company_id text,created_at timestamptz,status text) ON COMMIT DROP`,
+		`CREATE TEMP TABLE support_messages (conversation_id text,created_at timestamptz,message_type text,metadata text) ON COMMIT DROP`,
+	} {
+		if err := tx.Exec(q).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	end := time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC)
+	for i := 0; i < 8; i++ {
+		at := end.AddDate(0, 0, -10)
+		if i < 3 {
+			at = end.AddDate(0, 0, -1)
+		}
+		if err := tx.Exec(`INSERT INTO support_conversations VALUES (?,?,?,?,'open')`, fmt.Sprint(i), "workspace", "company", at).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []struct {
+		days   int
+		rating string
+	}{{1, "1"}, {2, "2"}, {40, "4"}, {41, "5"}, {1, "invalid"}} {
+		if err := tx.Exec(`INSERT INTO support_messages VALUES ('0',?,'csat_survey',?)`, end.AddDate(0, 0, -f.days), `{"rating":"`+f.rating+`"}`).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	repo := NewCRMSignalRepository(tx)
+	t.Run("fractional volume multiplier", func(t *testing.T) {
+		rows, err := repo.EvaluatePostgresSignalRule(context.Background(), model.CRMSignalRuleConfig{RuleKey: model.CRMSignalRuleSupportVolumeSpike}, end.Add(-time.Hour), end)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("got %d candidates", len(rows))
+		}
+	})
+	t.Run("rating regex does not consume a parameter", func(t *testing.T) {
+		rows, err := repo.EvaluatePostgresSignalRule(context.Background(), model.CRMSignalRuleConfig{RuleKey: model.CRMSignalRuleSupportCSATDeterioration}, end.Add(-time.Hour), end)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("got %d candidates", len(rows))
+		}
+	})
 }

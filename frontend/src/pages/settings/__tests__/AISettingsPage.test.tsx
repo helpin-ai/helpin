@@ -116,6 +116,14 @@ it('tells a member without manage permission that the page is read-only', async 
   expect(Array.from(document.querySelectorAll('button')).some((b) => b.textContent?.includes('Add connection'))).toBe(false);
 });
 
+it('makes keyword-only retrieval and separate server AI wiring visible', async () => {
+  vi.mocked(aiConnectionService.list).mockResolvedValue({data:{enabled:true, connections:[],models:[],knowledge:{embeddings_configured:false,embedding_model:'text-embedding-3-small',embedding_dimensions:1536,chat_providers:[]}},error:null});
+  await render('workspace');
+  expect(document.body.textContent).toContain('keyword matching only');
+  expect(document.body.textContent).toContain('Profiles below apply to agent runs');
+  expect(document.body.textContent).toContain('No server chat provider is configured');
+});
+
 it('orders Workspace before Personal and keeps management scoped when switching tabs', async () => {
   frame.permissions = new Set();
   vi.mocked(aiConnectionService.list).mockResolvedValue({ data: { enabled: true, connections: [], models: [] }, error: null });

@@ -11,8 +11,8 @@ type SupportSystemEventType = string
 
 const (
 	// SystemEventTeammateJoined — first non-internal reply by a given
-	// teammate on the conversation. Widget-visible; matches Intercom's
-	// "Jarek joined the conversation" pill.
+	// teammate on the conversation. Renders a widget-visible
+	// "{name} joined the conversation" pill.
 	SystemEventTeammateJoined SupportSystemEventType = "teammate_joined"
 
 	// SystemEventAssigned — one user assigns the conversation to another

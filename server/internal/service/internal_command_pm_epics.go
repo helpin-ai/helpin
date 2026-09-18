@@ -366,22 +366,6 @@ func resolvePMCommandEpicID(meta model.InternalCommandContext, explicit string, 
 	return epicID, nil
 }
 
-func normalizePMCommandPagination(page, perPage int) (int, int, error) {
-	if page < 0 || perPage < 0 {
-		return 0, 0, fmt.Errorf("page and per_page must be positive")
-	}
-	if page == 0 {
-		page = 1
-	}
-	if perPage == 0 {
-		perPage = 50
-	}
-	if perPage > 100 {
-		return 0, 0, fmt.Errorf("per_page must not exceed 100")
-	}
-	return page, perPage, nil
-}
-
 func parsePMCommandDateOnly(value *string, field string) (*time.Time, error) {
 	if value == nil || strings.TrimSpace(*value) == "" {
 		return nil, nil

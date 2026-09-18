@@ -1938,6 +1938,9 @@ func (s *SupportInboxService) listConversationMessages(ctx context.Context, work
 
 	if widgetOnly {
 		messages = widgetVisibleSupportMessages(messages)
+		if err := s.projectWidgetAIProgress(ctx, conv, messages); err != nil {
+			return nil, err
+		}
 	}
 
 	// Hydrate file attachments onto messages.
@@ -2078,6 +2081,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, fmt.Errorf("conversation not found")
 	}
 
+	if conv.AnonymizedAt != nil {
+		return nil, fmt.Errorf("this conversation is read-only because its customer was deleted")
+	}
+
 	messageType := req.MessageType
 	if messageType == "" {
 		messageType = "reply"
@@ -2170,6 +2177,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
 	msg.Metadata = withSupportDeliveryMode(msg.Metadata, req.DeliveryMode)
+	if senderType == "user" && !msg.IsInternal && messageType == "reply" {
+		if err := s.pauseForTeammate(ctx, conv, derefString(senderUserID), "teammate_replied", map[string]any{"opened_by_user_id": senderUserID}); err != nil {
+			return nil, err
+		}
+	}
 	// Before persisting a teammate's first public reply, emit a widget-visible
 	// "{name} joined the conversation" system message so the customer sees a
 	// centered pill immediately ahead of the reply — Intercom's pattern.
@@ -2234,7 +2246,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 				slog.ErrorContext(ctx, "failed to reopen support conversation after customer reply", "error", err, "conversation_id", ticketID)
 			}
 		}
-		if s.triageService != nil && !supportConversationHumanOwned(conv) {
+		if s.triageService != nil && (!supportConversationHumanOwned(conv) || s.triageService.jev.enabled(workspaceID)) {
 			go func(workspaceID, conversationID, messageID string) {
 				if _, triageErr := s.triageService.EvaluateAndRoute(context.WithoutCancel(ctx), workspaceID, conversationID, messageID); triageErr != nil {
 					slog.ErrorContext(ctx, "support triage failed after customer reply", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", triageErr)
@@ -2243,31 +2255,18 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
-	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" && senderUserID != nil && conv != nil {
-		if conv.OpenedByUserID == nil || *conv.OpenedByUserID != *senderUserID {
-			conv.OpenedByUserID = senderUserID
-			conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
-			conv.HumanTakeover = boolPtr(true)
-			// The message insert has already advanced the database projections.
-			// Saving the pre-reply snapshot here would restore the old preview,
-			// sender and workload state along with these ownership changes.
-			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
-				"opened_by_user_id": senderUserID,
-				"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
-				"human_takeover":    true,
-			}); err != nil {
-				slog.ErrorContext(ctx, "failed to set support conversation owner", "error", err, "conversation_id", ticketID)
-			}
-		}
+	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType == "user" && senderUserID != nil {
+		conv.OpenedByUserID = senderUserID
 	}
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && conv != nil {
 		conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
 		conv.HumanTakeover = boolPtr(true)
-		updates := map[string]any{
-			"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
-			"opened_by_user_id": conv.OpenedByUserID,
-			"human_takeover":    true,
+		updates := map[string]any{}
+		if msg.SenderType != "user" {
+			updates["flow_state"] = model.SupportConversationFlowStateAssignedToHuman
+			updates["human_takeover"] = true
+			updates["opened_by_user_id"] = conv.OpenedByUserID
 		}
 		if conv.Status == model.SupportConversationStatusResolved {
 			conv.Status = model.SupportConversationStatusWaitingOnCustomer
@@ -2477,14 +2476,26 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		return nil, fmt.Errorf("conversation not found")
 	}
 
-	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, true)
+	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, !req.ReviewedDraft)
 	if err != nil {
 		return nil, err
 	}
 
-	draft, err := s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
-	if err != nil {
-		return nil, err
+	var draft *supportConversationTaskDraft
+	if req.ReviewedDraft {
+		_, sourceHash := supportPMTriageEvidence(conversation, messages)
+		if req.SourceHash == "" || req.SourceHash != sourceHash {
+			return nil, ErrPMTriageStale
+		}
+		if trimPtrValue(req.Name) == "" || trimPtrValue(req.Description) == "" || !isValidTaskType(trimPtrValue(req.TaskType)) {
+			return nil, fmt.Errorf("reviewed title, description and valid task type are required")
+		}
+		draft = &supportConversationTaskDraft{Title: trimPtrValue(req.Name), Description: trimPtrValue(req.Description), TaskType: trimPtrValue(req.TaskType), Priority: trimPtrValue(req.Priority)}
+	} else {
+		draft, err = s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if trimPtrValue(req.Name) == "" {
 		if err := validateSupportTaskDraft(conversation, messages, draft); err != nil {
@@ -2541,13 +2552,19 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		createReq.Priority = &priority
 	}
 
-	detail, err := s.taskService.Create(ctx, createReq, actorID)
+	var review *supportTaskCreateReview
+	if req.ReviewedDraft {
+		review = &supportTaskCreateReview{conversationID: conversationID, sourceHash: req.SourceHash}
+	}
+	detail, err := s.taskService.create(ctx, createReq, actorID, review)
 	if err != nil {
 		return nil, err
 	}
 
 	taskID := detail.Task.ID
-	if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
+	if req.ReviewedDraft {
+		s.publishReviewedTaskLink(ctx, workspaceID, conversationID, taskID, actorID)
+	} else if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
 		return nil, err
 	}
 
@@ -4227,16 +4244,14 @@ func (s *SupportInboxService) assignConversationAgent(ctx context.Context, works
 		if inst != nil {
 			settings := parseSettings(inst.Settings)
 			if settings.AIAgentID != nil && strings.TrimSpace(*settings.AIAgentID) == agentID {
-				pending := "pending"
-				ticket.HumanTakeover = boolPtr(false)
-				ticket.AIState = &pending
-				ticket.AIResolvedAt = nil
-				ticket.AIResolutionType = nil
-				ticket.FlowState = strPtr(model.SupportConversationFlowStateAIHandling)
+				if !inst.Active {
+					return fmt.Errorf("support AI is not enabled")
+				}
+				return s.changeConversationAIControl(ctx, ticket, derefString(actorID), &model.SupportAIControlRequest{Action: "return", ExpectedVersion: ticket.AIControlVersion}, settings, nil, "")
 			}
 		}
 	}
-	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
+	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{"assigned_agent_id": ticket.AssignedAgentID, "flow_state": ticket.FlowState}); err != nil {
 		return err
 	}
 
@@ -4283,13 +4298,18 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 	}
 
 	previousAssignedUserID := derefString(ticket.AssignedUserID)
-	ticket.AssignedUserID = normalizedUserID
 	if normalizedUserID != nil {
-		ticket.HumanTakeover = boolPtr(true)
-	}
-	ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
-	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
-		return err
+		if err := s.pauseForTeammate(ctx, ticket, derefString(actorID), "assigned_to_teammate", map[string]any{"assigned_user_id": normalizedUserID}); err != nil {
+			return err
+		}
+	} else {
+		if ticket.HumanTakeover != nil && *ticket.HumanTakeover {
+			if err := s.pauseForTeammate(ctx, ticket, derefString(actorID), "unassigned_by_teammate", map[string]any{"assigned_user_id": (*string)(nil)}); err != nil {
+				return err
+			}
+		} else if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{"assigned_user_id": nil}); err != nil {
+			return err
+		}
 	}
 
 	if s.activitySvc != nil {
@@ -4751,8 +4771,8 @@ func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targe
 
 // emitTeammateJoinedIfFirstReply emits a public "{name} joined the conversation"
 // system message on the widget-visible side the first time a given teammate
-// sends a non-internal reply on the conversation. Matches Intercom's behavior
-// of surfacing a "joined" pill on first engagement rather than on assignment.
+// sends a non-internal reply on the conversation. The "joined" pill appears
+// on first engagement rather than on assignment.
 func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string, replyClientMessageID string, savedReply ...*model.SupportMessage) {
 	if s.messageRepo == nil || senderUserID == "" {
 		return

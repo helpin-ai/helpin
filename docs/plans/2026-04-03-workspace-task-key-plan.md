@@ -1,5 +1,17 @@
 # Workspace Task Key Plan
 
+> Source review, 2026-09-17
+
+Historical task-key plan and checkpoint. Computed `TaskKey` and `FormatTaskKey`
+exist in the [task model](../../server/internal/model/pm_task.go). The later
+[organization-scope migration](../../server/internal/dbmigrate/sql/202604070001_workspace_key_org_scope.sql)
+changes workspace-key uniqueness to `(workspace_key, organization_id)`, and
+[current availability checks](../../server/internal/repository/workspace.go)
+filter both active keys and aliases when an organization ID is supplied. The
+original global-uniqueness assumption is therefore not the current general
+contract. Revalidate key resolution and aliases for the caller's scope rather
+than relying on this older design.
+
 ## Status
 
 Plan for introducing a **workspace-level canonical task key** (e.g. `HLP-123`) as the primary human-readable identifier for PM tasks, replacing raw numeric `display_id` in all user-facing surfaces.

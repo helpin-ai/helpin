@@ -1,4 +1,4 @@
-helpin-dev.tryunhide.com {
+{$HELPIN_EVENT_API_HOST:helpin-dev.localhost} {
     @event_pipeline path /api/v1/event /api/v1/events /api/v1/s2s/event /api/v1/s2s/event/ /api/v1/s2s/events /api.*
     reverse_proxy @event_pipeline localhost:8095
     @event_sdk path /sdk/*
@@ -6,7 +6,7 @@ helpin-dev.tryunhide.com {
     reverse_proxy localhost:8080
 }
 
-helpin-dev-fe.tryunhide.com {
+{$HELPIN_EVENT_LAB_HOST:helpin-dev-fe.localhost} {
     @event_lab_control path /event-test /event-test/
     rewrite @event_lab_control /event-test/index.html
     @event_lab_pricing path /event-test/pricing /event-test/pricing/
@@ -18,6 +18,6 @@ helpin-dev-fe.tryunhide.com {
     reverse_proxy localhost:5173
 }
 
-helpin-dev-website.tryunhide.com {
+{$HELPIN_DEV_WEBSITE_HOST:helpin-dev-website.localhost} {
     reverse_proxy localhost:3002
 }

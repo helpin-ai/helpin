@@ -1,0 +1,4 @@
+interface:
+  display_name: "Helpin documentation"
+  short_description: "Name and explain Helpin technical documentation"
+  default_prompt: "Use $helpin-documentation to write or organize clear Helpin documentation with consistent names and working links."

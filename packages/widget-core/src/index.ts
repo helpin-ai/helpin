@@ -209,6 +209,7 @@ export function mountWidget(container: HTMLElement, options: MountWidgetOptions)
           buttonColor: config.branding?.buttonColor,
           buttonIconColor: config.branding?.buttonIconColor,
           icon: config.branding?.launcherIcon || 'chat_bubble',
+          position: config.branding?.widgetPosition,
         })
       : null,
   );

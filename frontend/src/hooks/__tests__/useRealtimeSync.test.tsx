@@ -1040,6 +1040,25 @@ describe('useRealtimeSync task ordering events', () => {
     container.remove()
   })
 
+  it('refreshes cached message identities when a customer is anonymized', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const messageKey = queryKeys.support.messages('ws-1', 'conv-deleted')
+    const visitorKey = queryKeys.support.visitorContext('ws-1', 'conv-deleted')
+    client.setQueryData(messageKey, { messages: [] })
+    client.setQueryData(visitorKey, { name: 'Old name' })
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    await act(async () => {
+      captured.onEvent?.({ action: 'updated', entity: 'support_conversation', entity_id: 'conv-deleted', workspace_id: 'ws-1', data: { reason: 'customer_anonymized' } })
+      await Promise.resolve()
+    })
+    expect(client.getQueryState(messageKey)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(visitorKey)?.isInvalidated).toBe(true)
+    act(() => root.unmount())
+    client.clear()
+  })
+
   it('refreshes live company visitor context and conversation associations', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const visitorKey = queryKeys.support.visitorContext('ws-1', 'conv-company')

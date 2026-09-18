@@ -12,6 +12,7 @@ import (
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
 type SupportConversation struct {
+	AnonymizedAt                   *time.Time      `json:"anonymized_at,omitempty" gorm:"type:timestamptz"`
 	ID                             string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID                    string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	MailboxID                      *string         `json:"mailbox_id" gorm:"type:uuid;index"`
@@ -72,9 +73,13 @@ type SupportConversation struct {
 	// AIActiveRunID points at the agent-runtime chat run currently backing
 	// this conversation's AI turns (nil before the first AI turn; repointed
 	// when an idle-expired run gets a successor).
-	AIFollowUp    *SupportAIFollowUp `json:"ai_follow_up,omitempty" gorm:"-"`
-	AIActiveRunID *string            `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
-	HumanTakeover *bool              `json:"human_takeover" gorm:"default:false;index"`
+	AIFollowUp       *SupportAIFollowUp `json:"ai_follow_up,omitempty" gorm:"-"`
+	AIActiveRunID    *string            `json:"ai_active_run_id,omitempty" gorm:"type:uuid;index"`
+	AIControlVersion int64              `json:"ai_control_version" gorm:"not null;default:0"`
+	AIResumedAt      *time.Time         `json:"ai_resumed_at,omitempty" gorm:"type:timestamptz"`
+	AIPausedAt       *time.Time         `json:"ai_paused_at,omitempty" gorm:"column:ai_paused_at;type:timestamptz"`
+	AIPausedByUserID *string            `json:"ai_paused_by_user_id,omitempty" gorm:"column:ai_paused_by_user_id;type:uuid"`
+	HumanTakeover    *bool              `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -981,6 +986,8 @@ type LinkTaskRequest struct {
 
 // CreateTaskFromConversationRequest creates a PM task from the current support conversation.
 type CreateTaskFromConversationRequest struct {
+	ReviewedDraft     bool                         `json:"reviewed_draft,omitempty"`
+	SourceHash        string                       `json:"source_hash,omitempty"`
 	Name              *string                      `json:"name,omitempty"`
 	Description       *string                      `json:"description,omitempty"`
 	TaskType          *string                      `json:"task_type,omitempty"`
@@ -1572,7 +1579,24 @@ type SupportAIPreviewHistoryTurn struct {
 }
 
 // SupportAIPreviewResponse is the structured dry-run response for support AI previewing.
+// SupportPreviewSnapshot contains only the immutable text context of a test run.
+// It is created by the host, never accepted as a runtime/model-supplied flag.
+type SupportPreviewSnapshot struct {
+	ExcludedTools       []string         `json:"excluded_tools,omitempty"`
+	History             []SupportMessage `json:"history"`
+	Message             string           `json:"message"`
+	ConversationSource  string           `json:"conversation_source"`
+	ConfidenceThreshold float64          `json:"confidence_threshold"`
+	MaxResults          int              `json:"max_results"`
+}
+
 type SupportAIPreviewResponse struct {
+	RunID               string                    `json:"run_id,omitempty"`
+	Status              string                    `json:"status,omitempty"`
+	Provider            string                    `json:"provider,omitempty"`
+	Model               string                    `json:"model,omitempty"`
+	ProfileID           string                    `json:"profile_id,omitempty"`
+	ExcludedTools       []string                  `json:"excluded_tools,omitempty"`
 	ConversationSource  string                    `json:"conversation_source"`
 	ConfidenceThreshold float64                   `json:"confidence_threshold"`
 	TotalTokensUsed     int                       `json:"total_tokens_used"`
@@ -1889,4 +1913,12 @@ type InstallationSettingsResponse struct {
 type RotateWidgetSecretResponse struct {
 	SecretKey string `json:"secret_key"`
 	RotatedAt string `json:"rotated_at"`
+}
+
+// SupportAIControlRequest changes ownership without sending a customer message.
+// Version prevents one teammate from overwriting another's newer decision.
+type SupportAIControlRequest struct {
+	Action              string `json:"action"`
+	ExpectedVersion     int64  `json:"expected_version"`
+	ConfirmHumanRequest bool   `json:"confirm_human_request"`
 }

@@ -1,15 +1,13 @@
-# CRM Entity Summaries
+# CRM entity summaries
 
-Taxonomy note: the canonical platform model for agents, built-in automations, and automation rules now lives in `docs/AGENTS_AND_AUTOMATION.md`. This file remains the implementation detail reference for CRM summary generation.
+Taxonomy note: the canonical platform model for agents, built-in automations, and automation rules now lives in `docs/agents-and-automation.md`. This file remains the implementation detail reference for CRM summary generation.
 
-This document explains the Phase 1b CRM summary pipeline as implemented today. It covers how contact and deal summaries are stored, what triggers refreshes, how generation runs, what data is included, and where the results appear in the product.
+This guide explains stored CRM summaries, refresh triggers, evidence assembly,
+and UI/API access. The original Phase 1b sections describe contact and deal
+summaries; the current service also supports company summaries as described below.
 
-The scope of this document is intentionally narrow:
-
-- `contact` summaries
-- `deal` summaries
-
-It does not cover company summaries, support summaries, or summary-driven write-back automation because those do not exist in this phase.
+Supported CRM entity types are `contact`, `deal`, and `company`. These are
+derived summary artifacts, not commands to edit CRM records.
 
 ## Purpose
 
@@ -325,6 +323,24 @@ It requests refreshes for:
 
 The daily job does not generate summaries directly. It reuses the same request flow as event-driven refreshes.
 
+## Company summaries
+
+The [summary service](../server/internal/service/crm_summary.go) provides
+`GetCompanySummary`, `RequestCompanyRefresh`, and refresh propagation from
+associated CRM/workspace objects. Company generation requires the timeline,
+task, and support evidence repositories; missing dependencies fail explicitly.
+
+The evidence payload combines company details, linked contacts, prioritized
+deals and tasks, support conversations, signals, and sampled recent activity.
+The current activity window is 90 days; bounded limits and source metadata live
+in the service constants and `generateCompanySummary`. Metadata records source
+counts, source references, readiness, and generation version rather than treating
+an empty summary as proof that no customer activity exists.
+
+The company detail page uses the shared `EntitySummaryCard`. Read and refresh
+routes are listed below. The contact/deal evidence rules in the next section
+remain specific to those entity types.
+
 ## Evidence assembly
 
 Summary generation works only from CRM-owned stored data.
@@ -429,13 +445,16 @@ Read endpoints:
 
 - `GET /api/crm/contacts/{id}/summary`
 - `GET /api/crm/deals/{id}/summary`
+- `GET /api/crm/companies/{id}/summary`
 
 Behavior:
 
 - return `200` with `null` when no summary row exists yet
 - return the stored summary row otherwise
 
-These endpoints are read-only in Phase 1b. There is no manual edit API.
+These GET endpoints read stored artifacts. The router also exposes POST
+`/summary/refresh` routes for each of these three entity types. Refresh requests
+regenerate a summary; they do not manually edit its contents.
 
 ## Frontend surface
 
@@ -452,6 +471,7 @@ Current placement:
 
 - contact detail page: top of Overview tab
 - deal detail page: between Stage Progress and Activity
+- company detail page: shared summary card
 
 Supported UI states:
 
@@ -483,11 +503,11 @@ And later work should depend on them rather than rebuilding their own ad hoc con
 
 ## Known current limitations
 
-- only `contact` and `deal` summaries exist
+- the original contact/deal evidence rules do not describe company evidence; see the company section
 - multi-contact emails without a linked deal do not trigger contact summaries
 - summaries are read-only derived artifacts
 - there is no admin diagnostics surface yet for summary runs
-- there is no company-level or support-level summary model yet
+- company summaries can include linked support evidence, but are still CRM company artifacts
 - there is no summary-driven CRM write-back logic
 
 ## Implementation references

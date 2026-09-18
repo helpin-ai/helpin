@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
@@ -915,14 +916,6 @@ func conversationHumanInboxCondition(alias string) string {
 		conversationHumanQueueCondition(alias),
 		alias,
 		alias,
-	)
-}
-
-func conversationHumanResolvedCondition(alias string) string {
-	return fmt.Sprintf("(%s.status = '%s' AND NOT (%s))",
-		alias,
-		model.SupportConversationStatusResolved,
-		conversationResolvedByAICondition(alias),
 	)
 }
 
@@ -2047,14 +2040,26 @@ func (r *SupportConversationRepository) Update(ctx context.Context, conversation
 	if conversation.Status == "resolved" || conversation.Status == "closed" || conversation.Status == "spam" {
 		conversation.DelayedTeamReplySentFor = conversation.AIEscalatedAt
 	}
-	if err := r.db.WithContext(ctx).Save(conversation).Error; err != nil {
-		return fmt.Errorf("update conversation: %w", err)
+	// A pre-takeover snapshot must never restore old ownership/control fields.
+	result := r.db.WithContext(ctx).Model(conversation).Where("workspace_id = ? AND ai_control_version = ?", conversation.WorkspaceID, conversation.AIControlVersion).Select("*").Updates(conversation)
+	if result.Error != nil {
+		return fmt.Errorf("update conversation: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrSupportAIControlConflict
 	}
 	return nil
 }
 
 // UpdateFields updates specific fields on a conversation by ID and workspace.
 func (r *SupportConversationRepository) UpdateFields(ctx context.Context, workspaceID, conversationID string, fields map[string]any) error {
+	// Legacy channel-policy and email takeover paths also revoke prior runs.
+	if _, changesOwnership := fields["human_takeover"]; changesOwnership {
+		fields = maps.Clone(fields)
+		fields["ai_control_version"] = gorm.Expr("ai_control_version + 1")
+		fields["ai_active_run_id"] = nil
+	}
+
 	if status, ok := fields["status"].(string); ok && (status == "resolved" || status == "closed" || status == "spam") {
 		fields = maps.Clone(fields)
 		fields["delayed_team_reply_sent_for"] = gorm.Expr("ai_escalated_at")
@@ -2316,6 +2321,19 @@ func (r *SupportConversationRepository) MarkUnread(ctx context.Context, conversa
 // Delete permanently removes a conversation and its messages.
 func (r *SupportConversationRepository) Delete(ctx context.Context, workspaceID, conversationID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Explicit conversation deletion remains available after anonymization.
+		// Remove the parent first so message cleanup cannot resurrect projections
+		// on a read-only conversation. Everything still commits atomically.
+		var conversation model.SupportConversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("workspace_id = ? AND id = ?", workspaceID, conversationID).Find(&conversation).Error; err != nil {
+			return err
+		}
+		if conversation.AnonymizedAt != nil {
+			if err := tx.Where("workspace_id = ? AND id = ?", workspaceID, conversationID).Delete(&model.SupportConversation{}).Error; err != nil {
+				return fmt.Errorf("delete anonymized conversation: %w", err)
+			}
+		}
+
 		if err := tx.Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID).Delete(&model.SupportMessage{}).Error; err != nil {
 			return fmt.Errorf("delete conversation messages: %w", err)
 		}
@@ -2721,8 +2739,8 @@ func (r *SupportInboxSessionRepository) UpdateSessionsByAnonymousID(ctx context.
 	return nil
 }
 
-// UpgradeIdentityProvenanceByAnonymousID records stronger identity evidence without downgrading
-// an existing verified identity.
+// UpgradeIdentityProvenanceByAnonymousID records evidence for the identity just
+// applied to these sessions. Replacing identity also replaces its verification.
 func (r *SupportInboxSessionRepository) UpgradeIdentityProvenanceByAnonymousID(
 	ctx context.Context,
 	workspaceID, anonymousID, method, trust string,
@@ -2733,18 +2751,11 @@ func (r *SupportInboxSessionRepository) UpgradeIdentityProvenanceByAnonymousID(
 		"identity_method": method,
 		"identity_trust":  trust,
 	}
-	if verifiedAt != nil {
-		updates["identity_verified_at"] = *verifiedAt
-	}
-	if verifierVersion != nil {
-		updates["identity_verifier_version"] = *verifierVersion
-	}
+	updates["identity_verified_at"] = verifiedAt
+	updates["identity_verifier_version"] = verifierVersion
 
 	query := r.db.WithContext(ctx).Model(&model.SupportWidgetSession{}).
 		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID)
-	if trust != model.IdentityTrustVerified {
-		query = query.Where("identity_trust <> ?", model.IdentityTrustVerified)
-	}
 	if err := query.Updates(updates).Error; err != nil {
 		return fmt.Errorf("upgrade session identity provenance: %w", err)
 	}

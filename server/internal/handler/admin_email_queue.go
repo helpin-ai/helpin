@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/helpin-ai/helpin/server/internal/deployment"
 	"net/http"
 	"strings"
 
@@ -28,11 +29,11 @@ func NewAdminEmailQueueHandler(
 ) *AdminEmailQueueHandler {
 	config.SupportEmailReplyDomain = strings.TrimSpace(config.SupportEmailReplyDomain)
 	if config.SupportEmailReplyDomain == "" {
-		config.SupportEmailReplyDomain = "replies.helpin.email"
+		config.SupportEmailReplyDomain = deployment.DefaultReplyDomain
 	}
 	config.SupportEmailRouteDomain = strings.TrimSpace(config.SupportEmailRouteDomain)
 	if config.SupportEmailRouteDomain == "" {
-		config.SupportEmailRouteDomain = "on.helpin.email"
+		config.SupportEmailRouteDomain = deployment.DefaultRouteDomain
 	}
 	config.VerifiedFallbackFromEmail = strings.TrimSpace(config.VerifiedFallbackFromEmail)
 	if config.VerifiedFallbackFromEmail == "" {

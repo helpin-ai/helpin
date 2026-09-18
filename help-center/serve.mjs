@@ -673,6 +673,14 @@ async function handleRequest(request, response) {
     }
 
     if (isApiRequest(routeUrl)) {
+      // The public help-center is not a proxy for staff or internal APIs.
+      let decodedPath
+      try { decodedPath = decodeURIComponent(routeUrl.pathname) } catch { decodedPath = '' }
+      if (!decodedPath.startsWith('/api/hc/') || decodedPath.includes('..') || decodedPath.includes('\\')) {
+        response.statusCode = 404
+        response.end('Not found')
+        return
+      }
       await proxyApiRequest(request, response, routeUrl)
       return
     }

@@ -11,7 +11,6 @@ const CUSTOMER_SURFACES = [
   'src/components/pm/CodingSession/CodingSessionHeader.tsx',
   'src/components/pm/CodingSession/CodingTranscriptPane.tsx',
   'src/components/pm/AgentRunArtifactView.tsx',
-  'src/components/command-bar/CommandRunTimeline.tsx',
   'src/pages/PublicSharedView.tsx',
 ];
 

@@ -587,6 +587,11 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           typingTimers.current.set(timerKey, timer)
         }
       } else {
+        if (event.data?.reason === 'customer_anonymized') {
+          queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, event.entity_id) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.support.visitorContext(workspaceId, event.entity_id) })
+          useSupportPresenceStore.getState().setTyping(event.entity_id, false)
+        }
         const statusPatch = supportConversationStatusPatchFromEvent(event)
         if (statusPatch) {
           queryClient.setQueriesData<SupportConversationListCache>(

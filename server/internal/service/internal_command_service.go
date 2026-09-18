@@ -44,6 +44,7 @@ func (d InternalCommandDefinition) RiskLevel() string {
 }
 
 type InternalCommandService struct {
+	jevDecisions          *JevDecisionService
 	agentService          *AgentService
 	taskService           *PMTaskService
 	labelService          *PMLabelService
@@ -403,6 +404,21 @@ func (s *InternalCommandService) Execute(ctx context.Context, meta model.Interna
 	if err := s.authorizeCommandActor(meta, def); err != nil {
 		return nil, err
 	}
+	if meta.RunID != "" && s.agentRunRepo != nil {
+		run, err := s.resolveCommandRun(ctx, meta)
+		if err != nil {
+			return nil, err
+		}
+		if run.TargetType == supportPreviewTarget {
+			if meta.TargetType != run.TargetType || meta.TargetID != run.TargetID || meta.AgentID != run.AgentID {
+				return nil, fmt.Errorf("preview command scope mismatch")
+			}
+			return s.executeSupportPreviewCommand(ctx, run, meta, def, input)
+		}
+	} else if meta.TargetType == supportPreviewTarget {
+		return nil, fmt.Errorf("preview requires a persisted run")
+	}
+
 	if def.Mutating {
 		if err := s.authorizeDockMutation(ctx, meta, def, input); err != nil {
 			return nil, err
@@ -2264,37 +2280,6 @@ func currentDocumentTargetID(meta model.InternalCommandContext) string {
 		return strings.TrimSpace(meta.TargetID)
 	}
 	return ""
-}
-
-func internalCompactDocumentBlocks(blocks []model.DocsBlock) []map[string]any {
-	out := make([]map[string]any, 0, len(blocks))
-	for _, block := range blocks {
-		out = append(out, map[string]any{
-			"id":           block.ID,
-			"type":         block.Type,
-			"revision":     block.Revision,
-			"content_text": truncateCommandBarText(block.ContentText, 140),
-		})
-	}
-	return out
-}
-
-func internalDetailedDocumentBlocks(blocks []model.DocsBlock, includeContent bool) []map[string]any {
-	out := make([]map[string]any, 0, len(blocks))
-	for _, block := range blocks {
-		item := map[string]any{
-			"id":           block.ID,
-			"type":         block.Type,
-			"revision":     block.Revision,
-			"content_text": truncateCommandBarText(block.ContentText, 140),
-		}
-		if includeContent {
-			item["content_text"] = block.ContentText
-			item["content"] = block.Content
-		}
-		out = append(out, item)
-	}
-	return out
 }
 
 func internalReadDocumentToolMetadata() *commandtools.RuntimeToolMetadata {

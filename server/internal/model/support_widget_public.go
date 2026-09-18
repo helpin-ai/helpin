@@ -118,6 +118,7 @@ func PublicWidgetMetadata(raw string) string {
 		VisitorFeedback  *SupportAnswerFeedback `json:"visitor_feedback,omitempty"`
 		DelayedTeamReply bool                   `json:"delayed_team_reply,omitempty"`
 		CaptureEmail     bool                   `json:"capture_email,omitempty"`
+		AIProgressState  string                 `json:"ai_progress_state,omitempty"`
 		AIReplyKind      string                 `json:"ai_reply_kind,omitempty"`
 		AISources        []struct {
 			DocID    string `json:"docId,omitempty"`
@@ -129,6 +130,9 @@ func PublicWidgetMetadata(raw string) string {
 	}
 	if json.Unmarshal([]byte(raw), &metadata) != nil {
 		return "{}"
+	}
+	if metadata.AIProgressState != "checking" {
+		metadata.AIProgressState = ""
 	}
 	metadata.VisitorFeedback = (SupportMessage{Metadata: raw}).VisitorFeedback()
 	switch metadata.AIReplyKind {

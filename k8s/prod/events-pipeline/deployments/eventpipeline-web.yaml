@@ -89,7 +89,7 @@ spec:
       #         mountPath: /data/tls
       containers:
         - name: main
-          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-v0.1.12
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-v0.1.15
           command: ["events-pipeline"]
           env:
             - name: INTERNAL_API_SECRET
@@ -187,7 +187,7 @@ spec:
               mountPath: /etc/nats/tls
               readOnly: true
         - name: replay-worker
-          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-v0.1.12
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-v0.1.15
           command: ["replay-worker"]
           env:
             - name: MAXMIND_ACCOUNT_ID

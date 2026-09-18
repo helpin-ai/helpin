@@ -3,10 +3,15 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/decision"
+	"github.com/helpin-ai/helpin/server/internal/deployment"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 const (
@@ -17,6 +22,25 @@ const (
 
 // Config holds all application configuration loaded from environment variables.
 type Config struct {
+	AuthenticatedRateLimit    int
+	ExpensiveRateLimit        int
+	PublicWidgetURL           string
+	PublicSDKURL              string
+	SMTPHost                  string
+	SMTPPort                  int
+	SMTPUsername              string
+	SMTPPassword              string
+	SMTPFrom                  string
+	SMTPTLSMode               string
+	EmailVerificationRequired bool
+	// DemoViewerEmail enables the public read-only demo login when set. It is the
+	// email of the shared viewer account visitors are signed in as.
+	DemoViewerEmail string
+	// DemoRequireEmail makes the visitor email mandatory on POST /api/auth/demo.
+	DemoRequireEmail bool
+	// DemoLeadWebhookURL receives a JSON POST for every visitor email captured.
+	DemoLeadWebhookURL    string
+	EnabledModules        []model.ModuleID
 	DatabaseURL           string
 	JWTSecret             string
 	Port                  string
@@ -38,26 +62,50 @@ type Config struct {
 	AgentRuntimeLaunchEnabled bool
 
 	// S3 / object storage (optional — attachments disabled if not set)
-	AWSAccessKeyID     string
-	AWSSecretAccessKey string
-	AWSBucket          string
-	AWSRegion          string
-	AWSEndpointURL     string // S3-compatible API endpoint (MinIO / R2)
-	AWSPublicBaseURL   string // Optional public asset base URL (R2 custom domain / CDN)
+	AWSAccessKeyID        string
+	AWSSecretAccessKey    string
+	AWSBucket             string
+	AWSRegion             string
+	AWSEndpointURL        string // S3-compatible API endpoint (MinIO / R2)
+	AWSPresignEndpointURL string // Public S3 origin for browser-signed requests
+	AWSPrivateBucket      bool
+	AWSPublicBaseURL      string // Optional public asset base URL (R2 custom domain / CDN)
 
 	// Anthropic API (optional — agent/orchestration features disabled if not set)
 	AnthropicAPIKey  string
 	AnthropicBaseURL string
 	OpenAIAPIKey     string
 	// FalAPIKey is used by the server-side image editing tool.
-	FalAPIKey             string
-	OpenAIBaseURL         string
-	OpenAIEmbeddingModel  string
-	SupportRerankerURL    string
-	SupportRerankerModel  string
-	SupportRerankerAPIKey string
-	OpenRouterAPIKey      string
-	OpenRouterBaseURL     string
+	FalAPIKey                   string
+	OpenAIBaseURL               string
+	OpenAIEmbeddingModel        string
+	JevAPIKey                   string
+	JevHandoffMode              string
+	JevFollowUpMode             string
+	JevHandoffThreshold         float64
+	JevFollowUpThreshold        float64
+	JevRoutingThreshold         float64
+	JevTagThreshold             float64
+	JevRoutingMode              string
+	JevTagsMode                 string
+	JevTimeoutMS                int
+	JevWorkspaceIDs             string
+	JevDailyLimit               int
+	JevProductPolicies          map[string]decision.Policy
+	JevPMMode                   string
+	JevPMThreshold              float64
+	JevPMDailyLimit             int
+	SupportDecisionMode         string
+	SupportDecisionURL          string
+	SupportDecisionToken        string
+	SupportDecisionTimeoutMS    int
+	SupportDecisionWorkspaceIDs string
+	SupportDecisionPolicies     string
+	SupportRerankerURL          string
+	SupportRerankerModel        string
+	SupportRerankerAPIKey       string
+	OpenRouterAPIKey            string
+	OpenRouterBaseURL           string
 	// Help center AI answer routing. Empty values resolve to a flash-tier
 	// default on the first chat provider that has an API key configured.
 	HelpcenterAnswerProvider string
@@ -98,6 +146,9 @@ type Config struct {
 	SupportEmailRouteDomain           string
 	AppBaseURL                        string
 	MobileAppBaseURL                  string
+	CLIEnabled                        bool
+	CLIModelGatewayEnabled            bool
+	CLIPublicBaseURL                  string
 	MCPServerEnabled                  bool
 	MCPOAuthEnabled                   bool
 	MCPServiceTokensEnabled           bool
@@ -234,13 +285,37 @@ func Load() (*Config, error) {
 		port = "8080"
 	}
 
+	smtpPort := 587
+	if raw := os.Getenv("SMTP_PORT"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 65535 {
+			return nil, fmt.Errorf("SMTP_PORT must be between 1 and 65535")
+		}
+		smtpPort = parsed
+	}
+	emailVerificationRequired, err := deployment.EmailVerificationPolicy(os.Getenv("AUTH_EMAIL_VERIFICATION_REQUIRED"))
+	if err != nil {
+		return nil, err
+	}
 	corsOrigins := parseCORSOrigins(os.Getenv("CORS_ORIGINS"))
+	enabledModules, err := deployment.ParseModules(os.Getenv("HELPIN_ENABLED_MODULES"))
+	if err != nil {
+		return nil, err
+	}
 
 	appBaseURL := os.Getenv("APP_BASE_URL")
 	if appBaseURL == "" {
 		appBaseURL = "http://localhost:5173"
 	}
 
+	publicWidgetURL, err := publicURL(firstNonEmpty(os.Getenv("PUBLIC_WIDGET_URL"), deployment.DefaultWidgetOrigin, appBaseURL), true)
+	if err != nil {
+		return nil, fmt.Errorf("PUBLIC_WIDGET_URL: %w", err)
+	}
+	publicSDKURL, err := publicURL(firstNonEmpty(os.Getenv("PUBLIC_SDK_URL"), deployment.DefaultSDKLoaderURL, publicWidgetURL+"/sdk/lib.js"), false)
+	if err != nil {
+		return nil, fmt.Errorf("PUBLIC_SDK_URL: %w", err)
+	}
 	webAuthnRPID := strings.TrimSpace(os.Getenv("WEBAUTHN_RP_ID"))
 	if webAuthnRPID == "" {
 		webAuthnRPID = originHost(appBaseURL)
@@ -304,13 +379,30 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("CRM_MEETING_CAPTURE_PROVIDER must be recall or vexa")
 	}
 
+	authenticatedRateLimit, err := rateLimitEnv("AUTHENTICATED_RATE_LIMIT_PER_MINUTE", 1200)
+	if err != nil {
+		return nil, err
+	}
+	expensiveRateLimit, err := rateLimitEnv("EXPENSIVE_RATE_LIMIT_PER_MINUTE", 120)
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
+		AuthenticatedRateLimit:                 authenticatedRateLimit,
+		ExpensiveRateLimit:                     expensiveRateLimit,
 		DatabaseURL:                            dbURL,
 		JWTSecret:                              jwtSecret,
 		Port:                                   port,
 		LogLevel:                               strings.TrimSpace(firstNonEmpty(os.Getenv("LOG_LEVEL"), "info")),
 		RunAutoMigrate:                         parseBoolEnvDefaultTrue(os.Getenv("RUN_AUTO_MIGRATE")),
 		CORSOrigins:                            corsOrigins,
+		EnabledModules:                         enabledModules,
+		PublicWidgetURL:                        publicWidgetURL,
+		PublicSDKURL:                           publicSDKURL,
+		EmailVerificationRequired:              emailVerificationRequired,
+		DemoViewerEmail:                        strings.ToLower(strings.TrimSpace(os.Getenv("DEMO_VIEWER_EMAIL"))),
+		DemoRequireEmail:                       parseBoolEnv(os.Getenv("DEMO_REQUIRE_EMAIL")),
+		DemoLeadWebhookURL:                     strings.TrimSpace(os.Getenv("DEMO_LEAD_WEBHOOK_URL")),
 		TemporalAddress:                        temporalAddress,
 		TemporalNamespace:                      temporalNamespace,
 		TemporalAPIKey:                         temporalAPIKey,
@@ -324,16 +416,40 @@ func Load() (*Config, error) {
 		AgentRuntimeLaunchEnabled:              parseBoolEnv(os.Getenv("AGENT_RUNTIME_LAUNCH_ENABLED")),
 		AWSAccessKeyID:                         os.Getenv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey:                     os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AWSPresignEndpointURL:                  strings.TrimSpace(os.Getenv("AWS_S3_PRESIGN_ENDPOINT_URL")),
 		AWSBucket:                              os.Getenv("AWS_S3_BUCKET_NAME"),
 		AWSRegion:                              os.Getenv("AWS_REGION"),
 		AWSEndpointURL:                         os.Getenv("AWS_S3_ENDPOINT_URL"),
 		AWSPublicBaseURL:                       strings.TrimSpace(os.Getenv("AWS_S3_PUBLIC_BASE_URL")),
+		AWSPrivateBucket:                       strings.EqualFold(os.Getenv("AWS_S3_PRIVATE_BUCKET"), "true"),
 		AnthropicAPIKey:                        os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicBaseURL:                       strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")),
 		OpenAIAPIKey:                           strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		FalAPIKey:                              strings.TrimSpace(os.Getenv("FAL_KEY")),
 		OpenAIBaseURL:                          strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
 		OpenAIEmbeddingModel:                   strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
+		JevRoutingThreshold:                    parseJevProbability(os.Getenv("JEV_ROUTING_THRESHOLD"), 0.9),
+		JevTagThreshold:                        parseJevProbability(os.Getenv("JEV_TAG_THRESHOLD"), 0.95),
+		JevAPIKey:                              os.Getenv("JEV_API_KEY"),
+		JevProductPolicies:                     jevProductPolicies(),
+		JevPMMode:                              strings.TrimSpace(os.Getenv("JEV_PM_MODE")),
+		JevPMThreshold:                         parseJevProbability(os.Getenv("JEV_PM_THRESHOLD"), .95),
+		JevPMDailyLimit:                        parsePositiveIntEnv(os.Getenv("JEV_PM_DAILY_LIMIT"), 1000),
+		JevHandoffMode:                         strings.TrimSpace(os.Getenv("JEV_HANDOFF_MODE")),
+		JevFollowUpMode:                        strings.TrimSpace(os.Getenv("JEV_FOLLOW_UP_MODE")),
+		JevHandoffThreshold:                    parseJevProbability(os.Getenv("JEV_HANDOFF_THRESHOLD"), .95),
+		JevFollowUpThreshold:                   parseJevProbability(os.Getenv("JEV_FOLLOW_UP_THRESHOLD"), .95),
+		JevRoutingMode:                         strings.TrimSpace(os.Getenv("JEV_ROUTING_MODE")),
+		JevTagsMode:                            strings.TrimSpace(os.Getenv("JEV_TAGS_MODE")),
+		JevTimeoutMS:                           parsePositiveIntEnv(os.Getenv("JEV_TIMEOUT_MS"), 1000),
+		JevWorkspaceIDs:                        os.Getenv("JEV_WORKSPACE_IDS"),
+		JevDailyLimit:                          parsePositiveIntEnv(os.Getenv("JEV_DAILY_LIMIT"), 1000),
+		SupportDecisionMode:                    strings.TrimSpace(os.Getenv("SUPPORT_DECISION_MODE")),
+		SupportDecisionURL:                     strings.TrimSpace(os.Getenv("SUPPORT_DECISION_URL")),
+		SupportDecisionToken:                   os.Getenv("SUPPORT_DECISION_TOKEN"),
+		SupportDecisionTimeoutMS:               parsePositiveIntEnv(os.Getenv("SUPPORT_DECISION_TIMEOUT_MS"), 200),
+		SupportDecisionWorkspaceIDs:            os.Getenv("SUPPORT_DECISION_WORKSPACE_IDS"),
+		SupportDecisionPolicies:                os.Getenv("SUPPORT_DECISION_POLICIES"),
 		SupportRerankerURL:                     strings.TrimRight(strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_URL")), "/"),
 		SupportRerankerModel:                   strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_MODEL")),
 		SupportRerankerAPIKey:                  strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_API_KEY")),
@@ -355,18 +471,27 @@ func Load() (*Config, error) {
 		GitHubAppSlug:                          os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:                    os.Getenv("GITHUB_APP_PRIVATE_KEY"),
 		GitOAuthEncryptionKey:                  strings.TrimSpace(os.Getenv("GIT_OAUTH_ENCRYPTION_KEY")),
+		SMTPHost:                               strings.TrimSpace(os.Getenv("SMTP_HOST")),
+		SMTPPort:                               smtpPort,
+		SMTPUsername:                           os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:                           os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:                               strings.TrimSpace(os.Getenv("SMTP_FROM")),
+		SMTPTLSMode:                            strings.TrimSpace(os.Getenv("SMTP_TLS_MODE")),
 		PostmarkAccountToken:                   strings.TrimSpace(os.Getenv("POSTMARK_ACCOUNT_TOKEN")),
 		PostmarkAppServerToken:                 strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
 		PostmarkAppFromEmail:                   strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),
 		PostmarkReplyServerToken:               strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
 		PostmarkReplyFromEmail:                 strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),
 		PostmarkReplyInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
-		SupportEmailReplyDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "replies.helpin.email")),
+		SupportEmailReplyDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), deployment.DefaultReplyDomain)),
 		PostmarkRouteServerToken:               strings.TrimSpace(os.Getenv("POSTMARK_ROUTE_SERVER_TOKEN")),
 		PostmarkRouteInboundWebhookSecret:      strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_ROUTE_INBOUND_WEBHOOK_SECRET"), os.Getenv("POSTMARK_INBOUND_WEBHOOK_SECRET"))),
-		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), "on.helpin.email")),
+		SupportEmailRouteDomain:                strings.TrimSpace(firstNonEmpty(os.Getenv("SUPPORT_EMAIL_ROUTE_DOMAIN"), os.Getenv("SUPPORT_EMAIL_REPLY_DOMAIN"), deployment.DefaultRouteDomain)),
 		AppBaseURL:                             appBaseURL,
 		MobileAppBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("MOBILE_APP_BASE_URL")), "/"),
+		CLIEnabled:                             parseBoolEnv(os.Getenv("CLI_ENABLED")),
+		CLIModelGatewayEnabled:                 parseBoolEnv(os.Getenv("CLI_MODEL_GATEWAY_ENABLED")),
+		CLIPublicBaseURL:                       strings.TrimRight(strings.TrimSpace(os.Getenv("CLI_PUBLIC_BASE_URL")), "/"),
 		MCPServerEnabled:                       parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVER_ENABLED")),
 		MCPOAuthEnabled:                        parseBoolEnvDefaultTrue(os.Getenv("MCP_OAUTH_ENABLED")),
 		MCPServiceTokensEnabled:                parseBoolEnvDefaultTrue(os.Getenv("MCP_SERVICE_TOKENS_ENABLED")),
@@ -599,4 +724,28 @@ func parseBoolEnvDefaultTrue(value string) bool {
 		return true
 	}
 	return parseBoolEnv(trimmed)
+}
+
+func rateLimitEnv(name string, fallback int) (int, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer (0 disables the limit)", name)
+	}
+	return value, nil
+}
+
+// parseJevProbability rejects invalid configured thresholds at client construction.
+func parseJevProbability(raw string, fallback float64) float64 {
+	if strings.TrimSpace(raw) == "" {
+		return fallback
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return math.NaN()
+	}
+	return value
 }

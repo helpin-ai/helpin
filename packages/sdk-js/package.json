@@ -12,11 +12,9 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist", "LICENSE", "NOTICE"],
   "scripts": {
-    "dev": "vite build --watch",
+    "dev": "vite build --watch --mode development",
     "build": "tsc && vite build && node scripts/build-esm.mjs",
     "preview": "vite preview",
     "test": "vitest run",
@@ -34,14 +32,15 @@
     "example:build": "tsc examples/test.ts --outDir examples",
     "example:serve": "wait-on dist/lib.js && vite --config vite.config.ts",
     "serve:test": "http-server . -p 3000",
-    "start": "concurrently \"npm run dev\" \"npm run example:serve\" \"npm run mock\" "
+    "start": "concurrently \"npm run dev\" \"npm run example:serve\" \"npm run mock\" ",
+    "test:e2e:uploads": "npm run build && playwright test --config=./playwright.widget.config.ts uploads.spec.ts"
   },
   "keywords": [
     "helpin",
     "analytics",
     "tracking"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@helpin-ai/widget-core": "workspace:*",
     "@helpin-ai/shared": "workspace:*",

@@ -1,10 +1,18 @@
-# Intercom Fin AI Agent — due-diligence inventory (as of 2026-09-10)
+# Intercom Fin AI Agent research inventory: September 10, 2026
 
-All capabilities sourced from fetched official pages (fin.ai, intercom.com/help, intercom.com/blog, intercom.com/changes, developers.intercom.com) plus named third parties. Items tagged UNVERIFIED could not be confirmed from an official page.
+This historical research inventory records the September 10 assessment of Fin and other support products. Its original author cited official pages and named third parties; those citations are research leads, not a current certification of every capability. Items tagged UNVERIFIED were not confirmed in the original review.
+
+## Review boundary: September 18, 2026
+
+The corporate announcements were rechecked against primary sources. Intercom announced the Fin company name on [May 12](https://www.intercom.com/blog/today-intercom-becomes-fin/). Salesforce subsequently announced that the acquisition **completed on September 10, 2026**, superseding the earlier expected-close wording. [Salesforce completion announcement](https://www.salesforce.com/news/press-releases/2026/09/10/salesforce-completes-acquisition-of-fin/).
+
+The remaining feature counts, pricing, provider support, certifications, release dates, and competitor classifications below retain their original research date and were not comprehensively revalidated in this documentation pass. Vendor performance and security statements are vendor claims, not independent measurements or Helpin guarantees. Recheck a linked primary source before using a specific comparison in public documentation; missing evidence in this inventory does not prove a competitor lacks a feature.
+
+The strategic takeaway is to compare complete support workflows and measurable outcomes. This source review does not establish an exhaustive ranking of open-source products or prove that only two products support autonomous local-model replies.
 
 ## 0. Corporate context
 - Intercom renamed itself "Fin" on 2026-05-12; the helpdesk keeps the Intercom name ("Intercom 2"). https://www.intercom.com/blog/today-intercom-becomes-fin/
-- Salesforce signed a definitive agreement to acquire Fin for ~$3.6B on 2026-06-15, close expected Salesforce FQ4 2027. https://www.salesforce.com/news/press-releases/2026/06/15/salesforce-signs-definitive-agreement-to-acquire-fin/
+- Salesforce announced an agreement on June 15 and [completion on September 10, 2026](https://www.salesforce.com/news/press-releases/2026/09/10/salesforce-completes-acquisition-of-fin/). The original expected closing date is superseded.
 - Help content mirrored on intercom.com/help and fin.ai/help.
 
 ## 1. Core engine
@@ -87,4 +95,4 @@ All capabilities sourced from fetched official pages (fin.ai, intercom.com/help,
 
 ## Takeaways
 - Fin's moat is the surrounding system, not the LLM: knowledge sync, bounded Guidance, Procedures with deterministic steps plus simulations/evals/releases, outcome accounting with reversals, escalation reporting, insights/QA.
-- Among open-source options only Libredesk and Tiledesk ship a customer-facing autonomous agent with first-class Ollama; Chatwoot's is paywalled; Zammad/FreeScout are assist-only.
+- The original comparison identified Libredesk and Tiledesk as local-model autonomous-agent examples. Its coverage is not exhaustive, and current edition/provider support needs verification before making exclusivity claims.

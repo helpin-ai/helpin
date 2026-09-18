@@ -261,25 +261,27 @@ func (AgentRunArtifact) TableName() string { return "agent_run_artifacts" }
 
 // AgentTriggerExecution captures one durable trigger firing attempt for an agent binding.
 type AgentTriggerExecution struct {
-	ID            string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID   string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	AgentID       string     `json:"agent_id" gorm:"type:uuid;not null;index"`
-	ActorID       *string    `json:"actor_id,omitempty" gorm:"type:uuid;index"`
-	BindingID     string     `json:"binding_id" gorm:"not null;index"`
-	BindingKind   string     `json:"binding_kind" gorm:"not null;index"`
-	TriggerType   *string    `json:"trigger_type"`
-	ReferenceID   *string    `json:"reference_id" gorm:"index"`
-	ReferenceType *string    `json:"reference_type"`
-	TargetType    *string    `json:"target_type" gorm:"index"`
-	TargetID      *string    `json:"target_id" gorm:"index"`
-	RunID         *string    `json:"run_id" gorm:"type:uuid;index"`
-	Status        string     `json:"status" gorm:"not null;index"`
-	ErrorMessage  *string    `json:"error_message"`
-	FiredAt       time.Time  `json:"fired_at" gorm:"not null;index"`
-	StartedAt     *time.Time `json:"started_at"`
-	CompletedAt   *time.Time `json:"completed_at"`
-	CreatedAt     time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                    string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID           string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	AgentID               string     `json:"agent_id" gorm:"type:uuid;index"`
+	ActorID               *string    `json:"actor_id,omitempty" gorm:"type:uuid;index"`
+	BindingID             string     `json:"binding_id" gorm:"not null;index"`
+	BindingKind           string     `json:"binding_kind" gorm:"not null;index"`
+	TriggerType           *string    `json:"trigger_type"`
+	ReferenceID           *string    `json:"reference_id" gorm:"index"`
+	ReferenceType         *string    `json:"reference_type"`
+	TargetType            *string    `json:"target_type" gorm:"index"`
+	TargetID              *string    `json:"target_id" gorm:"index"`
+	RunID                 *string    `json:"run_id" gorm:"type:uuid;index"`
+	ConditionOutcome      *string    `json:"condition_outcome,omitempty" gorm:"->"`
+	ConditionAssessmentID *string    `json:"condition_assessment_id,omitempty" gorm:"type:uuid;->"`
+	Status                string     `json:"status" gorm:"not null;index"`
+	ErrorMessage          *string    `json:"error_message"`
+	FiredAt               time.Time  `json:"fired_at" gorm:"not null;index"`
+	StartedAt             *time.Time `json:"started_at"`
+	CompletedAt           *time.Time `json:"completed_at"`
+	CreatedAt             time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt             time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (AgentTriggerExecution) TableName() string { return "agent_trigger_executions" }
@@ -719,6 +721,10 @@ type AgentRunWorkspaceContext struct {
 
 // AgentRunInputPayload is the shared input contract for all agent runs.
 type AgentRunInputPayload struct {
+	SupportPreview    *SupportPreviewSnapshot `json:"support_preview,omitempty"`
+	ExecutionLocation string                  `json:"execution_location,omitempty"`
+	LocalExecution    *CLILocalRun            `json:"local_execution,omitempty"`
+
 	CredentialSource    string                     `json:"credential_source,omitempty"`
 	ModelProvider       string                     `json:"model_provider,omitempty"`
 	ModelConnectionID   string                     `json:"model_connection_id,omitempty"`

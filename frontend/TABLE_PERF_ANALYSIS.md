@@ -1,5 +1,32 @@
 # Table Components Performance Analysis
 
+> Historical implementation review. Its component names, line numbers, and bug
+> claims describe an older table implementation. Current CRM tables use
+> `useTableSurface`, and memoized row components are present; `StoryListView`
+> has been replaced by `TaskListView`. Reproduce a performance issue against the
+> current component before treating a recommendation below as an open defect.
+
+
+## Current source comparison (2026-09-17)
+
+The recommendations below are historical hypotheses, not a current defect list
+or measured speedup. No browser profiling was performed for this docs review.
+
+| Original recommendation | Current implementation |
+| --- | --- |
+| Memoize rows and group headers | Present in ContactsTable, CompaniesTable, DealsTable, and TaskListView. |
+| Remove sizing props to prevent all resize renders | Current row comparators explicitly check sizing versions. Removing that invalidation without another width-update mechanism can leave stale rendering; a stable table row reference alone is insufficient. |
+| Memoize `estimateSize` | All four current tables use `useCallback`. |
+| Remove `localDeals` dependency | Deal edits now live in `useDealEdits`; its callback depends on current source deals, stages, scope, and callbacks, not its optimistic `localDeals` result. This does not make it permanently stable. |
+| Defer pinned-group state in the scroll handler | TaskListView's handler handles pagination; pinned headers use StickyPinnedGroupOverlay. The old inline handler no longer applies. |
+| Reduce all overscan values from 20 | Contacts uses 6; TaskListView uses 4 grouped / 6 flat; Companies and Deals retain 20. Profile the relevant view before changing these tradeoffs. |
+
+Current sources: [contacts](src/components/crm/ContactsTable.tsx),
+[companies](src/components/crm/CompaniesTable.tsx),
+[deals](src/components/crm/DealsTable.tsx),
+[tasks](src/components/pm/TaskListView.tsx), and
+[deal edits](src/components/crm/useDealEdits.ts).
+
 ## Summary of Findings
 
 Files analyzed:
@@ -250,4 +277,5 @@ Column `cell` renderers use inline arrow functions like `(info) => <InlinePriori
 | 5 | Wrap `onScroll` pinned-group state update in `startTransition` (StoryListView) | Reduces scroll jank at group boundaries | Low |
 | 6 | Reduce `overscan` from 20 to 10 (all 4 files) | Renders ~10 fewer off-screen rows | Trivial |
 
-All six optimizations are low-effort, high-confidence changes. Issues 1-2 combined would deliver the largest measurable improvement for 500+ row datasets.
+These were proposed priorities for the old implementation. The expected impacts
+above were estimates, not benchmark results, and do not establish current work to do.

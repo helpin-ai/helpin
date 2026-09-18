@@ -34,10 +34,11 @@ function injectSDKFilename() {
   };
 }
 
-export default defineConfig(({ command }) => {
+export default defineConfig(({ command, mode }) => {
   const isBuild = command === 'build';
 
   return {
+    define: { __HELPIN_SDK_RELEASE__: JSON.stringify(process.env.GITHUB_SHA || 'local') },
     resolve: {
       alias: [
         { find: /^@helpin-ai\/widget-core\/styles/, replacement: resolve(__dirname, '../widget-core/src/styles/widget.css') },
@@ -47,7 +48,7 @@ export default defineConfig(({ command }) => {
       ],
     },
     build: {
-      minify: false,
+      minify: mode === 'development' ? false : 'esbuild',
       cssCodeSplit: false,
       rollupOptions: {
         input: {

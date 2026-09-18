@@ -25,30 +25,6 @@ func TestSupportMessagePromptTextIncludesAttachmentSummary(t *testing.T) {
 	}
 }
 
-func TestBuildSupportCustomerContentPartsIncludesImages(t *testing.T) {
-	msg := model.SupportMessage{
-		Content: "Please inspect this",
-		Attachments: []model.SupportAttachmentPayload{
-			{FileName: "screenshot.png", FileType: "image/png", URL: "https://assets.example.com/screenshot.png"},
-			{FileName: "report.pdf", FileType: "application/pdf", URL: "https://assets.example.com/report.pdf"},
-		},
-	}
-
-	parts := buildSupportCustomerContentParts(msg)
-	if len(parts) != 2 {
-		t.Fatalf("expected text + image parts, got %#v", parts)
-	}
-	if parts[0].Type != "text" {
-		t.Fatalf("expected first part text, got %#v", parts[0])
-	}
-	if parts[1].Type != "image_url" || parts[1].ImageURL == nil {
-		t.Fatalf("expected second part image_url, got %#v", parts[1])
-	}
-	if parts[1].ImageURL.URL != "https://assets.example.com/screenshot.png" {
-		t.Fatalf("unexpected image url %#v", parts[1].ImageURL)
-	}
-}
-
 func TestSanitizeConversationHistoryKeepsAttachmentOnlyMessages(t *testing.T) {
 	history := []model.SupportMessage{
 		{

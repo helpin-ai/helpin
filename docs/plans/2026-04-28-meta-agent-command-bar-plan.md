@@ -1,10 +1,20 @@
-# Meta-Agent Command Bar — PRD Plan
+# Meta-agent command bar plan
 
 **Date:** 2026-04-28
 **Status:** v1 command-bar launcher, durable multi-step plan controls, frontend contract alignment, one-shot Command Agent, and bounded fan-out implemented
-**Altitude:** Product / architecture, grounded in current codebase. Also tracks implementation status.
+**Scope:** Historical product and architecture record; implementation status below describes the original branch.
 
 ---
+
+## Source review — 2026-09-18
+
+The original v1 status lists and verification commands below are historical. Current command-bar plan routes retain list/get, dispatch, cancel, retry, tool lookup, and promotion, and add resume/dismiss. The old `/intents/parse` and unmet-intent routes are absent from the current router. Conversational entry now uses Dock chat routes backed by Agent Runtime runs and the `AskAgentsDock` UI.
+
+Current orchestration supports DAG and task-pipeline plans through `command_bar_plan_orchestration.go`, not the retired local `AgentRunWorkflow` completion activity described below. Limits are 50 plan steps and 10 initially ready DAG steps, not five runs. The initial DAG limit is not a universal lifetime concurrency ceiling. The historical sequential-only non-goals and checklists therefore do not describe all current plan behavior.
+
+Use [command-bar agent architecture](2026-04-28-command-bar-agent-architecture.md), [DAG orchestration](2026-04-30-command-dag-orchestration-plan.md), and [agent execution](../coding-agent-execution.md) with their source-review notes for the current boundaries. The historical tests, fixture failures, production migration instructions, and provider behavior were not rerun or verified here.
+
+## Original plan
 
 ## Summary
 
@@ -50,7 +60,7 @@ Current caveats:
 - Tool-subset picker UI is implemented for known saved agents and blocks dispatch when a step is narrowed to zero tools. Backend `allowed_tools: []` still means "inherit defaults", so the UI intentionally does not dispatch explicit-empty tool sets.
 - Unmet-intent review has a settings UI and redacted-by-default API contract. Still open: final product policy for retention and who may reveal full prompts.
 - Promotion UI is implemented as an explicit dialog with name, description, tool scope, target scope, and provenance. Still open: broader custom-agent registry/versioning UX is outside this plan.
-- CRM one-shot research/update now routes to the Command Agent and can use guarded contact/company enrichment mutation tools. See [Guarded CRM Enrichment Tools Plan](./2026-04-29-guarded-crm-enrichment-tools-plan.md).
+- CRM one-shot research/update now routes to the Command Agent and can use guarded contact/company enrichment mutation tools. See [Guarded CRM Enrichment Tools Plan](2026-04-29-guarded-crm-enrichment-tools-plan.md).
 
 Verification completed:
 
@@ -296,7 +306,7 @@ Tracks A-D are implemented across backend and frontend. Track E single-target on
 - **Track C:** Done. Filtered tool catalog and frontend catalog picker with explicit-empty blocking are implemented.
 - **Track D:** Done. Redaction/review payload and frontend prompt-preview rendering are implemented.
 - **Track E:** Single-target one-shot Command Agent and bounded concrete-target fan-out are implemented.
-- **Track F:** Done. Guarded CRM enrichment tools are implemented and specified in [Guarded CRM Enrichment Tools Plan](./2026-04-29-guarded-crm-enrichment-tools-plan.md).
+- **Track F:** Done. Guarded CRM enrichment tools are implemented and specified in [Guarded CRM Enrichment Tools Plan](2026-04-29-guarded-crm-enrichment-tools-plan.md).
 
 ## Sequenced bets (high-level)
 

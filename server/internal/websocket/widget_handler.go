@@ -12,10 +12,12 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/requestmeta"
+	"github.com/helpin-ai/helpin/server/internal/widgetorigin"
 )
 
 // WidgetService defines the service methods needed by the widget WS handler.
 type WidgetService interface {
+	AuthorizeWidgetOrigin(context.Context, string, widgetorigin.Reference) error
 	GetInstallationByWidgetKey(ctx context.Context, widgetKey string) (*model.SupportWidgetInstallation, error)
 	CreateWidgetSession(ctx context.Context, widgetKey string, anonymousID string, customerName, customerEmail *string, userAgent, pageURL, timezone, locale *string) (*model.SupportWidgetSession, error)
 	UpdateSessionPageURL(ctx context.Context, sessionToken, url string) error
@@ -65,15 +67,13 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate widget_key exists
-	_, err := h.service.GetInstallationByWidgetKey(ctx, widgetKey)
-	if err != nil {
-		http.Error(w, "invalid widget key", http.StatusBadRequest)
+	if len(r.Header.Values("Origin")) != 1 || h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{WidgetKey: widgetKey, SessionToken: legacyToken}) != nil {
+		http.Error(w, "widget origin or credentials are not allowed", http.StatusForbidden)
 		return
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // allow cross-origin widget connections
+		InsecureSkipVerify: true, // exact installation origin checked above
 	})
 	if err != nil {
 		slog.Error("widget ws: accept error", "error", err)
@@ -102,7 +102,7 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "session:create":
 		session, err = h.handleSessionCreate(ctx, widgetKey, msg, conn)
 	case "session:restore":
-		session, err = h.handleSessionRestore(ctx, widgetKey, msg, conn)
+		session, err = h.handleSessionRestore(ctx, widgetKey, r.Header.Get("Origin"), msg, conn)
 	default:
 		slog.Warn("widget ws: unexpected first message type", "type", msg.Type)
 		conn.Close(websocket.StatusPolicyViolation, "expected session:create or session:restore")
@@ -119,6 +119,10 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // serveLegacy handles legacy widget connections that pass session_token in the URL.
 func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, r *http.Request, sessionToken string) {
+	if len(r.Header.Values("Origin")) != 1 || h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{SessionToken: sessionToken}) != nil {
+		http.Error(w, "widget origin or credentials are not allowed", http.StatusForbidden)
+		return
+	}
 	session, err := h.service.GetWidgetSession(ctx, sessionToken)
 	if err != nil {
 		slog.Warn("widget ws: invalid session", "error", err)
@@ -127,7 +131,7 @@ func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // exact installation origin checked above
 	})
 	if err != nil {
 		slog.Error("widget ws: accept error", "error", err)
@@ -262,7 +266,7 @@ func (h *WidgetHandler) handleSessionCreate(ctx context.Context, widgetKey strin
 	return session, nil
 }
 
-func (h *WidgetHandler) handleSessionRestore(ctx context.Context, widgetKey string, msg model.WidgetWSMessage, conn *websocket.Conn) (*model.SupportWidgetSession, error) {
+func (h *WidgetHandler) handleSessionRestore(ctx context.Context, widgetKey, origin string, msg model.WidgetWSMessage, conn *websocket.Conn) (*model.SupportWidgetSession, error) {
 	typed, err := unmarshalWidgetData[model.WidgetSessionRestoreData](msg.Data)
 	if err != nil {
 		slog.Warn("widget ws: invalid session:restore data", "error", err)
@@ -277,7 +281,11 @@ func (h *WidgetHandler) handleSessionRestore(ctx context.Context, widgetKey stri
 		return nil, nil
 	}
 
-	session, err := h.service.GetWidgetSession(ctx, token)
+	err = h.service.AuthorizeWidgetOrigin(ctx, origin, widgetorigin.Reference{WidgetKey: widgetKey, SessionToken: token})
+	var session *model.SupportWidgetSession
+	if err == nil {
+		session, err = h.service.GetWidgetSession(ctx, token)
+	}
 	if err != nil {
 		// Token invalid/expired/revoked — tell client to recreate
 		slog.Info("widget ws: session restore failed, client should recreate", "error", err)

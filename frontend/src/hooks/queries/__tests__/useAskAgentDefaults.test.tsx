@@ -19,8 +19,10 @@ it('loads the dock default without requesting the Automation library and rejects
   const root = createRoot(container);
   try {
     await act(async () => { root.render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>); });
-    await act(async () => { await query!.refetch(); });
-    expect(query!.data).toEqual({ ai_profile_id: 'shared-profile' });
+    await act(async () => {
+      const result = await query!.refetch();
+      expect(result.data).toEqual({ ai_profile_id: 'shared-profile' });
+    });
     expect(vi.mocked(api.get).mock.calls.every(([path]) => path === '/dock/ai-defaults?workspace_id=ws-1')).toBe(true);
     vi.mocked(api.get).mockResolvedValue({ data: null, error: null, status: 200 } as never);
     await act(async () => { const result = await query!.refetch(); expect(result.isError).toBe(true); });

@@ -1,6 +1,10 @@
 package mcpserver
 
 import (
+	"context"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/helpin-ai/helpin/server/internal/ratelimit"
+	"github.com/redis/go-redis/v9"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -20,29 +24,43 @@ func TestProtocolToolAnnotationsAreHintsFromDefinition(t *testing.T) {
 	}
 }
 
-func TestRequestLimiterSeparatesPrincipalAndWorkspaceLimits(t *testing.T) {
-	limiter := newRequestLimiter()
-	principal := &model.MCPPrincipal{ConnectionID: "connection-1", WorkspaceID: "workspace-1"}
-	for i := 0; i < 60; i++ {
-		if !limiter.Allow(principal) {
-			t.Fatalf("Allow() denied request %d before the connection limit", i+1)
+func TestRequestLimiterSharesActorBudgetAcrossTokens(t *testing.T) {
+	mini := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mini.Addr()})
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Error(err)
 		}
+	})
+	limiter := &requestLimiter{shared: ratelimit.New(client, ratelimit.Config{RequestsPerMinute: 2, ExpensivePerMinute: 1})}
+	ctx := context.Background()
+	principal := &model.MCPPrincipal{ConnectionID: "first-token", WorkspaceID: "ws1", UserID: "alice"}
+	if !limiter.Allow(ctx, principal) {
+		t.Fatal("first request blocked")
 	}
-	if limiter.Allow(principal) {
-		t.Fatal("Allow() accepted request above the connection limit")
+	principal.ConnectionID = "second-token"
+	if !limiter.Allow(ctx, principal) || limiter.Allow(ctx, principal) {
+		t.Fatal("token rotation bypassed budget")
 	}
-}
-
-func TestRequestLimiterAppliesToolClassLimits(t *testing.T) {
-	limiter := newRequestLimiter()
-	principal := &model.MCPPrincipal{ConnectionID: "connection-1", WorkspaceID: "workspace-1", UserID: "user-1"}
 	search := service.MCPToolDefinition{Name: "search_workspace"}
-	for i := 0; i < 20; i++ {
-		if !limiter.AllowTool(principal, search) {
-			t.Fatalf("AllowTool() denied search %d before the class limit", i+1)
-		}
+	if !limiter.AllowTool(ctx, principal, search) || limiter.AllowTool(ctx, principal, search) {
+		t.Fatal("expensive ceiling not applied")
 	}
-	if limiter.AllowTool(principal, search) {
-		t.Fatal("AllowTool() accepted a search above the class limit")
+	if !limiter.AllowTool(ctx, principal, service.MCPToolDefinition{Name: "get_task"}) {
+		t.Fatal("read used expensive ceiling")
+	}
+	principal.WorkspaceID = "ws2"
+	if !limiter.Allow(ctx, principal) || !limiter.AllowTool(ctx, principal, search) {
+		t.Fatal("another workspace blocked")
+	}
+	principal.WorkspaceID = "ws1"
+	principal.UserID = ""
+	principal.ServicePrincipalID = "service1"
+	if !limiter.Allow(ctx, principal) || !limiter.AllowTool(ctx, principal, search) {
+		t.Fatal("service principal blocked")
+	}
+	principal.ServicePrincipalID = "service2"
+	if !limiter.AllowTool(ctx, principal, search) {
+		t.Fatal("service principals share budget")
 	}
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import Markdown from 'react-markdown'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -77,10 +77,39 @@ export function ChatPlaygroundPage() {
   const [includeAnswer, setIncludeAnswer] = useState(true)
   const [maxResults, setMaxResults] = useState(8)
   const [history, setHistory] = useState<EditableHistoryTurn[]>([])
+  const [activePreview, setActivePreview] = useState<{ workspaceId: string; agentId: string; runId: string } | null>(null)
   const [response, setResponse] = useState<SupportAIPreviewResponse | null>(null)
 
   const configuredExists = configuredAgentId && supportAgents.some((a) => a.id === configuredAgentId)
   const selectedAgentId = agentId || (configuredExists ? configuredAgentId : supportAgents[0]?.id || '')
+
+  const previewResult = useQuery({
+    queryKey: ['support-preview', activePreview],
+    enabled: activePreview !== null,
+    queryFn: async () => {
+      if (!activePreview) throw new Error('No active preview')
+      return unwrap(await agentService.getSupportPreview(activePreview.workspaceId, activePreview.agentId, activePreview.runId))
+    },
+    refetchInterval: (query) => query.state.data?.final_decision === 'pending' || !query.state.data ? 1000 : false,
+    retry: 2,
+  })
+  useEffect(() => {
+    if (previewResult.data) {
+      setResponse(normalizeResponse(previewResult.data))
+      if (previewResult.data.final_decision !== 'pending') setActivePreview(null)
+    }
+  }, [previewResult.data])
+  useEffect(() => {
+    if (previewResult.error) { toast.error('Could not load preview', {description: previewResult.error.message}); setActivePreview(null) }
+  }, [previewResult.error])
+
+  const stopPreview = useMutation({
+    mutationFn: async () => {
+      if (activePreview) unwrap(await agentService.cancelSupportPreview(activePreview.workspaceId, activePreview.agentId, activePreview.runId))
+    },
+    onSuccess: () => { void previewResult.refetch() },
+    onError: (error: Error) => toast.error('Could not stop preview', {description:error.message}),
+  })
 
   const previewMutation = useMutation({
     mutationFn: async () => {
@@ -91,7 +120,7 @@ export function ChatPlaygroundPage() {
         .map((t) => ({ sender_type: t.sender_type, message_type: t.message_type || 'reply', content: t.content.trim() }))
         .filter((t) => t.content.length > 0)
 
-      return unwrap(
+      const data = unwrap(
         await agentService.previewSupportReply(workspaceId, selectedAgentId, {
           message: latestMessage.trim(),
           conversation_id: conversationId.trim() || undefined,
@@ -100,8 +129,12 @@ export function ChatPlaygroundPage() {
           max_results: Math.max(1, Math.min(maxResults || 8, 12)),
         }),
       )
+      return {data,workspaceId,agentId:selectedAgentId}
     },
-    onSuccess: (data) => setResponse(normalizeResponse(data)),
+    onSuccess: ({ data, workspaceId, agentId }) => {
+      setResponse(normalizeResponse(data))
+      if (data.run_id && data.final_decision === 'pending') setActivePreview({workspaceId, agentId, runId: data.run_id})
+    },
     onError: (error: Error) => toast.error('Preview failed', { description: error.message }),
   })
 
@@ -121,7 +154,7 @@ export function ChatPlaygroundPage() {
     setResponse(null)
   }
 
-  const searchQueries = response?.query_plan.search_queries ?? []
+
   const retrievalResults = response?.retrieval.results ?? []
 
   return (
@@ -175,9 +208,10 @@ export function ChatPlaygroundPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Max Results</Label>
+            <Label>Search-only limit</Label>
             <Input
               type="number"
+              disabled={includeAnswer}
               min={1}
               max={12}
               value={maxResults}
@@ -204,10 +238,11 @@ export function ChatPlaygroundPage() {
             type="button"
             size="sm"
             onClick={() => previewMutation.mutate()}
-            disabled={previewMutation.isPending || !workspaceId || !selectedAgentId || !latestMessage.trim()}
+            disabled={activePreview !== null || previewMutation.isPending || !workspaceId || !selectedAgentId || !latestMessage.trim()}
           >
-            {previewMutation.isPending ? 'Running...' : 'Run Preview'}
+            {activePreview !== null || previewMutation.isPending ? 'Running...' : 'Run Preview'}
           </Button>
+          {activePreview && <Button type="button" variant="outline" size="sm" disabled={stopPreview.isPending} onClick={() => stopPreview.mutate()}>Stop</Button>}
         </div>
 
         {/* History turns */}
@@ -252,6 +287,7 @@ export function ChatPlaygroundPage() {
         )}
       </div>
 
+      <p className="text-sm text-muted-foreground">Uses the saved agent and its shared AI profile through Runtime. Replies and handoffs are captured without contacting customers. External tools and customer changes are blocked. Model and retrieval usage is metered normally. Retrieval-only mode does not call the agent.</p>
       {/* Results */}
       {response && (
         <div className="space-y-6 border-t pt-6">
@@ -269,7 +305,7 @@ export function ChatPlaygroundPage() {
               {response.final_decision}
             </Badge>
             <Badge variant="outline">{response.final_reason}</Badge>
-            <Badge variant="outline">{response.total_tokens_used} tokens</Badge>
+            {response.total_tokens_used > 0 && <Badge variant="outline">{response.total_tokens_used} tokens</Badge>}
             <Badge variant="outline">threshold {response.confidence_threshold}</Badge>
           </div>
 
@@ -277,7 +313,7 @@ export function ChatPlaygroundPage() {
           {response.answer && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-medium">Answer</h3>
+                <h3 className="text-sm font-medium">{response.answer.can_answer ? "Validated reply" : "Rejected proposal — would not be sent"}</h3>
                 <Badge
                   variant={response.answer.can_answer ? 'default' : 'destructive'}
                   className="text-xs"
@@ -296,34 +332,8 @@ export function ChatPlaygroundPage() {
             </div>
           )}
 
-          {/* Query Plan */}
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Query Plan</h3>
-            {response.query_plan.error && (
-              <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                {response.query_plan.error}
-              </div>
-            )}
-            {response.query_plan.standalone_query && (
-              <div className="rounded-md border bg-muted/30 px-3 py-2 font-mono text-xs">
-                {response.query_plan.standalone_query}
-              </div>
-            )}
-            {response.query_plan.clarifying_question && (
-              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                {response.query_plan.clarifying_question}
-              </div>
-            )}
-            {searchQueries.length > 0 && (
-              <div className="space-y-1">
-                {searchQueries.map((q, i) => (
-                  <div key={`${q}-${i}`} className="rounded-md border bg-background px-3 py-1.5 font-mono text-xs">
-                    {q}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {response.provider && <p className="text-sm text-muted-foreground">{response.provider} / {response.model}{response.profile_id ? ` · Profile ${response.profile_id}` : ''}</p>}
+          {response.excluded_tools && response.excluded_tools.length > 0 && <p className="text-sm text-muted-foreground">Unavailable in this preview: {response.excluded_tools.join(', ')}</p>}
 
           {/* Retrieval */}
           {retrievalResults.length > 0 && (

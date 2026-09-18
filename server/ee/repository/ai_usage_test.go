@@ -391,3 +391,31 @@ func setupAIUsageRepository(t *testing.T, mode string, allowance int64) *AIUsage
 	}
 	return NewAIUsageRepository(db)
 }
+
+func TestAIUsageDuePeriodsExcludeClosingReservedBeforeApplyingLimit(t *testing.T) {
+	repo := setupAIUsageRepository(t, model.AIUsageEnforcementStrict, 1_000_000)
+	now := time.Now().UTC()
+	if err := repo.db.Model(&model.AIUsagePeriod{}).Where("id = ?", "period").Updates(map[string]any{"period_end": now.Add(-2 * time.Hour), "reserved_microusd": 100}).Error; err != nil {
+		t.Fatal(err)
+	}
+	p := model.AIUsagePeriod{ID: "ready-period", WorkspaceID: "ready-workspace", PeriodStart: now.Add(-time.Hour), PeriodEnd: now.Add(-time.Minute), Status: model.AIUsagePeriodOpen, PricingVersion: "test", EnforcementMode: model.AIUsageEnforcementStrict}
+	if err := repo.db.Create(&p).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.RolloverPeriod(context.Background(), "period", AIUsagePeriodSchedule{
+		WorkspaceID: "ws", Start: now.Add(-2 * time.Hour), End: now.AddDate(0, 1, 0),
+		PricingVersion: "test", EnforcementMode: model.AIUsageEnforcementStrict,
+	}, now); err != nil {
+		t.Fatalf("roll over busy period: %v", err)
+	}
+	rows, err := repo.ListDuePeriods(context.Background(), now, 1)
+	if err != nil || len(rows) != 1 || rows[0].ID != p.ID {
+		t.Fatalf("due=%v err=%v", rows, err)
+	}
+
+	var original model.AIUsagePeriod
+	repo.db.First(&original, "id = ?", "period")
+	if original.ReservedMicrousd != 100 || original.Status != model.AIUsagePeriodClosing {
+		t.Fatal("retired period lost its outstanding reservations")
+	}
+}

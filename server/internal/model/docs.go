@@ -601,7 +601,7 @@ func (DocsHelpcenterConfig) TableName() string { return "docs_helpcenter_configs
 type DocsHelpcenterArticle struct {
 	ID                string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	DocumentID        string     `json:"document_id" gorm:"type:uuid;not null;uniqueIndex"`
-	PublicID          string     `json:"public_id" gorm:"uniqueIndex"`
+	PublicID          string     `json:"public_id" gorm:"not null;uniqueIndex"`
 	Slug              string     `json:"slug" gorm:"not null;default:''"`
 	SEOTitle          *string    `json:"seo_title"`
 	SEODescription    *string    `json:"seo_description"`

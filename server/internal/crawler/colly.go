@@ -3,6 +3,7 @@ package crawler
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -42,6 +43,9 @@ func crawlWithColly(
 	collector := colly.NewCollector(
 		colly.MaxDepth(depth),
 		colly.Async(true),
+		colly.UserAgent(crawlerUserAgent),
+		// Enforced by the shared transport, including redirects and sitemaps.
+		colly.IgnoreRobotsTxt(),
 	)
 
 	// Rate limiting: 5 parallel requests, 500ms delay per domain.
@@ -53,30 +57,51 @@ func crawlWithColly(
 
 	collector.SetRequestTimeout(30 * time.Second)
 
-	// Proxy rotation (Decodo/Smartproxy or custom).
-	if len(proxyURLs) > 0 {
-		switcher, err := proxy.RoundRobinProxySwitcher(proxyURLs...)
-		if err == nil {
-			collector.SetProxyFunc(switcher)
-			logger.Info("crawler proxy enabled", "count", len(proxyURLs))
-		} else {
-			logger.Warn("crawler proxy setup failed, using direct connection", "error", err)
-		}
-	}
-
-	// Domain scoping.
-	baseDomain := extractDomain(source.StartURL)
-	allowedDomains := []string{baseDomain}
-	if source.IncludeSubdomains {
-		allowedDomains = append(allowedDomains, "*."+baseDomain)
-	}
-	collector.AllowedDomains = allowedDomains
-
 	var (
 		pageCount atomic.Int32
 		mu        sync.Mutex
 		crawlErr  error
 	)
+
+	// Keep proxy behavior shared by robots, page, and sitemap requests.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defer transport.CloseIdleConnections()
+	if len(proxyURLs) > 0 {
+		switcher, err := proxy.RoundRobinProxySwitcher(proxyURLs...)
+		if err != nil {
+			return 0, fmt.Errorf("crawler proxy setup: %w", err)
+		}
+		transport.Proxy = switcher
+	}
+	skipped := map[string]bool{}
+	guarded := newRobotsTransport(ctx, transport, func(rawURL string, err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !errors.Is(err, errRobotsDisallowed) {
+			if crawlErr == nil {
+				crawlErr = err
+			}
+			return
+		}
+		if skipped[rawURL] {
+			return
+		}
+		skipped[rawURL] = true
+		logger.Info("crawl URL skipped", "url", rawURL, "reason", "robots_disallowed")
+		if err := onPage(CrawlRecord{URL: rawURL, SkipReason: "robots_disallowed"}); err != nil && crawlErr == nil {
+			crawlErr = err
+		}
+	})
+	collector.WithTransport(guarded)
+	collector.SetRedirectHandler(func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("too many crawl redirects")
+		}
+		if !filter.Allowed(req.URL.String()) {
+			return fmt.Errorf("redirect outside configured crawl scope")
+		}
+		return nil
+	})
 
 	// Check context cancellation before each request.
 	collector.OnRequest(func(r *colly.Request) {
@@ -231,13 +256,8 @@ func crawlWithColly(
 		logger.Warn("crawl request failed", "url", r.Request.URL.String(), "status", r.StatusCode, "error", err)
 	})
 
-	// Create an HTTP client for sitemap discovery (reuses proxy if configured).
-	sitemapClient := &http.Client{Timeout: 15 * time.Second}
-	if len(proxyURLs) > 0 {
-		if proxyURL, err := url.Parse(proxyURLs[0]); err == nil {
-			sitemapClient.Transport = &http.Transport{Proxy: http.ProxyURL(proxyURL)}
-		}
-	}
+	// Sitemap fetches use exactly the same robots policy and cache.
+	sitemapClient := &http.Client{Timeout: 15 * time.Second, Transport: guarded}
 
 	// For combined discovery, crawl the entry page and its navigation first.
 	// This keeps a large blog sitemap from consuming the entire page budget
@@ -265,6 +285,9 @@ func crawlWithColly(
 		collector.Wait()
 	}
 
+	if ctx.Err() != nil {
+		return int(pageCount.Load()), ctx.Err()
+	}
 	if crawlErr != nil {
 		return int(pageCount.Load()), crawlErr
 	}

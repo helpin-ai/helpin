@@ -1,5 +1,17 @@
 # Workspace Task Key Progress Tracker
 
+> Source review, 2026-09-17
+
+Historical task-key plan and checkpoint. Computed `TaskKey` and `FormatTaskKey`
+exist in the [task model](../../server/internal/model/pm_task.go). The later
+[organization-scope migration](../../server/internal/dbmigrate/sql/202604070001_workspace_key_org_scope.sql)
+changes workspace-key uniqueness to `(workspace_key, organization_id)`, and
+[current availability checks](../../server/internal/repository/workspace.go)
+filter both active keys and aliases when an organization ID is supplied. The
+original global-uniqueness assumption is therefore not the current general
+contract. Revalidate key resolution and aliases for the caller's scope rather
+than relying on this older design.
+
 > **Tracking rule:** update this file as work lands. Keep statuses limited to `Pending`, `In Progress`, `Blocked`, or `Done`.
 
 ## Overall Status

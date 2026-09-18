@@ -27,6 +27,7 @@ export type KnowledgeSourceRow = {
   countLabel: string;
   lastSyncAt?: string | null;
   error?: string | null;
+  warning?: string | null;
 };
 
 type WebsiteSourceLike = Pick<
@@ -44,6 +45,7 @@ type WebsiteSourceLike = Pick<
   | 'last_sync_started_at'
   | 'last_sync_completed_at'
   | 'last_sync_error'
+  | 'last_sync_warning'
 >;
 
 type DocsSpaceLike = Pick<DocsSpace, 'id' | 'name' | 'type'>;
@@ -112,6 +114,7 @@ export function buildKnowledgeSourceRows({
       countLabel: `${source.indexed_pages ?? 0} ${(source.indexed_pages ?? 0) === 1 ? 'page' : 'pages'}`,
       lastSyncAt: source.last_sync_completed_at ?? source.last_sync_started_at ?? null,
       error: source.last_sync_error ?? null,
+      warning: source.last_sync_warning ?? null,
     };
   });
 

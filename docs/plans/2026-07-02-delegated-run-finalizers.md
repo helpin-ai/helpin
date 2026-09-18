@@ -1,4 +1,53 @@
-# Delegated Run Finalizers (agent-runtime → Helpin product side effects)
+# Delegated run finalizers and product side effects
+
+
+This historical implementation record explains why delegated runs need Helpin
+product-side finalization. Maintainers should use the current notes below before
+relying on the original retry, idempotency, or deployment claims.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18; no runtime failure injection or application tests
+were performed for this documentation review.
+
+- [Projection dispatch](../../server/internal/service/agent_runtime_projection.go)
+  still runs finalizers only on a non-terminal-to-terminal event transition,
+  before `UpdateRuntimeProjection`. If a summary fetch fails or a finalizer logs
+  an error and terminal persistence succeeds, a later duplicate terminal event
+  does **not** re-enter this dispatch. Missing markers alone do not cause retries.
+  The original summary-fetch retry claim below is incorrect.
+- [The finalizer service](../../server/internal/service/agent_runtime_finalizers.go)
+  now includes agent status, automation rules, support draft, support coverage gap,
+  planning output, repository delivery, and command-bar plan advancement, plus
+  product analytics. Plan advancement runs last and on all terminal statuses;
+  several other finalizers run only on completion. Local runs are excluded.
+- Marker persistence uses `UpdateRuntimeSummaryMarker`, an individual-key update,
+  rather than the old `UpdateOutputSummary` description. A marker is distinct from
+  the side effect: automation marks before evaluation, allowing lost evaluation
+  on a crash; agent bookkeeping marks after updating the agent, allowing repeated
+  token increments if that gap is replayed repeatedly. Do not describe the latter
+  as bounded to one duplicate increment.
+- Agent bookkeeping sets the agent idle and clears its active task without
+  checking whether a newer run is active. A previously persisted marker protects
+  against repeating this finalizer; it does not establish the blanket claim that
+  a late first finalization can never disturb a newer run.
+- Automation completion handling requires `TaskID` and `target_type == "task"`;
+  the historical `story` target is not accepted by this path. Support draft
+  handling excludes support-follow-up runs, pending approvals, missing draft
+  content, and already-recorded sent messages.
+- Errors returned by individual finalizers are logged while the loop continues.
+  This does not mean `ApplyEvent` can never fail: projection writes, settlement,
+  and the separate CRM playbook observer have their own error paths.
+- Current construction and injection are in
+  [the API entry point](../../server/cmd/api/main.go). The original Temporal-worker
+  wiring and local-executor parity discussion describe migration history. See
+  [agents and automation](../agents-and-automation.md) for current architecture.
+
+The original claims about a separately checked runtime checkout, its API routes,
+and live rollout are dated observations, not newly verified external state.
+The historical planning gaps below are not a current capability inventory.
+
+## Original implementation record
 
 Status: implemented 2026-07-02. Scope: `AgentRuntimeProjectionService` terminal-event
 handling, new `AgentRunFinalizerService`, temporal-worker wiring, `HandoffRun` delegated guard.
@@ -11,7 +60,7 @@ flipped; the blocking gaps (context assembly, phase metadata, approved-preview
 application, completion policy, fail-on-invalid-output) are enumerated as
 the migration-era planner parity blockers. Those blockers and the local
 executor were later retired; current execution architecture is documented in
-`docs/AGENTS_AND_AUTOMATION.md`.
+`docs/agents-and-automation.md`.
 
 ## Problem
 
@@ -84,8 +133,8 @@ summary before dispatch:
 - the merged summary is persisted atomically with the terminal status by the final
   `runRepo.Update`;
 - if the fetch fails, summary-dependent finalizers (3 and the flow-output branch of 4)
-  are skipped **without** writing their markers and the error is logged at ERROR, so a
-  later duplicate terminal event from the runtime can retry them; summary-independent
+  are skipped **without** writing their markers and the error is logged at ERROR, but after terminal status is persisted, a duplicate terminal event does not
+  retry them through this transition-gated dispatch; summary-independent
   finalizers (1, 2, epic branch of 4) still run.
 
 Contract keys each finalizer reads:

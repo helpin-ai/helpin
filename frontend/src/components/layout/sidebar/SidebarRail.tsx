@@ -32,9 +32,9 @@ export function SidebarRail({
       <div className="flex flex-1 flex-col items-center gap-1.5">
         {railItems
           .filter((item) => {
-            if (item.id === 'crm' || item.id === 'support' || item.id === 'automation') {
-              return accessibleModules.includes(item.id)
-            }
+            if (item.id === 'automation') return accessibleModules.includes('automation') || accessibleModules.includes('agents');
+            if (item.id === 'projects') return accessibleModules.includes('pm');
+            if (item.id === 'crm' || item.id === 'support' || item.id === 'docs') return accessibleModules.includes(item.id);
             return isModuleEnabled(item.id, userEmail)
           })
           .map((item) => (

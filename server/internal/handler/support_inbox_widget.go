@@ -17,6 +17,7 @@ import (
 
 // SupportInboxWidgetHandler handles public widget HTTP endpoints (no JWT required).
 type SupportInboxWidgetHandler struct {
+	publicOrigin   string
 	supportService *service.SupportInboxService
 }
 

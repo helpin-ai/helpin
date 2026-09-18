@@ -1031,23 +1031,6 @@ func normalizePlannedTaskPriority(value string) string {
 	}
 }
 
-func filterNonEmptyStrings(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	filtered := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			filtered = append(filtered, value)
-		}
-	}
-	if len(filtered) == 0 {
-		return nil
-	}
-	return filtered
-}
-
 func renderPlannedTaskDescription(proposed model.ProposedTask) string {
 	var sections []string
 	if summary := strings.TrimSpace(proposed.Description); summary != "" {
@@ -1167,23 +1150,6 @@ func resolvedSpecClarifications(items []model.SpecClarificationItem) []model.Spe
 	return resolved
 }
 
-func renderSpecClarificationsBrief(items []model.SpecClarificationItem) string {
-	lines := make([]string, 0, len(items))
-	for _, item := range items {
-		switch item.Kind {
-		case model.SpecClarificationKindOpenQuestion:
-			lines = append(lines, fmt.Sprintf("- %s -> %s", item.Prompt, item.Response))
-		case model.SpecClarificationKindAssumption:
-			if item.Disposition == model.SpecClarificationDispositionAccepted {
-				lines = append(lines, fmt.Sprintf("- %s -> accepted", item.Prompt))
-			} else {
-				lines = append(lines, fmt.Sprintf("- %s -> rejected: %s", item.Prompt, item.Response))
-			}
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
 func (s *AgentService) syncClarificationsIntoSpecDoc(ctx context.Context, documentID, actorID string, clarifications []model.SpecClarificationItem) error {
 	if len(clarifications) == 0 {
 		return nil
@@ -1258,14 +1224,6 @@ func renderSpecClarificationsSection(clarifications []model.SpecClarificationIte
 	}
 
 	return strings.Join(lines, "\n")
-}
-
-func truncateString(value string, limit int) string {
-	value = strings.TrimSpace(value)
-	if limit <= 0 || len(value) <= limit {
-		return value
-	}
-	return value[:limit] + "\n... (truncated)"
 }
 
 func parsePlanningRunStage(input json.RawMessage) string {

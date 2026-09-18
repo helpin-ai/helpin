@@ -1,4 +1,16 @@
-# Go Best Practices Reference (2025-2026)
+# Go reference notes (2025–2026)
+
+This collection summarizes external style and engineering advice. It is not a
+record of Helpin's enforced configuration or proof that every pattern is used by
+the codebase. For repository work, follow [backend instructions](../server/AGENTS.md)
+and the [migration runbook](ops/database-migrations.md).
+
+The current toolchain pin is in [`.go-version`](../.go-version), while
+[`server/go.mod`](../server/go.mod) declares the module's minimum Go version.
+CI runs `go vet` for Community and Enterprise builds; the sample golangci-lint
+configuration below is a recommendation, not a checked-in CI configuration.
+Upstream source dates and recommendations below were not reverified by this
+local documentation audit.
 
 Compiled from: Uber Go Style Guide, JetBrains GoLand Blog, Go official docs, golangci-lint docs,
 GORM docs, PingCAP, glukhov.org, reintech.io, cristiancurteanu.com, and other authoritative sources.

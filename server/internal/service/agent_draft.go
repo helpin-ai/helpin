@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"encoding/json"
+
 	"fmt"
 	"slices"
 	"strings"
@@ -345,12 +345,4 @@ func customAgentDraftJSONSchema() map[string]any {
 			},
 		},
 	}
-}
-
-func mustJSONForDraft(value any) string {
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return "{}"
-	}
-	return string(payload)
 }

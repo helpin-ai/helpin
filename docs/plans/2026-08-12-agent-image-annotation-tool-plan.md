@@ -1,4 +1,40 @@
-# `annotate_image` — Agent Image Annotation Tool
+# Agent image annotation tool proposal
+
+> Proposal, source-compared on 2026-09-17. This page describes a possible
+> agent annotation tool. The human editor exists, but the proposed backend tool,
+> Go renderer, schema mirror, and grounding evaluation are not implemented here.
+
+## Current implementation boundary
+
+The [frontend schema](../../frontend/src/components/docs/annotator/core/annotationTypes.ts)
+is version 1, with eight shape types and source-image pixel coordinates.
+The [annotation dialog](../../frontend/src/components/docs/annotator/integration/DocsImageAnnotateDialog.tsx)
+supports editable annotations and a separate permanent-flattening path for cover
+shapes. It restricts cover use when the original cannot be deleted and waits for
+source deletion before applying a redacted result. This UI flow is not a guarantee
+about every historical copy, backup, or external source.
+
+Source search found no `annotate_image` registration or implementation in the
+current server/packages, and no proposed `image_annotation.go` or
+`image_annotation_render.go` file. The [Go module](../../server/go.mod) does not
+include the proposed `fogleman/gg` dependency. Normalized coordinates, semantic
+targets, shape/text/image limits, renderer parity fixtures, and tool-side cover
+rejection below are therefore requirements, not supported API behavior.
+
+The existing [attachment import service](../../server/internal/service/pm_attachment.go)
+and [runtime artifact host](../../server/internal/service/agent_runtime_host.go)
+provide building blocks, not the missing annotation tool. Its eventual authorization
+still needs a resolved contract: the example specifies `docs.edit`/Docs write scope,
+while the later prose says “pm.edit-equivalent.” Neither wording establishes a
+current annotation-tool permission gate.
+
+The proposed dependency/license/font choices, cost estimate, deployment simplicity,
+and coordinate-accuracy claims were not validated by an implementation or benchmark.
+A future tool needs its own source access checks and measured rendering/grounding
+acceptance. No image processing, provider call, attachment upload, or source deletion
+was performed during this documentation review.
+
+## Original tool proposal
 
 Date: 2026-08-12
 Status: Proposed
@@ -140,7 +176,7 @@ permission, audit trail per call.
 
 ### Phase 5 — Prompting and docs
 - Tool description carrying the normalized-coordinate contract explicitly, with a worked example.
-- A note in `docs/AGENTS_AND_AUTOMATION.md` describing the tool as a generic executor capability.
+- A note in `docs/agents-and-automation.md` describing the tool as a generic executor capability.
 
 ## Risks
 

@@ -25,7 +25,7 @@ func TestCreateInvitation_LockedWorkspaceBlocksNewInvite(t *testing.T) {
 
 	billingService := NewBillingService(billingRepo, nil, nil)
 	billingService.SetWorkspaceRepository(workspaceRepo)
-	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, stubInviteEmailSender{}, "http://localhost:3000", jwtManager)
 	svc.SetBillingService(billingService)
 
 	ownerID := "owner-001"
@@ -63,7 +63,7 @@ func TestCreateInvitation_ActivePaidPlanAllowsAdditionalSeats(t *testing.T) {
 
 	billingService := NewBillingService(billingRepo, nil, nil)
 	billingService.SetWorkspaceRepository(workspaceRepo)
-	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, nil, "http://localhost:3000", jwtManager)
+	svc := NewInviteService(invitationRepo, workspaceRepo, nil, userRepo, settingsRepo, stubInviteEmailSender{}, "http://localhost:3000", jwtManager)
 	svc.SetBillingService(billingService)
 
 	ownerID := "owner-001"

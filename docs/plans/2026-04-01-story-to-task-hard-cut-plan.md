@@ -1,5 +1,15 @@
 # Story to Task Hard-Cut Rename Plan
 
+> Source review, 2026-09-17
+
+Historical April rename plan and checkpoint. The current public model is
+[PMTask](../../server/internal/model/pm_task.go), and current frontend routes use
+`pm/tasks`. The worker executor references and compatibility-shim inventory below
+belong to that checkpoint; they do not describe the current separate Agent Runtime
+execution architecture. Use [coding execution](../coding-agent-execution.md) and
+[current internal tools](../internal-tools-framework.md) for present contracts.
+The historical rollout and staging statuses have not been re-certified here.
+
 ## Status
 
 Draft plan for renaming the PM work item domain from **Story** to **Task** across product, API, database, automations, and agent/runtime surfaces.
@@ -325,8 +335,8 @@ Update repo-level documentation that references "story" as the canonical term:
 - `CLAUDE.md` (root) — logging examples (`"story created"`, `"story_id"`), route references (`/pm/stories`)
 - `server/CLAUDE.md` — `/stories` route definition, story creation log examples
 - `AGENTS.md` — story references in log output examples
-- `docs/prd-shortcut-importer.md` — Shortcut import mappings referencing `pm_stories`, story type counts, team story counts
-- `docs/PRD-stories-scale-and-performance.md` — performance requirements for stories board and scaling
+- `docs/prds/shortcut-importer.md` — Shortcut import mappings referencing `pm_stories`, story type counts, team story counts
+- `docs/prds/task-scale-and-performance.md` — performance requirements for stories board and scaling
 - Any internal PRDs or plan docs that describe story as the current product term should note the rename
 
 ## Rollout Notes

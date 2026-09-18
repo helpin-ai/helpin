@@ -21,6 +21,7 @@ describe('knowledgeSourcesPresentation', () => {
           sync_status: 'ready',
           sync_progress: 100,
           indexed_pages: 12,
+          last_sync_warning: '2 URLs skipped because the site disallows crawling.',
           indexed_chunks: 45,
           last_sync_completed_at: '2026-07-08T10:00:00Z',
         },
@@ -66,6 +67,8 @@ describe('knowledgeSourcesPresentation', () => {
         name: 'Docs site',
         status: 'ready',
         countLabel: '12 pages',
+        warning: '2 URLs skipped because the site disallows crawling.',
+        error: null,
       }),
       expect.objectContaining({
         id: 'file:file-1',

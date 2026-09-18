@@ -74,11 +74,12 @@ expected_project_id=${token_context[1]}
 payload=$(MARKER="$marker" python3 -c '
 import json, os
 marker = os.environ["MARKER"]
+lab_host = os.environ.get("HELPIN_EVENT_LAB_HOST", "helpin-dev-fe.localhost")
 print(json.dumps({
     "api_key": "payload-must-not-authorize",
     "project_id": "00000000-0000-0000-0000-000000000000",
     "event_type": "pipeline_smoke",
-    "url": f"https://helpin-dev-fe.tryunhide.com/event-test/smoke?run={marker}",
+    "url": f"https://{lab_host}/event-test/smoke?run={marker}",
     "doc_path": "/event-test/smoke",
     "user": {
         "anonymous_id": marker,

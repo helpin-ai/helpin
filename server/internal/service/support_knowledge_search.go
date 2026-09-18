@@ -14,7 +14,6 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
-	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
@@ -232,59 +231,6 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 	return reranked, nil
 }
 
-func buildKnowledgeContext(results []KnowledgeSearchResult) string {
-	if len(results) == 0 {
-		return ""
-	}
-
-	var sb strings.Builder
-	for idx, result := range results {
-		if idx >= 8 {
-			break
-		}
-		if result.IsInternal {
-			authority := "standard"
-			if result.SourceType == knowledgeSourceTypeGuidance {
-				authority = "maximum_applicable"
-			}
-			sb.WriteString(fmt.Sprintf(
-				"---\nEVIDENCE_ID: %s\nVISIBILITY: INTERNAL\nSOURCE_TYPE: %s\nAUTHORITY: %s\nTITLE: Internal guidance\nHEADING_PATH: Internal section\nCHUNK_INDEX: %d\nCONTENT:\n%s\n",
-				result.ID,
-				result.SourceType,
-				authority,
-				result.ChunkIndex,
-				result.Content,
-			))
-			continue
-		}
-		if strings.TrimSpace(result.URL) != "" {
-			sb.WriteString(fmt.Sprintf(
-				"---\nEVIDENCE_ID: %s\nVISIBILITY: PUBLIC\nDOC_ID: %s\nSOURCE_TYPE: %s\nTITLE: %s\nHEADING_PATH: %s\nURL: %s\nCHUNK_INDEX: %d\nCONTENT:\n%s\n",
-				result.ID,
-				result.ReferenceID,
-				result.SourceType,
-				result.Title,
-				result.HeadingPath,
-				result.URL,
-				result.ChunkIndex,
-				result.Content,
-			))
-		} else {
-			sb.WriteString(fmt.Sprintf(
-				"---\nEVIDENCE_ID: %s\nVISIBILITY: PUBLIC\nDOC_ID: %s\nSOURCE_TYPE: %s\nTITLE: %s\nHEADING_PATH: %s\nCHUNK_INDEX: %d\nCONTENT:\n%s\n",
-				result.ID,
-				result.ReferenceID,
-				result.SourceType,
-				result.Title,
-				result.HeadingPath,
-				result.ChunkIndex,
-				result.Content,
-			))
-		}
-	}
-	return sb.String()
-}
-
 func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult) []AISource {
 	if len(sourceDocIDs) == 0 || len(searchResults) == 0 {
 		return nil
@@ -323,29 +269,6 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 		})
 	}
 	return sources
-}
-
-func publicSourceDocIDs(sourceDocIDs []string, searchResults []KnowledgeSearchResult) []string {
-	publicIDs := make(map[string]struct{}, len(searchResults))
-	for _, result := range searchResults {
-		if !result.IsInternal {
-			publicIDs[result.ReferenceID] = struct{}{}
-		}
-	}
-
-	filtered := make([]string, 0, len(sourceDocIDs))
-	seen := make(map[string]struct{}, len(sourceDocIDs))
-	for _, sourceDocID := range sourceDocIDs {
-		if _, ok := publicIDs[sourceDocID]; !ok {
-			continue
-		}
-		if _, ok := seen[sourceDocID]; ok {
-			continue
-		}
-		seen[sourceDocID] = struct{}{}
-		filtered = append(filtered, sourceDocID)
-	}
-	return filtered
 }
 
 func normalizeQueryKey(query string) string {
@@ -447,17 +370,6 @@ func (s *SupportAIService) checkTokenBudget(agent *model.Agent) bool {
 		return true // no budget configured = unlimited
 	}
 	return agent.TokensUsedThisMonth < *agent.MonthlyTokenBudget
-}
-
-// recordTokenUsage atomically increments the agent's token usage counter.
-func (s *SupportAIService) recordTokenUsage(ctx context.Context, agentID string, tokensUsed int) {
-	if err := s.db.WithContext(ctx).
-		Model(&model.Agent{}).
-		Where("id = ?", agentID).
-		Update("tokens_used_this_month", gorm.Expr("tokens_used_this_month + ?", tokensUsed)).
-		Error; err != nil {
-		slog.ErrorContext(ctx, "record token usage failed", "agent_id", agentID, "error", err)
-	}
 }
 
 // acquireLock acquires a Redis SETNX lock with TTL.
@@ -570,6 +482,7 @@ func stripConversationPII(content string, customerEmail, customerPhone *string) 
 // SupportKnowledgeSearchOutcome is what the search_knowledge runtime tool
 // receives: the resolved support agent plus the agent-scoped search results.
 type SupportKnowledgeSearchOutcome struct {
+	Queries []string
 	AgentID string
 	Results []KnowledgeSearchResult
 }
@@ -591,27 +504,34 @@ func (s *SupportAIService) SearchKnowledgeForConversation(ctx context.Context, w
 		return nil, fmt.Errorf("no support AI agent is configured for this workspace")
 	}
 	agentID := strings.TrimSpace(*settings.AIAgentID)
-	effectiveQueries := cloneStringSlice(queries)
+	var messages []model.SupportMessage
 	if s.messageRepo != nil {
-		messages, listErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
-		if listErr != nil {
-			slog.WarnContext(ctx, "support knowledge tool: list messages for exact query failed", "error", listErr, "conversation_id", conversationID)
-		} else {
-			effectiveQueries = prependVisitorKnowledgeQuery(messages, effectiveQueries)
+		messages, err = s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+		if err != nil {
+			slog.WarnContext(ctx, "support knowledge tool: list messages for exact query failed", "error", err, "conversation_id", conversationID)
 		}
 	}
-	effectiveQueries = dedupeQueries(effectiveQueries)
-	if len(effectiveQueries) > 4 {
-		effectiveQueries = effectiveQueries[:4]
-	}
-
-	results, err := s.loadKnowledgeChunks(ctx, workspaceID, agentID, language, effectiveQueries)
+	effectiveQueries := supportKnowledgeQueries(messages, queries)
+	results, err := s.searchSupportKnowledge(ctx, workspaceID, agentID, language, messages, queries)
 	if err != nil {
 		return nil, err
 	}
 
 	s.recordToolRetrievalTrace(ctx, workspaceID, conversationID, effectiveQueries, results)
-	return &SupportKnowledgeSearchOutcome{AgentID: agentID, Results: results}, nil
+	return &SupportKnowledgeSearchOutcome{AgentID: agentID, Results: results, Queries: effectiveQueries}, nil
+}
+
+// Both production and previews prepend the exact visitor message and use the
+// same scoped retrieval/reranking pipeline. Only live turns emit coverage events.
+func supportKnowledgeQueries(messages []model.SupportMessage, queries []string) []string {
+	queries = dedupeQueries(prependVisitorKnowledgeQuery(messages, cloneStringSlice(queries)))
+	if len(queries) > 4 {
+		queries = queries[:4]
+	}
+	return queries
+}
+func (s *SupportAIService) searchSupportKnowledge(ctx context.Context, workspaceID, agentID, language string, messages []model.SupportMessage, queries []string) ([]KnowledgeSearchResult, error) {
+	return s.loadKnowledgeChunks(ctx, workspaceID, agentID, language, supportKnowledgeQueries(messages, queries))
 }
 
 func prependVisitorKnowledgeQuery(messages []model.SupportMessage, queries []string) []string {

@@ -1,5 +1,51 @@
 # CRM Meeting Intelligence
 
+
+This historical implementation record explains meeting capture and CRM follow-up.
+Use the notes below for current maintenance; the branch status, provider API
+instructions, and completed-checklist claims describe the original rollout.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18. No provider calls, external documentation checks,
+production canaries, or application tests were performed during this review.
+
+- [CRMMeetingService](../../server/internal/service/crm_meeting.go) retains
+  deployment-owned provider selection and capture-specific provider identity.
+  [Model JSON fields](../../server/internal/model/crm_meeting.go) hide technical
+  capture provider fields and the default provider. The original UI mockup's
+  provider display and workspace-admin provider selection are not the current
+  public settings contract. Capture identity is retained; capture status is
+  lifecycle state, so “immutable attempts” should not imply every field is frozen.
+- Calendar capture is no longer merely a follow-on proposal. The
+  [capture scheduler](../../server/internal/service/crm_meeting_capture_scheduler.go)
+  uses Temporal SignalWithStart, and the
+  [router](../../server/internal/router/router.go) includes upcoming-calendar,
+  event capture, and recurring-series capture endpoints. Availability still
+  depends on connection, policy, and worker configuration.
+- Schema setup includes versioned migrations such as the
+  [meeting prerequisites](../../server/internal/dbmigrate/sql/20260815000050000000_create_crm_meeting_migration_prerequisites.sql)
+  and [calendar capture migration](../../server/internal/dbmigrate/sql/202608150001_calendar_meeting_capture.sql).
+  AutoMigrate alone is not the installation contract, and source files do not
+  establish that migrations ran on any deployed database.
+- [AcceptActionItem](../../server/internal/service/crm_meeting_actions.go) returns
+  an already-accepted item and repairs its association, but first-time acceptance
+  creates the PM task before updating the action item and association. Those
+  operations are not one transaction in this method. A failure after task creation
+  or concurrent acceptance can therefore undermine the blanket idempotency claim;
+  do not promise exactly one task from this implementation alone.
+- Action acceptance requires both CRM edit and PM edit permissions at the route,
+  while dismissal requires CRM edit. Reading settings requires CRM read and
+  updating settings requires CRM admin. Workspace-only visibility remains the
+  supported validation policy.
+
+Provider subscription names, hosted URLs, version compatibility, and credential
+procedures below are dated operational notes. Confirm them with the selected
+provider before deployment. Historical build/test claims are not fresh results,
+while live rollout checks remain separate from this documentation review.
+
+## Original implementation record
+
 Status: code-complete on `feat/meeting-intelligence-providers`; Recall is the initial runtime provider, Vexa is an available configuration switch, and production provider canaries remain an operational rollout step.
 
 ## Product boundary

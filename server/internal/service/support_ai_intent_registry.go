@@ -57,19 +57,3 @@ func supportIntentDefinition(intent string) SupportIntentDefinition {
 	definition.RequiredEvidence = cloneStringSlice(definition.RequiredEvidence)
 	return definition
 }
-
-func normalizeSupportIntent(intent string, proposedEvidence []string) SupportIntentDefinition {
-	// Evidence sufficiency is assessed by the answer model against the retrieved
-	// sources. Customer-specific products cannot be represented safely by a
-	// server-owned list of required pricing, billing, or plan fields.
-	return supportIntentDefinition(intent)
-}
-
-func supportIntentIDs() []string {
-	return []string{
-		supportIntentPricingGeneral,
-		supportIntentPlanRecommendation,
-		supportIntentBillingTax,
-		supportIntentUnknown,
-	}
-}

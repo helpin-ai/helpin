@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -38,6 +39,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
+	"github.com/helpin-ai/helpin/server/internal/dbschema"
+	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -48,6 +51,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
+	"github.com/helpin-ai/helpin/server/internal/ratelimit"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/router"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -82,7 +86,8 @@ func main() {
 	}
 
 	// Initialize structured logger.
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
+	metrics := observability.NewMetrics()
+	logger := slog.New(metrics.BackgroundHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)})))
 	slog.SetDefault(logger)
 
 	// Connect to PostgreSQL via GORM.
@@ -184,255 +189,7 @@ func main() {
 
 		// Auto-migrate all models.
 		slog.Info("startup: running AutoMigrate")
-		if err := db.AutoMigrate(
-			&model.User{},
-			&model.UserPasskey{},
-			&model.PasswordResetToken{},
-			&model.EmailVerificationToken{},
-			&model.OAuthMobileHandoff{},
-			&model.Organization{},
-			&model.OrganizationMember{},
-			&model.Workspace{},
-			&model.WorkspaceMember{},
-			&model.WorkspaceModuleGrant{},
-			&model.WorkspaceSettings{},
-			&model.SetupGoal{},
-			&model.SetupIntent{},
-			&model.SetupAchievement{},
-			&model.SetupActionIntent{},
-			&model.MemberSetupPreference{},
-			&model.WorkspaceTeam{},
-			&model.TeamWorkspaceMembership{},
-			&model.WorkspaceManager{},
-			&model.JobRoleCriteria{},
-			&model.PMWorkflow{},
-			&model.PMWorkflowState{},
-			&model.PMEpicWorkflowState{},
-			&model.PMLabel{},
-			&model.PMEpic{},
-			&model.PMEpicObjective{},
-			&model.PMEpicLabel{},
-			&model.PMSprint{},
-			&model.PMSprintLabel{},
-			&model.PMTask{},
-			&model.PMTaskOwner{},
-			&model.PMTaskFollower{},
-			&model.PMTaskLabel{},
-			&model.PMComment{},
-			&model.PMCommentReaction{},
-			&model.PMActivityLog{},
-			&model.PMTaskUpdateRead{},
-			&model.PMTaskStandingBrief{},
-			&model.PMTaskBriefSuggestionDismissal{},
-			&model.PMAttachment{},
-			&model.PMObjective{},
-			&model.PMKeyResult{},
-			&model.PMObjectiveTeam{},
-			&model.PMObjectiveOwner{},
-			&model.PMObjectiveLabel{},
-			&model.PMChecklistItem{},
-			&model.PMExternalLink{},
-			&model.PMView{},
-			&model.SupportInboxView{},
-			&model.PMAutomation{},
-			&model.AutomationRule{},
-			&model.WorkspaceInvitation{},
-			&model.InvitationTeamPreassignment{},
-			&model.PMTeamEstimateSettings{},
-			&model.PMTeamFieldVisibility{},
-			&model.Agent{},
-			&model.AgentTeamAccess{},
-			&model.AgentTemplate{},
-			&model.WorkspaceAgentPresetVersion{},
-			&model.AgentVersion{},
-			&model.WorkspaceSkill{},
-			&model.AgentRun{},
-			&model.AgentTriggerExecution{},
-			&model.AgentRunMessage{},
-			&model.AgentRunArtifact{},
-			&model.AgentRunInteraction{},
-			&model.DockActionProposal{},
-			// Public MCP tables are intentionally excluded. Their constraints,
-			// partial indexes, and retention fields are owned exclusively by
-			// versioned migration 202607100003_public_mcp.sql. Letting GORM
-			// reconcile those tables can attempt incompatible constraint changes.
-			&model.CommandBarPlanRecord{},
-			&model.CommandBarPlanDismissal{},
-			&model.DockChat{},
-			&model.DockChatHandoff{},
-			&model.PublicShare{},
-			&model.SupportRunEvidence{},
-			&model.HelpcenterAnswer{},
-			&model.CodingSessionStateSnapshot{},
-			&model.PMTaskLink{},
-			&model.SupportConversation{},
-			&model.SupportConversationTriage{},
-			&model.SupportConversationTriageEvent{},
-			&model.SupportMailbox{},
-			&model.SupportMailboxMembership{},
-			&model.SupportTriageRule{},
-			&model.SupportEmailRoute{},
-			&model.SupportEmailSender{},
-			&model.SupportEmailSenderMailbox{},
-			&model.SupportEmailSenderDomain{},
-			&model.SupportMessage{},
-			&model.SupportEmailLog{},
-			&model.SupportEmailWebhookEvent{},
-			&model.SupportTag{},
-			&model.SupportConversationTag{},
-			&model.SupportTeammateStatusOverride{},
-			&model.SupportCannedResponse{},
-			&model.SupportWidgetInstallation{},
-			// WorkspaceEventProjectAlias is owned by versioned migration
-			// 202608240001, including its overlapping single-column and
-			// composite uniqueness constraints. GORM cannot safely reconcile
-			// those PostgreSQL constraints as indexes during AutoMigrate.
-			&model.CRMIdentityLink{},
-			&model.SupportCredentialRotationAudit{},
-			&model.SupportWidgetSession{},
-			&model.SupportAttachment{},
-			&model.CRMEmailAttachment{},
-			&model.SupportEvent{},
-			&model.SupportCoverageTopic{},
-			&model.SupportCoverageGap{},
-			&model.SupportGapEvidence{},
-			&model.SupportGapSuggestion{},
-			&model.SupportCoverageGapArticle{},
-			&model.SupportCoverageSnapshot{},
-			&model.SupportCoverageDigestDelivery{},
-			&model.SupportCoverageAnalysisRun{},
-			&model.SupportCoverageConversationAnalysis{},
-			&model.AIActionExecution{},
-			&model.CoverageBatch{},
-			&model.CoverageAnalysisAttempt{},
-			&model.CoverageFinding{},
-			&model.CoverageTopicV2{},
-			&model.CoverageAssignmentAttempt{},
-			&model.CoverageTopicMembership{},
-			&model.CoverageUnreviewedSignal{},
-			&model.CoverageRebuildAudit{},
-			&model.SupportAIRetrievalTrace{},
-			&model.SupportCoverageRecommendation{},
-			&model.SupportCoverageClusterRebuildRun{},
-			&model.SupportCoverageGapMergeSuggestion{},
-			&model.SupportCoverageGapPairDecision{},
-			&model.GitIntegration{},
-			&model.GitCredential{},
-			&model.GitRepository{},
-			&model.PMTeamRepoDefault{},
-			&model.TaskDeliveryTarget{},
-			&model.EpicDeliveryTarget{},
-			&model.TaskGitLink{},
-			&model.GitWebhookEvent{},
-			&model.AgentHandoff{},
-			&model.PMTaskTemplate{},
-			&model.PMRecurringTemplate{},
-			&model.PMRecurringRun{},
-			&model.PMImportJob{},
-			&authorization.AuthorizationRelation{},
-			// Docs module
-			&model.DocsSpace{},
-			&model.DocsSpaceTeam{},
-			&model.DocsCollection{},
-			&model.DocsDocument{},
-			&model.DocsDocumentKey{},
-			&model.DocsContent{},
-			&model.DocsBlock{},
-			&model.DocsAISectionCandidate{},
-			&model.DocsChangeProposal{},
-			&model.DocsVersion{},
-			&model.DocsLink{},
-			&model.DocsHelpcenterConfig{},
-			&model.DocsHelpcenterArticle{},
-			&model.DocsHelpcenterArticlePublication{},
-			&model.DocsHelpcenterSearchEntry{},
-			&model.DocsHelpcenterSpaceTranslation{},
-			&model.DocsHelpcenterCollectionTranslation{},
-			&model.DocsHelpcenterArticleTranslation{},
-			&model.DocsSlugAlias{},
-			&model.DocsRedirect{},
-			&model.DocsReviewQueue{},
-			&model.DocsArticleFeedback{},
-			&model.DocsComment{},
-			&model.DocsImportJob{},
-			&model.DocsAPIReference{},
-			&model.DocsAPIReferenceRevision{},
-			// Notifications module
-			&model.Notification{},
-			&model.NotificationEvent{},
-			&model.NotificationDelivery{},
-			&model.NotificationPreference{},
-			&model.UserNotificationSettings{},
-			&model.EntityFollower{},
-			&model.PushDevice{},
-			// CRM module
-			&model.CRMContact{},
-			&model.CRMCompany{},
-			&model.CRMPipeline{},
-			&model.CRMPipelineStage{},
-			&model.CRMDeal{},
-			&model.CRMAssociation{},
-			&model.CRMActivity{},
-			&model.CRMImportJob{},
-			&model.CRMMeeting{},
-			&model.CRMMeetingCapture{},
-			&model.CRMMeetingTranscript{},
-			&model.CRMMeetingIntelligence{},
-			&model.CRMMeetingActionItem{},
-			&model.CRMMeetingSettings{},
-			&model.CRMMeetingProviderEvent{},
-			// CRM Phase 3: Email & Calendar
-			&model.CRMEmailAccount{},
-			&model.CRMMailboxSendingPolicy{}, &model.CRMEmailSendReservation{}, &model.CRMEmailTemplate{}, &model.CRMEmailSequence{}, &model.CRMSequenceEnrollment{}, &model.CRMSequenceDelivery{}, &model.CRMEmailSuppression{},
-			&model.CRMEmailThread{},
-			&model.CRMEmailMessage{},
-			&model.CRMEmailMessageContact{},
-			&model.CRMCalendarEvent{},
-			&model.CRMCalendarSeriesPreference{},
-			// CRM Phase 4: Intelligence
-			&model.CRMEnrichmentResult{},
-			&model.CRMSignal{},
-			&model.CRMSignalObservation{},
-			&model.CRMSignalInterpretationConfig{},
-			&model.CRMSignalMotionState{},
-			&model.CRMSignalRuleConfig{},
-			&model.CRMSignalEvaluationRun{},
-			&model.CRMSignalEvaluatorWatermark{},
-			&model.CRMSignalScoringConfig{},
-			&model.CRMSignalFeedback{},
-			&model.CRMSignalRoutingPolicy{},
-			&model.CRMSignalRoutingSettings{},
-			&model.CRMSignalRolloutSettings{},
-			&model.CRMCompanyCommercialState{},
-			&model.CRMCompanyCommercialStateHistory{},
-			&model.CRMCompanyCommercialStateHealth{},
-			&model.CRMSignalConditionState{},
-			&model.CRMUsageWeekdayBaseline{},
-			&model.CRMSignalBatchSuppression{},
-			&model.CRMSignalDelivery{},
-			&model.CRMSignalExternalEvidence{},
-			&model.CRMEntitySummary{},
-			&model.CRMDealHealthScore{},
-			&model.CRMSuggestion{},
-			// Signals, Playbooks, history and scheduled events are versioned-SQL-owned;
-			// AutoMigrate must not pre-create these models without their constraints.
-			// CRM Phase 5: Writing
-			&model.CRMWritingProfile{},
-			// CRM Autonomy
-			&model.CRMAutonomySettings{},
-			// CRM Email Sync Settings
-			&model.CRMEmailSyncSettings{},
-			&model.AutomationHealthSnapshot{},
-			// AI Support Agent
-			&model.AgentKnowledgeSource{},
-			&model.AgentContentSource{},
-			&model.AIMessageProcessing{},
-			&model.DocsChunk{},
-			&model.SupportContentSource{},
-			&model.SupportContentPage{},
-			&model.SupportContentChunk{},
-			&model.CuratedGuidance{},
-		); err != nil {
+		if err := db.AutoMigrate(dbschema.AutoMigrationModels()...); err != nil {
 			fatalWithSentry("failed to auto-migrate", err)
 		}
 		if err := autoMigrateEdition(db); err != nil {
@@ -522,13 +279,19 @@ func main() {
 	slog.Info("startup: all migrations complete")
 
 	// Initialize email clients (nil if not configured).
-	appEmailClient := email.NewClient(cfg.PostmarkAppServerToken, cfg.PostmarkAppFromEmail)
+	appEmailClient, err := email.NewAppSender(email.SMTPConfig{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword, From: cfg.SMTPFrom, TLSMode: cfg.SMTPTLSMode}, cfg.PostmarkAppServerToken, cfg.PostmarkAppFromEmail)
+	if err != nil {
+		fatalWithSentry("configure application email", err)
+	}
+	if cfg.EmailVerificationRequired && appEmailClient == nil {
+		fatalWithSentry("configure application email", fmt.Errorf("AUTH_EMAIL_VERIFICATION_REQUIRED requires an SMTP or Postmark application email sender"))
+	}
 	replyEmailClient := email.NewClient(cfg.PostmarkReplyServerToken, cfg.PostmarkReplyFromEmail)
 	postmarkDomainClient := email.NewDomainClient(cfg.PostmarkAccountToken)
 	if appEmailClient != nil {
-		slog.Info("Postmark app email configured")
+		slog.Info("Application email configured")
 	} else {
-		slog.Info("Postmark app email not configured — product emails will be logged only")
+		slog.Info("Application email is not configured; invitations and password reset are unavailable")
 	}
 	if replyEmailClient != nil {
 		slog.Info("Postmark support reply email configured")
@@ -549,8 +312,15 @@ func main() {
 		cfg.AWSRegion,
 		cfg.AWSEndpointURL,
 		cfg.AWSPublicBaseURL,
+		cfg.AWSPresignEndpointURL,
 	)
+	s3Client.ConfigureAssetAccess(cfg.AppBaseURL, cfg.AWSPrivateBucket)
 	if s3Client != nil {
+		if cfg.AWSPrivateBucket {
+			if err := s3Client.EnsureCORS(context.Background()); err != nil {
+				fatalWithSentry("configure private bucket browser uploads", err)
+			}
+		}
 		slog.Info("S3 storage configured")
 	} else {
 		slog.Info("S3 storage not configured — attachments disabled")
@@ -715,6 +485,7 @@ func main() {
 	orgService := service.NewOrganizationService(orgRepo)
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
+	authzService.SetDeploymentModules(cfg.EnabledModules)
 	authzService.SetWorkspaceMFARepository(workspaceRepo)
 	editionServices, err := newEditionServices(db, cfg, workspaceRepo, orgService, authzService, productAnalytics, customerIOOutboxRepo)
 	if err != nil {
@@ -858,6 +629,12 @@ func main() {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
 	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, emailVerificationRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService.SetEmailVerificationRequired(cfg.EmailVerificationRequired)
+	authService.ConfigureDemo(service.DemoConfig{
+		ViewerEmail:    cfg.DemoViewerEmail,
+		RequireEmail:   cfg.DemoRequireEmail,
+		LeadWebhookURL: cfg.DemoLeadWebhookURL,
+	})
 	authService.SetOAuthMobileHandoffRepository(oauthMobileHandoffRepo)
 	authService.SetCustomerIOIdentityService(customerIOIdentityService)
 	authService.SetProductAnalyticsService(productAnalytics)
@@ -1024,6 +801,56 @@ func main() {
 		supportMessageRepo,
 		supportLLMProvider,
 	)
+	var decisionPolicies []service.SupportDecisionPolicy
+	if cfg.SupportDecisionMode != "" && cfg.SupportDecisionMode != "off" && cfg.SupportDecisionPolicies != "" {
+		if err := json.Unmarshal([]byte(cfg.SupportDecisionPolicies), &decisionPolicies); err != nil {
+			fatalWithSentry("invalid support decision policies", err)
+		}
+	}
+	decisionClient, err := service.NewSupportDecisionClient(service.SupportDecisionConfig{
+		Mode: cfg.SupportDecisionMode, URL: cfg.SupportDecisionURL, Token: cfg.SupportDecisionToken,
+		Timeout:      time.Duration(cfg.SupportDecisionTimeoutMS) * time.Millisecond,
+		WorkspaceIDs: strings.Split(cfg.SupportDecisionWorkspaceIDs, ","), Policies: decisionPolicies,
+	})
+	if err != nil {
+		fatalWithSentry("configure support decision client", err)
+	}
+	supportInboxTriageService.SetLocalDecisionClient(decisionClient)
+	var supportJevService *service.SupportJevService
+	var pmJevProvider decision.Provider
+	if strings.TrimSpace(cfg.JevAPIKey) != "" {
+		jevClient, jevErr := decision.NewJev(cfg.JevAPIKey, time.Duration(cfg.JevTimeoutMS)*time.Millisecond)
+		if jevErr != nil {
+			fatalWithSentry("configure Jev client", jevErr)
+		}
+		pmJevProvider = jevClient
+		jevService, jevErr := service.NewSupportJevService(service.SupportJevConfig{
+			HandoffMode: cfg.JevHandoffMode, FollowUpMode: cfg.JevFollowUpMode,
+			HandoffThreshold: cfg.JevHandoffThreshold, FollowUpThreshold: cfg.JevFollowUpThreshold,
+			RoutingMode: cfg.JevRoutingMode, TagsMode: cfg.JevTagsMode, WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
+			RoutingThreshold: cfg.JevRoutingThreshold, TagThreshold: cfg.JevTagThreshold, DailyLimit: cfg.JevDailyLimit,
+		}, jevClient, repository.NewSupportJevRepository(db), repository.NewAIExecutionUsageRepository(db), supportTagService)
+		if jevErr != nil {
+			fatalWithSentry("configure support Jev", jevErr)
+		}
+		jevService.SetMetrics(metrics)
+		supportInboxTriageService.SetJevService(jevService)
+		supportJevService = jevService
+	}
+
+	jevProductDecisions, jevProductErr := service.NewJevDecisionService(pmJevProvider, repository.NewJevDecisionRepository(db), repository.NewAIExecutionUsageRepository(db), cfg.JevProductPolicies, strings.Split(cfg.JevWorkspaceIDs, ","))
+	if jevProductErr != nil {
+		fatalWithSentry("configure product decisions", jevProductErr)
+	}
+	pmTriageService, pmTriageErr := service.NewPMTriageService(service.PMTriageConfig{
+		Mode: cfg.JevPMMode, Threshold: cfg.JevPMThreshold, DailyLimit: cfg.JevPMDailyLimit,
+		WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
+	}, pmJevProvider, repository.NewPMTriageRepository(db), repository.NewAIExecutionUsageRepository(db), pmTaskRepo, workspaceRepo, pmLabelRepo, supportInboxService)
+	if pmTriageErr != nil {
+		fatalWithSentry("configure PM Jev", pmTriageErr)
+	}
+
+	pmTaskService.SetTriageService(pmTriageService)
 	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
@@ -1148,6 +975,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	)
+	ruleEngine.SetJevDecisions(jevProductDecisions)
 	ruleEngine.SetAgentService(agentService)
 	ruleEngine.SetTaskService(pmTaskService)
 	ruleEngine.SetHealthObserver(automationHealthService)
@@ -1223,6 +1051,7 @@ func main() {
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterService.SetPublicationArtifactDependencies(agentRunArtifactRepo, s3Client)
+	docsHelpcenterService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	tlsAskService := service.NewTLSAskService(docsHelpcenterRepo, cfg.TLSAskExtraAllowedDomains)
 
 	// Tiered cache for hot public help-center reads. L1 is an in-process LRU;
@@ -1260,6 +1089,7 @@ func main() {
 	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
 	docsHelpcenterTranslationService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsHelpcenterTranslationService.SetPublicationArtifactDependencies(agentRunArtifactRepo, s3Client)
+	docsHelpcenterTranslationService.SetPublicationAttachmentRepository(pmAttachmentRepo)
 	docsImportService := service.NewDocsImportService(
 		docsImportRepo,
 		docsSpaceService,
@@ -1373,6 +1203,8 @@ func main() {
 	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
+	pmTriageHandler := handler.NewPMTriageHandler(pmTriageService)
+	pmTriageHandler.SetReviewer(service.NewPMTriageReviewService(pmTriageService, pmTaskService, associationsService))
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo).SetDealService(crmDealService)
 
@@ -1652,6 +1484,8 @@ func main() {
 		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
+	supportCoverageDailyAnalyzer.SetJevDecisions(jevProductDecisions)
+	commandService.SetJevDecisions(jevProductDecisions)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
 		SetCoverageV2Repository(supportCoverageV2Repo).
@@ -1680,6 +1514,7 @@ func main() {
 		agentService,
 		supportAIService,
 	)
+	supportChatService.SetJevService(supportJevService)
 	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo, workspaceRepo)
 	supportFollowUpRepo := repository.NewSupportFollowUpRepository(db)
 	supportFollowUpService := service.NewSupportFollowUpService(supportFollowUpRepo, supportChatService)
@@ -1733,7 +1568,8 @@ func main() {
 		SetGitRepositoryRepository(gitRepositoryRepo).
 		SetEntitlementService(entitlementService)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, workspaceRepo, pmTaskRepo, supportInstallRepo).
-		SetTargetResolvers(pmEpicRepo, docsDocumentRepo, supportConversationRepo, crmContactRepo, crmDealRepo, gitRepositoryRepo, supportCoverageRepo)
+		SetTargetResolvers(pmEpicRepo, docsDocumentRepo, supportConversationRepo, crmContactRepo, crmDealRepo, gitRepositoryRepo, supportCoverageRepo).
+		SetJevDecisions(jevProductDecisions)
 	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
 	if err != nil {
 		fatalWithSentry("failed to load flow templates", err)
@@ -1800,6 +1636,11 @@ func main() {
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 	agentService.SetMCPRepository(mcpRepo)
+	cliService, err := service.NewCLIService(repository.NewCLIRepository(db), workspaceRepo, authzService, agentService, service.CLIConfig{Enabled: cfg.CLIEnabled, GatewayEnabled: cfg.CLIModelGatewayEnabled, PublicBaseURL: cfg.CLIPublicBaseURL, AppBaseURL: cfg.AppBaseURL})
+	if err != nil {
+		slog.Error("invalid CLI configuration", "error", err)
+		os.Exit(1)
+	}
 	mcpService := service.NewMCPService(
 		mcpRepo,
 		workspaceRepo,
@@ -1871,6 +1712,9 @@ func main() {
 		RouteInboundSecretSet:     strings.TrimSpace(cfg.PostmarkRouteInboundWebhookSecret) != "",
 	}
 
+	if appEmailClient != nil {
+		emailDiagnosticsConfig.AppFromEmail = appEmailClient.FromEmail()
+	}
 	var setupHandler *handler.SetupHandler
 	if setupSuccessEnabled {
 		setupHandler = handler.NewSetupHandler(setupService, authzService)
@@ -1898,9 +1742,18 @@ func main() {
 	// agent-independent auto-indexing.
 	helpcenterAISearchService.SetAutoIndexer(docsEmbeddingService)
 
+	requestLimiter := ratelimit.New(redisClient, ratelimit.Config{RequestsPerMinute: cfg.AuthenticatedRateLimit, ExpensivePerMinute: cfg.ExpensiveRateLimit})
+	var demoReadOnly func(http.Handler) http.Handler
+	if authService.DemoEnabled() {
+		demoReadOnly = middleware.DemoReadOnly(authService.IsDemoUser)
+	}
 	handlers := router.Handlers{
+		Metrics:                   metrics,
+		AuthenticatedRateLimit:    middleware.AuthenticatedRateLimit(requestLimiter),
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
+		DemoReadOnly:              demoReadOnly,
+		Assets:                    handler.NewAssetHandler(s3Client),
 		Health:                    handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth: handler.NewAuthHandler(authService, handler.GoogleOAuthConfig{
 			ClientID:         cfg.GoogleAuthClientID,
@@ -1926,6 +1779,7 @@ func main() {
 		PMAISuggestion:      handler.NewPMAISuggestionHandler(pmAISuggestionService),
 		PMTask:              handler.NewPMTaskHandler(pmTaskService),
 		PMTaskInsights:      handler.NewPMTaskInsightsHandler(pmTaskInsightsService),
+		PMTriage:            pmTriageHandler,
 		PMComment:           handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment:        handler.NewPMAttachmentHandler(pmAttachmentService),
 		PMObjective:         handler.NewPMObjectiveHandler(pmObjectiveService),
@@ -1944,13 +1798,14 @@ func main() {
 		AIConnection:        handler.NewAIConnectionHandler(aiConnectionService),
 		AIProfile:           handler.NewAIProfileHandler(aiProfileService),
 		AgentRuntimeHost:    handler.NewAgentRuntimeHostHandler(agentRuntimeHostService).SetProjectionService(agentRuntimeProjectionService),
-		MCP:                 handler.NewMCPHandler(mcpService),
+		CLI:                 handler.NewCLIHandler(cliService),
+		MCP:                 handler.NewMCPHandler(mcpService, requestLimiter),
 		ExternalMCP:         handler.NewExternalMCPHandler(externalMCPService, agentService, authzService, cfg.AppBaseURL),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportTag:          handler.NewSupportTagHandler(supportTagService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
-		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService),
+		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService, curatedGuidanceService).SetPreviewService(service.NewSupportPreviewService(agentService, supportAIService, supportRunEvidenceRepo)),
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
 		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkReplyInboundWebhookSecret, cfg.PostmarkRouteInboundWebhookSecret),
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
@@ -2022,6 +1877,10 @@ func main() {
 	handlers.Docs.SetSupportEventRecorder(supportEventRecorder)
 	handlers.Docs.SetImageEditService(docsImageEditService)
 	handlers.Docs.SetSupportWidgetConfigProvider(supportInboxService)
+	handlers.SupportInboxWidget.SetPublicOrigin(cfg.PublicWidgetURL)
+	handlers.AIConnection.SetKnowledgeConfiguration(cfg.OpenAIAPIKey != "", cfg.OpenAIEmbeddingModel, supportLLMRouter.ConfiguredChatProviders())
+	handlers.Docs.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
+	handlers.Auth.SetPublicWidgetURLs(cfg.PublicWidgetURL, cfg.PublicSDKURL)
 	handlers.Docs.SetHelpcenterAISearchService(helpcenterAISearchService)
 	handlers.Docs.SetAPIReferenceService(docsAPIReferenceService)
 
@@ -2297,6 +2156,18 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Metrics uses a dedicated cluster-only port, never the public API ingress.
+	var metricsServer *http.Server
+	if addr := os.Getenv("METRICS_ADDR"); addr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metrics.Handler())
+		metricsServer = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fatalWithSentry("metrics server failed", err)
+			}
+		}()
+	}
 	// Listen for shutdown signals.
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -2360,6 +2231,11 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	if metricsServer != nil {
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			slog.Error("metrics shutdown failed", "error", err)
+		}
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		fatalWithSentry("server forced to shutdown", err)
 	}

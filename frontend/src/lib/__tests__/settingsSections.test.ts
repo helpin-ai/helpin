@@ -9,6 +9,15 @@ function visibleSectionIDs(canManageSettings: boolean) {
 }
 
 describe('getSettingsSidebarGroups', () => {
+  it('omits disabled modules from the Community settings home and search source', () => {
+    const groups = getSettingsSidebarGroups(true, new Set(['settings.read', 'workspace.read']), ['support', 'docs', 'agents']);
+    const ids = groups.flatMap(group => group.sections.map(section => section.id));
+    expect(ids).toEqual(expect.arrayContaining(['chat-general', 'helpcenter', 'ai']));
+    expect(ids).not.toContain('workflows');
+    expect(ids).not.toContain('automations');
+    expect(ids.some(id => id.startsWith('crm-'))).toBe(false);
+    expect(groups.every(group => group.sections.length > 0)).toBe(true);
+  });
   it.skipIf(billingEnabled)('omits billing in community workspaces', () => {
     expect(SETTINGS_ROUTE_SECTIONS.map(section => section.id)).not.toContain('billing');
     expect(visibleSectionIDs(true)).not.toContain('billing');

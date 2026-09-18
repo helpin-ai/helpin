@@ -1,4 +1,10 @@
-# Lead Function Implementation Plan
+# Lead function implementation plan (historical)
+
+> Historical implementation plan. `lead` is implemented in
+> [`src/core/client.ts`](../src/core/client.ts); the old `packages/javascript-sdk`
+> paths below predate the package move. Use the [SDK reference](../README.md#client-api)
+> for the current API, including CRM identity synchronization.
+
 
 ## Objective
 

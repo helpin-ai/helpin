@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"path/filepath"
+
 	"sort"
 	"strings"
 	"time"
@@ -336,7 +336,12 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	if agentRunIsPreview(run) {
 		deliveryMode = "preview"
 	}
+	executionLocation := "cloud"
+	if model.IsLocalAgentRun(run) {
+		executionLocation = "local"
+	}
 	session := &model.CodingSession{
+		ExecutionLocation:   executionLocation,
 		DeliveryMode:        deliveryMode,
 		ID:                  run.ID,
 		RunID:               run.ID,
@@ -655,17 +660,6 @@ func resolveIntentForInteraction(interaction *model.AgentRunInteraction, respons
 	}
 }
 
-func interactionMessageTypeForIntent(intent string) string {
-	switch strings.TrimSpace(intent) {
-	case model.AgentRunResumeIntentApprove:
-		return "approval"
-	case model.AgentRunResumeIntentRequestChanges:
-		return "request_changes"
-	default:
-		return "user_reply"
-	}
-}
-
 func requestUserInputResumeContent(interaction *model.AgentRunInteraction, responsePayload json.RawMessage) string {
 	if interaction == nil {
 		return ""
@@ -860,6 +854,9 @@ func (s *AgentService) resolveCodingSessionRepoState(ctx context.Context, run *m
 }
 
 func codingSessionCapabilitiesForRun(run *model.AgentRun) model.CodingSessionCapabilities {
+	if model.IsLocalAgentRun(run) {
+		return model.CodingSessionCapabilities{}
+	}
 	capabilities := model.CodingSessionCapabilities{
 		LiveTextStreaming: true,
 		ToolStreaming:     true,
@@ -970,10 +967,6 @@ func metadataStringFromJSON(raw json.RawMessage, key string) string {
 	}
 	value, _ := metadata[key].(string)
 	return strings.TrimSpace(value)
-}
-
-func codingSessionEventFromInteraction(interaction model.AgentRunInteraction) (string, map[string]any, map[string]any) {
-	return codingSessionEventFromInteractionWithStatus(interaction, strings.TrimSpace(interaction.Status))
 }
 
 func codingSessionEventFromInteractionWithStatus(interaction model.AgentRunInteraction, status string) (string, map[string]any, map[string]any) {
@@ -1168,6 +1161,10 @@ func (s *AgentService) publishCodingSessionModelEvent(
 	event model.CodingSessionEvent,
 	actorID string,
 ) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s.wsPublisher == nil || run == nil || strings.TrimSpace(event.ID) == "" {
 		return
 	}
@@ -1185,6 +1182,10 @@ func (s *AgentService) publishCodingSessionModelEvent(
 }
 
 func (s *AgentService) publishCodingSessionMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
+	if run != nil && run.TargetType == supportPreviewTarget {
+		return
+	}
+
 	if s.wsPublisher == nil || run == nil || message == nil {
 		return
 	}
@@ -1266,15 +1267,6 @@ func firstNonEmptyString(values ...string) string {
 	return ""
 }
 
-func sessionPathLabel(path string) *string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return nil
-	}
-	cleaned := filepath.Clean(path)
-	return &cleaned
-}
-
 // ListRunInteractions returns the run's interaction records (approval
 // requests, input requests) ordered as persisted. Used by the dock chat view
 // as the authoritative pending-interaction source.
@@ -1282,6 +1274,10 @@ func (s *AgentService) ListRunInteractions(ctx context.Context, workspaceID, run
 	if s == nil || s.interactionRepo == nil {
 		return nil, fmt.Errorf("interaction repository is not configured")
 	}
+	if err := s.requireSupportPreviewReader(ctx, workspaceID, runID); err != nil {
+		return nil, err
+	}
+
 	return s.interactionRepo.ListByRun(ctx, workspaceID, runID)
 }
 

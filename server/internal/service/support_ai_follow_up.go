@@ -37,6 +37,9 @@ func supportFollowUpEnabled(settings model.SupportInboxSettings) bool {
 }
 
 func supportFollowUpEligible(conv *model.SupportConversation, episode *model.SupportAIFollowUp, settings model.SupportInboxSettings, replyChannels ...string) bool {
+	if conv.AIResumedAt != nil && !episode.CreatedAt.After(*conv.AIResumedAt) {
+		return false
+	}
 	if !supportFollowUpEnabled(settings) || conv.FlowState == nil || *conv.FlowState != model.SupportConversationFlowStateAIHandling || derefString(conv.AIState) != "pending" || supportConversationHumanOwned(conv) || conv.CustomerRequestedHumanAt != nil || conv.LinkedTaskID != nil || conv.CustomerAwaitingResponse {
 		return false
 	}
@@ -166,10 +169,14 @@ func (s *SupportFollowUpService) process(ctx context.Context, row model.SupportA
 	if err != nil || !launch {
 		return err
 	}
-	return s.launch(ctx, row, &conv, settings, now)
+	handled, classification, err := s.assessJevFollowUp(ctx, row, &conv, now)
+	if err != nil || handled {
+		return err
+	}
+	return s.launch(ctx, row, &conv, settings, now, classification)
 }
 
-func (s *SupportFollowUpService) launch(ctx context.Context, episode model.SupportAIFollowUp, conv *model.SupportConversation, settings model.SupportInboxSettings, now time.Time) error {
+func (s *SupportFollowUpService) launch(ctx context.Context, episode model.SupportAIFollowUp, conv *model.SupportConversation, settings model.SupportInboxSettings, now time.Time, classifications ...string) error {
 	agent, err := s.chat.agentService.GetAgent(ctx, episode.WorkspaceID, derefString(settings.AIAgentID))
 	if err != nil {
 		return err
@@ -183,6 +190,9 @@ func (s *SupportFollowUpService) launch(ctx context.Context, episode model.Suppo
 	trigger := &model.AgentRunTriggerContext{Source: model.AgentRunTriggerSourceSystem, TriggerType: supportFollowUpTriggerType, FiredAt: &now}
 	trigger.Context, _ = json.Marshal(map[string]string{"follow_up_id": episode.ID})
 	additional := supportFollowUpInstructions(episode.CloseHours) + "\n\n" + fmt.Sprintf("Assess inactivity episode %s for support conversation %s. Read its conversation and public messages before deciding. The last unanswered AI message is %s. This is scheduled work, not a new customer message.", episode.ID, conv.ID, episode.SourceMessageID)
+	if len(classifications) > 0 && classifications[0] == "waiting_customer" {
+		additional += "\n\nThe server's Jev assessment classified this episode as waiting_customer with no outstanding company obligation. Generate the grounded follow-up question and separate closure notice using the rules above. Verify the cited public messages before submitting; choose handoff or skip if your context review finds contradictory evidence."
+	}
 	input, err := buildAgentRunInputPayload("support_conversation", conv.ID, trigger, nil, nil, &additional, tools)
 	if err != nil {
 		return err

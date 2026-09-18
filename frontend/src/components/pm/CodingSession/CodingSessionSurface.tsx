@@ -409,9 +409,9 @@ export function CodingSessionSurface({
     () => resolveCodingSessionComposerState(session, activeInteraction, loading),
     [activeInteraction, loading, session],
   );
-  const terminalContinuation = session !== null && (session.status === 'failed' || session.status === 'cancelled');
+  const terminalContinuation = session !== null && session.execution_location !== 'local' && (session.status === 'failed' || session.status === 'cancelled');
 
-  const canSuggestHandoff = session !== null
+  const canSuggestHandoff = session !== null && session.execution_location !== 'local'
     && session.status === 'completed'
     && session.target_type === 'task';
 
@@ -503,6 +503,7 @@ export function CodingSessionSurface({
         ? 'h-full min-h-0 overflow-hidden p-4'
         : 'min-h-full overflow-y-auto p-4 md:p-6 xl:h-full xl:min-h-0 xl:overflow-hidden xl:p-6',
     )}>
+      {session?.execution_location === 'local' ? <p className="border-b px-4 py-2 text-sm text-quiet-text-secondary">Local CLI run · This transcript and its artifacts were reported from a local checkout. Continue replies and approvals in the terminal using /runs and /resume.</p> : null}
       {session?.delivery_mode === 'preview' ? <p className="border-b px-4 py-2 text-sm text-muted-foreground">Preview run · Repository changes stay local; automatic publishing is disabled.</p> : null}
       <CodingSessionHeader
         session={session}

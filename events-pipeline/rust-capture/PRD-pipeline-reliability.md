@@ -1,12 +1,27 @@
 # PRD: Events Pipeline Reliability & Resilience
 
 > Historical document: this describes the retired Kafka implementation. The
-> current NATS JetStream pipeline contract is documented in
-> [`../../docs/plans/2026-08-25-nats-event-pipeline.md`](../../docs/plans/2026-08-25-nats-event-pipeline.md).
+> NATS JetStream replacement was designed in
+> [the August implementation plan](../../docs/plans/2026-08-25-nats-event-pipeline.md).
+> Use the [current capture guide](README.md) and
+> [deployment runbook](../DEPLOYMENT.md) for operating instructions.
 
-## Context
+Current-source comparison (2026-09-17): typed errors, rotating disk fallback,
+replay, health routes and stale-token retention exist, but the implementation
+differs from this proposal. [Capture health](src/health.rs) stays ready until
+shutdown and liveness does not depend on broker health.
+[Token storage](src/auth/http_tokens.rs) uses `ArcSwap`, not the proposed
+`RwLock`; startup can proceed with an empty registry. The
+[staging workload](../../k8s/stage/events-pipeline/deployments/eventpipeline-web.yaml)
+uses a retained PVC, not the `emptyDir` example below. Kafka-specific fixes,
+example image names, configuration proposals, incident descriptions and staged
+verification instructions remain historical and should not be applied to the
+current deployment. This comparison does not certify all original requirements
+or a zero-loss guarantee.
 
-Our Rust events-pipeline (capture API + consumer/worker) is functional but lacks production-hardening. After benchmarking against PostHog's mature Rust capture service, we identified critical gaps: silent event loss in Kafka batch sends, no health checks (k8s can't route traffic away from broken pods), no fallback when Kafka is down, and several panic-on-error patterns that crash the entire process. Events are being permanently lost in production today.
+## Historical context
+
+Our Rust events-pipeline (capture API + consumer/worker) is functional but lacks production-hardening. The reliability review identified critical gaps: silent event loss in Kafka batch sends, no health checks (k8s can't route traffic away from broken pods), no fallback when Kafka is down, and several panic-on-error patterns that crash the entire process. Events are being permanently lost in production today.
 
 This PRD covers two phases: **Phase 1** (quick wins that prevent data loss and crashes) and **Phase 2** (disk fallback sink with a replay worker for full durability).
 

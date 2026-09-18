@@ -1,3 +1,4 @@
+import { TaskTriageSection } from './TaskTriageSection';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useQueryClient } from '@tanstack/react-query';
@@ -1435,6 +1436,17 @@ function TaskDetailPanelBody({
               </div>
             )}
           </div>
+
+          {permissions.has('pm.edit') && workspace?.slug ? (
+            <TaskTriageSection
+              key={taskId}
+              workspaceId={workspaceId}
+              workspaceSlug={workspace.slug}
+              detail={taskDetail}
+              disabled={saving || labelSaving || editingDescription || Object.keys(pendingPatch).length > 0 || Boolean(saveError)}
+              onTaskUpdated={onTaskUpdated}
+            />
+          ) : null}
 
           {/* Attachments: compact action when empty, full section once populated. */}
           <div id="attachments-section">

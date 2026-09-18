@@ -64,6 +64,12 @@ export interface SupportAIPreviewAnswer {
 }
 
 export interface SupportAIPreviewResponse {
+  run_id?: string
+  status?: string
+  provider?: string
+  model?: string
+  profile_id?: string
+  excluded_tools?: string[]
   conversation_source: string
   confidence_threshold: number
   total_tokens_used: number

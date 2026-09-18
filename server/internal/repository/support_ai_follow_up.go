@@ -144,6 +144,7 @@ func supportFollowUpCandidates(tx *gorm.DB, workspaceID string, settings model.S
    AND NOT coalesce(human_takeover,false) AND assigned_user_id IS NULL AND opened_by_user_id IS NULL
    AND customer_requested_human_at IS NULL AND linked_task_id IS NULL
    AND last_public_message_id IS NOT NULL AND NOT email_unsubscribed
+   AND (ai_resumed_at IS NULL OR last_public_message_at > ai_resumed_at)
    AND assigned_agent_id = ? AND last_public_sender_type = 'ai' AND last_public_message_at <= ? AND last_public_message_at >= ?
    AND NOT customer_awaiting_response
    AND NOT EXISTS (SELECT 1 FROM support_ai_follow_ups f WHERE f.workspace_id = support_conversations.workspace_id AND f.conversation_id = support_conversations.id AND (f.source_message_id = support_conversations.last_public_message_id OR f.sent_message_id = support_conversations.last_public_message_id OR f.second_message_id = support_conversations.last_public_message_id OR f.status IN ('scheduled','assessing','waiting')))`, workspaceID, settings.AIAgentID, now.Add(-time.Duration(settings.AIFollowUpDelayHours)*time.Hour), now.Add(-30*24*time.Hour))

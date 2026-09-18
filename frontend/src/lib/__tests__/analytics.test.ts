@@ -1,3 +1,5 @@
+// This suite verifies the commercial analytics contract; Community has no endpoints.
+vi.mock('@edition/config', () => ({ APP_ANALYTICS_HOST: 'app.helpin.ai', USERMAVEN_KEY: 'test-key', CUSTOMER_IO_WRITE_KEY: 'test-key' }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { OrganizationWithRole, User, Workspace, WorkspaceAccess } from '../types';
@@ -34,7 +36,7 @@ const baseWorkspace: Workspace = {
   id: 'ws-1',
   name: 'Acme',
   slug: 'acme',
-  workspace_key: 'acme',
+  workspace_key: 'test-key',
   owner_id: 'user-1',
   organization_id: 'org-1',
   role: 'owner',
@@ -143,13 +145,13 @@ describe('app analytics', () => {
     const clients = makeClients();
     expect(initializeAppAnalytics({ hostname: 'app.helpin.ai', clients })).toBe(true);
     expect(clients.usermaven.init).toHaveBeenCalledWith({
-      key: 'UMpgKYZLxR',
+      key: 'test-key',
       tracking_host: 'https://events.usermaven.com',
       autocapture: true,
       cookie_domain: 'helpin.ai',
     });
     expect(clients.customerio.load).toHaveBeenCalledWith({
-      writeKey: 'a3fced22111b6be05726',
+      writeKey: 'test-key',
     });
   });
 

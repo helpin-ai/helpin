@@ -19,7 +19,7 @@ import (
 
 const (
 	// supportChatMaxAITurns is an absolute per-conversation ceiling on AI
-	// turns (the stall detector usually escalates far earlier).
+	// turns, in addition to the configured answer-turn limit.
 	supportChatMaxAITurns = 30
 
 	supportChatCarryForwardTurns = 20
@@ -40,6 +40,7 @@ type SupportChatService struct {
 	evidenceRepo     *repository.SupportRunEvidenceRepository
 	workspaceRepo    *repository.WorkspaceRepository
 	followUpService  *SupportFollowUpService
+	jev              *SupportJevService
 }
 
 // SetResearchEvidenceDependencies wires the stores used to turn completed
@@ -66,6 +67,9 @@ func NewSupportChatService(
 	agentService *AgentService,
 	supportAIService *SupportAIService,
 ) *SupportChatService {
+	if supportAIService != nil {
+		supportAIService.runCloser = agentService
+	}
 	return &SupportChatService{
 		conversationRepo: conversationRepo,
 		messageRepo:      messageRepo,
@@ -108,7 +112,7 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 	}
 
 	// State machine gates (straight port of the pipeline's checks).
-	if model.SupportAIConversationBlocked(conv) {
+	if model.SupportAIConversationBlocked(conv) || !model.SupportAIReplyAllowed(*settings, conv, msg) {
 		return nil
 	}
 	switch derefString(conv.AIState) {
@@ -169,6 +173,20 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 		return nil
 	}
 
+	commonRoute := ""
+	if err == nil {
+		commonRoute = classifySupportCommonMessage(conv, msg, history)
+	}
+	if commonRoute == "" && s.jev != nil && err == nil {
+		handled, assessErr := s.assessJevHandoff(ctx, conv, msg, history)
+		if assessErr != nil {
+			return assessErr
+		}
+		if handled {
+			return s.processingRepo.MarkCompleted(ctx, processing.ID, nil, 0)
+		}
+	}
+
 	// Budget gates.
 	agent, err := s.agentService.GetAgent(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
@@ -194,6 +212,13 @@ func (s *SupportChatService) HandleVisitorMessage(ctx context.Context, workspace
 	}
 
 	supportAI.publishTypingIndicator(ctx, workspaceID, conversationID, true)
+	if commonRoute == supportGreetingOperation {
+		handled, err := s.replyToInitialGreeting(ctx, conv, msg, agent, processing, *settings)
+		if err != nil || handled {
+			supportAI.publishTypingIndicator(ctx, workspaceID, conversationID, false)
+			return err
+		}
+	}
 
 	composed := strings.TrimSpace(msg.Content)
 	if feedback := supportVisitorFeedbackContext(history, *msg); feedback != "" {
@@ -258,11 +283,13 @@ func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *mode
 	workspaceID := conv.WorkspaceID
 	additional := composed
 	var parentRunID *string
-	if previousRun != nil {
+	if previousRun != nil || conv.AIResumedAt != nil || conv.AITurnCount > 0 {
 		if carry := s.buildCarryForward(ctx, workspaceID, conv.ID, previousRun); carry != "" {
 			additional = carry + "\n\n" + composed
 		}
-		parentRunID = &previousRun.ID
+		if previousRun != nil {
+			parentRunID = &previousRun.ID
+		}
 	}
 
 	now := time.Now().UTC()
@@ -295,10 +322,13 @@ func (s *SupportChatService) startSupportChatRun(ctx context.Context, conv *mode
 		slog.WarnContext(ctx, "support chat: child evidence persistence failed before successor launch",
 			"workspace_id", workspaceID, "run_id", run.ID, "evidence_id", pendingEvidence.EvidenceID)
 	}
-	if err := s.conversationRepo.UpdateFields(ctx, workspaceID, conv.ID, map[string]any{
-		"ai_active_run_id": &run.ID,
-	}); err != nil {
-		slog.WarnContext(ctx, "support chat: set active run failed", "error", err, "conversation_id", conv.ID)
+	bound, bindErr := s.conversationRepo.BindAIRun(ctx, conv, run.ID)
+	if bindErr != nil || !bound {
+		s.supportAIService.cancelControlledRun(ctx, workspaceID, conv.ID, run.ID)
+		if bindErr != nil {
+			return fmt.Errorf("bind support run: %w", bindErr)
+		}
+		return nil
 	}
 	conv.AIActiveRunID = &run.ID
 	s.agentService.publishRunEvent(run, "")
@@ -319,7 +349,11 @@ func (s *SupportChatService) buildCarryForward(ctx context.Context, workspaceID,
 	var b strings.Builder
 	b.WriteString("<previous_conversation>\n")
 	b.WriteString("This support conversation continues from an earlier session (previous run ")
-	b.WriteString(strings.TrimSpace(previousRun.Status))
+	if previousRun != nil {
+		b.WriteString(strings.TrimSpace(previousRun.Status))
+	} else {
+		b.WriteString("none; earlier replies are in the transcript")
+	}
 	b.WriteString("). Recent transcript:\n")
 	total := 0
 	for _, message := range messages {

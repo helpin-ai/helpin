@@ -1,4 +1,18 @@
-# Command DAG Orchestration Plan
+# Orchestrate command plans with dependencies
+
+This historical plan explains the proposed directed acyclic graph (DAG): a set of steps whose dependencies contain no cycles. Contributors can use it to understand the original scheduling requirements, but the current scheduler and retry API differ from the Temporal design below.
+
+## Source review — 2026-09-18
+
+- `dag`, `task_pipeline_fan_out`, and dependency indexes exist in [the model](../../server/internal/model/command_bar.go). Proposed `one_shot_dag`, `group_key`, and `group_label` are not fields/kinds in that contract.
+- [Dispatch validation](../../server/internal/service/command_bar_dispatch.go) checks dependency ranges, self-dependencies and cycles, selected agents, targets, and allowed tool subsets. Limits are 50 total steps and 10 initially runnable DAG steps. The latter is an initial-width check, not a continuous maximum-concurrency setting for every later scheduling wave.
+- Scheduling now runs [in process](../../server/internal/service/command_bar_orchestration_steps.go), with delegated runtime finalization and a periodic [stalled-plan sweep](../../server/internal/service/command_bar_plan_orchestration.go). The proposed Temporal parent/child workflow architecture and its worker verification commands are historical.
+- The scheduler starts dependency-ready steps and marks the plan failed on failed/cancelled runs; it does not automatically cancel independent active runs in that failure branch. Repository orchestration steps have a separate execution path.
+- DAG retry is implemented by the existing `/command-bar/plans/{planID}/retry` route. [The retry service](../../server/internal/service/command_bar_plans.go) removes failed/cancelled step run IDs, preserves completed runs, and schedules ready work. The proposed `retry-dag` endpoint and `failed_subgraph` request mode are not the current API; “retry is blocked” is obsolete.
+- [DeliveryPlanView](../../frontend/src/components/agents/dock/DeliveryPlanView.tsx) renders DAG dependency stages and task-pipeline lanes; `ExecutionStrip` reuses it and the confirmation card shows dependency indexes. This is source evidence of graph-aware presentation, not a fresh browser validation of all scenarios.
+- The old LLM router rollout phases describe an earlier chat architecture. Current dock chat uses backing agent runs rather than the removed parse/chat-turn endpoints; see the [reviewed command-bar architecture](2026-04-28-command-bar-agent-architecture.md). Natural-language planning quality and all end-to-end product scenarios remain unverified in this review.
+
+## Original plan
 
 **Date:** 2026-04-30  
 **Status:** Proposed follow-on to meta-agent command bar and task-pipeline Temporal orchestration  

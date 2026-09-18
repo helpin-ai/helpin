@@ -42,6 +42,11 @@ func WidgetRateLimit(redisClient *redis.Client) func(http.Handler) http.Handler 
 			}
 
 			window := time.Now().Unix() / 60
+			prefix := "widget:rl"
+			// Telemetry must never exhaust the customer message/upload allowance.
+			if strings.HasSuffix(r.URL.Path, "/widget/telemetry") {
+				prefix = "widget:telemetry:rl"
+			}
 			checks := []struct {
 				key   string
 				limit int
@@ -50,13 +55,13 @@ func WidgetRateLimit(redisClient *redis.Client) func(http.Handler) http.Handler 
 				checks = append(checks, struct {
 					key   string
 					limit int
-				}{fmt.Sprintf("widget:rl:s:%s:%d", token, window), widgetSessionLimitPerMinute})
+				}{fmt.Sprintf("%s:s:%s:%d", prefix, token, window), widgetSessionLimitPerMinute})
 			}
 			if ip := clientIPForRateLimit(r); ip != "" {
 				checks = append(checks, struct {
 					key   string
 					limit int
-				}{fmt.Sprintf("widget:rl:ip:%s:%d", ip, window), widgetIPLimitPerMinute})
+				}{fmt.Sprintf("%s:ip:%s:%d", prefix, ip, window), widgetIPLimitPerMinute})
 			}
 
 			for _, check := range checks {
