@@ -130,7 +130,7 @@ export function AIModelCombobox({
         <p className="text-xs text-muted-foreground">
           {tier.label} · {tier.description}
         </p>
-      ) : value && provider !== "openai_chatgpt" ? (
+      ) : value && provider !== "openai_chatgpt" && !catalogLabel(provider, value) ? (
         <p className="text-xs text-muted-foreground">
           Custom model. Make sure your provider accepts this id.
         </p>

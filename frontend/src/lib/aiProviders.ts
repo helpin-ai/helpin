@@ -145,6 +145,25 @@ const CHATGPT_MODELS = [
   { selectionModel: "gpt-5.6-luna", canonicalModel: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
 ];
 
+// Profile suggestions are independent of Helpin-funded routing and pricing.
+// Verified 2026-09-18 against the provider catalogs:
+// https://developers.openai.com/api/docs/models/all
+// https://platform.claude.com/docs/en/models/overview
+// https://openrouter.ai/api/v1/models
+const LATEST_PROVIDER_MODELS: Record<string, AIModelSuggestionGroup["models"]> = {
+  openai: CHATGPT_MODELS.slice(0, 2),
+  anthropic: [
+    { selectionModel: "claude-fable-5-1", canonicalModel: "claude-fable-5-1", label: "Claude Fable 5.1" },
+    { selectionModel: "claude-opus-5", canonicalModel: "claude-opus-5", label: "Claude Opus 5" },
+  ],
+  openrouter: [
+    { selectionModel: "openai/gpt-6-astra", canonicalModel: "gpt-6-astra", label: "GPT-6 Astra" },
+    { selectionModel: "openai/gpt-5.6-sol", canonicalModel: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+    { selectionModel: "anthropic/claude-fable-5.1", canonicalModel: "claude-fable-5-1", label: "Claude Fable 5.1" },
+    { selectionModel: "anthropic/claude-opus-5", canonicalModel: "claude-opus-5", label: "Claude Opus 5" },
+  ],
+};
+
 /**
  * Suggested models for each connection type. ChatGPT suggestions are separate
  * from the API billing catalog; compatible endpoints rely on free text.
@@ -153,13 +172,15 @@ export function modelCatalogFor(provider: string): AIModelSuggestionGroup[] {
   if (provider === "openai_chatgpt") return [{ key: "chatgpt", label: "", description: "", models: CHATGPT_MODELS }];
   const catalogProvider = provider === "openai_chatgpt" ? "openai" : provider;
   if (catalogProvider === "openai_compatible") return [];
-  return AI_MODELS.tiers
+  const latest = LATEST_PROVIDER_MODELS[provider] ?? [];
+  const latestIds = new Set(latest.map(model => model.selectionModel));
+  const catalogGroups = AI_MODELS.tiers
     .map((tier) => ({
       key: tier.key,
       label: tier.label,
       description: tier.description,
       models: AI_MODELS.models
-        .filter((model) => model.enabled && model.provider === catalogProvider && model.tier === tier.key)
+        .filter((model) => model.enabled && model.provider === catalogProvider && model.tier === tier.key && !latestIds.has(model.selection_model))
         .map((model) => ({
           selectionModel: model.selection_model,
           canonicalModel: model.canonical_model,
@@ -167,10 +188,13 @@ export function modelCatalogFor(provider: string): AIModelSuggestionGroup[] {
         })),
     }))
     .filter((group) => group.models.length > 0);
+  return latest.length ? [{ key: "latest", label: "Latest models", description: "", models: latest }, ...catalogGroups] : catalogGroups;
 }
 
 /** Catalog display name for a model identifier, when the catalog knows it. */
 export function catalogLabel(provider: string, model: string): string | undefined {
+  const latest = LATEST_PROVIDER_MODELS[provider]?.find(entry => entry.selectionModel === model);
+  if (latest) return latest.label;
   if (provider === "openai_chatgpt") {
     const suggested = CHATGPT_MODELS.find(entry => entry.selectionModel === model);
     if (suggested) return suggested.label;

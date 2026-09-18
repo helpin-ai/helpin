@@ -198,3 +198,24 @@ it('shows thinking level outside Advanced settings for a ChatGPT connection', as
     primary: expect.objectContaining({ connection_id: 'chatgpt', model: expect.objectContaining({ provider: 'openai_chatgpt', model: 'gpt-6-astra', controls: expect.objectContaining({ reasoning_effort: 'high' }) }) }),
   }), undefined);
 });
+
+it.each([
+  ['anthropic', 'claude-fable-5-1'],
+  ['openrouter', 'anthropic/claude-fable-5.1'],
+])('saves the newer model identifier for %s profiles', async (provider, model) => {
+  await render(<AIProfileEditor workspaceId="ws" scope="workspace" connections={[connection({ id: 'new-provider', provider })]} onClose={() => {}} />);
+  const name = document.querySelector<HTMLInputElement>('input[id$="-name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name, 'New model');
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await openConnectionPicker(0);
+  await act(async () => document.querySelector<HTMLElement>('[cmdk-item][data-value="new-provider"]')!.click());
+  await act(async () => document.querySelector<HTMLButtonElement>('button[id$="-model"]')!.click());
+  await act(async () => document.querySelector<HTMLElement>(`[cmdk-item][data-value="${model}"]`)!.click());
+  expect(document.body.textContent).not.toContain('Custom model.');
+  await act(async () => document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(aiProfileService.save).toHaveBeenCalledWith('ws', expect.objectContaining({
+    primary: expect.objectContaining({ model: expect.objectContaining({ provider, model }) }),
+  }), undefined);
+});
