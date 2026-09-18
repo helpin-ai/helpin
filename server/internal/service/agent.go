@@ -5178,9 +5178,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		}
 		validationAgent := agent
 		if opts.executionEnabled && opts.dockChatID != nil && agent.EffectivePresetKey() == model.AgentPresetAskAgent {
-			copy := *agent
-			copy.AllowedTools, _ = json.Marshal(appendPresetTools(parseJSONStringSlice(agent.AllowedTools), askAgentDirectTools()))
-			validationAgent = &copy
+			validationAgent = withAskAgentDirectTools(agent)
 		}
 		if err := validateRunAllowedTools(req.AllowedTools, validationAgent); err != nil {
 			return nil, err

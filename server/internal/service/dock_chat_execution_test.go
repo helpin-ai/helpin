@@ -68,6 +68,17 @@ func TestDockExecutionProjectionIsOptInAndSeparate(t *testing.T) {
 	}
 }
 
+func TestWithAskAgentDirectToolsDoesNotMutateSavedAgent(t *testing.T) {
+	agent := &model.Agent{AllowedTools: json.RawMessage(`["read_files"]`)}
+	projected := withAskAgentDirectTools(agent)
+	if projected == agent || !slices.Contains(parseJSONStringSlice(projected.AllowedTools), "run_python") {
+		t.Fatalf("execution tools were not projected: %s", projected.AllowedTools)
+	}
+	if string(agent.AllowedTools) != `["read_files"]` {
+		t.Fatalf("saved agent was mutated: %s", agent.AllowedTools)
+	}
+}
+
 func TestInitialDockExecutionRepositoryIDRequiresOneAuthorizedAttachment(t *testing.T) {
 	contexts := []model.AgentRunContextReference{{EntityType: "repository", EntityID: "repo-1"}}
 	if got := initialDockExecutionRepositoryID(false, contexts); got != nil {

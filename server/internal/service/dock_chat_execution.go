@@ -14,6 +14,15 @@ func askAgentDirectTools() []string {
 	return []string{"write_file", "edit_file", "apply_patch", "run_command", "run_python", "publish_outputs", "create_branch", "commit_and_push", "open_pr"}
 }
 
+func withAskAgentDirectTools(agent *model.Agent) *model.Agent {
+	if agent == nil {
+		return nil
+	}
+	projected := *agent
+	projected.AllowedTools, _ = json.Marshal(appendPresetTools(parseJSONStringSlice(agent.AllowedTools), askAgentDirectTools()))
+	return &projected
+}
+
 func (s *DockChatService) authorizeChatExecution(ctx context.Context, workspaceID, userID string) error {
 	if s.authz == nil {
 		return fmt.Errorf("execution authorization is unavailable")
@@ -35,9 +44,7 @@ func (s *DockChatService) scopedChatExecutionTools(ctx context.Context, chat *mo
 	if err := s.authorizeChatExecution(ctx, chat.WorkspaceID, userID); err != nil {
 		return nil, err
 	}
-	copy := *agent
-	copy.AllowedTools, _ = json.Marshal(appendPresetTools(parseJSONStringSlice(agent.AllowedTools), askAgentDirectTools()))
-	return s.scopedChatTools(ctx, chat.WorkspaceID, userID, &copy)
+	return s.scopedChatTools(ctx, chat.WorkspaceID, userID, withAskAgentDirectTools(agent))
 }
 
 func runtimeAgentForDockExecution(run *model.AgentRun, agent AgentRuntimeAgent) AgentRuntimeAgent {
