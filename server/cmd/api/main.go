@@ -789,7 +789,7 @@ func main() {
 		fatalWithSentry("validate agent model sizes", errors.Join(issues...))
 	}
 	supportLLMProvider := service.NewAICompletionService(supportLLMRouter, aiUsageService, completionRoutes).
-		SetGovernance(aiActionRegistry, aiActionExecutionRepo)
+		SetGovernance(aiActionRegistry, aiActionExecutionRepo).SetMetrics(metrics)
 	supportInboxTriageService := service.NewSupportInboxTriageService(
 		supportInboxService,
 		supportConversationTriageRepo,
@@ -842,6 +842,13 @@ func main() {
 	if jevProductErr != nil {
 		fatalWithSentry("configure product decisions", jevProductErr)
 	}
+	jevProductDecisions.SetMetrics(metrics)
+	translationRoute := service.AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731"}
+	if !supportLLMRouter.HasChatProvider("openrouter") && supportLLMRouter.HasChatProvider("openai") {
+		translationRoute = service.AICompletionRoute{Provider: "openai", Model: "gpt-5.6-luna"}
+	}
+	supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), supportLLMProvider, jevProductDecisions, translationRoute, supportLLMRouter.HasChatProvider("openai") || supportLLMRouter.HasChatProvider("openrouter"))
+	supportInboxService.SetTranslationMetrics(metrics)
 	pmTriageService, pmTriageErr := service.NewPMTriageService(service.PMTriageConfig{
 		Mode: cfg.JevPMMode, Threshold: cfg.JevPMThreshold, DailyLimit: cfg.JevPMDailyLimit,
 		WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),

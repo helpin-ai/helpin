@@ -101,6 +101,35 @@ export interface PendingDockChatMessage {
   actor_user_id?: string;
 }
 
+/** Compact history replaces the raw progress previously received while streaming. */
+function reconcileWorkSummaries(messages: AgentRunMessage[]): AgentRunMessage[] {
+  const sequence = (message: AgentRunMessage) => message.dock_chat_sequence ?? message.sequence_no;
+  const ordered = [...messages].sort((left, right) => sequence(left) - sequence(right)
+    || Number(!!right.dock_work_summary) - Number(!!left.dock_work_summary));
+  const covered = new Set<string>();
+  for (const [index, summary] of ordered.entries()) {
+    if (!summary.dock_work_summary) continue;
+    const finalID = summary.id.startsWith('work:') ? summary.id.slice(5) : summary.dock_work_summary.message_id;
+    const target = ordered.find(message => message.id === summary.dock_work_summary?.message_id);
+    const end = Math.max(sequence(summary), target ? sequence(target) : sequence(summary));
+    const boundary = findLastMatchingIndex(ordered.slice(0, index), message => message.role !== 'assistant');
+    const summaryTime = timestamp(summary.created_at);
+    const startTime = summaryTime === null ? null : summaryTime - summary.dock_work_summary.duration_ms;
+    for (const message of ordered.slice(boundary + 1)) {
+      if (sequence(message) > end) break;
+      if (message.role !== 'assistant' || message.dock_work_summary || message.id === finalID
+        || message.message_type === 'assistant_final' || message.message_type === 'status'
+        || message.run_id !== summary.run_id || message.dock_chat_id !== summary.dock_chat_id) continue;
+      // A page may start mid-turn. Without its user boundary, require proof
+      // that this progress belongs to the summary's time interval.
+      const time = timestamp(message.created_at);
+      if (boundary < 0 && (startTime === null || time === null || time < startTime)) continue;
+      covered.add(message.id);
+    }
+  }
+  return ordered.filter(message => !covered.has(message.id));
+}
+
 /** Merge stable chat rows with only the genuinely newer tail of a runtime snapshot. */
 export function mergePersistedChatMessages(
   stream: CodingSessionStreamState | null,
@@ -114,9 +143,7 @@ export function mergePersistedChatMessages(
       || !(message.client_message_id && options.failedClientMessageIds?.has(message.client_message_id)))
   );
 
-  const orderedMessages = messages.filter(isVisible).sort(
-    (left, right) => (left.dock_chat_sequence ?? left.sequence_no) - (right.dock_chat_sequence ?? right.sequence_no),
-  );
+  const orderedMessages = reconcileWorkSummaries(messages.filter(isVisible));
   const persisted = orderedMessages
     .filter((message) => message.role === 'user' || message.role === 'assistant' || message.message_type === 'status')
     .map((message) => ({
@@ -223,9 +250,7 @@ export function mergePersistedChatMessages(
 export function mergeMessagePages(current: AgentRunMessage[], incoming: AgentRunMessage[]) {
   const messages = new Map(current.map((message) => [message.id, message]));
   for (const message of incoming) messages.set(message.id, message);
-  return [...messages.values()].sort(
-    (left, right) => (left.dock_chat_sequence ?? left.sequence_no) - (right.dock_chat_sequence ?? right.sequence_no),
-  );
+  return reconcileWorkSummaries([...messages.values()]);
 }
 
 /** Never paint an optimistic user bubble beside its accepted durable row. */

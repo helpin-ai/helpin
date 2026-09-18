@@ -9,6 +9,7 @@ import type { Editor } from '@tiptap/core';
 import { clearReplyDeliveryDraft, loadReplyDelivery, saveReplyDelivery, saveReplySubject } from '../replyDelivery';
 
 const mocks = vi.hoisted(() => ({
+  translation: false,
   rewrite: vi.fn(), send: vi.fn(), empty: [], mutation: { isPending: false, mutateAsync: vi.fn() },
   conversation: null as Record<string, unknown> | null,
 }));
@@ -22,6 +23,9 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useDeleteCannedResponse: () => mocks.mutation,
   useUpdateConversationEmailRecipients: () => mocks.mutation,
   useUploadSupportAttachment: () => mocks.mutation,
+}));
+vi.mock('@/hooks/queries/useSupportTranslation', () => ({
+ useSupportTranslationOptions: () => ({ data: { available: mocks.translation, languages: { en: 'English', de: 'German' }, conversation: { customer_language: 'de' }, preference: { reading_language: 'en', auto_translate_incoming: true, auto_translate_outgoing: true } } }),
 }));
 vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: mocks.empty }) }));
 vi.mock('@/stores/dockStore', () => ({ useDockStore: () => null }));
@@ -64,8 +68,36 @@ describe('ReplyComposer AI loading state', () => {
     act(() => { root?.unmount(); });
     container?.remove();
     vi.useRealTimers();
+    mocks.translation = false;
     saveReplySubject('ws-1', 'conv-1');
     clearReplyDeliveryDraft('ws-1', 'conv-1');
+  });
+
+  it('translates on normal Send without a preview step', async () => {
+    mocks.translation = true;
+    setup(false, true);
+    expect(container.textContent).not.toContain('Preview translation');
+    await act(async () => { button('Send').click(); });
+    expect(mocks.send).toHaveBeenCalledOnce();
+    expect(mocks.send.mock.calls[0][0]).toMatchObject({ auto_translate: true, translation_target_language: 'de', content: '**Original** draft' });
+    expect(mocks.send.mock.calls[0][0].client_message_id).toBeTruthy();
+  });
+  it('keeps the draft and same send identity after translation failure', async () => {
+    mocks.translation = true;
+    setup(false, true);
+    mocks.send.mockRejectedValueOnce(new Error('Translation failed'));
+    await act(async () => { button('Send').click(); });
+    expect(container.querySelector('[contenteditable="true"]')?.textContent).toContain('Original');
+    const firstID = mocks.send.mock.calls[0][0].client_message_id;
+    await act(async () => { button('Send').click(); });
+    expect(mocks.send.mock.calls[1][0].client_message_id).toBe(firstID);
+  });
+  it('never translates internal notes', async () => {
+    mocks.translation = true;
+    setup(false, true);
+    act(() => useSupportInboxStore.setState({ replyMode: 'note' }));
+    await act(async () => { button('Add Note').click(); });
+    expect(mocks.send.mock.calls[0][0].auto_translate).toBeUndefined();
   });
 
   it('sends email without a subject editor or a stale draft subject override', async () => {

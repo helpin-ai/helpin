@@ -1,3 +1,4 @@
+import { useSupportAIControl } from './SupportAIControl';
 import { type ReactNode, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -84,6 +85,7 @@ export function ConversationActionsMenu({
   onSubjectDialogOpenChange,
 }: ConversationActionsMenuProps) {
   const confirm = useConfirm();
+  const aiControl = useSupportAIControl(conversation);
   const markConversationRead = useMarkConversationRead(workspaceId);
   const markConversationUnread = useMarkConversationUnread(workspaceId);
   const updateSubject = useUpdateConversationSubject(workspaceId);
@@ -199,7 +201,8 @@ export function ConversationActionsMenu({
         <DropdownMenuTrigger asChild>
           {trigger}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align={align} className="w-52">
+        <DropdownMenuContent align={align} className="w-64">
+          {aiControl.item && <>{aiControl.item}<DropdownMenuSeparator /></>}
           <DropdownMenuItem onClick={handleToggleReadState} className={itemClassName}>
             <MailOpenIcon className={iconClassName} />
             {isUnread ? 'Mark as read' : 'Mark as unread'}
@@ -280,6 +283,7 @@ export function ConversationActionsMenu({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {aiControl.confirmation}
 
       {subjectDialogOpen && (
         <Dialog open={subjectDialogOpen} onOpenChange={setSubjectDialogOpen}>

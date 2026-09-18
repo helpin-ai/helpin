@@ -19,6 +19,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
@@ -32,6 +33,7 @@ import (
 
 // SupportInboxService contains support business logic.
 type SupportInboxService struct {
+	translations     *supportTranslationService
 	followUpRepo     *repository.SupportFollowUpRepository
 	conversationRepo *repository.SupportConversationRepository
 	productAnalyticsEmitter
@@ -2108,6 +2110,43 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
+	// Apply the workspace policy to every public teammate reply, including older
+	// clients that omit or send stale per-message translation flags.
+	req.AutoTranslate = false
+	if s.translations != nil && senderType == "user" && !req.IsInternal && messageType == "reply" && strings.TrimSpace(req.Content) != "" {
+		options, err := s.TranslationOptions(ctx, workspaceID, ticketID, derefString(senderUserID))
+		if err != nil {
+			return nil, ErrSupportTranslation
+		}
+		req.AutoTranslate = options.Available && options.Preference.AutoTranslateOutgoing
+		if req.AutoTranslate && clientMessageID == "" {
+			clientMessageID = uuid.NewString()
+			req.ClientMessageID = clientMessageID
+		}
+	}
+	var translation *model.SupportTranslation
+	if req.AutoTranslate {
+		if senderType != "user" {
+			return nil, ErrSupportTranslation
+		}
+		var err error
+		translation, err = s.prepareTranslatedReply(ctx, workspaceID, ticketID, derefString(senderUserID), req)
+		if err != nil {
+			return nil, err
+		}
+		if translation.SentMessageID != nil {
+			sent, err := s.messageRepo.GetByID(ctx, *translation.SentMessageID)
+			if err != nil {
+				return nil, err
+			}
+			if sent == nil {
+				return nil, ErrSupportTranslation
+			}
+			return sent, nil
+		}
+		req.Content = translation.TranslatedText
+	}
+
 	// Auto-resolve sender display name and avatar from user record.
 	var senderAvatarURL *string
 	if senderUserID != nil && s.userRepo != nil {
@@ -2156,14 +2195,21 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		ClientMessageID:   clientMessageID,
 	}
 
+	if translation != nil {
+		msg.TranslationID = translation.ID
+	}
+
 	if len(mentionedUserIDs) > 0 {
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
 	}
-	if req.AIAssisted || clientMessageID != "" {
+	if req.AIAssisted || clientMessageID != "" || translation != nil {
 		metadata := map[string]any{}
 		if strings.TrimSpace(msg.Metadata) != "" {
 			_ = json.Unmarshal([]byte(msg.Metadata), &metadata)
+		}
+		if translation != nil {
+			metadata["translated"] = true
 		}
 		if req.AIAssisted {
 			metadata["ai_assisted"] = true
@@ -2195,6 +2241,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	} else if err := s.messageRepo.Create(ctx, msg); err != nil {
 		return nil, err
+	}
+	if translation != nil {
+		s.translations.metrics.TranslationEvent("outgoing_reply", "sent")
 	}
 	if explicitEmail && msg.WidgetVisible() && senderType == "user" && senderUserID != nil {
 		s.emitTeammateJoinedIfFirstReply(ctx, workspaceID, ticketID, strings.TrimSpace(*senderUserID), derefString(senderDisplayName), senderAvatarURL, clientMessageID, msg)

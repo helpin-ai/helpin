@@ -8,6 +8,8 @@ export interface DockWorkingGroupEntry {
   segments: TranscriptSegment[];
   active: boolean;
   durationMs?: number;
+  completed?: boolean;
+  startedAt?: number;
 }
 
 export interface DockWorkingSegmentEntry {

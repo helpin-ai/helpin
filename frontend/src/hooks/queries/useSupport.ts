@@ -101,6 +101,8 @@ export type SupportConversationFilters = {
 export type SupportConversationGlobalSearchFilters = SupportConversationSearchParams;
 
 type SendMessagePayload = {
+  auto_translate?: boolean;
+  translation_target_language?: string;
   content: string;
   client_message_id?: string;
   is_internal?: boolean;
@@ -241,6 +243,8 @@ export function useUpdateChatSettings(workspaceId: string) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.support.routingUsage(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: ['support', workspaceId, 'translation'] }),
+        queryClient.invalidateQueries({ queryKey: ['support', workspaceId, 'message-translation'] }),
       ]);
     },
     onError: (error: Error) => {
@@ -951,6 +955,7 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
       const key = queryKeys.support.messages(workspaceId, conversationId);
       await queryClient.cancelQueries({ queryKey: key });
       const previousMessages = queryClient.getQueryData<SupportMessagePages>(key);
+      if (payload.auto_translate) return { previousMessages, optimisticId: '' };
       const now = new Date().toISOString();
       const optimisticId = payload.client_message_id?.trim()
         || `optimistic-${conversationId}-${crypto.randomUUID()}`;
@@ -973,6 +978,8 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
             queryKeys.support.messages(workspaceId, conversationId),
             (current) => replaceMessageInPages(current, context.optimisticId, message),
           );
+        } else {
+          queryClient.setQueryData<SupportMessagePages>(queryKeys.support.messages(workspaceId, conversationId), current => appendMessageToNewestPage(current, message));
         }
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
