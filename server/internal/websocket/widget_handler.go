@@ -67,7 +67,12 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(r.Header.Values("Origin")) != 1 || h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{WidgetKey: widgetKey, SessionToken: legacyToken}) != nil {
+	var admissionErr error
+	if len(r.Header.Values("Origin")) == 1 {
+		admissionErr = h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{WidgetKey: widgetKey, SessionToken: legacyToken})
+	}
+	if len(r.Header.Values("Origin")) != 1 || admissionErr != nil {
+		widgetorigin.LogRejection(ctx, r, admissionErr)
 		http.Error(w, "widget origin or credentials are not allowed", http.StatusForbidden)
 		return
 	}
@@ -119,7 +124,12 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // serveLegacy handles legacy widget connections that pass session_token in the URL.
 func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, r *http.Request, sessionToken string) {
-	if len(r.Header.Values("Origin")) != 1 || h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{SessionToken: sessionToken}) != nil {
+	var admissionErr error
+	if len(r.Header.Values("Origin")) == 1 {
+		admissionErr = h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{SessionToken: sessionToken})
+	}
+	if len(r.Header.Values("Origin")) != 1 || admissionErr != nil {
+		widgetorigin.LogRejection(ctx, r, admissionErr)
 		http.Error(w, "widget origin or credentials are not allowed", http.StatusForbidden)
 		return
 	}
