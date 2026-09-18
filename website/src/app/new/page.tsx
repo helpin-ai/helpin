@@ -66,18 +66,18 @@ export default function NewHomePage() {
       {/* Hero */}
       <section className="hero">
         <div className="wrap">
-          <div className="hero-inner">
+          <LoopWire />
+          <div className="hero-inner hero-inner-below">
             <span className="eyebrow">Open source, for SaaS teams</span>
             <h1>Where SaaS teams answer customers, ship fixes, and close deals.</h1>
             <p className="lede">Helpin puts your support inbox, help center, project tracker, and CRM on one customer record. AI agents draft replies, plan work, and open pull requests inside it, and ask before they act.</p>
             <CtaRow />
             <div className="assure"><span>AGPL-3.0</span><span>Unlimited seats</span><span>Self-host or Cloud</span></div>
           </div>
-          <LoopWire />
           <ReviewNote tag="Hero">
             <p><b>Audience-first headline.</b> "SaaS teams" is the subject; the three verbs map to support and docs, projects, and CRM. The frame is a placeholder for the real company page in the seeded workspace.</p>
             <p><b>Wire concept.</b> One line, four stages on the page grid, one customer. The line draws left to right, each stage hangs its artifact off it, and the work inside Decide and Ship ticks off item by item. The approval moment is explicit in Ship: the run waits, an Approve pill appears, then "Approved by Sam." About ten seconds, plays once, finished state under reduced motion, vertical on phones. Every intermediate state is readable text; nothing overlaps mid-transition.</p>
-            <p><b>What moved:</b> the animated customer record is now the visual for section two, and it starts when scrolled into view.</p>
+            <p><b>Order:</b> the wire comes first, then the headline and description, so the story plays while the reader arrives at the sentence that names them. The animated customer record is the visual for section two and starts when scrolled into view.</p>
             <p><Flag>DECISION</Flag> "View on GitHub" assumes the repository and a release bundle are public. <Flag>CLOUD</Flag> Until the Community module decision, this frame shows Cloud.</p>
           </ReviewNote>
         </div>

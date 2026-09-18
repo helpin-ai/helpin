@@ -216,7 +216,7 @@
   .hp3 .tl > div, .hp3 .sig > div { transition: none; }
   .hp3 .tl span.flip { animation: none; }
 }
-.hp3 .wire { position: relative; margin-top: 56px; }
+.hp3 .wire { position: relative; margin-top: 28px; }
 .hp3 .wire-line { position: absolute; left: 50%; top: 14px; width: 100vw; height: 1.5px; background: var(--ink); transform: translateX(-50%) scaleX(0); transform-origin: left center; transition: transform 1.4s cubic-bezier(.2,.7,.2,1); }
 .hp3 .wire-line.drawn { transform: translateX(-50%) scaleX(1); }
 .hp3 .wire-nodes { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; }
@@ -259,3 +259,8 @@
 @keyframes hp3-flip { 0% { background: var(--em-t); } 100% { background: transparent; } }
 @keyframes hp3-spin { to { transform: rotate(360deg); } }
 @keyframes hp3-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+/* Hero order: wire first, then the headline block. */
+.hp3 .hero-inner-below { margin-top: 72px; }
+.hp3 section.hero { padding-block: 40px 72px; }
+@media (max-width: 960px) { .hp3 .hero-inner-below { margin-top: 48px; } }
