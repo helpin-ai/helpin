@@ -58,8 +58,7 @@ export default function NewHomePage() {
           <div className="hero-inner">
             <span className="eyebrow">The open-source workspace for SaaS teams</span>
             <h1>Hear customers.<br />Decide what matters.<br />Ship it.</h1>
-            <p className="lede">Connect customer conversations to product work, engineering, docs, and CRM.</p>
-            <p className="lede lede-2">Helpin keeps the context attached as work moves — with your team in control.</p>
+            <p className="lede">Connect customer conversations to product work, engineering, docs, and CRM. Helpin keeps the context attached as work moves — with your team in control.</p>
             <CtaRow />
             <div className="assure"><span>Open source</span><span>Self-hostable</span><span>Bring your own models</span><span>Cloud available</span></div>
           </div>
