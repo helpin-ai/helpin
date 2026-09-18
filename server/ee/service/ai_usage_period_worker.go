@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -42,6 +43,9 @@ func (w *AIUsagePeriodWorker) CloseDuePeriods(ctx context.Context, now time.Time
 	processed := 0
 	for _, period := range periods {
 		if _, err := w.store.ClosePeriod(ctx, period.WorkspaceID, now); err != nil {
+			if errors.Is(err, eerepository.ErrAIUsagePeriodBusy) {
+				continue // A live reservation may have appeared after listing due periods.
+			}
 			return processed, fmt.Errorf("close AI usage period %s: %w", period.ID, err)
 		}
 		schedule, err := w.schedule(ctx, period.WorkspaceID, period.PeriodEnd)

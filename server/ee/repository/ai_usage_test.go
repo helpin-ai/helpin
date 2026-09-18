@@ -391,3 +391,27 @@ func setupAIUsageRepository(t *testing.T, mode string, allowance int64) *AIUsage
 	}
 	return NewAIUsageRepository(db)
 }
+
+func TestAIUsageDuePeriodsExcludeReservedBeforeApplyingLimit(t *testing.T) {
+	repo := setupAIUsageRepository(t, model.AIUsageEnforcementStrict, 1_000_000)
+	now := time.Now().UTC()
+	if err := repo.db.Model(&model.AIUsagePeriod{}).Where("id = ?", "period").Updates(map[string]any{"period_end": now.Add(-2 * time.Hour), "reserved_microusd": 100}).Error; err != nil {
+		t.Fatal(err)
+	}
+	p := model.AIUsagePeriod{ID: "ready-period", WorkspaceID: "ready-workspace", PeriodStart: now.Add(-time.Hour), PeriodEnd: now.Add(-time.Minute), Status: model.AIUsagePeriodOpen, PricingVersion: "test", EnforcementMode: model.AIUsageEnforcementStrict}
+	if err := repo.db.Create(&p).Error; err != nil {
+		t.Fatal(err)
+	}
+	rows, err := repo.ListDuePeriods(context.Background(), now, 1)
+	if err != nil || len(rows) != 1 || rows[0].ID != p.ID {
+		t.Fatalf("due=%v err=%v", rows, err)
+	}
+	if _, err = repo.ClosePeriod(context.Background(), "ws", now); !errors.Is(err, ErrAIUsagePeriodBusy) {
+		t.Fatalf("close busy period: %v", err)
+	}
+	var original model.AIUsagePeriod
+	repo.db.First(&original, "id = ?", "period")
+	if original.ReservedMicrousd != 100 || original.Status != model.AIUsagePeriodOpen {
+		t.Fatal("busy period was modified")
+	}
+}

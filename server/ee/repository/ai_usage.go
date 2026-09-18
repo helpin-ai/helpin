@@ -51,6 +51,9 @@ type AIUsageCheckpointRequest struct {
 	RunOutputSummary                  model.JSONBlob
 }
 
+// ErrAIUsagePeriodBusy means active usage must settle before the period can close.
+var ErrAIUsagePeriodBusy = errors.New("AI usage period has active reservations")
+
 // AIUsagePeriodSchedule describes a new, empty allowance period.
 type AIUsagePeriodSchedule struct {
 	WorkspaceID, Plan, BillingInterval, PricingVersion, EnforcementMode string
@@ -447,7 +450,7 @@ func (r *AIUsageRepository) ClosePeriod(ctx context.Context, workspaceID string,
 			return nil
 		}
 		if period.ReservedMicrousd != 0 {
-			return fmt.Errorf("AI usage period has active reservations")
+			return ErrAIUsagePeriodBusy
 		}
 		if err := tx.Model(&period).Update("status", model.AIUsagePeriodClosed).Error; err != nil {
 			return fmt.Errorf("close AI usage period: %w", err)
@@ -505,7 +508,7 @@ func (r *AIUsageRepository) OpenNextPeriod(ctx context.Context, input AIUsagePer
 // ListDuePeriods returns open periods ready to close in stable order.
 func (r *AIUsageRepository) ListDuePeriods(ctx context.Context, now time.Time, limit int) ([]model.AIUsagePeriod, error) {
 	var periods []model.AIUsagePeriod
-	err := r.db.WithContext(ctx).Where("(status = ? AND period_end <= ?) OR (status = ? AND NOT EXISTS (SELECT 1 FROM billing_ai_usage_periods successor WHERE successor.workspace_id = billing_ai_usage_periods.workspace_id AND successor.status = ?))",
+	err := r.db.WithContext(ctx).Where("(status = ? AND period_end <= ? AND reserved_microusd = 0) OR (status = ? AND NOT EXISTS (SELECT 1 FROM billing_ai_usage_periods successor WHERE successor.workspace_id = billing_ai_usage_periods.workspace_id AND successor.status = ?))",
 		model.AIUsagePeriodOpen, now, model.AIUsagePeriodClosed, model.AIUsagePeriodOpen).
 		Order("period_end, id").Limit(limit).Find(&periods).Error
 	return periods, err

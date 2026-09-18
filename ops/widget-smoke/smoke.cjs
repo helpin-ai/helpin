@@ -4,10 +4,10 @@ const { randomUUID } = require('node:crypto');
 const site = process.env.SMOKE_SITE || 'https://helpin.ai/';
 const metricsURL = process.env.SMOKE_METRICS_URL;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
-async function publish(browser, success, seconds) {
+async function publish(browser, success, seconds, navigationRetries) {
   if (!metricsURL) return;
   const now = Math.floor(Date.now() / 1000);
-  const body = `helpin_widget_smoke_success{browser="${browser}"} ${success}\nhelpin_widget_smoke_last_run_seconds{browser="${browser}"} ${now}\nhelpin_widget_smoke_duration_seconds{browser="${browser}"} ${seconds}\n`;
+  const body = `helpin_widget_smoke_success{browser="${browser}"} ${success}\nhelpin_widget_smoke_last_run_seconds{browser="${browser}"} ${now}\nhelpin_widget_smoke_duration_seconds{browser="${browser}"} ${seconds}\nhelpin_widget_smoke_navigation_retries{browser="${browser}"} ${navigationRetries}\n`;
   const response = await fetch(metricsURL, { method: 'POST', body, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error('metrics_publish_failed');
 }
@@ -22,6 +22,7 @@ function failureKind(error) {
 async function check(kind) {
   let browser, page, attachment, session, api, downloadURL, failed = false;
   let metadataFailed = false;
+  let navigationRetries = 0;
   let stage = 'launch';
   const start = Date.now();
   const name = `helpin-monitor-${randomUUID()}.png`;
@@ -72,7 +73,18 @@ async function check(kind) {
       })().catch(() => { metadataFailed = true; }));
     });
     stage = 'page';
-    const navigation = await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    let navigation;
+    try {
+      navigation = await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    } catch (error) {
+      // Chromium can observe network initialization immediately after launch.
+      // Retry only this specific pre-widget navigation error, once, and expose it.
+      if (failureKind(error) !== 'ERR_NETWORK_CHANGED') throw error;
+      navigationRetries = 1;
+      console.log(JSON.stringify({ browser: kind, stage: 'page', outcome: 'retrying', failure: 'ERR_NETWORK_CHANGED' }));
+      await new Promise(resolve => setTimeout(resolve, 250));
+      navigation = await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    }
     if (navigation && !navigation.ok()) throw new Error('page_http_error');
     stage = 'launcher';
     await page.locator('.helpin-launcher').click();
@@ -128,8 +140,8 @@ async function check(kind) {
     }
   }
   const seconds = (Date.now() - start) / 1000;
-  await publish(kind, failed ? 0 : 1, seconds);
-  console.log(JSON.stringify({ browser: kind, outcome: failed ? 'failed' : 'success', duration_seconds: seconds }));
+  await publish(kind, failed ? 0 : 1, seconds, navigationRetries);
+  console.log(JSON.stringify({ browser: kind, outcome: failed ? 'failed' : 'success', duration_seconds: seconds, navigation_retries: navigationRetries }));
   return !failed;
 }
 (async () => {

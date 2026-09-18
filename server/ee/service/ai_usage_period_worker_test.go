@@ -30,9 +30,10 @@ func TestAIUsagePeriodWorkerClosesAndOpensAnniversaryPeriod(t *testing.T) {
 }
 
 type fakePeriodWorkerStore struct {
-	due    []model.AIUsagePeriod
-	closed string
-	opened eerepository.AIUsagePeriodSchedule
+	busyWorkspace string
+	due           []model.AIUsagePeriod
+	closed        string
+	opened        eerepository.AIUsagePeriodSchedule
 }
 
 func (f *fakePeriodWorkerStore) ListDuePeriods(context.Context, time.Time, int) ([]model.AIUsagePeriod, error) {
@@ -40,6 +41,9 @@ func (f *fakePeriodWorkerStore) ListDuePeriods(context.Context, time.Time, int) 
 }
 
 func (f *fakePeriodWorkerStore) ClosePeriod(_ context.Context, workspaceID string, _ time.Time) (*model.AIUsageSettlement, error) {
+	if workspaceID == f.busyWorkspace {
+		return nil, eerepository.ErrAIUsagePeriodBusy
+	}
 	f.closed = workspaceID
 	return nil, nil
 }
@@ -47,4 +51,22 @@ func (f *fakePeriodWorkerStore) ClosePeriod(_ context.Context, workspaceID strin
 func (f *fakePeriodWorkerStore) OpenNextPeriod(_ context.Context, schedule eerepository.AIUsagePeriodSchedule) (*model.AIUsagePeriod, error) {
 	f.opened = schedule
 	return &model.AIUsagePeriod{}, nil
+}
+
+func TestAIUsagePeriodWorkerSkipsBusyPeriodWithoutBlockingOthers(t *testing.T) {
+	now := time.Now().UTC()
+	store := &fakePeriodWorkerStore{due: []model.AIUsagePeriod{
+		{ID: "busy", WorkspaceID: "busy", PeriodEnd: now},
+		{ID: "ready", WorkspaceID: "ready", PeriodEnd: now},
+	}, busyWorkspace: "busy"}
+	worker := NewAIUsagePeriodWorker(store, func(_ context.Context, workspace string, start time.Time) (eerepository.AIUsagePeriodSchedule, error) {
+		if workspace == "busy" {
+			t.Fatal("must not open a successor for a busy period")
+		}
+		return eerepository.AIUsagePeriodSchedule{WorkspaceID: workspace, Start: start, End: start.AddDate(0, 1, 0)}, nil
+	})
+	count, err := worker.CloseDuePeriods(context.Background(), now, 10)
+	if err != nil || count != 1 || store.opened.WorkspaceID != "ready" {
+		t.Fatalf("count=%d err=%v opened=%s", count, err, store.opened.WorkspaceID)
+	}
 }
