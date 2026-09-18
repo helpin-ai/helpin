@@ -8,12 +8,13 @@ import { useReviewNotes } from './ReviewNotes';
 // they travel into the record and the week draws down the timeline. One authored moment,
 // transforms and opacity only, plays once. Reduced motion shows the finished record.
 const ENTRIES = [
-  { when: '09:14', title: 'Support conversation', sub: '“Export jobs are timing out.”', kind: 'support' },
-  { when: '09:22', title: 'AI identified issue', sub: 'Possible regression · 4 similar reports', kind: 'ai' },
-  { when: '10:05', title: 'Task created', sub: 'Fix CSV export timeout', kind: 'task' },
-  { when: 'Wed', title: 'Product meeting', sub: 'Mentioned in roadmap review · Priority increased', kind: 'meeting' },
-  { when: 'Thu', title: 'PR #482 merged', sub: 'CSV export timeout fixed', kind: 'pr' },
-  { when: 'Fri', title: 'Customer follow-up', sub: '“Your export issue has been resolved.”', kind: 'reply' },
+  { when: 'Mon', title: 'Renewal call', sub: '“Security needs the Okta steps before we sign.”', kind: 'meeting' },
+  { when: '10:42', title: 'Support conversation', sub: '“Does SSO work with Okta? We move next month.”', kind: 'support' },
+  { when: '10:45', title: 'Signal identified', sub: 'Timeline identified · High · Okta before renewal', kind: 'ai' },
+  { when: '11:05', title: 'Task created', sub: 'HLP-142 · Okta SAML mapping', kind: 'task' },
+  { when: 'Wed', title: 'Product meeting', sub: 'Raised in roadmap review · priority increased', kind: 'meeting' },
+  { when: 'Thu', title: 'PR #318 merged', sub: 'Okta SAML attribute mapping', kind: 'pr' },
+  { when: 'Fri', title: 'Customer follow-up', sub: '“Okta is verified and documented.” · Renewal signed', kind: 'reply' },
 ];
 
 const MERGE_MS = 800;
@@ -60,26 +61,26 @@ export function RecordStory() {
       {/* Three versions of the same story, before Helpin. */}
       <div className="rs-frag rs-frag-a" aria-hidden="true">
         <span className="rs-frag-l">Support inbox</span>
-        <b>Acme · Export jobs are timing out.</b>
+        <b>Acme · Does SSO work with Okta?</b>
         <span>Open · assigned to Sam</span>
       </div>
       <div className="rs-frag rs-frag-b" aria-hidden="true">
         <span className="rs-frag-l">Roadmap</span>
-        <b>Fix CSV export timeout</b>
-        <span>Backlog · P2 · no customer linked</span>
+        <b>Okta SAML mapping</b>
+        <span>Backlog · no customer linked</span>
       </div>
       <div className="rs-frag rs-frag-c" aria-hidden="true">
         <span className="rs-frag-l">CRM</span>
-        <b>Acme Inc. · $42k ARR</b>
-        <span>Renewal in 63 days · last touch 3 weeks ago</span>
+        <b>Acme Corp · $48k ARR</b>
+        <span>Renewal in 22 days · last touch 3 weeks ago</span>
       </div>
 
-      <div className="rs-panel" role="img" aria-label="Acme Inc. customer record: a support conversation on Tuesday morning becomes a task, is raised in Wednesday's product meeting, is fixed by a merged pull request on Thursday, and the customer is told on Friday">
+      <div className="rs-panel" role="img" aria-label="Acme Corp customer record: a renewal call on Monday, the Okta question on Tuesday morning that becomes a signal and task HLP-142, the Wednesday product meeting, PR #318 merged on Thursday, and the customer told on Friday with the renewal signed">
         <div className="rs-head">
           <div className="rs-av">A</div>
           <div>
-            <b>Acme Inc.</b>
-            <span>Enterprise · $42k ARR · Renewal in 63 days</span>
+            <b>Acme Corp</b>
+            <span>Growth · $48k ARR · Renewal in 22 days</span>
           </div>
           <span className="rs-live">One record</span>
         </div>

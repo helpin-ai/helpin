@@ -8,15 +8,15 @@ import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { Chip, CtaRow, GithubIcon, SectionHead, SIGNUP_URL, GITHUB_URL } from './_components/ui';
 
 // Which timeline entry each record item lights up on hover or focus.
-const RECORD_KINDS = ['support', 'meeting', 'deal', 'task', 'reply', 'reply'];
+const RECORD_KINDS = ['support', 'meeting', 'task', 'deal', 'reply', 'meeting'];
 
 const RECORD_FACTS = [
-  ['Conversations', 'Chat and email, with assignments, notes, tags, and replies.'],
-  ['Meetings', 'Recordings, transcripts, summaries, decisions, objections, and next steps.'],
-  ['Deals', 'Pipeline activity and buyer signals, linked back to the conversation or meeting that created them.'],
-  ['Tasks', 'Created from conversations, meetings, or plans — always connected to their source.'],
-  ['Docs', 'Help-center and internal docs, including what the customer was sent and what their questions created.'],
-  ['Emails & calls', 'Gmail and calendar activity appear on the same customer timeline.'],
+  ['Conversations', 'Every support conversation, email, note, assignment, and reply — connected to the customer and company.'],
+  ['Meetings', 'Recordings, transcripts, summaries, decisions, objections, and next steps from Meet, Zoom, Teams, and Webex.'],
+  ['Projects', 'Full product and project work — projects, tasks, priorities, owners, and progress — with the customer context that created it still attached.'],
+  ['Deals', 'Pipeline, stages, renewal context, and buyer signals from conversations and meetings.'],
+  ['Docs', 'Help-center and internal knowledge, including the articles customers used and the gaps their questions uncovered.'],
+  ['Email & calendar', 'Customer threads, meetings, and appointments on the same timeline as everything else.'],
 ];
 
 const AI_FACTS = [
@@ -86,16 +86,16 @@ export default function NewHomePage() {
           <div className="rs-grid">
             <div className="rs-copy">
               <span className="rs-eyebrow">One customer. One record.</span>
-              <h2>Support, product, and sales read the same story.</h2>
-              <p>A customer talks to support on Tuesday, comes up in a roadmap meeting on Wednesday, and renews on Friday.</p>
-              <p>Most tools keep three versions of that story.</p>
-              <p className="rs-strong"><span className="rs-keep">Helpin keeps one.</span> Everything attaches to the same customer record.</p>
+              <h2>The customer record your whole company works from.</h2>
+              <p>Helpin connects every conversation, meeting, project, deal, document, and interaction to the customer behind it.</p>
+              <p>Support, product, engineering, and sales work from the same context — and so do your AI agents.</p>
             </div>
             <RecordStory />
           </div>
           <div className="rs-items">
             {RECORD_FACTS.map(([k, v], i) => <div key={k} data-kind={RECORD_KINDS[i]} tabIndex={0}><h3>{k}</h3><p>{v}</p></div>)}
           </div>
+          <p className="rs-close"><span className="rs-keep">One customer.</span> Every interaction. Full context.</p>
         </div>
       </section>
 

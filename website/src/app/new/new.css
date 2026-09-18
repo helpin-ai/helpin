@@ -449,3 +449,5 @@
 .hp3 .rs-frag-a { top: -8px; left: -36px; }
 .hp3 .rs-frag-c { left: -36px; bottom: -30px; }
 @media (max-width: 600px) { .hp3 .rs-live { display: none; } .hp3 .rs-head { grid-template-columns: 40px 1fr; } }
+.hp3 .rs-close { margin-top: 36px; font-size: 20px; font-weight: 600; color: var(--d-fg); letter-spacing: -.01em; }
+.hp3 .rs-copy p:last-child { margin-bottom: 0; }
