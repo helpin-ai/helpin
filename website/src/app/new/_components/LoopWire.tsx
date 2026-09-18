@@ -23,19 +23,72 @@ const LAST = 41;
 
 type Item = { at: number; label: string; done?: string };
 
-const DECIDE: Item[] = [
-  { at: S.d1, label: 'Signal: Timeline identified · High' },
-  { at: S.d2, label: 'Next step accepted: confirm Okta before renewal' },
-  { at: S.d3, label: 'HLP-142 created from the conversation' },
+type Scenario = {
+  caption: string;
+  hear: { initial: string; text: string; meta: string; time: string; speaker: string; quote: string; chip: string };
+  decide: { items: [string, string, string]; key: string; title: string };
+  ship: { branch: string; items: [string, string, string, string]; approver: string };
+  tell: { doc: string; section: string; reply: string; replyMeta: string; initial: string; deal: string; outcome: string };
+};
+
+// Four kinds of request, one loop each. Names and companies are examples for the demo workspace.
+const SCENARIOS: Scenario[] = [
+  {
+    caption: 'Acme Corp · SSO migration',
+    hear: { initial: 'M', text: "We're moving to Okta next month. Does SSO work with it?", meta: 'Maya R. · Acme Corp · website chat',
+      time: '14:02', speaker: 'Maya', quote: '…security wants the Okta mapping steps before we sign.', chip: 'Timeline identified' },
+    decide: { items: ['Signal: Timeline identified · High', 'Next step accepted: confirm Okta before renewal', 'HLP-142 created from the conversation'],
+      key: 'HLP-142', title: 'Verify and document Okta SAML mapping' },
+    ship: { branch: 'HLP-142-okta-saml-mapping', items: ['Task planner scoped the work', 'Code builder opened PR #318', 'Review agent: checks passed', 'Merged by Sam'], approver: 'Sam' },
+    tell: { doc: 'Set up SSO with Okta', section: 'Help center · Security', reply: 'Okta is verified and documented. Here are the exact steps.', replyMeta: 'Sam · source: Set up SSO with Okta', initial: 'S',
+      deal: 'Growth renewal · $48k', outcome: 'Renewal signed' },
+  },
+  {
+    caption: 'Nimbus · Billing details',
+    hear: { initial: 'D', text: 'Our invoices still show the old company name. Finance is bouncing them.', meta: 'Dev P. · Nimbus · email',
+      time: '09:41', speaker: 'Dev', quote: '…we rebranded in June, every invoice since is wrong.', chip: 'Relationship risk' },
+    decide: { items: ['Signal: Relationship risk · Medium', 'Next step accepted: reissue August invoices', 'HLP-151 created from the thread'],
+      key: 'HLP-151', title: 'Let admins edit the billing name on invoices' },
+    ship: { branch: 'HLP-151-editable-billing-name', items: ['Task planner scoped the work', 'Code builder opened PR #322', 'Review agent: checks passed', 'Merged by Priya'], approver: 'Priya' },
+    tell: { doc: 'Update your billing details', section: 'Help center · Billing', reply: 'You can now change the billing name yourself. Reissued August invoices are attached.', replyMeta: 'Priya · source: Update your billing details', initial: 'P',
+      deal: 'Starter · 14 seats', outcome: 'Account retained' },
+  },
+  {
+    caption: 'Orbit Labs · Export bug',
+    hear: { initial: 'L', text: 'CSV export has been timing out since Tuesday on our biggest workspace.', meta: 'Lin Z. · Orbit Labs · website chat',
+      time: '16:20', speaker: 'Lin', quote: '…three of our analysts are blocked until this works.', chip: 'Champion identified' },
+    decide: { items: ['Coverage gap: 3 similar reports this week', 'Next step accepted: prioritise the export fix', 'HLP-158 created from the conversation'],
+      key: 'HLP-158', title: 'Fix CSV export timeout on large workspaces' },
+    ship: { branch: 'HLP-158-export-timeout', items: ['Task planner scoped the work', 'Code builder opened PR #330', 'Review agent: checks passed', 'Merged by Sam'], approver: 'Sam' },
+    tell: { doc: 'Exporting large workspaces', section: 'Help center · Data', reply: 'Fixed and deployed. Exports over 100k rows now stream in the background.', replyMeta: 'Sam · source: Exporting large workspaces', initial: 'S',
+      deal: 'Growth · expansion', outcome: '+20 seats added' },
+  },
+  {
+    caption: 'Fieldline · Feature request',
+    hear: { initial: 'A', text: 'Can we get Slack alerts when a payment fails? We keep finding out from customers.', meta: 'Aisha K. · Fieldline · website chat',
+      time: '11:15', speaker: 'Aisha', quote: '…if alerts land in Slack we would move the whole team over.', chip: 'Buying intent' },
+    decide: { items: ['Signal: Buying intent · High', 'Next step accepted: add to the Q4 roadmap', 'HLP-160 created from the conversation'],
+      key: 'HLP-160', title: 'Slack alerts for failed payments' },
+    ship: { branch: 'HLP-160-slack-payment-alerts', items: ['Task planner scoped the work', 'Code builder opened PR #341', 'Review agent: checks passed', 'Merged by Priya'], approver: 'Priya' },
+    tell: { doc: 'Set up Slack alerts', section: 'Help center · Integrations', reply: 'Shipped. Connect Slack under Settings and pick the channel for payment alerts.', replyMeta: 'Priya · source: Set up Slack alerts', initial: 'P',
+      deal: 'Growth · new deal · $24k', outcome: 'Closed won' },
+  },
 ];
 
-const SHIP: Item[] = [
-  { at: S.s1, label: 'Task planner scoped the work' },
-  { at: S.s2, label: 'Code builder opened PR #318' },
-  { at: S.approved, label: 'Waiting for approval', done: 'Approved by Sam' },
-  { at: S.s4, label: 'Review agent: checks passed' },
-  { at: S.s5, label: 'Merged by Sam' },
-];
+const HOLD_TICKS = 8; // rest on the finished state before the next example
+
+function decideItems(sc: Scenario): Item[] {
+  return [{ at: S.d1, label: sc.decide.items[0] }, { at: S.d2, label: sc.decide.items[1] }, { at: S.d3, label: sc.decide.items[2] }];
+}
+function shipItems(sc: Scenario): Item[] {
+  return [
+    { at: S.s1, label: sc.ship.items[0] },
+    { at: S.s2, label: sc.ship.items[1] },
+    { at: S.approved, label: 'Waiting for approval', done: `Approved by ${sc.ship.approver}` },
+    { at: S.s4, label: sc.ship.items[2] },
+    { at: S.s5, label: sc.ship.items[3] },
+  ];
+}
 
 // Stepped wire geometry. Stage labels alternate between an upper and a lower level and the
 // line moves between them with an S-curve, entering and leaving at the viewport edges.
@@ -119,6 +172,8 @@ function Checklist({ items, t, cardAt }: { items: Item[]; t: number; cardAt: num
 export function LoopWire() {
   const [t, setT] = useState(0);
   const [run, setRun] = useState(0);
+  const [idx, setIdx] = useState(0);
+  const [inView, setInView] = useState(true);
   const [size, setSize] = useState({ w: 0, vw: 0 });
   const [len, setLen] = useState(0);
   const [marks, setMarks] = useState<number[]>([]);
@@ -151,19 +206,36 @@ export function LoopWire() {
   }, [d, size.w, size.vw]);
 
   useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((entries) => setInView(entries.some((e) => e.isIntersecting)), { threshold: 0.2 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setReduced(true); setT(LAST); return; }
+    if (!inView) return;
     let cur = 0;
     setT(0);
     const id = window.setInterval(() => {
       cur += 1;
-      setT(cur);
-      if (cur >= LAST) window.clearInterval(id);
+      if (cur <= LAST) { setT(cur); return; }
+      if (cur >= LAST + HOLD_TICKS) {
+        // Next example: reset the line without animating it backwards, then start over.
+        settle.current = true;
+        cur = 0;
+        setIdx((i) => (i + 1) % SCENARIOS.length);
+        setT(0);
+      }
     }, TICK_MS);
     return () => window.clearInterval(id);
-  }, [run]);
+  }, [run, inView]);
 
-  const replay = useCallback(() => setRun((r) => r + 1), []);
+  const sc = SCENARIOS[idx];
+
+  const replay = useCallback(() => { settle.current = true; setRun((r) => r + 1); }, []);
   const on = (at: number) => (t >= at ? 'on' : undefined);
 
   // Stage badges are always visible. A badge fills as the dark line closes in on it
@@ -205,16 +277,16 @@ export function LoopWire() {
           <div className={badge(0)}><i /><span>01 Hear</span></div>
           <div className="wart hear">
             <div className={`bub ${on(S.hearBubble) ?? ''}`}>
-              <span className="bav">M</span>
+              <span className="bav">{sc.hear.initial}</span>
               <div>
-                <p>We're moving to Okta next month. Does SSO work with it?</p>
-                <small>Maya R. · Acme Corp · website chat</small>
+                <p>{sc.hear.text}</p>
+                <small>{sc.hear.meta}</small>
               </div>
             </div>
             <div className={`tline ${on(S.hearLine) ?? ''}`}>
-              <span className="mono tt">14:02</span>
-              <div><b>Maya:</b> “…security wants the Okta mapping steps before we sign.”</div>
-              <span className="wchip am">Timeline identified</span>
+              <span className="mono tt">{sc.hear.time}</span>
+              <div><b>{sc.hear.speaker}:</b> “{sc.hear.quote}”</div>
+              <span className="wchip am">{sc.hear.chip}</span>
             </div>
           </div>
         </div>
@@ -223,10 +295,10 @@ export function LoopWire() {
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(1)] }}>
           <div className={badge(1)}><i /><span>02 Decide</span></div>
           <div className={`wart decide ${on(S.decideCard) ?? ''}`}>
-            <Checklist items={DECIDE} t={t} cardAt={S.decideCard} />
+            <Checklist items={decideItems(sc)} t={t} cardAt={S.decideCard} />
             <div className={`trow ${on(S.taskRow) ?? ''}`}>
-              <span className="tkey">HLP-142</span>
-              <span className="tname">Verify and document Okta SAML mapping</span>
+              <span className="tkey">{sc.decide.key}</span>
+              <span className="tname">{sc.decide.title}</span>
               <span className="tstate"><i />Todo</span>
             </div>
           </div>
@@ -236,8 +308,8 @@ export function LoopWire() {
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(2)] }}>
           <div className={badge(2)}><i /><span>03 Ship</span></div>
           <div className={`wart log ${on(S.shipCard) ?? ''}`}>
-            <div className="lhead"><span>agent run · HLP-142</span><span className="mono">HLP-142-okta-saml-mapping</span></div>
-            <Checklist items={SHIP} t={t} cardAt={S.shipCard} />
+            <div className="lhead"><span>agent run · {sc.decide.key}</span><span className="mono">{sc.ship.branch}</span></div>
+            <Checklist items={shipItems(sc)} t={t} cardAt={S.shipCard} />
           </div>
         </div>
 
@@ -246,25 +318,29 @@ export function LoopWire() {
           <div className={badge(3)}><i /><span>04 Tell</span></div>
           <div className="wart tell">
             <div className={`docp ${on(S.doc) ?? ''}`}>
-              <div className="dtitle">Set up SSO with Okta</div>
+              <div className="dtitle">{sc.tell.doc}</div>
               <div className="dline" style={{ width: '92%' }} /><div className="dline" style={{ width: '76%' }} /><div className="dline" style={{ width: '84%' }} />
-              <div className="dfoot"><span>Help center · Security</span><span className="wchip em">Published</span></div>
+              <div className="dfoot"><span>{sc.tell.section}</span><span className="wchip em">Published</span></div>
             </div>
             <div className={`bub reply ${on(S.reply) ?? ''}`}>
               <div>
-                <p>Okta is verified and documented. Here are the exact steps.</p>
-                <small>Sam · source: Set up SSO with Okta</small>
+                <p>{sc.tell.reply}</p>
+                <small>{sc.tell.replyMeta}</small>
               </div>
-              <span className="bav">S</span>
+              <span className="bav">{sc.tell.initial}</span>
             </div>
-            <div className={`deal ${on(S.deal) ?? ''}`}><i /><b>Growth renewal · $48k</b><span>Renewal signed</span></div>
+            <div className={`deal ${on(S.deal) ?? ''}`}><i /><b>{sc.tell.deal}</b><span>{sc.tell.outcome}</span></div>
           </div>
         </div>
       </div>
+      <div className="wcaption" aria-hidden="true">
+        <span className="wdots">{SCENARIOS.map((x, i) => <i key={x.caption} className={i === idx ? 'on' : undefined} />)}</span>
+        <span>{sc.caption}</span>
+      </div>
       {shown ? (
         <div className="replay-row">
-          <button type="button" className="replay" onClick={replay}>Replay animation</button>
-          <span>tick {t} of {LAST}</span>
+          <button type="button" className="replay" onClick={replay}>Replay this example</button>
+          <span>example {idx + 1} of {SCENARIOS.length} · tick {t} of {LAST}</span>
         </div>
       ) : null}
     </div>

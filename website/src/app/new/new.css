@@ -325,3 +325,7 @@
 .hp3 .tt, .hp3 .tkey, .hp3 .when, .hp3 .deal b, .hp3 .replay-row, .hp3 .log { font-variant-numeric: tabular-nums; }
 .hp3 ::selection { background: var(--em-t); color: var(--ink); }
 .hp3 .log ::selection { background: #3FBF83; color: #10201A; }
+.hp3 .wcaption { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-top: 18px; font-family: var(--mono); font-size: 11.5px; letter-spacing: .02em; color: var(--t3); }
+.hp3 .wdots { display: inline-flex; gap: 5px; }
+.hp3 .wdots i { width: 6px; height: 6px; border-radius: 50%; background: var(--border-2); transition: background-color .3s ease; }
+.hp3 .wdots i.on { background: var(--ink); }
