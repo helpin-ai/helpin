@@ -614,3 +614,20 @@
 }
 @media (max-width: 600px) { .hp3 .intg { grid-template-columns: 1fr; } }
 .hp3 .rn > .tag { justify-self: start; }
+
+/* Homepage product strip: five areas, one line each, linking to the product page. */
+.hp3 .pstrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 32px; border-top: 1px solid var(--border); }
+.hp3 .pstrip > a { display: grid; gap: 8px; align-content: start; padding: 24px 0; border-bottom: 1px solid var(--border); color: inherit; }
+.hp3 .pstrip h3 { font-size: 17px; }
+.hp3 .pstrip p { color: var(--t2); font-size: 14.5px; }
+.hp3 .pstrip span { font-size: 14px; font-weight: 600; color: var(--em); }
+.hp3 .pstrip > a:hover h3 { color: var(--em); }
+.hp3 .inline-link { font-size: 16px; font-weight: 600; color: var(--em); margin-left: 12px; }
+.hp3 .inline-link:hover { border-bottom: 1px solid var(--em); }
+/* Product page */
+.hp3 section.page-hero { padding-block: 56px 24px; }
+.hp3 .page-hero h1 { font-size: clamp(2rem, 3.6vw, 2.9rem); }
+.hp3 .jump { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
+.hp3 .jump a { border: 1px solid var(--border-2); border-radius: 999px; padding: 6px 14px; font-size: 14px; font-weight: 600; }
+.hp3 .jump a:hover { border-color: var(--ink); }
+@media (max-width: 960px) { .hp3 .pstrip { grid-template-columns: 1fr; gap: 0; } }

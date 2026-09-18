@@ -17,15 +17,6 @@ const RECORD_FACTS = [
   ['Email & calendar', 'Keep customer threads, calls, and meetings on the same timeline.'],
 ];
 
-const AGENTS = [
-  ['Support', 'Draft answers using customer history and product knowledge.'],
-  ['Triage', 'Turn conversations into requests, bugs, tasks, and product work.'],
-  ['Product', 'Find patterns across feedback and identify what customers keep asking for.'],
-  ['Engineering', 'Carry the customer context behind an issue into development workflows.'],
-  ['Docs', 'Update knowledge when the product changes.'],
-  ['Customer', 'Find the people waiting for a fix or feature and prepare the follow-up.'],
-];
-
 const OPEN_SOURCE = [
   ['Open source', 'Read the code. Change it. Build on it.'],
   ['Self-host', 'Run Helpin inside your own infrastructure.'],
@@ -34,17 +25,6 @@ const OPEN_SOURCE = [
   ['Own your context', 'Keep control of the customer and product data your workflows depend on.'],
   ['Avoid platform lock-in', 'Your customer history shouldn’t disappear behind a closed system.'],
 ];
-
-const DEVELOPERS = [
-  ['REST API', "Build on Helpin’s customer, project, conversation, and workspace model."],
-  ['SDK', 'Send customer and product context directly from your application.'],
-  ['Webhooks', 'React to conversations, projects, tasks, customers, and product events.'],
-  ['MCP', 'Let AI tools work with Helpin context and actions.'],
-  ['GitHub & GitLab', 'Connect customer work directly to engineering.'],
-  ['Docker', 'Run Helpin where your team runs software.'],
-];
-
-function Arrow() { return <span className="arrow" aria-hidden="true">→</span>; }
 
 export default function NewHomePage() {
   return (
@@ -86,77 +66,21 @@ export default function NewHomePage() {
         </div>
       </section>
 
-      {/* 04 Product & project management */}
-      <section id="projects">
+      {/* Product areas: one line each, detail lives on the product page. */}
+      <section id="product">
         <div className="wrap">
-          <SectionHead eyebrow="From feedback to roadmap" title="Turn customer feedback into product work."
-            lede="Create projects and tasks from conversations, meetings, and customer requests — with the original context still attached." />
-          <div className="pm-grid">
-            <div className="pm-items">
-              <div><h3>See the demand</h3><p>Know who is asking, how often it comes up, and which accounts it matters to.</p></div>
-              <div><h3>Plan the work</h3><p>Organize projects, tasks, priorities, owners, and progress in the same workspace.</p></div>
-              <div><h3>Connect engineering</h3><p>Link product work to GitHub, GitLab, issues, pull requests, releases, and coding agents — with the original customer request attached.</p></div>
-              <div><h3>Know who is waiting</h3><p>When something ships, see every customer who asked for it and prepare their follow-up.</p></div>
-            </div>
-            <aside className="pm-panel" aria-label="Project SSO Enterprise Readiness with linked customer requests">
-              <div className="pm-head"><span className="k">Project</span><b>SSO Enterprise Readiness</b><span className="muted">8 / 12 tasks · owner Sam K. · due Oct 3</span></div>
-              <div className="rs-bar light"><i className="on" style={{ width: '66.7%' }} /></div>
-              <div className="pm-meta"><span><b>7</b> customer requests</span><span><b>3</b> linked engineering issues</span><span><b>3</b> renewals depend on it</span></div>
-              <ul className="rs-tasks light">
-                <li><span>Okta SAML mapping</span><em className="prog">In progress · PR #728</em></li>
-                <li><span>SCIM provisioning</span><em>Planned</em></li>
-                <li><span>Role mapping</span><em className="done">Shipped</em></li>
-              </ul>
-              <div className="pm-who"><span className="k">Asked for this</span><div className="avs"><img src="/new/avatars/maya.webp" alt="" /><img src="/new/avatars/dev.webp" alt="" /><img src="/new/avatars/lin.webp" alt="" /><img src="/new/avatars/aisha.webp" alt="" /><span>+3</span></div></div>
-            </aside>
+          <SectionHead eyebrow="What’s inside" title="One workspace. Five places the context lives." lede="Each area stands on its own. Together they keep the customer attached to the work." />
+          <div className="pstrip">
+            <a href="/new/product#inbox"><h3>Inbox</h3><p>Chat and email in one shared inbox, with the customer’s history beside every reply.</p><span>Learn more →</span></a>
+            <a href="/new/product#meetings"><h3>Meetings</h3><p>Calls recorded, transcribed, summarized, and turned into work.</p><span>Learn more →</span></a>
+            <a href="/new/product#projects"><h3>Projects</h3><p>Customer requests become projects and tasks that reach GitHub and GitLab with the why attached.</p><span>Learn more →</span></a>
+            <a href="/new/product#crm"><h3>CRM</h3><p>Deals, renewals, and buyer signals next to the conversations that explain them.</p><span>Learn more →</span></a>
+            <a href="/new/product#knowledge"><h3>Knowledge</h3><p>Help-center and internal docs that grow from what customers ask.</p><span>Learn more →</span></a>
           </div>
-          <div className="flow big"><span>Feedback</span><Arrow /><span>Project</span><Arrow /><span>Engineering</span><Arrow /><span>Shipped</span><Arrow /><span>Customer</span></div>
-          <ReviewNote tag="04">
-            <p><Flag>VERIFY</Flag> "Structured product requests" as a distinct object, request counts per project, and "renewals depend on it" roll-ups are not confirmed in code. Projects, tasks, epics, owners, states, GitHub and GitLab links, and task-from-conversation are.</p>
-          </ReviewNote>
         </div>
       </section>
 
-      <section id="meetings">
-        <div className="wrap">
-          <SectionHead eyebrow="Every call becomes context" title="Turn customer meetings into work." lede="Helpin joins your calls, captures what was said, and connects the outcome to the customer." />
-          <ul className="steps big"><li>Record the conversation.</li><li>Get a speaker-attributed transcript.</li><li>Summarize decisions, objections, and next steps.</li><li>Create tasks and product work from action items.</li><li>Keep the meeting connected to the customer, deal, and projects that matter.</li></ul>
-          <p className="section-close">Google Meet · Zoom · Microsoft Teams · Webex</p>
-        </div>
-      </section>
-
-      <section id="inbox">
-        <div className="wrap">
-          <SectionHead eyebrow="More than a support inbox" title="Answer the customer. Keep the context." lede="Handle chat and email from one shared inbox without disconnecting support from the rest of the company." />
-          <ul className="steps big"><li>Assign conversations.</li><li>Add notes and tags.</li><li>Use saved replies.</li><li>See customer history.</li><li>Create product work.</li><li>Ask an agent for help.</li></ul>
-          <p className="section-close">When the conversation becomes something bigger, the context goes with it.</p>
-        </div>
-      </section>
-
-      <section id="crm">
-        <div className="wrap">
-          <SectionHead eyebrow="CRM with the conversation attached" title="Know what’s happening before the next sales call." lede="Manage companies, contacts, deals, stages, and renewals alongside the customer activity that explains them." />
-          <ul className="steps big"><li>See the support issue holding up a deal.</li><li>See the feature request tied to a renewal.</li><li>See the meeting where the objection came up.</li><li>See what changed before you follow up.</li></ul>
-          <p className="section-close">The record tells you more than the stage.</p>
-        </div>
-      </section>
-
-      {/* AI agents */}
-      <section id="agents">
-        <div className="wrap">
-          <SectionHead eyebrow="Agents with context" title="Give agents the context your team already has."
-            lede="Helpin agents work across customers, conversations, projects, docs, meetings, and engineering activity." secondaryLede="They don’t start every task from scratch." />
-          <div className="six">
-            {AGENTS.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
-          </div>
-          <p className="section-close">Different agents. Shared context.</p>
-          <ReviewNote tag="05">
-            <p><Flag>VERIFY</Flag> Shipped presets are Support, Documentation, Epic planner, Coding task planner, Code builder, Review, CRM operator, Marketer, Command, Ask, Researcher. "Triage Agent," "Product Agent," "Engineering Agent," and "Customer Agent" are marketing names for capabilities spread across those presets and triage rules; confirm the mapping or rename.</p>
-          </ReviewNote>
-        </div>
-      </section>
-
-      {/* 06 AI control */}
+      {/* AI control */}
       <section id="control">
         <div className="wrap">
           <SectionHead eyebrow="You set the boundaries" title="Decide how much the AI can do." lede="Start with suggestions. Add approvals. Automate workflows when you’re ready." />
@@ -179,18 +103,10 @@ export default function NewHomePage() {
               <ol className="chain"><li>Issue resolved</li><li>Docs updated</li><li>Affected customers found</li><li>Follow-up sent</li></ol>
             </div>
           </div>
-          <p className="section-close">Automate what you trust. Keep control of the rest.</p>
-          <ReviewNote tag="06">
-            <p><Flag>CONFIRMED</Flag> Per-agent approval modes, approval and review-checkpoint prompts, automation rules with triggers and actions. <Flag>VERIFY</Flag> An "affected customers identified → follow-up sent" automation as a shipped workflow.</p>
+          <p className="section-close">Automate what you trust. Keep control of the rest. <a className="inline-link" href="/new/product#agents">Meet the agents →</a></p>
+          <ReviewNote tag="AI control">
+            <p><Flag>CONFIRMED</Flag> Per-agent approval modes, approval and review-checkpoint prompts, automation rules with triggers and actions. <Flag>VERIFY</Flag> An "affected customers found → follow-up sent" automation as a shipped workflow.</p>
           </ReviewNote>
-        </div>
-      </section>
-
-      <section id="knowledge">
-        <div className="wrap">
-          <SectionHead eyebrow="Knowledge that stays current" title="Turn what your team learns into answers." lede="Create public help-center content and internal docs alongside the conversations and product work that produce them." />
-          <ul className="steps big"><li>See which articles customers used.</li><li>Find unanswered questions.</li><li>Create documentation from repeated conversations.</li><li>Update docs when the product changes.</li><li>Give agents the same knowledge your team uses.</li></ul>
-
         </div>
       </section>
 
@@ -202,22 +118,7 @@ export default function NewHomePage() {
           <div className="six">
             {OPEN_SOURCE.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
           </div>
-          <div className="links"><a className="btn btn-primary" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the repository →</a><span className="mono muted">AGPL-3.0</span></div>
-        </div>
-      </section>
-
-      {/* 08 Developers */}
-      <section id="developers">
-        <div className="wrap">
-          <SectionHead eyebrow="Built to be extended" title="Connect Helpin to the rest of your stack."
-            lede="Use the API, SDK, webhooks, MCP, and developer integrations to bring Helpin into your existing workflows." />
-          <div className="six">
-            {DEVELOPERS.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
-          </div>
-          <div className="links"><a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/README.md`}>Read the docs →</a></div>
-          <ReviewNote tag="08">
-            <p><Flag>CONFIRMED</Flag> API routes, SDK packages, MCP server, GitHub and GitLab, Docker Compose. <Flag>VERIFY</Flag> Public REST API documentation and outbound webhooks were not found in the audit.</p>
-          </ReviewNote>
+          <div className="links"><a className="btn btn-primary" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the repository →</a><a className="btn-link" href="/new/product#developers">API, SDK, MCP, and integrations →</a><span className="mono muted">AGPL-3.0</span></div>
         </div>
       </section>
 

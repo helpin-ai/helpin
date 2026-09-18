@@ -3,8 +3,8 @@ import { HelpinBrand } from '@/components/HelpinBrand';
 import { GITHUB_URL, SIGNUP_URL, GithubIcon } from './ui';
 
 const LINKS = [
-  { label: 'Product', href: '#record' },
-  { label: 'Developers', href: '#developers' },
+  { label: 'Product', href: '/new/product' },
+  { label: 'Developers', href: '/new/product#developers' },
   { label: 'Open Source', href: '#open-source' },
   { label: 'Docs', href: 'https://github.com/helpin-ai/helpin/blob/develop/docs/README.md' },
 ];
