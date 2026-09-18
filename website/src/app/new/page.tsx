@@ -5,7 +5,7 @@ import { LiveRecord } from './_components/LiveRecord';
 import { LoopWire } from './_components/LoopWire';
 import { LoopSection } from './_components/LoopSection';
 import { ReviewBanner, ReviewNote, Flag } from './_components/ReviewNotes';
-import { Chip, CtaRow, SectionHead, SIGNUP_URL, GITHUB_URL } from './_components/ui';
+import { Chip, CtaRow, GithubIcon, SectionHead, SIGNUP_URL, GITHUB_URL } from './_components/ui';
 
 const RECORD_FACTS = [
   ['Conversations', 'Website chat and email, in a shared inbox with assignment, notes, tags, and saved replies.'],
@@ -188,7 +188,7 @@ export default function NewHomePage() {
                 {OS_FACTS.map(([k, v]) => <div key={k}><b>{k}</b><p>{v}</p></div>)}
               </div>
               <div className="links">
-                <a className="btn btn-primary" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">View on GitHub</a>
+                <a className="btn btn-primary" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View on GitHub</a>
                 <a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Read the install guide →</a>
               </div>
             </div>
