@@ -130,6 +130,48 @@ func TestDockExecutionRequiresTrustedAuthorization(t *testing.T) {
 	}
 }
 
+func TestDockExecutionCanBeSelectedWhenCreatingChat(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+	if err := db.Exec(`CREATE TABLE dock_chats (
+		id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT,
+		visibility TEXT, module_id TEXT, support_conversation_id TEXT,
+		active_run_id TEXT, next_message_sequence INTEGER DEFAULT 0,
+		execution_enabled BOOLEAN NOT NULL DEFAULT false, last_message_at DATETIME,
+		archived_at DATETIME, created_at DATETIME, updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	repo := repository.NewDockChatRepository(db)
+	adminService := &DockChatService{
+		chatRepo: repo,
+		authz:    authorization.NewAuthzService(db, dockChatAdminMemberRepo{}, dockChatModuleRepo{}),
+	}
+	chat, err := adminService.CreateChat(context.Background(), "ws-1", "admin", model.CreateDockChatRequest{ExecutionEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !chat.ExecutionEnabled {
+		t.Fatal("execution choice was not persisted at chat creation")
+	}
+
+	ordinary, err := adminService.CreateChat(context.Background(), "ws-1", "admin", model.CreateDockChatRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ordinary.ExecutionEnabled {
+		t.Fatal("new chat enabled execution by default")
+	}
+
+	memberService := &DockChatService{
+		chatRepo: repo,
+		authz:    authorization.NewAuthzService(db, dockChatMemberRepo{}, dockChatModuleRepo{}),
+	}
+	if _, err := memberService.CreateChat(context.Background(), "ws-1", "member", model.CreateDockChatRequest{ExecutionEnabled: true}); err == nil {
+		t.Fatal("project editor enabled execution at chat creation")
+	}
+}
+
 func TestInterruptedEffectsReachSuccessorThroughCancellation(t *testing.T) {
 	run := &model.AgentRun{ID: "previous", WorkspaceID: "workspace", AgentID: "ask", Status: model.AgentRunStatusRunning}
 	runtimeRun := &AgentRuntimeRun{ID: "runtime", Status: model.AgentRunStatusCancelled, OutputSummary: json.RawMessage(`{"interrupted_external_effects":[{"tool_call_id":"push-42","tool_name":"commit_and_push","status":"started_outcome_unknown"}]}`)}

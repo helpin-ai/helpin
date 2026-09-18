@@ -29,7 +29,6 @@ async function request(method, path, body) {
 }
 const get = (path) => request('GET', path);
 const post = (path, body) => request('POST', path, body);
-const patch = (path, body) => request('PATCH', path, body);
 
 const workspaces = await get('/workspaces');
 const workspace = workspaces.find((item) => item.slug === 'usermaven');
@@ -41,13 +40,8 @@ if (!repository) throw new Error('No enabled repository found');
 log('workspace', { id: workspace.id, repository: repository.full_name, repository_id: repository.id });
 
 async function createChat(executionEnabled = false) {
-  const chat = await post(`/dock/chats?${q}`, { title: `E2E validation ${stamp}` });
-  if (Boolean(chat.execution_enabled)) throw new Error('new chat unexpectedly enabled execution');
-  if (executionEnabled) {
-    const updated = await patch(`/dock/chats/${chat.id}?${q}`, { execution_enabled: true });
-    if (!updated.execution_enabled) throw new Error('execution toggle did not persist');
-    return updated;
-  }
+  const chat = await post(`/dock/chats?${q}`, { title: `E2E validation ${stamp}`, execution_enabled: executionEnabled });
+  if (Boolean(chat.execution_enabled) !== executionEnabled) throw new Error('initial execution choice did not persist');
   return chat;
 }
 

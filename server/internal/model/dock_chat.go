@@ -47,6 +47,7 @@ type CreateDockChatRequest struct {
 	SupportConversationID *string             `json:"support_conversation_id,omitempty"`
 	Visibility            *DockChatVisibility `json:"visibility,omitempty"`
 	ModuleID              *ModuleID           `json:"module_id,omitempty"`
+	ExecutionEnabled      bool                `json:"execution_enabled,omitempty"`
 }
 
 // UpdateDockChatRequest is the payload for renaming or archiving a dock chat.

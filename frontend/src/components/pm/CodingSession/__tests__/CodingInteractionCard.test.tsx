@@ -472,6 +472,22 @@ describe('CodingInteractionCard', () => {
     expect(approvalContext?.className).not.toContain('bg-muted/25');
   });
 
+  it('hides TypeSafe score details from approval prompts', () => {
+    renderCard(vi.fn(), buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve tool call',
+      summary: 'Approve run_command for this agent run. TypeSafe review: external_send=0.97, user_asked=0.77. Scores do not authorize external effects.',
+      request_payload: {
+        tool_name: 'run_command',
+        approval_review: { provider: 'typesafe', scores: { external_send: 0.97 } },
+      },
+    }));
+
+    expect(container.textContent).toContain('Approve run_command for this agent run.');
+    expect(container.textContent).not.toContain('TypeSafe review');
+    expect(container.textContent).not.toContain('external_send=');
+  });
+
   it('does not duplicate the summary when a document preview already represents the request', () => {
     const onResolve = vi.fn();
     renderCard(onResolve, buildInteraction({

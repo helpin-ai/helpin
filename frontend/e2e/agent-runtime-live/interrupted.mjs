@@ -19,8 +19,8 @@ const patch = (path, body) => request('PATCH', path, body);
 const workspace = (await get('/workspaces')).find((item) => item.slug === 'usermaven');
 if (!workspace) throw new Error('workspace missing');
 const q = `workspace_id=${workspace.id}`;
-const chat = await post(`/dock/chats?${q}`, { title: 'E2E interrupted command marker' });
-await patch(`/dock/chats/${chat.id}?${q}`, { execution_enabled: true });
+const chat = await post(`/dock/chats?${q}`, { title: 'E2E interrupted command marker', execution_enabled: true });
+if (!chat.execution_enabled) throw new Error('initial execution choice did not persist');
 async function state() {
   const [detail, messages, interactions] = await Promise.all([
     get(`/dock/chats/${chat.id}?${q}`),
@@ -44,6 +44,9 @@ for (let attempt = 0; attempt < 120; attempt += 1) {
   await sleep(1000);
 }
 if (!pending || pending.request_payload?.tool_name !== 'run_command') throw new Error(`run_command approval missing: ${JSON.stringify(pending)}`);
+if (pending.summary !== 'Approve run_command for this agent run.' || /TypeSafe review|external_send=/.test(pending.summary)) {
+  throw new Error(`approval prompt exposed reviewer details: ${pending.summary}`);
+}
 await post(`/dock/chats/${chat.id}/interactions/${pending.id}/resolve?${q}`, { response_payload: { decision: 'approve' } });
 for (let attempt = 0; attempt < 30; attempt += 1) {
   const current = await state();

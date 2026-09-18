@@ -6,7 +6,6 @@ import type { AIConnectionSelection } from '@/lib/services/aiConnectionService';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ArrowRight01Icon, ArrowUp01Icon, Loading01Icon } from '@/lib/icons';
-import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { commandBarService } from '@/lib/services/commandBarService';
@@ -17,6 +16,7 @@ import { parseDockPlanConfirm } from '@/lib/dockTypes';
 import type { DockChatDetail, DockChatMediaAttachment, DockEntityReference } from '@/lib/dockTypes';
 import type { AgentRun, AgentRunMessage, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
+import { DockExecutionPicker } from './DockExecutionPicker';
 import { DockTranscript, type DockMessageSubmission } from './DockTranscript';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
@@ -57,7 +57,7 @@ interface ChatViewProps {
   chatId?: string;
   rosterRunId?: string | null;
   active?: boolean;
-  onCreateChat?: () => Promise<{ id: string } | null>;
+  onCreateChat?: (options?: { executionEnabled?: boolean }) => Promise<{ id: string } | null>;
   scrollToLatestRequest: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
@@ -117,6 +117,7 @@ export function ChatView({
   const cacheTranscript = useDockStore((state) => state.cacheTranscript);
   const [aiConnection, setAIConnection] = useState<AIConnectionSelection>({});
   const [changingExecution, setChangingExecution] = useState(false);
+  const [draftExecutionEnabled, setDraftExecutionEnabled] = useState(false);
   const [detail, setDetail] = useState<DockChatDetail | null>(cachedTranscript?.detail ?? null);
   const [detailLoading, setDetailLoading] = useState(!!chatId && !cachedTranscript);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -171,6 +172,7 @@ export function ChatView({
 
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.id === workspaceId ? state.currentWorkspace.slug : undefined);
   const run = detail?.run ?? null;
+  const executionEnabled = detail?.chat.execution_enabled ?? draftExecutionEnabled;
   const acceptedSelection = run?.input?.ai_selection;
   const acceptedProfileId = acceptedSelection && typeof acceptedSelection === 'object' && 'profile_id' in acceptedSelection && typeof acceptedSelection.profile_id === 'string'
     ? acceptedSelection.profile_id : typeof run?.input?.ai_profile_id === 'string' ? run.input.ai_profile_id : undefined;
@@ -226,6 +228,30 @@ export function ChatView({
     if (res.data) { detailRefreshed.current = true; setDetail(res.data); }
     return res.data ?? null;
   }, [chatId, detailReader]);
+
+  const changeExecution = useCallback(async (enabled: boolean) => {
+    if (!chatId) {
+      setDraftExecutionEnabled(enabled);
+      return;
+    }
+    setChangingExecution(true);
+    try {
+      const response = await dockChatService.updateChat(workspaceId, chatId, { execution_enabled: enabled });
+      if (response.error || !response.data) {
+        toast.error(response.error ?? 'Could not update execution settings.');
+        return;
+      }
+      setDetail((current) => current ? { ...current, chat: response.data! } : current);
+      onChatChanged?.();
+      toast.message(enabled
+        ? 'Code and Python tools will be available for your next message.'
+        : 'Execution stopped. Check any interrupted external action before retrying.');
+    } catch {
+      toast.error('Could not update execution settings.');
+    } finally {
+      setChangingExecution(false);
+    }
+  }, [chatId, onChatChanged, workspaceId]);
 
   const refreshMessages = useCallback(async (automatic = false) => {
 	if (!chatId) return [];
@@ -548,7 +574,7 @@ export function ChatView({
       try {
         let targetChatId = chatId;
         if (!targetChatId) {
-          const created = await onCreateChat?.();
+          const created = await onCreateChat?.({ executionEnabled: draftExecutionEnabled });
           if (!created) throw new Error('Unable to create chat. Please retry.');
           targetChatId = created.id;
         }
@@ -623,7 +649,7 @@ export function ChatView({
         setSending(false);
       }
     },
-    [agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
+    [agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, draftExecutionEnabled, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
   );
 
   const submit = async () => {
@@ -994,31 +1020,15 @@ export function ChatView({
             </div>
           )}
           <div className="p-2">
-              {detail && detail.chat.user_id === currentUserId && chatId && (
-                <div className="mb-2 border-t border-quiet-divider-light pt-2 text-xs text-quiet-text-secondary">
-                  <label className="flex items-center justify-between gap-2">
-                    <span>Allow code and Python execution</span>
-                    <Switch
-                      checked={Boolean(detail.chat.execution_enabled)}
-                      disabled={changingExecution || sending || (!detail.chat.execution_enabled && Boolean(run && ['queued', 'running', 'pending'].includes(run.status)))}
-                      onCheckedChange={async (enabled) => {
-                        setChangingExecution(true);
-                        try {
-                          const response = await dockChatService.updateChat(workspaceId, chatId, { execution_enabled: enabled });
-                          if (response.error) { toast.error(response.error); return; }
-                          await refreshDetail();
-                          onChatChanged?.();
-                          toast.message(enabled ? 'Execution enabled for your next message.' : 'Execution stopped. Interrupted external actions may have completed; check their status before retrying.');
-                        } catch { toast.error('Could not update execution settings.'); }
-                        finally { setChangingExecution(false); }
-                      }}
-                    />
-                  </label>
-                  <p className="mt-1">Commands can read other runs’ files on the execution worker. Files and packages last for this run only.</p>
-                </div>
-              )}
               <DockInput
                 mode="conversation"
+                executionPicker={(!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
+                  <DockExecutionPicker
+                    enabled={Boolean(executionEnabled)}
+                    disabled={changingExecution || sending || (!executionEnabled && Boolean(run && ['queued', 'running', 'pending'].includes(run.status)))}
+                    onChange={changeExecution}
+                  />
+                ) : null}
                 profilePicker={run ? (
                   acceptedProfileId ? <AIConnectionPicker workspaceId={workspaceId} inDock compact locked value={{ ai_profile_id: acceptedProfileId }} onChange={() => {}} />
                     : <span className="text-xs text-quiet-text-secondary" title="This conversation keeps its saved AI configuration">Saved profile</span>

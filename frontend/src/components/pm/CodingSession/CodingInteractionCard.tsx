@@ -440,7 +440,7 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
     // Only when there is no richer document/preview already representing the
     // request (task-plan/doc approvals carry a preview panel and intentionally
     // suppress the raw summary in favour of the rendered preview).
-    const approvalContext = (interaction.summary ?? approval?.summary)?.trim() || undefined;
+    const approvalContext = cleanApprovalSummary(interaction.summary ?? approval?.summary);
     const showApprovalContext = Boolean(approvalContext) && !approval?.preview_panel_key && !attachedPreview;
     const buildApprovalResponse = (
       decision: CodingSessionApprovalResponsePayload['decision'],
@@ -880,6 +880,12 @@ function approvalPreviewContent(preview?: PublishedPreview | null): string | nul
 
 function normalizePromptText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function cleanApprovalSummary(summary: string | undefined) {
+  const value = summary?.trim();
+  if (!value) return undefined;
+  return value.replace(/\s+TypeSafe review:.*?Scores do not authorize external effects\.\s*$/s, '').trim() || undefined;
 }
 
 function dedupePromptSummary(summary: string | undefined, prompts: string[]) {

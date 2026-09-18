@@ -18,7 +18,6 @@ async function request(method, path, body, authenticated = true) {
 }
 const get = async (path) => (await request('GET', path)).value;
 const post = async (path, body) => (await request('POST', path, body)).value;
-const patch = async (path, body) => (await request('PATCH', path, body)).value;
 
 const workspace = (await get('/workspaces')).find((item) => item.slug === 'usermaven');
 if (!workspace) throw new Error('workspace missing');
@@ -26,11 +25,9 @@ const q = `workspace_id=${workspace.id}`;
 const repository = (await get(`/git/repositories?${q}`)).find((repo) => repo.full_name === 'usermaven/events-pipeline');
 if (!repository) throw new Error('events-pipeline missing');
 
-const chat = await post(`/dock/chats?${q}`, { title: `E2E execution ${stamp}` });
-if (chat.execution_enabled) throw new Error('execution must default off');
-const enabled = await patch(`/dock/chats/${chat.id}?${q}`, { execution_enabled: true });
-if (!enabled.execution_enabled) throw new Error('execution setting did not persist');
-log('execution chat', { chat_id: chat.id, default_off: true, enabled: enabled.execution_enabled });
+const chat = await post(`/dock/chats?${q}`, { title: `E2E execution ${stamp}`, execution_enabled: true });
+if (!chat.execution_enabled) throw new Error('initial execution choice did not persist');
+log('execution chat', { chat_id: chat.id, enabled_at_creation: true });
 
 async function send(content, pageContext) {
   return post(`/dock/chats/${chat.id}/messages?${q}`, { client_message_id: crypto.randomUUID(), content, ...(pageContext ? { page_context: pageContext } : {}) });

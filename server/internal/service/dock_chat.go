@@ -190,6 +190,11 @@ func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID st
 	if err != nil {
 		return nil, err
 	}
+	if req.ExecutionEnabled {
+		if err := s.authorizeChatExecution(ctx, workspaceID, userID); err != nil {
+			return nil, err
+		}
+	}
 	if req.SupportConversationID != nil {
 		conversationID := strings.TrimSpace(*req.SupportConversationID)
 		if conversationID == "" {
@@ -211,6 +216,7 @@ func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID st
 		Visibility:            visibility,
 		ModuleID:              moduleID,
 		SupportConversationID: req.SupportConversationID,
+		ExecutionEnabled:      req.ExecutionEnabled,
 	}
 	if err := s.chatRepo.Create(ctx, chat); err != nil {
 		if req.SupportConversationID != nil {

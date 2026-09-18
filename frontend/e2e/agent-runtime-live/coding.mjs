@@ -27,7 +27,6 @@ async function request(method, path, body) {
 }
 const get = (path) => request('GET', path);
 const post = (path, body) => request('POST', path, body);
-const patch = (path, body) => request('PATCH', path, body);
 const workspace = (await get('/workspaces')).find((item) => item.slug === 'usermaven');
 if (!workspace) throw new Error('workspace missing');
 const q = `workspace_id=${workspace.id}`;
@@ -35,12 +34,10 @@ const repository = (await get(`/git/repositories?${q}`)).find((repo) => repo.ful
 if (!repository) throw new Error('repository missing');
 const pageContext = { entity_type: 'repository', entity_id: repository.id, display_title: repository.full_name, metadata: { full_name: repository.full_name, default_branch: repository.default_branch } };
 if (!chatID) {
-  const chat = await post(`/dock/chats?${q}`, { title: `E2E direct coding ${stamp}` });
-  if (chat.execution_enabled) throw new Error('execution unexpectedly enabled by default');
-  const enabled = await patch(`/dock/chats/${chat.id}?${q}`, { execution_enabled: true });
-  if (!enabled.execution_enabled) throw new Error('could not enable execution');
+  const chat = await post(`/dock/chats?${q}`, { title: `E2E direct coding ${stamp}`, execution_enabled: true });
+  if (!chat.execution_enabled) throw new Error('initial execution choice did not persist');
   chatID = chat.id;
-  log('new coding chat', { chat_id: chatID, default_off: true, enabled: true });
+  log('new coding chat', { chat_id: chatID, enabled_at_creation: true });
 }
 
 async function send(content) { return post(`/dock/chats/${chatID}/messages?${q}`, { client_message_id: crypto.randomUUID(), content, page_context: pageContext }); }

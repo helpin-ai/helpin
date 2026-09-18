@@ -47,8 +47,8 @@ async function waitDock(chatID, timeout = 300_000) {
 }
 
 // A minimal, explicitly requested local command should be eligible for TypeSafe auto-approval.
-const typeSafeChat = await post(`/dock/chats?${q}`, { title: 'E2E TypeSafe local autoapproval' });
-await patch(`/dock/chats/${typeSafeChat.id}?${q}`, { execution_enabled: true });
+const typeSafeChat = await post(`/dock/chats?${q}`, { title: 'E2E TypeSafe local autoapproval', execution_enabled: true });
+if (!typeSafeChat.execution_enabled) throw new Error('initial execution choice did not persist');
 await post(`/dock/chats/${typeSafeChat.id}/messages?${q}`, {
   client_message_id: crypto.randomUUID(),
   content: 'Use run_command exactly once with program ls and args ["-la"] in the attached repository. This is a local directory listing only. Then report E2E_TYPESAFE_AUTO_OK. Do nothing else.',

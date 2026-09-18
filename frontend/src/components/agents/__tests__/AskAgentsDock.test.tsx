@@ -610,7 +610,7 @@ describe('AskAgentsDock', () => {
 		});
 		await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'support draft message was not sent');
 
-		expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support');
+		expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support', false);
 		expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-new', expect.objectContaining({
 			content: 'Investigate this request',
 			page_context: supportContext,
@@ -1520,7 +1520,7 @@ describe('AskAgentsDock', () => {
     expect(useDockStore.getState().tab).toBe('chats');
   });
 
-  it('opens a local new-chat composer without creating an abandoned chat', async () => {
+  it('selects execution before creating a local chat on its first message', async () => {
     await renderDock();
     await waitForText('Sprint questions');
 
@@ -1543,6 +1543,18 @@ describe('AskAgentsDock', () => {
     await waitForText('New chat');
     expect(mocks.createChat).not.toHaveBeenCalled();
     expect(useDockStore.getState().activeChatId).toBeNull();
+    const executionPicker = document.body.querySelector<HTMLButtonElement>('[aria-label="Code and Python tools disabled"]');
+    expect(executionPicker).not.toBeNull();
+    await act(async () => {
+      executionPicker?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    });
+    await flush();
+    const executionChoice = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')).find(
+      (item) => item.textContent?.includes('Code & Python'),
+    );
+    expect(executionChoice).toBeTruthy();
+    await act(async () => executionChoice?.click());
+    expect(document.body.querySelector('[aria-label="Code and Python tools enabled"]')).not.toBeNull();
 
     const createdChat: DockChat = { ...CHAT, id: 'chat-2', title: '' };
     mocks.createChat.mockResolvedValue({ data: createdChat, error: null });
@@ -1553,7 +1565,7 @@ describe('AskAgentsDock', () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
     await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'draft chat message was not sent');
-    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', undefined, null);
+    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', undefined, null, true);
     expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-2', expect.objectContaining({ content: 'Investigate the signup issue' }));
   });
 
