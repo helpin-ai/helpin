@@ -182,7 +182,7 @@ beforeEach(() => {
   root = createRoot(container);
   localStorage.clear();
   localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'chats', chatId: 'chat-1' }));
-  useDockStore.setState({ collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], transcripts: {}, drafts: {}, lastAttentionIds: [] });
+  useDockStore.setState({ transcriptView: 'timeline', collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], transcripts: {}, drafts: {}, lastAttentionIds: [] });
   useWorkspaceStore.setState({
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
@@ -344,9 +344,22 @@ describe('AskAgentsDock', () => {
     expect(document.body.textContent).toContain('Investigate the workspace');
     expect(document.body.textContent).not.toContain('Ask a question about your workspace, or describe work for an agent to do.');
 
+    const composerBeforeAcceptance = dockTextarea();
+    const scrollBeforeAcceptance = document.querySelector('[data-agent-dock-chat-scroll]');
+    expect(document.body.textContent).not.toContain('Loading chat…');
+    mocks.listChats.mockResolvedValue({ data: { chats: [createdChat] }, error: null });
     await act(async () => {
       resolveSend?.({ data: chatDetail({ chat: createdChat }), error: null });
     });
+    expect(dockTextarea()).toBe(composerBeforeAcceptance);
+    expect(document.querySelector('[data-agent-dock-chat-scroll]')).toBe(scrollBeforeAcceptance);
+    expect(document.body.textContent).toContain('Investigate the workspace');
+    expect(document.body.textContent).not.toContain('Loading chat…');
+    await act(async () => window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
+      detail: { mode: 'compose', intent: 'new_chat' },
+    })));
+    expect(dockTextarea()).not.toBe(composerBeforeAcceptance);
+    expect(document.body.textContent).not.toContain('Investigate the workspace');
   });
 
   it('renders a cached transcript immediately and keeps it when refresh fails', async () => {
@@ -1325,7 +1338,8 @@ describe('AskAgentsDock', () => {
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50, expect.any(AbortSignal));
   });
 
-  it('keeps earlier assistant progress and the final reply outside working groups', async () => {
+  it('keeps earlier assistant progress and the final reply outside working groups in Detailed view', async () => {
+    useDockStore.setState({ transcriptView: 'detailed' });
     mocks.listMessages.mockResolvedValue({
       data: {
         messages: [
@@ -1789,7 +1803,7 @@ describe('AskAgentsDock', () => {
     });
 
     expect(panel?.getAttribute('data-maximized')).toBeNull();
-    expect(panel?.className).toContain('w-[min(900px,92vw)]');
+    expect(panel?.className).toContain('w-[min(1120px,92vw)]');
     expect(document.body.querySelector('[aria-label="Maximize agent dock"]')).not.toBeNull();
   });
 

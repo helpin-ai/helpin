@@ -145,10 +145,6 @@ export function canClearDockContext(
   return hasClearAction;
 }
 
-export function contextChipMaxWidth(canAddContext: boolean) {
-  return canAddContext ? 'calc(100% - 116px)' : undefined;
-}
-
 export function usesSeparateComposerActionRow(mode: DockInputProps['mode']) {
   return mode === 'conversation';
 }
@@ -229,7 +225,6 @@ export function DockInput({
   const sendDisabled = (!value.trim() && !hasReadyAttachment) || !!busy || !!disabled;
 
   const canAddReferences = !!workspaceId && !!onAddReference;
-  const canAddContext = !!onAddContext || canAddReferences;
   const showContextRow = mode === 'conversation' && (showChip || !!onAddContext || canAddReferences || references.length > 0);
   const separateActionRow = usesSeparateComposerActionRow(mode);
   const attachmentButton = mode === 'conversation' && onAddMedia ? (
@@ -341,7 +336,6 @@ export function DockInput({
                 activeKey={activeContextKey}
                 onChange={onContextKeyChange}
                 onClear={onClearContext}
-                reserveSpaceForAddContext={canAddContext}
               />
             ) : null}
             {references.map((reference) => (
@@ -383,7 +377,7 @@ export function DockInput({
             ) : null}
           </div>
           {showShortcutHint ? (
-            <span className="shrink-0 text-[11px] text-muted-foreground">
+            <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
               Press <kbd className="rounded border bg-muted px-1 py-0 font-mono text-[10px]">/</kbd> to open
             </span>
           ) : null}
@@ -475,14 +469,12 @@ function ContextChip({
   activeKey,
   onChange,
   onClear,
-  reserveSpaceForAddContext = false,
 }: {
   context: CommandBarPageContext;
   options: PageContextScopeOption[];
   activeKey?: string | null;
   onChange?: (key: string) => void;
   onClear?: () => void;
-  reserveSpaceForAddContext?: boolean;
 }) {
   const blockScoped = isBlockScopedDocument(context);
   const allTasks = isAllTasksContext(context);
@@ -490,17 +482,17 @@ function ContextChip({
   const hasOptions = options.length > 1 && !!onChange;
   const canClear = canClearDockContext(context.entity_type, !!onClear);
   const chipClassName = cn(
-    'inline-flex max-w-[300px] items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] text-foreground transition',
+    'inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border px-2 py-1 text-[11px] text-foreground transition',
     blockScoped || allTasks ? 'border-orange-500/30 bg-orange-500/10' : 'border-border/70 bg-muted/30',
     hasOptions ? 'cursor-pointer hover:border-foreground/30 hover:bg-muted/50' : '',
   );
   const body = (
     <>
       <ContextIcon type={context.entity_type} />
-      <span className="truncate font-medium">{context.display_title || context.entity_id}</span>
+      <span className="min-w-0 truncate font-medium">{context.display_title || context.entity_id}</span>
       {blockScoped ? (
-        <span className="ml-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-medium text-orange-700 dark:text-orange-300">
+          <span className="h-1 w-1 rounded-full bg-orange-500" />
           Block selected
         </span>
       ) : null}
@@ -517,7 +509,7 @@ function ContextChip({
         event.stopPropagation();
         onClear?.();
       }}
-      className="-mr-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-background hover:text-foreground"
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <Cancel01Icon className="h-3 w-3" />
     </button>
@@ -527,10 +519,11 @@ function ContextChip({
     return (
       <span
         title={title}
+        data-dock-context-chip
         className={chipClassName}
-        style={{ maxWidth: contextChipMaxWidth(reserveSpaceForAddContext) }}
+        style={{ maxWidth: 'min(300px, 100%)' }}
       >
-        {body}
+        <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">{body}</span>
         {clearButton}
       </span>
     );
@@ -541,8 +534,7 @@ function ContextChip({
       <DropdownMenuTrigger
         type="button"
         title={title}
-        className={chipClassName}
-        style={{ maxWidth: contextChipMaxWidth(reserveSpaceForAddContext) }}
+        className="inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {body}
       </DropdownMenuTrigger>
@@ -570,10 +562,8 @@ function ContextChip({
     </DropdownMenu>
   );
 
-  if (!clearButton) return dropdown;
-
   return (
-    <span className="inline-flex min-w-0 items-center gap-1">
+    <span data-dock-context-chip className={chipClassName} style={{ maxWidth: 'min(300px, 100%)' }}>
       {dropdown}
       {clearButton}
     </span>

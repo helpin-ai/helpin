@@ -34,6 +34,8 @@ export interface RenderSegmentOptions {
   resolveActor?: (message: CodingSessionTranscriptMessage) => CodingSessionActor | null;
   /** Surface-specific label when actor details are intentionally unavailable. */
   fallbackUserLabel?: string;
+  /** Compact dock attribution below the bubble, without an avatar. */
+  userPresentation?: 'avatar' | 'signature';
   /** Dock-only aggregation metadata for adjacent calls to the same tool. */
   toolGroup?: TranscriptToolGroupPresentation;
   /** Show the original tool input/result/error inline inside a working group. */
@@ -91,6 +93,7 @@ export function TranscriptSegmentView({
           message={segment.message}
           actor={options.resolveActor?.(segment.message) ?? null}
           fallbackLabel={options.fallbackUserLabel}
+          presentation={options.userPresentation}
         />
       );
     case 'review_decision':
@@ -350,15 +353,21 @@ function UserSegment({
   message,
   actor,
   fallbackLabel = 'User',
+  presentation = 'avatar',
 }: {
   message: CodingSessionTranscriptMessage;
   actor: CodingSessionActor | null;
   fallbackLabel?: string;
+  presentation?: 'avatar' | 'signature';
 }) {
   const actorLabel = actor?.full_name || actor?.email || fallbackLabel;
+  const sentAt = new Date(message.timestamp);
+  const sentTime = Number.isFinite(sentAt.getTime())
+    ? sentAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : null;
   return (
-    <div className="flex flex-col items-end gap-2">
-      <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
+    <div className="flex min-w-0 flex-col items-end gap-1.5">
+      {presentation === 'avatar' && <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(message.timestamp)}</span>
         {message.delivery_status === 'pending' ? <span className="sr-only">Sending…</span> : null}
         <span className="font-medium">{actorLabel}</span>
@@ -372,7 +381,7 @@ function UserSegment({
           className="h-6 w-6"
           fallbackClassName="text-[10px]"
         />
-      </div>
+      </div>}
       {message.content.trim() ? <UserMessageBubble content={message.content} /> : null}
       {message.attachments?.length ? (
         <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
@@ -395,6 +404,16 @@ function UserSegment({
           ))}
         </div>
       ) : null}
+      {presentation === 'signature' && (
+        <div data-message-sender className="max-w-[90%] px-1 text-right text-[11px] leading-4 text-muted-foreground" title={sentTime ? sentAt.toLocaleString() : undefined}>
+          <span className="break-words">{actorLabel}</span>
+          {sentTime && <span className="whitespace-nowrap">
+            <span aria-hidden="true"> · </span>
+            <time dateTime={message.timestamp} className="tabular-nums" aria-label={`Sent at ${sentTime}`}>{sentTime}</time>
+          </span>}
+          {message.delivery_status === 'pending' ? <span className="sr-only"> · Sending…</span> : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -504,7 +523,7 @@ function UserMessageBubble({ content }: { content: string }) {
           </div>
           <button
             type="button"
-            className="mt-1 text-[11px] font-medium text-blue-700 hover:underline dark:text-blue-200"
+            className="mt-1 text-[11px] font-medium text-quiet-text-secondary hover:underline"
             onClick={() => setExpanded((prev) => !prev)}
           >
             {expanded ? 'Show less' : 'Show more'}
