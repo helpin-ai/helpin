@@ -19,6 +19,7 @@
     "test:e2e:presence": "playwright test --config=./playwright.support.config.ts --project=chromium",
     "test:e2e:presence:install": "playwright install chromium",
     "test:e2e:agent-runtime:ordinary": "node e2e/agent-runtime-live/ordinary.mjs",
+    "test:e2e:agent-runtime:admission": "node e2e/agent-runtime-live/admission-race.mjs",
     "test:e2e:agent-runtime:analysis": "node e2e/agent-runtime-live/analysis.mjs",
     "test:e2e:agent-runtime:artifacts": "node e2e/agent-runtime-live/artifacts.mjs",
     "test:e2e:agent-runtime:typesafe": "node e2e/agent-runtime-live/typesafe-and-saved-agent.mjs",

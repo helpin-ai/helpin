@@ -136,15 +136,40 @@ func (r *DockChatRepository) TouchLastMessage(ctx context.Context, workspaceID, 
 }
 
 // WithTurnLock serializes settings transitions and message admission across API
-// replicas without holding a row lock during runtime callbacks.
+// replicas for the full callback.
 func (r *DockChatRepository) WithTurnLock(ctx context.Context, workspaceID, chatID string, fn func() error) error {
-	if r.db.Dialector.Name() != "postgres" {
-		return fn()
-	}
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "dock-turn:"+workspaceID+":"+chatID).Error; err != nil {
-			return err
-		}
+	return r.WithTurnLockRelease(ctx, workspaceID, chatID, func(_ func() error) error {
 		return fn()
 	})
+}
+
+// WithTurnLockRelease serializes a chat turn across API replicas and lets the
+// caller release the advisory lock after durable admission, before a slow
+// runtime callback. When release is not called explicitly, the lock remains
+// held until fn returns, matching WithTurnLock.
+func (r *DockChatRepository) WithTurnLockRelease(ctx context.Context, workspaceID, chatID string, fn func(release func() error) error) error {
+	if r.db.Dialector.Name() != "postgres" {
+		return fn(func() error { return nil })
+	}
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	released := false
+	release := func() error {
+		if released {
+			return nil
+		}
+		released = true
+		return tx.Commit().Error
+	}
+	defer func() {
+		if !released {
+			_ = tx.Rollback().Error
+		}
+	}()
+	if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "dock-turn:"+workspaceID+":"+chatID).Error; err != nil {
+		return err
+	}
+	return fn(release)
 }

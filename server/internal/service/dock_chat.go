@@ -354,15 +354,15 @@ func (s *DockChatService) OwnedActiveRunForChat(ctx context.Context, workspaceID
 // completion, failure).
 func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, chatID string, req model.SendDockChatMessageRequest) (*model.DockChatDetail, error) {
 	var result *model.DockChatDetail
-	err := s.chatRepo.WithTurnLock(ctx, workspaceID, chatID, func() error {
+	err := s.chatRepo.WithTurnLockRelease(ctx, workspaceID, chatID, func(release func() error) error {
 		var err error
-		result, err = s.sendMessageLocked(ctx, workspaceID, userID, chatID, req)
+		result, err = s.sendMessageLocked(ctx, workspaceID, userID, chatID, req, release)
 		return err
 	})
 	return result, err
 }
 
-func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, userID, chatID string, req model.SendDockChatMessageRequest) (*model.DockChatDetail, error) {
+func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, userID, chatID string, req model.SendDockChatMessageRequest, releaseTurnLock func() error) (*model.DockChatDetail, error) {
 	if req.AIProfileID != "" && (req.ModelConnectionID != "" || req.ModelName != "") {
 		return nil, fmt.Errorf("select a profile or legacy connection, not both")
 	}
@@ -446,7 +446,7 @@ func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, us
 	switch {
 	case currentRun == nil || !model.IsAgentRunActiveStatus(currentRun.Status):
 		// First message, or the previous backing run ended.
-		if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
+		if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, releaseTurnLock, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
 			return nil, err
 		}
 	case model.IsAgentRunPausedStatus(currentRun.Status):
@@ -462,7 +462,7 @@ func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, us
 			if _, err := s.agentService.CancelRun(ctx, workspaceID, currentRun.ID, userID); err != nil {
 				return nil, fmt.Errorf("rotate stale chat run: %w", err)
 			}
-			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
+			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, releaseTurnLock, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
 				return nil, err
 			}
 		} else if err := s.setRunAttachedContexts(ctx, currentRun, attachedContexts); err != nil {
@@ -474,7 +474,7 @@ func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, us
 			// The runtime idle-expired the run; it is completed on its side.
 			// Continue the conversation through a successor run.
 			clientMessageID = uuid.NewString()
-			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
+			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, releaseTurnLock, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
 				return nil, err
 			}
 		}
@@ -787,7 +787,7 @@ func validDockChatModule(moduleID model.ModuleID) bool {
 
 // startChatRun starts a (possibly successor) backing run for the chat and
 // repoints the chat at it.
-func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, attachedContexts []model.AgentRunContextReference, previousRun *model.AgentRun, clientMessageID string, selection ...string) error {
+func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, attachedContexts []model.AgentRunContextReference, previousRun *model.AgentRun, clientMessageID string, releaseTurnLock func() error, selection ...string) error {
 	agent, err := s.agentService.ensureBuiltInAgent(ctx, chat.WorkspaceID, userID, model.AgentPresetAskAgent)
 	if err != nil {
 		return fmt.Errorf("ensure ask agent: %w", err)
@@ -837,7 +837,7 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 	if len(selection) >= 3 {
 		profileID = selection[2]
 	}
-	run, err := s.agentService.startTargetRunWithOptions(
+	_, err = s.agentService.startTargetRunWithOptions(
 		ctx,
 		chat.WorkspaceID,
 		"workspace",
@@ -857,15 +857,23 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 			clientMessageID:  clientMessageID,
 			executionEnabled: chat.ExecutionEnabled,
 			repositoryID:     initialDockExecutionRepositoryID(chat.ExecutionEnabled, attachedContexts),
+			afterPersist: func(run *model.AgentRun) error {
+				if err := s.chatRepo.SetActiveRun(ctx, chat.WorkspaceID, chat.ID, run.ID); err != nil {
+					return fmt.Errorf("set chat active run: %w", err)
+				}
+				chat.ActiveRunID = &run.ID
+				if releaseTurnLock != nil {
+					if err := releaseTurnLock(); err != nil {
+						return fmt.Errorf("release dock turn admission lock: %w", err)
+					}
+				}
+				return nil
+			},
 		},
 	)
 	if err != nil {
 		return err
 	}
-	if err := s.chatRepo.SetActiveRun(ctx, chat.WorkspaceID, chat.ID, run.ID); err != nil {
-		return fmt.Errorf("set chat active run: %w", err)
-	}
-	chat.ActiveRunID = &run.ID
 	for _, planID := range pendingPlanIDs {
 		if err := s.planRepo.MarkParentNotified(ctx, chat.WorkspaceID, planID); err != nil {
 			slog.WarnContext(ctx, "dock chat: mark plan notified after carry-forward failed",

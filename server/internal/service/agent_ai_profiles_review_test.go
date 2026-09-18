@@ -303,7 +303,7 @@ execution_enabled boolean NOT NULL DEFAULT false,
 	client := &fakeAgentRuntimeSignalClient{}
 	agents := (&AgentService{agentRepo: repository.NewAgentRepository(db), runRepo: repository.NewAgentRunRepository(db)}).SetAIConnectionService(profiles.connections).SetAIProfileService(profiles).SetAgentRuntimeClient(client).SetAgentRuntimeLaunchEnabled(true)
 	dock := &DockChatService{agentService: agents, chatRepo: repository.NewDockChatRepository(db)}
-	if err := dock.startChatRun(ctx, chat, "owner", "Review this task", nil, nil, "", "", "", p.ID); err != nil {
+	if err := dock.startChatRun(ctx, chat, "owner", "Review this task", nil, nil, "", nil, "", "", p.ID); err != nil {
 		t.Fatal(err)
 	}
 	if chat.ActiveRunID == nil || len(client.startRunCalls) != 1 {

@@ -1185,6 +1185,23 @@ func (r *AgentRunRepository) Update(ctx context.Context, run *model.AgentRun) er
 	return nil
 }
 
+// BindExternalRuntimeIfActive records the delegated runtime mapping without
+// reviving a run that was cancelled while remote admission was in flight.
+func (r *AgentRunRepository) BindExternalRuntimeIfActive(ctx context.Context, workspaceID, runID, runtimeName, runtimeRunID string) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, fmt.Errorf("agent run repository is not configured")
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, runID).
+		Where("status IN ?", []string{model.AgentRunStatusQueued, model.AgentRunStatusRunning, model.AgentRunStatusPaused}).
+		Updates(map[string]any{"external_runtime": runtimeName, "external_runtime_id": runtimeRunID})
+	if result.Error != nil {
+		return false, fmt.Errorf("bind active agent run to external runtime: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // UpdateOutputSummary updates only the run output summary.
 func (r *AgentRunRepository) UpdateOutputSummary(ctx context.Context, runID string, outputSummary json.RawMessage) error {
 	if r == nil || r.db == nil {

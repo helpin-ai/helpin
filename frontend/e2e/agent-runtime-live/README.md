@@ -13,6 +13,7 @@ Run the independent checks from `frontend/`:
 
 ```bash
 pnpm test:e2e:agent-runtime:ordinary
+pnpm test:e2e:agent-runtime:admission
 pnpm test:e2e:agent-runtime:analysis
 pnpm test:e2e:agent-runtime:typesafe
 pnpm test:e2e:agent-runtime:interrupted
@@ -41,3 +42,5 @@ pnpm test:e2e:agent-runtime:coding
 ```
 
 Each script fails on a missing marker, unexpected route or approval, terminal run failure, or privacy/lifecycle regression. Provider failures are reported as failures rather than silently retried, so a failed run can distinguish infrastructure instability from a product assertion.
+
+The admission check sends two first messages concurrently. It requires exactly one durable user turn and one backing run, proving that the loser observes the persisted queued run while the winner performs runtime admission outside the database-backed turn lock.
