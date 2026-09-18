@@ -90,7 +90,14 @@ func (r *SupportTranslationRepository) Reserve(ctx context.Context, candidate *m
 			if !retryReview && cached.Status == "ready" && (cached.ExpiresAt == nil || now.Before(*cached.ExpiresAt) || cached.SentMessageID != nil) {
 				return nil
 			}
-			if cached.Attempts >= 3 || now.Sub(cached.UpdatedAt) < time.Minute {
+			// Back off repeated failures without permanently poisoning a message's
+			// cache entry after a temporary provider outage. Keep attempts monotonic
+			// so an older worker cannot settle a newer generation.
+			cooldown := time.Minute
+			if cached.Attempts >= 3 {
+				cooldown = 15 * time.Minute
+			}
+			if now.Sub(cached.UpdatedAt) < cooldown {
 				return nil
 			}
 			nextAttempt := cached.Attempts + 1
@@ -98,6 +105,7 @@ func (r *SupportTranslationRepository) Reserve(ctx context.Context, candidate *m
 				return err
 			}
 			cached.Status = "pending"
+			cached.ErrorCode = ""
 			cached.ExpiresAt = candidate.ExpiresAt
 			cached.ReviewStatus = "not_requested"
 			cached.JevAssessmentID = nil
