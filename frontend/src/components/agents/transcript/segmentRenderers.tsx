@@ -512,18 +512,18 @@ function UserMessageBubble({ content }: { content: string }) {
   const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
 
   return (
-    <div className="max-w-[90%] rounded-2xl rounded-br-sm bg-blue-50 px-3.5 py-2.5 text-sm leading-relaxed text-foreground/85 shadow-sm dark:bg-blue-950/40 dark:text-foreground">
+    <div className="max-w-[90%] rounded-2xl rounded-br-sm bg-quiet-icon-well px-3.5 py-2.5 text-sm leading-relaxed text-quiet-text-primary shadow-sm">
       {isLong ? (
         <div>
           <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
             <MarkdownContent content={content} className="text-inherit" />
             {!expanded && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-blue-50 to-transparent dark:from-blue-950/40" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-quiet-icon-well to-transparent" />
             )}
           </div>
           <button
             type="button"
-            className="mt-1 text-[11px] font-medium text-blue-700 hover:underline dark:text-blue-200"
+            className="mt-1 text-[11px] font-medium text-quiet-text-secondary hover:underline"
             onClick={() => setExpanded((prev) => !prev)}
           >
             {expanded ? 'Show less' : 'Show more'}
