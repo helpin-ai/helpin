@@ -1,7 +1,9 @@
 # Deploy Community publicly
 
-Run commands below from the bundle’s `community/` directory.
-
+This guide is for operators exposing a Community installation on a public
+hostname. It explains the reverse proxy, URL settings, and network boundaries
+required for HTTPS access; use it after a local evaluation succeeds. Run
+commands below from the bundle’s `community/` directory.
 
 Use an existing HTTPS reverse proxy or adapt `Caddyfile.example`. Configure:
 
@@ -68,9 +70,6 @@ separate public help-center image copy. Helpin exposes only help-center assets,
 user avatars and workspace logos; Garage has no anonymous website listener.
 The one-node bundle has no storage redundancy. Use off-host backups; deployments
 requiring fault tolerance should use an external replicated S3-compatible store.
-This replaces the unreleased MinIO fixture, not an automatic migration of MinIO
-volumes. Export any existing fixture objects before discarding its old volume.
-
 
 For step-by-step diagnosis, see [troubleshooting](troubleshooting.md).
 

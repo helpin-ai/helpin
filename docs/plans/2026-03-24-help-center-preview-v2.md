@@ -617,7 +617,7 @@ git commit -m "refactor(docs): remove old workspace-auth preview endpoint"
 
 If `.env.example` or `.env` exists in frontend, add:
 ```
-VITE_HELPCENTER_URL=http://91.98.85.12:5174
+VITE_HELPCENTER_URL=http://localhost:5174
 ```
 
 If no env file exists, the code already has a fallback default of `http://localhost:5174`.

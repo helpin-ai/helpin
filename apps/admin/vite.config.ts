@@ -10,7 +10,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5174,
     strictPort: true,
-    allowedHosts: ['dev-azhar.helpin.ai'],
+    // Extra dev hostnames (comma-separated); localhost is always allowed.
+    allowedHosts: (process.env.VITE_ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean),
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8080',

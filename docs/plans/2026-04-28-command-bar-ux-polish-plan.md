@@ -232,7 +232,7 @@ Plan steps appearing, tool picker opening, dialog opening — all currently snap
 
 ## Test plan
 
-- Each top-5 item: dogfood on `helpin-dev-fe.tryunhide.com` with the same flow used to validate v1 (Cmd+K → parse → narrow tools → confirm → rail → save agent).
+- Each top-5 item: validate on the development environment with the same flow used to validate v1 (Cmd+K → parse → narrow tools → confirm → rail → save agent).
 - Status vocabulary unification (X1): visual diff of `STATUS_META` rendering on a single fixture page covering all states.
 - Cross-cutting (X3, X4): manual sweep of every command-bar surface.
 - No new automated tests required; existing typecheck + vite build remain the build gate.

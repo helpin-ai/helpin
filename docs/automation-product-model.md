@@ -173,7 +173,7 @@ We should show both in one ecosystem, but distinguish:
 
 They may share layout patterns, but should not pretend to be authored the same way.
 
-## CRM Playbooks and Beacon: agreed extension
+## CRM Playbooks and Beacon (implemented, not activated by default)
 
 The checked-out code includes the Playbook connection: guided reviewed setup, separate activation/adoption, captured specialized skills, guarded normal Agent Runtime execution, durable checks and canonical CRM approvals. This is not a production activation report. The [CRM blueprint](crm-customer-work-blueprint.md) owns product scope and the [connection plan](crm-playbook-automation-change-proposal.md) owns current capability, safeguards and verification.
 

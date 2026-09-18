@@ -322,7 +322,7 @@ test('count joins view_key -> id -> view_id', () => {
 })
 ```
 
-- [ ] **Step 2: FAIL → Step 3: Implement → Step 4: PASS** + typecheck. (When implementing, confirm the builtin `view_key` string values by calling the running dev API at `http://91.98.85.12:8080/api/support/inbox/views/builtin` with a valid token, or by reading `server/internal/service/support_inbox_view_service.go` around the builtin seeding — the labels map `inbox→"Inbox", mine→"Mine", waiting→"Waiting", resolved→"Resolved", spam→"Spam", ai_active→"AI Handling", resolved_by_ai→"AI Resolved"`.)
+- [ ] **Step 2: FAIL → Step 3: Implement → Step 4: PASS** + typecheck. (When implementing, confirm the builtin `view_key` string values by calling the running dev API at `http://localhost:8080/api/support/inbox/views/builtin` with a valid token, or by reading `server/internal/service/support_inbox_view_service.go` around the builtin seeding — the labels map `inbox→"Inbox", mine→"Mine", waiting→"Waiting", resolved→"Resolved", spam→"Spam", ai_active→"AI Handling", resolved_by_ai→"AI Resolved"`.)
 - [ ] **Step 5: Commit.** `git commit -m "feat(mobile): inbox view-list model and per-view count resolution"`
 
 ---

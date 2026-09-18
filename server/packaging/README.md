@@ -64,23 +64,25 @@ sudo systemctl edit helpin-temporal-worker
 Default package config:
 
 ```env
-DOPPLER_PROJECT=backend
-DOPPLER_CONFIG=prd
+DOPPLER_PROJECT=your-project
+DOPPLER_CONFIG=your-config
 ```
 
-Recommended `systemctl edit` override for hosts running the service with the `prov` user's home directory:
+Set the Doppler project and config for your own account, then provide the
+service token through a `systemctl edit` override:
 
 ```ini
 [Service]
-Environment=HOME=/home/prov
+Environment=HOME=/var/lib/helpin-temporal-worker
 Environment=DOPPLER_TOKEN=dp.st.xxxxx
 ```
 
 Notes:
 
-- Doppler needs a valid `HOME` in the service environment. For your current host setup, use `HOME=/home/prov`.
-- The Doppler credential to provide is `DOPPLER_TOKEN`. If you see `DOPPLER_SECRET` in notes or conversations, treat that as a mistake; the service expects `DOPPLER_TOKEN`.
-- This override lives in `/etc/systemd/system/helpin-temporal-worker.service.d/override.conf` and survives package upgrades.
+- Doppler needs a valid, writable `HOME` in the service environment for the service user.
+- The credential the service expects is `DOPPLER_TOKEN`.
+- The override lives in `/etc/systemd/system/helpin-temporal-worker.service.d/override.conf` and survives package upgrades.
+- Operators who do not use Doppler can replace the `ExecStart` wrapper with a plain environment file.
 
 Start the worker only after Doppler and runtime binaries are ready:
 
@@ -96,7 +98,7 @@ Requirements:
 
 - `gh` installed on the host
 - `GH_TOKEN` set in `/etc/helpin/temporal-worker.conf`
-- sufficient token scope to read private releases for `helpin-ai/helpin`
+- a token able to read releases for the repository you package from
 
 The current container release workflow does not supply those `.deb` assets.
 Enable the updater only if a separate packaging process publishes the expected

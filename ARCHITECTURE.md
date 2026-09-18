@@ -12,8 +12,7 @@ supported beta feature.
 
 **Source review:** 2026-09-18, against the checked-in Community Compose, API and
 worker entry points, frontend build configuration, and Runtime integration. This
-map describes repository wiring; it does not establish that publication gates or
-live deployment acceptance have passed.
+map describes repository wiring, not the state of any particular deployment.
 
 ## System overview
 
@@ -235,9 +234,8 @@ browser-reachable storage URL for signed object requests. Follow the
 provision public DNS or certificates. The
 [bundle packager](community/package-release.py) pins image digests; checked-in
 Compose still uses tags for application images.
-[Publication gates](community/PUBLICATION.md) record pending decisions and release
-validation, so the packaging implementation alone is not proof of a published
-bundle.
+Release validation steps are recorded in the
+[publication checklist](community/PUBLICATION.md).
 
 The root development Compose files, Community Compose, and Kubernetes manifests
 serve different environments. Do not substitute one set of ports, secrets, or

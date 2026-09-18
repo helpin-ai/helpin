@@ -144,7 +144,7 @@ This is a new transport: Runtime currently uses the Claude chat model and OpenAI
 
 Recorded from the earlier test-system investigation in this working session and reconfirmed by the user on September 14:
 
-- Runtime run: `run_9b1445790f13e52c710f2c3d`; Helpin run: `086a992f-a4ca-479b-8923-67923861fa9d`.
+- Runtime run: `run_<id>`; Helpin run: `086a992f-a4ca-479b-8923-67923861fa9d`.
 - Selected route: `openai_chatgpt`, model `gpt-5.6-terra`, app-owned OAuth credential. The earlier inspection confirmed that credential source rather than the API-key route.
 - Observed progress: 10 successful model responses and 37 tool calls before the run stalled in `commit_and_push`. The stall was traced to a Git authentication/process-handling issue, after model inference and tool execution had succeeded. It was not a completed end-to-end run.
 - This record supports ChatGPT inference and tool execution, not expired-token refresh, reconnect/revocation, or lossless provider-state replay. It records the prior investigation; it is not a new live validation or an archived raw-log artifact.

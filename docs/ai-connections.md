@@ -1,11 +1,11 @@
 # AI connections and profiles
 
-This document describes the profile contract being implemented in the
-[September 14 rollout plan](plans/2026-09-14-ai-profiles-and-ee-billing-plan.md).
-It supersedes the September 12 manual-only, full-rate personal-connection contract.
-Edition construction is implemented. Deployment remains gated on migration/provisioning, canaries,
-and live refresh/revocation validation. Do not restart an older installation into
-profile-based wiring before completing that coordinated rollout.
+This reference explains how AI connections and profiles select a provider,
+model, and policy for Helpin features and agent runs. It describes the contract
+in this checkout; rollout history lives in the
+[September 14 plan](plans/2026-09-14-ai-profiles-and-ee-billing-plan.md). Do not
+restart an older installation into profile-based wiring before completing that
+plan's migration and provisioning steps.
 
 Connections hold encrypted credentials; profiles bind a connection to an explicit
 provider, model, and model controls. A profile may have one direct fallback.
@@ -26,16 +26,16 @@ infrastructure errors do not authorize fallback. Execution never changes routes
 mid-run. CRM freezes its route in the reviewed setup and requires another review
 to change that route; its financial policy is accepted when the run launches.
 
-Community records normalized usage without Helpin token or tool charges. SaaS
-managed routes retain hosted pricing. New SaaS BYOK uses an explicit versioned
+Community records normalized usage without Helpin token or tool charges. Helpin Cloud
+managed routes retain hosted pricing. New Helpin Cloud BYOK uses an explicit versioned
 flat USD fee per million normalized tokens, equally across providers and models;
 paid tools are charged separately. A zero rate is valid; an unset rate is not.
-SaaS BYOK defaults off per workspace. The historical percentage and full-equivalent
+Helpin Cloud BYOK defaults off per workspace. The historical percentage and full-equivalent
 modes remain readable for older records but do not define new profile pricing.
 
 ## Configuration and provisioning
 
-- Apply core migrations through `cmd/migrate`. An EE build adds its migration
+- Apply core migrations through `cmd/migrate`. An Enterprise build adds its migration
   source with `go run -tags ee ./cmd/migrate up`; historical SQL remains in the
   original ledger with unchanged checksums.
 - Set Helpin's stable `AI_CONNECTION_ENCRYPTION_KEY` (32 bytes, raw, hexadecimal,
@@ -63,11 +63,9 @@ Migration `202609140012` updates unchanged standard Small profiles to
 to Small; agents and saved versions using its former standard Medium default
 move to Small. Custom profile routes and other explicit profile selections are
 preserved, as are accepted run inputs. New installations use these same defaults.
-EE pricing version `2026-09-14` sets managed Small input tokens to $0.33 per
-million. Small cached-input and output rates, and BYOK tariff rates, are unchanged.
 
 API and worker startup provision standard profiles for existing workspaces; new
-workspaces are provisioned automatically. EE fills untouched standard connection
+workspaces are provisioned automatically. Enterprise fills untouched standard connection
 placeholders using Helpin's provider configuration and updates connected managed
 keys when deployment keys rotate. Existing customer credentials and disconnected
 connections are preserved. Community uses customer-funded connections and permits
@@ -96,32 +94,29 @@ the secret and revokes bound credentials. A post-launch check covers disconnects
 racing admission. Already in-flight requests may finish; revocation prevents
 subsequent model calls.
 
-The September 13 test-system run `run_9b1445790f13e52c710f2c3d` (Helpin run
-`086a992f-a4ca-479b-8923-67923861fa9d`) used `openai_chatgpt` / `gpt-5.6-terra`
-with app-owned OAuth credentials and produced 10 model responses and 37 tool calls
-before a Git tool stalled. This supports inference and tool execution; live
+ChatGPT inference and tool execution have been exercised in test runs; live
 expired-token refresh, reconnect, and revocation are separate release gates.
 ChatGPT strips the previous-response identifier and does not support lossless
 provider-state replay, although ordinary transcript continuation is supported.
 
 Helpin pins SDK `v0.6.0` in [the server module](../server/go.mod).
 Check the selected Runtime revision separately when verifying pair compatibility. Explicit empty model controls clear inherited controls
-while preserving execution limits. Chat Completions and the real local-model
-adapter validation are implemented; deployed Helpin canaries remain pending.
+while preserving execution limits. Chat Completions and the local-model
+adapter validation are implemented.
 
 ## Build editions
 
 Community is the default Go build (`go run ./cmd/api` and `go run ./cmd/temporal-worker`). It records usage with no financial policy, price catalog, subscription gate, or billing jobs. Missing deployment provider keys do not prevent startup; a feature still needs a configured provider when invoked.
 
-SaaS uses `go run -tags ee ./cmd/api` and `go run -tags ee ./cmd/temporal-worker`, plus `go run -tags ee ./cmd/migrate up` for registered EE migrations. Its API and every worker require `AI_CONNECTION_ENCRYPTION_KEY`, even when personal ChatGPT is disabled. Existing and new workspaces receive standard profiles automatically; the normal migration performs the one-time agent reset. Missing provider keys leave connections visibly unconfigured.
+Helpin Cloud uses `go run -tags ee ./cmd/api` and `go run -tags ee ./cmd/temporal-worker`, plus `go run -tags ee ./cmd/migrate up` for registered Enterprise migrations. Its API and every worker require `AI_CONNECTION_ENCRYPTION_KEY`, even when personal ChatGPT is disabled. Existing and new workspaces receive standard profiles automatically; the normal migration performs the one-time agent reset. Missing provider keys leave connections visibly unconfigured.
 
-Container builds default to community too. SaaS builds pass `--build-arg GO_BUILD_TAGS=ee`; the staging and production workflows declare that choice explicitly. Both binaries must use the same edition. No live migration or service restart command was run as part of this change.
+Container builds default to community too. Helpin Cloud builds pass `--build-arg GO_BUILD_TAGS=ee`; the staging and production workflows declare that choice explicitly. Both binaries must use the same edition.
 
-The frontend also defaults to community: `pnpm --dir frontend dev` and `pnpm --dir frontend build`. SaaS development uses `pnpm --dir frontend dev:ee`; production uses `pnpm --dir frontend build:ee`. The build command fixes the edition for both TypeScript and Vite, so an inherited environment value cannot select mismatched implementations. Staging and production workflows explicitly build EE. Community omits billing navigation, payment requests, upgrade UI, and price assets; old billing URLs return not found. Desktop builds that reuse frontend components default to the same community extension points.
+The frontend also defaults to community: `pnpm --dir frontend dev` and `pnpm --dir frontend build`. Helpin Cloud development uses `pnpm --dir frontend dev:ee`; production uses `pnpm --dir frontend build:ee`. The build command fixes the edition for both TypeScript and Vite, so an inherited environment value cannot select mismatched implementations. Staging and production workflows explicitly build Enterprise. Community omits billing navigation, payment requests, upgrade UI, and price assets; old billing URLs return not found. Desktop builds that reuse frontend components default to the same community extension points.
 
-### SaaS BYOK operator policy
+### Helpin Cloud BYOK operator policy
 
-The EE-only operator command previews a transactional policy change by default:
+The Enterprise-only operator command previews a transactional policy change by default:
 
 ```bash
 cd server
@@ -135,7 +130,7 @@ Supply an explicit nonnegative integer rate: `1000000` represents USD 1 per
 million normalized tokens; `0` explicitly configures no Helpin token fee.
 An omitted rate is invalid. Review the JSON result, then repeat with `-apply`.
 The command loads `DATABASE_URL` from the environment or `server/.env` and
-requires the core and EE migrations to have been applied. It does not restart
+requires the core and Enterprise migrations to have been applied. It does not restart
 services, test provider credentials, or change accepted executions.
 
 A tariff version can be reused only with identical values. A different rate
@@ -169,14 +164,14 @@ Changes to that binding require a new connection/profile; accepted runs never
 redirect their credentials. Compatible routes have transcript continuation, not
 lossless Responses replay or provider-specific reasoning/service-tier controls.
 
-See Runtime `docs/2026-09-14-compatible-models.md` for the real local Qwen test and
-`docs/2026-09-14-helpin-deployment.md` for fresh host/compose templates. Helpin currently pins SDK `v0.6.0`; the earlier `v0.6.0-alpha.2`
+Endpoint approval and compose templates are documented in the Agent Runtime
+repository (currently private). Helpin currently pins SDK `v0.6.0`; the earlier `v0.6.0-alpha.2`
 rollout reference is historical.
 
-Host SaaS development commands are `just backend-ee`, `just worker-ee`, and
+Host Helpin Cloud development commands are `just backend-ee`, `just worker-ee`, and
 `just frontend-ee` in separate terminals. Community uses the existing commands
-without the `-ee` suffix. Do not switch a live EE deployment to Community while
-accepted EE runs are outstanding; drain them first to preserve their frozen policy.
+without the `-ee` suffix. Do not switch a live Enterprise deployment to Community while
+accepted Enterprise runs are outstanding; drain them first to preserve their frozen policy.
 
 Bootstrap reads only the process environment unless `-env-file` names an explicit
 dotenv file. It never guesses a file from the working directory. Existing process

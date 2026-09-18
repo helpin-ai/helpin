@@ -25,7 +25,7 @@ Install these before attempting any of the dev-loop commands below:
   ```
   Android SDK/NDK setup works on Linux, macOS, and Windows.
 - **iOS**: Xcode 15+ with the iOS 15+ simulator runtime. iOS steps require macOS — they cannot run on Linux or Windows.
-- **Node/pnpm**: already required by the rest of the monorepo (see root `CLAUDE.md`).
+- **Node/pnpm**: already required by the rest of the monorepo (see the [contribution guide](../../CONTRIBUTING.md)).
 
 ## Local API URL
 
@@ -41,7 +41,7 @@ locally hosted API:
 Set this in `apps/support-mobile/.env.local` (create it if it doesn't exist).
 
 Set `VITE_WEB_APP_URL` to the matching Helpin web application origin (for
-example `https://stage.helpin.ai`). Linked PM tasks created from a support
+example `https://app.example.com`, or `https://app.helpin.ai` for Helpin Cloud). Linked PM tasks created from a support
 conversation open at that origin in the system browser. When omitted, the
 current page origin is used, which is suitable only when that origin also
 serves the main Helpin web routes.
@@ -56,8 +56,8 @@ access or refresh tokens in the URL. The hosted mobile build returns through
 its HTTPS login page. Configure the API with:
 
 ```bash
-MOBILE_APP_BASE_URL=https://azhar.dev.helpin.ai
-CORS_ORIGINS=https://azhar.dev.helpin.ai,...
+MOBILE_APP_BASE_URL=https://mobile.example.com
+CORS_ORIGINS=https://mobile.example.com,...
 ```
 
 For passkeys in the DNS-hosted build, include that HTTPS origin in the
@@ -173,7 +173,7 @@ before mobile `init`.
 
 7. **Login / workspace picker / You screen end-to-end check** (Task 9 —
    `src/screens/login-screen.tsx`, `workspaces-screen.tsx`, `you-screen.tsx`):
-   point `VITE_API_URL` at staging or a local API (`http://10.0.2.2:8080/api`
+   point `VITE_API_URL` at a test or local API (`http://10.0.2.2:8080/api`
    on the Android emulator; see "Local API URL" above), then on a real
    emulator/simulator:
    - Sign in with a real account/password; confirm field-level errors show
@@ -228,16 +228,13 @@ before mobile `init`.
 
 9. **Push plugin (Task 19 — `src-tauri/tauri-plugin-helpin-push/`)**: written
    with device verification still pending in the checked-in QA record. Full SPIKE-VERIFY list lives in
-   `src-tauri/tauri-plugin-helpin-push/README.md`; do not proceed with any
-   of the below until Task 19a's findings doc
-   (`docs/superpowers/plans/2026-07-08-push-spike-findings.md`) exists and
-   this plugin has been reconciled against it. Once a real toolchain and
+   `src-tauri/tauri-plugin-helpin-push/README.md`. Once a real toolchain and
    `gen/android`/`gen/apple` exist:
    - `cd apps/support-mobile/src-tauri && cargo check` — first sanity pass;
      confirm the crate compiles for desktop (`#[cfg(desktop)]` path) before
      attempting mobile targets.
    - Add `google-services.json` (Android) / `GoogleService-Info.plist`
-     (iOS) from Doppler per Task 19a Step 1; both are gitignored.
+     (iOS) from your Firebase project; both are gitignored.
    - Apply the `com.google.gms.google-services` Gradle plugin in
      `gen/android/app/build.gradle.kts` (the **application** module —
      deliberately not applied in the plugin's library module, where it is
@@ -295,7 +292,7 @@ before mobile `init`.
       user with the correct `platform` (`ios`/`android`), a non-empty
       `token`, and `app_version` matching the build.
     - **Full tap-through loop**: background the app (do not force-kill),
-      have a customer reply to a conversation on staging, confirm the push
+      have a customer reply to a conversation on the test API, confirm the push
       notification arrives, tap it, and confirm the app opens directly on
       that conversation (not the Inbox) — then confirm the back gesture/
       button returns to the Inbox, not a dead end.

@@ -4,9 +4,10 @@ This guide explains what happens when an agent works on a repository. It helps
 backend and frontend contributors follow a run from authorization and workspace
 preparation through execution and delivery back into Helpin.
 
-This document describes repository-backed agent execution after the Agent
-Runtime hard cutover. It applies to Forge/Code Builder, Lens/Review Agent, and
-custom agents configured for repository work.
+Agent Runtime is the only executor. This page applies to the Code Builder and
+Review Agent system presets and to custom agents configured for repository work.
+Repository coding workflows are outside the Community 0.1 beta surface; this
+page documents the code in the monorepo.
 
 For the broader ownership and trigger model, see
 [agents and automation](agents-and-automation.md).
@@ -22,7 +23,7 @@ the execution workspace and model/tool loop.
 | Enforce workspace/team access, entitlements, billing, tools, and targets | Enforce accepted runtime/tool/workspace policy |
 | Create the Helpin `agent_run` and launch metadata | Create and execute the runtime run/workflow |
 | Supply target context, domain commands, skills, and repository spec | Prepare the repository workspace and expose runtime tools |
-| Project runtime events into product records | Run `native_sdk`, `codex`, or `opencode` |
+| Project runtime events into product records | Run the `native_sdk` model/tool loop |
 | Apply product finalizers such as PR/task/git-link bookkeeping | Persist transcript, interactions, artifacts, usage, and repository outcome |
 
 System and custom agents use this same boundary. `is_system` never selects a
@@ -39,15 +40,13 @@ from:
 - approval and invocation policy;
 - repository workspace mode and access policy.
 
-Forge and Lens receive these values from managed presets. A custom agent may
+Code Builder and Review Agent receive these values from managed presets. A custom agent may
 request the same generic repository capabilities through explicit
 configuration, but it does not inherit or track those presets.
 
-Runtime kinds select adapters only:
-
-- `native_sdk`: in-process model/tool loop inside Agent Runtime;
-- `codex`: Codex app-server execution inside Agent Runtime;
-- `opencode`: OpenCode command execution inside Agent Runtime.
+Runtime kinds select adapters only. New runs use `native_sdk`, the model/tool
+loop inside Agent Runtime; `codex` and `opencode` remain in historical
+configuration contracts and are not used for new launches.
 
 ## Launch sequence
 
@@ -135,7 +134,7 @@ and applies only the finalizers valid for that outcome.
 
 - Do not add a Helpin-local coding executor.
 - Do not branch execution on `is_system`.
-- Do not encode Forge or Lens as runtime subclasses.
+- Do not encode Code Builder or Review Agent as runtime subclasses.
 - Add reusable behavior as prompts, skills, tools, targets, or execution policy.
 - Keep workspace tenancy, user authorization, and product delivery in Helpin.
 - Keep runtime adapters, workspaces, tool execution, and durable run mechanics

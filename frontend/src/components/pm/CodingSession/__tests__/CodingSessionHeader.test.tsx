@@ -47,8 +47,8 @@ function buildSession(overrides: Partial<CodingSession> = {}): CodingSession {
       can_start_followup: true,
     },
     repo: {
-      repo_name: 'd4interactive/contentstudio-website-v2',
-      branch: 'feature/cont-139-create-a-new-page-for-hootsuite-alternative',
+      repo_name: 'acme/website-v2',
+      branch: 'feature/web-139-new-landing-page',
       base_branch: 'main',
     },
     cached_input_tokens: 119000,
@@ -121,8 +121,8 @@ describe('CodingSessionHeader', () => {
     const currentStage = container.querySelector('[data-coding-session-lifecycle-stage]');
     expect(currentStage?.textContent).toContain('Completed');
     expect(container.querySelectorAll('[data-coding-session-lifecycle-stage]')).toHaveLength(1);
-    expect(container.textContent?.match(/d4interactive\/contentstudio-website-v2/g)).toHaveLength(1);
-    expect(container.textContent?.match(/feature\/cont-139-create-a-new-page-for-hootsuite-alternative/g)).toHaveLength(1);
+    expect(container.textContent?.match(/acme\/website-v2/g)).toHaveLength(1);
+    expect(container.textContent?.match(/feature\/web-139-new-landing-page/g)).toHaveLength(1);
 
     const tokenTrigger = container.querySelector('button[aria-label^="Token usage:"]');
     const runtimePill = container.querySelector('[data-coding-session-runtime-pill]');

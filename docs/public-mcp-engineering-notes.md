@@ -13,7 +13,7 @@ Historical test results and rollout lessons below refer to the first implementat
 
 Related references:
 
-- [Complete Helpin Public MCP Guide](public-mcp-server.md)
+- [Connect external clients to Helpin MCP](public-mcp-server.md)
 - [Public MCP Server PRD](prds/helpin-public-mcp-server.md)
 - [Public MCP Implementation Plan](plans/2026-07-10-helpin-public-mcp-server-plan.md)
 - [MCP UI PRD](prds/helpin-mcp-ui.md)
@@ -409,29 +409,7 @@ The full backend suite also exposed unrelated existing failures and sandbox rest
 4. Do not "fix" unrelated dirty work without authorization.
 5. Keep a clear distinction between implementation failures, pre-existing failures, and sandbox/environment failures.
 
-## 18. Repository and Git hygiene
-
-The workspace already contained unrelated modified and untracked files. Preserving them required explicit file staging.
-
-Rules for the next session:
-
-- Check the current branch and worktree before editing.
-- Create or switch to the intended feature branch before the first shareable commit.
-- Never use `git add -A` in a dirty shared workspace.
-- Stage explicit files and inspect `git diff --cached --name-only`.
-- Run `git diff --cached --check` before committing.
-- Verify `HEAD` equals the upstream commit after pushing.
-- Do not delete, restore, reformat, or commit unrelated user changes.
-- Treat generated route-tree changes as implementation-owned only when caused by the new routes.
-
-The MCP work was split into understandable commits:
-
-- product PRD and implementation plan
-- complete implementation
-- complete capability/operations guide
-- this reusable learnings playbook
-
-## 19. Repeatable workflow for future MCP work
+## 18. Repeatable workflow for future MCP work
 
 ```mermaid
 flowchart TD
@@ -459,7 +437,7 @@ flowchart TD
 
 - Read the capability guide, PRD, plan, and this document.
 - Inspect current branch, dirty files, migrations, flags, and deployment state.
-- Confirm whether staging/production are still globally disabled.
+- Confirm the environment's current `MCP_SERVER_ENABLED` value.
 - Reconcile the requested feature against the actual catalog and source.
 
 ### Phase 2: Contract and risk review
@@ -497,44 +475,7 @@ flowchart TD
 - Verify DNS, TLS, metadata, OAuth, revocation, audit, and supported clients.
 - Enable selected workspace policies before expanding rollout.
 
-## 20. Quick-start checklist for the next session
-
-Before making changes:
-
-- [ ] Read `docs/public-mcp-server.md`.
-- [ ] Read this learnings document.
-- [ ] Check `git status -sb` and current upstream.
-- [ ] Confirm current migration status.
-- [ ] Check `MCP_SERVER_ENABLED` in the deployment manifest, not only Doppler.
-- [ ] Inspect the actual tool catalog and current count.
-- [ ] Identify existing commands/services that own the desired behavior.
-- [ ] Verify real authorization constants in source.
-
-Before exposing a tool:
-
-- [ ] One workspace is derived from the principal.
-- [ ] Scope, toolset, RBAC, module, mode, and platform flag are declared.
-- [ ] Inputs are strict and bounded.
-- [ ] Outputs are minimized and below the size limit.
-- [ ] Mutations require idempotency.
-- [ ] Destructive/customer-visible behavior has server-side approval or is deferred.
-- [ ] Audit and rate-limit behavior are defined.
-- [ ] `tools/list` and `tools/call` both enforce current policy.
-- [ ] The capability guide and catalog regression test are updated.
-
-Before rollout:
-
-- [ ] Migration applied and validated.
-- [ ] API/migration binaries and production frontend build pass.
-- [ ] OAuth discovery, PKCE, refresh, and revocation tested in real clients.
-- [ ] Cross-workspace and IDOR matrix passes.
-- [ ] DNS and TLS verified for the MCP hostname.
-- [ ] Audit contains no raw credentials or payloads.
-- [ ] Emergency global and workspace revocation drills pass.
-- [ ] Client compatibility limitations are documented.
-- [ ] The global switch is enabled only through reviewed deployment configuration.
-
-## 21. Useful validation commands
+## 19. Useful validation commands
 
 Run from the repository root unless a command changes directory explicitly.
 
@@ -570,7 +511,7 @@ git diff --cached --name-only
 git diff --cached --check
 ```
 
-## 22. Remaining beta and GA work
+## 20. Remaining beta and GA work
 
 The original handoff targeted a controlled beta. Repository configuration now enables the endpoint in the checked-in deployment manifests, but that does not establish completion of the following environment and release checks:
 

@@ -59,21 +59,21 @@ func TestUserRepository_GetByEmail_CaseInsensitive(t *testing.T) {
 
 	// Row stored with mixed-case email (legacy / invited casing).
 	if _, err := repo.CreateUser(ctx, &model.User{
-		Email:    "Hassan.Khattak@d4interactive.io",
-		FullName: "Muhammad Hassaan khattak",
+		Email:    "Mixed.Case@example.com",
+		FullName: "Mixed Case",
 	}); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
 	// Auth normalizes the input to lowercase before looking up.
-	user, err := repo.GetByEmail(ctx, "hassan.khattak@d4interactive.io")
+	user, err := repo.GetByEmail(ctx, "mixed.case@example.com")
 	if err != nil {
 		t.Fatalf("GetByEmail: %v", err)
 	}
 	if user == nil {
 		t.Fatal("GetByEmail returned nil for a case-variant of an existing email; this forks duplicate accounts")
 	}
-	if user.FullName != "Muhammad Hassaan khattak" {
+	if user.FullName != "Mixed Case" {
 		t.Fatalf("full_name = %q, want the existing user", user.FullName)
 	}
 }

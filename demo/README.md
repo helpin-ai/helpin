@@ -1,6 +1,8 @@
 # Public demo workspace
 
-This guide is for operators preparing a public demo workspace. The repository
+This is the operating note for Helpin's own hosted demo workspace. Community
+operators only need the `DEMO_*` settings in
+[configuration](../docs/community/configuration.md). The repository
 implements passwordless demo login and a read-only guard for the configured
 viewer account. It does not provision, seed, or verify a production demo.
 
@@ -48,7 +50,7 @@ the viewer role. Verify those setup requirements before enabling public access.
 - Real visitors who chat in the demo widget see that the conversation is
   public. Those conversations are tagged by source and moderated, not wiped.
 
-## Separate provisioning and follow-up work
+## Planned provisioning and follow-up work (not implemented)
 
 - Visitor bots (agent-browser through the widget, scenario library, daily cap)
   and reply bots (API service accounts), as CronJobs in `k8s/prod`.

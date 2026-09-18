@@ -97,8 +97,8 @@ identity requests. In `report_only`, those requests remain unverified browser
 claims; a valid proof can establish verified identity. In `off`, the verifier
 returns untrusted provenance. These modes do not replace the origin allowlist.
 
-New Community installations default to `report_only`; new EE installations use
-`enforced`. Existing installations retain their saved mode. Check that mode rather
+New Community installations default to `report_only`; new Cloud and Enterprise installations
+use `enforced`. Existing installations retain their saved mode. Check that mode rather
 than assuming unsigned identities are always rejected.
 
 Test with a valid identity, an expired proof, and a changed email or company ID.

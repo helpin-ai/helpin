@@ -14,6 +14,8 @@ For the product-facing explanation of flows and agents, see
 [how automation works](automation-product-model.md).
 
 For repository work, see [coding-agent execution](coding-agent-execution.md).
+PM and CRM targets require those modules; Community 0.1 beta enables support,
+docs, and agents by default.
 
 **Source review:** 2026-09-18. The launch and policy references below describe this checkout. Agent Runtime is a separate component; its deployed adapters, browser lifecycle, and external service configuration were not exercised by this review.
 
@@ -299,7 +301,7 @@ storage, and model definitions. Runtime code still strips the legacy
 
 Repo-local execution tools such as file reads, patching, and shell commands may
 still be provided directly by a backend where appropriate. Helpin product tools
-should go through MCP for both `native_sdk` and `codex`.
+go through MCP; runtime-local tools are provided by Agent Runtime.
 
 Authenticated browser automation is also runtime-owned. The canonical browser
 bundle is `browser_open`, `browser_snapshot`, `browser_act`, and
@@ -477,7 +479,7 @@ Pending approval, unresolved results and linked work use cheap checks. Material 
 
 Playbooks Activity projects existing connection/gate/run receipts without raw prompts, packages or runtime output. Canonical decisions, human inspections and customer progress stay in CRM. Independently configured ordinary automations and external senders are not silently migrated into these controls.
 
-See the [CRM reference](crm-signals.md) for endpoints and the [connection plan](crm-playbook-automation-change-proposal.md) for verification and deployment boundaries. These capabilities are implemented on the branch; no production migration, activation or customer send is implied.
+See the [CRM reference](crm-signals.md) for endpoints and the [connection plan](crm-playbook-automation-change-proposal.md) for verification and deployment boundaries. These capabilities are implemented in this checkout; no production migration, activation or customer send is implied.
 
 ## Launch path comparison
 
@@ -548,7 +550,7 @@ Preset contract behavior:
 - `epic_planner` on epic targets and `task_planner` on task targets use planner tool/artifact contracts without introducing a separate planner executor
 - phase guidance, active skill contracts, repair instructions, and active skill policy are prompt/tool-contract inputs to a generic run, not a separate planner controller
 - canonical mutations such as approved PRD persistence, task creation, task-plan-doc persistence, and replay protection remain backend-owned and runtime-neutral
-- backend-specific code should only handle execution mechanics such as Codex sessions/auth/workspace handling or native model-loop/provider configuration
+- backend-specific code should only handle execution mechanics such as model-loop and provider configuration
 
 ### Custom agents
 
@@ -662,7 +664,7 @@ can consume.
 - some legacy PM and settings routes still exist as redirects or compatibility aliases
 - some backend package and model names still use older PM-era terminology
 - some product-owned automations still have domain-specific orchestration paths, especially in support
-- some historical design docs still describe retired local agent workflows or legacy prefixed tool names; treat this file and `docs/internal-tools-framework.md` as the current contract
+- some historical design docs still describe retired local agent workflows or legacy prefixed tool names; treat this file and [internal tools](internal-tools-framework.md) as the current contract
 
 Those do not change the current product direction:
 

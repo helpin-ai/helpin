@@ -14,7 +14,7 @@ replies should thread back into the support conversation.
    - Preferred `From`: active verified workspace sender domain, for example
      `support@example.com`
    - Next `From`: workspace mailbox sender, for example
-     `inbox@contentpen.on.helpin.email`
+     `inbox@example.on.helpin.email`
    - Fallback `From`: verified Postmark sender, for example
      `support@helpin.email`
    - `Reply-To`: conversation route, for example
@@ -51,7 +51,7 @@ Managed sender-domain flow:
   replies continue threading to the conversation.
 
 Avoid using per-workspace subdomains like
-`inbox@contentpen.on.helpin.email` as the long-term outbound `From` unless each
+`inbox@example.on.helpin.email` as the long-term outbound `From` unless each
 subdomain is verified for outbound sending.
 
 ## First Checks

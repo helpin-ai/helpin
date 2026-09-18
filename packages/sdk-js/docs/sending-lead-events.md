@@ -10,7 +10,7 @@ Learn how to send first-party lead data to Helpin using the JavaScript SDK’s `
 
 ## Prerequisites
 
-- Install and initialize the Helpin JavaScript SDK (see the getting started guide for credentials and setup).
+- Install and initialize the Helpin JavaScript SDK (see the [SDK README](../README.md#installation) for credentials and setup).
 - Ensure each lead payload includes a valid `email` field. Events without a properly formatted email are ignored and an error is logged to the console.
 
 ## Basic Usage
@@ -19,8 +19,8 @@ Learn how to send first-party lead data to Helpin using the JavaScript SDK’s `
 import { helpinClient } from '@helpin-ai/sdk-js';
 
 const client = helpinClient({
-  widgetKey: 'UM_PUBLIC_KEY',
-  host: 'https://events.helpin.ai',
+  widgetKey: 'your-widget-key',
+  host: 'https://client.helpin.ai', // or your Community PUBLIC_WIDGET_URL
 });
 
 client?.lead({
@@ -104,5 +104,5 @@ These helpers forward calls to the core `lead` API and inherit the same validati
 ## Troubleshooting
 
 - Check the browser console for the validation error if events are not recorded.
-- Confirm the project key and tracking host are correct and that ad blockers aren’t preventing requests.
+- Confirm the widget key and `host` are correct and that ad blockers aren’t preventing requests.
 - If leads are collected server-side, ensure the environment can reach `host` and forward the same payload structure.

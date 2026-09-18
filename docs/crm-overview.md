@@ -3,6 +3,8 @@
 This guide explains the CRM data model, backend structure, and connections to
 project management, knowledge, support, and agents. Use it to locate a CRM change;
 use the linked signals guide for detailed detection and activation behavior.
+CRM is outside the Community 0.1 beta default modules; the code is present in
+the monorepo.
 
 CRM connects contacts, companies, and deals with support, project work, signals,
 and configured automation. Similar object names do not imply HubSpot API

@@ -14,7 +14,7 @@ not establish current production-store behavior. The reported pass count and
 performance assurances below were not revalidated by this documentation audit.
 
 
-## Customer: Champagne & Gifts (champagneandgifts.co.uk)
+## Customer: example Magento 2 store
 
 ### Problem Statement
 
@@ -39,36 +39,10 @@ These errors broke the entire Magento site functionality, preventing deployment.
 
 ---
 
-## ✅ VALIDATED SOLUTION
+## Implementation guide
 
-### Test Results: **ALL TESTS PASSED** ✅
-
-```
-================================================================================
-📊 HEALTH CHECK RESULTS
-================================================================================
-Page Loaded:              ✅ PASS
-RequireJS Working:        ✅ PASS
-No "require" Errors:      ✅ PASS
-No "define" Errors:       ✅ PASS
-Magento Working:          ✅ PASS
-Helpin Working:        ✅ PASS
-Tracking Working:         ✅ PASS
-================================================================================
-OVERALL HEALTH:           PASS ✅
-================================================================================
-
-✅ SOLUTION VALIDATED - Safe to send to customer!
-```
-
-**Test Suite**: 6 comprehensive integration tests
-**Environment**: Chromium (simulating real Magento 2 environment)
-**Test Duration**: 11.6 seconds
-**Success Rate**: 100% (6/6 passed)
-
----
-
-## Implementation Guide
+The loader below uses a retired script URL and attribute names; do not copy it
+into a new integration. It is kept only as a record of the RequireJS workaround.
 
 ### Step 1: Create the Helpin Loader File
 
@@ -76,7 +50,7 @@ Create this file in your Magento theme:
 
 **File Location:**
 ```
-app/design/frontend/Crescentek/champagne/web/js/helpin-loader.js
+app/design/frontend/Vendor/theme/web/js/helpin-loader.js
 ```
 
 **File Content:**
@@ -139,7 +113,7 @@ Create or modify this file:
 
 **File Location:**
 ```
-app/design/frontend/Crescentek/champagne/Magento_Theme/layout/default_head_blocks.xml
+app/design/frontend/Vendor/theme/Magento_Theme/layout/default_head_blocks.xml
 ```
 
 **File Content:**
@@ -179,15 +153,15 @@ php bin/magento setup:static-content:deploy -f en_US --area frontend
 ### Recommended Setup:
 
 1. **Create a new Helpin project** for staging
-   - Name it: "Champagne & Gifts - Staging"
+   - Name it: "Example store - Staging"
    - Get the staging key
 
-2. **On Staging** (`stagingcg.co.uk`):
+2. **On Staging** (`staging.example.com`):
    ```javascript
    script.setAttribute('data-key', 'YOUR_STAGING_KEY_HERE');
    ```
 
-3. **On Production** (`champagneandgifts.co.uk`):
+3. **On Production** (`www.example.com`):
    ```javascript
    script.setAttribute('data-key', 'YOUR_PRODUCTION_KEY_HERE'); // Your production key
    ```
@@ -356,20 +330,5 @@ For additional help, contact Helpin support with:
 
 ## Summary
 
-✅ **Solution Status**: Fully tested and validated  
-✅ **Safety**: No breaking changes to Magento  
-✅ **Performance**: No impact on site speed  
-✅ **Compatibility**: Works with Magento 2.x + RequireJS  
-✅ **Test Results**: 100% pass rate (6/6 tests)  
-
-**Next Steps:**
-1. Deploy to staging with staging key
-2. Test thoroughly on staging
-3. Deploy to production with production key
-4. Monitor Helpin dashboard for data
-
----
-
-**Document Version**: 1.0  
-**Last Updated**: 2026-01-30  
-**Test Report**: Available in `playwright-report/index.html`
+Historical record dated 2026-01-30. The pass counts and performance claims in
+the original report were not revalidated; see the note at the top of this page.

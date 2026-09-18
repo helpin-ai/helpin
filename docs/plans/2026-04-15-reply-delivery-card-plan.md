@@ -146,7 +146,7 @@ Behavior:
 
 `content` (for admin / legacy consumers / fallback rendering):
 
-> `You'll get replies here and in your email: azhar@contentstudio.io. Usually replies in a few minutes.`
+> `You'll get replies here and in your email: visitor@example.com. Usually replies in a few minutes.`
 
 Variants:
 - Identified online: `You'll get replies here and in your email: {email}. {replyTimeText}.`
@@ -159,7 +159,7 @@ Variants:
 ```json
 {
   "delivery_card": {
-    "email": "azhar@contentstudio.io",
+    "email": "visitor@example.com",
     "reply_time_text": "Usually replies in a few minutes",
     "reply_time_preset": "few_minutes",
     "reply_time_minutes": null,

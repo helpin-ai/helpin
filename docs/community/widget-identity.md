@@ -1,5 +1,9 @@
 # Website origins and visitor identity
 
+This guide is for operators and website developers. It explains how website
+origins are allowlisted and how visitor identity is verified; apply it before
+embedding the widget on a site.
+
 In Settings → Chat widget, first add your website origin, for example
 `https://www.example.com`. Use one origin per line, with no path, trailing slash,
 or wildcard. Add preview and local development origins explicitly, including
@@ -13,11 +17,12 @@ claims** (`report_only`). Matching another visitor's email does not authorize
 access to that visitor's conversations. An origin allowlist limits browser
 embedding; it is not authentication for non-browser clients.
 
-EE keeps `enforced` for new installations. Both lazy creation and workspace
-seeding write the edition mode explicitly. Existing installations retain their
-saved mode. The historical SQL default remains enforced; no upgrade migration
-downgrades existing policies, and operators must use the application setup path
-instead of inserting installations directly into the database.
+Enterprise keeps `enforced` for new installations. Both lazy creation and
+workspace seeding write the edition mode explicitly. Existing installations
+retain their saved mode. The column default in the current schema is
+`report_only`; no upgrade migration changes an existing installation's saved
+mode. Use the application setup path instead of inserting installations directly
+into the database.
 
 ## Signed identities
 

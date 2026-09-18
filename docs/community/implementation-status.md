@@ -1,11 +1,10 @@
 # Community 0.1 implementation and verification
 
 Historical implementation evidence recorded September 16, 2026. At that time,
-Community work was reported as consolidated into Helpin `feat/local-cli-admission`
-and Runtime `feat/host-neutral-local-cli`, with both branches pushed. Branch
-locations, test totals, scan findings and migration heads below are a dated
-record, not current checkout or release verification. This document is
-maintainer-only and is excluded from operator bundles. Publication still requires
+Community work was consolidated on feature branches in both repositories. Test
+totals, scan findings and migration heads below are a dated record, not current
+checkout or release verification. This document is historical and is excluded
+from operator bundles. Publication still requires
 [the publication checklist](../../community/PUBLICATION.md). Current CI and
 release commands are in [the development guide](development.md).
 
@@ -13,11 +12,11 @@ release commands are in [the development guide](development.md).
 
 - Installation origins enforced on visitor HTTP and both WebSocket paths;
   origin-first settings; new Community report-only identity defaults; saved and
-  EE defaults preserved. Unsigned identification cannot inherit verified history.
+  Enterprise defaults preserved. Unsigned identification cannot inherit verified history.
 - Community support/docs/agents module defaults, navigation and API admission;
   staff-email feature gates removed from HEAD.
 - Local signup without email verification, optional SMTP application mail,
-  EE verification email policy (not a server-enforced login restriction), operator URLs and no default telemetry endpoints.
+  Enterprise verification email policy (not a server-enforced login restriction), operator URLs and no default telemetry endpoints.
 - Support-only SDK mode, local HTTP/WS addressing, signed private attachments,
   public help-center/snippet addressing, safe anonymous-to-known identification
   and isolation when switching between known users.
@@ -58,7 +57,7 @@ release commands are in [the development guide](development.md).
 | --- | --- |
 | Helpin full backend suite and Community source-exclusion check | Passed |
 | Runtime full Go suite after dependency updates | Passed |
-| EE configuration/mail/edition/API/worker checks | Passed |
+| Enterprise configuration/mail/edition/API/worker checks | Passed |
 | Community frontend source-exclusion build | Passed |
 | Prior full frontend regression baseline | 458 files; 2,748 passed, 3 existing skips |
 | Help-center regression suite | 30 files; 116 passed |
@@ -99,11 +98,11 @@ Recorded schema state: Helpin `202609160001`, Temporal `1.19`, visibility `1.14`
 Runtime has no migration ledger head; record its image version/digest instead.
 `setup.sh status` reports these diagnostics without environment values.
 
-## Remaining release gates
+## Remaining release gates (open on September 16, 2026, historical)
 
 These are not completed or claimed by local tests:
 
-1. Licenses are now present; the owner must finish the public EE-source and
+1. Licenses are now present; the owner must finish the public Enterprise-source and
    attribution decisions in the publication checklist.
 2. Owner resolves publication hygiene: private docs, personal addresses in
    historical `featureFlags.ts`, and redacted history-scan matches. Scans found
@@ -120,3 +119,31 @@ These are not completed or claimed by local tests:
    publish reviewed artifacts only after the preceding gates pass.
 
 The implementation is a locally tested candidate, not a published release.
+
+## Historical: local validation on September 16, 2026
+
+Verified locally on Linux amd64:
+
+- CI selection/required-status/cache policy: 5 tests passed.
+- Runner, archive, image identity and promotion contracts: 14 tests passed;
+  publication calls are mocked. Installer/readiness: 4 tests passed.
+- Community backend build/tests with the `ee/` directories absent, and full Enterprise backend tests: passed.
+- PostgreSQL 16 migration regressions and PostgreSQL 17 schema/privacy checks: passed.
+- Community frontend build/artifact check: passed; 2,796 tests passed, 3 existing skips.
+- Enterprise frontend build: passed; 2,829 tests passed, 1 existing skip.
+- Full isolated browser/AI/mail/restore acceptance: passed with the existing local
+  Community images. Restored credentials and private attachment bytes/policy passed.
+- Real SIGTERM cancellation with mocked Docker, failure cleanup and ownership
+  checks passed; no acceptance containers/volumes remained after live validation.
+- Compose-to-Bake definitions, workflow lint, shell checks and bundle links passed.
+
+Acceptance-only timings with existing images were approximately 58 seconds for
+smoke and 239 seconds for the final full run. These are local observations, not
+an end-to-end CI benchmark: builds, registry/cache transfer and runner scheduling
+are excluded. The PR path now omits full browser/mail/restore phases, host workspace
+installation for those phases, and duplicate Community frontend/API builds.
+
+Native arm64, fresh candidate image builds/scans, GitHub cache behavior and real
+registry/release promotion still run through their CI/release gates. They are not
+claimed by these local checks. No release, tag, repository visibility or branch
+protection setting was changed during this cleanup.
