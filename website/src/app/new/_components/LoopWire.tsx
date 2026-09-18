@@ -66,15 +66,21 @@ function wirePath(w: number, vw: number): string {
   const ox = Math.max(0, (vw - w) / 2);
   const cw = (w - GAP * 3) / 4;
   const y = (i: number) => LEVEL_Y[levelOf(i)];
-  let d = `M ${-ox} ${y(0)} L ${ox} ${y(0)}`;
+  const r = 12; // corner radius of each step
+  let d = `M ${-ox} ${y(0)}`;
   for (let i = 0; i < 4; i += 1) {
-    const colL = ox + i * (cw + GAP);
-    const bendStart = colL + cw * 0.62;
     const next = i + 1;
     if (next < 4) {
-      const bendEnd = ox + next * (cw + GAP) - 6;
-      const mid = (bendStart + bendEnd) / 2;
-      d += ` L ${bendStart} ${y(i)} C ${mid} ${y(i)} ${mid} ${y(next)} ${bendEnd} ${y(next)}`;
+      // Step down or up just before the next stage: two small rounded corners and a short vertical.
+      const xStep = ox + next * (cw + GAP) - 28;
+      const y1 = y(i), y2 = y(next);
+      const down = y2 > y1;
+      const s1 = down ? 1 : 0; // sweep flags for a right-turning then left-turning corner
+      const s2 = down ? 0 : 1;
+      d += ` L ${xStep - r} ${y1}`;
+      d += ` A ${r} ${r} 0 0 ${s1} ${xStep} ${y1 + (down ? r : -r)}`;
+      d += ` L ${xStep} ${y2 - (down ? r : -r)}`;
+      d += ` A ${r} ${r} 0 0 ${s2} ${xStep + r} ${y2}`;
     } else {
       d += ` L ${vw + ox} ${y(i)}`;
     }
