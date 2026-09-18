@@ -21,7 +21,9 @@ import { AISuggestions } from '@/components/pm/my-work/AISuggestions';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { pmTaskService } from '@/lib/services/pmTaskService';
-import { PRIORITY_CONFIG, StateTypeIcon, PriorityIcon } from '@/lib/pmConstants';
+import { PRIORITY_CONFIG, PriorityIcon } from '@/lib/pmConstants';
+import { StateTypeIcon } from '@/lib/pmIcons';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Task, StateType } from '@/lib/pmTypes';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunEventDetail, type AgentRunEventDetail } from '@/lib/agentRunRealtime';
@@ -331,13 +333,9 @@ export function MyWorkPage() {
                 />
               </QuietMetricGrid>
 
-              <p className="px-1 text-[11.5px] leading-5 text-quiet-muted">
-                Focus order is based on due dates, blockers, priority, active state, and recent updates.
-              </p>
-
               <div className="border-t border-quiet-divider-strong">
                 {focus.length > 0 ? (
-                  <TaskSection title="Focus now" count={focus.length} tasks={focus} onClickTask={openTask} findTeamName={findTeamName} showTeam={showTeam} />
+                  <TaskSection title="Focus now" description="Focus order is based on due dates, blockers, priority, active state, and recent updates." count={focus.length} tasks={focus} onClickTask={openTask} findTeamName={findTeamName} showTeam={showTeam} />
                 ) : null}
                 {blockedTasks.length > 0 ? (
                   <TaskSection title="Blocked" count={blockedTasks.length} tasks={blockedTasks} onClickTask={openTask} findTeamName={findTeamName} showTeam={showTeam} />
@@ -435,8 +433,9 @@ function MyWorkLoadingState() {
 
 const COLLAPSE_THRESHOLD = 5;
 
-function TaskSection({ title, count, tasks, onClickTask, findTeamName, showTeam }: {
+function TaskSection({ title, description, count, tasks, onClickTask, findTeamName, showTeam }: {
   title: string;
+  description?: string;
   count: number;
   tasks: Task[];
   onClickTask: (s: Task) => void;
@@ -450,8 +449,18 @@ function TaskSection({ title, count, tasks, onClickTask, findTeamName, showTeam 
 
   return (
     <QuietSection
-      title={title}
-      count={count}
+      title={description ? (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button type="button" className="cursor-help rounded-sm text-left focus-visible:outline-2 focus-visible:outline-ring">
+                {title} ({count})
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{description}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : `${title} (${count})`}
       className="py-4"
       bodyClassName="-mx-4 -mb-4 sm:-mx-6 lg:-mx-8"
       action={collapsible ? (
@@ -518,7 +527,7 @@ function TaskRow({ task, onClick, teamName }: {
   const facts = [
     task.state_name && task.state_type ? (
       <span className="inline-flex items-center gap-1.5">
-        <StateTypeIcon stateType={task.state_type as StateType} className="h-3.5 w-3.5" />
+        <StateTypeIcon stateType={task.state_type as StateType} className="h-3.5 w-3.5" style={task.state_color ? { color: task.state_color } : undefined} />
         {task.state_name}
       </span>
     ) : null,
