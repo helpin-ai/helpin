@@ -1,4 +1,15 @@
-# agent-runtime audit
+# Agent Runtime integration audit
+
+This historical audit records the September 10, 2026 investigation of Agent Runtime and Helpin support AI. It is useful for understanding the original integration questions, but its external checkout paths, line numbers, provider inventory, and deployment conclusions are not current setup instructions.
+
+## Source review — 2026-09-18
+
+- The central execution finding still holds in Helpin: [agent launch](../../server/internal/service/agent.go) rejects a disabled or missing Runtime execution path, and [support chat](../../server/internal/service/support_chat.go) uses Runtime chat runs. Disabling AI does not prevent operating the human support inbox.
+- The deployment omission described below is superseded. [Community Compose](../../community/compose.yaml) defines both `agent-runtime` and `agent-runtime-worker`, host callbacks, PostgreSQL storage, model/MCP credential encryption, and NATS event delivery. Follow the [Community development guide](../community/development.md) or [local Runtime guide](../agent-runtime-local-setup.md), rather than adding the historical single SQLite service. Public availability of the pinned Runtime source and images remains a separate release requirement.
+- The blanket “BYOK not supported” conclusion is also superseded on the Helpin host side. [Model credential handling](../../server/internal/service/agent_model_credentials.go) resolves authorized connection credentials and supports run credential updates; [AI profile selection](../../server/internal/service/agent_ai_profiles.go) resolves launch selections. These source paths do not prove that every provider or arbitrary compatible endpoint works.
+- External Runtime and SDK repositories were not re-audited here. Their exact provider/default-model lists, environment requirements, file counts, and absence claims remain dated observations. The original report has no recorded external commit IDs, so its absolute paths and line numbers are evidence from that investigation, not reproducible current references. No deployment, model call, or external compatibility test was performed.
+
+## Original audit — September 10, 2026
 
 Scope: `/root/agent-runtime` (engine), `/root/agent-runtime-go` and `/root/agent-runtime-python` (SDKs), and how `/root/helpin` consumes them.
 
@@ -139,7 +150,7 @@ Client: `/root/helpin/server/internal/service/agent_runtime_client.go:55-112`, w
 
 Chat-mode config: `/root/helpin/server/internal/service/agent.go:607-660` (`defaultSupportChatIdleTimeoutSeconds = 24*60*60`).
 
-`/root/helpin/docs/AGENT_RUNTIME_LOCAL.md:19-21` confirms the absence of any fallback:
+`/root/helpin/docs/agent-runtime-local-setup.md:19-21` confirms the absence of any fallback:
 
 > `AGENT_RUNTIME_LAUNCH_ENABLED=false` disables new agent execution. It does not restore an in-process executor.
 
@@ -201,7 +212,7 @@ Three providers: Anthropic, OpenAI-compatible, OpenRouter. No Gemini/Bedrock/Ver
 
 Store resolution: `openStore` at `/root/agent-runtime/cmd/agent-runtime/main.go:279-306` — memory store, or GORM SQL with `MigratePostgres` for Postgres and `AutoMigrate` otherwise. Migrations at `/root/agent-runtime/internal/store/migrations.go`; JSON/null-byte sanitization at `/root/agent-runtime/internal/store/sanitize.go`.
 
-Helpin's own local runbook uses SQLite — `/root/helpin/docs/AGENT_RUNTIME_LOCAL.md:49-50`:
+Helpin's own local runbook uses SQLite — `/root/helpin/docs/agent-runtime-local-setup.md:49-50`:
 
 ```bash
 AGENT_RUNTIME_STORE_DRIVER=sqlite

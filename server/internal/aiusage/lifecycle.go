@@ -52,6 +52,9 @@ type MeteringContext struct {
 // AIUsageOperationMediaEnrichment identifies the separately governed media pass.
 const AIUsageOperationMediaEnrichment = "media_enrichment"
 
+// AIUsageOperationSupportGreeting identifies a bounded first-greeting reply.
+const AIUsageOperationSupportGreeting = "initial_greeting"
+
 // PreflightRequest contains one execution's metering request.
 type PreflightRequest struct{ Metering MeteringRequest }
 

@@ -1,5 +1,16 @@
 # Guarded CRM Enrichment Tools Plan
 
+> Source review, 2026-09-17
+
+The `server/internal/worker` tool/executor package referenced below is absent
+from this checkout. Current Helpin provider dispatch lives in
+[agent_runtime_mcp.go](../../server/internal/service/agent_runtime_mcp.go), with
+product operations implemented by internal command services. Runtime-local tool
+execution belongs to the separate Agent Runtime repository. See the
+[current tool guide](../internal-tools-framework.md); do not recreate the old
+worker registry to follow this historical plan.
+Guarded enrichment now lives in [crm_enrichment.go](../../server/internal/service/crm_enrichment.go), with [guard tests](../../server/internal/service/crm_enrichment_guarded_test.go). The checked worker-file tasks are historical completion records.
+
 **Date:** 2026-04-29
 **Status:** Implemented
 **Scope:** Add CRM contact/company mutation tools for one-shot Command Agent runs, with server-side guards that prevent agents from rewriting user-entered identity data.

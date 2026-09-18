@@ -11,7 +11,8 @@ metadata:
     - native_sdk
 ---
 
-For the task plan preview, use `publish_task_plan`:
+For the task plan preview, use `publish_task_plan`. The paths below are
+illustrative placeholders; replace them with files found in the selected repository:
 
 ```json
 {
@@ -31,7 +32,7 @@ For the task plan preview, use `publish_task_plan`:
           "approach": "...",
           "files_to_modify": [
             {
-              "path": "server/internal/worker/tools.go",
+              "path": "path/to/tracking/helper.go",
               "action": "modify",
               "description": "..."
             }
@@ -51,7 +52,7 @@ For the task plan preview, use `publish_task_plan`:
           "approach": "...",
           "files_to_modify": [
             {
-              "path": "server/internal/capture/errors.go",
+              "path": "path/to/capture/errors.go",
               "action": "modify",
               "description": "..."
             }

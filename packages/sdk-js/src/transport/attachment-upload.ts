@@ -1,11 +1,15 @@
+import type { WidgetTelemetryEvent } from './widget-telemetry';
 import { widgetURL } from '../core/urls';
 export interface AttachmentUploadOptions {
   signal?: AbortSignal;
+  onTelemetry?: (event: WidgetTelemetryEvent) => void;
   onProgress?: (percent: number) => void;
 }
 
 // Covers initialization, the direct storage upload, and server confirmation.
 const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+// A disconnected storage request must not leave the widget waiting at 0%.
+const UPLOAD_IDLE_TIMEOUT_MS = 30 * 1000;
 const timeoutMessage = 'The file upload timed out. Check your connection and retry.';
 const aborted = () => new DOMException('File upload cancelled.', 'AbortError');
 
@@ -24,17 +28,27 @@ async function responseError(response: Response, fallback: string): Promise<Erro
   return new Error(`${fallback} (HTTP ${response.status}). Please retry.`);
 }
 
-function uploadToStorage(url: string, file: File, publicRead: boolean, signal: AbortSignal, onProgress?: (percent: number) => void): Promise<void> {
+function uploadToStorage(url: string, file: File, signal: AbortSignal, onProgress?: (percent: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     checkAborted(signal);
     const xhr = new XMLHttpRequest();
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastLoaded = 0;
     const cleanup = () => {
+      clearTimeout(idleTimer);
       signal.removeEventListener('abort', cancel);
       xhr.onload = xhr.onerror = xhr.onabort = xhr.ontimeout = null;
       xhr.upload.onprogress = null;
     };
     const fail = (error: Error) => { cleanup(); reject(error); };
     const cancel = () => { xhr.abort(); fail(aborted()); };
+    const armIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        fail(new Error('The upload stopped making progress. Check your connection and retry.'));
+        xhr.abort();
+      }, UPLOAD_IDLE_TIMEOUT_MS);
+    };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) { cleanup(); resolve(); }
       else fail(new Error(`Unable to upload the file to storage (HTTP ${xhr.status}). Please retry.`));
@@ -43,6 +57,10 @@ function uploadToStorage(url: string, file: File, publicRead: boolean, signal: A
     xhr.onabort = () => fail(aborted());
     xhr.ontimeout = () => fail(new Error(timeoutMessage));
     xhr.upload.onprogress = event => {
+      if (event.loaded > lastLoaded) {
+        lastLoaded = event.loaded;
+        armIdleTimer();
+      }
       if (event.lengthComputable && event.total > 0) {
         // 100% means confirmed and ready to send, not just transferred to storage.
         onProgress?.(Math.min(99, Math.max(0, Math.round(event.loaded / event.total * 100))));
@@ -53,7 +71,7 @@ function uploadToStorage(url: string, file: File, publicRead: boolean, signal: A
       xhr.open('PUT', url, true);
       xhr.timeout = UPLOAD_TIMEOUT_MS;
       xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-      if (publicRead) xhr.setRequestHeader('x-amz-acl', 'public-read');
+      armIdleTimer();
       xhr.send(file);
     } catch (error) {
       fail(error instanceof Error ? error : new Error('Unable to start the file upload. Please retry.'));
@@ -67,8 +85,12 @@ export async function uploadAttachment(
   file: File,
   options: AttachmentUploadOptions = {},
 ): Promise<{ attachmentId: string; url: string }> {
-  if (options.signal?.aborted) throw aborted();
-  if (!sessionToken) throw new Error('Chat is not connected yet. Please wait and retry the upload.');
+  const totalStart = Date.now();
+  const report = (stage: WidgetTelemetryEvent['stage'], outcome: WidgetTelemetryEvent['outcome'], start: number) => {
+    try { options.onTelemetry?.({ stage, outcome, duration_ms: Date.now() - start }); } catch { /* Observability must not affect uploads. */ }
+  };
+  if (options.signal?.aborted) { report('upload', 'cancelled', totalStart); throw aborted(); }
+  if (!sessionToken) { report('upload', 'not_connected', totalStart); throw new Error('Chat is not connected yet. Please wait and retry the upload.'); }
   const controller = new AbortController();
   const { signal } = controller;
   const cancel = () => controller.abort();
@@ -76,6 +98,8 @@ export async function uploadAttachment(
   let timedOut = false;
   const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, UPLOAD_TIMEOUT_MS);
   let stage = 'start the file upload';
+  let stageLabel: WidgetTelemetryEvent['stage'] = 'initialization';
+  let stageStart = Date.now();
   try {
     options.onProgress?.(0);
     checkAborted(signal);
@@ -92,10 +116,15 @@ export async function uploadAttachment(
     if (typeof attachmentId !== 'string' || !attachmentId || typeof data.upload_url !== 'string' || !data.upload_url) {
       throw new Error('The server did not return valid upload details. Please retry.');
     }
+    report(stageLabel, 'success', stageStart);
+    stageLabel = 'storage'; stageStart = Date.now();
     stage = 'upload the file to storage';
     const publicUrl = typeof data.public_url === 'string' ? data.public_url : '';
-    await uploadToStorage(data.upload_url, file, !!publicUrl, signal, options.onProgress);
+    // A returned download URL does not make an attachment public. Match the private PUT signature.
+    await uploadToStorage(data.upload_url, file, signal, options.onProgress);
     checkAborted(signal);
+    report(stageLabel, 'success', stageStart);
+    stageLabel = 'confirmation'; stageStart = Date.now();
     stage = 'confirm the file upload';
     const confirm = await fetch(widgetURL(host, `/widget/support/attachments/${attachmentId}/confirm`), {
       method: 'PATCH', headers, signal,
@@ -103,9 +132,14 @@ export async function uploadAttachment(
     checkAborted(signal);
     if (!confirm.ok) throw await responseError(confirm, 'Unable to confirm the file upload');
     checkAborted(signal);
+    report(stageLabel, 'success', stageStart);
+    report('upload', 'success', totalStart);
     options.onProgress?.(100);
     return { attachmentId, url: publicUrl };
   } catch (error) {
+    const outcome = timedOut || (error instanceof Error && /timed out|stopped making progress/.test(error.message)) ? 'timeout' : signal.aborted ? 'cancelled' : 'error';
+    report(stageLabel, outcome, stageStart);
+    report('upload', outcome, totalStart);
     if (timedOut) throw new Error(timeoutMessage);
     if (signal.aborted) throw aborted();
     if (error instanceof TypeError) throw new Error(`Unable to ${stage}. Check your connection and retry.`);

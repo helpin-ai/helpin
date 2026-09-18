@@ -1,15 +1,22 @@
 # Public demo workspace
 
-A read-only workspace in prod that shows the whole product to visitors without
-an account. Helpin supports Helpin here: it is seeded from the public `helpin`
-and `agent-runtime` repos and the public docs, with fictional teams and a
-recurring cast of bot customers. History is never reset; it is the input for
-support gap detection.
+This guide is for operators preparing a public demo workspace. The repository
+implements passwordless demo login and a read-only guard for the configured
+viewer account. It does not provision, seed, or verify a production demo.
 
-Only one product change backs this: `POST /api/auth/demo` mints a session for a
-shared viewer account, and every non-read request from that account is rejected
-(see `DEMO_*` in `docs/community/configuration.md`). Everything else is set up
-once through the product, as a customer would.
+The intended demo uses public Helpin and Agent Runtime material, fictional teams,
+and recurring bot customers. Retaining that history for support-gap detection
+is an operating policy, not a reset/retention mechanism implemented here.
+
+`POST /api/auth/demo` issues a session for an existing account selected by
+`DEMO_VIEWER_EMAIL`. On authenticated routes using the demo middleware, requests
+other than GET, HEAD, and OPTIONS return `403` with `demo_read_only`. Public
+login and widget endpoints are separate; this guard does not make the public
+widget read-only. See [demo configuration](../docs/community/configuration.md).
+
+The login handler rejects a platform-admin or 2FA-enabled viewer account. It
+does not validate that the account belongs to exactly one workspace or has only
+the viewer role. Verify those setup requirements before enabling public access.
 
 ## One-time setup checklist
 
@@ -31,7 +38,7 @@ once through the product, as a customer would.
 9. Set `DEMO_VIEWER_EMAIL` (and optionally `DEMO_REQUIRE_EMAIL`,
    `DEMO_LEAD_WEBHOOK_URL`) on the prod API, redeploy, open `/demo`.
 
-## Rules that keep it honest
+## Intended demo operating rules
 
 - The demo widget lives on the demo site only. The marketing site widget points
   at the real workspace.
@@ -41,7 +48,7 @@ once through the product, as a customer would.
 - Real visitors who chat in the demo widget see that the conversation is
   public. Those conversations are tagged by source and moderated, not wiped.
 
-## Not yet built
+## Separate provisioning and follow-up work
 
 - Visitor bots (agent-browser through the widget, scenario library, daily cap)
   and reply bots (API service accounts), as CronJobs in `k8s/prod`.
@@ -50,3 +57,16 @@ once through the product, as a customer would.
 - Backups for the demo workspace.
 - A "public demo" banner in the app for demo sessions.
 - Recorded loop for the marketing site.
+
+## Implementation references
+
+- [Demo login service](../server/internal/service/auth_demo.go): account checks,
+  token issuance, and optional asynchronous lead webhook.
+- [Read-only middleware](../server/internal/middleware/demo.go) and
+  [route registration](../server/internal/router/router.go): protected methods
+  and where the guard applies.
+- [Demo page](../frontend/src/pages/Demo.tsx): disabled state, optional email
+  collection, and navigation after login.
+
+Source review does not establish whether these settings or the intended demo
+content are deployed. Check the actual installation before sharing its URL.

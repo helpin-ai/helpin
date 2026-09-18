@@ -1,4 +1,18 @@
-# Magento 2 + Helpin Integration Solution
+# Historical Magento 2 integration workaround
+
+This records a 2026-01-30 workaround for a former UMD bundle. It is not the
+current installation guide or proof of compatibility with a deployed Magento
+store. The current [Vite configuration](../vite.config.ts) emits ES-format loader
+and SDK assets, so the UMD/AMD premise below no longer describes this checkout.
+Start with the [SDK installation guide](../README.md).
+
+Do not copy the global `define`/`exports`/`module` suppression below into a new
+integration based on this historical result. It changes shared globals while an
+asynchronous script loads. The retained [browser fixture](../test/e2e/magento-requirejs-test.html)
+and [test source](../test/e2e/magento-requirejs.spec.ts) simulate RequireJS; they do
+not establish current production-store behavior. The reported pass count and
+performance assurances below were not revalidated by this documentation audit.
+
 
 ## Customer: Champagne & Gifts (champagneandgifts.co.uk)
 
@@ -175,7 +189,7 @@ php bin/magento setup:static-content:deploy -f en_US --area frontend
 
 3. **On Production** (`champagneandgifts.co.uk`):
    ```javascript
-   script.setAttribute('data-key', 'UMQ0nlVTbu'); // Your production key
+   script.setAttribute('data-key', 'YOUR_PRODUCTION_KEY_HERE'); // Your production key
    ```
 
 **Why?** This prevents staging traffic from polluting your production analytics data.

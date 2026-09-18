@@ -3,12 +3,15 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/helpin-ai/helpin/server/internal/deployment"
-	"github.com/helpin-ai/helpin/server/internal/model"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/decision"
+	"github.com/helpin-ai/helpin/server/internal/deployment"
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 const (
@@ -73,14 +76,36 @@ type Config struct {
 	AnthropicBaseURL string
 	OpenAIAPIKey     string
 	// FalAPIKey is used by the server-side image editing tool.
-	FalAPIKey             string
-	OpenAIBaseURL         string
-	OpenAIEmbeddingModel  string
-	SupportRerankerURL    string
-	SupportRerankerModel  string
-	SupportRerankerAPIKey string
-	OpenRouterAPIKey      string
-	OpenRouterBaseURL     string
+	FalAPIKey                   string
+	OpenAIBaseURL               string
+	OpenAIEmbeddingModel        string
+	JevAPIKey                   string
+	JevHandoffMode              string
+	JevFollowUpMode             string
+	JevHandoffThreshold         float64
+	JevFollowUpThreshold        float64
+	JevRoutingThreshold         float64
+	JevTagThreshold             float64
+	JevRoutingMode              string
+	JevTagsMode                 string
+	JevTimeoutMS                int
+	JevWorkspaceIDs             string
+	JevDailyLimit               int
+	JevProductPolicies          map[string]decision.Policy
+	JevPMMode                   string
+	JevPMThreshold              float64
+	JevPMDailyLimit             int
+	SupportDecisionMode         string
+	SupportDecisionURL          string
+	SupportDecisionToken        string
+	SupportDecisionTimeoutMS    int
+	SupportDecisionWorkspaceIDs string
+	SupportDecisionPolicies     string
+	SupportRerankerURL          string
+	SupportRerankerModel        string
+	SupportRerankerAPIKey       string
+	OpenRouterAPIKey            string
+	OpenRouterBaseURL           string
 	// Help center AI answer routing. Empty values resolve to a flash-tier
 	// default on the first chat provider that has an API key configured.
 	HelpcenterAnswerProvider string
@@ -403,6 +428,28 @@ func Load() (*Config, error) {
 		FalAPIKey:                              strings.TrimSpace(os.Getenv("FAL_KEY")),
 		OpenAIBaseURL:                          strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
 		OpenAIEmbeddingModel:                   strings.TrimSpace(os.Getenv("OPENAI_EMBEDDING_MODEL")),
+		JevRoutingThreshold:                    parseJevProbability(os.Getenv("JEV_ROUTING_THRESHOLD"), 0.9),
+		JevTagThreshold:                        parseJevProbability(os.Getenv("JEV_TAG_THRESHOLD"), 0.95),
+		JevAPIKey:                              os.Getenv("JEV_API_KEY"),
+		JevProductPolicies:                     jevProductPolicies(),
+		JevPMMode:                              strings.TrimSpace(os.Getenv("JEV_PM_MODE")),
+		JevPMThreshold:                         parseJevProbability(os.Getenv("JEV_PM_THRESHOLD"), .95),
+		JevPMDailyLimit:                        parsePositiveIntEnv(os.Getenv("JEV_PM_DAILY_LIMIT"), 1000),
+		JevHandoffMode:                         strings.TrimSpace(os.Getenv("JEV_HANDOFF_MODE")),
+		JevFollowUpMode:                        strings.TrimSpace(os.Getenv("JEV_FOLLOW_UP_MODE")),
+		JevHandoffThreshold:                    parseJevProbability(os.Getenv("JEV_HANDOFF_THRESHOLD"), .95),
+		JevFollowUpThreshold:                   parseJevProbability(os.Getenv("JEV_FOLLOW_UP_THRESHOLD"), .95),
+		JevRoutingMode:                         strings.TrimSpace(os.Getenv("JEV_ROUTING_MODE")),
+		JevTagsMode:                            strings.TrimSpace(os.Getenv("JEV_TAGS_MODE")),
+		JevTimeoutMS:                           parsePositiveIntEnv(os.Getenv("JEV_TIMEOUT_MS"), 1000),
+		JevWorkspaceIDs:                        os.Getenv("JEV_WORKSPACE_IDS"),
+		JevDailyLimit:                          parsePositiveIntEnv(os.Getenv("JEV_DAILY_LIMIT"), 1000),
+		SupportDecisionMode:                    strings.TrimSpace(os.Getenv("SUPPORT_DECISION_MODE")),
+		SupportDecisionURL:                     strings.TrimSpace(os.Getenv("SUPPORT_DECISION_URL")),
+		SupportDecisionToken:                   os.Getenv("SUPPORT_DECISION_TOKEN"),
+		SupportDecisionTimeoutMS:               parsePositiveIntEnv(os.Getenv("SUPPORT_DECISION_TIMEOUT_MS"), 200),
+		SupportDecisionWorkspaceIDs:            os.Getenv("SUPPORT_DECISION_WORKSPACE_IDS"),
+		SupportDecisionPolicies:                os.Getenv("SUPPORT_DECISION_POLICIES"),
 		SupportRerankerURL:                     strings.TrimRight(strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_URL")), "/"),
 		SupportRerankerModel:                   strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_MODEL")),
 		SupportRerankerAPIKey:                  strings.TrimSpace(os.Getenv("SUPPORT_RERANKER_API_KEY")),
@@ -689,4 +736,16 @@ func rateLimitEnv(name string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be a non-negative integer (0 disables the limit)", name)
 	}
 	return value, nil
+}
+
+// parseJevProbability rejects invalid configured thresholds at client construction.
+func parseJevProbability(raw string, fallback float64) float64 {
+	if strings.TrimSpace(raw) == "" {
+		return fallback
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return math.NaN()
+	}
+	return value
 }

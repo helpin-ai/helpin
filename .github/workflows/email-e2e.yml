@@ -1,7 +1,7 @@
 name: Email E2E (MailSlurp)
 
 # Real-provider email tests via MailSlurp + Postmark staging. See
-# `docs/test-suite-ci-email-plan.md` Phase 6 / Scenarios A–G.
+# `docs/plans/test-suite-ci-email-plan.md` Phase 6 / Scenarios A–G.
 #
 # Runs:
 # - Daily schedule (03:30 UTC, after Nightly).
@@ -65,7 +65,7 @@ jobs:
   # Scenario suite. Scenario names use `TestMailSlurpScenario...` so failures
   # report the specific behavior that broke.
   #
-  # Scenarios map to docs/test-suite-ci-email-plan.md Phase 6 as they land.
+  # Scenarios map to docs/plans/test-suite-ci-email-plan.md Phase 6 as they land.
   # Test files use the `email_e2e` build tag and are kept out of the
   # default unit-test path because they send real provider email.
   scenarios:

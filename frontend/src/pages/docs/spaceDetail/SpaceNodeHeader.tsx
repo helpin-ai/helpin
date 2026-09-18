@@ -81,7 +81,7 @@ export function SpaceNodeHeader({
   // ── Ancestors (rendered inline, left of the title) ─────────────────
   // The current node is NOT in this list — it's the big title to the
   // right of the last arrow. That keeps the "you are here" signal
-  // compact and matches the GitHub/Notion/Linear pattern.
+  // compact and keeps the page hierarchy visible.
   const ancestors: AncestorLink[] = (() => {
     if (view.kind === 'space_root' || view.kind === 'loading') return []
     const items: AncestorLink[] = [

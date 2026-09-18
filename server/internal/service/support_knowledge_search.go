@@ -14,7 +14,6 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/sync/errgroup"
-	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/aipolicy"
 	"github.com/helpin-ai/helpin/server/internal/llm"
@@ -232,48 +231,6 @@ func (s *SupportAIService) loadKnowledgeChunks(ctx context.Context, workspaceID,
 	return reranked, nil
 }
 
-func buildKnowledgeContext(results []KnowledgeSearchResult) string {
-	if len(results) == 0 {
-		return ""
-	}
-
-	// JSON escapes source-supplied delimiters, newlines, and role-like markup.
-	// Source text stays intact for citation checking; no destructive keyword filter.
-	type chunk struct {
-		EvidenceID  string `json:"EVIDENCE_ID"`
-		Visibility  string `json:"VISIBILITY"`
-		DocID       string `json:"DOC_ID,omitempty"`
-		SourceType  string `json:"SOURCE_TYPE"`
-		Authority   string `json:"AUTHORITY"`
-		Title       string `json:"TITLE"`
-		HeadingPath string `json:"HEADING_PATH"`
-		URL         string `json:"URL,omitempty"`
-		ChunkIndex  int    `json:"CHUNK_INDEX"`
-		Content     string `json:"CONTENT"`
-	}
-	chunks := make([]chunk, 0, min(8, len(results)))
-	for idx, result := range results {
-		if idx >= 8 {
-			break
-		}
-		row := chunk{EvidenceID: result.ID, Visibility: "PUBLIC", DocID: result.ReferenceID,
-			SourceType: result.SourceType, Authority: knowledgeResultAuthority(result), Title: result.Title,
-			HeadingPath: result.HeadingPath, URL: result.URL, ChunkIndex: result.ChunkIndex, Content: result.Content}
-		if result.IsInternal {
-			row.Visibility = "INTERNAL"
-			row.DocID = ""
-			row.URL = ""
-			row.Title = "Internal guidance"
-			row.HeadingPath = "Internal section"
-		}
-		chunks = append(chunks, row)
-	}
-	return string(mustJSON(struct {
-		Trust  string  `json:"content_trust"`
-		Chunks []chunk `json:"chunks"`
-	}{Trust: "untrusted_reference", Chunks: chunks}))
-}
-
 func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult) []AISource {
 	if len(sourceDocIDs) == 0 || len(searchResults) == 0 {
 		return nil
@@ -312,29 +269,6 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 		})
 	}
 	return sources
-}
-
-func publicSourceDocIDs(sourceDocIDs []string, searchResults []KnowledgeSearchResult) []string {
-	publicIDs := make(map[string]struct{}, len(searchResults))
-	for _, result := range searchResults {
-		if !result.IsInternal {
-			publicIDs[result.ReferenceID] = struct{}{}
-		}
-	}
-
-	filtered := make([]string, 0, len(sourceDocIDs))
-	seen := make(map[string]struct{}, len(sourceDocIDs))
-	for _, sourceDocID := range sourceDocIDs {
-		if _, ok := publicIDs[sourceDocID]; !ok {
-			continue
-		}
-		if _, ok := seen[sourceDocID]; ok {
-			continue
-		}
-		seen[sourceDocID] = struct{}{}
-		filtered = append(filtered, sourceDocID)
-	}
-	return filtered
 }
 
 func normalizeQueryKey(query string) string {
@@ -436,17 +370,6 @@ func (s *SupportAIService) checkTokenBudget(agent *model.Agent) bool {
 		return true // no budget configured = unlimited
 	}
 	return agent.TokensUsedThisMonth < *agent.MonthlyTokenBudget
-}
-
-// recordTokenUsage atomically increments the agent's token usage counter.
-func (s *SupportAIService) recordTokenUsage(ctx context.Context, agentID string, tokensUsed int) {
-	if err := s.db.WithContext(ctx).
-		Model(&model.Agent{}).
-		Where("id = ?", agentID).
-		Update("tokens_used_this_month", gorm.Expr("tokens_used_this_month + ?", tokensUsed)).
-		Error; err != nil {
-		slog.ErrorContext(ctx, "record token usage failed", "agent_id", agentID, "error", err)
-	}
 }
 
 // acquireLock acquires a Redis SETNX lock with TTL.
@@ -559,6 +482,7 @@ func stripConversationPII(content string, customerEmail, customerPhone *string) 
 // SupportKnowledgeSearchOutcome is what the search_knowledge runtime tool
 // receives: the resolved support agent plus the agent-scoped search results.
 type SupportKnowledgeSearchOutcome struct {
+	Queries []string
 	AgentID string
 	Results []KnowledgeSearchResult
 }
@@ -594,7 +518,7 @@ func (s *SupportAIService) SearchKnowledgeForConversation(ctx context.Context, w
 	}
 
 	s.recordToolRetrievalTrace(ctx, workspaceID, conversationID, effectiveQueries, results)
-	return &SupportKnowledgeSearchOutcome{AgentID: agentID, Results: results}, nil
+	return &SupportKnowledgeSearchOutcome{AgentID: agentID, Results: results, Queries: effectiveQueries}, nil
 }
 
 // Both production and previews prepend the exact visitor message and use the

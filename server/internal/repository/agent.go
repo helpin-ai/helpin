@@ -1440,6 +1440,7 @@ func (r *AgentTriggerExecutionRepository) CountAutomationRuleExecutions(ctx cont
 	var rows []countRow
 	if err := r.db.WithContext(ctx).
 		Model(&model.AgentTriggerExecution{}).
+		Where("binding_id <> ?", "semantic_condition").
 		Select("reference_id, COUNT(*) AS total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS failed", model.AgentTriggerExecutionStatusFailed).
 		Where("workspace_id = ? AND binding_kind = ? AND reference_type = ? AND reference_id IN ?", workspaceID, "automation_rule", "automation_rule", ruleIDs).
 		Group("reference_id").

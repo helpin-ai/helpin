@@ -25,6 +25,8 @@ declare global {
 }
 
 export type InstallWidgetMockOptions = {
+  dropMessageAcknowledgments?: boolean
+  deferSession?: boolean
   invalidStoredSession?: boolean
   persistedSession?: boolean
   unreadCount?: number
@@ -38,7 +40,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
     headers: { 'Access-Control-Allow-Origin': '*' },
     body: '',
   }))
-  await page.addInitScript(({ widgetHost, widgetKey, unreadCount, conversationId, linkPreviewUrl, persistedSession, invalidStoredSession, widgetPosition }) => {
+  await page.addInitScript(({ widgetHost, widgetKey, unreadCount, conversationId, linkPreviewUrl, persistedSession, invalidStoredSession, widgetPosition, deferSession, dropMessageAcknowledgments }) => {
     const patchedUserAgent = (navigator.userAgent || '').replace(/HeadlessChrome\/[\d.]+\s*/i, 'Chrome/122.0.0.0 ')
     Object.defineProperty(Navigator.prototype, 'userAgent', {
       configurable: true,
@@ -145,6 +147,8 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
         typeof init?.body === 'string' && init.body.length > 0
           ? JSON.parse(init.body)
           : undefined
+
+      if (url.host === widgetHost && url.pathname === '/widget/telemetry') return new Response(null, { status: 204 })
 
       if (url.host === widgetHost && url.pathname === '/widget/config' && method === 'GET') {
         return new Response(
@@ -298,6 +302,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
 
         switch (frame.type) {
           case 'session:create':
+            if (deferSession) break
             queueMicrotask(() => {
               this.serverEmit({
                 type: 'session:joined',
@@ -356,7 +361,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
               ? frame.data.attachment_ids.filter((value): value is string => typeof value === 'string')
               : []
             const message = {
-              id: `msg-${Date.now()}`,
+              id: `msg-${Date.now()}-${state.messages.length}`,
               conversation_id: state.conversationId,
               sender_type: 'customer',
               sender_display_name: state.customerName,
@@ -376,7 +381,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
                 : undefined,
               is_internal: false,
               via_channel: 'widget',
-              created_at: '2026-03-27T20:01:00Z',
+              created_at: new Date().toISOString(),
             }
             state.messages.push(message)
             state.conversations = state.conversations.map((conversation) =>
@@ -388,6 +393,7 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
                   }
                 : conversation,
             )
+            if (dropMessageAcknowledgments) break
             queueMicrotask(() => {
               this.serverEmit({
                 type: 'message:received',
@@ -404,19 +410,22 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
               })
             })
             break
-          case 'conversation:select':
+          case 'conversation:select': {
             state.conversations = state.conversations.map((conversation) =>
               conversation.id === frame.data?.conversation_id
                 ? { ...conversation, unread_count: 0 }
                 : conversation,
             )
+            // Snapshot history before subsequent sends, as the server's read loop does.
+            const history = structuredClone(buildConversationMessagesPayload())
             queueMicrotask(() => {
               this.serverEmit({
                 type: 'conversation:messages',
-                data: buildConversationMessagesPayload(),
+                data: history,
               })
             })
             break
+          }
           case 'conversation:read':
             state.conversations = state.conversations.map((conversation) =>
               conversation.id === frame.data?.conversation_id
@@ -483,6 +492,8 @@ export async function installWidgetMocks(page: Page, options: InstallWidgetMockO
       // ignore localStorage issues in tests
     }
   }, {
+    dropMessageAcknowledgments: options.dropMessageAcknowledgments,
+    deferSession: options.deferSession,
     widgetHost: WIDGET_HOST,
     widgetKey: WIDGET_KEY,
     persistedSession: options.persistedSession ?? false,

@@ -1,5 +1,18 @@
 # Collection PublicID Implementation Plan
 
+> Source review, 2026-09-17
+
+Historical collection rollout reference. Current models include parent, depth,
+and PublicID fields. The later
+[slug-uniqueness migration](../../server/internal/dbmigrate/sql/202604140002_remove_helpcenter_slug_uniqueness.sql)
+drops collection/article slug uniqueness; space slugs remain unique. Any tests
+below requiring unique collection slugs, a slug-conflict response, or the old
+slug-only canonical URL are obsolete for a fully migrated database. Use
+[current models](../../server/internal/model/docs.go) and
+[PublicID route helpers](../../help-center/src/lib/locale.ts) when adapting this
+checklist. Historical migration-specific tests remain useful at their original
+migration boundary, not as assertions about the final schema.
+
 **Date**: 2026-04-13
 **Status**: Approved, ready for implementation
 **Priority**: High — production change

@@ -1,8 +1,45 @@
-# Plan — Agent icon click opens the Agent Run screen directly
+# Open an agent run from a task card
 
 Date: 2026-04-17
 Owner: azhar@d4interactive.io
 Branch: `feature/live-chat-events-pipeline` (or spin off)
+
+## Current implementation review — 2026-09-18
+
+This historical plan explains task-card run navigation for contributors. The main
+navigation path exists, but current run selection and badge visibility differ from
+the original active-run-only proposal.
+
+The [task model](../../server/internal/model/pm_task.go) includes latest run ID,
+agent ID, status, pause reason, and time. The
+[repository](../../server/internal/repository/pm_task.go) loads task-targeted runs
+in one batch ordered by `COALESCE(started_at, created_at)` descending, then selects
+the first per task in memory. It does not filter terminal statuses or use the
+proposed `DISTINCT ON` query. A newer terminal run can therefore be selected ahead
+of an older active run; “latest run” is not “latest active run.”
+
+[TaskCard](../../frontend/src/components/pm/TaskCard.tsx) displays the run-agent row
+from `latest_run_agent_id`, not solely `assigned_agent_id`, and its memo comparison
+includes the latest-run fields. Overlay rendering is noninteractive; normal badge
+clicks stop propagation and invoke the host callback.
+[KanbanBoard](../../frontend/src/components/pm/KanbanBoard.tsx) passes `?run=` only
+when the selected latest run is active. Otherwise it opens task details. The
+[navigation helper](../../frontend/src/components/pm/task-detail/taskRouteNavigation.ts)
+forces route navigation for a requested run, subject to the task-panel suppression
+check; it otherwise retains overlay behavior where appropriate.
+
+[Active statuses](../../frontend/src/components/pm/agentRunConstants.ts) are
+`queued`, `running`, and `paused`. Awaiting input/approval/auth are pause reasons,
+not extra values in that set. Generic run reads in the
+[router](../../server/internal/router/router.go) require `pm.read`; the original
+claim that workspace access alone permits viewing runs is too broad.
+
+The old repository filename is now `server/internal/repository/pm_task.go`.
+Original tests, touch/keyboard scenarios, and all-host parity remain a historical
+verification matrix, not fresh browser results. No runtime tests, rollout actions,
+or messages to the product channel were performed for this documentation review.
+
+## Original implementation plan
 
 ## Problem
 

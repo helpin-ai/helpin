@@ -3,7 +3,7 @@ package service
 // support.send_reply / support.escalate_to_human: the only ways a support
 // chat run's output reaches the visitor. send_reply re-validates the agent's
 // grounding server-side (claims vs the run's evidence snapshot, numeric
-// checks, confidence threshold, satisfaction trend) and converts failures
+// checks and confidence threshold) and converts failures
 // into the existing escalation machinery — a hallucinated answer cannot reach
 // a customer regardless of what the model produced.
 
@@ -40,7 +40,6 @@ type supportReplyGateInput struct {
 	Kind      string
 	Contract  *AIResponseContract
 	Evidence  []KnowledgeSearchResult
-	History   []model.SupportMessage
 	Threshold float64
 }
 
@@ -55,7 +54,8 @@ type supportReplyGateResult struct {
 // evaluateSupportReplyGate re-validates an agent-produced reply exactly the
 // way the pipeline validated its own answers: evidence-grounded claims and
 // numeric matching for answers, a weighted confidence score vs the workspace
-// threshold, and the declining-satisfaction trend across recent AI turns.
+// threshold. Scores from different turns are not customer satisfaction signals;
+// conversation-level handoff decisions belong to the support lifecycle.
 func evaluateSupportReplyGate(input supportReplyGateInput) supportReplyGateResult {
 	kind := normalizeSupportReplyKind(input.Kind)
 	result := supportReplyGateResult{ValidationOutcome: supportValidationPass}
@@ -73,11 +73,6 @@ func evaluateSupportReplyGate(input supportReplyGateInput) supportReplyGateResul
 	result.Confidence = confidence
 	if kind == supportReplyKindAnswer && confidence < input.Threshold {
 		result.EscalationReason = "low_confidence"
-		return result
-	}
-
-	if signal := evaluatePostAnswerEscalation(input.History, confidence); signal != nil {
-		result.EscalationReason = signal.Reason
 		return result
 	}
 
@@ -108,12 +103,12 @@ func (s *InternalCommandService) registerSupportReplyCommands() {
 			CommandName: "support.send_reply",
 			Alias:       "send_support_reply",
 			Category:    "Support",
-			Description: "Send your reply to the visitor. For factual answers you MUST first call search_knowledge and cite the evidence_id values that support each material claim — the server re-validates grounding and confidence. This must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
+			Description: "Send your reply to the visitor. For factual answers you MUST first call search_knowledge and cite the evidence_id values that support each material claim — the server re-validates grounding and confidence. When child work is pending, a conversational acknowledgment keeps the customer turn open; wait for the child result and then send the final answer. Otherwise this must be the final successful action of the turn. If the tool returns rewrite_required, rewrite once in customer-facing language and call it again.",
 			InputSchema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"content":        map[string]any{"type": "string", "description": "The reply text shown to the visitor."},
-					"reply_kind":     map[string]any{"type": "string", "enum": []string{"answer", "clarify", "conversational", "confirmation"}, "description": "answer = factual answer needing evidence; clarify = asking the visitor a question; conversational = greeting/small talk; confirmation = confirming the visitor's issue is resolved."},
+					"reply_kind":     map[string]any{"type": "string", "enum": []string{"answer", "clarify", "conversational", "confirmation"}, "description": "answer = factual answer needing evidence; clarify = asking the visitor a question; conversational = greeting/small talk or a brief acknowledgment while child work is pending; confirmation = confirming the visitor's issue is resolved."},
 					"confidence":     map[string]any{"type": "number", "description": "Your 0-1 confidence that the reply is correct and grounded."},
 					"source_doc_ids": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "evidence_id values (from search_knowledge) backing the reply."},
 					"claims": map[string]any{
@@ -300,7 +295,6 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		Kind:      req.ReplyKind,
 		Contract:  contract,
 		Evidence:  evidence,
-		History:   sanitizeConversationHistory(history, ""),
 		Threshold: settings.AIConfidenceThreshold,
 	})
 	if !gate.OK {
@@ -328,6 +322,19 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	}
 
 	kind := normalizeSupportReplyKind(req.ReplyKind)
+	progressState := ""
+	if kind == supportReplyKindConversational && replyRunID != "" && s.commandBarService != nil && s.commandBarService.planRepo != nil {
+		pending, pendingErr := s.commandBarService.planRepo.HasPendingSupportResult(ctx, meta.WorkspaceID, conversationID, replyRunID)
+		if pendingErr != nil {
+			return nil, fmt.Errorf("load pending support work: %w", pendingErr)
+		}
+		if pending {
+			progressState = supportAIProgressChecking
+		}
+	}
+	if progressState != "" && turn.Status == "waiting_for_result" {
+		return mustJSON(map[string]any{"status": "awaiting_result", "next_action": supportProgressNextAction}), nil
+	}
 	// Claims cite chunk ids; AISources are keyed by reference ids — translate.
 	referenceByID := make(map[string]string, len(evidence))
 	for _, item := range evidence {
@@ -342,9 +349,9 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 	sources := buildAISources(sourceRefIDs, evidence)
 	var message *model.SupportMessage
 	if shouldCreatePublicSupportAIReply(*settings) {
-		message, err = supportAI.publishAIReply(ctx, meta.WorkspaceID, conversationID, agentID, content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", "", conv.CustomerEmail, conv.CustomerPhone, turn.ID, replyRunID)
+		message, err = supportAI.publishAIReply(ctx, meta.WorkspaceID, conversationID, agentID, content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", progressState, conv.CustomerEmail, conv.CustomerPhone, turn.ID, replyRunID)
 	} else {
-		message, err = supportAI.publishAIInternalNote(ctx, meta.WorkspaceID, conversationID, agentID, "Suggested reply:\n\n"+content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", "", conv.CustomerEmail, conv.CustomerPhone, turn.ID, replyRunID)
+		message, err = supportAI.publishAIInternalNote(ctx, meta.WorkspaceID, conversationID, agentID, "Suggested reply:\n\n"+content, supportReplyModelLabel, 0, gate.Confidence, sources, kind, "", "", progressState, conv.CustomerEmail, conv.CustomerPhone, turn.ID, replyRunID)
 	}
 	if errors.Is(err, errSupportTurnSettled) {
 		return mustJSON(map[string]any{"status": "suppressed", "next_action": "This customer turn already has an outcome. End your turn."}), nil
@@ -357,6 +364,11 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		if updateErr := resolveSupportAIConversation(ctx, supportAI.conversationRepo.DB(), conv, "confirmed", time.Now().UTC()); updateErr != nil {
 			slog.WarnContext(ctx, "mark confirmed resolution failed", "error", updateErr, "conversation_id", conversationID)
 		}
+	}
+
+	if progressState != "" {
+		supportAI.publishProgress(meta.WorkspaceID, conversationID, progressState)
+		return mustJSON(map[string]any{"status": "awaiting_result", "message_id": message.ID, "next_action": supportProgressNextAction}), nil
 	}
 
 	triggerMessageID := turn.SourceMessageID
@@ -376,6 +388,8 @@ func (s *InternalCommandService) executeSupportSendReply(ctx context.Context, me
 		"next_action": "Reply delivered. End your turn now; do not call send_support_reply again until the visitor responds.",
 	}), nil
 }
+
+const supportProgressNextAction = "Acknowledgment delivered; the customer is still waiting for an answer. End this runtime turn and wait for the child result. When it arrives, call send_support_reply with the final answer; do not wait for another visitor message or repeat the acknowledgment."
 
 func supportReplyInternalProcessDisclosures(content string) []string {
 	lower := strings.ToLower(content)

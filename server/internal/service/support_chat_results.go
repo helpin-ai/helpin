@@ -35,10 +35,16 @@ func (s *SupportChatService) OnSupportChatRunPaused(ctx context.Context, run *mo
 		return
 	}
 
-	s.supportAIService.publishTypingIndicator(ctx, run.WorkspaceID, conversationID, false)
 	if s.closeSupportChatRunIfTerminal(ctx, run, conversationID, time.Now().UTC()) {
+		s.supportAIService.publishTypingIndicator(ctx, run.WorkspaceID, conversationID, false)
 		return
 	}
+	if s.waitingForSupportResult(ctx, run, conversationID) {
+		s.supportAIService.publishProgress(run.WorkspaceID, conversationID, supportAIProgressChecking)
+		s.drainDeferredMessages(ctx, run, conversationID)
+		return
+	}
+	s.supportAIService.publishTypingIndicator(ctx, run.WorkspaceID, conversationID, false)
 
 	if s.enforceTurnSettlement(ctx, run, conversationID) {
 		// A nudge resume was sent — the run is active again; deferred
@@ -46,6 +52,28 @@ func (s *SupportChatService) OnSupportChatRunPaused(ctx context.Context, run *mo
 		return
 	}
 	s.drainDeferredMessages(ctx, run, conversationID)
+}
+
+// A paused parent with pending child work has not gone silent. Keep its source
+// turn open; result delivery resumes it without requiring another visitor message.
+func (s *SupportChatService) waitingForSupportResult(ctx context.Context, run *model.AgentRun, conversationID string) bool {
+	if s.planRepo == nil || s.processingRepo == nil {
+		return false
+	}
+	row, err := s.processingRepo.LatestProcessingForConversation(ctx, run.WorkspaceID, conversationID)
+	if err != nil {
+		slog.WarnContext(ctx, "support chat: load pending turn", "error", err)
+		return true
+	}
+	if row == nil {
+		return false
+	}
+	pending, err := s.planRepo.HasPendingSupportResult(ctx, run.WorkspaceID, conversationID, run.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "support chat: load pending child work", "error", err)
+		return true
+	}
+	return pending
 }
 
 // closeSupportChatRunIfTerminal ends chat-mode runtime runs that no longer

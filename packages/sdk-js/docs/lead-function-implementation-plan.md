@@ -1,5 +1,11 @@
 # Lead Function Implementation Plan
 
+> Historical implementation plan. `lead` is implemented in
+> [`src/core/client.ts`](../src/core/client.ts); the old `packages/javascript-sdk`
+> paths below predate the package move. Use the [SDK reference](../README.md#client-api)
+> for the current API, including CRM identity synchronization.
+
+
 ## Objective
 
 Introduce a dedicated `lead` API in the JavaScript SDK so that first-party applications can send lead events that always include a contact email before the payload is dispatched to Helpin.

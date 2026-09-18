@@ -1,8 +1,47 @@
-# Command Runs Rail UX Plan
+# Command runs rail UX plan
 
 **Date:** 2026-04-28
-**Status:** Implemented in the command runs rail
+**Status:** Historical implementation record; the original rail and backend limitations have been superseded.
 **Scope:** Redesign the command runs rail around a spine/branch execution model while staying faithful to the current backend semantics.
+
+## Current implementation review
+
+Source-compared on 2026-09-17. This page records the April execution-rail design
+for contributors; its checked steps describe historical work, not the current
+component tree or a fresh acceptance-test result.
+
+The [plan model](../../server/internal/model/command_bar.go) now includes `dag`
+and `task_pipeline_fan_out` alongside the three original plan kinds. A DAG is a
+directed acyclic graph: steps declare dependencies on earlier work. Current
+[dispatch validation](../../server/internal/service/command_bar_dispatch.go) and
+[step scheduling](../../server/internal/service/command_bar_orchestration_steps.go)
+handle those dependencies. The old blanket statement that mixed dependency
+execution and joins are unsupported is therefore obsolete. This does not imply
+that every proposed gate or arbitrary graph is supported.
+
+[Current service limits](../../server/internal/service/command_bar.go) include
+50 plan steps and 10 initially runnable DAG steps. The original five-target
+statement is not a universal limit for today's plan kinds. Plan advancement is
+[in-process with reconciliation](../../server/internal/service/command_bar_plan_orchestration.go);
+the historical `AgentRunWorkflow` wording is not a complete description of
+current Runtime-backed execution.
+
+The named `CommandRunsRail`/timeline components below are no longer the current
+entry points. [ExecutionStrip](../../frontend/src/components/agents/dock/ExecutionStrip.tsx)
+uses [PipelineRail](../../frontend/src/components/agents/dock/PipelineRail.tsx),
+fan-out presentation, and [DeliveryPlanView](../../frontend/src/components/agents/dock/DeliveryPlanView.tsx).
+Delivery plans can display execution stages derived from dependencies. PipelineRail
+uses a horizontal row rather than the old vertical spine. Current compact run
+presentation can collapse pending-interaction content until expanded, so the old
+always-visible approval requirement is not a universal UI guarantee.
+
+For persistence and actor-scoping qualifications, see the
+[reviewed persistence plan](2026-04-29-command-runs-rail-persistence-plan.md).
+The original manual QA list remains historical and was not rerun during this
+source review. Do not recreate the old components or remove current dependency
+presentation merely to match this plan.
+
+## Original design
 
 ## Goal
 
@@ -18,9 +57,9 @@ Make command-bar execution easy to understand at a glance:
 
 The rail should feel like an execution monitor, not a stack of generic cards.
 
-## Current Backend Semantics
+## Backend semantics at the time of the design
 
-The UI must reflect what the backend actually supports today.
+The following describes the April baseline; see the current implementation review above.
 
 Supported:
 
@@ -50,7 +89,7 @@ The UI may use branch visuals for fan-out, but it must not imply unsupported joi
 
 ## Design Direction
 
-Adopt a compact Linear-style execution spine:
+Adopt a compact execution spine:
 
 - a vertical 1px spine connects sequential steps
 - fan-out targets render as indented branch rows

@@ -1,4 +1,16 @@
-# Two-Way Support Chat Integrations Plan
+# Two-way Slack and Mattermost support bridge proposal
+
+This unimplemented August 2026 proposal describes a customer-support bridge for contributors evaluating Slack and Mattermost integration work. It is a design and estimate, not installation instructions or a statement that either provider is connected.
+
+## Source review — 2026-09-18
+
+- Repository searches found none of the proposed `support_chat_integrations` tables/models, `chatbridge`/`slackapi`/`mattermostapi` packages, `chat-integrations` routes, `CreateExternalConversationMessage`, or `SUPPORT_CHAT_BRIDGE_ENABLED` configuration. The named migration and environment variables below are proposed additions.
+- The existing [SupportChatService](../../server/internal/service/support_chat.go) runs the Echo Agent Runtime conversation lifecycle. Its name does not indicate an implemented Slack/Mattermost bridge. The [support message service](../../server/internal/service/support_inbox.go) remains the integration point to assess for customer delivery semantics.
+- [Support attachments](../../server/internal/service/support_attachment.go) currently allow 100 MiB (displayed as 100 MB), replacing the 10 MB assumption below. A future provider adapter must reconcile provider limits and the current Helpin limit; the proposal does not establish an existing provider-download path.
+- [Customer.io outbox](../../server/internal/service/customer_io_outbox.go) and [PostgreSQL leadership](../../server/internal/coordination/postgres_leader.go) implementations exist as reuse candidates. Their existence does not implement bridge atomicity, delivery reconciliation, listener recovery, or the exactly-once acceptance criteria.
+- The freely replying channel-member policy and customer-visible identity rules remain proposed product decisions. Provider scopes, API details, effort estimates, external references and live-provider behavior were not revalidated in this source review. Validate them before implementation; no provider messages or connections were created.
+
+## Original proposal
 
 **Date:** 2026-08-18  
 **Primary area:** Support inbox  
@@ -21,7 +33,7 @@ The first release follows the Crisp operator-bridge model:
 The schema and provider interfaces reserve two other modes without implementing them in v1:
 
 - `notification_only`: one-way event posts whose thread replies do not affect Helpin.
-- `customer_channel`: Intercom-style conversations initiated by customers inside Slack, Slack Connect, Mattermost, or another provider.
+- `customer_channel`: conversations initiated by customers inside Slack, Slack Connect, Mattermost, or another provider.
 
 ## 2. Scope
 
@@ -897,7 +909,7 @@ Smaller alternatives:
 - One-way posting only, both providers, text/links: 10-15 engineering days.
 - Slack-only two-way, text-only pilot: 20-28 engineering days.
 - Slack + Mattermost text-only pilot without attachments/actions/admin diagnostics: 30-40 engineering days.
-- Intercom-style provider-originated customer channels after this v1: add approximately 15-25 engineering days for channel ownership, customer/CRM identity, conversation creation, Slack Connect/DM semantics, and new routing behavior.
+- provider-originated customer channels after this v1: add approximately 15-25 engineering days for channel ownership, customer/CRM identity, conversation creation, Slack Connect/DM semantics, and new routing behavior.
 
 ## 15. Deployment and rollback
 

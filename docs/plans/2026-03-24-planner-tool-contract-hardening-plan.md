@@ -1,5 +1,15 @@
 # Planner Tool Contract Hardening Plan
 
+> Source review, 2026-09-17
+
+The `server/internal/worker` tool/executor package referenced below is absent
+from this checkout. Current Helpin provider dispatch lives in
+[agent_runtime_mcp.go](../../server/internal/service/agent_runtime_mcp.go), with
+product operations implemented by internal command services. Runtime-local tool
+execution belongs to the separate Agent Runtime repository. See the
+[current tool guide](../internal-tools-framework.md); do not recreate the old
+worker registry to follow this historical plan.
+
 ## Status
 
 Draft plan for tightening the contract between:
@@ -47,8 +57,8 @@ These are all symptoms of the same issue: the model contract is not strict enoug
 
 Right now, the model learns planner tool usage from:
 
-- the JSON schemas in [server/internal/worker/tools.go](/root/teampulse/server/internal/worker/tools.go)
-- the preset prompt text in [server/internal/service/agent_system_prompts.go](/root/teampulse/server/internal/service/agent_system_prompts.go)
+- the JSON schemas in `server/internal/worker/tools.go` (historical path; absent from this checkout)
+- the preset prompt text in [server/internal/service/agent_system_prompts.go](../../server/internal/service/agent_system_prompts.go)
 
 That is workable, but some high-value tools still rely too much on prose instead of one canonical example.
 
@@ -207,9 +217,9 @@ Make the backend model layer the single documented source of truth for planner p
 
 ### Primary files
 
-- [server/internal/model/agent_planning.go](/root/teampulse/server/internal/model/agent_planning.go)
+- [server/internal/model/agent_planning.go](../../server/internal/model/agent_planning.go)
 - new file: `/root/teampulse/server/internal/model/agent_planning_normalization.go`
-- [server/internal/temporalapp/activities.go](/root/teampulse/server/internal/temporalapp/activities.go)
+- `server/internal/temporalapp/activities.go` (historical path; absent from this checkout)
 
 ### Exit criteria
 
@@ -237,8 +247,8 @@ Make the tool schemas reflect what we truly accept, no looser and no stricter.
 
 ### Primary files
 
-- [server/internal/worker/tools.go](/root/teampulse/server/internal/worker/tools.go)
-- [server/internal/worker/tools_test.go](/root/teampulse/server/internal/worker/tools_test.go)
+- `server/internal/worker/tools.go` (historical path; absent from this checkout)
+- `server/internal/worker/tools_test.go` (historical path; absent from this checkout)
 
 ### Exit criteria
 
@@ -264,9 +274,9 @@ Reduce model drift by making planner prompts short, exact, and schema-aligned.
 
 ### Primary files
 
-- [server/internal/service/agent_system_prompts.go](/root/teampulse/server/internal/service/agent_system_prompts.go)
-- [server/internal/worker/planning_prompt_pack.go](/root/teampulse/server/internal/worker/planning_prompt_pack.go)
-- [server/internal/service/agent_system_prompts_test.go](/root/teampulse/server/internal/service/agent_system_prompts_test.go)
+- [server/internal/service/agent_system_prompts.go](../../server/internal/service/agent_system_prompts.go)
+- `server/internal/worker/planning_prompt_pack.go` (historical path; absent from this checkout)
+- [server/internal/service/agent_system_prompts_test.go](../../server/internal/service/agent_system_prompts_test.go)
 
 ### Exit criteria
 
@@ -297,9 +307,9 @@ Make invalid planner output easier for the model to self-repair.
 
 ### Primary files
 
-- [server/internal/service/agent_planning.go](/root/teampulse/server/internal/service/agent_planning.go)
-- [server/internal/temporalapp/activities.go](/root/teampulse/server/internal/temporalapp/activities.go)
-- [server/internal/worker/tools_preview.go](/root/teampulse/server/internal/worker/tools_preview.go)
+- [server/internal/service/agent_planning.go](../../server/internal/service/agent_planning.go)
+- `server/internal/temporalapp/activities.go` (historical path; absent from this checkout)
+- `server/internal/worker/tools_preview.go` (historical path; absent from this checkout)
 
 ### Exit criteria
 
@@ -352,11 +362,11 @@ Prove approved artifacts are successfully applied for:
 
 ### Primary files
 
-- [server/internal/model/agent_planning_test.go](/root/teampulse/server/internal/model/agent_planning_test.go)
-- [server/internal/worker/tools_test.go](/root/teampulse/server/internal/worker/tools_test.go)
-- [server/internal/worker/tools_interaction_test.go](/root/teampulse/server/internal/worker/tools_interaction_test.go)
-- [server/internal/service/agent_system_prompts_test.go](/root/teampulse/server/internal/service/agent_system_prompts_test.go)
-- [server/internal/temporalapp/activities_test.go](/root/teampulse/server/internal/temporalapp/activities_test.go)
+- [server/internal/model/agent_planning_test.go](../../server/internal/model/agent_planning_test.go)
+- `server/internal/worker/tools_test.go` (historical path; absent from this checkout)
+- `server/internal/worker/tools_interaction_test.go` (historical path; absent from this checkout)
+- [server/internal/service/agent_system_prompts_test.go](../../server/internal/service/agent_system_prompts_test.go)
+- `server/internal/temporalapp/activities_test.go` (historical path; absent from this checkout)
 
 ### Exit criteria
 
@@ -383,7 +393,7 @@ Stop relying on tribal knowledge when adjusting planner prompts or schemas.
 
 ### Candidate file
 
-- `/root/teampulse/docs/AGENTS_AND_AUTOMATION.md`
+- `/root/teampulse/docs/agents-and-automation.md`
   or
 - new file `/root/teampulse/docs/plans/planner-tool-contract-reference.md`
 

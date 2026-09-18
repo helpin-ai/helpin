@@ -2581,15 +2581,6 @@ func timePointersEqual(left, right *time.Time) bool {
 	return left.UTC().Equal(right.UTC())
 }
 
-func isAIUsageCreditLimitError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, model.ErrAIUsageExhausted) ||
-		errors.Is(err, model.ErrExtraAIUsageUnavailable) ||
-		errors.Is(err, model.ErrBillingWorkspaceLocked)
-}
-
 func (s *AgentRuntimeProjectionService) resolveRun(ctx context.Context, event AgentRuntimeEventEnvelope) (*model.AgentRun, error) {
 	hostRunID := strings.TrimSpace(event.HostRunID)
 	if hostRunID == "" {

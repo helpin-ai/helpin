@@ -1,3 +1,4 @@
+import type { CreateTaskFromConversationRequest } from '@/lib/pmTypes';
 import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -1043,13 +1044,12 @@ export function useUploadSupportAttachment(workspaceId: string, conversationId: 
         },
       ));
 
-      // Step 2: Upload to S3 via presigned PUT URL
+      // Step 2: Match the private presigned PUT; do not add a public-read ACL.
       const uploadResp = await fetch(initData.upload_url, {
         method: 'PUT',
         body: file,
         headers: {
           'Content-Type': file.type || 'application/octet-stream',
-          'x-amz-acl': 'public-read',
         },
       });
       if (!uploadResp.ok) throw new Error('Upload to storage failed');
@@ -1238,8 +1238,9 @@ export function useRunConversationAgent(workspaceId: string) {
 export function useCreateTaskFromConversation(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ conversationId, teamId }: { conversationId: string; teamId: string }) =>
+    mutationFn: ({ conversationId, teamId, draft }: { conversationId: string; teamId: string; draft?: Omit<CreateTaskFromConversationRequest, 'team_id'> }) =>
       supportService.createTaskFromConversation(workspaceId, conversationId, {
+        ...draft,
         team_id: teamId,
       }).then(unwrap),
     onSuccess: (_data, { conversationId }) => {

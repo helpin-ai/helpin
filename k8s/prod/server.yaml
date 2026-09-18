@@ -38,7 +38,7 @@ spec:
           emptyDir: {}
       containers:
         - name: helpin-server
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.402
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.408
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -58,6 +58,8 @@ spec:
               value: "https://mcp.helpin.ai"
             - name: MCP_SERVER_ENABLED
               value: "true"
+            - name: METRICS_ADDR
+              value: ":9090"
             - name: GOMEMLIMIT
               value: "2750MiB"
           resources:
@@ -69,6 +71,8 @@ spec:
               memory: 3Gi
           ports:
             - containerPort: 8080
+            - name: metrics
+              containerPort: 9090
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -114,6 +118,9 @@ metadata:
     app: helpin-server
 spec:
   ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics
     - name: helpin-server-port
       port: 8080
       targetPort: 8080

@@ -32,7 +32,8 @@
     "example:build": "tsc examples/test.ts --outDir examples",
     "example:serve": "wait-on dist/lib.js && vite --config vite.config.ts",
     "serve:test": "http-server . -p 3000",
-    "start": "concurrently \"npm run dev\" \"npm run example:serve\" \"npm run mock\" "
+    "start": "concurrently \"npm run dev\" \"npm run example:serve\" \"npm run mock\" ",
+    "test:e2e:uploads": "npm run build && playwright test --config=./playwright.widget.config.ts uploads.spec.ts"
   },
   "keywords": [
     "helpin",

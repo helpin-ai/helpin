@@ -1,4 +1,20 @@
-# Superpowers Skills — Implementation Plan (against `develop`)
+# Runtime quality skills implementation plan
+
+This historical proposal considers test-driven development, debugging, and
+verification skills inspired by Superpowers. It is not an installed skill pack or
+a current runtime rollout checklist. The proposed additions remain absent in the
+reviewed checkout, while the catalog organization has changed.
+
+## Source review — 2026-09-18
+
+- The six proposed skill directories (`test_driven_development`, `systematic_debugging`, `verification_before_completion`, `using_git_worktrees`, `authoring_for_code_review`, and `brainstorming_standalone`) do not exist under `server/skills/system`.
+- [Built-in embedding](../../server/skills/builtin.go) still embeds the system directory, but [catalog loading and preset bundles](../../server/internal/agentcontract/skill_catalog.go) now live in `agentcontract`, not the removed worker catalog path. Adding a directory must satisfy catalog parsing and runtime/preset contracts; embedding alone is not proof of usable activation.
+- Existing disk directories remain `code_builder` and `review_agent`, with canonical keys `code_implementation` and `code_review`. [Code Implementation](../../server/skills/system/code_builder/SKILL.md) already requires relevant validation and honest reporting, and includes a preview-run no-commit exception. [Code Review](../../server/skills/system/review_agent/SKILL.md) now includes an interactive checkpoint protocol, so the original sparse-bundle description is not a complete behavior inventory.
+- [Stage activation](../../server/internal/agentskills/activation.go) covers Epic Planner, Task Planner, and Documentation Agent. There are no proposed thorough/quick Code Builder modes or corresponding workspace/task settings in the inspected source. Configured/core/available skill sets should not be equated with all skills being injected on every turn.
+- The proposed `customer_visible`, `CustomerVisible`, and `visible_to=customer` contract is absent from the inspected catalog/UI path. [The frontend hook](../../frontend/src/hooks/queries/useSkills.ts) requests the workspace skill catalog without that filter.
+- Nested execution should be assessed against the current Agent Runtime/host orchestration contracts, not the removed `eino_executor.go` path. This review did not verify the separate runtime repository, benchmark token costs, install upstream content, or recheck its license. The plan's numeric cost multiplier and timeline are estimates, not measured outcomes.
+
+## Original proposal
 
 **Date:** 2026-05-15
 **Base branch:** `origin/develop`
@@ -117,7 +133,7 @@ No removal of existing rules. Keep the "local commit only, backend manages remot
 
 ## Phase 2 — Cost control: per-stage activation for CodeBuilder
 
-The risk we discussed: TDD makes `code_builder` runs 2–3× more expensive. We want it opt-in per task or per workspace, not blanket.
+The original planning estimate was that TDD might make `code_builder` runs 2–3× more expensive; no benchmark is recorded here. We want it opt-in per task or per workspace, not blanket.
 
 ### 2.1 Add `planning_stage` values for code builder
 

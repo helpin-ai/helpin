@@ -23,6 +23,7 @@ const helpinClient = createClient({
   widgetKey: 'your-widget-key',
   host: 'https://client.helpin.ai',
   autoBoot: false,
+  autoPageview: false, // This guide tracks pageviews explicitly.
   // Optional: use a staging or pinned runtime.
   // widgetRuntimeUrl: 'https://cdn.helpin.ai/lib.js',
 });
@@ -123,7 +124,7 @@ For migrations from another help-center provider, map each legacy article ID to 
 
 ## `usePageView()`
 
-Tracks route changes automatically by observing `pushState`, `replaceState`, and `popstate`. Optionally run setup logic or attach extra data before each pageview fires:
+With `autoPageview: false` on the client, this hook tracks route changes by observing `pushState`, `replaceState`, and `popstate`. Optionally run setup logic or attach extra data before each pageview fires:
 
 ```tsx
 import { usePageView } from '@helpin-ai/react';
@@ -141,6 +142,10 @@ function AppShell() {
   return <AppRoutes />;
 }
 ```
+
+Mount one pageview hook per application. Disable the SDK’s `autoPageview` tracker
+when using the hook to avoid duplicate route-change events. The `before` callback
+is synchronous; it does not wait for an asynchronous `id()` call to finish.
 
 | Option | Type | Description |
 | --- | --- | --- |

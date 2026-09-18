@@ -1,5 +1,11 @@
 # Agent Runtime CLI: Helpin admission (Phase 3)
 
+> Historical Phase 3 snapshot. The capability limits below describe admission-only
+> implementation at that stage, not the current connected execution feature.
+> Use [CLI connected execution](2026-09-15-cli-connected-execution.md) for the
+> subsequent model gateway, event, artifact, and execution-lease behavior.
+
+
 ## Implemented scope
 
 Helpin exposes the generic `agent-runtime-cli/v1alpha1` discovery, OAuth, admission,

@@ -1,8 +1,12 @@
 # Community beta scope and known limitations
 
 The first release focuses on support chat, visitor identification, and public
-help-center articles. Agents assist that workflow. PM, CRM navigation, automation
-builders, and coding are outside the default Community surface.
+help-center articles. Agents assist that workflow. The default enabled modules
+are `support,docs,agents`; PM and CRM navigation and automation builders are
+outside that default. This is a deployment surface choice, not removal of their
+code: shared customer services remain available to Support, and some agent APIs,
+including coding-session routes, are classified under Agents. Coding workflows
+are outside this release's support-focused scope.
 
 Known limitations to address:
 
@@ -30,3 +34,9 @@ includes explicit backup/restore and external proxy instructions.
 
 These are tracked limitations, not a claim that an untested deployment is ready
 for public traffic. Follow the release gate and published patch notes.
+
+Implementation references: [Community module defaults](https://github.com/helpin-ai/helpin/blob/develop/server/internal/deployment/defaults_community.go),
+[API module classification](https://github.com/helpin-ai/helpin/blob/develop/server/internal/deployment/modules.go),
+[Compose defaults](community/compose.yaml), and
+[provider wiring](https://github.com/helpin-ai/helpin/blob/develop/server/cmd/api/main.go). Future release items above are plans,
+not evidence of shipped features or completed deployment checks.

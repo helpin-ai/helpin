@@ -1,5 +1,13 @@
 # Editor List Exit Behavior Research
 
+> **Status: historical editor research.** Cross-editor comparisons below are
+> design input, not a current vendor compatibility test. Source review on
+> 2026-09-17 found that the installed TipTap StarterKit already includes
+> ListKeymap and TrailingNode by default. Helpin's
+> [DocsEditor configuration](../../frontend/src/components/docs/DocsEditor.tsx)
+> does not disable them. Do not add duplicate extensions based on the old
+> missing-feature list below.
+
 ## 1. List Exit Behavior Across Editors
 
 ### Google Docs
@@ -40,7 +48,7 @@
 ### Confluence (Atlassian)
 - **Enter on empty list item**: Exits the list.
 - **Tab/Shift+Tab**: Tab indents list items, Shift+Tab outdents.
-- **Nested exit**: Progressive unnesting like Notion - outdent first, then exit.
+- **Nested exit**: Progressive unnesting: outdent first, then exit.
 - **Summary**: Standard behavior - Enter on empty exits, Tab/Shift+Tab for nesting.
 
 ### Coda
@@ -255,16 +263,16 @@ For code blocks specifically:
 4. **Triple-Enter exit** for code blocks (as an alternative to Cmd+Enter)
 5. **Empty-paragraph exit** for blockquotes and callouts (like Helpin's CalloutExtension pattern)
 
-### What Helpin Currently Has vs. What's Missing
+### Historical Helpin snapshot (superseded)
 
-**Currently implemented**:
+**Recorded implementation at the time of research**:
 - StarterKit with default list behavior (Enter exits empty top-level items, unnests nested items)
 - TaskList/TaskItem with nested support
 - CalloutExtension with custom Enter/Backspace exit handling (double-empty-paragraph pattern)
 - CodeBlockExtension (lowlight, but no custom exit handling beyond TipTap defaults)
 - No ListKeymap extension installed
 
-**Potentially missing**:
+**Questions raised at the time of research (recheck before implementation)**:
 - ListKeymap extension (would fix "Bullet List Limbo" backspace issue)
 - Custom blockquote exit behavior (Enter on empty paragraph at end of blockquote to exit)
 - Custom code block exit alternative to Cmd+Enter (e.g., triple-Enter or arrow-down-from-last-line)
@@ -272,7 +280,19 @@ For code blocks specifically:
 
 ---
 
-## 5. Recommended Standard Behavior (Industry Consensus)
+### Current source comparison
+
+The installed StarterKit registers ListKeymap and TrailingNode unless disabled.
+The current editor disables StarterKit's code block and supplies its own
+[CodeBlockExtension](../../frontend/src/components/editor/CodeBlockExtension.ts),
+which changes the node view and syntax highlighting, without adding keyboard
+shortcuts. [CalloutExtension](../../frontend/src/components/docs/CalloutExtension.ts)
+still exits when the last two children are empty paragraphs and there are at
+least three children. Backspace/Delete can replace a single empty callout with a
+paragraph. These source checks do not verify every nested-list or table gesture
+in a browser; reproduce a reported issue before treating it as an open defect.
+
+## 5. Proposed interaction behavior
 
 ### Lists
 1. **Enter on non-empty item**: Split into two items

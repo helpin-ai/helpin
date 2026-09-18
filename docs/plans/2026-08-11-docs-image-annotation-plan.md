@@ -1,8 +1,44 @@
-# Docs Image Annotation — Implementation Plan (react-konva)
+# Docs image annotation implementation plan
 
 Date: 2026-08-11
-Status: Proposed
+Status: Historical plan; frontend annotation exists, with deletion limits noted below
 Supersedes: the marker.js variant of this plan (same file, earlier revision)
+
+This historical plan explains editable image annotations and the proposed agent
+annotation follow-on. Maintainers should use the current source notes before
+changing save/publish behavior or describing redaction guarantees.
+
+## Source review — 2026-09-18
+
+- The [annotator](../../frontend/src/components/docs/annotator/core/annotationTypes.ts),
+  integration dialog, undo/redo, node attributes, and lazy image-toolbar entry
+  exist. The ESLint rule prohibits `@/` imports inside the core. The current schema
+  has evolved (for example, text shapes carry wrapping width); use its parser and
+  types rather than copying the simplified schema below.
+- [The save dialog](../../frontend/src/components/docs/annotator/integration/DocsImageAnnotateDialog.tsx)
+  forces permanent flattening whenever a cover shape exists. It refuses that
+  path when there is no deletable source attachment or an alternate source exists.
+  This is stronger than the proposed default-on optional toggle.
+- Save uploads the new render, requests source deletion, then updates the node.
+  These are separate operations: a failed deletion can leave an unused new upload,
+  and successful source deletion precedes document persistence.
+- **Deletion is not a verified erasure guarantee.**
+  [PMAttachmentService.Delete](../../server/internal/service/pm_attachment.go)
+  ignores object-storage deletion errors and retains storage objects with another
+  attachment reference (or an unsuccessful reference-count lookup). A successful
+  API response therefore does not prove the original pixels were erased. The
+  historical redaction claims below remain design intent, not a security promise.
+- [Publishing](../../frontend/src/lib/docsPublishTransforms.ts) can re-render from
+  the original artifact/attachment, upload the flattened image, and remove
+  annotation state, source attachment, artifact, and dark-variant references.
+  This is more than stripping one HTML attribute. Removing references does not
+  itself delete originals or their copies.
+- The proposed `annotate_image` tool and Go `image_annotation.go` schema were not
+  found in the inspected service/contract/model sources. Treat that follow-on as
+  proposed. Library size/license comparisons and browser/render fidelity targets
+  below were not reverified or measured during this source review.
+
+## Original plan
 
 ## Goal
 

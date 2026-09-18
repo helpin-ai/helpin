@@ -302,7 +302,7 @@ export const MessageBubble: FunctionComponent<MessageBubbleProps> = ({
   const agentName = message.senderName;
   const agentAvatar = message.senderAvatar;
   const isWorkspaceBrandAvatar = message.id === '__intro__' && Boolean(agentAvatar);
-  // Flat Intercom-style pill is reserved for teammate_joined — the one and
+  // Flat pill is reserved for teammate_joined — the one and
   // only widget-visible routing event. Internal routing and escalation
   // events are filtered; their public handoff replies render normally.
   const showSystemPill = isSystem && message.systemEventType === 'teammate_joined';

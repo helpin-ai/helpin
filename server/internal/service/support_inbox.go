@@ -1938,6 +1938,9 @@ func (s *SupportInboxService) listConversationMessages(ctx context.Context, work
 
 	if widgetOnly {
 		messages = widgetVisibleSupportMessages(messages)
+		if err := s.projectWidgetAIProgress(ctx, conv, messages); err != nil {
+			return nil, err
+		}
 	}
 
 	// Hydrate file attachments onto messages.
@@ -2243,7 +2246,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 				slog.ErrorContext(ctx, "failed to reopen support conversation after customer reply", "error", err, "conversation_id", ticketID)
 			}
 		}
-		if s.triageService != nil && !supportConversationHumanOwned(conv) {
+		if s.triageService != nil && (!supportConversationHumanOwned(conv) || s.triageService.jev.enabled(workspaceID)) {
 			go func(workspaceID, conversationID, messageID string) {
 				if _, triageErr := s.triageService.EvaluateAndRoute(context.WithoutCancel(ctx), workspaceID, conversationID, messageID); triageErr != nil {
 					slog.ErrorContext(ctx, "support triage failed after customer reply", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", triageErr)
@@ -2473,14 +2476,26 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		return nil, fmt.Errorf("conversation not found")
 	}
 
-	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, true)
+	messages, err := s.ListConversationMessages(ctx, workspaceID, conversationID, !req.ReviewedDraft)
 	if err != nil {
 		return nil, err
 	}
 
-	draft, err := s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
-	if err != nil {
-		return nil, err
+	var draft *supportConversationTaskDraft
+	if req.ReviewedDraft {
+		_, sourceHash := supportPMTriageEvidence(conversation, messages)
+		if req.SourceHash == "" || req.SourceHash != sourceHash {
+			return nil, ErrPMTriageStale
+		}
+		if trimPtrValue(req.Name) == "" || trimPtrValue(req.Description) == "" || !isValidTaskType(trimPtrValue(req.TaskType)) {
+			return nil, fmt.Errorf("reviewed title, description and valid task type are required")
+		}
+		draft = &supportConversationTaskDraft{Title: trimPtrValue(req.Name), Description: trimPtrValue(req.Description), TaskType: trimPtrValue(req.TaskType), Priority: trimPtrValue(req.Priority)}
+	} else {
+		draft, err = s.generateTaskDraftFromConversation(ctx, workspaceID, conversation, messages)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if trimPtrValue(req.Name) == "" {
 		if err := validateSupportTaskDraft(conversation, messages, draft); err != nil {
@@ -2537,13 +2552,19 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		createReq.Priority = &priority
 	}
 
-	detail, err := s.taskService.Create(ctx, createReq, actorID)
+	var review *supportTaskCreateReview
+	if req.ReviewedDraft {
+		review = &supportTaskCreateReview{conversationID: conversationID, sourceHash: req.SourceHash}
+	}
+	detail, err := s.taskService.create(ctx, createReq, actorID, review)
 	if err != nil {
 		return nil, err
 	}
 
 	taskID := detail.Task.ID
-	if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
+	if req.ReviewedDraft {
+		s.publishReviewedTaskLink(ctx, workspaceID, conversationID, taskID, actorID)
+	} else if err := s.LinkConversationTask(ctx, workspaceID, conversationID, taskID, actorID); err != nil {
 		return nil, err
 	}
 
@@ -4750,8 +4771,8 @@ func formatAssignmentSystemMessage(target assignmentTargetKind, actorName, targe
 
 // emitTeammateJoinedIfFirstReply emits a public "{name} joined the conversation"
 // system message on the widget-visible side the first time a given teammate
-// sends a non-internal reply on the conversation. Matches Intercom's behavior
-// of surfacing a "joined" pill on first engagement rather than on assignment.
+// sends a non-internal reply on the conversation. The "joined" pill appears
+// on first engagement rather than on assignment.
 func (s *SupportInboxService) emitTeammateJoinedIfFirstReply(ctx context.Context, workspaceID, conversationID, senderUserID, displayName string, senderAvatar *string, replyClientMessageID string, savedReply ...*model.SupportMessage) {
 	if s.messageRepo == nil || senderUserID == "" {
 		return

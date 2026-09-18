@@ -1,8 +1,36 @@
-# Unified Agent Transcript Renderer
+# Unified agent transcript renderer plan
 
 **Date:** 2026-06-15
-**Status:** Proposed
+**Status:** Historical plan; shared rendering is implemented and has evolved
 **Owner:** frontend / agent surfaces
+
+This plan records the original effort to share transcript rendering between the
+Ask dock and coding-session panel. Use it for design history; current consumers
+include richer grouping and disclosure behavior than the initial proposal.
+
+## Source review — 2026-09-18
+
+- [The shared collector](../../frontend/src/components/agents/transcript/segments.ts),
+  `TranscriptRow`, `TranscriptSegmentView`, and tool chrome modules exist. Both
+  [DockTranscript](../../frontend/src/components/agents/dock/DockTranscript.tsx)
+  and [CodingTranscriptPane](../../frontend/src/components/pm/CodingSession/CodingTranscriptPane.tsx)
+  consume the shared implementation; the opening problem describes the old state.
+- The dock now passes `expandable: true`, groups adjacent tools, and can display
+  expandable working history. The proposal's permanently flat, non-expandable
+  dock and dropped grouping are no longer its contract.
+- `DOCK_SEGMENT_KINDS` includes user messages. Main-chat scope adds status and
+  review decisions, and compact working scope adds reasoning. Do not infer the
+  exact visible kinds from the historical assistant/tool-only scope below.
+- The collector separates `includeLive` from `runtimeActive`, allowing retained
+  runtime ordering without active streaming styling. It also filters runtime
+  control tools rather than relying only on a literal `update_plan` name.
+- The coding panel retains virtualization and local composer/interaction
+  concerns. Completed sessions now use shared working-group disclosures; active
+  and interrupted sessions remain flat.
+- The test/build checklist below is historical acceptance intent. This review
+  inspected source; it does not establish passing runtime, browser, or build tests.
+
+## Original proposal
 
 ## 1. Problem
 

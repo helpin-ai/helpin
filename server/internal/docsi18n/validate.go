@@ -2,7 +2,6 @@ package docsi18n
 
 import (
 	"fmt"
-	"reflect"
 
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
@@ -128,8 +127,4 @@ func strAttr(attrs map[string]any, key string) string {
 	}
 	s, _ := value.(string)
 	return s
-}
-
-func attrsEqual(source, translated map[string]any) bool {
-	return reflect.DeepEqual(source, translated)
 }

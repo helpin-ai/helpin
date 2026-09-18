@@ -1,9 +1,49 @@
-# Support Triage at Intercom-Fin Level — Gap Analysis & Plan
+# Support triage capability gaps and implementation plan
+
+> Historical June 12 assessment, source-compared on 2026-09-17. This page is for
+> contributors evaluating routing improvements. Its competitive target is a
+> product aspiration, not verified feature parity or a current vendor comparison.
+> The baseline below is historical; proposed phases are not all shipped.
+
+## Current implementation and remaining proposals
+
+[Rule conditions and defaults](../../server/internal/model/support_inbox.go)
+now include sender-email substring matching and `condition_logic` (`all`/`any`).
+New default settings enable triage and auto-move with confidence threshold 0.8
+and daily budget 250; rerun-on-meaning-change defaults to false. Existing saved
+settings can differ. Entitlement, channel, and conversation-state guards still
+apply, so a default flag does not guarantee routing for every message.
+
+The [triage service](../../server/internal/service/support_inbox_triage.go)
+can evaluate later customer messages when reruns are enabled, using the current
+message instead of the first reply as input. This setting is not a semantic
+change detector by itself. Deterministic rules remain first; configured Jev
+routing can precede LLM fallback. The local decision client is considered only
+when Jev routing is not enabled, avoiding a three-provider cascade. The LLM is
+injected/configured; a fixed Haiku-only contract is obsolete. Jev tagging is also
+invoked separately, so the original mailbox-only description is incomplete.
+
+The rule payload remains the bespoke phrase/domain/sender condition structure,
+not the proposed shared query-builder tree. Phrase matching still uses lowercase
+substring checks; it does not implement the proposed general punctuation/hyphen
+normalization. Rule create/update persists the rule without launching the proposed
+30-day conversation backfill. The current
+[route table](../../server/internal/router/router.go) has triage-rule CRUD under
+`/api/support/inbox/triage-rules`, but not the proposed preview endpoint.
+
+The workspace intent-taxonomy table, broad multi-action rule engine, feedback
+few-shot learning, suggested-rule clustering, and analytics dashboard described
+below should remain proposals rather than inferred consequences of the routing
+or tagging implementation. The inspected routing prompt does not load recent
+feedback corrections as training examples. This review did not run live provider
+calls or establish deployed configuration.
+
+## Original assessment and plan
 
 **Date:** 2026-06-12
 **Current code:** `server/internal/service/support_inbox_triage.go`
 
-## Where we are today
+## June 12 baseline
 
 | Capability | Current state |
 |---|---|

@@ -47,11 +47,23 @@ GOWORK=off go run -tags ee ./cmd/migrate up
 
 Community uses the same command without `-tags ee`. Restart the Helpin API and
 workers and deploy the frontend. There are no new environment variables or
-Agent Runtime / SDK changes. The two optional escalation fields are backward
-compatible and are exposed through Helpin's existing MCP tool catalog.
+Agent Runtime / SDK changes. The optional escalation fields `issue_summary`, `attempted_steps`, and
+`unresolved_questions` are backward compatible and are defined in the
+[escalation tool metadata](../server/internal/service/internal_command_support_reply.go).
 
 Automated coverage includes SQLite service tests, frontend interaction tests,
 and a PostgreSQL integration test for publication waiting on a takeover lock.
 The latter uses an isolated schema in `SUPPORT_FOLLOWUP_TEST_DSN` and the
 `integration` build tag. Before release, check the controls in a real inbox
 while an AI reply is in progress, then return to AI and send a fresh message.
+
+## Source references
+
+The [control service](../server/internal/service/support_ai_control.go) checks
+eligibility and writes the transition through the
+[conversation repository](../server/internal/repository/support_ai_control.go).
+The [handoff-note builder](../server/internal/service/support_handoff_brief.go)
+keeps the briefing internal. The
+[PostgreSQL test](../server/internal/service/support_ai_control_postgres_test.go)
+checks serialization with reply publication; its presence is not evidence that
+the integration test ran against a deployment.

@@ -44,6 +44,7 @@ func (d InternalCommandDefinition) RiskLevel() string {
 }
 
 type InternalCommandService struct {
+	jevDecisions          *JevDecisionService
 	agentService          *AgentService
 	taskService           *PMTaskService
 	labelService          *PMLabelService
@@ -2280,37 +2281,6 @@ func currentDocumentTargetID(meta model.InternalCommandContext) string {
 		return strings.TrimSpace(meta.TargetID)
 	}
 	return ""
-}
-
-func internalCompactDocumentBlocks(blocks []model.DocsBlock) []map[string]any {
-	out := make([]map[string]any, 0, len(blocks))
-	for _, block := range blocks {
-		out = append(out, map[string]any{
-			"id":           block.ID,
-			"type":         block.Type,
-			"revision":     block.Revision,
-			"content_text": truncateCommandBarText(block.ContentText, 140),
-		})
-	}
-	return out
-}
-
-func internalDetailedDocumentBlocks(blocks []model.DocsBlock, includeContent bool) []map[string]any {
-	out := make([]map[string]any, 0, len(blocks))
-	for _, block := range blocks {
-		item := map[string]any{
-			"id":           block.ID,
-			"type":         block.Type,
-			"revision":     block.Revision,
-			"content_text": truncateCommandBarText(block.ContentText, 140),
-		}
-		if includeContent {
-			item["content_text"] = block.ContentText
-			item["content"] = block.Content
-		}
-		out = append(out, item)
-	}
-	return out
 }
 
 func internalReadDocumentToolMetadata() *commandtools.RuntimeToolMetadata {

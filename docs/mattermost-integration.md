@@ -1,4 +1,11 @@
-# Mattermost Integration for Helpin -- Design Document
+# Mattermost integration proposal
+
+> Status: unimplemented proposal, checked against this checkout on 2026-09-17.
+> The Mattermost handlers, services, client, and settings components listed below
+> are proposed files, not existing integration code. The River queue and phased
+> setup instructions are design choices, not supported installation steps.
+> Older references to stories also predate the task terminology used by current code.
+
 
 ## Context
 

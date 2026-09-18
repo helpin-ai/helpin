@@ -5,7 +5,7 @@ description: Investigate Helpin support evidence, connect it to existing product
 
 # Support to Product
 
-1. Call `get_current_context`, then load the named conversation with `get_support_conversation` and `list_support_messages`.
+1. Call `get_current_context`, then load the named conversation with `get_support_conversation` and `list_conversation_messages`.
 2. Minimize customer data in summaries. Do not repeat unrelated message content, attachment URLs, or personal details.
 3. Call `search_workspace`, `list_tasks`, and `list_documents` to find known issues, fixes, and documentation before proposing new work.
 4. Separate customer impact, observed evidence, likely root cause, documentation gaps, and product follow-up. Label uncertain conclusions.

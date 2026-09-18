@@ -1,117 +1,99 @@
-# AI Usage Metering
+# AI usage metering
 
-## Product Model
+Use this guide when adding an AI call, investigating recorded usage, or checking
+which edition owns charging. Both editions record execution usage. **Community
+has no financial pricing policy; EE adds pricing, reservations, and settlement.**
+The build selects the lifecycle; an environment variable cannot turn a Community
+binary into EE. See [AI connections](ai-connections.md) for model selection.
 
-Helpin shows customers **AI usage**, not AI task credits. The customer should understand how much monthly AI capacity has been used, how much remains, and when it resets. They should not need to memorize per-task prices before using AI.
+## Product model
 
-Customer-facing surfaces should use:
+Keep model execution, usage telemetry, and financial policy separate:
 
-- Monthly AI usage
-- AI usage used
-- AI usage remaining
-- Extra AI usage
-- AI usage packs
+- Product services identify the workspace, action, feature, and idempotency key.
+- The selected connection/profile determines the provider, model, and accepted
+  policy for the execution.
+- Provider token usage is normalized and recorded through the edition's lifecycle.
+- EE computes charges using the accepted rate snapshot and funding mode.
 
-Internal backend code may continue to use credit-oriented names such as `included_credits`, `credits_used`, and `billing_credit_ledger` until a later API/schema cleanup.
+The old weighted-token formula, per-feature credit floors, and 5,000-unit pack
+examples previously on this page describe the legacy credit system. They are
+not the current token-priced AI usage contract. Some legacy billing schema and
+code remain; their presence does not make them the active AI metering path.
 
-## Plan Allowances
+## Community
 
-| Plan | Monthly AI usage |
-| --- | ---: |
-| Starter | 5,000 units |
-| Growth | 25,000 units |
-| Growth trial | 25,000 units |
+[CommunityAIUsage](../server/internal/service/ai_usage_community.go) implements
+the shared lifecycle without a price catalog or financial reservation. It
+validates the accepted Community policy, normalizes tokens, and persists
+execution usage. Charge calculation returns zero. This does not mean the
+configured external model provider is free; its account remains separately owned.
 
-Usage resets every billing period. Unused included usage does not roll over.
+## EE pricing and funding
 
-## Internal Formula
+The [EE usage service](../server/ee/service/ai_usage.go) resolves an eligible route,
+freezes the pricing context, reserves usage before execution, and reconciles the
+actual result. Rates and route eligibility come from the versioned
+[pricing catalog](../server/ee/pricing/catalog.json), rather than a universal
+multiplier or per-feature floor table.
 
-AI usage is calculated internally from model token usage plus a feature floor:
+The [calculator](../server/ee/pricing/calculator.go) uses integer micro-USD and
+separate token classes: uncached input, cache reads, cache writes, output, and
+reasoning. Paid tool usage is included where applicable. Funding mode determines
+which portion becomes the customer charge. Do not calculate a second charge in
+a product handler or copy current catalog prices into a feature guide.
 
-```text
-weighted_tokens =
-  input_tokens
-  + output_tokens * 6
-  + reasoning_tokens * 6
-  - cached_input_tokens * 0.90
+For customer-provided credentials using flat-token pricing, the
+[flat tariff path](../server/ee/service/ai_usage_flat.go) requires a versioned USD
+tariff with an explicit nonnegative rate and supported accounting version. It
+copies the accepted tariff and tool rates so later configuration changes do not
+mutate an already accepted execution. This path does not replace governed media
+operation pricing.
 
-usage_units = max(feature_floor, ceil(weighted_tokens / 1000))
-```
+## Adding a direct model call
 
-The `6x` output and reasoning multiplier reflects the higher cost of generated and reasoning tokens. Cached input receives a `90%` discount. Weighted usage can exceed the feature floor on large runs.
+Use the existing [metered provider](../server/internal/service/ai_usage_meter.go)
+and action-policy registry rather than calling the provider around the lifecycle.
 
-Provider usage is normalized before applying this formula. Cached reads are included in `input_tokens` and then discounted; reasoning is separated from provider totals that include it in output; cache-write tokens are retained in usage metadata for cost analysis but receive no separate customer multiplier.
+1. Supply workspace, action, feature, and idempotency context through
+   `WithAIUsageMetering`.
+2. Let the provider wrapper resolve policy and preflight the execution.
+3. Record the provider's actual usage through the same accepted context.
+4. Use `WithAIUsageMeteringExempt` only for an intentionally exempt call; it is
+   not a general fallback for missing context. The wrapper can reject calls
+   without metering context or an explicit exemption.
 
-## Feature Floors
+Whether an action is exempt belongs to its current policy and call site. Do not
+assume all setup, preview, embedding, or import work is exempt based on its UI
+label. In particular, [support previews](support-ai-preview.md) use the normal
+execution and edition policy even though they do not send customer messages.
 
-The highest feature floor is `100` usage units. No action should have a minimum above `100`, though actual token-based usage may exceed `100`.
+## Agent executions
 
-| AI action | Floor |
-| --- | ---: |
-| AI triage/routing | 2 |
-| Coverage gap analysis, per conversation | 2 |
-| CRM signal detection | 3 |
-| Rewrite/improve support reply | 4 |
-| Deal automation inference | 5 |
-| CRM summary | 6 |
-| Support reply draft | 8 |
-| Support task draft | 8 |
-| Docs AI section generation | 15 |
-| Help article translation | 15 |
-| Help article generation/update | 20 |
-| Built-in lightweight agent run | 40 |
-| Scribe task planning run | 50 |
-| Mira marketing run | 50 |
-| Quill documentation run | 60 |
-| Custom agent run | 60 |
-| Atlas epic planning run | 80 |
-| Forge coding run | 100 |
-| Lens review run | 100 |
-| Custom coding/review agent run | 100 |
+Helpin preflights the accepted run and passes the selected model and policy to
+Agent Runtime. Runtime usage callbacks and checkpoints feed the shared lifecycle;
+settlement uses persisted execution telemetry. A Runtime-delivered support reply
+belongs to its run rather than creating an independent legacy reply-floor charge.
 
-## Free Setup Actions
+Use stable idempotency keys across retries. The EE repository owns transactional
+reservation, checkpoint, and reconciliation behavior; service-level hints cannot
+replace that boundary. Releasing or cancelling execution must preserve already
+recorded usage and the accepted policy.
 
-Do not charge AI usage for rare setup and activation actions:
+## Code and verification
 
-- Custom agent draft/config generation
-- Creating or editing automations
-- Creating or editing flows
-- Agent prompt improvement
-- Inbox, help center, docs, CRM, and import setup
+| Responsibility | Source |
+| --- | --- |
+| Shared lifecycle types | [aiusage](../server/internal/aiusage/) |
+| Product call context and metered provider | [AI usage meter](../server/internal/service/ai_usage_meter.go) |
+| Community recording | [Community lifecycle](../server/internal/service/ai_usage_community.go) |
+| EE reservation and reconciliation | [EE usage service](../server/ee/service/ai_usage.go) |
+| EE transactional persistence | [Usage repository](../server/ee/repository/ai_usage.go) |
+| Pricing arithmetic and funding modes | [Calculator](../server/ee/pricing/calculator.go) |
+| Accepted BYOK tariff | [Flat tariff resolution](../server/ee/service/ai_usage_flat.go) |
 
-Charge when the configured AI work runs, not when users configure it.
-
-## Implementation Wiring
-
-AI usage is currently metered in two paths:
-
-- Direct LLM calls wrap the request context with `WithAIUsageMetering(...)`; `MeteredLLMProvider` first runs a simple preflight check using the feature floor, then records final usage after the provider returns token usage.
-- Setup/config calls that are intentionally free must use `WithAIUsageMeteringExempt(...)`. A metered provider call without usage context or an explicit exemption fails closed.
-- Agent runtimes call `PreflightAgentRunAIUsage(...)` before native SDK, Codex, or OpenCode execution starts, then call `RecordAgentRunAIUsage(...)` after token totals are persisted on the `agent_run`.
-
-Direct LLM metering is wired for standalone support routing/replies/rewrite/task draft fallback, inbox triage, coverage gap analysis, coverage docs suggestions/enrichment, docs AI section generation, help center translation and auto-translation, CRM signal detection, CRM summaries, and deal automation inference.
-
-Agent run metering is wired for built-in agents, custom agents, command-bar work, and coding/review agents through the shared runtime callback. The feature key is selected from the agent preset where possible; custom coding/review agents receive the coding/review floor. Runtime-delivered support replies are part of that agent run and do not create a second support-reply charge.
-
-The metering layer uses idempotency keys so retries or repeated persistence steps do not double-charge the same billable execution. Workspace attribution is required; unattributed internal previews do not consume AI usage.
-
-Usage limit enforcement must happen inside the database transaction that locks the workspace billing row. Service-level prechecks are only early rejection hints; the locked row is the source of truth for included usage, extra usage availability, and workspace lock status.
-
-The direct LLM preflight is intentionally simple: it blocks calls when the workspace is locked, past included AI usage without extra usage enabled, or unable to buy extra usage. It uses the feature floor because exact token usage is unknown before the model call. Final charging still uses the persisted token usage and the transaction-level billing checks.
-
-Extra usage billing is part of the locked billing-row transaction. If a usage event requires a new 5,000-unit paid pack and the Stripe charge fails or times out, the usage ledger, usage counter, and invoiced block count do not commit. The Stripe request uses a short timeout to keep row locks and database connections bounded; a durable charge/reconciliation queue is the next step if this path needs higher throughput.
-
-Embeddings, setup/config generation, and feature configuration are intentionally not metered. SLA limits are not part of this system yet and should be added when the SLA feature ships.
-
-## Customer Explanation
-
-The main app should show a simple usage meter, for example:
-
-```text
-AI usage
-3,420 / 5,000 used
-1,580 remaining
-Resets July 1
-```
-
-Usage history may show categories such as Support AI, Docs AI, CRM AI, Agents, and Automation. Avoid presenting those categories as a pricing menu. Help copy should say that short routing/classification uses little AI usage, while drafting, translation, article generation, and agent runs use more because they read more context and produce longer outputs.
+When changing metering, verify retry idempotency, token normalization, accepted
+rate immutability, rejected/missing policy, and edition behavior. The colocated
+Community, EE service/repository, and pricing tests cover these boundaries.
+Source inspection does not establish a deployment's active prices, allowances,
+or successful settlement; inspect its configured policy and ledger separately.

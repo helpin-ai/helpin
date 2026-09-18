@@ -1,7 +1,6 @@
 package service
 
-// Admin/teammate features: reply preview, draft rewrite, task drafts, and
-// the retained generateResponse helper they share.
+// Admin/teammate features: draft rewrite, task drafts, and shared preview history.
 
 import (
 	"context"
@@ -52,15 +51,6 @@ func (s *SupportAIService) RewriteSupportDraft(
 	}
 
 	return s.rewriteSupportDraftWithHistory(ctx, workspaceID, history, req)
-}
-
-// RewriteSupportDraftWithoutConversation rewrites a support draft before a conversation exists.
-func (s *SupportAIService) RewriteSupportDraftWithoutConversation(
-	ctx context.Context,
-	workspaceID string,
-	req model.SupportAIRewriteDraftRequest,
-) (*model.SupportAIRewriteDraftResponse, error) {
-	return s.rewriteDraftWithHistory(ctx, workspaceID, nil, "support reply", BillingFeatureSupportReplyRewrite, req)
 }
 
 // RewriteDraftForSurface applies the shared conversation-composer rewrite contract
@@ -318,150 +308,6 @@ func (s *SupportAIService) resolvePreviewHistory(
 	return nil, "none", nil
 }
 
-// generateResponse calls the LLM with knowledge context and conversation history.
-func (s *SupportAIService) generateResponse(
-	ctx context.Context,
-	agent *model.Agent,
-	conv *model.SupportConversation,
-	history []model.SupportMessage,
-	knowledgeContext string,
-	customerMessage model.SupportMessage,
-	providerName string,
-	modelName string,
-) (*AIResponseContract, int, error) {
-	return s.generateResponseWithPlan(
-		ctx,
-		agent,
-		conv,
-		history,
-		knowledgeContext,
-		customerMessage,
-		providerName,
-		modelName,
-		defaultSupportQueryPlan(supportMessagePromptText(customerMessage)),
-	)
-}
-
-func (s *SupportAIService) generateResponseWithPlan(
-	ctx context.Context,
-	agent *model.Agent,
-	conv *model.SupportConversation,
-	history []model.SupportMessage,
-	knowledgeContext string,
-	customerMessage model.SupportMessage,
-	providerName string,
-	modelName string,
-	plan SupportQueryPlanContract,
-) (*AIResponseContract, int, error) {
-	return s.generateResponseWithPlanRevision(ctx, agent, conv, history, knowledgeContext, customerMessage, providerName, modelName, plan, "")
-}
-
-func (s *SupportAIService) generateResponseWithPlanRevision(
-	ctx context.Context,
-	agent *model.Agent,
-	conv *model.SupportConversation,
-	history []model.SupportMessage,
-	knowledgeContext string,
-	customerMessage model.SupportMessage,
-	providerName string,
-	modelName string,
-	plan SupportQueryPlanContract,
-	revisionInstruction string,
-) (*AIResponseContract, int, error) {
-	if s == nil || s.llmProvider == nil {
-		return nil, 0, fmt.Errorf("support chat LLM provider is not configured")
-	}
-
-	// Retrieved source text must never occupy the system instruction channel.
-	systemPrompt := buildAISystemPromptWithPlan(agent, "", plan)
-	if strings.TrimSpace(revisionInstruction) != "" {
-		systemPrompt += "\n\nREVISION REQUIRED:\n" + revisionInstruction
-	}
-
-	messages := make([]llm.Message, 0, len(history)+2)
-	if knowledgeContext != "" {
-		messages = append(messages, llm.Message{Role: "user", Content: "Untrusted knowledge reference data (JSON):\n" + knowledgeContext})
-	}
-	messages = append(messages, buildConversationMessages(history)...)
-	messages = append(messages, llm.Message{
-		Role:         "user",
-		Content:      "<customer_message>\n" + supportMessagePromptText(customerMessage) + "\n</customer_message>",
-		ContentParts: buildSupportCustomerContentParts(customerMessage),
-	})
-
-	workspaceID := ""
-	conversationID := ""
-	if conv != nil {
-		workspaceID = conv.WorkspaceID
-		conversationID = conv.ID
-	} else if agent != nil {
-		workspaceID = agent.WorkspaceID
-	}
-	messageID := customerMessage.ID
-	resp, err := completeAI(ctx, s.llmProvider, AICompletionRequest{
-		WorkspaceID:    workspaceID,
-		FeatureKey:     BillingFeatureSupportAIReply,
-		IdempotencyKey: aiUsageIdempotencyKey(workspaceID, BillingFeatureSupportAIReply, conversationID, messageID),
-		Metadata: map[string]interface{}{
-			"conversation_id": conversationID,
-			"message_id":      messageID,
-		},
-		PreferredRoute: &AICompletionRoute{
-			Provider: providerName, Model: modelName, ServiceTier: defaultAICompletionServiceTier,
-		},
-		Chat: llm.ChatRequest{
-			SystemPrompt:     systemPrompt,
-			Messages:         messages,
-			Temperature:      0.3,
-			MaxTokens:        1024,
-			JSONMode:         true,
-			JSONSchema:       supportAnswerJSONSchema(),
-			JSONSchemaStrict: true,
-		},
-	})
-	if err != nil {
-		return nil, 0, err
-	}
-
-	contract, cleanedContent, ok := parseAIResponse(resp.Content)
-	totalTokens := resp.TokensUsed.InputTokens + resp.TokensUsed.OutputTokens
-
-	if !ok {
-		slog.ErrorContext(ctx, "AI response JSON parse failed — refusing ungrounded reply",
-			"provider", providerName,
-			"model", modelName,
-			"raw_content_prefix", truncateLog(resp.Content, 200),
-		)
-		return &AIResponseContract{
-			Content:    cleanedContent,
-			CanAnswer:  false,
-			Confidence: 0,
-		}, totalTokens, nil
-	}
-	if isTemplateLikeAIContent(contract.Content) {
-		slog.ErrorContext(ctx, "AI response matched prompt placeholder — refusing templated reply",
-			"provider", providerName,
-			"model", modelName,
-			"content_preview", truncateLog(contract.Content, 120),
-		)
-		return &AIResponseContract{
-			CanAnswer:  false,
-			Confidence: 0,
-		}, totalTokens, nil
-	}
-
-	slog.InfoContext(ctx, "AI response parsed",
-		"provider", providerName,
-		"model", modelName,
-		"can_answer", contract.CanAnswer,
-		"confidence", contract.Confidence,
-		"source_count", len(contract.SourceDocIDs),
-		"claim_count", len(contract.Claims),
-	)
-
-	return &contract, totalTokens, nil
-}
-
 func sanitizeConversationHistory(history []model.SupportMessage, currentMessageID string) []model.SupportMessage {
 	if len(history) == 0 {
 		return nil
@@ -698,10 +544,6 @@ func normalizeSupportRewriteOperation(raw string) string {
 	default:
 		return ""
 	}
-}
-
-func buildSupportRewriteSystemPrompt(operation string) string {
-	return buildDraftRewriteSystemPrompt("support reply", operation)
 }
 
 func buildDraftRewriteSystemPrompt(surface, operation string) string {

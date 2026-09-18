@@ -5,6 +5,21 @@ Date: 2026-09-07.
 Scope: Helpin Ask Agent/Dock conversations and long-running native SDK work; define reusable boundaries for other Helpin agent surfaces.
 Reviewed Helpin baseline: `56fa5caf5`; Agent Runtime baseline: `121f189`.
 
+This plan is for contributors designing continuity across Ask Agent backing runs.
+It separates the implemented storage foundation from proposed generation,
+retrieval, and rollout work. The authorization recorded below is historical;
+it does not authorize deployment or paid evaluations today.
+
+## Source review — 2026-09-18
+
+- [Successor carry-forward](../../server/internal/service/dock_chat.go) still takes at most 20 messages and slices each message at 500 **bytes**, with a 6,000-byte budget for rendered role/content lines. These are Go string-length limits, not Unicode character or token limits. The wrapper is additional, and once a line would exceed the budget the remaining selected messages are omitted.
+- [Handoff storage](../../server/internal/repository/dock_chat_handoff.go) validates bounded claims, delivered source membership and contiguous sequence coverage, leases, and revision checks. Its constructor has no production caller in this checkout; successor creation still uses the transcript carry-forward path. Storage alone does not implement conversation memory.
+- The table is present in the [versioned foundation schema](../../server/internal/dbmigrate/sql/000000000001_core_foundation.sql), as well as the registered model list. The original AutoMigrate note is not the complete current schema-installation contract.
+- [Commercial usage checkpoints](../../server/ee/repository/ai_usage.go) now compare duplicate-token values and the durable run watermark, returning `ErrAIUsageWatermarkChanged` on mismatch rather than restoring a stale whole summary. The blocker described in the original baseline is historical and is addressed by that current path; runtime tests were not rerun for this documentation review.
+- [Native context configuration](../../server/internal/model/agent_native_context.go) includes `user_anchor_tokens`. Agent Runtime source, third-party pinned harness findings, model quality, production flags, and rollout state were not independently reverified here. Proposed recall-tool names remain absent from the inspected Helpin server source.
+
+## Original plan and implementation record
+
 ## Decision
 
 Keep the current portable compactor. Add durable conversation continuity and bounded evidence retrieval around it. Do not equate a smaller prompt with reliable memory, or replace the implementation with another harness wholesale.
@@ -32,7 +47,7 @@ The research below refines this plan: retain a separate bounded slice of real us
 
 - `agent-runtime/internal/runtime/native_context.go` already provides configurable thresholds, recent complete tool groups, preservation of the latest real user request and loaded skills, bounded tool-free summarization, failure handling, and context events. It remains opt-in.
 - `native_checkpoint.go` restores the compacted history for the same app/run and stores usage and checkpoint generation. This is execution continuity, not a conversation-level memory contract.
-- `helpin/server/internal/service/dock_chat.go:buildCarryForward` carries at most 20 recent messages, 500 characters per message, and 6,000 characters total to a successor. Earlier requirements and decisions can be absent even when native compaction itself works correctly.
+- `helpin/server/internal/service/dock_chat.go:buildCarryForward` carries at most 20 recent messages, 500 bytes per message, and a 6,000-byte rendered-line budget to a successor. Earlier requirements and decisions can be absent even when native compaction itself works correctly.
 - `native_context_test.go:TestNativeContextLongRunBoundedAndDurable` checks 120 tool rounds using a canned summarizer. It verifies mechanics, not real-model retention or task quality.
 - Raw cumulative input/output tokens measure repeated work as well as new work. A bounded prompt still permits a very expensive long loop. Report replay, cached/uncached input, summary usage, retrieval usage, and task outcome separately.
 - Separate existing blocker: the paused-chat `AIUsageRepository.Checkpoint` duplicate path still replaces a whole output summary. Fix and regression-test this before deployment; conversation continuity must not be layered onto regressing billing watermarks. The explicitly deferred P2 rounding issue is not part of this plan.

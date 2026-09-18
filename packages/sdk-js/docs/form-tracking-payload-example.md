@@ -1,182 +1,67 @@
-# Helpin Form Tracking Event Payload Structure
+# Form capture payload
 
-This document provides an example of the nested JSON structure used for form tracking events in the Helpin JavaScript SDK.
+Use this reference when configuring SDK form capture or consuming its `$form`
+events. Capture is opt-in: only forms matching a configured selector are observed,
+and only explicitly allowed field names are collected.
 
-## $form Event Payload
+## Configure a form
 
-The `$form` event is triggered when a form is submitted. The form data is now stored in a nested JSON structure under `event_attributes` with form fields in a `fields` array.
+Pass `formCapture` when initializing the client:
+
+```ts
+import { helpinClient } from '@helpin-ai/sdk-js';
+
+const client = helpinClient({
+  widgetKey: 'YOUR_WIDGET_KEY',
+  formCapture: [{
+    formId: 'contact-sales',
+    selector: '#contact-sales',
+    fields: ['email', 'company_name'],
+    fieldMappings: {
+      email: 'contact.email',
+      company_name: 'company.name',
+    },
+  }],
+});
+```
+
+## Event attributes
+
+For a matching form submission, the SDK calls `track('$form', attributes)` with
+this shape. The tracking transport supplies the surrounding event envelope.
 
 ```json
 {
-  "event_id": "",
-  "user": {
-    "anonymous_id": "1q5d25481s",
-    "id": "user123",
-    "email": "test@example.com",
-    "custom": {},
-    "company": {
-      "id": "company123",
-      "name": "Test Company",
-      "created_at": "2023-01-01"
-    }
+  "form_id": "contact-sales",
+  "field_names": ["email", "company_name"],
+  "fields": {
+    "email": "prospect@example.com",
+    "company_name": "Example Company"
   },
-  "company": {
-    "id": "company123",
-    "name": "Test Company",
-    "created_at": "2023-01-01"
-  },
-  "ids": {
-    "fbp": "fb.0.1742799825963.414412939976805714"
-  },
-  "utc_time": "2025-06-18T08:14:23.105Z",
-  "local_tz_offset": -300,
-  "api_key": "test-api-key",
-  "src": "helpin",
-  "event_type": "$form",
-  "namespace": "default",
-  "event_attributes": {
-    "form_id": "testForm",
-    "form_action": "http://localhost:5173/examples/form-tracking.html",
-    "form_method": "get",
-    "fields": [
-      {
-        "tag": "input",
-        "type": "text",
-        "id": "name",
-        "value": "Sheharyar khalid",
-        "class": "",
-        "name": "name",
-        "attributes": {}
-      },
-      {
-        "tag": "input",
-        "type": "email",
-        "id": "email",
-        "value": "admin@mail.com",
-        "class": "",
-        "name": "email",
-        "attributes": {}
-      },
-      {
-        "tag": "input",
-        "type": "password",
-        "id": "password",
-        "value": "",
-        "class": "",
-        "name": "password",
-        "attributes": {}
-      },
-      {
-        "tag": "input",
-        "type": "number",
-        "id": "age",
-        "value": "24",
-        "class": "",
-        "name": "age",
-        "attributes": {}
-      },
-      {
-        "tag": "select",
-        "id": "country",
-        "value": "au",
-        "class": "",
-        "name": "country",
-        "attributes": {}
-      },
-      {
-        "tag": "input",
-        "type": "checkbox",
-        "id": "newsletter",
-        "value": "on",
-        "class": "",
-        "name": "newsletter",
-        "attributes": {}
-      },
-      {
-        "tag": "textarea",
-        "id": "comments",
-        "value": "Saving the tracking form object for future reference.",
-        "class": "",
-        "name": "comments",
-        "attributes": {}
-      }
-    ]
-  },
-  "referer": "http://localhost:5173/examples/index.html",
-  "url": "http://localhost:5173/examples/form-tracking.html",
-  "page_title": "Helpin SDK Test",
-  "doc_path": "/examples/form-tracking.html",
-  "doc_host": "localhost",
-  "doc_search": "",
-  "screen_resolution": "1920x1200",
-  "vp_size": "1850x1052",
-  "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
-  "user_language": "en-US",
-  "doc_encoding": "UTF-8",
-  "utm": {}
+  "field_mappings": {
+    "email": "contact.email",
+    "company_name": "company.name"
+  }
 }
 ```
 
-## $form_field_change Event Payload
+`fields` is an object keyed by field name, not the array of DOM element metadata
+shown in older examples. Values are limited to 256 characters. Password and file
+inputs, non-string form values, and the implementation's reserved sensitive field
+names are excluded. An empty allowlist captures no field values. Configure the
+allowlist deliberately; these exclusions do not classify every possible sensitive
+field automatically.
 
-The `$form_field_change` event is triggered when a form field value changes. The field data is now stored in a nested JSON structure under `event_attributes.field`.
+Recognized field names and input types can supply automatic mappings when an
+explicit mapping is absent. A mapped email can also produce a `lead` call before
+the `$form` event. The lead API performs its own email validation.
 
-```json
-{
-  "event_id": "",
-  "user": {
-    "anonymous_id": "603c604s07"
-  },
-  "company": {},
-  "ids": {},
-  "utc_time": "2025-06-18T07:22:41.917Z",
-  "local_tz_offset": -300,
-  "api_key": "UMaugVPOWz",
-  "src": "helpin",
-  "event_type": "$form_field_change",
-  "namespace": "default",
-  "event_attributes": {
-    "form_id": "simpleForm",
-    "form_name": "simple-test-form",
-    "field": {
-      "tag": "input",
-      "type": "email",
-      "id": "email",
-      "name": "user_email",
-      "value": "updated@example.com",
-      "data_attributes": {
-        "test": "email-field"
-      }
-    }
-  },
-  "referer": "",
-  "url": "http://localhost:3000/test/e2e/form-tracking-test.html",
-  "page_title": "Helpin Form Tracking Test",
-  "doc_path": "/test/e2e/form-tracking-test.html",
-  "doc_host": "localhost",
-  "doc_search": "",
-  "screen_resolution": "1280x720",
-  "vp_size": "1280x720",
-  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.28 Safari/537.36",
-  "user_language": "en-US",
-  "doc_encoding": "UTF-8",
-  "utm": {}
-}
-```
+## Removed legacy behavior
 
-## Key Changes in Payload Structure
+The current capture implementation does not install a field-change listener or
+emit `$form_field_change`. Earlier examples of that event and full DOM attributes
+are historical and should not be used as the current payload contract.
 
-1. **Nested JSON Structure**: Form data is now stored in a nested structure under `event_attributes` instead of being flattened at the root level.
-
-2. **Fields Array**: Form fields are now stored as an array of objects in `event_attributes.fields` instead of using flattened keys like `field_1_tag`, `field_1_value`, etc.
-
-3. **Field Object**: For field change events, the field data is stored as a single object in `event_attributes.field` with properties like `tag`, `type`, `id`, `value`, etc.
-
-4. **ClickHouse Compatibility**: This structure takes advantage of improved ClickHouse JSON functions, allowing for more efficient storage and querying of nested data structures.
-
-## Benefits
-
-- **Cleaner Data Structure**: The nested JSON structure is more intuitive and easier to understand.
-- **Better ClickHouse Integration**: Takes advantage of improved ClickHouse JSON functions.
-- **More Flexible**: Easier to add new properties or modify the structure without changing the database schema.
-- **Reduced Duplication**: No need to repeat field properties in the event name.
+See [capture implementation](../src/tracking/configured-capture.ts),
+[configuration types](../src/core/types.ts), and
+[lead events](sending-lead-events.md).

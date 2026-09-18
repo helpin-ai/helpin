@@ -121,6 +121,7 @@ The snippet queues commands until the SDK loads, so you can call `helpin(...)` i
 | `HelpinOptions` | Configuration type |
 | `UserProps` | User identity payload |
 | `EventPayload` | Event data payload |
+| `LeadProps` | Validated lead identity and attributes |
 | `ClientProperties` | Browser/request environment shape |
 | `ShowArticleOptions` | Optional collection/space context for `openArticle(...)` |
 | `LogLevel` | Logger verbosity enum |
@@ -161,9 +162,10 @@ Every method below is available on the object returned by `helpinClient(...)`.
 | `init` | `(config: HelpinOptions) => void` | Re-initialize with new options |
 | `id` | `(userData: UserProps, doNotSendEvent?: boolean) => Promise<void>` | Identify a user (optionally suppress the `user_identify` event) |
 | `track` | `(eventName: string, payload?: EventPayload, directSend?: boolean) => void` | Track a custom event |
-| `lead` | `(payload: EventPayload, directSend?: boolean) => void` | Track a validated lead event |
+| `lead` | `(payload: LeadProps, directSend?: boolean) => void` | Track a validated lead event |
 | `rawTrack` | `(payload: unknown) => void` | Send a raw payload as event type `raw` |
 | `group` | `(company: { id: string; name: string; created_at: string; ... }, doNotSendEvent?: boolean) => Promise<void>` | Associate the user with a company or group |
+| `articleView` | `(articleId: string, properties?: EventPayload) => void` | Track a help article view |
 | `pageview` | `() => void` | Send a pageview event |
 | `set` | `(properties: Record<string, unknown>, opts?: { eventType?: string; persist?: boolean }) => void` | Attach global or event-scoped properties |
 | `unset` | `(propertyName: string, opts?: { eventType?: string; persist?: boolean }) => void` | Remove a property added with `set(...)` |

@@ -1,3 +1,4 @@
+import { createWidgetTelemetry } from '../transport/widget-telemetry';
 import { widgetOrigin, widgetURL, widgetSocketURL } from './urls';
 import { mountWidget, unmountWidget, SYSTEM_EVENT_TYPES } from '@helpin-ai/widget-core';
 import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai/widget-core';
@@ -82,6 +83,7 @@ type PendingOutgoingMessage = {
   queuedAt: number;
   lastSentConnection: number;
   expectsAIReply?: boolean;
+  hasBeenSent?: boolean;
 };
 
 const MAX_WS_RETRIES = 10;
@@ -94,6 +96,7 @@ const RECEIVED_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
 const SENT_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/submit.mp3';
 const AI_STREAM_REVEAL_INTERVAL_MS = 45;
 const OUTGOING_STATUS_DELAY_MS = 1500;
+const OUTGOING_HISTORY_SYNC_DELAY_MS = 10_000;
 const AI_PROGRESS_COPY: Record<string, string> = {
   looking: 'Looking into this…',
   checking: 'Checking the details…',
@@ -132,6 +135,7 @@ export class WidgetManager {
   private unreadCount = 0;
   private titleUnreadByConversation = new Map<string, number>();
   private sessionToken: string | null = null;
+  private reportTelemetry = createWidgetTelemetry(() => this.host, () => this.widgetKey);
   private wsConnection: WebSocket | null = null;
   private wsRetryCount = 0;
   private wsHasConnected = false;
@@ -145,6 +149,9 @@ export class WidgetManager {
   private connectionStatus: ConnectionStatus = 'idle';
   private connectionGeneration = 0;
   private pendingOutgoingMessages: PendingOutgoingMessage[] = [];
+  private pendingHistoryTimer: ReturnType<typeof setTimeout> | null = null;
+  private seenCustomerMessageIds = new Set<string>();
+  private creatingConversation = false;
   private pendingStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Preact mount state
@@ -324,6 +331,7 @@ export class WidgetManager {
     this.connectionStatus = 'idle';
     this.connectionGeneration = 0;
     this.pendingOutgoingMessages = [];
+    this.seenCustomerMessageIds.clear();
     if (this.pendingStatusTimer) {
       clearTimeout(this.pendingStatusTimer);
       this.pendingStatusTimer = null;
@@ -1030,6 +1038,9 @@ export class WidgetManager {
     };
 
     if (parsedMeta) {
+      if (role === 'ai' && parsedMeta.ai_progress_state === 'checking') {
+        message.aiProgressState = 'checking';
+      }
       message.delayedTeamReply = parsedMeta.delayed_team_reply === true;
       message.captureEmail = parsedMeta.capture_email === true;
       if (typeof parsedMeta.visitor_feedback?.helpful === 'boolean') message.answerFeedback = parsedMeta.visitor_feedback.helpful;
@@ -1042,6 +1053,20 @@ export class WidgetManager {
     }
 
     return message;
+  }
+
+  private canShowAIProgress(): boolean {
+    const conversation = this.conversations.find((item) => item.id === this.activeConversationId);
+    return conversation?.aiState !== 'escalated'
+      && !['waiting_for_human', 'queued_for_human', 'after_hours_queue', 'assigned_to_human', 'resolved_by_human'].includes(conversation?.flowState || '');
+  }
+
+  private restoreAIProgress(): void {
+    // History is projected by the server against the current turn/ownership,
+    // so an old acknowledgment cannot restart a completed or handed-off loader.
+    const latestReply = [...this.messages].reverse().find((message) => message.role !== 'customer');
+    this.isAIThinking = latestReply?.aiProgressState === 'checking' && this.canShowAIProgress();
+    this.aiProgressLabel = this.isAIThinking ? AI_PROGRESS_COPY.checking : undefined;
   }
 
   private isPublicMessage(msg: any): boolean {
@@ -1074,12 +1099,8 @@ export class WidgetManager {
 
     // Replace optimistic customer messages and transient AI stream placeholders.
     if (msg.sender_type === 'customer') {
-      const pending = this.reconcilePendingOutgoingMessage(msg.content || '');
-      const tempIdx = this.messages.findIndex((message) =>
-        pending
-          ? message.id === pending.id
-          : message.id.startsWith('temp-') && message.content === msg.content,
-      );
+      const pending = this.reconcilePendingOutgoingMessage(msg);
+      const tempIdx = pending ? this.messages.findIndex(message => message.id === pending.id) : -1;
       if (tempIdx >= 0) {
         newMsg.clientId = this.messages[tempIdx].clientId || this.messages[tempIdx].id;
         this.messages[tempIdx] = newMsg;
@@ -1103,8 +1124,8 @@ export class WidgetManager {
 
     if (msg.sender_type !== 'customer') {
       this.isTyping = false;
-      this.isAIThinking = false;
-      this.aiProgressLabel = undefined;
+      this.isAIThinking = newMsg.aiProgressState === 'checking' && this.canShowAIProgress();
+      this.aiProgressLabel = this.isAIThinking ? AI_PROGRESS_COPY.checking : undefined;
       this.playReceivedMessageSound();
     }
 
@@ -1316,7 +1337,7 @@ export class WidgetManager {
       if (!Array.isArray(parsed)) return [];
       return parsed.filter((item): item is PendingOutgoingMessage =>
         Boolean(item && typeof item.id === 'string' && typeof item.content === 'string' && typeof item.queuedAt === 'number'),
-      ).map((item) => ({ ...item, lastSentConnection: -1 }));
+      ).map((item) => ({ ...item, hasBeenSent: item.hasBeenSent || item.lastSentConnection >= 0, lastSentConnection: -1 }));
     } catch {
       return [];
     }
@@ -1335,7 +1356,7 @@ export class WidgetManager {
   }
 
   private flushPendingOutgoingMessages(): void {
-    if (this.wsConnection?.readyState !== WebSocket.OPEN) return;
+    if (this.wsConnection?.readyState !== WebSocket.OPEN || this.connectionStatus !== 'connected') return;
 
     let selectedConversationId: string | undefined;
     let newConversationStarted = false;
@@ -1346,6 +1367,9 @@ export class WidgetManager {
         this.wsSend('conversation:select', { conversation_id: pending.conversationId });
         selectedConversationId = pending.conversationId;
       } else if (!pending.conversationId && !newConversationStarted) {
+        // A second compose action must share the conversation being created.
+        if (this.creatingConversation) continue;
+        this.creatingConversation = true;
         this.wsSend('conversation:new', {});
         newConversationStarted = true;
         selectedConversationId = undefined;
@@ -1357,8 +1381,10 @@ export class WidgetManager {
       }
       this.wsSend('message:send', payload);
       pending.lastSentConnection = this.connectionGeneration;
+      pending.hasBeenSent = true;
     }
     this.persistPendingOutgoingMessages();
+    this.schedulePendingHistorySync();
   }
 
   private getVisiblePendingMessageCount(): number {
@@ -1384,26 +1410,47 @@ export class WidgetManager {
     }, Math.max(0, nextVisibleAt - now));
   }
 
-  private reconcilePendingOutgoingMessage(content: string): PendingOutgoingMessage | null {
-    const pendingIndex = this.pendingOutgoingMessages.findIndex((message) => message.content === content);
+  private reconcilePendingOutgoingMessage(raw: any): PendingOutgoingMessage | null {
+    if (!raw?.id || this.seenCustomerMessageIds.has(raw.id)) return null;
+    this.seenCustomerMessageIds.add(raw.id);
+    const createdAt = new Date(raw.created_at || 0).getTime();
+    const pendingIndex = this.pendingOutgoingMessages.findIndex((pending) =>
+      (pending.hasBeenSent || pending.lastSentConnection >= 0)
+      && pending.content.trim() === (raw.content || '').trim()
+      && (!pending.conversationId || pending.conversationId === raw.conversation_id)
+      && (!createdAt || createdAt >= pending.queuedAt - 5 * 60_000),
+    );
     if (pendingIndex < 0) return null;
     const [pending] = this.pendingOutgoingMessages.splice(pendingIndex, 1);
     this.persistPendingOutgoingMessages();
     this.schedulePendingStatusRender();
+    if (this.pendingOutgoingMessages.length === 0 && this.pendingHistoryTimer) {
+      clearTimeout(this.pendingHistoryTimer);
+      this.pendingHistoryTimer = null;
+    }
     return pending;
   }
 
   private reconcilePendingMessagesWithHistory(rawMessages: any[]): void {
     for (const raw of rawMessages) {
-      if (raw?.sender_type !== 'customer') continue;
-      const createdAt = new Date(raw.created_at || 0).getTime();
-      const pendingIndex = this.pendingOutgoingMessages.findIndex((pending) =>
-        pending.content === (raw.content || '') && (!createdAt || createdAt >= pending.queuedAt - 5 * 60_000),
-      );
-      if (pendingIndex >= 0) this.pendingOutgoingMessages.splice(pendingIndex, 1);
+      if (raw?.sender_type === 'customer') this.reconcilePendingOutgoingMessage(raw);
     }
-    this.persistPendingOutgoingMessages();
-    this.schedulePendingStatusRender();
+  }
+
+  private schedulePendingHistorySync(): void {
+    if (this.pendingHistoryTimer || !this.activeConversationId) return;
+    const conversationId = this.activeConversationId;
+    if (!this.pendingOutgoingMessages.some(pending => pending.conversationId === conversationId
+      && pending.lastSentConnection === this.connectionGeneration)) return;
+    // Recover a lost acknowledgment from saved history without sending the
+    // customer's message again and creating a duplicate support request.
+    this.pendingHistoryTimer = setTimeout(() => {
+      this.pendingHistoryTimer = null;
+      if (this.connectionStatus === 'connected' && this.activeConversationId === conversationId
+        && this.pendingOutgoingMessages.some(pending => pending.conversationId === conversationId)) {
+        this.wsSend('conversation:select', { conversation_id: conversationId });
+      }
+    }, OUTGOING_HISTORY_SYNC_DELAY_MS);
   }
 
   private restorePendingMessagesIntoThread(): void {
@@ -1424,7 +1471,7 @@ export class WidgetManager {
   }
 
   private async handleUploadAttachment(file: File, _localId: string, options?: AttachmentUploadOptions): Promise<{ attachmentId: string; url: string }> {
-    return uploadAttachment(this.host, this.sessionToken || '', file, options);
+    return uploadAttachment(this.host, this.sessionToken || '', file, { ...options, onTelemetry: this.reportTelemetry });
   }
 
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
@@ -1776,6 +1823,7 @@ export class WidgetManager {
     if (this.isShutdown || !this.widgetKey) return;
 
     this.connectionStatus = 'connecting';
+    this.creatingConversation = false;
     this.render();
 
     try {
@@ -1785,10 +1833,6 @@ export class WidgetManager {
       );
 
       this.wsConnection.onopen = () => {
-        this.wsRetryCount = 0;
-        this.wsHasConnected = true;
-        this.connectionIssueStartedAt = null;
-        this.connectionStatus = 'connected';
         this.connectionGeneration++;
         this.render();
 
@@ -1819,12 +1863,16 @@ export class WidgetManager {
 
       this.wsConnection.onclose = (event) => {
         if (this.isShutdown) return;
+        this.reportTelemetry({ stage: 'connection', outcome: 'error', duration_ms: 0 });
 
         const now = Date.now();
         if (this.connectionIssueStartedAt === null) {
           this.connectionIssueStartedAt = now;
         }
 
+        this.creatingConversation = false;
+        if (this.pendingHistoryTimer) clearTimeout(this.pendingHistoryTimer);
+        this.pendingHistoryTimer = null;
         this.connectionStatus = 'disconnected';
         this.clearAIResponseStreams();
         this.isAIThinking = false;
@@ -1898,6 +1946,7 @@ export class WidgetManager {
         this.clearAIResponseStreams();
         const payload = data.data;
         this.sessionToken = payload.session_token;
+        this.reportTelemetry({ stage: 'connection', outcome: 'success', duration_ms: 0 });
 
         // Persist session to a shared root-domain cookie.
         if (this.widgetKey && payload.session_token && payload.expires_at) {
@@ -1923,6 +1972,7 @@ export class WidgetManager {
           ? payload.messages.filter((message: any) => this.isPublicMessage(message))
           : [];
         this.messages = history.map((message: any) => this.mapSupportMessage(message));
+        this.restoreAIProgress();
         this.reconcilePendingMessagesWithHistory(history);
         this.restorePendingMessagesIntoThread();
 
@@ -1937,6 +1987,9 @@ export class WidgetManager {
           }
         }
 
+        this.wsRetryCount = 0;
+        this.wsHasConnected = true;
+        this.connectionIssueStartedAt = null;
         this.connectionStatus = 'connected';
         this.syncUnreadCount();
 
@@ -2029,6 +2082,7 @@ export class WidgetManager {
       }
 
       case 'message:received': {
+        this.reportTelemetry({ stage: 'message', outcome: 'success', duration_ms: 0 });
         this.handleReceivedMessage(data.data);
         break;
       }
@@ -2036,6 +2090,13 @@ export class WidgetManager {
       case 'conversation:created': {
         const convId = data.data?.conversation_id;
         if (convId) {
+          if (this.creatingConversation) {
+            for (const pending of this.pendingOutgoingMessages) {
+              if (!pending.conversationId) pending.conversationId = convId;
+            }
+            this.creatingConversation = false;
+            this.persistPendingOutgoingMessages();
+          }
           this.activeConversationId = convId;
           this.activeTeammate = undefined;
           // Add new conversation to the list with real server ID
@@ -2050,6 +2111,7 @@ export class WidgetManager {
               lastMessageAt: new Date().toISOString(),
             }, ...this.conversations];
           }
+          this.flushPendingOutgoingMessages();
           this.triggerCallback('onConversationStarted', convId);
           this.render();
         }
@@ -2061,7 +2123,7 @@ export class WidgetManager {
         const conversationId = typeof data.data?.conversation_id === 'string'
           ? data.data.conversation_id
           : '';
-        if (conversationId && (!this.activeConversationId || this.activeConversationId === conversationId)) {
+        if (conversationId && (!this.activeConversationId || this.activeConversationId === conversationId) && this.canShowAIProgress()) {
           this.aiProgressLabel = AI_PROGRESS_COPY[stage] || AI_PROGRESS_COPY.looking;
           this.isAIThinking = true;
           this.render();
@@ -2106,12 +2168,14 @@ export class WidgetManager {
         break;
 
       case 'ai:thinking:start':
+        if (data.data?.conversation_id && data.data.conversation_id !== this.activeConversationId) break;
         this.isAIThinking = true;
         this.aiProgressLabel ||= AI_PROGRESS_COPY.looking;
         this.render();
         break;
 
       case 'ai:thinking:stop':
+        if (data.data?.conversation_id && data.data.conversation_id !== this.activeConversationId) break;
         this.isAIThinking = false;
         this.aiProgressLabel = undefined;
         this.render();
@@ -2147,15 +2211,22 @@ export class WidgetManager {
           this.clearAIResponseStreams();
           this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate)
             || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
-          this.messages = msgs.filter((m: any) => this.isPublicMessage(m)).map((m: any) => this.mapSupportMessage(m));
+          const history = msgs.filter((m: any) => this.isPublicMessage(m));
+          this.reconcilePendingMessagesWithHistory(history);
+          this.messages = history.map((m: any) => this.mapSupportMessage(m));
+          this.restorePendingMessagesIntoThread();
           this.isTyping = false;
-          this.isAIThinking = false;
+          this.restoreAIProgress();
           this.render();
         }
         break;
       }
 
       case 'conversation:escalated': {
+        if (!data.data?.conversation_id || data.data.conversation_id === this.activeConversationId) {
+          this.isAIThinking = false;
+          this.aiProgressLabel = undefined;
+        }
         this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate) || this.activeTeammate;
         const conversationId = typeof data.data?.conversation_id === 'string'
           ? data.data.conversation_id
@@ -2307,6 +2378,9 @@ export class WidgetManager {
   }
 
   private disconnectWebSocket(): void {
+    this.creatingConversation = false;
+    if (this.pendingHistoryTimer) clearTimeout(this.pendingHistoryTimer);
+    this.pendingHistoryTimer = null;
     this.clearAIResponseStreams();
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);

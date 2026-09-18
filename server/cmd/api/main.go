@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -39,6 +40,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/crmemail"
 	"github.com/helpin-ai/helpin/server/internal/crmsignal"
 	"github.com/helpin-ai/helpin/server/internal/dbschema"
+	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
@@ -84,7 +86,8 @@ func main() {
 	}
 
 	// Initialize structured logger.
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)}))
+	metrics := observability.NewMetrics()
+	logger := slog.New(metrics.BackgroundHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: parseLogLevel(cfg.LogLevel)})))
 	slog.SetDefault(logger)
 
 	// Connect to PostgreSQL via GORM.
@@ -798,6 +801,56 @@ func main() {
 		supportMessageRepo,
 		supportLLMProvider,
 	)
+	var decisionPolicies []service.SupportDecisionPolicy
+	if cfg.SupportDecisionMode != "" && cfg.SupportDecisionMode != "off" && cfg.SupportDecisionPolicies != "" {
+		if err := json.Unmarshal([]byte(cfg.SupportDecisionPolicies), &decisionPolicies); err != nil {
+			fatalWithSentry("invalid support decision policies", err)
+		}
+	}
+	decisionClient, err := service.NewSupportDecisionClient(service.SupportDecisionConfig{
+		Mode: cfg.SupportDecisionMode, URL: cfg.SupportDecisionURL, Token: cfg.SupportDecisionToken,
+		Timeout:      time.Duration(cfg.SupportDecisionTimeoutMS) * time.Millisecond,
+		WorkspaceIDs: strings.Split(cfg.SupportDecisionWorkspaceIDs, ","), Policies: decisionPolicies,
+	})
+	if err != nil {
+		fatalWithSentry("configure support decision client", err)
+	}
+	supportInboxTriageService.SetLocalDecisionClient(decisionClient)
+	var supportJevService *service.SupportJevService
+	var pmJevProvider decision.Provider
+	if strings.TrimSpace(cfg.JevAPIKey) != "" {
+		jevClient, jevErr := decision.NewJev(cfg.JevAPIKey, time.Duration(cfg.JevTimeoutMS)*time.Millisecond)
+		if jevErr != nil {
+			fatalWithSentry("configure Jev client", jevErr)
+		}
+		pmJevProvider = jevClient
+		jevService, jevErr := service.NewSupportJevService(service.SupportJevConfig{
+			HandoffMode: cfg.JevHandoffMode, FollowUpMode: cfg.JevFollowUpMode,
+			HandoffThreshold: cfg.JevHandoffThreshold, FollowUpThreshold: cfg.JevFollowUpThreshold,
+			RoutingMode: cfg.JevRoutingMode, TagsMode: cfg.JevTagsMode, WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
+			RoutingThreshold: cfg.JevRoutingThreshold, TagThreshold: cfg.JevTagThreshold, DailyLimit: cfg.JevDailyLimit,
+		}, jevClient, repository.NewSupportJevRepository(db), repository.NewAIExecutionUsageRepository(db), supportTagService)
+		if jevErr != nil {
+			fatalWithSentry("configure support Jev", jevErr)
+		}
+		jevService.SetMetrics(metrics)
+		supportInboxTriageService.SetJevService(jevService)
+		supportJevService = jevService
+	}
+
+	jevProductDecisions, jevProductErr := service.NewJevDecisionService(pmJevProvider, repository.NewJevDecisionRepository(db), repository.NewAIExecutionUsageRepository(db), cfg.JevProductPolicies, strings.Split(cfg.JevWorkspaceIDs, ","))
+	if jevProductErr != nil {
+		fatalWithSentry("configure product decisions", jevProductErr)
+	}
+	pmTriageService, pmTriageErr := service.NewPMTriageService(service.PMTriageConfig{
+		Mode: cfg.JevPMMode, Threshold: cfg.JevPMThreshold, DailyLimit: cfg.JevPMDailyLimit,
+		WorkspaceIDs: strings.Split(cfg.JevWorkspaceIDs, ","),
+	}, pmJevProvider, repository.NewPMTriageRepository(db), repository.NewAIExecutionUsageRepository(db), pmTaskRepo, workspaceRepo, pmLabelRepo, supportInboxService)
+	if pmTriageErr != nil {
+		fatalWithSentry("configure PM Jev", pmTriageErr)
+	}
+
+	pmTaskService.SetTriageService(pmTriageService)
 	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
@@ -922,6 +975,7 @@ func main() {
 		pmActivityService,
 		wsPublisher,
 	)
+	ruleEngine.SetJevDecisions(jevProductDecisions)
 	ruleEngine.SetAgentService(agentService)
 	ruleEngine.SetTaskService(pmTaskService)
 	ruleEngine.SetHealthObserver(automationHealthService)
@@ -1149,6 +1203,8 @@ func main() {
 	crmDealService.SetProductAnalyticsService(productAnalytics)
 	crmAssociationService := service.NewCRMAssociationService(crmAssociationRepo)
 	associationsService := service.NewAssociationsService(crmAssociationRepo, crmContactRepo, workspaceRepo, pmTaskLinkRepo, pmTaskRepo, supportConversationRepo, docsLinkRepo, docsDocumentRepo)
+	pmTriageHandler := handler.NewPMTriageHandler(pmTriageService)
+	pmTriageHandler.SetReviewer(service.NewPMTriageReviewService(pmTriageService, pmTaskService, associationsService))
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
 	crmImportService := service.NewCRMImportService(crmImportRepo, crmContactRepo, crmCompanyRepo, crmDealRepo).SetDealService(crmDealService)
 
@@ -1428,6 +1484,8 @@ func main() {
 		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
 		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
 		SetTemporalClient(temporalClient)
+	supportCoverageDailyAnalyzer.SetJevDecisions(jevProductDecisions)
+	commandService.SetJevDecisions(jevProductDecisions)
 	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService).
 		SetCoverageV2Repository(supportCoverageV2Repo).
@@ -1456,6 +1514,7 @@ func main() {
 		agentService,
 		supportAIService,
 	)
+	supportChatService.SetJevService(supportJevService)
 	supportChatService.SetResearchEvidenceDependencies(supportRunEvidenceRepo, workspaceRepo)
 	supportFollowUpRepo := repository.NewSupportFollowUpRepository(db)
 	supportFollowUpService := service.NewSupportFollowUpService(supportFollowUpRepo, supportChatService)
@@ -1509,7 +1568,8 @@ func main() {
 		SetGitRepositoryRepository(gitRepositoryRepo).
 		SetEntitlementService(entitlementService)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, workspaceRepo, pmTaskRepo, supportInstallRepo).
-		SetTargetResolvers(pmEpicRepo, docsDocumentRepo, supportConversationRepo, crmContactRepo, crmDealRepo, gitRepositoryRepo, supportCoverageRepo)
+		SetTargetResolvers(pmEpicRepo, docsDocumentRepo, supportConversationRepo, crmContactRepo, crmDealRepo, gitRepositoryRepo, supportCoverageRepo).
+		SetJevDecisions(jevProductDecisions)
 	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
 	if err != nil {
 		fatalWithSentry("failed to load flow templates", err)
@@ -1689,6 +1749,7 @@ func main() {
 		demoReadOnly = middleware.DemoReadOnly(authService.IsDemoUser)
 	}
 	handlers := router.Handlers{
+		Metrics:                   metrics,
 		AuthenticatedRateLimit:    middleware.AuthenticatedRateLimit(requestLimiter),
 		WidgetRateLimit:           middleware.WidgetRateLimit(redisClient),
 		HelpcenterAnswerRateLimit: middleware.HelpcenterAnswerRateLimit(redisClient),
@@ -1719,6 +1780,7 @@ func main() {
 		PMAISuggestion:      handler.NewPMAISuggestionHandler(pmAISuggestionService),
 		PMTask:              handler.NewPMTaskHandler(pmTaskService),
 		PMTaskInsights:      handler.NewPMTaskInsightsHandler(pmTaskInsightsService),
+		PMTriage:            pmTriageHandler,
 		PMComment:           handler.NewPMCommentHandler(pmCommentService),
 		PMAttachment:        handler.NewPMAttachmentHandler(pmAttachmentService),
 		PMObjective:         handler.NewPMObjectiveHandler(pmObjectiveService),
@@ -2095,6 +2157,18 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Metrics uses a dedicated cluster-only port, never the public API ingress.
+	var metricsServer *http.Server
+	if addr := os.Getenv("METRICS_ADDR"); addr != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metrics.Handler())
+		metricsServer = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second}
+		go func() {
+			if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fatalWithSentry("metrics server failed", err)
+			}
+		}()
+	}
 	// Listen for shutdown signals.
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -2158,6 +2232,11 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	if metricsServer != nil {
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			slog.Error("metrics shutdown failed", "error", err)
+		}
+	}
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		fatalWithSentry("server forced to shutdown", err)
 	}

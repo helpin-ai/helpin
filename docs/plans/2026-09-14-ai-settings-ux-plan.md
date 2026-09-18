@@ -1,5 +1,49 @@
 # AI settings pages: restyle and UX plan
 
+
+This historical implementation plan records the September AI settings redesign.
+Use the current notes before following its component names or visual acceptance
+criteria; the page structure has evolved since the proposed card layout.
+
+## Current implementation and limits
+
+Source-compared on 2026-09-18. The original live-dev observations and verification
+checklist are historical, not a fresh browser or test report.
+
+- [AISettingsPage](../../frontend/src/pages/settings/AISettingsPage.tsx) uses
+  Workspace/Personal tabs in one settings frame and table-based connection/profile
+  rows. `AIConnectionRow` and `AIProfileRow` replace the proposed card components.
+  The personal route initializes the Personal tab; it is not a separate page
+  implementation. Workspace management is gated by `workspace.update`, while
+  the personal tab passes its personal-management capability separately.
+- The [settings registry](../../frontend/src/lib/settingsSections.tsx) uses
+  `workspace.read` for both AI route entries, rather than the proposed
+  `settings.read` on workspace AI. Frontend visibility is not a substitute for
+  backend authorization.
+- Query hooks, provider metadata, the connection dialog, status badge, route
+  fields, and [model combobox](../../frontend/src/components/agents/AIModelCombobox.tsx)
+  exist. The combobox offers catalog suggestions and custom identifiers; a
+  selectable custom string does not establish provider support for that model.
+- [AIProfileEditor](../../frontend/src/components/agents/AIProfileEditor.tsx)
+  scopes primary/fallback choices to the page scope, excludes the primary
+  connection from fallback choices, and validates missing fields and duplicate
+  primary/fallback connections. Connection disconnect and profile deletion use
+  confirmation dialogs in their respective row components.
+- [Device login](../../frontend/src/components/agents/ChatGPTDeviceLogin.tsx)
+  implements polling and expiry handling. Poll intervals have a five-second
+  minimum, so “poll at interval_seconds” below is not exact for smaller values.
+  This review did not initiate authentication or verify external provider flows.
+- [Community pricing text](../../frontend/src/edition/community/ai.tsx) is returned
+  only when the policy mode is `community`; otherwise the helper returns null.
+  The plan's claim that the fee line is never empty is too broad.
+
+Current tests include row-oriented tests instead of the proposed card tests.
+The old build, edition, mobile-width, dark-mode, and accessibility checklist still
+requires explicit execution to establish those results; source availability
+alone does not prove all of it passed.
+
+## Original implementation plan
+
 ## Context
 
 The AI profiles branch added two settings pages, Personal → AI connections (`/w/$slug/settings/ai-connections`) and Workspace → AI (`/w/$slug/settings/ai`), plus the "Manage connections" dialog and the profile editor. They work but look and behave unlike the rest of Helpin. Verified against the live dev site and the code:

@@ -1,8 +1,53 @@
-# GitHub PR Status Reconciliation — PRD / Plan
+# GitHub PR status reconciliation plan
 
 **Date**: 2026-04-23
 **Author**: azhar
-**Status**: Draft
+**Status**: Historical proposal; manual reconciliation implemented with different semantics.
+
+## Current implementation review
+
+Source-compared on 2026-09-17. This plan explains the original missed-webhook
+problem for contributors. Its April incident and production metrics are historical,
+and the proposal is not a description of a fully deployed reconciliation system.
+
+The [GitHub client](../../server/internal/githubapp/client.go) now implements
+`GetPullRequest`. Unlike the proposed contract, HTTP errors including 404 return
+an error rather than `nil, nil`. The [service](../../server/internal/service/git.go)
+implements `ReconcileOpenPullRequestStatuses`, invoked by the
+[reconciliation command](../../server/cmd/reconcile-git-pr-status/main.go).
+The command defaults to dry-run, a limit of 200, and a ten-minute context timeout;
+`-apply` enables writes. It uses configured database and GitHub App credentials.
+
+The [repository query](../../server/internal/repository/git.go) scans GitHub links
+with a PR number and open or null status, oldest update first, across workspaces.
+It has no 15-minute staleness predicate or 30-day cutoff. Invalid limits outside
+1–1000 reset to 200. The service processes links sequentially, not with the proposed
+five concurrent requests. Still-open results are counted without refreshing their
+metadata. Its `Updated` counter increments before dry-run and write success checks,
+so it is not a count of successfully persisted changes.
+
+Applying reconciliation calls `updateDeliveryStatusForPR`, which updates delivery
+state and calls `syncTaskWorkflowForPRStatus`. When team repository settings enable
+auto-sync and configure the corresponding state, this can change task workflow
+state. The metadata-only mitigation in the original risks section is **not** the
+implemented behavior. Writes span multiple operations; this is not an atomic
+all-links repair.
+
+The proposed periodic worker, `GIT_PR_RECONCILER_ENABLED` switch, per-link refresh
+route/button, and `last_webhook_*` integration fields were not found in current
+source. There is no source basis for the promised 15-minute convergence window.
+Webhook event recording/logging and [admin event routes](../../server/internal/router/router.go)
+now exist, so the old blanket claim of no observability is also outdated. The
+GitHub integration resolver still checks signatures conditionally when a secret
+is present; the proposed strict empty-secret rejection is not implemented there.
+
+Future schema additions must follow the [migration guide](../ops/database-migrations.md),
+including installations with AutoMigrate disabled. The original “no dbmigrate SQL
+required” statement is not current schema guidance. Provider rate limits and
+capacity estimates below are historical assumptions, not verified current limits.
+No live reconciliation or runtime tests were run for this documentation review.
+
+## Original proposal and evidence
 
 ## Problem
 
@@ -16,7 +61,7 @@ Today's pipeline depends **entirely** on a single GitHub webhook delivery to kee
 
 If that one delivery is dropped, mis-signed, or the task link lookup fails, status stays stuck forever. There is no reconciler, no manual refresh, and no visibility into whether webhook delivery is even working.
 
-## Evidence of the gap (code audit)
+## Historical evidence of the gap (April code audit)
 
 - **No GitHub PR-read API**: `server/internal/githubapp/client.go` exposes `MintInstallationToken`, `ListInstallationRepositories`, `GetInstallation`, `ListRepositoryBranches`, `MergeBranch` — no `GetPullRequest`.
 - **No periodic reconciliation**: `rg "ReconcilePR|refresh.*pr|sync.*pr"` across `server/internal` returns nothing git-related. No Temporal workflow, cron, or worker touches open PR links.
@@ -30,7 +75,7 @@ If that one delivery is dropped, mis-signed, or the task link lookup fails, stat
 ## Goals
 
 1. Task PR status converges to ground truth within a bounded window (≤ 15 min) even if a webhook is missed.
-2. Admins can tell whether webhook delivery is healthy without leaving Teampulse.
+2. Admins can tell whether webhook delivery is healthy without leaving Helpin.
 3. Users have a one-click way to force-sync a stuck link.
 4. No silent drops — every webhook outcome is observable in logs.
 

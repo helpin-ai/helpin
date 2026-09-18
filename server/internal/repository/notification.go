@@ -11,16 +11,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
-func eventTypesForCategory(category string) []string {
-	eventTypes := make([]string, 0)
-	for eventType, mappedCategory := range model.EventTypeToCategory {
-		if mappedCategory == category {
-			eventTypes = append(eventTypes, eventType)
-		}
-	}
-	return eventTypes
-}
-
 func eventTypesForCategories(categories ...string) []string {
 	if len(categories) == 0 {
 		return nil

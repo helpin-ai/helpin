@@ -1,8 +1,42 @@
-# Marketing Skills Catalog — Evaluation
+# Marketing skills catalog evaluation
 
 **Source:** https://github.com/coreyhaines31/marketingskills (40 skills, ~28K stars)
 **Date:** 2026-05-12
-**Status:** Proposal for review
+**Status:** Historical evaluation; superseded in part by the current marketing catalog
+
+This dated evaluation records proposed marketing skills, integrations, and agents.
+Use it to understand the original selection rationale, not to determine which
+skills or tools a current Helpin run can use.
+
+## Source review — 2026-09-18
+
+- The claim that Helpin has no marketing skills is historical. The current
+  [skill catalog](../../server/internal/agentcontract/skill_catalog.go) includes a
+  marketer preset with context, copy, conversion, lifecycle, SEO, research, and
+  other marketing skills. These are Helpin-specific keys, not a direct copy of
+  the 22 upstream names below. The six proposed specialist presets are not the
+  current preset structure.
+- [Marketing context setup](../../server/skills/system/marketing_context/SKILL.md)
+  uses an internal Helpin Docs document as its source of truth, rather than the
+  proposed `marketing_context` workspace field or new model.
+- [The MCP catalog](../../server/internal/service/mcp_catalog.go) includes CRM
+  writes such as `create_crm_deal`, `add_deal_note`, and `update_deal_stage` with
+  CRM write scope and edit permission. The blanket read-only CRM claim is stale.
+- [Browser tool definitions](../../server/internal/agentcontract/browser_tool_catalog.json)
+  include `browser_snapshot`. Availability depends on the run's allowed tools,
+  runtime, and configuration; a catalog definition does not establish live
+  browser or external-platform access. The old worker tool catalog path is gone.
+- The suggested `schedule_email_sequence` and `draft_social_post` names were not
+  found in the inspected current catalog/service/skill surfaces. Existing mail
+  infrastructure does not prove a sequence scheduler or automatic outbound
+  campaign permission. Template trigger names below also require reconciliation
+  with the current automation event contracts.
+- Upstream stars, catalog counts, time estimates, and tool availability below are
+  historical assessments. The dependency groups overlap (and one row names two
+  skills), so their totals cannot prove “22 of 28 work today.” No upstream fetch,
+  license verification, or live integration test was performed in this review.
+
+## Original evaluation
 
 ## Context
 
@@ -122,7 +156,7 @@ Each is a thin preset over existing `native_sdk` agent runtime — same pattern 
 | `launch_coordinator` | launch-strategy + sales-enablement + social-content + release_notes_writer (existing) | manual, `release.published` |
 | `cro_analyst` | page-cro + form-cro + popup-cro + onboarding-cro + paywall-upgrade-cro | manual, `cron` (biweekly) |
 
-All run through the existing generic agent runtime — no special launch paths needed per the canonical `AGENTS_AND_AUTOMATION.md` direction.
+All run through the existing generic agent runtime — no special launch paths needed per the canonical `agents-and-automation.md` direction.
 
 ---
 
@@ -157,12 +191,12 @@ scheduled flows.
 ## Open questions for you
 
 - Marketing module UI surfacing — is there a marketing module workspace surface yet, or should these skills launch from PM/CRM/Docs for now?
-- License: upstream is presumably permissive (skills are markdown). Confirm before bulk import.
+- License: inspect the exact upstream revision and preserve its required notices before any import; Markdown format does not imply permission.
 - Do we want a "marketing context" doc per workspace, or per organization (since brand voice is usually org-level)?
 
 ---
 
-# External Tool Dependencies — Gap Analysis
+## External tool dependencies — historical gap analysis
 
 Audited the actual SKILL.md bodies for the 28 recommended skills against Helpin's agent tool catalog (`server/internal/worker/tool_catalog.go`).
 
@@ -176,9 +210,9 @@ Pure-knowledge skills — they reason over user input and produce markdown/code.
 
 `copywriting`, `copy-editing`, `content-strategy`, `customer-research`, `marketing-ideas`, `marketing-psychology`, `pricing-strategy`, `sales-enablement`, `launch-strategy`, `product-marketing-context`, `programmatic-seo` (templates only), `page-cro`, `signup-flow-cro`, `onboarding-cro`, `paywall-upgrade-cro`.
 
-These are safe to import as-is. They'll use `fetch_url` and `web_search_*` where the upstream skill says "audit the live page."
+This was the proposed low-integration group; importing still requires license, instruction, and tool-scope review. They'll use `fetch_url` and `web_search_*` where the upstream skill says "audit the live page."
 
-## Skills that work but degrade without external tools (7)
+## Skills that work but degrade without external tools (8 in 7 rows)
 
 Will run, but quality drops because they expect data from a platform we don't talk to.
 
@@ -188,7 +222,7 @@ Will run, but quality drops because they expect data from a platform we don't ta
 | `ai-seo` | Same — also wants JS-rendered DOM | Misses JS-injected schema and content | Add a browser tool (see below) |
 | `schema-markup` | schema.org validator API | Can author markup, can't validate live | `fetch_url` validator.schema.org/?url=... works as a fallback |
 | `site-architecture` | Sitemap crawler | Limited beyond what `crawl_url` returns | Often fine; user can paste sitemap XML |
-| `analytics-tracking` | GA4 / GTM / Mixpanel / PostHog APIs | Can only produce *plans* and tracking-plan docs — can't read live event data | Acceptable; plan-authoring is the main use |
+| `analytics-tracking` | External analytics and tag-management APIs | Can only produce *plans* and tracking-plan docs — can't read live event data | Acceptable; plan-authoring is the main use |
 | `ab-test-setup` | Optimizely / Statsig / GrowthBook | Can author test specs + power calcs; can't read variant data | Acceptable; design is the value |
 | `form-cro`, `popup-cro` | Live event/funnel data | Falls back to heuristic audits via `fetch_url` | Acceptable |
 

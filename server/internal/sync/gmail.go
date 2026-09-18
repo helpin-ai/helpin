@@ -700,11 +700,6 @@ func extractBody(mimeType string, body gmailMessageBody, parts []gmailPart) (tex
 	return text, html
 }
 
-func parseAddressList(value string) []string {
-	addrs, _ := parseAddressListWithNames(value)
-	return addrs
-}
-
 func parseAddressListWithNames(value string) ([]string, map[string]string) {
 	names := make(map[string]string)
 	addrs, err := mail.ParseAddressList(value)

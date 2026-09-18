@@ -1,173 +1,96 @@
-# tauri-plugin-helpin-push
+# Helpin native push plugin
 
-Bridges FCM (Android) / APNs (iOS) push tokens and notification-tap payloads
-into the Helpin Support mobile webview. Desktop targets are a no-op (so
-`src-tauri/` keeps compiling for `pnpm tauri dev` on any dev machine).
+This guide is for contributors integrating native push into the Support mobile
+app. The plugin returns Firebase Cloud Messaging (FCM) tokens on Android and
+iOS, and forwards notification payloads to the webview. On iOS, Firebase also
+needs the APNs device token forwarded by the host app. Desktop commands return
+no token or pending tap.
 
-## Status: pre-spike, unverified
+## Implementation and verification status
 
-Task 19a (the hardware spike — Firebase project + physical devices) has
-**not run yet**. This plugin was written as best-effort, well-researched
-code for the spike to validate, not from confirmed device behavior. Nothing
-here has been compiled — this environment has no Rust toolchain, no Android
-SDK/NDK, and no Xcode. Structural correctness comes from mirroring the
-official Tauri v2 plugin layout (`@tauri-apps/plugin-notification`,
-`@tauri-apps/plugin-haptics`, both present in `node_modules` here for guest-js
-reference) as closely as possible from Tauri v2 mobile-plugin conventions,
-not from a working build.
+Source reviewed on 2026-09-17. The Rust bridge, Kotlin/Swift implementations,
+JavaScript bindings, app registration, and foreground notification handling are
+present. This is not proof of successful device delivery or a TestFlight release.
+The original hardware-spike checklist remains relevant for native acceptance,
+but its claims that nothing had ever been compiled and that registration was
+future work are obsolete. The current Swift package records a prior build issue
+and uses Firebase iOS SDK `from: "12.0.0"`, not the original `10.29.0` value.
 
-**Do not treat any behavior described below as confirmed until Task 19a's
-findings doc (`docs/superpowers/plans/2026-07-08-push-spike-findings.md`)
-exists and this plugin has been reconciled against it, per the task brief:
-"where the findings contradict the outline below, the findings win."**
+Use [the TestFlight guide](../../TESTFLIGHT.md) for the release workflow.
+Record actual device/build results when validating the checklist below; do not
+infer acceptance from the existence of source files or mocked tests.
 
-## Guest-js API (consumed by Task 20)
+## JavaScript API
+
+The app imports these source bindings through the `@helpin/plugin-push` alias
+in its Vite and TypeScript configuration. This is not a published npm package.
 
 ```ts
-import { getPushToken, onPushTokenChanged, onPushTapped } from '@helpin/plugin-push'
+import {
+  getPushToken,
+  onPushTokenChanged,
+  onPushTapped,
+  onPushReceived,
+} from '@helpin/plugin-push'
 
 const token = await getPushToken() // string | null
-const unlistenToken = await onPushTokenChanged((token) => { /* ... */ })
-const unlistenTap = await onPushTapped((data) => { /* data: Record<string,string> */ })
+const stopToken = await onPushTokenChanged((token) => { /* register token */ })
+const stopTap = await onPushTapped((data) => { /* navigate using routing data */ })
+const stopReceived = await onPushReceived((data) => { /* show an in-app notice */ })
+// Each stop function unregisters its listener when the consumer is disposed.
 ```
 
-### Tap delivery: pull model, not event timing
+`getPushToken()` can prompt for notification permission. The app's
+[registration code](../../src/push/push-registration.ts) reads the current
+token and registers it with the backend; it also subscribes to token rotation.
+The app's [entry point](../../src/main.tsx) subscribes to notification taps
+and foreground messages. The [bindings](guest-js/index.ts) define the exact API.
 
-Cold-start taps are delivered deterministically, never by racing a native
-event against webview/listener readiness:
+On Android, token refresh events are forwarded only while a plugin instance is
+attached. Reading the current token during registration avoids depending solely
+on historical refresh events. Foreground messages forward both notification
+text and routing data to the webview. Background display depends on the native
+platform and notification payload; validate it on devices.
 
-1. The native side buffers every tap payload (Android: launch-intent extras
-   read in `load()`, warm-tap extras in `onNewIntent`; iOS: `didReceive
-   response.userInfo`).
-2. `onPushTapped(cb)` registers the live `push-tapped` plugin listener
-   **first**, then invokes the `take_pending_tap` command exactly once — the
-   native side returns-and-clears the buffer.
-3. Warm taps are *also* `trigger()`ed live (belt and braces); if the same
-   payload arrives through both paths, guest-js dedupes by JSON equality
-   within a 3s window and delivers once.
+## Tap buffering
 
-Consumed via a source alias (`@helpin/plugin-push` → `guest-js/index.ts`),
-configured in the app's `vite.config.ts` and `tsconfig.app.json` — not a
-built/published npm package. This was the explicit "simplest" option in the
-task brief: no `rollup`/build step to keep green, no dist output to go stale.
+The native code stores the latest tap payload. `onPushTapped` registers the live
+listener first, then invokes `take_pending_tap` to read and clear that buffer.
+Identical payloads received within three seconds are deduplicated using sorted
+key/value entries. This is a single pending payload, not a durable queue of taps.
 
-## Layout (mirrors official Tauri v2 plugins)
+The buffering mechanism does not establish that every native launch callback
+fires as expected. Confirm Android launch-intent/new-intent payloads and iOS
+terminated-state notification callbacks on physical devices.
 
-```
-tauri-plugin-helpin-push/
-  Cargo.toml, build.rs          — Rust crate + build script (mirrors tauri-plugin-notification's shape)
-  src/
-    lib.rs                       — Builder::new("helpin-push"), HelpinPushExt trait
-    commands.rs                  — #[command] get_push_token, take_pending_tap
-    mobile.rs / desktop.rs       — platform-specific HelpinPush<R> handle
-    models.rs, error.rs
-  permissions/
-    default.toml
-    autogenerated/commands/*.toml — get_push_token + take_pending_tap;
-                                     hand-written; a real `cargo build`
-                                     would normally generate these
-  guest-js/index.ts              — TS bindings, invoke()/addPluginListener()
-  android/                       — Kotlin plugin + FirebaseMessagingService
-  ios/                           — Swift plugin (SPM package)
-  package.json                   — guest-js package descriptor (unused by
-                                     any build step today; see above)
-```
+## Native integration checklist
 
-No `src-tauri/gen/android` or `src-tauri/gen/apple` exist in this repo yet —
-mobile native projects have never been initialized here (no Android
-Studio/Xcode). Once `pnpm tauri android init` / `pnpm tauri ios init` run (see
-the app's main README "Device handoff checklist"), this plugin's `android/`
-and `ios/` directories get wired into those generated projects automatically
-via `build.rs`'s `tauri_plugin::Builder::android_path("android")` /
-`.ios_path("ios")`.
+- Build each target and verify Tauri command signatures, plugin registration,
+  generated permissions, and Android manifest merging. The `android/` and `ios/`
+  directories are wired through [build.rs](build.rs).
+- Initialize native projects with `pnpm tauri android init` or
+  `pnpm tauri ios init` from `apps/support-mobile`. Generated project presence
+  in a local checkout is not evidence of release success.
+- Configure Firebase for the application. On Android, place
+  `google-services.json` in the generated app module and apply the Google
+  services Gradle plugin there, not in this plugin's library module.
+- On iOS, include `GoogleService-Info.plist` in the app bundle. The Swift plugin
+  returns no token when that file is absent. Confirm the host AppDelegate
+  forwards `didRegisterForRemoteNotificationsWithDeviceToken` to
+  `Messaging.messaging().apnsToken`.
+- Enable Push Notifications and the remote-notification background mode in the
+  generated iOS project. Confirm signing capabilities and entitlements.
+- Validate the local Tauri Swift package path after generation. Current build
+  declarations are in [Package.swift](ios/Package.swift) and
+  [build.gradle.kts](android/build.gradle.kts): Firebase iOS `from: "12.0.0"`,
+  Android Firebase BOM `33.5.1`, Android compile SDK 34 and minimum SDK 26.
+  These declarations do not establish tested device compatibility.
+- Test permission approval/denial, fresh token retrieval, rotation, logout,
+  foreground notices, background taps, terminated-state taps, and activity
+  recreation. Confirm that native redelivery does not repeat navigation.
+- Test with the backend's actual notification and routing payload. JavaScript
+  mocks cannot prove APNs/FCM delivery, OS tray behavior, or platform lifecycle
+  handling.
 
-## Consolidated SPIKE-VERIFY list
-
-Every item below also has an inline `SPIKE-VERIFY:` comment at its exact
-location in code. Task 19a should confirm/correct each one; anything that
-turns out wrong should be fixed here, not worked around in Task 20.
-
-### Cross-cutting
-1. **Nothing in this plugin has been compiled.** Rust crate structure,
-   Kotlin annotations (`@TauriPlugin`, `@Command`, `@Permission`,
-   `@PermissionCallback`), and Swift `Tauri` module API calls are
-   reproduced from memory of the Tauri v2 mobile-plugin convention, not
-   verified against a real build.
-2. **SDK/Gradle/SPM version pins are placeholders** (`firebase-bom:33.5.1`,
-   `firebase-ios-sdk` from `10.29.0`, `compileSdk = 34`) — replace with
-   whatever Task 19a's findings doc records as tested-working.
-3. **Permission gating semantics**: assumed on both platforms that denying
-   the notification-display permission (Android `POST_NOTIFICATIONS`, iOS
-   `UNUserNotificationCenter` authorization) does **not** block FCM/APNs
-   token issuance, only tray display. Needs on-device confirmation.
-
-### Android (`android/`)
-4. `PushPlugin.kt`: tap buffering itself is deterministic (pull model —
-   buffer written in `load()`/`onNewIntent`, drained by `takePendingTap`),
-   so the remaining question is **whether the launch intent / `onNewIntent`
-   intent actually carries the FCM data payload as extras on real
-   hardware** — not whether the buffering works. Also confirm the OS
-   redelivering the launch intent on activity recreation (rotation, process
-   restore) doesn't re-populate the buffer with an already-handled tap; if
-   it does, mark the intent consumed rather than changing the pull model.
-5. `PushPlugin.kt`: `requestPermissionForAlias`/`@PermissionCallback`
-   dispatch pattern for `POST_NOTIFICATIONS` — confirm exact base-class
-   method name/signature against the real `app.tauri.plugin.Plugin` API.
-6. `PushPlugin.kt`: FCM notification-tap extras assumed to land as flat
-   string key/value pairs directly on the launcher/new intent — confirm,
-   and confirm no conflicting/reserved keys from Tauri's own intent extras.
-   (`PushPlugin.instance` — the companion-object bridge used by
-   `HelpinMessagingService` for token refresh — still needs its
-   process-lifecycle behavior confirmed too.)
-7. `HelpinMessagingService.kt`: `onNewToken` silently drops the event if no
-   `PushPlugin.instance` is attached (app fully backgrounded/activity
-   destroyed) rather than buffering — confirmed acceptable only if Task 20
-   always calls `getPushToken()` fresh on launch instead of relying on
-   having caught every historical token-changed event.
-8. `onMessageReceived` assumes the backend (Task 18's FCM sender) always
-   includes a `notification` block so the OS tray shows something — a
-   data-only message would arrive silently with nothing displayed.
-9. `AndroidManifest.xml` / `build.gradle.kts`: manifest-merge conflicts and
-   Gradle module wiring into `gen/android/settings.gradle.kts` are
-   unverified — no `gen/android` exists yet in this repo.
-10. **Google services Gradle plugin placement**: `com.google.gms.google-services`
-    is deliberately NOT applied in this plugin's library module (documented
-    as ineffective there — it only processes `google-services.json` for the
-    *application* module). During Task 19a it must be applied in
-    `gen/android/app/build.gradle.kts` (plus the classpath/plugin
-    declaration in the generated root/settings Gradle files), alongside
-    placing `google-services.json` in that app module.
-
-### iOS (`ios/`)
-11. `Package.swift`: relative path to the `Tauri` SPM package
-    (`../.tauri/tauri-api`) is a guess — confirm against whatever
-    `pnpm tauri ios init` actually generates under `gen/apple/`.
-12. `PushPlugin.swift`: `FirebaseApp.configure()` called from the plugin's
-    `init()` — may instead need to live in the generated
-    `gen/apple/<App>/AppDelegate.swift` (manual edit), especially if Tauri's
-    plugin lifecycle instantiates the plugin more than once.
-13. `PushPlugin.swift`: **APNs token forwarding requires a manual
-    AppDelegate edit.** `Messaging.messaging().token` will likely never
-    resolve on a real device until
-    `application(_:didRegisterForRemoteNotificationsWithDeviceToken:)` in
-    the generated AppDelegate calls
-    `Messaging.messaging().apnsToken = deviceToken` — this plugin cannot
-    intercept that callback itself. Document as a required manual Xcode/
-    AppDelegate step once `gen/apple` exists.
-14. `PushPlugin.swift`: tap buffering is deterministic (every `didReceive`
-    writes `bufferedTapPayload`, drained by `takePendingTap`), so the
-    remaining question is **whether `UNUserNotificationCenterDelegate.didReceive`
-    actually fires for a terminated-state (cold-start) launch** — if it
-    doesn't, the payload instead needs reading from
-    `launchOptions[.remoteNotification]` in
-    `application(_:didFinishLaunchingWithOptions:)` and forwarding into
-    `PushPlugin.bufferedTapPayload` (internal access, module-visible for
-    exactly this purpose).
-15. Push Notifications capability + Background Modes (remote-notification)
-    must be enabled manually in the generated Xcode project — cannot be
-    expressed from this plugin's files alone.
-
-### Ops (blocks everything above)
-16. `GoogleService-Info.plist` / `google-services.json` don't exist yet —
-    Task 19a Step 1 (Firebase project, Doppler storage, `.gitignore`
-    entries) is a prerequisite for any of this to run at all.
+Keep Firebase configuration and signing credentials outside committed source.
+See the app's [QA checklist](../../QA.md) for broader device acceptance.

@@ -28,10 +28,12 @@ Do not mix mocked widget coverage and live widget coverage in the same directory
 
 ## Commands
 
+Run from the repository root:
+
 ```bash
+pnpm install --frozen-lockfile
 pnpm --dir packages/sdk-js exec playwright install chromium
-pnpm --dir packages/sdk-js exec playwright test --config=./playwright.widget.config.ts --project=chromium
-pnpm --dir packages/sdk-js run build
+pnpm --dir packages/sdk-js run test:e2e:widget
 ```
 
 ## Extension Points

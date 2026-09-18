@@ -66,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix='community-bundle-') as temporary:
         shutil.copy2(root / 'community' / name, community / name)
     shutil.copytree(root / 'community/postgres', community / 'postgres')
     (bundle / 'docs/community').mkdir(parents=True)
-    for name in ('configuration.md', 'deployment.md', 'backups.md', 'upstream-images.md', 'widget-identity.md'):
+    for name in ('configuration.md', 'deployment.md', 'backups.md', 'upstream-images.md', 'widget-identity.md', 'troubleshooting.md'):
         shutil.copy2(root / 'docs/community' / name, bundle / 'docs/community' / name)
     # Image references in a release bundle are immutable. Version variables are
     # useful for source builds only and cannot override these digest locks.

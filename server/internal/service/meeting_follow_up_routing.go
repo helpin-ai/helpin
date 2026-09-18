@@ -26,7 +26,7 @@ func (s *CRMMeetingProcessingService) SetFollowUpRoutingStore(store meetingFollo
 // BackfillFollowUpRouting classifies existing drafts without regenerating meeting artifacts.
 // Unavailable AI/transcripts leave suggestions visible in CRM and eligible for a later retry.
 func (s *CRMMeetingProcessingService) BackfillFollowUpRouting(ctx context.Context) error {
-	if s.followUpRouting == nil || s.llmProvider == nil {
+	if s.followUpRouting == nil || (s.llmProvider == nil && s.jevDecisions == nil) {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
@@ -70,6 +70,12 @@ func (s *CRMMeetingProcessingService) classifyExistingFollowUp(ctx context.Conte
 	}
 	if body, ok := item.Context["draft_body"].(string); ok && strings.TrimSpace(body) != "" {
 		draft += "\n" + body
+	}
+	if route := s.classifyJevMeetingFollowUp(ctx, item.WorkspaceID, item.ID, draft, transcript.PlainText); route != nil {
+		return route.scope, nil
+	}
+	if s.llmProvider == nil {
+		return "uncertain", fmt.Errorf("meeting routing provider unavailable")
 	}
 	content := transcript.PlainText
 	if len(content) > 120000 {

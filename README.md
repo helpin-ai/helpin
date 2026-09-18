@@ -1,237 +1,149 @@
 # Helpin
 
-Monorepo for the Helpin app, embedded widget SDK, shared widget components, and the standalone widget bundle.
+Helpin Community is a self-hosted customer support platform with website chat,
+a shared staff inbox, a public help center, and AI agents using your own AI
+connections. Keep support conversations and knowledge in one installation,
+without requiring a Helpin account.
+
+**Status: Community 0.1 beta, pre-release.** The repository release record as of
+2026-09-18 describes a local, unpublished candidate with open
+[release gates](community/PUBLICATION.md). Use the source-build path below while
+those gates remain open; a Compose image tag alone does not establish that a
+public installation bundle is available.
+
+[Help docs — coming soon](https://helpin.ai/docs) · [Get started](#get-started) · [Architecture](ARCHITECTURE.md) ·
+[Contribute](CONTRIBUTING.md) · [Known limitations](ROADMAP.md)
+
+## What you can do
+
+- **Chat with visitors:** embed the support widget on your website and identify
+  visitors within your workspace.
+- **Reply as a team:** manage support conversations from the shared staff inbox.
+- **Publish answers:** create articles and serve them through your public help center.
+- **Use AI assistance:** connect your own provider credentials or an approved local
+  model endpoint, then select a workspace AI profile for support agents.
+- **Self-host the stack:** run the Community services with Docker Compose. The
+  default bundle does not configure an external telemetry destination or require
+  a Helpin account.
+
+A typical support workflow:
+
+```mermaid
+flowchart LR
+    Visitor[Visitor on your website] --> Widget[Embedded chat]
+    Widget --> Inbox[Shared staff inbox]
+    Inbox --> Reply[Staff reply]
+    Inbox --> Agent[Configured support agent]
+    Articles[Published help articles] --> Visitor
+    Reply --> Widget
+    Agent --> Widget
+```
+
+AI connections are optional for human chat and published articles. Provider usage
+may incur charges from your provider. Knowledge embeddings and some non-agent AI
+features have [separate configuration](docs/community/configuration.md).
+
+## Get started
+
+### Evaluate from source today
+
+Follow the [Community source-build guide](docs/community/development.md#source-builds-and-acceptance).
+It includes cloning Helpin and the separate Agent Runtime repository, selecting
+the pinned Runtime revision, and building the complete Compose stack. Access to
+Runtime is required while that repository remains private.
+
+For editing the application with local Go and frontend processes, use the
+[local development guide](docs/development.md).
+
+### Install a published bundle when available
+
+The [Community installation guide](community/README.md) describes downloading and
+verifying a release bundle. Requirements are Docker Engine, Docker Compose v2,
+Bash, OpenSSL, and an amd64 or arm64 host. Allow at least **8 GiB RAM and 20 GiB
+free disk** for evaluation; source builds need more. These are starting points,
+not measured production capacity limits.
+
+After verifying and extracting a published bundle, run from its `community/` directory:
+
+```sh
+./setup.sh install
+# Edit .env for your public URLs and optional mail/AI settings.
+./setup.sh start
+./setup.sh status
+```
+
+Open **http://localhost:8085**, sign up, and create an organization and workspace.
+To complete your first conversation:
+
+1. In workspace settings, allow your website's origin, including scheme and port.
+   The widget rejects visitor requests if the origin list is empty.
+2. Copy the generated support installation snippet into that website.
+3. Open the website, send a visitor message, and reply from the staff inbox.
+4. Optionally publish a help-center article or configure a shared connection and
+   workspace default under **Settings → AI**.
+
+Before exposing the installation publicly, follow the
+[DNS and HTTPS guide](docs/community/deployment.md) and configure
+[backups](docs/community/backups.md). The default local setup binds to loopback.
+
+## Community scope and editions
+
+This monorepo also contains Helpin's broader CRM, project management, automation,
+and native applications. Their presence in source does not mean they are included
+in the default Community beta experience.
+
+| Capability | Community 0.1 beta | Broader repository / EE |
+| --- | --- | --- |
+| Visitor chat, staff inbox, published help center | Included | Shared application capabilities |
+| Agent AI connections | Your credentials or approved local endpoints | EE adds managed routes and commercial billing policies |
+| CRM and PM navigation, automation builders, coding | Outside the default beta surface | Code exists; availability is separate from Community beta support |
+| Subscription billing and payment UI | Excluded | Explicit EE builds |
+| Analytics collector and ClickHouse | Not bundled; support SDK does not collect analytics events | Separate event pipeline |
+| Desktop, mobile, admin, and email notice apps | Not shipped in the Community Compose bundle | Separate build and deployment paths |
+
+Application SMTP is optional. Support email replies and inbound delivery require
+the optional Postmark integration. Tested cross-version upgrades are planned for
+0.2; see the [roadmap and known limitations](ROADMAP.md).
+
+## For developers
+
+Start with [ARCHITECTURE.md](ARCHITECTURE.md) for the service diagram, request and
+agent flows, data ownership, edition boundaries, and a guide to where changes belong.
+
+- [Local development](docs/development.md): toolchain, infrastructure, app startup, checks.
+- [Community development](docs/community/development.md): complete source builds and acceptance tests.
+- [AI connections and profiles](docs/ai-connections.md): configuration and edition selection.
+- [Widget architecture](docs/widget-architecture.md): SDK, shared widget, and standalone build paths.
+- [Documentation index](docs/README.md): deeper engineering and product references.
+
+## Contributing and support
+
+Product guides will be hosted in the [Helpin docs](https://helpin.ai/docs) (coming soon).
+For now, use the repository guides above and [SUPPORT.md](SUPPORT.md) for setup
+questions, bug reports, and support expectations.
+Self-hosters can start with [troubleshooting](docs/community/troubleshooting.md).
+
+[Report a bug](https://github.com/helpin-ai/helpin/issues/new?template=community-bug.yml)
+or [request a feature](https://github.com/helpin-ai/helpin/issues/new?template=community-feature.yml)
+with a concrete example. For larger contributions, open an issue to agree on scope
+before implementation. Documentation improvements and reproducible bug reports
+are useful contributions too.
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for development checks and PR expectations.
+Application and enterprise contributions require acceptance of the [CLA](CLA.md);
+contributions solely to Apache-2.0 components do not require the additional CLA.
+Please follow the [code of conduct](CODE_OF_CONDUCT.md).
+
+Report vulnerabilities through [SECURITY.md](SECURITY.md), not public issues.
+Public issue and security-reporting access depends on repository publication;
+maintainers must verify these entry points before launch.
 
 ## License
 
-The community application is **AGPL-3.0-only**. Code in `server/ee/` and
-`frontend/src/ee/`, and any other directory named `ee`, is covered by the
-[Helpin Enterprise License](ee/LICENSE): internal development, testing, and
-evaluation are permitted; production use requires a commercial agreement.
-The public SDKs and embedded widget packages are **Apache-2.0**. See
-[LICENSE](LICENSE) for exact scopes and third-party exceptions, and
-[CONTRIBUTING.md](CONTRIBUTING.md) for contribution terms.
-
-## Community 0.1 beta
-
-The self-hosted support beta includes visitor identification and chat, a staff
-inbox, public help-center articles, and agents using your own AI connections.
-Start with the [Community installation guide](community/README.md), including
-public DNS/HTTPS setup, application SMTP, backups, and [known limitations](ROADMAP.md).
-The release candidate is local and unpublished until its
-[publication and architecture gates](community/PUBLICATION.md) pass.
-There is no telemetry endpoint or Helpin account requirement by default.
-
-Engineering documentation starts at [docs/README.md](docs/README.md). The
-canonical CRM signals reference is
-[docs/crm-signals.md](docs/crm-signals.md).
-
-## Main Packages
-
-- `frontend/`: main React app
-- `packages/shared/`: shared types and shared emoji catalog/search helpers
-- `packages/widget-core/`: reusable chat widget UI components
-- `packages/sdk-js/`: embeddable `lib.js` SDK loader and widget runtime
-- `widget/`: standalone non-SDK widget bundle
-- `server/`: Go API and workers
-- `events-pipeline/`: capture, JetStream delivery, session writers, sustained
-  test harness, and the [15k events/s capacity baseline](events-pipeline/CAPACITY_BASELINE.md)
-
-## Widget Paths
-
-There are three different UI paths in this repo. They share some data, but they do not build the same way.
-
-### 1. Embedded Widget via `lib.js`
-
-This is the path used when a site loads:
-
-```html
-<script src="https://.../lib.js"></script>
-```
-
-Flow:
-
-1. `packages/sdk-js/src/loader.ts` builds to stable `dist/lib.js`.
-2. `packages/sdk-js/vite.config.ts` injects the hashed SDK filename into `lib.js`.
-3. `lib.js` loads `helpin.[hash].js`.
-4. `packages/sdk-js/src/core/widget.ts` mounts the widget from `@helpin-ai/widget-core`.
-5. `sdk-js` aliases `@helpin-ai/widget-core` to `packages/widget-core/src/*`, so the SDK build bundles widget-core source directly.
-
-Important consequence:
-
-- If `widget-core` changes, rebuild `@helpin-ai/sdk-js` for the embed widget to pick it up.
-- Building `widget-core` alone does not update the live `lib.js` widget.
-
-### 2. Frontend App
-
-The frontend uses emoji-related code in two different places:
-
-- Support composer: `frontend/src/components/support/EmojiPicker.tsx`
-  - Uses `loadEmojiCatalog()` from `@helpin-ai/widget-core`
-- Widget preview in settings: `frontend/src/components/settings/WidgetPreview.tsx`
-  - Uses `@helpin-ai/widget-core`
-  - Frontend aliases `@helpin-ai/widget-core` to `packages/widget-core/dist/index.js`
-
-Important consequence:
-
-- The app support composer and widget-core now share the same async emoji catalog loader.
-- The app support composer is not literally the same component as the widget-core picker.
-
-### 3. Standalone Widget Bundle
-
-This is the plain JS bundle under `widget/`:
-
-- Source: `widget/src/helpin-widget.js`
-- Emoji payload: `widget/src/emoji-data.js`
-- Build script: `widget/build.sh`
-- Outputs:
-  - `widget/dist/helpin-widget.min.js`
-  - `widget/dist/emoji-data.js`
-
-This path is independent from `packages/sdk-js` and `packages/widget-core`.
-
-Use the term "standalone widget bundle" for this path to avoid confusion with the `lib.js` SDK widget.
-
-## Emoji Flow
-
-### Shared Catalog
-
-Shared emoji data lives in:
-
-- `packages/shared/src/emoji-data.ts`
-- re-exported from `packages/shared/src/index.ts`
-
-This is the source of truth for:
-
-- frontend support composer, via widget-core's loader
-- widget-core lazy emoji catalog
-
-The frontend app reaches this catalog through `@helpin-ai/widget-core`'s exported `loadEmojiCatalog()` helper, rather than importing the dataset eagerly.
-
-### Embedded Widget Emoji Load
-
-Flow:
-
-1. User clicks the emoji button in widget-core.
-2. `packages/widget-core/src/components/EmojiPicker.tsx` calls `emoji-loader.ts`.
-3. `packages/widget-core/src/components/emoji-loader.ts` dynamically imports `emoji-catalog.ts`.
-4. `packages/widget-core/src/components/emoji-catalog.ts` reads from `@helpin-ai/shared`.
-5. The SDK build emits a lazy chunk like `dist/chunks/emoji-catalog.[hash].js`.
-6. Browser fetches that chunk only when the picker is opened.
-
-Serving requirements for the embedded widget:
-
-- `lib.js`
-- `helpin.[hash].js`
-- `chunks/emoji-catalog.[hash].js`
-- `sounds/ping.mp3`
-
-If `/chunks/` is not served as JavaScript, the picker will fail at runtime.
-
-### Standalone Widget Emoji Load
-
-Flow:
-
-1. User clicks the emoji button.
-2. `widget/src/helpin-widget.js` resolves the widget asset base URL.
-3. It lazy-loads `emoji-data.js` from the same base path.
-
-This is separate from the `sdk-js` lazy chunk approach.
-
-## Build and Deploy
-
-Useful commands:
-
-```bash
-pnpm --filter @helpin-ai/shared build
-pnpm --filter @helpin-ai/widget-core build
-pnpm --filter @helpin-ai/sdk-js build
-pnpm --filter frontend build
-bash widget/build.sh
-```
-
-Deploy notes:
-
-- `packages/sdk-js` CDN deploy must include `dist/chunks/`, not just `lib.js` and `helpin.*.js`
-- nginx/static hosting for the embed widget must serve `/chunks/`
-- frontend preview depends on `packages/widget-core/dist/index.js`
-
-## Frontend Bundle Size Notes
-
-Current frontend behavior:
-
-- The emoji catalog is emitted as one async `emoji-catalog-*.js` chunk.
-- The support composer and widget preview both load that same async catalog path through widget-core.
-- The support route no longer carries a second copy of the catalog.
-
-Important clarification:
-
-- The large `index-*.js` chunk warning in the frontend build is not caused by the emoji catalog.
-- The emoji-related payload is now isolated to the separate `emoji-catalog-*.js` chunk plus the picker UI code.
-
-The shared dataset was also cleaned up:
-
-- per-category duplicate entries were removed
-- malformed entries were removed
-- total catalog entries dropped from 1534 to 1409 without changing category coverage across the file
-
-## Quick Rules of Thumb
-
-- Change `packages/widget-core` and want the embed widget updated: rebuild `@helpin-ai/sdk-js`
-- Change the standalone widget under `widget/`: run `bash widget/build.sh`
-- Change only shared emoji data: rebuild anything that consumes it
-- Debug a broken embed-widget emoji picker first by checking `/chunks/emoji-catalog.*.js` delivery and MIME type
-
-## Agents and Automation
-
-The canonical doc for the current backend ownership and execution model is [docs/AGENTS_AND_AUTOMATION.md](docs/AGENTS_AND_AUTOMATION.md).
-
-Workspace-owned outbound MCP servers for agents are documented in [docs/EXTERNAL_MCP_SERVERS.md](docs/EXTERNAL_MCP_SERVERS.md). Public inbound MCP for outside AI clients remains documented separately in [docs/HELPIN_PUBLIC_MCP.md](docs/HELPIN_PUBLIC_MCP.md).
-
-Current truth:
-
-- `agent_run` is the durable execution primitive
-- automation rules are the user-authored trigger-to-action layer
-- built-in automations remain product-owned backend behavior
-- run input now carries explicit `trigger` / `target` / `event` metadata while preserving legacy fields
-- generic target launching now exists for direct runs and automation-rule `start_agent_run`
-- the backend records two ownership styles, not two executor types:
-  - system agents are product-owned, usually preset-backed configurations
-  - custom agents are workspace-owned, versioned configurations
-- system agents, custom agents, and one-shot command agents all execute through
-  Agent Runtime using the same `agent_run` lifecycle
-- `runtime_kind` selects the `native_sdk`, `codex`, or `opencode` adapter; it
-  does not select a system-agent or custom-agent execution path
-- Helpin owns workspace tenancy, agent configuration, access policy, triggers,
-  and product launch surfaces; Agent Runtime owns generic execution mechanics
-
-Current trigger surfaces:
-
-- manual run actions
-- agent `trigger_mode`
-- automation-rule triggers: events such as `task.state_entered` and
-  `agent_run.approved`, plus `cron`
-
-Custom-agent rules:
-
-- keep system agents product-owned defaults
-- keep custom agents generic and workspace-managed
-- trigger custom agents via `manual`, automation-rule `event`, and automation-rule `cron`
-- pass a minimal trigger payload into `agent_run.input`
-- let custom agents gather additional context with tools
-- do not give custom agents `preset_key`; reproduce preset-like behavior with
-  prompts, skills, allowed tools, allowed targets, runtime configuration, and
-  approval policy
-
-
-## Community and SaaS AI configuration
-
-Community builds omit commercial billing and use workspace AI profiles with
-customer credentials or approved local models. SaaS builds explicitly select EE;
-managed profiles retain hosted pricing, while optional SaaS BYOK uses a configured
-flat token tariff and separate paid-tool charges.
-
-See [AI connections and profiles](docs/ai-connections.md) for installation,
-bootstrap, edition commands, and staged upgrade instructions. Agent Runtime's
-`docs/2026-09-14-helpin-deployment.md` supplies fresh host and Compose configuration.
-Existing installations must migrate/bootstrap before restarting into profile wiring.
+The Community application is **AGPL-3.0-only**. Public SDKs and embedded widget
+packages are **Apache-2.0**. Code in any directory named `ee`, including
+`server/ee/` and `frontend/src/ee/`, uses the [Helpin Enterprise License](ee/LICENSE):
+internal development, testing, and evaluation are permitted; production use
+requires a commercial agreement.
+
+See [LICENSE](LICENSE) for exact directory scopes and third-party exceptions.
