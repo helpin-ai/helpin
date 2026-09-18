@@ -67,9 +67,9 @@ export default function NewHomePage() {
         <div className="wrap hero-wrap">
           <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
-            <span className="eyebrow">Open source, for SaaS teams</span>
-            <h1>Where SaaS teams answer customers, ship fixes, and close deals.</h1>
-            <p className="lede">Helpin puts your support inbox, help center, project tracker, and CRM on one customer record. AI agents draft replies, plan work, and open pull requests inside it, and ask before they act.</p>
+            <span className="eyebrow">The open-source workspace for SaaS teams</span>
+            <h1>Hear customers. Decide what matters. Ship it.</h1>
+            <p className="lede">Support, product, engineering, docs, and CRM share one customer record. Helpin's AI agents carry context from conversation to task to pull request to answer — while you decide what gets executed.</p>
             <CtaRow />
             <div className="assure"><span>AGPL-3.0</span><span>Unlimited seats</span><span>Self-host or Cloud</span></div>
           </div>
