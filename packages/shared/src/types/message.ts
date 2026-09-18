@@ -41,6 +41,8 @@ export interface Message {
   answerFeedback?: boolean;
   /** AI-authored classification used to decide which response UI is appropriate. */
   aiReplyKind?: AIReplyKind;
+  /** Present only while this acknowledgment is awaiting its final answer. */
+  aiProgressState?: 'checking';
   linkPreviews?: LinkPreview[];
   attachments?: Attachment[];
   viaChannel?: 'email' | 'widget';

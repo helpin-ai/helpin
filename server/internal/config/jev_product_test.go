@@ -2,13 +2,14 @@ package config
 
 import "testing"
 
-func TestJevProductPoliciesDefaultToIndependentShadow(t *testing.T) {
+func TestJevProductPoliciesDefaultToPrimaryWithIndependentOverrides(t *testing.T) {
 	for _, prefix := range []string{"JEV_MEETING_ROUTING", "JEV_COVERAGE_CLASSIFICATION", "JEV_COVERAGE_TOPIC_MATCHING", "JEV_AUTOMATION_CONDITION", "JEV_ANSWER_EVIDENCE"} {
 		t.Setenv(prefix+"_MODE", "")
 		t.Setenv(prefix+"_THRESHOLD", "")
 		t.Setenv(prefix+"_DAILY_LIMIT", "")
 	}
-	t.Setenv("JEV_MEETING_ROUTING_MODE", "primary")
+	t.Setenv("JEV_MEETING_ROUTING_MODE", "shadow")
+	t.Setenv("JEV_ANSWER_EVIDENCE_MODE", "off")
 	t.Setenv("JEV_MEETING_ROUTING_THRESHOLD", "0.98")
 	t.Setenv("JEV_MEETING_ROUTING_DAILY_LIMIT", "75")
 	policies := jevProductPolicies()
@@ -20,10 +21,14 @@ func TestJevProductPoliciesDefaultToIndependentShadow(t *testing.T) {
 			t.Fatal(err)
 		}
 		if name == "meeting_routing" {
-			if policy.Mode != "primary" || policy.Threshold != .98 || policy.DailyLimit != 75 {
+			if policy.Mode != "shadow" || policy.Threshold != .98 || policy.DailyLimit != 75 {
 				t.Fatalf("meeting override lost: %+v", policy)
 			}
-		} else if policy.Mode != "shadow" || policy.Threshold != .95 || policy.DailyLimit != 1000 {
+		} else if name == "answer_evidence" {
+			if policy.Mode != "off" {
+				t.Fatalf("off override lost: %+v", policy)
+			}
+		} else if policy.Mode != "primary" || policy.Threshold != .95 || policy.DailyLimit != 1000 {
 			t.Fatalf("independent default changed: %+v", policy)
 		}
 	}

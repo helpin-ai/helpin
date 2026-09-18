@@ -24,6 +24,7 @@ const (
 
 // AutomationInventoryService assembles the shared read-only automation inventory.
 type AutomationInventoryService struct {
+	jevDecisions         *JevDecisionService
 	settingsRepo         *repository.SettingsRepository
 	pmAutomationRepo     *repository.PMAutomationRepository
 	crmEmailRepo         *repository.CRMEmailRepository
@@ -70,6 +71,11 @@ func NewAutomationInventoryService(
 		taskRepo:             taskRepo,
 		installationRepo:     installationRepo,
 	}
+}
+
+func (s *AutomationInventoryService) SetJevDecisions(decisions *JevDecisionService) *AutomationInventoryService {
+	s.jevDecisions = decisions
+	return s
 }
 
 func (s *AutomationInventoryService) SetTargetResolvers(
@@ -146,6 +152,7 @@ func (s *AutomationInventoryService) GetWorkspaceInventory(ctx context.Context, 
 	})
 
 	return &model.AutomationInventoryResponse{
+		SemanticConditions: s.jevDecisions.SemanticConditionAvailability(workspaceID),
 		Groups: []model.AutomationInventoryGroup{
 			{ID: automationGroupBuiltIn, Title: "Built-in Automations", Description: "System intelligence and deterministic built-ins that already operate inside the product."},
 			{ID: automationGroupRules, Title: "Automation Rules", Description: "User-configured rules triggered by workflow events. Powers stage-based agent pipelines."},

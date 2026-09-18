@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func TestRuntimeSupportReplyDoesNotCreateSecondUsageCharge(t *testing.T) {
@@ -34,11 +36,6 @@ func supportGateEvidence() []KnowledgeSearchResult {
 			CombinedScore: 0.9,
 		},
 	}
-}
-
-func aiHistoryMessage(confidence float64) model.SupportMessage {
-	metadata, _ := json.Marshal(map[string]interface{}{"ai_auto_reply": true, "ai_confidence": confidence})
-	return model.SupportMessage{SenderType: "ai", Content: "earlier reply", Metadata: string(metadata)}
 }
 
 func TestSupportReplyInternalProcessDisclosures(t *testing.T) {
@@ -174,20 +171,6 @@ func TestEvaluateSupportReplyGate(t *testing.T) {
 			},
 			wantOK: true,
 		},
-		{
-			name: "declining satisfaction escalates",
-			input: supportReplyGateInput{
-				Kind:     "conversational",
-				Contract: &AIResponseContract{Content: "Let me try again...", CanAnswer: true, Confidence: 0.45},
-				History: []model.SupportMessage{
-					aiHistoryMessage(0.95),
-					aiHistoryMessage(0.8),
-				},
-				Threshold: 0.7,
-			},
-			wantOK: false,
-			// The exact reason constant comes from the escalation module.
-		},
 	}
 
 	for _, tt := range tests {
@@ -212,5 +195,83 @@ func TestNormalizeSupportReplyKind(t *testing.T) {
 	}
 	if normalizeSupportReplyKind("unknown") != supportReplyKindAnswer {
 		t.Error("unknown kind should default to answer")
+	}
+}
+
+// Reproduce the live greeting -> small talk -> pricing sequence through the
+// runtime reply tool. The former confidence-trend gate escalated 1.0 -> .935 ->
+// .74 even though the visitor had not expressed dissatisfaction.
+func TestSupportSendReplyAfterGreetingDoesNotInferDissatisfaction(t *testing.T) {
+	ctx := context.Background()
+	chat, db, conv, source, processing, settings, _ := setupSupportGreetingTest(t)
+	if handled, err := chat.replyToInitialGreeting(ctx, conv, source, &model.Agent{ID: "agent"}, processing, settings); err != nil || !handled {
+		t.Fatalf("opening greeting: handled=%v err=%v", handled, err)
+	}
+	ai := chat.supportAIService
+	ai.conversationRepo = chat.conversationRepo
+	ai.messageRepo = chat.messageRepo
+	ai.processingRepo = chat.processingRepo
+	ai.installationRepo = repository.NewSupportInboxInstallationRepository(db)
+	commands := &InternalCommandService{supportAIService: ai, supportProcessingRepo: chat.processingRepo}
+	meta := model.InternalCommandContext{WorkspaceID: conv.WorkspaceID, TargetType: "support_conversation", TargetID: conv.ID, AgentID: "agent"}
+	for _, turn := range []struct {
+		id, question, reply        string
+		confidence, wantConfidence float64
+	}{
+		{"small-talk", "What's going on?", "What can I help you with today?", .9, .935},
+		{"pricing", "What is your pricing?", "Are you interested in monthly or annual pricing?", .6, .74},
+	} {
+		t.Run(turn.id, func(t *testing.T) {
+			message := &model.SupportMessage{ID: turn.id, WorkspaceID: conv.WorkspaceID, ConversationID: conv.ID, SenderType: "customer", MessageType: "reply", Content: turn.question}
+			if err := chat.messageRepo.Create(ctx, message); err != nil {
+				t.Fatal(err)
+			}
+			if err := chat.conversationRepo.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{"last_public_message_id": message.ID}); err != nil {
+				t.Fatal(err)
+			}
+			claim, ok := chat.processingRepo.BeginAttempt(ctx, conv.WorkspaceID, message.ID, conv.ID)
+			if !ok {
+				t.Fatal("could not claim customer turn")
+			}
+			input, err := json.Marshal(map[string]any{"content": turn.reply, "reply_kind": "clarify", "confidence": turn.confidence})
+			if err != nil {
+				t.Fatal(err)
+			}
+			output, err := commands.executeSupportSendReply(ctx, meta, input)
+			if err != nil {
+				t.Fatalf("send reply: %v", err)
+			}
+			var result struct {
+				Status     string  `json:"status"`
+				Confidence float64 `json:"confidence"`
+			}
+			if err := json.Unmarshal(output, &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != "sent" || math.Abs(result.Confidence-turn.wantConfidence) > .000001 {
+				t.Fatalf("reply outcome = %s", output)
+			}
+			var settled model.AIMessageProcessing
+			if err := db.First(&settled, "id = ?", claim.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if settled.Status != "completed" || settled.ReplyMessageID == nil {
+				t.Fatalf("reply did not settle its source turn: %+v", settled)
+			}
+			var reply model.SupportMessage
+			if err := db.First(&reply, "id = ?", *settled.ReplyMessageID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if reply.Content != turn.reply || reply.IsInternal {
+				t.Fatalf("unexpected published reply: %+v", reply)
+			}
+			current, err := chat.conversationRepo.GetByID(ctx, conv.WorkspaceID, conv.ID, "", model.RoleOwner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if derefString(current.AIState) == "escalated" || current.HumanTakeover != nil && *current.HumanTakeover {
+				t.Fatal("ordinary customer question was handed to a human")
+			}
+		})
 	}
 }

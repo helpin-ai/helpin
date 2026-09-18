@@ -730,6 +730,50 @@ describe('WidgetManager', () => {
       expect(latestOptions?.messages.at(-1)?.aiReplyKind).toBe('answer');
     });
 
+    it('keeps progress after a streamed acknowledgment and stops for the final answer', async () => {
+      vi.useFakeTimers();
+      try {
+        (widget as any).widgetConfig = { workspaceId: 'ws_test', branding: {}, features: { aiEnabled: true, aiFirst: true } };
+        (widget as any).mountContainer = document.createElement('div');
+        (widget as any).activeConversationId = 'conv-1';
+        const receive = (type: string, data: any) => (widget as any).handleWSMessage({ type, data });
+        const options = () => (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+        receive('ai:response:start', { response_id: 'ack', conversation_id: 'conv-1', sender_type: 'ai' });
+        receive('ai:response:delta', { response_id: 'ack', conversation_id: 'conv-1', sequence: 1, delta: 'Checking the pricing.' });
+        receive('message:received', { id: 'ack', conversation_id: 'conv-1', sender_type: 'ai', message_type: 'reply', content: 'Checking the pricing.', metadata: JSON.stringify({ ai_reply_kind: 'conversational', ai_progress_state: 'checking' }) });
+        receive('ai:response:complete', { response_id: 'ack', conversation_id: 'conv-1' });
+        await vi.advanceTimersByTimeAsync(90);
+        expect(options()?.isAIThinking).toBe(true);
+        expect(options()?.aiProgressLabel).toBe('Checking the details…');
+        expect(options()?.messages.at(-1)?.isStreaming).toBeUndefined();
+        receive('ai:thinking:stop', { conversation_id: 'another-conversation' });
+        expect(options()?.isAIThinking).toBe(true);
+        receive('message:received', { id: 'answer', conversation_id: 'conv-1', sender_type: 'ai', message_type: 'reply', content: 'Here are the plan details.', metadata: { ai_reply_kind: 'answer' } });
+        expect(options()?.isAIThinking).toBe(false);
+        expect(options()?.aiProgressLabel).toBeUndefined();
+      } finally { vi.useRealTimers(); }
+    });
+
+    it('restores pending progress from projected history and clears it on human handoff', () => {
+      (widget as any).widgetConfig = { workspaceId: 'ws_test', branding: {}, features: {} };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).conversations = [{ id: 'conv-1', aiState: 'pending' }];
+      const receive = (type: string, data: any) => (widget as any).handleWSMessage({ type, data });
+      const options = () => (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      const ack = { id: 'ack', conversation_id: 'conv-1', sender_type: 'ai', message_type: 'reply', content: 'Checking the pricing.', metadata: { ai_progress_state: 'checking' } };
+      receive('conversation:messages', { messages: [ack] });
+      expect(options()?.isAIThinking).toBe(true);
+      receive('conversation:escalated', { conversation_id: 'conv-1' });
+      expect(options()?.isAIThinking).toBe(false);
+      // A delayed stream/canonical replay must not restart loading after takeover.
+      receive('message:received', ack);
+      expect(options()?.isAIThinking).toBe(false);
+      receive('conversation:messages', { messages: [{ ...ack, metadata: {} }] });
+      expect(options()?.isAIThinking).toBe(false);
+      expect(options()?.aiProgressLabel).toBeUndefined();
+    });
+
     it('ignores an unsupported AI reply kind from message metadata', () => {
       (widget as any).widgetConfig = {
         workspaceId: 'ws_test',

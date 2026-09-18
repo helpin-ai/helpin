@@ -130,9 +130,11 @@ func TestJevFlowConditionValidationAndLegacyParity(t *testing.T) {
 }
 
 func TestJevFlowConditionCRUDRoundTrip(t *testing.T) {
+	decisions, _, _, _ := setupJevDecisionTest(t, "primary")
 	db := setupRuleEngineTestDB(t)
 	repo := repository.NewAutomationRuleRepository(db)
 	engine := NewAutomationRuleEngine(repo, nil, nil, nil, nil, nil, nil, nil)
+	engine.SetJevDecisions(decisions)
 	config := json.RawMessage(`{"repo_full_name":"helpin/api","semantic_condition":{"text":"Authentication release"}}`)
 	created, err := engine.CreateRuleForActor(context.Background(), "workspace", "actor", model.CreateAutomationRuleRequest{Name: "Release", TriggerType: model.TriggerGitHubReleasePub, TriggerConfig: config, ActionType: model.ActionRunCommand, ActionConfig: json.RawMessage(`{"command_name":"test"}`)})
 	if err != nil {
@@ -157,11 +159,52 @@ func TestJevFlowConditionCRUDRoundTrip(t *testing.T) {
 	if string(saved.TriggerConfig) != string(config) {
 		t.Fatal("failed update changed saved condition")
 	}
+	// Losing the provider must not prevent unrelated edits or explicit removal.
+	engine.SetJevDecisions(nil)
+	name := "Renamed release"
+	if _, err := engine.UpdateRule(context.Background(), "workspace", created.ID, model.UpdateAutomationRuleRequest{Name: &name, TriggerConfig: &config}); err != nil {
+		t.Fatalf("could not preserve unavailable condition: %v", err)
+	}
+	changed := json.RawMessage(`{"repo_full_name":"helpin/api","semantic_condition":{"text":"Billing release"}}`)
+	if _, err := engine.UpdateRule(context.Background(), "workspace", created.ID, model.UpdateAutomationRuleRequest{TriggerConfig: &changed}); err == nil {
+		t.Fatal("changed condition accepted without Jev")
+	}
 	removed := json.RawMessage(`{"repo_full_name":"helpin/api"}`)
 	if _, err := engine.UpdateRule(context.Background(), "workspace", created.ID, model.UpdateAutomationRuleRequest{TriggerConfig: &removed}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := engine.UpdateRule(context.Background(), "other", created.ID, model.UpdateAutomationRuleRequest{TriggerConfig: &config}); err == nil {
 		t.Fatal("cross-workspace update accepted")
+	}
+}
+
+func TestJevFlowConditionCreateRequiresActiveProvider(t *testing.T) {
+	for _, mode := range []string{"missing_key", "off", "shadow", "workspace_disabled"} {
+		t.Run(mode, func(t *testing.T) {
+			decisions, provider, _, _ := setupJevDecisionTest(t, "primary")
+			switch mode {
+			case "missing_key":
+				decisions.provider = nil
+			case "workspace_disabled":
+				decisions.workspaces = map[string]bool{"other": true}
+			default:
+				policy := decisions.policies[JevAutomationCondition]
+				policy.Mode = mode
+				decisions.policies[JevAutomationCondition] = policy
+			}
+			repo := repository.NewAutomationRuleRepository(setupRuleEngineTestDB(t))
+			engine := NewAutomationRuleEngine(repo, nil, nil, nil, nil, nil, nil, nil).SetJevDecisions(decisions)
+			req := model.CreateAutomationRuleRequest{Name: "Release", TriggerType: model.TriggerGitHubReleasePub, TriggerConfig: json.RawMessage(`{"repo_full_name":"helpin/api","semantic_condition":{"text":"Authentication release"}}`), ActionType: model.ActionRunCommand, ActionConfig: json.RawMessage(`{"command_name":"test"}`)}
+			if _, err := engine.CreateRuleForActor(context.Background(), "workspace", "actor", req); err == nil {
+				t.Fatal("unusable condition accepted")
+			}
+			req.TriggerConfig = json.RawMessage(`{"repo_full_name":"helpin/api"}`)
+			if _, err := engine.CreateRuleForActor(context.Background(), "workspace", "actor", req); err != nil {
+				t.Fatalf("ordinary Flow requires Jev: %v", err)
+			}
+			if provider.calls != 0 {
+				t.Fatal("authoring called provider")
+			}
+		})
 	}
 }

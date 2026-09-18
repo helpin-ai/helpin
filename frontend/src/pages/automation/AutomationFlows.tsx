@@ -53,7 +53,7 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
-import type { AutomationInventoryItem, Workspace, WorkspaceTeam } from '@/lib/types';
+import type { AutomationInventoryItem, SemanticConditionAvailability, Workspace, WorkspaceTeam } from '@/lib/types';
 import type { Agent, AgentApprovalMode, AgentRuntimeKind, AgentSkillRef, AgentTargetType, AutomationRule, EpicWithStats, FlowTemplateInput, FlowTemplateManifest, GitRepository, SkillCatalogEntry, Task, ToolCatalogEntry, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import type { DocsCollection, DocsSpace } from '@/lib/docsTypes';
 import { buildAutomationActivityPath, type FlowTargetMode } from '@/lib/automationUi';
@@ -2578,6 +2578,8 @@ function PillInput({
 }
 
 export function FlowComposer({
+  semanticConditionAvailability,
+  semanticConditionLoading,
   workspaceId,
   open,
   mode,
@@ -2601,6 +2603,8 @@ export function FlowComposer({
   workspaceId: string;
   open: boolean;
   mode: FlowComposerMode;
+  semanticConditionAvailability?: SemanticConditionAvailability;
+  semanticConditionLoading?: boolean;
   draft: FlowDraft;
   workflows: WorkflowWithStates[];
   statesById: Map<string, WorkflowState>;
@@ -3068,6 +3072,9 @@ export function FlowComposer({
             <div className="my-1 h-px bg-border/40" />
 
             <FlowSemanticConditionField
+              availability={semanticConditionAvailability}
+              loading={semanticConditionLoading}
+              disabled={!canEdit || saving}
               value={draft.semanticCondition}
               scheduled={isCronTrigger}
               onChange={(semanticCondition) => updateDraft((current) => ({ ...current, semanticCondition }))}
@@ -4833,6 +4840,8 @@ export function AutomationFlowsPage({
         onConfirm={() => void handleConfirmDeleteFlow()}
       />
       <FlowComposer
+        semanticConditionAvailability={inventoryQuery.isError ? undefined : inventoryQuery.data?.semantic_conditions}
+        semanticConditionLoading={inventoryQuery.isPending}
         workspaceId={workspaceId}
         open={composerOpen}
         mode={composerMode}

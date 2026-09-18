@@ -1,12 +1,12 @@
 # Jev product decisions
 
-This extends the existing direct Jev provider with five independent, operator-funded classifiers. CRM signal classification is excluded. These changes do not deploy or enable primary behavior by themselves.
+This extends the existing direct Jev provider with five independent, operator-funded classifiers. CRM signal classification is excluded. A configured `JEV_API_KEY` enables these classifiers by default; explicit feature modes and the workspace allowlist still take precedence.
 
 ## Controls and rollout
 
 Apply SQL migrations through `202609170004_flow_condition_activity` before enabling the code. The first migration owns `jev_decision_attempts`; the second allows Flow condition history without an agent and adds outcome/provenance columns. Both are idempotent. API and Temporal worker need the same settings.
 
-All five modes default to **shadow**, thresholds to **0.95**, and daily limits to **1000 attempted calls per workspace per feature**:
+All five modes default to **primary**, thresholds to **0.95**, and daily limits to **1000 attempted calls per workspace per feature**:
 
 | Environment prefix | Purpose |
 | --- | --- |
@@ -18,11 +18,11 @@ All five modes default to **shadow**, thresholds to **0.95**, and daily limits t
 
 Each prefix accepts `_MODE=off|shadow|primary`, `_THRESHOLD`, and `_DAILY_LIMIT`. `JEV_API_KEY` and `JEV_WORKSPACE_IDS` are shared with the existing support integration. Without a key, no provider is constructed. Use a limited workspace allowlist for an initial pilot. Thresholds are provider probabilities, not locally calibrated accuracy estimates.
 
-Start in shadow with reviewed, representative multilingual examples. Compare routing/category/matching outputs against human decisions and review false positives, abstention, fallbacks, latency, and usage. Promote one feature at a time after acceptable results. Synthetic tests verify mechanics and guards; they do not establish classifier quality on real customer traffic.
+For an evaluation-only rollout, explicitly set the relevant `_MODE=shadow` with reviewed, representative multilingual examples. Compare routing/category/matching outputs against human decisions and review false positives, abstention, fallbacks, latency, and usage. Promote one feature at a time after acceptable results. Synthetic tests verify mechanics and guards; they do not establish classifier quality on real customer traffic.
 
 Returning a mode to `off` stops new calls and restores existing behavior for meetings and Coverage, and removes advisory answer labels. It does not reverse existing assignments. Existing topic membership history supports human correction; canonical topics are never automatically merged or deleted.
 
-**Flow exception:** a configured semantic condition is an explicit gate. Off, shadow, missing key, budget limits, provider/audit failures, oversized input, uncertainty, and stale evidence all skip the action. Turning the classifier off must never bypass that gate. To remove it, clear the condition in the Flow editor. Conditions are supported on event-triggered Flows; schedule/CRM-playbook conditions are rejected. Existing Flows without conditions keep their behavior.
+**Flow exception:** a configured semantic condition is an explicit gate. Off, shadow, missing key, budget limits, provider/audit failures, oversized input, uncertainty, and stale evidence all skip the action. Turning the classifier off must never bypass that gate. To remove it, clear the condition in the Flow editor. The editor shows configuration availability and disables adding or editing conditions without active Jev. Saved conditions remain visible and can be explicitly removed; unrelated edits remain possible. The API also rejects new or changed conditions while unavailable. Availability describes configuration, not provider health or remaining budget. Conditions are supported on event-triggered Flows; schedule/CRM-playbook conditions are rejected. Existing Flows without conditions keep their behavior.
 
 ## Evidence and behavior
 
