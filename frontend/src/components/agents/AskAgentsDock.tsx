@@ -133,6 +133,7 @@ export function AskAgentsDock({
     rosterRunId: string | null;
   } | null>(null);
   const [draftChat, setDraftChat] = useState(false);
+  const [draftIdentity, setDraftIdentity] = useState({ generation: 0, chatId: null as string | null });
   const [supportChatError, setSupportChatError] = useState<{ associationKey: string; message: string } | null>(null);
   const [supportChatRetry, setSupportChatRetry] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -179,7 +180,9 @@ export function AskAgentsDock({
     return available.filter(chat => chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null);
   }, [activeChatId, chats, sharedChatLink.chat]);
   const activeChat = sharedChatLink.pending || sharedChatLink.error ? null : visibleChats.find((chat) => chat.id === activeChatId) ?? null;
-  const chatViewKey = draftChat
+  const chatViewKey = !embedded && (draftChat || (!!activeChat && activeChat.id === draftIdentity.chatId))
+    ? `global:draft:${draftIdentity.generation}`
+    : draftChat
     ? embedded
       ? `support:${associatedSupportConversationId ?? 'unknown'}:draft`
       : 'global:draft'
@@ -385,6 +388,7 @@ export function AskAgentsDock({
   const newChat = useCallback(() => {
     if (embedded) return;
     clearDraft('global:draft');
+    setDraftIdentity(current => ({ generation: current.generation + 1, chatId: null }));
     setDraftChat(true);
     setActiveChatId(null);
     setTab('chats');
@@ -403,6 +407,7 @@ export function AskAgentsDock({
     }
     invalidateChats();
     upsertChat(result.data);
+    setDraftIdentity(current => ({ ...current, chatId: result.data!.id }));
     setActiveChatId(result.data.id);
     setTab('chats');
     return result.data;

@@ -1,3 +1,4 @@
+import activityStyles from './DockActivityTimeline.module.css';
 import { AIExecutionDetails } from "../AIExecutionDetails";
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -199,7 +200,7 @@ export function DockRunView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative min-h-0 flex-1">
-        <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-3.5 py-3">
+        <div ref={scrollRef} className={`${activityStyles.activityHost} absolute inset-0 overflow-y-auto px-3.5 py-3`}>
           {loading && !streamState ? (
             <div className="grid min-h-28 place-items-center text-[#8a8781]"><Loading01Icon className="h-4 w-4 animate-spin" /></div>
           ) : null}
@@ -252,7 +253,7 @@ export function DockRunView({
             </div>
           ) : null}
           {liveProgress ? (
-            <div className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2" data-agent-live-status-region>
+            <div className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2" data-agent-live-status-region data-working={liveProgress.tone === 'working'}>
               <AgentLiveStatus progress={liveProgress} />
             </div>
           ) : null}

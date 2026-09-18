@@ -3,6 +3,8 @@ import { useDockStore } from '@/stores/dockStore';
 import { Tick01Icon } from '@/lib/icons';
 import { DockActivityTimeline, DockActivitySteps } from './DockActivityTimeline';
 import { buildDockActivityTimeline } from './dockActivityTimeline';
+import { DockAnswerSegment } from './DockAnswerSegment';
+import { useDockAnswerAnimation } from './useDockAnswerAnimation';
 import { cn } from '@/lib/utils';
 import type { CodingSessionStreamState } from '@/lib/pmTypes';
 import {
@@ -136,11 +138,11 @@ function DockWorkDisclosure({
     <section className="py-1" data-dock-work-disclosure>
       <button
         type="button"
-        className={cn("inline-flex items-center gap-2 text-[13px] font-medium text-muted-foreground hover:text-foreground", timelineView && "min-h-11 py-2.5")}
+        className={cn("inline-flex items-center gap-2 text-xs font-normal text-muted-foreground hover:text-foreground", timelineView && "min-h-11 py-2.5")}
         aria-expanded={open}
         onClick={toggle}
       >
-        {timelineView ? <><Tick01Icon className="h-4 w-4 text-quiet-positive" /><span>Work completed</span><span className="text-[11px] font-normal tabular-nums">{formatCodingSessionElapsed(summary.duration_ms)}</span></> : <span>Worked for {formatCodingSessionElapsed(summary.duration_ms)}</span>}
+        {timelineView ? <><span className="grid h-5 w-5 place-items-center"><Tick01Icon className="h-3.5 w-3.5" /></span><span>Work completed</span><span className="text-[11px] font-normal tabular-nums">{formatCodingSessionElapsed(summary.duration_ms)}</span></> : <span>Worked for {formatCodingSessionElapsed(summary.duration_ms)}</span>}
         <DisclosureChevron open={open} />
       </button>
       {open ? (
@@ -238,15 +240,16 @@ export function DockTranscript({
       avatar_background_color: member.avatar_background_color,
     }]),
   );
-  if (!stream) return null;
-  const segments = collectSegments(stream, {
+  const segments = stream ? collectSegments(stream, {
     includeLive: useRuntimeTimeline,
     runtimeActive: active,
     include: showUserMessages
       ? (compactAssistantProgress ? DOCK_WORKING_SEGMENT_KINDS : DOCK_CHAT_SEGMENT_KINDS)
       : DOCK_SEGMENT_KINDS,
     compactAssistantProgress: false,
-  });
+  }) : [];
+  const animateAnswer = useDockAnswerAnimation(segments, active || !!latestSubmission);
+  if (!stream) return null;
   if (segments.length === 0 && subAgentRuns.length === 0) return null;
   const times = transcriptSegmentTimes(stream);
   // A submitted user turn now shares the transcript's stable row. Retained
@@ -380,7 +383,7 @@ export function DockTranscript({
           );
         }
         return (
-          <Fragment key={entry.key}>
+          <Fragment key={entry.segment.kind === 'assistant' ? entry.segment.messageId ?? entry.segment.id.replace(/^live:/, '') : entry.key}>
             {runsByBoundary.has(index) ? <SubAgentTimelineGroup items={runsByBoundary.get(index)!} /> : null}
             <div
               className={cn(
@@ -420,7 +423,8 @@ export function DockTranscript({
                   ))}
                 </DockWorkingGroup>
               ) : (
-                <TranscriptSegmentView
+                <DockAnswerSegment
+                  animate={assistantPresentation?.presentation === 'final' && animateAnswer(entry.segment)}
                   segment={entry.segment}
                   options={{
                     expandable: true,

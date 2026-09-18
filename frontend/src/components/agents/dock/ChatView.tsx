@@ -1,3 +1,4 @@
+import activityStyles from './DockActivityTimeline.module.css';
 import { useAskAgentDefaults } from "@/hooks/queries/useAskAgentDefaults";
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
 import { AISettingsLink } from '@/components/agents/AISettingsLink';
@@ -482,7 +483,11 @@ export function ChatView({
     };
     update();
     node.addEventListener('scroll', update, { passive: true });
-    return () => node.removeEventListener('scroll', update);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      if (autoFollowRef.current) node.scrollTop = node.scrollHeight;
+    });
+    if (node.firstElementChild) observer?.observe(node.firstElementChild);
+    return () => { node.removeEventListener('scroll', update); observer?.disconnect(); };
   }, []);
 
   const scrollToLatest = useCallback(() => {
@@ -834,7 +839,8 @@ export function ChatView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} data-agent-dock-chat-scroll className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-24 pt-3">
+      <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-3`}>
+      <div className="space-y-3">
 		{nextMessagesBefore && (
 		  <div className="flex justify-center">
 		    <Button
@@ -852,7 +858,7 @@ export function ChatView({
 		    </Button>
 		  </div>
 		)}
-        {detailLoading && !detail && (
+        {detailLoading && !detail && !hasTranscriptMessages && !pendingEcho && !sending && (
           <p className="py-6 text-center text-sm text-muted-foreground">Loading chat…</p>
         )}
         {refreshError && (
@@ -861,7 +867,7 @@ export function ChatView({
             <button type="button" className="font-semibold hover:underline" onClick={() => void refreshConversation()}>Retry</button>
           </div>
         )}
-        {!detailLoading && !run && !pendingEcho && (
+        {!detailLoading && !run && !pendingEcho && !sending && !hasTranscriptMessages && (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {requiredPageContext?.entity_type === 'support_conversation'
               ? 'Ask about this conversation, draft a reply, investigate the issue, or have an agent take the next step.'
@@ -958,10 +964,12 @@ export function ChatView({
           <div
             className="mt-2 shrink-0 border-t border-border/40 px-1 pt-2"
             data-agent-live-status-region
+            data-working={displayedLiveProgress.tone === 'working'}
           >
             <AgentLiveStatus progress={displayedLiveProgress} />
           </div>
         ) : null}
+      </div>
       </div>
       {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
       </div>

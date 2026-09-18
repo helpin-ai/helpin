@@ -1,10 +1,10 @@
 /* Shared visual rhythm with Usermaven's activity timeline. */
 .container { margin: 8px 0 16px; min-width: 0; color: var(--muted-foreground); }
-.summary { display: flex; align-items: center; gap: 8px; max-width: 100%; min-height: 44px; padding: 10px 0; text-align: start; font-size: 13px; line-height: 20px; cursor: pointer; }
+.summary { display: flex; align-items: center; gap: 8px; max-width: 100%; min-height: 44px; padding: 10px 0; text-align: start; font-size: 12px; line-height: 20px; cursor: pointer; }
 .summary:hover { color: var(--foreground); }
 .summary:focus-visible, .stepButton:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 6px; }
 .summaryIcon { display: grid; place-items: center; width: 20px; height: 20px; flex-shrink: 0; }
-.label { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.label { min-width: 0; overflow-wrap: anywhere; font-weight: 400; }
 .elapsed { flex-shrink: 0; font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
 .history { padding: 4px 0 16px; }
 .list { position: relative; list-style: none; margin: 0; padding: 0; }
@@ -25,3 +25,5 @@
 .shimmer { background: linear-gradient(105deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%); background-size: 250% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: sweep 1.8s ease-in-out infinite; }
 @keyframes sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
 @media (prefers-reduced-motion: reduce), (forced-colors: active) { .shimmer { animation: none; background: none; color: var(--muted-foreground); } }
+
+.activityHost:has([data-dock-activity-timeline][data-running='true']) [data-agent-live-status-region][data-working='true'] { display: none; }

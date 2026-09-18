@@ -344,9 +344,22 @@ describe('AskAgentsDock', () => {
     expect(document.body.textContent).toContain('Investigate the workspace');
     expect(document.body.textContent).not.toContain('Ask a question about your workspace, or describe work for an agent to do.');
 
+    const composerBeforeAcceptance = dockTextarea();
+    const scrollBeforeAcceptance = document.querySelector('[data-agent-dock-chat-scroll]');
+    expect(document.body.textContent).not.toContain('Loading chat…');
+    mocks.listChats.mockResolvedValue({ data: { chats: [createdChat] }, error: null });
     await act(async () => {
       resolveSend?.({ data: chatDetail({ chat: createdChat }), error: null });
     });
+    expect(dockTextarea()).toBe(composerBeforeAcceptance);
+    expect(document.querySelector('[data-agent-dock-chat-scroll]')).toBe(scrollBeforeAcceptance);
+    expect(document.body.textContent).toContain('Investigate the workspace');
+    expect(document.body.textContent).not.toContain('Loading chat…');
+    await act(async () => window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
+      detail: { mode: 'compose', intent: 'new_chat' },
+    })));
+    expect(dockTextarea()).not.toBe(composerBeforeAcceptance);
+    expect(document.body.textContent).not.toContain('Investigate the workspace');
   });
 
   it('renders a cached transcript immediately and keeps it when refresh fails', async () => {

@@ -94,8 +94,8 @@ export function DockActivityTimeline({ group, runStatus }: { group: DockWorkingG
   return (
     <section className={styles.container} aria-label="Agent activity" data-dock-activity-timeline data-running={group.active}>
       <button type="button" className={styles.summary} aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(!expanded)}>
-        <span className={cn(styles.summaryIcon, failed ? 'text-destructive' : 'text-quiet-positive')} aria-hidden="true">
-          {group.active ? <AskAgentWorkAnimation className="h-5 w-5" /> : failed || (!group.completed && (runStatus === 'failed' || runStatus === 'cancelled')) ? <Cancel01Icon className="h-4 w-4" /> : <Tick01Icon className="h-4 w-4" />}
+        <span className={cn(styles.summaryIcon, failed ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true">
+          {group.active ? <AskAgentWorkAnimation className="h-5 w-5" /> : failed || (!group.completed && (runStatus === 'failed' || runStatus === 'cancelled')) ? <Cancel01Icon className="h-4 w-4" /> : <Tick01Icon className="h-3.5 w-3.5" />}
         </span>
         <span className={styles.label} role={group.active ? 'status' : undefined}>{label}</span>
         {duration !== undefined && duration > 0 && <span className={styles.elapsed}>{formatCodingSessionElapsed(duration)}</span>}
