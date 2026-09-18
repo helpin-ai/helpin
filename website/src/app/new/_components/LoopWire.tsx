@@ -29,58 +29,53 @@ type Scenario = {
   decide: { items: [string, string, string]; key: string; title: string };
   ship: { branch: string; items: [string, string, string, string]; approver: string };
   tell: { doc: string; section: string; reply: string; replyMeta: string; initial: string; deal: string; outcome: string };
-  receipt: { record: string; objects: string[]; byAgents: number; approvedBy: string; approvals: number };
 };
 
 // Four kinds of request, one loop each. Names and companies are examples for the demo workspace.
 const SCENARIOS: Scenario[] = [
   {
     caption: 'Acme Corp · SSO migration',
-    hear: { initial: 'M', text: "We're moving to Okta next month. Does SSO work with it?", meta: 'Maya R. · Acme Corp · website chat',
-      time: '14:02', speaker: 'Maya', quote: '…security wants the Okta mapping steps before we sign.', chip: 'Timeline identified' },
-    decide: { items: ['Signal: Timeline identified · High', 'Next step accepted: confirm Okta before renewal', 'HLP-142 created from the conversation'],
-      key: 'HLP-142', title: 'Verify and document Okta SAML mapping' },
-    ship: { branch: 'HLP-142-okta-saml-mapping', items: ['Task planner scoped the work', 'Code builder opened PR #318', 'Review agent: checks passed', 'Merged by Sam'], approver: 'Sam' },
-    tell: { doc: 'Set up SSO with Okta', section: 'Help center · Security', reply: 'Okta is verified and documented. Here are the exact steps.', replyMeta: 'Sam · source: Set up SSO with Okta', initial: 'S',
-      deal: 'Growth renewal · $48k', outcome: 'Renewal signed' },
-    receipt: { record: 'Acme Corp', objects: ['Conversation', 'Meeting summary', 'Signal', 'Task HLP-142', 'PR #318', 'Article', 'Deal'], byAgents: 4, approvedBy: 'Sam', approvals: 3 },
+    hear: { initial: 'M', text: 'Does SSO work with Okta? We move next month.', meta: 'Maya R. · Acme Corp · chat',
+      time: '14:02', speaker: 'Maya', quote: 'Security needs the Okta steps first.', chip: 'Timeline identified' },
+    decide: { items: ['Timeline identified · High', 'Next step: confirm Okta support', 'HLP-142 created'],
+      key: 'HLP-142', title: 'Okta SAML mapping' },
+    ship: { branch: 'HLP-142-okta-saml', items: ['Task planner scoped it', 'Code builder opened PR #318', 'Checks passed', 'Merged by Sam'], approver: 'Sam' },
+    tell: { doc: 'Set up SSO with Okta', section: 'Help center', reply: 'Okta is documented. Steps attached.', replyMeta: 'Sam · source linked', initial: 'S',
+      deal: 'Renewal · $48k', outcome: 'Signed' },
   },
   {
     caption: 'Nimbus · Billing details',
-    hear: { initial: 'D', text: 'Our invoices still show the old company name. Finance is bouncing them.', meta: 'Dev P. · Nimbus · email',
-      time: '09:41', speaker: 'Dev', quote: '…we rebranded in June, every invoice since is wrong.', chip: 'Relationship risk' },
-    decide: { items: ['Signal: Relationship risk · Medium', 'Next step accepted: reissue August invoices', 'HLP-151 created from the thread'],
-      key: 'HLP-151', title: 'Let admins edit the billing name on invoices' },
-    ship: { branch: 'HLP-151-editable-billing-name', items: ['Task planner scoped the work', 'Code builder opened PR #322', 'Review agent: checks passed', 'Merged by Priya'], approver: 'Priya' },
-    tell: { doc: 'Update your billing details', section: 'Help center · Billing', reply: 'You can now change the billing name yourself. Reissued August invoices are attached.', replyMeta: 'Priya · source: Update your billing details', initial: 'P',
-      deal: 'Starter · 14 seats', outcome: 'Account retained' },
-    receipt: { record: 'Nimbus', objects: ['Email thread', 'Signal', 'Task HLP-151', 'PR #322', 'Article', 'Reissued invoices'], byAgents: 3, approvedBy: 'Priya', approvals: 3 },
+    hear: { initial: 'D', text: 'Invoices still show our old company name.', meta: 'Dev P. · Nimbus · email',
+      time: '09:41', speaker: 'Dev', quote: 'Every invoice since June is wrong.', chip: 'Relationship risk' },
+    decide: { items: ['Relationship risk · Medium', 'Next step: reissue August invoices', 'HLP-151 created'],
+      key: 'HLP-151', title: 'Editable billing name' },
+    ship: { branch: 'HLP-151-billing-name', items: ['Task planner scoped it', 'Code builder opened PR #322', 'Checks passed', 'Merged by Priya'], approver: 'Priya' },
+    tell: { doc: 'Update your billing details', section: 'Help center', reply: 'You can edit the billing name now. Invoices reissued.', replyMeta: 'Priya · source linked', initial: 'P',
+      deal: 'Starter · 14 seats', outcome: 'Retained' },
   },
   {
     caption: 'Orbit Labs · Export bug',
-    hear: { initial: 'L', text: 'CSV export has been timing out since Tuesday on our biggest workspace.', meta: 'Lin Z. · Orbit Labs · website chat',
-      time: '16:20', speaker: 'Lin', quote: '…three of our analysts are blocked until this works.', chip: 'Champion identified' },
-    decide: { items: ['Coverage gap: 3 similar reports this week', 'Next step accepted: prioritise the export fix', 'HLP-158 created from the conversation'],
-      key: 'HLP-158', title: 'Fix CSV export timeout on large workspaces' },
-    ship: { branch: 'HLP-158-export-timeout', items: ['Task planner scoped the work', 'Code builder opened PR #330', 'Review agent: checks passed', 'Merged by Sam'], approver: 'Sam' },
-    tell: { doc: 'Exporting large workspaces', section: 'Help center · Data', reply: 'Fixed and deployed. Exports over 100k rows now stream in the background.', replyMeta: 'Sam · source: Exporting large workspaces', initial: 'S',
-      deal: 'Growth · expansion', outcome: '+20 seats added' },
-    receipt: { record: 'Orbit Labs', objects: ['3 conversations', 'Coverage gap', 'Task HLP-158', 'PR #330', 'Article', 'Deal'], byAgents: 4, approvedBy: 'Sam', approvals: 3 },
+    hear: { initial: 'L', text: 'CSV export times out on our big workspace.', meta: 'Lin Z. · Orbit Labs · chat',
+      time: '16:20', speaker: 'Lin', quote: 'Three analysts are blocked.', chip: 'Champion identified' },
+    decide: { items: ['Coverage gap · 3 reports', 'Next step: prioritise the fix', 'HLP-158 created'],
+      key: 'HLP-158', title: 'Export timeout' },
+    ship: { branch: 'HLP-158-export-timeout', items: ['Task planner scoped it', 'Code builder opened PR #330', 'Checks passed', 'Merged by Sam'], approver: 'Sam' },
+    tell: { doc: 'Exporting large workspaces', section: 'Help center', reply: 'Fixed. Large exports now run in the background.', replyMeta: 'Sam · source linked', initial: 'S',
+      deal: 'Growth · expansion', outcome: '+20 seats' },
   },
   {
     caption: 'Fieldline · Feature request',
-    hear: { initial: 'A', text: 'Can we get Slack alerts when a payment fails? We keep finding out from customers.', meta: 'Aisha K. · Fieldline · website chat',
-      time: '11:15', speaker: 'Aisha', quote: '…if alerts land in Slack we would move the whole team over.', chip: 'Buying intent' },
-    decide: { items: ['Signal: Buying intent · High', 'Next step accepted: add to the Q4 roadmap', 'HLP-160 created from the conversation'],
-      key: 'HLP-160', title: 'Slack alerts for failed payments' },
-    ship: { branch: 'HLP-160-slack-payment-alerts', items: ['Task planner scoped the work', 'Code builder opened PR #341', 'Review agent: checks passed', 'Merged by Priya'], approver: 'Priya' },
-    tell: { doc: 'Set up Slack alerts', section: 'Help center · Integrations', reply: 'Shipped. Connect Slack under Settings and pick the channel for payment alerts.', replyMeta: 'Priya · source: Set up Slack alerts', initial: 'P',
-      deal: 'Growth · new deal · $24k', outcome: 'Closed won' },
-    receipt: { record: 'Fieldline', objects: ['Conversation', 'Signal', 'Task HLP-160', 'PR #341', 'Article', 'Deal'], byAgents: 3, approvedBy: 'Priya', approvals: 3 },
+    hear: { initial: 'A', text: 'Can we get Slack alerts for failed payments?', meta: 'Aisha K. · Fieldline · chat',
+      time: '11:15', speaker: 'Aisha', quote: 'With alerts we would move the whole team.', chip: 'Buying intent' },
+    decide: { items: ['Buying intent · High', 'Next step: add to Q4 roadmap', 'HLP-160 created'],
+      key: 'HLP-160', title: 'Slack payment alerts' },
+    ship: { branch: 'HLP-160-slack-alerts', items: ['Task planner scoped it', 'Code builder opened PR #341', 'Checks passed', 'Merged by Priya'], approver: 'Priya' },
+    tell: { doc: 'Set up Slack alerts', section: 'Help center', reply: 'Shipped. Pick a channel under Settings.', replyMeta: 'Priya · source linked', initial: 'P',
+      deal: 'New deal · $24k', outcome: 'Closed won' },
   },
 ];
 
-const HOLD_TICKS = 12; // rest on the finished state before the next example; the receipt shows here
+const HOLD_TICKS = 8; // rest on the finished state before the next example
 
 function decideItems(sc: Scenario): Item[] {
   return [{ at: S.d1, label: sc.decide.items[0] }, { at: S.d2, label: sc.decide.items[1] }, { at: S.d3, label: sc.decide.items[2] }];
@@ -238,7 +233,7 @@ export function LoopWire() {
     setT(0);
     const id = window.setInterval(() => {
       cur += 1;
-      if (cur <= LAST + 2) { setT(cur); return; }
+      if (cur <= LAST) { setT(cur); return; }
       if (cur >= LAST + HOLD_TICKS) {
         // Next example: reset the line without animating it backwards, then start over.
         settle.current = true;
@@ -327,7 +322,7 @@ export function LoopWire() {
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(2)] }}>
           <div className={badge(2)} style={badgeDelay(2)}><i /><span>03 Ship</span></div>
           <div className={`wart log ${on(S.shipCard) ?? ''}`}>
-            <div className="lhead"><span>agent run · {sc.decide.key}</span><span className="mono">{sc.ship.branch}</span></div>
+            <div className="lhead"><span>run · {sc.decide.key}</span><span className="mono">{sc.ship.branch}</span></div>
             <Checklist items={shipItems(sc)} t={t} cardAt={S.shipCard} />
           </div>
         </div>
@@ -351,11 +346,6 @@ export function LoopWire() {
             <div className={`deal ${on(S.deal) ?? ''}`}><i /><b>{sc.tell.deal}</b><span>{sc.tell.outcome}</span></div>
           </div>
         </div>
-      </div>
-      <div className={`receipt ${t > LAST ? 'on' : ''}`} aria-hidden="true">
-        <div className="rhead">On the {sc.receipt.record} record now</div>
-        <div className="robjs">{sc.receipt.objects.map((o) => <span key={o}>{o}</span>)}</div>
-        <div className="rcount"><b>{sc.receipt.byAgents} created by agents</b><span>·</span><b>{sc.receipt.approvals} approved by {sc.receipt.approvedBy}</b></div>
       </div>
       <div className="wcaption" aria-hidden="true">
         <span className="wdots">{SCENARIOS.map((x, i) => <i key={x.caption} className={i === idx ? 'on' : undefined} />)}</span>
