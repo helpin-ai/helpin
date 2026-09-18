@@ -68,8 +68,9 @@ type SupportTranslationOptions struct {
 }
 
 type SupportTranslateRequest struct {
-	MessageID      string `json:"message_id,omitempty"`
-	Content        string `json:"content,omitempty"`
-	DraftID        string `json:"draft_id,omitempty"`
-	TargetLanguage string `json:"target_language"`
+	DetectLanguageOnly bool   `json:"-"`
+	MessageID          string `json:"message_id,omitempty"`
+	Content            string `json:"content,omitempty"`
+	DraftID            string `json:"draft_id,omitempty"`
+	TargetLanguage     string `json:"target_language"`
 }

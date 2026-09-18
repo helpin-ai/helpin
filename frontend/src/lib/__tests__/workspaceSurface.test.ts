@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { filterWorkspaceNav, workspaceHome, workspaceSurface } from '../workspaceSurface';
 
 describe('deployment product surfaces', () => {
+  it('places workspace translation settings in the support module', () => {
+    expect(workspaceSurface('/w/acme/settings/support-translation')).toBe('support');
+  });
   it('opens support on a Community workspace and handles no access without redirect loops', () => {
     expect(workspaceHome('acme', ['support', 'docs', 'agents'])).toBe('/w/acme/support');
     expect(workspaceHome('acme', [])).toBeNull();

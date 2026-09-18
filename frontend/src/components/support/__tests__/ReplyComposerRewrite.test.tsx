@@ -26,7 +26,6 @@ vi.mock('@/hooks/queries/useSupport', () => ({
 }));
 vi.mock('@/hooks/queries/useSupportTranslation', () => ({
  useSupportTranslationOptions: () => ({ data: { available: mocks.translation, languages: { en: 'English', de: 'German' }, conversation: { customer_language: 'de' }, preference: { reading_language: 'en', auto_translate_incoming: true, auto_translate_outgoing: true } } }),
- useSaveTranslationSettings: () => ({ isPending: false, mutate: vi.fn() }),
 }));
 vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: mocks.empty }) }));
 vi.mock('@/stores/dockStore', () => ({ useDockStore: () => null }));

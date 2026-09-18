@@ -1135,6 +1135,9 @@ export interface BusinessHoursDay {
 
 export interface SupportInboxSettings {
  translation_enabled?: boolean;
+ translation_incoming_enabled?: boolean;
+ translation_outgoing_enabled?: boolean;
+ translation_customer_language?: string;
  default_agent_language?: string;
   require_email_before_chat: boolean;
   require_phone_after_email: boolean;

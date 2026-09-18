@@ -1,4 +1,4 @@
-import { AutoTranslateReplyControls, useOutgoingSupportTranslation } from './AutoTranslateReplyControls';
+import { useOutgoingSupportTranslation } from '@/hooks/queries/useOutgoingSupportTranslation';
 import { useRef, useEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -1518,8 +1518,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
         ...(!isInternal && outgoingTranslation.enabled && markdown ? {
           auto_translate: true,
           translation_target_language: outgoingTranslation.language,
-          client_message_id: translatedSendRef.current!.id,
         } : {}),
+        ...(!isInternal ? { client_message_id: translatedSendRef.current!.id } : {}),
         is_internal: isInternal,
         ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
         ...(!isInternal ? { delivery_mode: deliveryMode, channels: replyDeliveryChannels(deliveryMode) } : {}),
@@ -2239,12 +2239,17 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
               )}
             >
               {isNote && <SentIcon className="h-3 w-3" />}
-              {isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending && outgoingTranslation.enabled ? 'Translating…' : 'Send'}
+              {isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending ? 'Sending…' : 'Send'}
             </Button>
           </div>
         </div>
       </div>
-      {!isNote && <AutoTranslateReplyControls translation={outgoingTranslation} disabled={sendMutation.isPending || isRewriting} />}
+      {!isNote && outgoingTranslation.options.isError && (
+        <div role="alert" className="px-3 py-2 text-xs text-destructive">
+          Translation settings are unavailable.{' '}
+          <button type="button" onClick={() => void outgoingTranslation.options.refetch()}>Retry</button>
+        </div>
+      )}
       </div>
     </div>
   );
