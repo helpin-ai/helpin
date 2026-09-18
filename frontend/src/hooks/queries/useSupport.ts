@@ -243,6 +243,8 @@ export function useUpdateChatSettings(workspaceId: string) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.support.installation(workspaceId) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.support.routingUsage(workspaceId) }),
+        queryClient.invalidateQueries({ queryKey: ['support', workspaceId, 'translation'] }),
+        queryClient.invalidateQueries({ queryKey: ['support', workspaceId, 'message-translation'] }),
       ]);
     },
     onError: (error: Error) => {

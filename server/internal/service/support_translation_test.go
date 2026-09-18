@@ -16,12 +16,18 @@ import (
 )
 
 type translationTestProvider struct {
-	calls int
-	fail  bool
+	calls            int
+	fail             bool
+	onCall           func()
+	responseLanguage string
+	responseText     string
 }
 
 func (p *translationTestProvider) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	p.calls++
+	if p.onCall != nil {
+		p.onCall()
+	}
 	if p.fail {
 		return nil, errors.New("provider unavailable")
 	}
@@ -34,6 +40,10 @@ func (p *translationTestProvider) ChatCompletion(_ context.Context, req llm.Chat
 	if input["target_language"] == "en" {
 		translated = strings.ReplaceAll(input["text"], "Hallo", "Hello")
 		language = "de"
+	}
+	if p.responseLanguage != "" {
+		language = p.responseLanguage
+		translated = p.responseText
 	}
 	raw, err := json.Marshal(map[string]string{"source_language": language, "text": translated})
 	if err != nil {
@@ -50,6 +60,7 @@ func translationFixture(t *testing.T) (*emailFallbackTestEnv, *model.SupportConv
 	}
 	p := &translationTestProvider{}
 	env.service.supportInboxService.SetTranslations(repository.NewSupportTranslationRepository(db), p, nil, AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731"}, true)
+	setTranslationWorkspaceSettings(t, env, conv.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "de" })
 	return env, conv, p
 }
 func TestTranslationSendAutomaticallyPreservesDeliveryAndDeduplicates(t *testing.T) {
@@ -157,7 +168,7 @@ func TestTranslationIncomingCacheAndSourceRevision(t *testing.T) {
 	}
 }
 func TestTranslationRejectsPrivateForeignAndUnavailableInputs(t *testing.T) {
-	for _, scenario := range []string{"internal", "foreign_workspace", "foreign_conversation", "deleted", "anonymized", "no_provider", "bad_language"} {
+	for _, scenario := range []string{"internal", "foreign_workspace", "foreign_conversation", "deleted", "anonymized", "no_provider"} {
 		t.Run(scenario, func(t *testing.T) {
 			env, c, p := translationFixture(t)
 			s := env.service.supportInboxService
@@ -187,9 +198,6 @@ func TestTranslationRejectsPrivateForeignAndUnavailableInputs(t *testing.T) {
 				}
 			}
 			target := "en"
-			if scenario == "bad_language" {
-				target = "bogus"
-			}
 			_, err := s.TranslateSupport(ctx, c.WorkspaceID, c.ID, "22222222-2222-2222-2222-222222222222", model.SupportTranslateRequest{MessageID: msg.ID, TargetLanguage: target})
 			if err == nil || p.calls != 0 {
 				t.Fatalf("rejected input made call: err=%v calls=%d", err, p.calls)
@@ -247,6 +255,10 @@ func TestTranslationJevPrimaryBlocksAndShadowIsAdvisory(t *testing.T) {
 
 func TestTranslationDetectsCustomerLanguageOnSend(t *testing.T) {
 	env, c, p := translationFixture(t)
+	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) {
+		settings.TranslationCustomerLanguage = ""
+		settings.TranslationIncomingEnabled = false
+	})
 	s := env.service.supportInboxService
 	ctx := context.Background()
 	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo"}
@@ -297,5 +309,260 @@ func TestTranslationRetriesUnavailableJevReviewAfterCooldown(t *testing.T) {
 	}
 	if sent.Content != "Hallo" || reviewer.calls != 2 || p.calls != 2 {
 		t.Fatalf("retry result=%q reviewCalls=%d calls=%d", sent.Content, reviewer.calls, p.calls)
+	}
+}
+
+func setTranslationWorkspaceSettings(t *testing.T, env *emailFallbackTestEnv, workspaceID string, change func(*model.SupportInboxSettings)) {
+	t.Helper()
+	var installation model.SupportWidgetInstallation
+	db := env.messageRepo.DB()
+	if err := db.Where("workspace_id = ?", workspaceID).First(&installation).Error; err != nil {
+		t.Fatal(err)
+	}
+	settings := parseSettings(installation.Settings)
+	change(&settings)
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&installation).Update("settings", string(raw)).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTranslationWorkspacePolicyIgnoresLegacyOverrides(t *testing.T) {
+	env, c, _ := translationFixture(t)
+	db := env.messageRepo.DB()
+	actor := "22222222-2222-2222-2222-222222222222"
+	preference := model.SupportTranslationPreference{WorkspaceID: c.WorkspaceID, UserID: actor, ReadingLanguage: "fr", AutoTranslateIncoming: false, AutoTranslateOutgoing: false}
+	conversation := model.SupportTranslationConversation{WorkspaceID: c.WorkspaceID, ConversationID: c.ID, CustomerLanguage: "es", TranslationMode: "off"}
+	if err := db.Create(&preference).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, userID := range []string{actor, uuid.NewString()} {
+		options, err := env.service.supportInboxService.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !options.Available || !options.Preference.AutoTranslateIncoming || !options.Preference.AutoTranslateOutgoing || options.Preference.ReadingLanguage != "en" || options.Conversation.CustomerLanguage != "de" || options.Conversation.TranslationMode != "inherit" {
+			t.Fatalf("workspace policy not applied: %+v", options)
+		}
+	}
+}
+
+func TestTranslationSendUsesWorkspacePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name                                 string
+		master, outgoing, provider, internal bool
+		want                                 string
+		calls                                int
+	}{
+		{"enabled ignores client opt out", true, true, true, false, "Hallo", 1},
+		{"master disabled", false, true, true, false, "Hello", 0},
+		{"outgoing disabled", true, false, true, false, "Hello", 0},
+		{"provider missing", true, true, false, false, "Hello", 0},
+		{"internal note", true, true, true, true, "Hello", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, c, p := translationFixture(t)
+			s := env.service.supportInboxService
+			s.translations.available = tc.provider
+			setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) {
+				settings.TranslationEnabled = tc.master
+				settings.TranslationOutgoingEnabled = tc.outgoing
+			})
+			req := explicitDeliveryRequest(t, "chat_only")
+			req.Content = "Hello"
+			req.IsInternal = tc.internal
+			if tc.internal {
+				req.DeliveryMode = ""
+				req.Channels = nil
+			}
+			req.AutoTranslate = !tc.master || !tc.outgoing
+			req.TranslationTargetLanguage = "fr"
+			sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sent.Content != tc.want || p.calls != tc.calls {
+				t.Fatalf("content=%q calls=%d", sent.Content, p.calls)
+			}
+		})
+	}
+}
+
+func TestTranslationIncomingUsesWorkspaceLanguage(t *testing.T) {
+	env, c, p := translationFixture(t)
+	s := env.service.supportInboxService
+	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo"}
+	if err := env.messageRepo.Create(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+	req := model.SupportTranslateRequest{MessageID: msg.ID, TargetLanguage: "fr"}
+	result, err := s.TranslateSupport(context.Background(), c.WorkspaceID, c.ID, "agent", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TargetLanguage != "en" || result.TranslatedText != "Hello" {
+		t.Fatalf("client language overrode workspace: %+v", result)
+	}
+	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationIncomingEnabled = false })
+	if _, err := s.TranslateSupport(context.Background(), c.WorkspaceID, c.ID, "agent", req); err == nil || p.calls != 1 {
+		t.Fatalf("disabled incoming allowed: err=%v calls=%d", err, p.calls)
+	}
+}
+
+func TestTranslationWorkspacePolicyRevalidatedAfterGeneration(t *testing.T) {
+	for _, change := range []string{"disable", "outgoing", "language"} {
+		t.Run(change, func(t *testing.T) {
+			env, c, p := translationFixture(t)
+			p.onCall = func() {
+				setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) {
+					switch change {
+					case "disable":
+						settings.TranslationEnabled = false
+					case "outgoing":
+						settings.TranslationOutgoingEnabled = false
+					case "language":
+						settings.TranslationCustomerLanguage = "fr"
+					}
+				})
+			}
+			req := explicitDeliveryRequest(t, "chat_only")
+			req.Content = "Hello"
+			if _, err := env.service.supportInboxService.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil); err == nil {
+				t.Fatal("changed policy allowed send")
+			}
+			var count int64
+			if err := env.messageRepo.DB().Model(&model.SupportMessage{}).Where("conversation_id = ?", c.ID).Count(&count).Error; err != nil {
+				t.Fatal(err)
+			}
+			if count != 0 {
+				t.Fatalf("sent %d messages after policy changed", count)
+			}
+		})
+	}
+}
+
+func TestTranslationSameLanguagePreservesOriginalWithoutJev(t *testing.T) {
+	for _, responseText := range []string{"", "A model rewrite must never replace the original."} {
+		t.Run(responseText, func(t *testing.T) {
+			env, c, p := translationFixture(t)
+			s := env.service.supportInboxService
+			p.responseLanguage = "en"
+			p.responseText = responseText
+			setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "en" })
+			jev, reviewer, _, jevDB := setupJevDecisionTest(t, "primary")
+			if err := jevDB.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
+				t.Fatal(err)
+			}
+			jev.policies[JevTranslationReview] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 10}
+			jev.workspaces = map[string]bool{c.WorkspaceID: true}
+			reviewer.choices = map[string]string{"meaning": "no"}
+			reviewer.err = errors.New("review provider unavailable")
+			s.translations.jev = jev
+			req := explicitDeliveryRequest(t, "chat_only")
+			req.Content = "Hello, please check https://example.com/reset for ORDER-123."
+			req.ClientMessageID = uuid.NewString()
+			actor := strPtr("22222222-2222-2222-2222-222222222222")
+			sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sent.Content != req.Content || reviewer.calls != 0 {
+				t.Fatalf("unchanged reply=%q review calls=%d", sent.Content, reviewer.calls)
+			}
+			retry, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if retry.ID != sent.ID || p.calls != 1 {
+				t.Fatalf("duplicate same language send: %s/%s calls=%d", sent.ID, retry.ID, p.calls)
+			}
+		})
+	}
+}
+
+func TestTranslationSameLanguageIncomingPreservesOriginal(t *testing.T) {
+	env, c, p := translationFixture(t)
+	p.responseLanguage = "en"
+	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hello, I cannot log in to my account."}
+	if err := env.messageRepo.Create(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+	result, err := env.service.supportInboxService.TranslateSupport(context.Background(), c.WorkspaceID, c.ID, "agent", model.SupportTranslateRequest{MessageID: msg.ID, TargetLanguage: "en"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "ready" || result.TranslatedText != msg.Content || result.ReviewStatus != "not_requested" {
+		t.Fatalf("same language=%+v", result)
+	}
+}
+
+func TestTranslationWorkspaceSettingsValidateAndPersist(t *testing.T) {
+	env, c, _ := translationFixture(t)
+	s := env.service.supportInboxService
+	disabled := false
+	language := "fr"
+	auto := ""
+	_, settings, err := s.UpdateInstallationSettings(context.Background(), c.WorkspaceID, model.UpdateInstallationSettingsRequest{TranslationIncomingEnabled: &disabled, TranslationOutgoingEnabled: &disabled, DefaultAgentLanguage: &language, TranslationCustomerLanguage: &auto})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.TranslationIncomingEnabled || settings.TranslationOutgoingEnabled || settings.DefaultAgentLanguage != "fr" || settings.TranslationCustomerLanguage != "" {
+		t.Fatalf("settings not saved: %+v", settings)
+	}
+	options, err := s.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, "agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.Preference.AutoTranslateIncoming || options.Preference.AutoTranslateOutgoing || options.Preference.ReadingLanguage != "fr" || options.Conversation.CustomerLanguage != "" {
+		t.Fatalf("settings not applied: %+v", options)
+	}
+	invalid := "bogus"
+	for _, req := range []model.UpdateInstallationSettingsRequest{{DefaultAgentLanguage: &invalid}, {TranslationCustomerLanguage: &invalid}} {
+		if _, _, err := s.UpdateInstallationSettings(context.Background(), c.WorkspaceID, req); err == nil {
+			t.Fatal("invalid language accepted")
+		}
+	}
+}
+
+func TestTranslationRetryAfterPipelineUpgrade(t *testing.T) {
+	env, c, p := translationFixture(t)
+	s := env.service.supportInboxService
+	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "en" })
+	p.fail = true
+	req := explicitDeliveryRequest(t, "chat_only")
+	req.Content = "Hello, please check your inbox."
+	req.ClientMessageID = uuid.NewString()
+	actor := strPtr("22222222-2222-2222-2222-222222222222")
+	if _, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", actor, nil, nil); err == nil {
+		t.Fatal("failed generation sent a reply")
+	}
+	db := env.messageRepo.DB()
+	if err := db.Model(&model.SupportTranslation{}).Where("conversation_id = ?", c.ID).Updates(map[string]any{"pipeline_version": "v1", "cache_key": "old-cache"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	p.fail = false
+	p.responseLanguage = "en"
+	sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent.Content != req.Content || p.calls != 2 {
+		t.Fatalf("retry content=%q calls=%d", sent.Content, p.calls)
+	}
+	if err := db.Model(&model.SupportTranslation{}).Where("conversation_id = ?", c.ID).Updates(map[string]any{"pipeline_version": "v1", "cache_key": "sent-old-cache"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != sent.ID || p.calls != 2 {
+		t.Fatalf("upgrade duplicated send: %s/%s calls=%d", sent.ID, again.ID, p.calls)
 	}
 }

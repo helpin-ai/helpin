@@ -19,6 +19,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/email/inboundhtml"
@@ -2109,6 +2110,20 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
+	// Apply the workspace policy to every public teammate reply, including older
+	// clients that omit or send stale per-message translation flags.
+	req.AutoTranslate = false
+	if s.translations != nil && senderType == "user" && !req.IsInternal && messageType == "reply" && strings.TrimSpace(req.Content) != "" {
+		options, err := s.TranslationOptions(ctx, workspaceID, ticketID, derefString(senderUserID))
+		if err != nil {
+			return nil, ErrSupportTranslation
+		}
+		req.AutoTranslate = options.Available && options.Preference.AutoTranslateOutgoing
+		if req.AutoTranslate && clientMessageID == "" {
+			clientMessageID = uuid.NewString()
+			req.ClientMessageID = clientMessageID
+		}
+	}
 	var translation *model.SupportTranslation
 	if req.AutoTranslate {
 		if senderType != "user" {

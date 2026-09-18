@@ -105,3 +105,48 @@ func TestTranslationPostgresMigrationPrivacyAndConcurrentSend(t *testing.T) {
 	}
 	privacyCheck(t, db, "SELECT count(*) = 0 FROM support_translations WHERE conversation_id=?", conv.ID)
 }
+
+func TestTranslationPostgresWorkspacePolicyGuard(t *testing.T) {
+	db := contactPrivacyDB(t)
+	workspace := uuid.NewString()
+	seedContactPrivacyWorkspace(t, db, workspace)
+	actor := uuid.NewString()
+	privacyExec(t, db, `INSERT INTO users(id,email,full_name,password_hash) VALUES (?,?,'Translator','test')`, actor, actor+"@example.invalid")
+	conv := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: workspace, Subject: "Translation", Status: "open", Source: "widget"}
+	if err := db.Create(conv).Error; err != nil {
+		t.Fatal(err)
+	}
+	installation := &model.SupportWidgetInstallation{ID: uuid.NewString(), WorkspaceID: workspace, WidgetKey: uuid.NewString(), Settings: `{"translation_enabled":false}`}
+	if err := db.Create(installation).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := NewSupportTranslationRepository(db)
+	expires := time.Now().Add(time.Hour)
+	candidate := &model.SupportTranslation{ID: uuid.NewString(), WorkspaceID: workspace, ConversationID: conv.ID, Purpose: "outgoing_reply", CreatedByUserID: &actor, SendKey: uuid.NewString(), SourceText: "Hello", SourceHash: "hash", SourceLanguage: "en", TargetLanguage: "de", TranslatedText: "Hallo", CacheKey: "cache", PipelineVersion: "v1", Attempts: 1, Status: "pending", ReviewStatus: "not_requested", ExpiresAt: &expires}
+	artifact, owned, err := repo.Reserve(context.Background(), candidate)
+	if err != nil || !owned {
+		t.Fatalf("reserve=%v owned=%v", err, owned)
+	}
+	artifact.Status = "ready"
+	if err := repo.Finish(context.Background(), artifact); err != nil {
+		t.Fatal(err)
+	}
+	messages := NewSupportMessageRepository(db)
+	send := func() error {
+		return messages.Create(context.Background(), &model.SupportMessage{WorkspaceID: workspace, ConversationID: conv.ID, SenderType: "user", SenderUserID: &actor, Content: "Hallo", MessageType: "reply", TranslationID: artifact.ID})
+	}
+	for _, settings := range []string{`{"translation_enabled":false}`, `{"translation_outgoing_enabled":false}`, `{"translation_customer_language":"fr"}`} {
+		if err := db.Model(installation).Update("settings", settings).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := send(); err == nil {
+			t.Fatalf("workspace policy allowed send: %s", settings)
+		}
+	}
+	if err := db.Model(installation).Update("settings", `{"translation_customer_language":"de"}`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := send(); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -16,30 +16,6 @@ func (h *SupportInboxHandler) TranslationOptions(w http.ResponseWriter, r *http.
 	}
 	writeJSON(w, http.StatusOK, result)
 }
-func (h *SupportInboxHandler) SaveTranslationPreference(w http.ResponseWriter, r *http.Request) {
-	var req model.SupportTranslationPreference
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid translation preference.")
-		return
-	}
-	if err := h.supportService.SaveTranslationPreference(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req); err != nil {
-		writeError(w, http.StatusBadRequest, "Could not save translation preference.")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
-}
-func (h *SupportInboxHandler) SaveTranslationConversation(w http.ResponseWriter, r *http.Request) {
-	var req model.SupportTranslationConversation
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid translation settings.")
-		return
-	}
-	if err := h.supportService.SaveTranslationConversation(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req); err != nil {
-		writeError(w, http.StatusBadRequest, "Could not save translation settings.")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]bool{"saved": true})
-}
 func (h *SupportInboxHandler) TranslateMessage(w http.ResponseWriter, r *http.Request) {
 	var req model.SupportTranslateRequest
 	if err := decodeJSON(r, &req); err != nil || req.MessageID == "" {

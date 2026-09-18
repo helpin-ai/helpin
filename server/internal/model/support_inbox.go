@@ -1276,8 +1276,11 @@ const (
 
 // SupportInboxSettings holds all widget configuration stored as JSONB.
 type SupportInboxSettings struct {
-	TranslationEnabled   bool   `json:"translation_enabled"`
-	DefaultAgentLanguage string `json:"default_agent_language"`
+	TranslationIncomingEnabled  bool   `json:"translation_incoming_enabled"`
+	TranslationOutgoingEnabled  bool   `json:"translation_outgoing_enabled"`
+	TranslationCustomerLanguage string `json:"translation_customer_language"`
+	TranslationEnabled          bool   `json:"translation_enabled"`
+	DefaultAgentLanguage        string `json:"default_agent_language"`
 	// Identity Capture
 	RequireEmailBeforeChat bool   `json:"require_email_before_chat"`
 	RequirePhoneAfterEmail bool   `json:"require_phone_after_email"`
@@ -1396,6 +1399,8 @@ type SupportRoutingUsageStatus struct {
 // DefaultSupportInboxSettings returns settings with sensible defaults.
 func DefaultSupportInboxSettings() SupportInboxSettings {
 	return SupportInboxSettings{
+		TranslationIncomingEnabled:     true,
+		TranslationOutgoingEnabled:     true,
 		TranslationEnabled:             true,
 		DefaultAgentLanguage:           "en",
 		RequireEmailBeforeChat:         true,
@@ -1480,6 +1485,9 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
+	TranslationIncomingEnabled      *bool                       `json:"translation_incoming_enabled,omitempty"`
+	TranslationOutgoingEnabled      *bool                       `json:"translation_outgoing_enabled,omitempty"`
+	TranslationCustomerLanguage     *string                     `json:"translation_customer_language,omitempty"`
 	TranslationEnabled              *bool                       `json:"translation_enabled,omitempty"`
 	DefaultAgentLanguage            *string                     `json:"default_agent_language,omitempty"`
 	AllowedOrigins                  *[]string                   `json:"allowed_origins,omitempty"`
