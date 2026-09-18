@@ -14,7 +14,7 @@ async function publish(browser, success, seconds) {
 // Fixed categories only: never emit URLs, response bodies or exception messages.
 function failureKind(error) {
   const message = String(error?.message || error || '');
-  const code = message.match(/\b(?:ERR_[A-Z_]{1,50}|NS_ERROR_[A-Z_]{1,50}|NS_BINDING_ABORTED|SSL_ERROR_[A-Z_]{1,50}|SEC_ERROR_[A-Z_]{1,50})\b/);
+  const code = message.match(/\b(?:ERR_[A-Z0-9_]{1,50}|NS_ERROR_[A-Z0-9_]{1,50}|NS_BINDING_ABORTED|SSL_ERROR_[A-Z0-9_]{1,50}|SEC_ERROR_[A-Z0-9_]{1,50})\b/);
   if (code) return code[0];
   if (error?.name === 'TimeoutError') return 'timeout';
   return 'other';
