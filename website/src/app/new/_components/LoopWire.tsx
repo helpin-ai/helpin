@@ -185,6 +185,7 @@ export function LoopWire() {
   const [run, setRun] = useState(0);
   const [idx, setIdx] = useState(0);
   const [inView, setInView] = useState(true);
+  const [mounted, setMounted] = useState(false);
   const [size, setSize] = useState({ w: 0, vw: 0 });
   const [len, setLen] = useState(0);
   const [marks, setMarks] = useState<number[]>([]);
@@ -215,6 +216,11 @@ export function LoopWire() {
     setMarks(stageXs(size.w, size.vw).map((x) => lengthAtX(path, total, x)));
     settle.current = true;
   }, [d, size.w, size.vw]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setMounted(true), 120);
+    return () => window.clearTimeout(id);
+  }, []);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -254,10 +260,12 @@ export function LoopWire() {
   // the stage runs, and settles to a done state when the line leaves for the next stage.
   const departs = [S.depart1, S.depart2, S.depart3, S.depart4, S.exit];
   const badge = (i: number) => {
-    if (t >= departs[i + 1]) return 'wlabel done';
-    if (t >= departs[i] + 2) return 'wlabel running';
-    return 'wlabel';
+    const base = mounted ? 'wlabel in' : 'wlabel';
+    if (t >= departs[i + 1]) return `${base} done`;
+    if (t >= departs[i] + 2) return `${base} running`;
+    return base;
   };
+  const badgeDelay = (i: number) => ({ transitionDelay: mounted ? `${i * 110}ms, 0ms, 0ms, 0ms` : '0ms' });
 
   // Where the dark line's head should be for the current tick.
   let target = 0;
@@ -285,7 +293,7 @@ export function LoopWire() {
       <div className="wire-nodes" aria-hidden="true">
         {/* 01 Hear: chat bubbles and a transcript line */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(0)] }}>
-          <div className={badge(0)}><i /><span>01 Hear</span></div>
+          <div className={badge(0)} style={badgeDelay(0)}><i /><span>01 Hear</span></div>
           <div className="wart hear">
             <div className={`bub ${on(S.hearBubble) ?? ''}`}>
               <span className="bav">{sc.hear.initial}</span>
@@ -304,7 +312,7 @@ export function LoopWire() {
 
         {/* 02 Decide: bare checklist of pills, then the task row */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(1)] }}>
-          <div className={badge(1)}><i /><span>02 Decide</span></div>
+          <div className={badge(1)} style={badgeDelay(1)}><i /><span>02 Decide</span></div>
           <div className={`wart decide ${on(S.decideCard) ?? ''}`}>
             <Checklist items={decideItems(sc)} t={t} cardAt={S.decideCard} />
             <div className={`trow ${on(S.taskRow) ?? ''}`}>
@@ -317,7 +325,7 @@ export function LoopWire() {
 
         {/* 03 Ship: a dark run log */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(2)] }}>
-          <div className={badge(2)}><i /><span>03 Ship</span></div>
+          <div className={badge(2)} style={badgeDelay(2)}><i /><span>03 Ship</span></div>
           <div className={`wart log ${on(S.shipCard) ?? ''}`}>
             <div className="lhead"><span>agent run · {sc.decide.key}</span><span className="mono">{sc.ship.branch}</span></div>
             <Checklist items={shipItems(sc)} t={t} cardAt={S.shipCard} />
@@ -326,7 +334,7 @@ export function LoopWire() {
 
         {/* 04 Tell: document preview, a reply bubble, the deal */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(3)] }}>
-          <div className={badge(3)}><i /><span>04 Tell</span></div>
+          <div className={badge(3)} style={badgeDelay(3)}><i /><span>04 Tell</span></div>
           <div className="wart tell">
             <div className={`docp ${on(S.doc) ?? ''}`}>
               <div className="dtitle">{sc.tell.doc}</div>
