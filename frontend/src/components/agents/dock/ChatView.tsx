@@ -839,7 +839,7 @@ export function ChatView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 flex-1 overflow-y-auto px-4 pb-24 pt-3`}>
+      <div ref={scrollRef} data-agent-dock-chat-scroll className={`${activityStyles.activityHost} min-h-0 flex-1 overflow-y-auto px-5 pb-24 pt-3 sm:px-6`}>
       <div className="space-y-3">
 		{nextMessagesBefore && (
 		  <div className="flex justify-center">

@@ -200,7 +200,7 @@ export function DockRunView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="relative min-h-0 flex-1">
-        <div ref={scrollRef} className={`${activityStyles.activityHost} absolute inset-0 overflow-y-auto px-3.5 py-3`}>
+        <div ref={scrollRef} className={`${activityStyles.activityHost} absolute inset-0 overflow-y-auto px-5 py-3 sm:px-6`}>
           {loading && !streamState ? (
             <div className="grid min-h-28 place-items-center text-[#8a8781]"><Loading01Icon className="h-4 w-4 animate-spin" /></div>
           ) : null}

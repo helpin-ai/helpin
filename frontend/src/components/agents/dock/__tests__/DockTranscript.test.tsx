@@ -772,7 +772,9 @@ describe('DockTranscript', () => {
 
     expect(container.textContent).toContain('Alice Johnson');
     expect(mocks.resolveTeamMemberAvatarSrc).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-message-sender]')?.textContent).toBe('Alice Johnson');
+    expect(container.querySelector('[data-message-sender]')?.textContent).toContain('Alice Johnson');
+    expect(container.querySelector('[data-message-sender] time')?.getAttribute('datetime')).toBe('2026-08-06T00:00:01Z');
+    expect(container.querySelector('[data-message-sender] time')?.textContent).toBe(new Date('2026-08-06T00:00:01Z').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
     expect(container.textContent!.indexOf('Show my message.')).toBeLessThan(container.textContent!.indexOf('Alice Johnson'));
   });
 

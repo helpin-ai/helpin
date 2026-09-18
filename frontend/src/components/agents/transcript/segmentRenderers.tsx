@@ -361,6 +361,10 @@ function UserSegment({
   presentation?: 'avatar' | 'signature';
 }) {
   const actorLabel = actor?.full_name || actor?.email || fallbackLabel;
+  const sentAt = new Date(message.timestamp);
+  const sentTime = Number.isFinite(sentAt.getTime())
+    ? sentAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    : null;
   return (
     <div className="flex min-w-0 flex-col items-end gap-1.5">
       {presentation === 'avatar' && <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
@@ -401,8 +405,12 @@ function UserSegment({
         </div>
       ) : null}
       {presentation === 'signature' && (
-        <div data-message-sender className="max-w-[90%] px-1 text-right text-[11px] leading-4 text-muted-foreground" title={formatCodingSessionRelative(message.timestamp)}>
+        <div data-message-sender className="max-w-[90%] px-1 text-right text-[11px] leading-4 text-muted-foreground" title={sentTime ? sentAt.toLocaleString() : undefined}>
           <span className="break-words">{actorLabel}</span>
+          {sentTime && <span className="whitespace-nowrap">
+            <span aria-hidden="true"> · </span>
+            <time dateTime={message.timestamp} className="tabular-nums" aria-label={`Sent at ${sentTime}`}>{sentTime}</time>
+          </span>}
           {message.delivery_status === 'pending' ? <span className="sr-only"> · Sending…</span> : null}
         </div>
       )}
