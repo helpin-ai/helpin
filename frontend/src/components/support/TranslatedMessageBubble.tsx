@@ -63,6 +63,7 @@ export function TranslatedMessageBubble({
   const translated =
     enabled &&
     result?.status === 'ready' &&
+    result.target_language === language &&
     result.source_text === message.content &&
     result.translated_text !== message.content;
   return (

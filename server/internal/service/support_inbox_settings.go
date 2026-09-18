@@ -127,6 +127,15 @@ func parseSettings(raw string) model.SupportInboxSettings {
 
 // mergeSettingsUpdate applies non-nil patch fields onto current settings.
 func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateInstallationSettingsRequest) model.SupportInboxSettings {
+	if patch.TranslationIncomingEnabled != nil {
+		current.TranslationIncomingEnabled = *patch.TranslationIncomingEnabled
+	}
+	if patch.TranslationOutgoingEnabled != nil {
+		current.TranslationOutgoingEnabled = *patch.TranslationOutgoingEnabled
+	}
+	if patch.TranslationCustomerLanguage != nil {
+		current.TranslationCustomerLanguage = *patch.TranslationCustomerLanguage
+	}
 	if patch.TranslationEnabled != nil {
 		current.TranslationEnabled = *patch.TranslationEnabled
 	}
@@ -685,6 +694,9 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 	current := parseSettings(inst.Settings)
 	merged := mergeSettingsUpdate(current, req)
+	if merged.TranslationCustomerLanguage != "" && supportTranslationLanguages[merged.TranslationCustomerLanguage] == "" {
+		return nil, nil, fmt.Errorf("unsupported customer translation language")
+	}
 	if supportTranslationLanguages[merged.DefaultAgentLanguage] == "" {
 		return nil, nil, fmt.Errorf("unsupported default translation language")
 	}

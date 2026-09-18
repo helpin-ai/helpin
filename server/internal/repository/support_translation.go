@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -20,25 +21,6 @@ func NewSupportTranslationRepository(db *gorm.DB) *SupportTranslationRepository 
 	return &SupportTranslationRepository{db: db}
 }
 
-func (r *SupportTranslationRepository) Preferences(ctx context.Context, workspaceID, userID, conversationID string) (model.SupportTranslationPreference, model.SupportTranslationConversation, error) {
-	p := model.SupportTranslationPreference{WorkspaceID: workspaceID, UserID: userID, ReadingLanguage: "en", AutoTranslateIncoming: true, AutoTranslateOutgoing: true}
-	c := model.SupportTranslationConversation{WorkspaceID: workspaceID, ConversationID: conversationID, TranslationMode: "inherit"}
-	err := r.db.WithContext(ctx).Where("workspace_id = ? AND user_id = ?", workspaceID, userID).First(&p).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return p, c, err
-	}
-	err = r.db.WithContext(ctx).Where("workspace_id = ? AND conversation_id = ?", workspaceID, conversationID).First(&c).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		err = nil
-	}
-	return p, c, err
-}
-func (r *SupportTranslationRepository) SavePreference(ctx context.Context, p *model.SupportTranslationPreference) error {
-	return r.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}, {Name: "user_id"}}, DoUpdates: clause.AssignmentColumns([]string{"reading_language", "auto_translate_incoming", "auto_translate_outgoing", "updated_at"})}).Create(p).Error
-}
-func (r *SupportTranslationRepository) SaveConversation(ctx context.Context, c *model.SupportTranslationConversation) error {
-	return r.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "workspace_id"}, {Name: "conversation_id"}}, DoUpdates: clause.AssignmentColumns([]string{"customer_language", "translation_mode", "updated_at"})}).Create(c).Error
-}
 func (r *SupportTranslationRepository) Get(ctx context.Context, workspaceID, conversationID, id string) (*model.SupportTranslation, error) {
 	var result model.SupportTranslation
 	err := r.db.WithContext(ctx).Where("workspace_id = ? AND conversation_id = ? AND id = ?", workspaceID, conversationID, id).First(&result).Error
@@ -70,6 +52,36 @@ func (r *SupportTranslationRepository) Reserve(ctx context.Context, candidate *m
 			}
 		}
 		now := time.Now().UTC()
+		// Keep a send identity stable across pipeline upgrades. Completed sends
+		// stay deduplicated; an unsent draft can be retried with the fixed pipeline.
+		if candidate.Purpose == "outgoing_reply" {
+			var previous model.SupportTranslation
+			err := tx.Where("workspace_id = ? AND conversation_id = ? AND created_by_user_id = ? AND send_key = ?", candidate.WorkspaceID, candidate.ConversationID, candidate.CreatedByUserID, candidate.SendKey).First(&previous).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err == nil {
+				if previous.SourceText != candidate.SourceText || previous.SourceHash != candidate.SourceHash || previous.TargetLanguage != candidate.TargetLanguage {
+					return ErrTranslationUnavailable
+				}
+				if previous.SentMessageID != nil || (previous.Status == "pending" && now.Sub(previous.UpdatedAt) < time.Minute) {
+					result = &previous
+					return nil
+				}
+				if previous.PipelineVersion != candidate.PipelineVersion {
+					candidate.ID = previous.ID
+					candidate.CreatedAt = previous.CreatedAt
+					// Increment rather than reset so completion from an older attempt
+					// cannot overwrite this generation.
+					candidate.Attempts = previous.Attempts + 1
+					if err := tx.Save(candidate).Error; err != nil {
+						return err
+					}
+					owned = true
+					return nil
+				}
+			}
+		}
 		var cached model.SupportTranslation
 		err := tx.Where("workspace_id = ? AND cache_key = ?", candidate.WorkspaceID, candidate.CacheKey).First(&cached).Error
 		if err == nil {
@@ -142,12 +154,18 @@ func (r *SupportMessageRepository) createTranslatedMessage(ctx context.Context, 
 		if artifact.Purpose != "outgoing_reply" || artifact.Status != "ready" || artifact.ReviewStatus == "needs_review" || artifact.SentMessageID != nil || artifact.CreatedByUserID == nil || msg.SenderUserID == nil || *artifact.CreatedByUserID != *msg.SenderUserID || artifact.TranslatedText != msg.Content || artifact.ExpiresAt == nil || !time.Now().Before(*artifact.ExpiresAt) {
 			return ErrTranslationUnavailable
 		}
-		var config model.SupportTranslationConversation
-		err := tx.Where("workspace_id = ? AND conversation_id = ?", msg.WorkspaceID, msg.ConversationID).First(&config).Error
+		var installation model.SupportWidgetInstallation
+		err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("workspace_id = ?", msg.WorkspaceID).First(&installation).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if config.TranslationMode == "off" || (config.CustomerLanguage != "" && config.CustomerLanguage != artifact.TargetLanguage) {
+		settings := model.DefaultSupportInboxSettings()
+		if installation.Settings != "" {
+			if err := json.Unmarshal([]byte(installation.Settings), &settings); err != nil {
+				return ErrTranslationUnavailable
+			}
+		}
+		if !settings.TranslationEnabled || !settings.TranslationOutgoingEnabled || (settings.TranslationCustomerLanguage != "" && settings.TranslationCustomerLanguage != artifact.TargetLanguage) {
 			return ErrTranslationUnavailable
 		}
 		if err := r.WithTx(tx).create(ctx, msg); err != nil {
