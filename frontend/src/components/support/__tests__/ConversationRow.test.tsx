@@ -44,6 +44,10 @@ vi.mock('@/components/ui/confirm-dialog', () => ({
   useConfirm: () => vi.fn(async () => true),
 }))
 
+vi.mock('../SupportAIControl', () => ({
+  useSupportAIControl: () => ({ item: null, confirmation: null }),
+}))
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
