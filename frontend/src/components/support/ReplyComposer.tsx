@@ -1,3 +1,4 @@
+import { AutoTranslateReplyControls, useOutgoingSupportTranslation } from './AutoTranslateReplyControls';
 import { useRef, useEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -1478,6 +1479,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     }
   }, [editor, isNote]);
 
+  const outgoingTranslation = useOutgoingSupportTranslation(workspaceId, conversationId);
+
+  const translatedSendRef = useRef<{ fingerprint: string; id: string } | null>(null);
+
   const sendReply = useCallback(async () => {
     if (!editor || !editor.isEditable || attachmentsPending) return;
     const markdown = getEditorMarkdown(editor).trim();
@@ -1490,6 +1495,11 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
 
     const attachmentIds = doneAttachments.map((a) => a.attachmentId!);
     const isInternal = useSupportInboxStore.getState().replyMode === 'note';
+    if (!isInternal && (outgoingTranslation.options.isPending || outgoingTranslation.options.isError)) {
+      toast.error('Translation settings are unavailable. Try again shortly.');
+      return;
+    }
+
     const primaryEmail = conversation?.customer_email?.trim() || '';
     const normalizedCC = normalizeRecipientEmails(conversation?.email_cc ?? [], [primaryEmail]);
 
@@ -1498,27 +1508,43 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     if (!isInternal) {
       restoreReplyDelivery(workspaceId, conversationId, deliveryMode);
     }
-    await sendMutation.mutateAsync({
-      content: markdown || ' ',
-      is_internal: isInternal,
-      ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
-      ...(!isInternal ? { delivery_mode: deliveryMode, channels: replyDeliveryChannels(deliveryMode) } : {}),
-      ...(!isInternal && deliveryMode !== 'chat_only' && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
-      ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
-    });
-
+    const fingerprint = JSON.stringify([conversationId, markdown, outgoingTranslation.language, attachmentIds, deliveryMode, normalizedCC]);
+    if (translatedSendRef.current?.fingerprint !== fingerprint) translatedSendRef.current = { fingerprint, id: crypto.randomUUID() };
+    const translating = !isInternal && outgoingTranslation.enabled && !!markdown;
+    if (translating) editor.setEditable(false);
+    try {
+      await sendMutation.mutateAsync({
+        content: markdown || ' ',
+        ...(!isInternal && outgoingTranslation.enabled && markdown ? {
+          auto_translate: true,
+          translation_target_language: outgoingTranslation.language,
+          client_message_id: translatedSendRef.current!.id,
+        } : {}),
+        is_internal: isInternal,
+        ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
+        ...(!isInternal ? { delivery_mode: deliveryMode, channels: replyDeliveryChannels(deliveryMode) } : {}),
+        ...(!isInternal && deliveryMode !== 'chat_only' && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
+        ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
+      });
+    } catch {
+      // The mutation reports the failure. Keep the draft and retry identity.
+      return;
+    } finally {
+      if (translating && !editor.isDestroyed) editor.setEditable(true);
+    }
 
     // Clean up preview URLs
     pendingAttachments.forEach((a) => { if (a.previewUrl && a.previewObjectUrl) URL.revokeObjectURL(a.previewUrl); });
     setPendingAttachments([]);
 		aiAssistedRef.current = false;
     editor.commands.clearContent();
+    translatedSendRef.current = null;
     clearDraft(conversationId);
     if (!isInternal) {
       clearReplyDeliveryDraft(workspaceId, conversationId);
     }
     editor.commands.focus();
-  }, [attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
+  }, [outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
 
   const handleSend = useCallback(async () => {
     if (!editor || !editor.isEditable || attachmentsPending) return;
@@ -2205,7 +2231,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
             />}
             <Button
               size="sm"
-              disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
+              disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && outgoingTranslation.options.isPending) || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
               onClick={handleSend}
               className={cn(
                 'h-7 gap-1.5 rounded-full px-3 text-xs',
@@ -2213,11 +2239,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
               )}
             >
               {isNote && <SentIcon className="h-3 w-3" />}
-              {isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : 'Send'}
+              {isNote ? 'Add Note' : primaryRecipientUnconfirmed ? 'Confirm recipient' : sendMutation.isPending && outgoingTranslation.enabled ? 'Translating…' : 'Send'}
             </Button>
           </div>
         </div>
       </div>
+      {!isNote && <AutoTranslateReplyControls translation={outgoingTranslation} disabled={sendMutation.isPending || isRewriting} />}
       </div>
     </div>
   );

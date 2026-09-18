@@ -37,7 +37,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
-import { MessageBubble } from './MessageBubble';
+import { TranslatedMessageBubble } from './TranslatedMessageBubble';
+import { SupportTranslationControls } from './SupportTranslationControls';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
@@ -1142,6 +1143,7 @@ export function MessageThread({
         </div>
       )}
 
+      {conversationId && <SupportTranslationControls workspaceId={workspaceId} conversationId={conversationId} canEdit={!!access?.permissions?.includes('support.edit')} />}
       {/* Messages area with light background (Crisp-style) */}
       <ScrollArea
         ref={scrollAreaRef}
@@ -1205,7 +1207,8 @@ export function MessageThread({
                 data-support-message-id={item.message.id}
                 data-support-message-key={supportMessageRenderKey(item.message)}
               >
-                <MessageBubble
+                <TranslatedMessageBubble
+                  workspaceId={workspaceId}
                   message={item.message}
                   isConsecutive={item.isConsecutive}
                   isLastInGroup={item.isLastInGroup}

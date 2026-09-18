@@ -1,3 +1,4 @@
+import { TranslationLanguagePicker } from '@/components/support/SupportTranslationControls';
 import { SupportAIPreview } from "./SupportAIPreview";
 import { WidgetOriginSettings } from './chat-widget/WidgetOriginSettings';
 import { brandingDescription } from '@edition';
@@ -102,6 +103,9 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
   const [widgetAvatarUrl, setWidgetAvatarUrl] = useState('');
   const [widgetHelpSpaceIds, setWidgetHelpSpaceIds] = useState<string[]>([]);
 
+  const [translationEnabled, setTranslationEnabled] = useState(true);
+  const [defaultAgentLanguage, setDefaultAgentLanguage] = useState('en');
+
   // AI & Routing state
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiEnableAttempted, setAiEnableAttempted] = useState(false);
@@ -173,6 +177,8 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
       setWidgetName(s.widget_name || '');
       setWidgetAvatarUrl(s.widget_avatar_url || '');
       setWidgetHelpSpaceIds(sortedHelpSpaceIds);
+      setTranslationEnabled(s.translation_enabled ?? true);
+      setDefaultAgentLanguage(s.default_agent_language || 'en');
       setAiEnabled(s.ai_enabled && isChatWidgetAIResponseModeActive(s.ai_response_mode));
       setAiAgentId(s.ai_agent_id ?? NO_AGENT_VALUE);
       setConfidenceThreshold(String(s.ai_confidence_threshold));
@@ -216,6 +222,8 @@ function ChatGeneralSettings({ workspaceId, mode }: { workspaceId: string; mode:
   const showAIAssistantEnableBlocker = Boolean(aiAssistantEnableBlocker && (aiEnableAttempted || aiEnabled));
 
   const settingsDraft: ChatSettingsDraft = {
+    translation_enabled: translationEnabled,
+    default_agent_language: defaultAgentLanguage,
     require_email_before_chat: requireEmail,
     require_phone_after_email: requirePhone,
     welcome_message: welcomeMessage,
@@ -994,11 +1002,20 @@ function Dashboard() {
     </div>
   );
 
+  const translationSection = <div className={supportSectionClass}>
+    <div className="flex items-center justify-between gap-4 p-4">
+      <div><p className="text-sm font-medium">Auto-translate</p><p className="text-sm text-muted-foreground">Translate customer messages and teammate replies automatically. Requires a configured AI provider.</p></div>
+      <Switch aria-label="Enable auto-translation" checked={translationEnabled} onCheckedChange={setTranslationEnabled} />
+    </div>
+    {translationEnabled && <div className="border-t px-4 py-3"><TranslationLanguagePicker label="Default reading language" value={defaultAgentLanguage} languages={TRANSLATION_LANGUAGES} onChange={setDefaultAgentLanguage} /><p className="mt-2 text-xs text-muted-foreground">Teammates can choose their own reading language in the inbox.</p></div>}
+  </div>;
+
   if (isAIAssistantPage) {
     return (
       <div className="space-y-4">
         {saveIndicator}
         {aiAssistantSection}
+        {translationSection}
         {data?.settings.ai_agent_id && <SupportAIPreview key={`${workspaceId}:${data.settings.ai_agent_id}`} workspaceId={workspaceId} agentId={data.settings.ai_agent_id} />}
         <CuratedGuidanceField
           key={aiAgentId}
@@ -1016,6 +1033,7 @@ function Dashboard() {
       <div className="flex flex-1 flex-col overflow-auto">
         <div className="flex-1 space-y-3 p-4">
         {saveIndicator}
+        {translationSection}
         {data && <WidgetOriginSettings key={workspaceId} workspaceId={workspaceId} installation={data} />}
         {/* Widget Installation */}
         <div className={supportSectionClass}>
@@ -1795,3 +1813,5 @@ function ConfigurationLabel({ label, help }: { label: string; help: string }) {
     </div>
   );
 }
+
+const TRANSLATION_LANGUAGES: Record<string, string> = {"en":"English","de":"German","fr":"French","es":"Spanish","it":"Italian","pt":"Portuguese","pt-BR":"Portuguese (Brazil)","nl":"Dutch","pl":"Polish","uk":"Ukrainian","ru":"Russian","tr":"Turkish","ar":"Arabic","he":"Hebrew","hi":"Hindi","bn":"Bengali","ur":"Urdu","ja":"Japanese","ko":"Korean","zh-CN":"Chinese (Simplified)","zh-TW":"Chinese (Traditional)","vi":"Vietnamese","th":"Thai","id":"Indonesian","sv":"Swedish","da":"Danish","no":"Norwegian","fi":"Finnish","cs":"Czech","ro":"Romanian","el":"Greek"};

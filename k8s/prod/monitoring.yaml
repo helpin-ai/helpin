@@ -77,3 +77,13 @@ spec:
           for: 5m
           labels: {severity: warning, service: helpin, alertgroup: helpin}
           annotations: {summary: A Helpin background worker is repeatedly failing}
+        - alert: HelpinTranslationProviderFailures
+          expr: sum by(stage)(rate(helpin_translation_provider_attempts_total{outcome!="success"}[10m])) / clamp_min(sum by(stage)(rate(helpin_translation_provider_attempts_total[10m])), 0.000001) > 0.05 and sum by(stage)(increase(helpin_translation_provider_attempts_total[10m])) >= 20
+          for: 5m
+          labels: {severity: warning, service: helpin, alertgroup: helpin}
+          annotations: {summary: Translation provider failures exceed five percent, description: Check the Support translation dashboard for provider errors, invalid outputs and usage settlement failures.}
+        - alert: HelpinTranslationSlow
+          expr: histogram_quantile(0.95, sum by(le,stage)(rate(helpin_translation_provider_duration_seconds_bucket[10m]))) > 15 and sum by(stage)(increase(helpin_translation_provider_duration_seconds_count[10m])) >= 20
+          for: 10m
+          labels: {severity: warning, service: helpin, alertgroup: helpin}
+          annotations: {summary: Translation provider p95 latency exceeds fifteen seconds}

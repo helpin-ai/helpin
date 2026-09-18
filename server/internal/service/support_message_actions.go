@@ -48,6 +48,8 @@ type SupportMessageInfoDelivery struct {
 }
 
 type SupportMessageInfo struct {
+	OriginalText             string                      `json:"original_text,omitempty"`
+	TranslationLanguage      string                      `json:"translation_language,omitempty"`
 	ID                       string                      `json:"id"`
 	SentAt                   time.Time                   `json:"sent_at"`
 	Sender                   SupportMessageInfoSender    `json:"sender"`
@@ -170,6 +172,18 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 		Edited:     false,
 		Translated: false,
 		Automated:  msg.SenderType == "agent" || msg.SenderType == "ai",
+	}
+	var metadata map[string]any
+	if json.Unmarshal([]byte(msg.Metadata), &metadata) == nil && metadata["translated"] == true {
+		artifact, err := repository.NewSupportTranslationRepository(s.messageRepo.DB()).ForSentMessage(ctx, workspaceID, conversationID, messageID)
+		if err != nil {
+			return nil, err
+		}
+		if artifact != nil {
+			info.Translated = true
+			info.OriginalText = artifact.SourceText
+			info.TranslationLanguage = artifact.TargetLanguage
+		}
 	}
 	if externalEmail {
 		info.Origin = "External email"

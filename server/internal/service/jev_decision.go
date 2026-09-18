@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/decision"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
@@ -22,6 +24,7 @@ const (
 	JevCoverageTopicMatching  = "coverage_topic_matching"
 	JevAutomationCondition    = "automation_condition"
 	JevAnswerEvidence         = "answer_evidence"
+	JevTranslationReview      = "translation_review"
 )
 
 // JevDecisionStore provides admission and content-free settlement for decisions.
@@ -33,11 +36,21 @@ type JevDecisionStore interface {
 // JevDecisionService applies shared bounds, metering and audit to domain decisions.
 // Domain callers own authorization, evidence preparation and guarded mutations.
 type JevDecisionService struct {
+	metrics    *observability.Metrics
 	provider   decision.Provider
 	store      JevDecisionStore
 	usage      AIExecutionUsageStore
 	policies   map[string]decision.Policy
 	workspaces map[string]bool
+}
+
+func (s *JevDecisionService) SetMetrics(metrics *observability.Metrics) {
+	if s != nil {
+		s.metrics = metrics
+	}
+}
+func (s *JevDecisionService) Primary(workspaceID, feature string) bool {
+	return s.Enabled(workspaceID, feature) && s.policies[feature].Mode == "primary"
 }
 
 // NewJevDecisionService creates shared infrastructure without calling the provider.
@@ -48,7 +61,7 @@ func NewJevDecisionService(provider decision.Provider, store JevDecisionStore, u
 	copied := make(map[string]decision.Policy, len(policies))
 	for feature, policy := range policies {
 		switch feature {
-		case JevMeetingRouting, JevCoverageClassification, JevCoverageTopicMatching, JevAutomationCondition, JevAnswerEvidence:
+		case JevMeetingRouting, JevCoverageClassification, JevCoverageTopicMatching, JevAutomationCondition, JevAnswerEvidence, JevTranslationReview:
 		default:
 			return nil, errors.New("unsupported decision feature")
 		}
@@ -178,10 +191,23 @@ func (s *JevDecisionService) Decide(ctx context.Context, req JevDecisionRequest)
 		return output, nil
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	started := time.Now()
 	result, callErr := s.provider.DecideMany(callCtx, req.State, req.Questions)
 	cancel()
+	elapsed := time.Since(started)
 	if callErr == nil {
 		callErr = decision.ValidateResult(result, req.Questions)
+	}
+	if req.Feature == JevTranslationReview {
+		outcome := "success"
+		if callErr != nil {
+			outcome = "error"
+		}
+		var telemetry *aiusage.TokenTelemetry
+		if result != nil {
+			telemetry = &aiusage.TokenTelemetry{InputTokensTotal: result.InputTokens, OutputTokens: result.OutputTokens}
+		}
+		s.metrics.TranslationAttempt("jev_review", "typesafe", decision.Model, outcome, elapsed, telemetry, aiusage.TokenRates{})
 	}
 	settle, done := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer done()

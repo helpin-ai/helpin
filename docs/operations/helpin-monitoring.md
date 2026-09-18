@@ -129,3 +129,43 @@ tests for metrics/telemetry/ownership/rate limits, Go vet/build, 29 SDK tests an
 - Connection-failure and known background-worker alerts are firing and need
   separate root-cause investigation. Do not silence them by changing thresholds
   without investigating the events first.
+
+## Support translation monitoring
+
+The translation feature adds the **Helpin — Support translation** dashboard
+(UID `helpin-support-translation`) through
+[`monitoring-translation-dashboard.yaml`](../../k8s/prod/monitoring-translation-dashboard.yaml).
+The manifest uses the existing Grafana operator and VictoriaMetrics datasource;
+it is ready for the normal release process, not verified live by this change.
+
+Automatic translation uses OpenRouter's configured DeepSeek route, or Luna when
+only OpenAI is configured. Enable it in Chat settings → Auto-translate; teammates
+choose reading and reply languages in the inbox. Replies translate on Send with
+no preview. Failure preserves the draft and sends no original-text fallback.
+Without a translation provider, ordinary messaging continues. Without
+`JEV_API_KEY`, translation works with deterministic validation; when present,
+`JEV_TRANSLATION_REVIEW_MODE=primary` requires an accepted check before sending.
+`shadow` records advisory accepted/rejected checks and `off` skips them.
+Incoming language detection is cached; if it has not run yet, Send detects the
+customer language from the latest public customer message. An unknown language
+requires the teammate to choose it. Expired unsent draft snapshots are pruned
+on the next translation request in that workspace.
+
+The dashboard separates incoming/outgoing cache and generation outcomes, actual
+provider attempts, p95 latency, normalized input/cache/output/reasoning tokens,
+and Jev review outcomes. Attempts count retries and invalid outputs. Cache hits
+consume no tokens. The sent counter records persistence through delivery guards,
+not customer receipt. No message text, workspace IDs, email addresses or customer
+languages appear as metric labels.
+
+Estimated provider spend uses immutable admission rates when available. It is
+not the customer charge or an invoice. The pricing-coverage panel flags missing
+rates, including unpriced Jev calls and Community metering. Missing token usage
+is also visible. Do not interpret missing prices or absent series as free usage.
+Durable AI usage records remain the accounting source; scrape-based counters
+can miss calls if a process exits before being scraped.
+
+Two alerts cover sustained provider failures and slow translation, with a minimum
+20 attempts in ten minutes to avoid low-volume noise. Operational success and
+Jev acceptance do not establish linguistic accuracy: evaluate representative
+language pairs, negations, product terms and commitments before broad rollout.
