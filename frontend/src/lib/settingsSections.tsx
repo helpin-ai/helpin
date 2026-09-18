@@ -5,7 +5,10 @@ import { workspaceSurface } from './workspaceSurface';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   UserIcon,
-  Settings02Icon,
+  Building03Icon,
+  CreditCardIcon,
+  PlugSocketIcon,
+  SourceCodeIcon,
   Notification02Icon,
   Settings01Icon,
   UserGroupIcon,
@@ -46,7 +49,9 @@ function hi(icon: HugeIconData): IconComponent {
 
 const Profile = hi(UserIcon);
 const Security = hi(Shield02Icon);
-const Account = hi(Settings02Icon);
+const Account = hi(Building03Icon);
+const Billing = hi(CreditCardIcon);
+const Repositories = hi(SourceCodeIcon);
 const Notifications = hi(Notification02Icon);
 const General = hi(Settings01Icon);
 const Members = hi(UserGroupIcon);
@@ -68,7 +73,7 @@ const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
-const MCP = hi(Robot01Icon);
+const MCP = hi(PlugSocketIcon);
 const ExternalMCP = hi(Globe02Icon);
 const AIConnections = hi(Key01Icon);
 const WorkspaceAI = hi(AiNetworkIcon);
@@ -208,7 +213,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
     group: 'Workspace',
     requiredPermission: 'module_access.manage',
   },
-  ...billingSettingsSections(Account).map(section => ({ ...section, group: 'Billing', keywords: ['invoices', 'payment', 'subscription', 'plan', 'usage', 'credits'] })),
+  ...billingSettingsSections(Billing).map(section => ({ ...section, group: 'Billing', keywords: ['invoices', 'payment', 'subscription', 'plan', 'usage', 'credits'] })),
   {
     id: 'ai-connections',
     sidebar: false,
@@ -238,7 +243,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
     id: 'repositories',
     label: 'Repositories',
     description: 'Choose which synced Git repositories are available to this workspace.',
-    icon: Delivery,
+    icon: Repositories,
     group: 'Integrations & data',
   },
   {

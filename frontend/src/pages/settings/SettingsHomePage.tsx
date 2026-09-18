@@ -44,8 +44,8 @@ export function SettingsHomeView({ groups, slug, recent = [], autoFocus = false,
       </div>
       <QuietTextAction onClick={() => setQuery('')} className="mt-4">Clear search</QuietTextAction>
     </section> : <>
-      <div className="grid items-start gap-4 md:grid-cols-2">
-        {groups.map(group => <Card key={group.label} className="gap-0 rounded-lg border-border/70 py-0 shadow-none">
+      <div className="columns-1 gap-4 md:columns-2">
+        {groups.map(group => <Card key={group.label} className="mb-4 break-inside-avoid gap-0 rounded-lg border-border/70 py-0 shadow-none">
           <section aria-label={group.label}>
             <h2 className="border-b border-quiet-divider-strong px-4 py-3 text-sm font-semibold text-quiet-text-primary">{group.label}</h2>
             <div className="p-2">{group.sections.map(section => <a key={section.id} {...linkProps(buildSettingsRoutePath(slug, section.id))} className="group flex min-w-0 items-center gap-3 rounded-md px-2 py-3 transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">

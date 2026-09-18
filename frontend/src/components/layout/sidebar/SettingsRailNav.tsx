@@ -83,7 +83,7 @@ export function SettingsRailNav({
           {groups.filter(group => SETTINGS_TOP_LEVEL_GROUPS.has(group.label)).flatMap(group => group.items).map(item => (
             <SidebarMenuItem key={item.link}>
               <SidebarMenuButton asChild isActive={isActive(item.link)}>
-                <a href={item.link} onClick={event => { event.preventDefault(); onNavigate(item.link); }}>{item.label}</a>
+                <a href={item.link} onClick={event => { event.preventDefault(); onNavigate(item.link); }}><item.icon className="size-4 shrink-0 text-sidebar-foreground/75" /><span>{item.label}</span></a>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
@@ -116,6 +116,7 @@ export function SettingsRailNav({
                         onNavigate(item.link);
                       }}
                     >
+                      <item.icon className="size-4 shrink-0 text-sidebar-foreground/75" />
                       <span>{item.label}</span>
                     </a>
                   </SidebarMenuButton>
@@ -182,7 +183,6 @@ export function SettingsRailNav({
               <SidebarGroup className="p-0 pb-1">
                 <SidebarGroupLabel asChild className="h-9 w-full gap-2.5 rounded-md px-2 text-sm font-medium normal-case tracking-normal text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring">
                   <Collapsible.Trigger type="button" className="cursor-pointer select-none text-left">
-                    {group.icon && <group.icon className="size-4 shrink-0 text-sidebar-foreground/75" />}
                     <span className="min-w-0 flex-1">{groupLabel}</span>
                     <ArrowRight01Icon className={`size-4 shrink-0 text-sidebar-foreground/70 transition-transform duration-200 motion-reduce:transition-none ${isOpen ? 'rotate-90' : ''}`} />
                   </Collapsible.Trigger>
