@@ -12,8 +12,8 @@ const TABS = ['Overview', 'Tasks', 'Emails', 'Meetings', 'Calls', 'Deals', 'Supp
 const FILTERS = ['All', 'Notes', 'Emails', 'Calls', 'Meetings', 'Tasks', 'Deals', 'Support'];
 
 const LAST_STEP = 8;
-const STEP_MS = 2000;
-const START_MS = 900;
+const STEP_MS = 1400;
+const START_MS = 500;
 
 type Row = { ic: string; title: string; when: string; at: number; sub: (step: number) => string; flipAt?: number };
 

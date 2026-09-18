@@ -6,7 +6,7 @@ import { useReviewNotes } from './ReviewNotes';
 // Hero concept: one wire, four stages, one customer. The line draws left to right,
 // each stage hangs its artifact off the wire, and work inside the stages ticks off.
 // Everything is in the DOM from the first paint; ticks only reveal and flip state.
-const TICK_MS = 290;
+const TICK_MS = 215;
 
 // Schedule. The dark line departs for a stage, arrives about four ticks later, and the
 // stage's work begins once it has arrived. Two lines: a light track showing the whole
@@ -21,7 +21,15 @@ const S = {
 };
 const LAST = 41;
 
-type Item = { at: number; label: string; done?: string };
+type Item = { at: number; label: string; done?: string; avatar?: string };
+
+const AVATAR: Record<string, string> = { M: 'maya', D: 'dev', L: 'lin', A: 'aisha', S: 'sam', P: 'priya' };
+function Avatar({ initial, size = 24 }: { initial: string; size?: number }) {
+  const file = AVATAR[initial];
+  return file
+    ? <img className="bav" src={`/new/avatars/${file}.webp`} width={size} height={size} alt="" loading="lazy" decoding="async" />
+    : <span className="bav">{initial}</span>;
+}
 
 type Scenario = {
   caption: string;
@@ -84,7 +92,7 @@ function shipItems(sc: Scenario): Item[] {
   return [
     { at: S.s1, label: sc.ship.items[0] },
     { at: S.s2, label: sc.ship.items[1] },
-    { at: S.approved, label: 'Waiting for approval', done: `Approved by ${sc.ship.approver}` },
+    { at: S.approved, label: 'Waiting for approval', done: `Approved by ${sc.ship.approver}`, avatar: sc.ship.approver[0] },
     { at: S.s4, label: sc.ship.items[2] },
     { at: S.s5, label: sc.ship.items[3] },
   ];
@@ -166,6 +174,7 @@ function Checklist({ items, t, cardAt }: { items: Item[]; t: number; cardAt: num
         return (
           <li key={it.label} className={state}>
             <Check state={state} />
+            {done && it.done && it.avatar ? <Avatar initial={it.avatar} size={16} /> : null}
             <span>{done && it.done ? it.done : it.label}</span>
             {isApproval && state === 'active' ? <em className="approve">Approve</em> : null}
           </li>
@@ -273,7 +282,7 @@ export function LoopWire() {
   }
   // Constant-acceleration feel: ease-in-out, with duration growing with distance.
   const dist = Math.abs(target - prevTarget.current);
-  const dur = settle.current || reduced ? 0 : Math.min(1.6, Math.max(0.6, 0.45 + dist / 480));
+  const dur = settle.current || reduced ? 0 : Math.min(1.1, Math.max(0.45, 0.3 + dist / 720));
   const headStyle = len
     ? { strokeDasharray: len, strokeDashoffset: len - target, transition: dur ? `stroke-dashoffset ${dur}s cubic-bezier(.45,0,.55,1)` : 'none', opacity: 1 }
     : { opacity: 0 };
@@ -291,7 +300,7 @@ export function LoopWire() {
           <div className={badge(0)} style={badgeDelay(0)}><i /><span>01 Hear</span></div>
           <div className="wart hear">
             <div className={`bub ${on(S.hearBubble) ?? ''}`}>
-              <span className="bav">{sc.hear.initial}</span>
+              <Avatar initial={sc.hear.initial} />
               <div>
                 <p>{sc.hear.text}</p>
                 <small>{sc.hear.meta}</small>
@@ -341,7 +350,7 @@ export function LoopWire() {
                 <p>{sc.tell.reply}</p>
                 <small>{sc.tell.replyMeta}</small>
               </div>
-              <span className="bav">{sc.tell.initial}</span>
+              <Avatar initial={sc.tell.initial} />
             </div>
             <div className={`deal ${on(S.deal) ?? ''}`}><i /><b>{sc.tell.deal}</b><span>{sc.tell.outcome}</span></div>
           </div>

@@ -352,3 +352,9 @@
   .hp3 .record > * { min-width: 0; }
   .hp3 .tabs { -webkit-overflow-scrolling: touch; }
 }
+/* Portrait avatars. */
+.hp3 img.bav { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-2); background: var(--bg2); display: block; }
+.hp3 .wl img.bav { width: 16px; height: 16px; border-color: transparent; margin-left: -2px; }
+.hp3 .bub.reply img.bav { border-color: var(--em-t); }
+/* Faster entrances. */
+.hp3 .wart.decide, .hp3 .wart.log, .hp3 .bub, .hp3 .tline, .hp3 .trow, .hp3 .docp, .hp3 .deal, .hp3 .tl > div, .hp3 .sig > div { transition-duration: .4s, .4s, .4s; }
