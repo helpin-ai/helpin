@@ -68,7 +68,7 @@ export default function NewHomePage() {
           <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
             <span className="eyebrow">The open-source workspace for SaaS teams</span>
-            <h1>Hear customers. Decide what matters. Ship it.</h1>
+            <h1>Hear customers.<br />Decide what matters.<br />Ship it.</h1>
             <p className="lede">Support, product, engineering, docs, and CRM share one customer record. Helpin's AI agents carry context from conversation to task to pull request to answer — while you decide what gets executed.</p>
             <CtaRow />
             <div className="assure"><span>AGPL-3.0</span><span>Unlimited seats</span><span>Self-host or Cloud</span></div>
