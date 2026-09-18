@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useReviewNotes } from './ReviewNotes';
 
 // Hero concept: one wire, four stages, one customer. The line draws left to right,
@@ -24,6 +24,34 @@ const SHIP: Item[] = [
   { at: 22, label: 'Review agent: checks passed' },
   { at: 24, label: 'Merged by Sam' },
 ];
+
+// Stepped wire geometry. Stage labels alternate between an upper and a lower level and the
+// line moves between them with an S-curve, entering and leaving at the viewport edges.
+const GAP = 24;
+const LEVEL_Y = [15, 65]; // centre line of the label pill on each level
+const LEVEL_TOP = [0, 50]; // padding-top for nodes on each level
+const levelOf = (i: number) => i % 2;
+
+function wirePath(w: number, vw: number): string {
+  if (!w || !vw) return '';
+  const ox = Math.max(0, (vw - w) / 2);
+  const cw = (w - GAP * 3) / 4;
+  const y = (i: number) => LEVEL_Y[levelOf(i)];
+  let d = `M ${-ox} ${y(0)} L ${ox} ${y(0)}`;
+  for (let i = 0; i < 4; i += 1) {
+    const colL = ox + i * (cw + GAP);
+    const bendStart = colL + cw * 0.62;
+    const next = i + 1;
+    if (next < 4) {
+      const bendEnd = ox + next * (cw + GAP) - 6;
+      const mid = (bendStart + bendEnd) / 2;
+      d += ` L ${bendStart} ${y(i)} C ${mid} ${y(i)} ${mid} ${y(next)} ${bendEnd} ${y(next)}`;
+    } else {
+      d += ` L ${vw + ox} ${y(i)}`;
+    }
+  }
+  return d;
+}
 
 function Check({ state }: { state: 'todo' | 'active' | 'done' }) {
   if (state === 'done') return <i className="ck done" aria-hidden="true">✓</i>;
@@ -56,7 +84,27 @@ function Checklist({ items, t, cardAt }: { items: Item[]; t: number; cardAt: num
 export function LoopWire() {
   const [t, setT] = useState(0);
   const [run, setRun] = useState(0);
+  const [size, setSize] = useState({ w: 0, vw: 0 });
+  const [len, setLen] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const pathRef = useRef<SVGPathElement>(null);
   const { shown } = useReviewNotes();
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => setSize({ w: el.clientWidth, vw: window.innerWidth });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
+  }, []);
+
+  const d = wirePath(size.w, size.vw);
+  useEffect(() => {
+    if (pathRef.current && d) setLen(pathRef.current.getTotalLength());
+  }, [d]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -75,11 +123,20 @@ export function LoopWire() {
   const on = (at: number) => (t >= at ? 'on' : undefined);
 
   return (
-    <div className="wire" aria-label="One customer question moving through Hear, Decide, Ship, and Tell">
-      <div className={`wire-line ${t >= 1 ? 'drawn' : ''}`} aria-hidden="true" />
+    <div className="wire" ref={wrapRef} aria-label="One customer question moving through Hear, Decide, Ship, and Tell">
+      <svg className="wire-svg" width={size.vw || 0} height={96} aria-hidden="true" style={{ left: -Math.max(0, (size.vw - size.w) / 2) }}>
+        <path
+          ref={pathRef}
+          d={d}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          style={len ? { strokeDasharray: len, strokeDashoffset: t >= 1 ? 0 : len, opacity: 1 } : { opacity: 0 }}
+        />
+      </svg>
       <div className="wire-nodes">
         {/* 01 Hear */}
-        <div className="wnode">
+        <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(0)] }}>
           <div className={`wlabel ${on(2) ?? ''}`}><i /><span>01 Hear</span></div>
           <div className={`wcard ${on(3) ?? ''}`}>
             <div className={`witem ${on(3) ?? ''}`}>
@@ -94,7 +151,7 @@ export function LoopWire() {
         </div>
 
         {/* 02 Decide */}
-        <div className="wnode">
+        <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(1)] }}>
           <div className={`wlabel ${on(3) ?? ''}`}><i /><span>02 Decide</span></div>
           <div className={`wcard ${on(7) ?? ''}`}>
             <Checklist items={DECIDE} t={t} cardAt={7} />
@@ -103,7 +160,7 @@ export function LoopWire() {
         </div>
 
         {/* 03 Ship */}
-        <div className="wnode">
+        <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(2)] }}>
           <div className={`wlabel ${on(4) ?? ''}`}><i /><span>03 Ship</span></div>
           <div className={`wcard ${on(13) ?? ''}`}>
             <div className="wmeta" style={{ marginBottom: 6 }}>HLP-142 · Run agent · <span className="mono">HLP-142-okta-saml-mapping</span></div>
@@ -112,7 +169,7 @@ export function LoopWire() {
         </div>
 
         {/* 04 Tell */}
-        <div className="wnode">
+        <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(3)] }}>
           <div className={`wlabel ${on(5) ?? ''}`}><i /><span>04 Tell</span></div>
           <div className={`wcard ${on(25) ?? ''}`}>
             <div className={`witem wdoc ${on(26) ?? ''}`}>

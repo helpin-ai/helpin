@@ -217,8 +217,8 @@
   .hp3 .tl span.flip { animation: none; }
 }
 .hp3 .wire { position: relative; margin-top: 28px; }
-.hp3 .wire-line { position: absolute; left: 50%; top: 14px; width: 100vw; height: 1.5px; background: var(--ink); transform: translateX(-50%) scaleX(0); transform-origin: left center; transition: transform 1.4s cubic-bezier(.2,.7,.2,1); }
-.hp3 .wire-line.drawn { transform: translateX(-50%) scaleX(1); }
+.hp3 .wire-svg { position: absolute; top: 0; height: 96px; color: var(--ink); pointer-events: none; overflow: visible; }
+.hp3 .wire-svg path { transition: stroke-dashoffset 1.7s cubic-bezier(.2,.7,.2,1); }
 .hp3 .wire-nodes { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; }
 .hp3 .wnode { display: grid; gap: 22px; align-content: start; }
 .hp3 .wlabel { justify-self: start; display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 10px; border-radius: 999px; background: var(--bg2); border: 1px solid var(--border-2); font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); position: relative; z-index: 1; opacity: 0; transform: translateY(4px); transition: opacity .4s ease, transform .4s ease; }
@@ -245,7 +245,8 @@
 .hp3 .ck.active { border-color: var(--em); border-top-color: transparent; animation: hp3-spin 1s linear infinite; }
 .hp3 .record-frame { margin-top: 48px; }
 @media (max-width: 960px) {
-  .hp3 .wire-line { display: none; }
+  .hp3 .wire-svg { display: none; }
+  .hp3 .wnode { padding-top: 0 !important; }
   .hp3 .wire-nodes { grid-template-columns: 1fr; gap: 20px; border-left: 1.5px solid var(--ink); padding-left: 20px; margin-left: 6px; }
   .hp3 .wnode { gap: 12px; }
   .hp3 .wlabel { margin-left: -36px; }
@@ -253,7 +254,7 @@
   .hp3 .wcard { min-height: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hp3 .wire-line, .hp3 .wlabel, .hp3 .wcard, .hp3 .witem { transition: none; }
+  .hp3 .wire-svg path, .hp3 .wlabel, .hp3 .wcard, .hp3 .witem { transition: none; }
   .hp3 .ck.active, .hp3 .wl .approve { animation: none; }
 }
 @keyframes hp3-flip { 0% { background: var(--em-t); } 100% { background: transparent; } }
