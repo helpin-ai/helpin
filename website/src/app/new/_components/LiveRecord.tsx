@@ -79,7 +79,7 @@ export function LiveRecord() {
             </div>
             <div className="tabs">{TABS.map((t, i) => <span key={t} className={i === 0 ? 'on' : undefined}>{t}</span>)}</div>
             <div className="filters">{FILTERS.map((f, i) => <span key={f} className={i === 0 ? 'on' : undefined}>{f}</span>)}</div>
-            <div className="tl" aria-live="polite">
+            <div className="tl">
               {ROWS.map((r) => {
                 const on = step >= r.at;
                 const flipped = r.flipAt !== undefined && step >= r.flipAt;

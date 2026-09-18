@@ -6,7 +6,7 @@ import { useReviewNotes } from './ReviewNotes';
 // Hero concept: one wire, four stages, one customer. The line draws left to right,
 // each stage hangs its artifact off the wire, and work inside the stages ticks off.
 // Everything is in the DOM from the first paint; ticks only reveal and flip state.
-const TICK_MS = 350;
+const TICK_MS = 320;
 const LAST = 30;
 
 type Item = { at: number; label: string; done?: string };
@@ -123,7 +123,7 @@ export function LoopWire() {
   const on = (at: number) => (t >= at ? 'on' : undefined);
 
   return (
-    <div className="wire" ref={wrapRef} aria-label="One customer question moving through Hear, Decide, Ship, and Tell">
+    <div className="wire" ref={wrapRef} role="img" aria-label="One customer question moving through four stages: heard in chat and a meeting, decided into a task, shipped through an agent-opened pull request that a person approves and merges, and told back as a published article and a reply">
       <svg className="wire-svg" width={size.vw || 0} height={96} aria-hidden="true" style={{ left: -Math.max(0, (size.vw - size.w) / 2) }}>
         <path
           ref={pathRef}
@@ -134,19 +134,19 @@ export function LoopWire() {
           style={len ? { strokeDasharray: len, strokeDashoffset: t >= 1 ? 0 : len, opacity: 1 } : { opacity: 0 }}
         />
       </svg>
-      <div className="wire-nodes">
+      <div className="wire-nodes" aria-hidden="true">
         {/* 01 Hear: chat bubbles and a transcript line */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(0)] }}>
-          <div className={`wlabel ${on(2) ?? ''}`}><i /><span>01 Hear</span></div>
+          <div className={`wlabel ${on(3) ?? ''}`}><i /><span>01 Hear</span></div>
           <div className="wart hear">
-            <div className={`bub ${on(3) ?? ''}`}>
+            <div className={`bub ${on(4) ?? ''}`}>
               <span className="bav">M</span>
               <div>
                 <p>We're moving to Okta next month. Does SSO work with it?</p>
                 <small>Maya R. · Acme Corp · website chat</small>
               </div>
             </div>
-            <div className={`tline ${on(5) ?? ''}`}>
+            <div className={`tline ${on(6) ?? ''}`}>
               <span className="mono tt">14:02</span>
               <div><b>Maya:</b> “…security wants the Okta mapping steps before we sign.”</div>
               <span className="wchip am">Timeline identified</span>
@@ -156,7 +156,7 @@ export function LoopWire() {
 
         {/* 02 Decide: bare checklist of pills, then the task row */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(1)] }}>
-          <div className={`wlabel ${on(3) ?? ''}`}><i /><span>02 Decide</span></div>
+          <div className={`wlabel ${on(4) ?? ''}`}><i /><span>02 Decide</span></div>
           <div className={`wart decide ${on(7) ?? ''}`}>
             <Checklist items={DECIDE} t={t} cardAt={7} />
             <div className={`trow ${on(12) ?? ''}`}>
@@ -169,7 +169,7 @@ export function LoopWire() {
 
         {/* 03 Ship: a dark run log */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(2)] }}>
-          <div className={`wlabel ${on(4) ?? ''}`}><i /><span>03 Ship</span></div>
+          <div className={`wlabel ${on(5) ?? ''}`}><i /><span>03 Ship</span></div>
           <div className={`wart log ${on(13) ?? ''}`}>
             <div className="lhead"><span>agent run · HLP-142</span><span className="mono">HLP-142-okta-saml-mapping</span></div>
             <Checklist items={SHIP} t={t} cardAt={13} />
@@ -178,7 +178,7 @@ export function LoopWire() {
 
         {/* 04 Tell: document preview, a reply bubble, the deal */}
         <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(3)] }}>
-          <div className={`wlabel ${on(5) ?? ''}`}><i /><span>04 Tell</span></div>
+          <div className={`wlabel ${on(6) ?? ''}`}><i /><span>04 Tell</span></div>
           <div className="wart tell">
             <div className={`docp ${on(26) ?? ''}`}>
               <div className="dtitle">Set up SSO with Okta</div>
