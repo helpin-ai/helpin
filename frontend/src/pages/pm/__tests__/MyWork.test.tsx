@@ -10,6 +10,7 @@ import { MyWorkPage } from '../MyWork'
 
 const stableMocks = vi.hoisted(() => ({
   navigate: vi.fn(),
+  canEdit: true,
   access: {
     data: { membership: { id: 'member-1' } },
     isLoading: false,
@@ -30,6 +31,8 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/components/pm/my-work/AISuggestions', () => ({ AISuggestions: () => <div>Meeting follow-up suggestions</div> }))
 
+vi.mock('@/hooks/queries/useWorkspaces', () => ({ useWorkspaceMembers: () => ({data: [{id:'sara',full_name:'Sara Khan',email:'sara@example.com'}]}) }))
+
 vi.mock('@/hooks/useTitle', () => ({
   useTitle: vi.fn(),
 }))
@@ -40,7 +43,7 @@ vi.mock('@/stores/workspaceStore', () => ({
 
 vi.mock('@/hooks/queries/useSession', () => ({
   useWorkspaceAccess: () => stableMocks.access,
-  usePermissions: () => ({ has: () => true }),
+  usePermissions: () => ({ has: (permission: string) => permission !== 'pm.edit' || stableMocks.canEdit }),
 }))
 
 vi.mock('@/hooks/useAccessibleTeams', () => ({
@@ -101,6 +104,8 @@ async function renderPage() {
 
 describe('MyWorkPage', () => {
   beforeEach(() => {
+    localStorage.clear()
+    stableMocks.canEdit = true
     stableMocks.access.isLoading = false
     stableMocks.accessibleTeams.teams = [{ id: 'team-1', name: 'Engineering' }]
     stableMocks.accessibleTeams.hasTeams = true
@@ -131,7 +136,7 @@ describe('MyWorkPage', () => {
     })
   })
 
-  it('uses the Quiet shell, tabs, metric blocks, and stacked task facts', async () => {
+  it('preserves task facts in the compact list and filter toolbar', async () => {
     vi.mocked(pmTaskService.list).mockResolvedValue(taskListResponse([{
       ...task,
       priority: 'high',
@@ -149,8 +154,8 @@ describe('MyWorkPage', () => {
     expect(container.querySelector('.max-w-4xl')).toBeFalsy()
     expect(container.textContent).toContain('Assigned to me')
     expect(container.textContent).toContain('Requested by me')
-    expect(container.textContent).toContain('Tasks currently underway')
-    expect(container.textContent).toContain('High priority')
+    expect(container.textContent).toContain('In progress')
+    expect(container.textContent).toContain('High')
     expect(container.textContent).toContain('Blocked')
     expect(container.textContent).toContain('Agent running')
 
@@ -298,4 +303,66 @@ describe('MyWorkPage', () => {
       root.unmount()
     })
   })
+  it('searches across loaded pages and opens collapsed completed matches', async () => {
+    vi.mocked(pmTaskService.list)
+      .mockResolvedValueOnce({data:{data:[task],total_pages:2},error:null} as TaskListResponse)
+      .mockResolvedValueOnce({data:{data:[{...task,id:'done',task_key:'DONE-1',name:'Historical fix',completed:true}],total_pages:2},error:null} as TaskListResponse)
+    const {container,root}=await renderPage()
+    expect(pmTaskService.list).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('Historical fix')
+    await act(async()=>{
+      const input=container.querySelector<HTMLInputElement>('input[aria-label="Search tasks"]')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'DONE-1')
+      input.dispatchEvent(new Event('input',{bubbles:true}))
+    })
+    expect(container.textContent).toContain('Historical fix')
+    expect(container.textContent).not.toContain('Testing one more')
+    act(()=>root.unmount())
+  })
+
+  it('remembers separate quick filters for assigned and requested tabs', async () => {
+    const {container,root}=await renderPage()
+    const tab=(name:string)=>Array.from(container.querySelectorAll('[role="tab"]')).find(node=>node.textContent===name)
+    act(()=>Array.from(container.querySelectorAll('button')).find(node=>node.textContent?.startsWith('Blocked ('))?.click())
+    expect(container.textContent).toContain('No matching tasks')
+    await act(async()=>{tab('Requested by me')?.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}))})
+    expect(container.textContent).toContain('Testing one more')
+    await act(async()=>{tab('Assigned to me')?.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}))})
+    expect(container.textContent).toContain('No matching tasks')
+    act(()=>root.unmount())
+  })
+
+  it('preserves all agent outcomes and pause reasons, independently of task completion', async () => {
+    const statuses=[['queued',null,'Agent queued'],['running',null,'Agent running'],['completed',null,'Agent completed'],['failed',null,'Agent failed'],['cancelled',null,'Agent cancelled'],['paused','human_approval','Agent needs approval'],['paused','authentication','Agent needs auth'],['paused','awaiting_user_message','Agent awaiting reply'],['paused',null,'Agent needs input']]
+    vi.mocked(pmTaskService.list).mockResolvedValue(taskListResponse(statuses.map(([status,reason],i)=>({...task,id:`run-${i}`,latest_run_status:status,latest_run_pause_reason:reason}) as Task)))
+    const {container,root}=await renderPage()
+    for(const [, ,label] of statuses)expect(container.textContent).toContain(label)
+    expect(container.textContent).not.toContain('Recently completed')
+    act(()=>root.unmount())
+  })
+
+  it('shows requested-task owners and searches by owner name', async () => {
+    vi.mocked(pmTaskService.list).mockResolvedValue(taskListResponse([{...task,owner_member_ids:['sara']}]))
+    const {container,root}=await renderPage()
+    await act(async()=>{Array.from(container.querySelectorAll('[role="tab"]')).find(node=>node.textContent==='Requested by me')?.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0}))})
+    expect(container.textContent).toContain('Sara Khan')
+    await act(async()=>{
+      const input=container.querySelector<HTMLInputElement>('input[aria-label="Search tasks"]')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'Sara')
+      input.dispatchEvent(new Event('input',{bubbles:true}))
+    })
+    expect(container.textContent).toContain('Testing one more')
+    act(()=>root.unmount())
+  })
+
+  it('keeps task facts readable without exposing edit controls to read-only members', async () => {
+    stableMocks.canEdit=false
+    const {container,root}=await renderPage()
+    expect(container.textContent).toContain('To Do')
+    expect(container.querySelector('button[aria-label^="Change stage"]')).toBeNull()
+    expect(container.querySelector('button[aria-label^="Change priority"]')).toBeNull()
+    expect(container.querySelector('button[aria-label^="Due date"]')).toBeNull()
+    act(()=>root.unmount())
+  })
+
 })
