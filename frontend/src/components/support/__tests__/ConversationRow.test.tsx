@@ -13,6 +13,10 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { ConversationRow, getConversationRowVisualState, getSupportTagPillStyle, getVisibleSupportTagCount } from '../ConversationRow'
 
+vi.mock('../SupportAIControl', () => ({
+  useSupportAIControl: () => ({ item: null, confirmation: null }),
+}))
+
 const mockWorkspaceMembers = vi.hoisted(() => ({
   data: [] as Array<{
     user_id: string
