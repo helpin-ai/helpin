@@ -398,3 +398,43 @@ for (const outcome of ['answer', 'handoff'] as const) {
     await expect(page.locator('.helpin-ai-thinking')).toHaveCount(0)
   })
 }
+
+
+test('recovers a lost send acknowledgment from history without sending a duplicate', async ({ page }) => {
+  await bootWidget(page, { dropMessageAcknowledgments: true })
+  await openWidget(page)
+  await page.locator('.helpin-compose-input').fill('Hi there')
+  await page.locator('.helpin-compose-send').click()
+  await expect(page.getByText('Sending message…', { exact: true })).toBeVisible()
+  await expect(page.getByText('Sending message…', { exact: true })).toBeHidden({ timeout: 15_000 })
+  await expect(page.locator('.helpin-message-list').getByText('Hi there', { exact: true })).toHaveCount(1)
+  const sends = await page.evaluate(() => window.__widgetE2E?.getSentMessages().filter(frame => frame.type === 'message:send'))
+  expect(sends).toHaveLength(1)
+  const pending = await page.evaluate(key => sessionStorage.getItem(`helpin_pending_messages_${key}`), WIDGET_KEY)
+  expect(pending).toBeNull()
+})
+
+
+test('clears Sending 2 messages after two identical offline sends lose their acknowledgments', async ({ page }) => {
+  await bootWidget(page, { dropMessageAcknowledgments: true })
+  await openWidget(page)
+  await page.evaluate(() => {
+    window.__widgetE2E?.setSocketBehavior('fail')
+    if (window.helpin?._widgetManager) {
+      window.helpin._widgetManager.wsRetryCount = 10
+      window.helpin._widgetManager.connectionIssueStartedAt = Date.now() - 30_000
+    }
+    window.__widgetE2E?.disconnect()
+  })
+  for (let i = 0; i < 2; i++) {
+    await page.locator('.helpin-compose-input').fill('Hi there')
+    await page.locator('.helpin-compose-send').click()
+  }
+  await page.evaluate(() => window.__widgetE2E?.setSocketBehavior('open'))
+  await page.getByRole('button', { name: 'Reconnect' }).click()
+  await expect(page.getByText('Sending 2 messages…', { exact: true })).toBeVisible()
+  await expect(page.getByText('Sending 2 messages…', { exact: true })).toBeHidden({ timeout: 15_000 })
+  await expect(page.locator('.helpin-message-list').getByText('Hi there', { exact: true })).toHaveCount(2)
+  expect(await page.evaluate(() => window.__widgetE2E?.getSentMessages().filter(frame => frame.type === 'message:send'))).toHaveLength(2)
+  expect(await page.evaluate(key => sessionStorage.getItem(`helpin_pending_messages_${key}`), WIDGET_KEY)).toBeNull()
+})

@@ -571,6 +571,7 @@ describe('WidgetManager', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(MockWebSocket.instances).toHaveLength(1);
 
+      (widget as any).handleWSMessage({ type: 'session:joined', data: { messages: [], conversations: [] } });
       (widget as any).wsRetryCount = 10;
       (widget as any).connectionIssueStartedAt = Date.now() - 30_000;
       MockWebSocket.instances[0].close();
@@ -624,6 +625,7 @@ describe('WidgetManager', () => {
       const ws = sockets[0];
       expect(ws).toBeTruthy();
 
+      (widget as any).handleWSMessage({ type: 'session:joined', data: { messages: [], conversations: [] } });
       (widget as any).activeConversationId = 'conv-old';
       (widget as any).messages = [{
         id: 'msg-old',
@@ -651,6 +653,7 @@ describe('WidgetManager', () => {
     });
 
     it('keeps the optimistic bubble pending and starts AI thinking after acknowledgment', () => {
+      (widget as any).connectionStatus = 'connected';
       const sent: string[] = [];
       (widget as any).widgetConfig = {
         workspaceId: 'ws_test',
@@ -934,6 +937,7 @@ describe('WidgetManager', () => {
     });
 
     it('does not show optimistic AI thinking after a conversation is escalated to a human', () => {
+      (widget as any).connectionStatus = 'connected';
       const sent: string[] = [];
       (widget as any).widgetConfig = {
         workspaceId: 'ws_test',
@@ -1001,6 +1005,7 @@ describe('WidgetManager', () => {
         expect(sent).toHaveLength(0);
 
         (widget as any).wsConnection.readyState = MockWebSocket.OPEN;
+        (widget as any).connectionStatus = 'connected';
         (widget as any).connectionGeneration = 1;
         (widget as any).flushPendingOutgoingMessages();
 
@@ -1027,6 +1032,105 @@ describe('WidgetManager', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('keeps messages queued until the session handshake finishes', () => {
+      const manager = widget as any;
+      const sent: string[] = [];
+      manager.render = vi.fn();
+      manager.connectionStatus = 'connecting';
+      manager.wsConnection = { readyState: MockWebSocket.OPEN, send: (value: string) => sent.push(value), close: vi.fn() };
+      manager.handleSendMessage('Hello');
+      expect(sent).toEqual([]);
+      manager.handleWSMessage({ type: 'session:joined', data: { messages: [], conversations: [] } });
+      expect(sent.map(value => JSON.parse(value).type)).toEqual(['conversation:new', 'message:send']);
+    });
+
+    it('clears delivered messages when history arrives after a lost acknowledgment', () => {
+      const manager = widget as any;
+      manager.render = vi.fn();
+      manager.activeConversationId = 'conv-1';
+      manager.pendingOutgoingMessages = [{ id: 'temp-1', content: 'Hi there', conversationId: 'conv-1', queuedAt: Date.now(), lastSentConnection: 1 }];
+      manager.handleWSMessage({ type: 'conversation:messages', data: { messages: [
+        { id: 'saved-1', conversation_id: 'conv-1', content: 'Hi there', sender_type: 'customer', created_at: new Date().toISOString() },
+      ] } });
+      expect(manager.pendingOutgoingMessages).toEqual([]);
+      expect(manager.messages.map((message: any) => message.id)).toEqual(['saved-1']);
+    });
+
+    it('does not acknowledge a second identical send from a duplicate server event', () => {
+      const manager = widget as any;
+      manager.render = vi.fn();
+      manager.activeConversationId = 'conv-1';
+      manager.pendingOutgoingMessages = [1, 2].map(id => ({ id: `temp-${id}`, content: 'Hi', conversationId: 'conv-1', queuedAt: Date.now(), lastSentConnection: 1 }));
+      const data = { id: 'saved-1', conversation_id: 'conv-1', content: 'Hi', sender_type: 'customer', created_at: new Date().toISOString() };
+      manager.handleWSMessage({ type: 'message:received', data });
+      manager.handleWSMessage({ type: 'message:received', data });
+      manager.handleWSMessage({ type: 'conversation:messages', data: { messages: [data] } });
+      expect(manager.pendingOutgoingMessages.map((message: any) => message.id)).toEqual(['temp-2']);
+    });
+
+    it('does not clear a queued message using matching text from another conversation', () => {
+      const manager = widget as any;
+      manager.render = vi.fn();
+      manager.pendingOutgoingMessages = [{ id: 'temp-1', content: 'Hi', conversationId: 'conv-1', queuedAt: Date.now(), lastSentConnection: 1 }];
+      manager.handleWSMessage({ type: 'message:received', data: { id: 'saved-2', conversation_id: 'conv-2', content: 'Hi', sender_type: 'customer' } });
+      expect(manager.pendingOutgoingMessages).toHaveLength(1);
+    });
+
+    it('does not treat an earlier greeting as acknowledgment of a new identical greeting', () => {
+      const manager = widget as any;
+      manager.render = vi.fn();
+      manager.activeConversationId = 'conv-1';
+      const history = [{ id: 'old-1', conversation_id: 'conv-1', content: 'Hi', sender_type: 'customer', created_at: new Date().toISOString() }];
+      manager.handleWSMessage({ type: 'conversation:messages', data: { messages: history } });
+      manager.pendingOutgoingMessages = [{ id: 'temp-1', content: 'Hi', conversationId: 'conv-1', queuedAt: Date.now(), lastSentConnection: 1 }];
+      manager.handleWSMessage({ type: 'conversation:messages', data: { messages: history } });
+      expect(manager.pendingOutgoingMessages).toHaveLength(1);
+      expect(manager.messages.map((message: any) => message.id)).toEqual(['old-1', 'temp-1']);
+    });
+
+    it('does not acknowledge an offline draft that has never been sent', () => {
+      const manager = widget as any;
+      manager.render = vi.fn();
+      manager.pendingOutgoingMessages = [{ id: 'temp-1', content: 'Hi', conversationId: 'conv-1', queuedAt: Date.now(), lastSentConnection: -1 }];
+      manager.handleWSMessage({ type: 'session:joined', data: { messages: [
+        { id: 'old-1', conversation_id: 'conv-1', content: 'Hi', sender_type: 'customer', created_at: new Date().toISOString() },
+      ] } });
+      expect(manager.pendingOutgoingMessages).toHaveLength(1);
+    });
+
+    it('checks saved history after a missing acknowledgment without resending', () => {
+      vi.useFakeTimers();
+      try {
+        const manager = widget as any;
+        const sent: string[] = [];
+        manager.render = vi.fn();
+        manager.activeConversationId = 'conv-1';
+        manager.connectionStatus = 'connected';
+        manager.wsConnection = { readyState: MockWebSocket.OPEN, send: (value: string) => sent.push(value), close: vi.fn() };
+        manager.handleSendMessage('Hello');
+        sent.length = 0;
+        vi.advanceTimersByTime(10_000);
+        expect(sent.map(value => JSON.parse(value))).toEqual([{ type: 'conversation:select', data: { conversation_id: 'conv-1' } }]);
+      } finally {
+        widget.shutdown();
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps rapid sends in the same newly created conversation', () => {
+      const manager = widget as any;
+      const sent: string[] = [];
+      manager.render = vi.fn();
+      manager.connectionStatus = 'connected';
+      manager.wsConnection = { readyState: MockWebSocket.OPEN, send: (value: string) => sent.push(value), close: vi.fn() };
+      manager.handleSendMessage('Hello');
+      manager.handleSendMessage('Pricing?');
+      expect(sent.map(value => JSON.parse(value).type)).toEqual(['conversation:new', 'message:send']);
+      manager.handleWSMessage({ type: 'conversation:created', data: { conversation_id: 'conv-new' } });
+      expect(sent.map(value => JSON.parse(value).type)).toEqual(['conversation:new', 'message:send', 'conversation:select', 'message:send']);
+      expect(manager.pendingOutgoingMessages.map((message: any) => message.conversationId)).toEqual(['conv-new', 'conv-new']);
     });
 
     it('restores a saved message into its conversation after a page reload', () => {

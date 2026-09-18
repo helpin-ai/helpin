@@ -86,3 +86,18 @@ func TestPublicWidgetMetadataFailsClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicWidgetMetadataPreservesOnlyKnownAIProgress(t *testing.T) {
+	for _, state := range []string{"checking", "", "private_future_state"} {
+		t.Run(state, func(t *testing.T) {
+			message := PublicWidgetMessage(&SupportMessage{SenderType: "ai", Metadata: `{"ai_progress_state":"` + state + `","ai_model":"PRIVATE_MODEL"}`})
+			want := "{}"
+			if state == "checking" {
+				want = `{"ai_progress_state":"checking"}`
+			}
+			if message.Metadata != want {
+				t.Fatalf("metadata = %s, want %s", message.Metadata, want)
+			}
+		})
+	}
+}
