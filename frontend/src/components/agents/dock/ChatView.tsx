@@ -880,6 +880,7 @@ export function ChatView({
             latestSubmission={latestSubmission}
             active={isDockTranscriptStreaming(run)}
             runStatus={run?.status}
+            pauseReason={run?.pause_reason}
             useRuntimeTimeline={showRuntimeTimeline}
             workspaceId={workspaceId}
             chatId={chatId}

@@ -6,7 +6,7 @@ import { buildDockActivityTimeline } from './dockActivityTimeline';
 import { DockAnswerSegment } from './DockAnswerSegment';
 import { useDockAnswerAnimation } from './useDockAnswerAnimation';
 import { cn } from '@/lib/utils';
-import type { CodingSessionStreamState } from '@/lib/pmTypes';
+import type { AgentRunPauseReason, CodingSessionStreamState } from '@/lib/pmTypes';
 import {
   collectSegments,
   DOCK_SEGMENT_KINDS,
@@ -134,18 +134,21 @@ function DockWorkDisclosure({
   };
 
   const workStream = messages ? mergePersistedChatMessages(null, messages) : null;
+  const workSegments = workStream ? collectSegments(workStream, { includeLive: false, include: DOCK_WORKING_SEGMENT_KINDS })
+    .filter(segment => segment.kind === 'tool' || segment.kind === 'reasoning'
+      || (segment.kind === 'assistant' && !segment.final && !!segment.content.trim())) : null;
+  const hasDetails = workSegments ? workSegments.length > 0 : summary.activity_count > 0;
+  const Summary = hasDetails ? 'button' : 'div';
   return (
     <section className="py-1" data-dock-work-disclosure>
-      <button
-        type="button"
-        className={cn("inline-flex items-center gap-2 text-xs font-normal text-muted-foreground hover:text-foreground", timelineView && "min-h-11 py-2.5")}
-        aria-expanded={open}
-        onClick={toggle}
+      <Summary
+        {...(hasDetails ? { type: 'button' as const, 'aria-expanded': open, onClick: toggle } : {})}
+        className={cn("inline-flex items-center gap-2 text-xs font-normal text-muted-foreground", hasDetails && "hover:text-foreground", timelineView && "min-h-11 py-2.5")}
       >
         {timelineView ? <><span className="grid h-5 w-5 place-items-center"><Tick01Icon className="h-3.5 w-3.5" /></span><span>Work completed</span><span className="text-[11px] font-normal tabular-nums">{formatCodingSessionElapsed(summary.duration_ms)}</span></> : <span>Worked for {formatCodingSessionElapsed(summary.duration_ms)}</span>}
-        <DisclosureChevron open={open} />
-      </button>
-      {open ? (
+        {hasDetails && <DisclosureChevron open={open} />}
+      </Summary>
+      {open && hasDetails ? (
         <div className={cn("mt-2", !timelineView && "border-l border-border/70 pl-3")}>
           {loading ? <div className="text-xs text-muted-foreground">Loading work…</div> : null}
           {error ? (
@@ -154,7 +157,7 @@ function DockWorkDisclosure({
             </button>
           ) : null}
           {workStream && timelineView ? (
-            <DockActivitySteps segments={collectSegments(workStream, { includeLive: false, include: DOCK_WORKING_SEGMENT_KINDS })} />
+            <DockActivitySteps segments={workSegments ?? []} />
           ) : workStream ? (
             <DockTranscript
               stream={workStream}
@@ -194,6 +197,7 @@ export function DockTranscript({
   completedRun = false,
   historyWorkOnly = false,
   runStatus,
+  pauseReason,
   subAgentRuns = [],
   latestSubmission,
   className,
@@ -218,6 +222,7 @@ export function DockTranscript({
   /** Render progress and tools without repeating the completed final answer. */
   historyWorkOnly?: boolean;
   runStatus?: string;
+  pauseReason?: AgentRunPauseReason;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
   /** Segments already visible before the latest local send, including undated snapshots. */
@@ -395,7 +400,7 @@ export function DockTranscript({
               data-final-response-separator={assistantPresentation?.separator ? 'true' : undefined}
             >
               {workingGroup && timelineView ? (
-                <DockActivityTimeline group={workingGroup} runStatus={runStatus} />
+                <DockActivityTimeline group={workingGroup} runStatus={runStatus} pauseReason={pauseReason} />
               ) : workingGroup ? (
                 <DockWorkingGroup
                   id={workingGroup.key}

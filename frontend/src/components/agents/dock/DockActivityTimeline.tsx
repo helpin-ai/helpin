@@ -7,6 +7,7 @@ import { TranscriptSegmentView, type TranscriptSegment } from '@/components/agen
 import { DisclosureChevron } from '@/components/agents/transcript/DisclosureChevron';
 import { describeToolCall } from '@/components/pm/CodingSession/toolCallPresentation';
 import { formatCodingSessionElapsed } from '@/components/pm/CodingSession/codingSessionPresentation';
+import type { AgentRunPauseReason } from '@/lib/pmTypes';
 import type { DockWorkingGroupEntry } from './dockWorkingGroups';
 import styles from './DockActivityTimeline.module.css';
 
@@ -63,7 +64,7 @@ function ActivityRow({ segment, active }: { segment: TranscriptSegment; active: 
   );
 }
 
-export function DockActivityTimeline({ group, runStatus }: { group: DockWorkingGroupEntry; runStatus?: string }) {
+export function DockActivityTimeline({ group, runStatus, pauseReason }: { group: DockWorkingGroupEntry; runStatus?: string; pauseReason?: AgentRunPauseReason }) {
   const failed = group.segments.some(segment => segment.kind === 'tool' && segment.toolCall.status === 'failed');
   const [expanded, setExpanded] = useState(group.active || failed);
   const [wasActive, setWasActive] = useState(group.active);
@@ -102,7 +103,9 @@ export function DockActivityTimeline({ group, runStatus }: { group: DockWorkingG
     : group.completed || group.durationMs !== undefined ? 'Work completed'
     : runStatus === 'cancelled' ? 'Stopped'
     : runStatus === 'failed' ? 'Couldn’t finish'
-    : runStatus === 'paused' ? 'Needs your input'
+    : runStatus === 'paused' && pauseReason === 'human_input' ? 'Needs your input'
+    : runStatus === 'paused' && pauseReason === 'human_approval' ? 'Waiting for approval'
+    : runStatus === 'paused' && pauseReason === 'authentication' ? 'Waiting for sign-in'
     : 'Activity';
   return (
     <section className={styles.container} aria-label="Agent activity" data-dock-activity-timeline data-running={group.active}>

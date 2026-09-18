@@ -935,6 +935,36 @@ describe('explicit turn delivery in the rendered dock', () => {
 });
 
 describe('Timeline view', () => {
+  it.each([
+    ['awaiting_user_message', 'Activity'],
+    ['human_input', 'Needs your input'],
+    ['human_approval', 'Waiting for approval'],
+    ['authentication', 'Waiting for sign-in'],
+  ] as const)('labels a paused %s turn accurately', (pauseReason, label) => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const progress = { ...assistantMessage('progress', 'I will add a paragraph.', 1), message_type: 'assistant_progress' };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([progress])} active={false}
+      compactAssistantProgress runStatus="paused" pauseReason={pauseReason} />));
+    expect(container.querySelector('[data-dock-activity-timeline] > button')?.textContent).toBe(label);
+    if (pauseReason === 'awaiting_user_message') expect(container.textContent).not.toContain('Needs your input');
+  });
+
+  it('shows completed work without a caret or an interactive control when there are no steps', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const summary = { ...assistantMessage('work:empty-final', '', 2), message_type: 'status',
+      dock_work_summary: { message_id: 'empty-final', duration_ms: 9000, activity_count: 0 } };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([
+      summary, { ...assistantMessage('empty-final', 'Done.', 3), message_type: 'assistant_final' },
+    ])} active={false} workspaceId="ws-1" chatId="chat-1" compactAssistantProgress
+      runStatus="paused" pauseReason="awaiting_user_message" />));
+    const completion = container.querySelector('[data-dock-work-disclosure]');
+    expect(completion?.textContent).toContain('Work completed');
+    expect(completion?.querySelector('button, [data-disclosure-chevron], [aria-expanded]')).toBeNull();
+    expect(mocks.getMessageWorkDetail).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('Needs your input');
+    expect(container.textContent).toContain('Done.');
+  });
+
   it('shows live activity with the branded loader and collapses it when the final answer arrives', () => {
     useDockStore.setState({ transcriptView: 'timeline' });
     const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };

@@ -334,6 +334,41 @@ describe('hasAuthoritativeDockRuntimeTimeline', () => {
 });
 
 describe('mergeMessagePages', () => {
+  it('replaces streamed progress and late tool metadata with one completed summary without touching other turns', () => {
+    const user = persisted(43, 'Add a paragraph.', '2026-09-18T12:59:29Z');
+    const progress = { ...persisted(44, 'I will add a paragraph.', '2026-09-18T12:59:33Z'), message_type: 'assistant_progress' };
+    const final = { ...persisted(45, 'Added the paragraph.', '2026-09-18T12:59:38Z'), role: 'assistant' as const, message_type: 'assistant_final' };
+    const tools = { ...persisted(46, '', '2026-09-18T12:59:37Z'), message_type: 'assistant_progress' };
+    const summary = { ...final, id: `work:${final.id}`, content: '', message_type: 'status',
+      dock_work_summary: { message_id: tools.id, duration_ms: 9000, activity_count: 2 } };
+    const old = persisted(42, 'Previous answer.', '2026-09-18T12:58:00Z');
+    const nextUser = persisted(47, 'Another question.', '2026-09-18T13:00:00Z');
+    const nextProgress = { ...persisted(48, 'Checking.', '2026-09-18T13:00:01Z'), message_type: 'assistant_progress' };
+    const current = [old, user, progress, final, tools, nextUser, nextProgress];
+    const expected = [old.id, user.id, summary.id, final.id, nextUser.id, nextProgress.id];
+    expect(mergeMessagePages(current, [summary, final]).map(message => message.id)).toEqual(expected);
+    // Older pages arriving later must not resurrect the same progress.
+    expect(mergeMessagePages([summary, final], [user, progress, tools]).map(message => message.id))
+      .toEqual([user.id, summary.id, final.id]);
+    // Also reconcile a cache populated before the fix.
+    const snapshot = stream([], [{ kind: 'assistant_message', segment_id: progress.id,
+      assistant_message: { message_id: progress.id, content: progress.content, message_type: 'assistant_progress',
+        status: 'completed', tool_calls: [], started_at: progress.created_at } }]);
+    const merged = mergePersistedChatMessages(snapshot, [...current, summary]);
+    expect(merged?.transcript_messages.map(message => message.event_id)).toEqual(expected.map(id => `msg:${id}`));
+    expect(merged?.live_turn_segments).toEqual([]);
+  });
+
+  it('keeps unrelated runs and history outside a compact summary when a page starts mid-turn', () => {
+    const old = { ...persisted(2, 'Earlier progress.', '2026-09-18T12:00:00Z'), message_type: 'assistant_progress' };
+    const progress = { ...persisted(4, 'Current progress.', '2026-09-18T12:01:00Z'), message_type: 'assistant_progress' };
+    const unrelated = { ...progress, id: 'other-run', run_id: 'run-2' };
+    const summary = { ...persisted(6, '', '2026-09-18T12:01:09Z'), id: 'work:answer', message_type: 'status',
+      dock_work_summary: { message_id: 'answer', duration_ms: 9000, activity_count: 1 } };
+    expect(mergeMessagePages([old, progress, unrelated], [summary]).map(message => message.id))
+      .toEqual([old.id, unrelated.id, summary.id]);
+  });
+
   it('deduplicates and restores stable sequence order across pagination', () => {
     const merged = mergeMessagePages(
       [persisted(51, 'later', '2026-08-14T00:00:51Z')],

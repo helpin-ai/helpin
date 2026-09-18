@@ -209,6 +209,7 @@ export function DockRunView({
             stream={streamState}
             active={transcriptStreaming}
             runStatus={effectiveRun.status}
+            pauseReason={effectiveRun.pause_reason}
             useRuntimeTimeline={showRuntimeTimeline}
             workspaceId={workspaceId}
             fallbackActor={session?.triggered_by_user}
