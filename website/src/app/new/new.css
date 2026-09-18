@@ -264,3 +264,49 @@
     .tl span.flip { animation: none; }
   }
 }
+
+/* Hero wire concept: one line, four stages, artifacts hanging from it. */
+.hp3 {
+  .wire { position: relative; margin-top: 56px; }
+  .wire-line { position: absolute; left: 50%; top: 14px; width: 100vw; height: 1.5px; background: var(--ink); transform: translateX(-50%) scaleX(0); transform-origin: left center; transition: transform 1.4s cubic-bezier(.2,.7,.2,1); }
+  .wire-line.drawn { transform: translateX(-50%) scaleX(1); }
+  .wire-nodes { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; }
+  .wnode { display: grid; gap: 22px; align-content: start; }
+  .wlabel { justify-self: start; display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 10px; border-radius: 999px; background: var(--bg2); border: 1px solid var(--border-2); font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); position: relative; z-index: 1; opacity: 0; transform: translateY(4px); transition: opacity .4s ease, transform .4s ease; }
+  .wlabel i { width: 7px; height: 7px; border-radius: 50%; background: var(--em); display: inline-block; }
+  .wlabel.on { opacity: 1; transform: none; }
+  .wcard { position: relative; border: 1px solid var(--border); border-radius: 10px; background: #fff; padding: 12px; display: grid; gap: 10px; align-content: start; font-size: 12.5px; box-shadow: 0 1px 2px rgba(19,21,20,.04); opacity: 0; transform: translateY(6px); transition: opacity .45s ease, transform .45s ease; min-height: 150px; }
+  .wcard::before { content: ""; position: absolute; left: 20px; top: -22px; width: 1.5px; height: 22px; background: var(--border-2); }
+  .wcard.on { opacity: 1; transform: none; }
+  .witem { opacity: 0; transform: translateY(4px); transition: opacity .4s ease, transform .4s ease; display: grid; gap: 4px; }
+  .witem.on { opacity: 1; transform: none; }
+  .wq { border: 1px solid var(--border); border-radius: 6px; padding: 8px; line-height: 1.45; }
+  .wdoc { border: 1px dashed var(--border-2); border-radius: 6px; padding: 8px; }
+  .wmeta { font-size: 11px; color: var(--t3); }
+  .wchip { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-2); color: var(--t2); background: #fff; }
+  .wchip.em { border-color: var(--em); color: var(--em); background: var(--em-t); }
+  .wchip.am { border-color: var(--amber-b); color: var(--amber); background: var(--amber-bg); }
+  .wl { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .wl li { display: flex; align-items: center; gap: 8px; color: var(--t3); transition: color .3s ease; min-height: 20px; }
+  .wl li.done { color: var(--ink); }
+  .wl li.active { color: var(--ink); }
+  .wl .approve { margin-left: auto; font-style: normal; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--ink); color: #fff; animation: hp3-pulse 1.2s ease-in-out infinite; }
+  .ck { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--border-2); display: inline-grid; place-items: center; font-size: 9px; font-style: normal; flex: none; }
+  .ck.done { border-color: var(--em); background: var(--em); color: #fff; }
+  .ck.active { border-color: var(--em); border-top-color: transparent; animation: hp3-spin 1s linear infinite; }
+  @keyframes hp3-spin { to { transform: rotate(360deg); } }
+  @keyframes hp3-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+  .record-frame { margin-top: 48px; }
+  @media (max-width: 960px) {
+    .wire-line { display: none; }
+    .wire-nodes { grid-template-columns: 1fr; gap: 20px; border-left: 1.5px solid var(--ink); padding-left: 20px; margin-left: 6px; }
+    .wnode { gap: 12px; }
+    .wlabel { margin-left: -36px; }
+    .wcard::before { display: none; }
+    .wcard { min-height: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wire-line, .wlabel, .wcard, .witem { transition: none; }
+    .ck.active, .wl .approve { animation: none; }
+  }
+}

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { PreviewNav } from './_components/PreviewNav';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LiveRecord } from './_components/LiveRecord';
+import { LoopWire } from './_components/LoopWire';
 import { LoopSection } from './_components/LoopSection';
 import { ReviewBanner, ReviewNote, Flag } from './_components/ReviewNotes';
 import { Chip, CtaRow, SectionHead, SIGNUP_URL, GITHUB_URL } from './_components/ui';
@@ -72,10 +73,11 @@ export default function NewHomePage() {
             <CtaRow />
             <div className="assure"><span>AGPL-3.0</span><span>Unlimited seats</span><span>Self-host or Cloud</span></div>
           </div>
-          <LiveRecord />
+          <LoopWire />
           <ReviewNote tag="Hero">
             <p><b>Audience-first headline.</b> "SaaS teams" is the subject; the three verbs map to support and docs, projects, and CRM. The frame is a placeholder for the real company page in the seeded workspace.</p>
-            <p><b>Animation concept.</b> Events arrive on the record in place, one every two seconds: meeting, signal, chat, next step, task, PR, article, renewal. Status chips flip where the work moves. It plays once and rests; reduced-motion shows the finished state. The rail divider sits on the page grid, so it lines up with the last column boundary of the loop section below.</p>
+            <p><b>Wire concept.</b> One line, four stages on the page grid, one customer. The line draws left to right, each stage hangs its artifact off it, and the work inside Decide and Ship ticks off item by item. The approval moment is explicit in Ship: the run waits, an Approve pill appears, then "Approved by Sam." About ten seconds, plays once, finished state under reduced motion, vertical on phones. Every intermediate state is readable text; nothing overlaps mid-transition.</p>
+            <p><b>What moved:</b> the animated customer record is now the visual for section two, and it starts when scrolled into view.</p>
             <p><Flag>DECISION</Flag> "View on GitHub" assumes the repository and a release bundle are public. <Flag>CLOUD</Flag> Until the Community module decision, this frame shows Cloud.</p>
           </ReviewNote>
         </div>
@@ -94,6 +96,7 @@ export default function NewHomePage() {
               {RECORD_FACTS.map(([k, v]) => <div key={k}><b>{k}</b><p>{v}</p></div>)}
             </div>
           </div>
+          <LiveRecord />
           <ReviewNote tag="Section 2">
             <p><Flag>CONFIRMED</Flag> Meeting intelligence fields, Recall.ai and Vexa providers, Meet, Zoom, Teams, Webex; Gmail and calendar sync; associations across conversation, task, deal, contact, company. <Flag>VERIFY</Flag> Whether "calls" has its own capture path; whether "Emails" covers support email as well as Gmail-synced sales email.</p>
           </ReviewNote>

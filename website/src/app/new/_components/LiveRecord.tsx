@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chip, Frame } from './ui';
 import { useReviewNotes } from './ReviewNotes';
 
@@ -30,7 +30,19 @@ const ROWS: Row[] = [
 export function LiveRecord() {
   const [step, setStep] = useState(1);
   const [run, setRun] = useState(0);
+  const [inView, setInView] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const { shown } = useReviewNotes();
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setInView(true); return; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { setInView(true); io.disconnect(); }
+    }, { threshold: 0.35 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -38,8 +50,10 @@ export function LiveRecord() {
       setStep(LAST_STEP);
       return;
     }
+    if (!inView) return;
     let current = 1;
     setStep(current);
+    const timers: number[] = [];
     const start = window.setTimeout(() => {
       const tick = window.setInterval(() => {
         current += 1;
@@ -48,14 +62,14 @@ export function LiveRecord() {
       }, STEP_MS);
       timers.push(tick);
     }, START_MS);
-    const timers: number[] = [start];
+    timers.push(start);
     return () => timers.forEach((t) => { window.clearTimeout(t); window.clearInterval(t); });
-  }, [run]);
+  }, [run, inView]);
 
   const replay = useCallback(() => setRun((r) => r + 1), []);
 
   return (
-    <div className="hero-frame">
+    <div className="record-frame" ref={ref}>
       <Frame crumb="CRM · Companies · Acme Corp" label="Acme Corp customer record with one timeline across meetings, support, tasks, docs, and deals">
         <div className="record gridlines">
           <div>
