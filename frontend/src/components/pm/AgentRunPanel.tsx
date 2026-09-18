@@ -41,6 +41,7 @@ interface Props {
   delivery?: AgentRunDeliveryContext;
   showDevelopmentHistory?: boolean;
   onEditDeliveryContext?: () => void;
+  deliveryContextEditReason?: string;
 }
 
 export interface AgentRunDeliveryContext {
@@ -279,6 +280,7 @@ export function AgentRunPanel({
   delivery,
   showDevelopmentHistory = false,
   onEditDeliveryContext,
+  deliveryContextEditReason,
 }: Props) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { run?: string };
@@ -504,6 +506,8 @@ export function AgentRunPanel({
     }
   };
 
+  const executionContext = delivery ? <AgentRunExecutionContext delivery={delivery} onEdit={onEditDeliveryContext} editReason={deliveryContextEditReason} /> : null;
+
   if (
     taskRunnableAgents.length === 0
     && runs.length === 0
@@ -512,13 +516,11 @@ export function AgentRunPanel({
     && !loadingAgents
     && !(showDevelopmentHistory && gitLinksQuery.isPending)
     && !gitLinksQuery.error
-  ) return null;
+  ) return executionContext ? <div className="mt-6">{executionContext}</div> : null;
 
   return (
     <div className="mt-6 space-y-7">
-      {delivery ? (
-        <AgentRunExecutionContext delivery={delivery} onEdit={onEditDeliveryContext} />
-      ) : null}
+      {executionContext}
 
       <section aria-label="Next delivery action">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Next action</h2>
@@ -649,28 +651,39 @@ export function AgentRunPanel({
   );
 }
 
-function AgentRunExecutionContext({
+export function AgentRunExecutionContext({
   delivery,
   onEdit,
+  editReason,
 }: {
   delivery: AgentRunDeliveryContext;
   onEdit?: () => void;
+  editReason?: string;
 }) {
   const repositoryName = delivery.selectedRepository?.full_name ?? delivery.target?.repo_full_name ?? '';
-
-  if (!delivery.loading && !repositoryName) return null;
 
   return (
     <section className="border-y border-border/60 py-4" aria-label="Execution context">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-foreground/70">Execution context</h2>
-        {onEdit ? <Button type="button" variant="outline" size="sm" onClick={onEdit}>Edit context</Button> : null}
+        {onEdit ? (
+          editReason ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0}><Button type="button" variant="outline" size="sm" disabled>Edit context</Button></span>
+              </TooltipTrigger>
+              <TooltipContent>{editReason}</TooltipContent>
+            </Tooltip>
+          ) : <Button type="button" variant="outline" size="sm" onClick={onEdit}>Edit context</Button>
+        ) : null}
       </div>
       {delivery.loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loading01Icon className="h-4 w-4 animate-spin" />
           Loading execution context…
         </div>
+      ) : !repositoryName ? (
+        <p className="text-sm text-muted-foreground">Not configured</p>
       ) : (
         <div className="grid min-w-0 gap-4 sm:grid-cols-3">
           <ExecutionContextValue label="Repository" value={repositoryName} icon />

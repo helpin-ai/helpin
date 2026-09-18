@@ -117,7 +117,8 @@ export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSe
   options?: { id: string; label: string; keywords?: string[] }[];
 };
 
-const SETTINGS_GROUP_LABELS = ['Personal', 'Organization', 'Workspace', 'AI & knowledge', 'Integrations & data', 'Projects', 'Support', 'CRM'];
+export const SETTINGS_TOP_LEVEL_GROUPS = new Set(['Billing']);
+const SETTINGS_GROUP_LABELS = ['Billing', 'Personal', 'Organization', 'Workspace', 'AI & knowledge', 'Integrations & data', 'Projects', 'Support', 'CRM'];
 const SETTINGS_GROUP_ICONS: Record<string, IconComponent> = {
   Personal: Profile,
   Organization: Members,
@@ -207,7 +208,7 @@ const allSettingsSections: SettingsSectionMeta[] = [
     group: 'Workspace',
     requiredPermission: 'module_access.manage',
   },
-  ...billingSettingsSections(Account).map(section => ({ ...section, group: 'Workspace', keywords: ['invoices', 'payment', 'subscription', 'plan', 'usage', 'credits'] })),
+  ...billingSettingsSections(Account).map(section => ({ ...section, group: 'Billing', keywords: ['invoices', 'payment', 'subscription', 'plan', 'usage', 'credits'] })),
   {
     id: 'ai-connections',
     sidebar: false,
