@@ -4,20 +4,23 @@ import { GITHUB_URL } from './ui';
 
 const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   { title: 'Product', links: [
-    { label: 'Support inbox', href: '#record' }, { label: 'Help center', href: '#record' }, { label: 'Projects', href: '#loop' },
-    { label: 'CRM and meetings', href: '#record' }, { label: 'Agents and automations', href: '#agents' }, { label: 'Pricing', href: '/pricing' },
-  ] },
-  { title: 'Open source', links: [
-    { label: 'GitHub', href: GITHUB_URL }, { label: 'Install guide', href: `${GITHUB_URL}/blob/develop/community/README.md` },
-    { label: 'License', href: `${GITHUB_URL}/blob/develop/LICENSE` }, { label: 'Contributing', href: `${GITHUB_URL}/blob/develop/CONTRIBUTING.md` },
-    { label: 'Roadmap and limitations', href: `${GITHUB_URL}/blob/develop/ROADMAP.md` }, { label: 'Security policy', href: `${GITHUB_URL}/blob/develop/SECURITY.md` },
+    { label: 'Customer records', href: '#record' }, { label: 'Inbox', href: '#loop' }, { label: 'Meetings', href: '#record' },
+    { label: 'Projects', href: '#projects' }, { label: 'Docs', href: '#record' }, { label: 'AI agents', href: '#agents' }, { label: 'Integrations', href: '#integrations' },
   ] },
   { title: 'Developers', links: [
-    { label: 'Documentation', href: `${GITHUB_URL}/blob/develop/docs/README.md` }, { label: 'MCP server', href: `${GITHUB_URL}/blob/develop/docs/public-mcp-server.md` },
-    { label: 'SDK', href: `${GITHUB_URL}/tree/develop/packages/sdk-js` }, { label: 'Architecture', href: `${GITHUB_URL}/blob/develop/ARCHITECTURE.md` },
+    { label: 'Documentation', href: `${GITHUB_URL}/blob/develop/docs/README.md` }, { label: 'API', href: `${GITHUB_URL}/blob/develop/docs/README.md` },
+    { label: 'SDK', href: `${GITHUB_URL}/tree/develop/packages/sdk-js` }, { label: 'MCP', href: `${GITHUB_URL}/blob/develop/docs/public-mcp-server.md` },
+    { label: 'GitHub', href: GITHUB_URL }, { label: 'Self-hosting', href: `${GITHUB_URL}/blob/develop/community/README.md` },
   ] },
   { title: 'Company', links: [
-    { label: 'Privacy', href: '/privacy' }, { label: 'Terms', href: '/terms' }, { label: 'Contact', href: 'mailto:hello@helpin.ai' },
+    { label: 'About', href: '#' }, { label: 'Changelog', href: '#' }, { label: 'Blog', href: '#' }, { label: 'Contact', href: 'mailto:hello@helpin.ai' },
+  ] },
+  { title: 'Open Source', links: [
+    { label: 'GitHub', href: GITHUB_URL }, { label: 'Contributing', href: `${GITHUB_URL}/blob/develop/CONTRIBUTING.md` },
+    { label: 'Issues', href: `${GITHUB_URL}/issues` }, { label: 'Releases', href: `${GITHUB_URL}/releases` },
+  ] },
+  { title: 'Legal', links: [
+    { label: 'Privacy', href: '/privacy' }, { label: 'Terms', href: '/terms' }, { label: 'Security', href: `${GITHUB_URL}/blob/develop/SECURITY.md` },
   ] },
 ];
 
@@ -28,7 +31,8 @@ export function PreviewFooter() {
         <div className="fgrid">
           <div>
             <Link href="/new" className="logo" aria-label="Helpin"><HelpinBrand /></Link>
-            <p className="tagline">Open-source support, docs, projects, and CRM for SaaS teams.</p>
+            <p className="tagline">Open-source workspace for SaaS teams.</p>
+            <p className="tagline strong">Hear customers. Decide what matters. Ship it.</p>
           </div>
           {COLUMNS.map((c) => (
             <div key={c.title}>
