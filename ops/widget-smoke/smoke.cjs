@@ -11,6 +11,15 @@ async function publish(browser, success, seconds) {
   const response = await fetch(metricsURL, { method: 'POST', body, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error('metrics_publish_failed');
 }
+// Fixed categories only: never emit URLs, response bodies or exception messages.
+function failureKind(error) {
+  const message = String(error?.message || error || '');
+  for (const code of ['ERR_HTTP2_PROTOCOL_ERROR', 'ERR_QUIC_PROTOCOL_ERROR', 'ERR_NAME_NOT_RESOLVED', 'ERR_CONNECTION_RESET', 'ERR_CONNECTION_CLOSED', 'ERR_CONNECTION_TIMED_OUT', 'ERR_CERT_AUTHORITY_INVALID', 'ERR_ABORTED']) {
+    if (message.includes(code)) return code;
+  }
+  if (error?.name === 'TimeoutError') return 'timeout';
+  return 'other';
+}
 async function check(kind) {
   let browser, page, attachment, session, api, downloadURL, failed = false;
   let metadataFailed = false;
@@ -18,6 +27,8 @@ async function check(kind) {
   const start = Date.now();
   const name = `helpin-monitor-${randomUUID()}.png`;
   const pending = [];
+  const network = [];
+  const record = event => { if (network.length < 12) network.push(event); };
   try {
     browser = await ({ chromium, firefox }[kind]).launch({ headless: true });
     page = await browser.newPage({ userAgent: kind === 'firefox'
@@ -25,9 +36,16 @@ async function check(kind) {
       : 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36' });
     page.setDefaultTimeout(45_000);
     await page.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+    page.on('requestfailed', request => {
+      const type = request.resourceType();
+      if (['document', 'script', 'fetch', 'xhr'].includes(type)) {
+        record({ type, failure: failureKind(request.failure()?.errorText) });
+      }
+    });
     page.on('websocket', socket => {
       const socketURL = new URL(socket.url());
       if (socketURL.pathname !== '/widget/ws') return;
+      socket.on('socketerror', () => record({ type: 'websocket', failure: 'socket_error' }));
       socket.on('framereceived', ({ payload }) => {
         try {
           const frame = JSON.parse(String(payload));
@@ -41,6 +59,7 @@ async function check(kind) {
     page.on('response', response => {
       const request = response.request();
       const url = new URL(response.url());
+      if (response.status() >= 400) record({ type: 'http', status: response.status() });
       if (request.method() !== 'POST' || url.pathname !== '/widget/support/attachments') return;
       pending.push((async () => {
         if (request.postDataJSON()?.file_name !== name || !response.ok()) return;
@@ -52,9 +71,11 @@ async function check(kind) {
       })().catch(() => { metadataFailed = true; }));
     });
     stage = 'page';
-    await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    stage = 'connection';
+    const navigation = await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    if (navigation && !navigation.ok()) throw new Error('page_http_error');
+    stage = 'launcher';
     await page.locator('.helpin-launcher').click();
+    stage = 'session';
     // Widget readiness only means config loaded; wait for the real session acknowledgement.
     const connectionDeadline = Date.now() + 45_000;
     while (!session && Date.now() < connectionDeadline) await new Promise(resolve => setTimeout(resolve, 100));
@@ -71,10 +92,10 @@ async function check(kind) {
       return Array.from(new Uint8Array(await response.arrayBuffer()));
     }, downloadURL);
     if (!Buffer.from(stored).equals(png)) throw new Error('readback_mismatch');
-  } catch {
+  } catch (error) {
     failed = true;
     // Never print browser errors: they can include signed URLs or session credentials.
-    console.error(JSON.stringify({ browser: kind, stage, outcome: 'failed' }));
+    console.error(JSON.stringify({ browser: kind, stage, outcome: 'failed', failure: failureKind(error), network }));
   } finally {
     await Promise.allSettled(pending);
     if (session && api && page) {

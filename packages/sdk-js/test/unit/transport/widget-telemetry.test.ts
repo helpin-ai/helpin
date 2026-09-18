@@ -13,6 +13,11 @@ describe('privacy-safe widget telemetry', () => {
     expect(options.credentials).toBe('omit');
     expect(options.headers).toEqual({ 'Content-Type': 'application/json' });
   });
+  it('includes only the numeric close code for connection diagnostics', () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', fetch);
+    createWidgetTelemetry(() => 'api.test', () => 'key')({ stage: 'connection', outcome: 'closed', close_code: 1000, duration_ms: 42 });
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ widget_key: 'key', sdk_release: 'local', stage: 'connection', outcome: 'closed', close_code: 1000, duration_ms: 42 });
+  });
   it('bounds reporting during reconnect loops and resets the budget', () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-17T00:00:00Z'));
     const fetch = vi.fn().mockResolvedValue({ ok: true }); vi.stubGlobal('fetch', fetch);

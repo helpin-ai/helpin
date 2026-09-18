@@ -17,6 +17,7 @@ import (
 func WidgetTelemetry(metrics *observability.Metrics) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var event struct {
+			CloseCode  *int    `json:"close_code"`
 			WidgetKey  string  `json:"widget_key"`
 			SDKRelease string  `json:"sdk_release"`
 			Stage      string  `json:"stage"`
@@ -41,9 +42,17 @@ func WidgetTelemetry(metrics *observability.Metrics) http.HandlerFunc {
 			return
 		}
 		switch event.Outcome {
-		case "success", "error", "timeout", "cancelled", "not_connected":
+		case "success", "error", "timeout", "cancelled", "not_connected", "closed":
 		default:
 			writeError(w, 400, "invalid outcome")
+			return
+		}
+		if event.Outcome == "closed" && event.Stage != "connection" {
+			writeError(w, 400, "invalid outcome for stage")
+			return
+		}
+		if event.CloseCode != nil && (event.Stage != "connection" || *event.CloseCode < 0 || *event.CloseCode > 4999) {
+			writeError(w, 400, "invalid close code")
 			return
 		}
 		if math.IsNaN(event.DurationMS) || math.IsInf(event.DurationMS, 0) || event.DurationMS < 0 || event.DurationMS > 600000 {
@@ -70,7 +79,7 @@ func WidgetTelemetry(metrics *observability.Metrics) http.HandlerFunc {
 		}
 		metrics.Widget(event.Stage, event.Outcome, browser, event.DurationMS/1000)
 		if event.Outcome == "error" || event.Outcome == "timeout" || event.Outcome == "not_connected" {
-			slog.WarnContext(r.Context(), "widget operation failed", "stage", event.Stage, "outcome", event.Outcome, "browser", browser, "sdk_release", event.SDKRelease)
+			slog.WarnContext(r.Context(), "widget operation failed", "stage", event.Stage, "outcome", event.Outcome, "browser", browser, "sdk_release", event.SDKRelease, "close_code", event.CloseCode)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

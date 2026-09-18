@@ -1825,6 +1825,8 @@ export class WidgetManager {
     this.connectionStatus = 'connecting';
     this.creatingConversation = false;
     this.render();
+    let sessionJoined = false;
+    const connectionStartedAt = Date.now();
 
     try {
       // Connect with just widget_key (unauthenticated)
@@ -1855,6 +1857,7 @@ export class WidgetManager {
       this.wsConnection.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if (data.type === 'session:joined') sessionJoined = true;
           this.handleWSMessage(data);
         } catch {
           console.error('Failed to parse WebSocket message');
@@ -1863,7 +1866,14 @@ export class WidgetManager {
 
       this.wsConnection.onclose = (event) => {
         if (this.isShutdown) return;
-        this.reportTelemetry({ stage: 'connection', outcome: 'error', duration_ms: 0 });
+        // Only a clean normal close of an established session is expected.
+        // Going-away, policy errors and abnormal closes remain visible as failures.
+        this.reportTelemetry({
+          stage: 'connection',
+          outcome: sessionJoined && event.wasClean && event.code === 1000 ? 'closed' : 'error',
+          duration_ms: Date.now() - connectionStartedAt,
+          close_code: event.code,
+        });
 
         const now = Date.now();
         if (this.connectionIssueStartedAt === null) {
