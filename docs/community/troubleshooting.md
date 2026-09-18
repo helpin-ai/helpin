@@ -3,8 +3,8 @@
 This guide applies to the Community Docker Compose bundle. Run commands from its
 `community/` directory. For source builds, first complete the
 [source-build guide](https://github.com/helpin-ai/helpin/blob/develop/docs/community/development.md).
-Product workflow guides will be hosted in the
-[Helpin documentation](https://helpin.ai/docs) (coming soon).
+A hosted help center for product workflow guides is planned; this guide covers
+installation and service problems.
 
 ## Start with service status
 

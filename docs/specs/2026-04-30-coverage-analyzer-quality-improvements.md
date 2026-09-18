@@ -33,7 +33,7 @@ history before creating a new gap. It does not discard all such evidence once an
 analyzer has run. Semantic grouping is now implemented in the
 [materializer](../../server/internal/service/support_coverage_materializer.go),
 so the “deferred” section is historical. Embedding failure can fall back to lexical
-grouping; see the [updated diagnosis](../plans/2026-09-02-coverage-gaps-diagnosis.md)
+grouping; see the the September 2 diagnosis (moved to the private archive on September 18, 2026)
 for execution and recovery limits.
 
 The [legacy closure migration](../../server/internal/dbmigrate/sql/20260430202658586984_close_v1_legacy_gaps.sql)
@@ -57,13 +57,14 @@ Production data from two active workspaces reveals five systemic issues in the d
 
 ## Evidence
 
-Analyzed 4 gap details from workspace `e03065c1`:
+Analyzed four gap details from a test workspace (rows below are synthetic
+examples with the same shape as the original evidence):
 
 | Gap | Issue | human_resolution | Knowledge scores |
 |-----|-------|-----------------|-----------------|
-| Meta phishing | Not Contentpen's product | Speculative | All ~0.016 |
-| YouTube features | Legitimate but speculative | Speculative | All ~0.016 |
-| Paddle dispute | Excellent — real resolution | Observed | All ~0.016 |
+| Unrelated vendor question | Not this product | Speculative | All ~0.016 |
+| Feature request | Legitimate but speculative | Speculative | All ~0.016 |
+| Billing dispute | Real resolution recorded | Observed | All ~0.016 |
 | Refund policy | Hallucinated article content | Speculative | All ~0.015 |
 
 Common patterns:

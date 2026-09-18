@@ -1,6 +1,7 @@
 # Support AI preview
 
-Support administrators can test the **saved** assistant in Settings → AI Assistant → Test AI response. The admin playground also accepts explicit text history or an existing conversation visible to the caller. Unsaved settings do not affect a test. Preview does not enable AI replies or change workspace settings.
+This guide is for support administrators testing the saved assistant and for
+contributors changing preview code. Support administrators can test the **saved** assistant in Settings → AI Assistant → Test AI response. The admin playground also accepts explicit text history or an existing conversation visible to the caller. Unsaved settings do not affect a test. Preview does not enable AI replies or change workspace settings.
 
 Answer previews use the normal AgentService admission, shared-profile resolution, encrypted run credentials, Runtime provider, saved agent prompt/model controls, usage metering, knowledge retrieval and server reply gate. Personal manual-run profiles are deliberately ineligible, matching unattended visitor runs. Explicit requests for a human use the same deterministic handoff check before invoking a model.
 
@@ -8,7 +9,7 @@ Each test has an isolated `support_preview` target and an immutable text snapsho
 
 Only knowledge search, the two captured outcome tools, and reads of the preview's own conversation snapshot are available. The host checks the persisted run and rejects forged targets and other commands. External MCP attachments, child runs, browser actions and other tools are excluded and listed in the result. This tests grounded support answers; it does not certify external integrations, channel delivery, takeover races, or live conversation eligibility. Embeddings retain the workspace's existing server-side configuration; choosing a local agent model does not change that.
 
-The existing admin retrieval-only option calls the shared search function without launching a model. It reports `retrieval_only`, not a simulated agent answer. The old in-process preview answer generator and fabricated planner display are removed.
+The existing admin retrieval-only option calls the shared search function without launching a model. It reports `retrieval_only`, not a simulated agent answer.
 
 ## API and lifecycle
 
@@ -25,7 +26,7 @@ Available routes:
 
 A captured outcome triggers cancellation if Runtime is still active, preserving normal usage settlement and credential cleanup. A paused run is reported as blocked; completion without an outcome is reported as failure. The existing reconciliation sweep cancels previews older than three minutes, including abandoned browser sessions; tool callbacks also reject expired/terminal previews. Sweep scheduling can delay cancellation beyond the three-minute eligibility deadline.
 
-Model and retrieval calls are billed/metered under the normal edition policy. A test is isolated from customer effects, not free of model usage. No new migration, environment variable, SDK version, or Runtime deployment is required; restart Helpin API and rebuild the frontend/admin apps to expose this feature.
+Model and retrieval calls are billed/metered under the normal edition policy. A test is isolated from customer effects, not free of model usage. Preview requires no additional configuration.
 
 ## Verification
 

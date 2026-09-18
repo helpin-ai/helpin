@@ -124,7 +124,7 @@ sub-agents or authorize mutations.
 
 **Child results:** plans launched from a chat carry
 `command_bar_plans.parent_chat_run_id` / `dock_chat_id`. When a plan settles,
-helpin resumes the parent chat run with a `<child_run_result>` block
+Helpin resumes the parent chat run with a `<child_run_result>` block
 (`internal/service/dock_chat_results.go`; immediate via the terminal
 finalizer, 30s sweep as backstop; ended chats get results via successor-run
 carry-forward). Each child is instructed to end with a self-contained handoff
@@ -151,7 +151,7 @@ to create or update the final document, task, or CRM record.
 
 | Layer | Path |
 |-------|------|
-| FE shell | `frontend/src/components/agents/AskAgentsDock.tsx` (+ `dock/ChatView.tsx`, `dock/ChatListView.tsx`, `dock/DockPlanConfirmCard.tsx`, `dock/dockChatState.ts`) |
+| FE shell | `frontend/src/components/agents/AskAgentsDock.tsx` (+ `dock/ChatView.tsx`, `dock/DockPlanConfirmCard.tsx`, `dock/dockChatState.ts`) |
 | FE service / store | `frontend/src/lib/services/dockChatService.ts`, `frontend/src/stores/dockStore.ts` |
 | API | `/api/dock/chats*` (`server/internal/handler/dock_chat.go`, router `/dock` block) |
 | Service | `server/internal/service/dock_chat.go`, `dock_chat_results.go` |

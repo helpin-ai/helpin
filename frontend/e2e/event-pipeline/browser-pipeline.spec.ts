@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 
 const widgetKey = process.env.HELPIN_EVENT_TEST_WIDGET_KEY;
 const projectId = process.env.EVENT_TEST_PROJECT_ID;
-const frontendURL = process.env.HELPIN_EVENT_TEST_FRONTEND_URL || 'https://helpin-dev-fe.tryunhide.com';
-const apiURL = process.env.HELPIN_EVENT_TEST_API_URL || 'https://helpin-dev.tryunhide.com';
+const frontendURL = process.env.HELPIN_EVENT_TEST_FRONTEND_URL || 'https://helpin-dev-fe.localhost';
+const apiURL = process.env.HELPIN_EVENT_TEST_API_URL || 'https://helpin-dev.localhost';
 const clickhouseURL = process.env.HELPIN_CLICKHOUSE_HTTP_URL || 'http://127.0.0.1:8123';
 
 async function queryClickHouse(query: string): Promise<string> {

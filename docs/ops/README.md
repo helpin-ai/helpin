@@ -6,5 +6,4 @@ Operational procedures for migrations, deployments, and support infrastructure. 
 
 - [Database migrations](database-migrations.md)
 - [Serve a help center under a subpath](help-center-subpath-reverse-proxy.md)
-- [Native runtime and AI profiles release runbook](native-release-runbook.md)
 - [Support email fallback operations](support-email-fallback-runbook.md)

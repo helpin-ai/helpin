@@ -39,7 +39,7 @@ and return are recorded in internal notes; they do not change resolution metrics
 ## Deployment
 
 Apply migration `202609160005_support_ai_control.sql` with the normal edition
-migration command before restarting Helpin. For EE, from `server/`:
+migration command before restarting Helpin. For Enterprise builds, from `server/`:
 
 ```sh
 GOWORK=off go run -tags ee ./cmd/migrate up
@@ -54,7 +54,7 @@ Agent Runtime / SDK changes. The optional escalation fields `issue_summary`, `at
 Automated coverage includes SQLite service tests, frontend interaction tests,
 and a PostgreSQL integration test for publication waiting on a takeover lock.
 The latter uses an isolated schema in `SUPPORT_FOLLOWUP_TEST_DSN` and the
-`integration` build tag. Before release, check the controls in a real inbox
+`integration` build tag. After deploying, check the controls in a real inbox
 while an AI reply is in progress, then return to AI and send a fresh message.
 
 ## Source references

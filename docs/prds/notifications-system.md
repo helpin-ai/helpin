@@ -1403,7 +1403,7 @@ The `notification_deliveries` table already supports Mattermost as a channel. Im
 - **MattermostNotificationWorker**: River worker that resolves DM vs channel post, applies preferences, renders Mattermost-specific message format (Markdown), posts via Mattermost API, and records delivery with `external_message_id`.
 - **v1 scope (narrow)**: `story.mentioned` (direct), `story.assigned`, `story.blocked`, `sprint.ending_soon`. Team mentions should be either DM fan-out OR mapped channel posts, not both.
 - **Preference extension**: Add `"mattermost"` key to `channel_preferences` JSONB (e.g., `{ "story.assigned": { "in_app": true, "email": true, "mattermost": true } }`).
-- See also: [Mattermost integration doc](../mattermost-integration.md).
+- See also: the Mattermost integration design (moved to the private archive on September 18, 2026).
 
 ### Slack Integration (Phase 3 - Separate PRD)
 - Personal DMs for @-mentions and assignments

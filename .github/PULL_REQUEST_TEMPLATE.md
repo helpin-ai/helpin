@@ -14,7 +14,7 @@
 
 ## Documentation
 
-<!-- Link updated technical docs and any affected https://helpin.ai/docs articles.
+<!-- Link updated technical docs and any affected hosted help center articles once that site is live.
      If no documentation update is needed, explain why. -->
 
 ## Contribution terms

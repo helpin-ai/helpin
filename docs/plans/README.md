@@ -148,7 +148,6 @@ Implementation plans, progress notes, and audits. Dated documents record the sta
 - [Agent Run Turn Chronology Implementation Plan](2026-08-22-agent-run-turn-chronology.md)
 - [NATS event pipeline](2026-08-25-nats-event-pipeline.md)
 - [Demand attribution fixes](2026-08-30-demand-attribution-fixes.md)
-- [Coverage Gaps diagnosis (ContentStudio, 2026-09-02)](2026-09-02-coverage-gaps-diagnosis.md)
 - [Docs Autosave Reconciliation Implementation Plan](2026-09-02-docs-autosave-reconciliation.md)
 - [Single-Release Plan — Helpin MCP Tool Registration](2026-09-02-helpin-mcp-tool-registration-plan.md)
 - [Task Page Loading Implementation Plan](2026-09-03-task-page-loading.md)

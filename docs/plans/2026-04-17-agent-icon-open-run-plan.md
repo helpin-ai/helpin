@@ -1,7 +1,6 @@
 # Open an agent run from a task card
 
 Date: 2026-04-17
-Owner: azhar@d4interactive.io
 Branch: `feature/live-chat-events-pipeline` (or spin off)
 
 ## Current implementation review — 2026-09-18

@@ -1,4 +1,4 @@
-# Lead Function Implementation Plan
+# Lead function implementation plan (historical)
 
 > Historical implementation plan. `lead` is implemented in
 > [`src/core/client.ts`](../src/core/client.ts); the old `packages/javascript-sdk`

@@ -20,11 +20,11 @@ artifact upload, or local-result billing. Helpin advertises only `admission` and
 
 ## Enablement and deployment order
 
-1. Apply additive migration `202609150001_cli_local_admission.sql` using the normal
+1. Apply additive migration `20260915000101_cli_local_admission.sql` using the normal
    migration runner. AutoMigrate also includes these models for development.
 2. Deploy the API and frontend consent page with `CLI_ENABLED=false` (the default).
 3. Set `CLI_PUBLIC_BASE_URL` to the public **API origin**, e.g.
-   `https://api.helpin.ai`; this is required when enabling the feature.
+   `https://api.example.com`; this is required when enabling the feature.
    Set `APP_BASE_URL` to the frontend origin. Both must be origins without paths.
 4. Verify the API origin routes `/agent-runtime/cli.json`,
    `/.well-known/oauth-authorization-server/api/cli/oauth`, and `/api/cli/*` to the

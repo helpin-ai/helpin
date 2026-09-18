@@ -1,12 +1,15 @@
 # Community configuration
 
-Community 0.1 is a beta. The supported bundle sets explicit local defaults;
-running the binaries directly retains conservative authentication defaults.
+This reference is for operators configuring a Community installation. It lists
+the environment settings the bundle supports and their defaults; use it after
+installation and before public deployment. Community 0.1 is a beta. The
+supported bundle sets explicit local defaults; running the binaries directly
+retains conservative authentication defaults.
 
 | Setting | Behavior |
 | --- | --- |
-| `HELPIN_ENABLED_MODULES` | Comma-separated product surfaces. Community defaults to `support,docs,agents`; EE defaults to all modules. Support requires Docs. Workspace roles remain in force. |
-| `AUTH_EMAIL_VERIFICATION_REQUIRED` | Defaults to `true`. Set `false` for local Community signup without mail. EE rejects `false`. This never marks an email verified. |
+| `HELPIN_ENABLED_MODULES` | Comma-separated product surfaces. Community defaults to `support,docs,agents`; Enterprise defaults to all modules. Support requires Docs. Workspace roles remain in force. |
+| `AUTH_EMAIL_VERIFICATION_REQUIRED` | Defaults to `true`. Set `false` for local Community signup without mail. Enterprise rejects `false`. This never marks an email verified. |
 | `DEMO_VIEWER_EMAIL` | Optional. Email of an existing account that visitors of `/demo` are signed in as without a password. Give it the `viewer` role in one workspace only, no 2FA, not a platform admin. Every non-read API request from this account is rejected with `demo_read_only`. Empty disables `/demo`. |
 | `DEMO_REQUIRE_EMAIL` | Defaults to `false`. When `true`, visitors must enter their own email before the demo session is issued. |
 | `DEMO_LEAD_WEBHOOK_URL` | Optional. Visitor emails captured on `/demo` are POSTed here as `{"email","source":"demo","captured_at"}`. Failures are logged and never block the visitor. |
@@ -89,11 +92,6 @@ URLs use the application origin. Garage has a distinct generated access key,
 secret key and RPC secret. Keep them with backups of the entire `garage_data`
 volume, including metadata and object data. Changing env values does not rotate
 an existing Garage access key; use Garage's documented key management procedure.
-
-The fresh-schema CI job applies the ledger to an empty PostgreSQL database and
-compares the schema before and after the API's exact AutoMigrate model list.
-Model additions therefore need an additive ledger migration; do not regenerate
-or edit the historical foundation snapshot to bypass the guard.
 
 ## Authenticated request limits
 

@@ -1,6 +1,6 @@
 # Helpin contributor instructions
 
-Unified platform for project management, CRM, customer support, knowledge, and AI-assisted execution.
+Unified platform for project management, CRM, customer support, knowledge, and AI-assisted execution. The Community 0.1 beta ships the support, docs, and agents modules; see [ROADMAP.md](ROADMAP.md).
 
 ## Small Fix Workflow
 
@@ -19,8 +19,8 @@ with the checks described there.
 - **Backend**: Go 1.26.7 toolchain (`.go-version`; module minimum 1.25.0) + Chi router + GORM (PostgreSQL) + Temporal workflows
 - **Frontend**: React 19 + Vite 7 + TypeScript 5.9 + TanStack Router + TanStack Query + Zustand + shadcn/ui
 - **Database**: PostgreSQL with pgvector; see Community Compose for self-hosted defaults
-- **Storage**: AWS S3 / MinIO (presigned URLs + direct upload)
-- **Infra**: Kubernetes with Traefik, Doppler secrets, GHCR container registry
+- **Storage**: S3-compatible object storage (Garage in the Community bundle; AWS S3 or MinIO elsewhere) with presigned URLs and direct upload
+- **Infra**: Docker Compose for Community; Kubernetes with Traefik for the hosted service; GHCR container registry
 
 ## Development
 
@@ -136,19 +136,16 @@ frontend/                        # React SPA
     routes/                      # TanStack Router file-based routes
     stores/                      # Zustand stores (auth, workspace, org, etc.)
 
-k8s/                             # Kubernetes manifests
-  stage/                         # Staging (stage.helpin.ai)
-  prod/                          # Production (helpin.ai)
+k8s/                             # Kubernetes manifests for the hosted service
 
 .github/workflows/               # CI/CD pipelines
   ci.yml                         # PR checks (Go and pnpm validation)
-  deploy-staging.yml             # develop → stage
-  deploy-prod.yml                # main → prod
+  deploy-*.yml                   # Hosted-service deployments
 ```
 
 ## Branches
-- `develop` → Staging (stage.helpin.ai)
-- `main` → Production (helpin.ai)
+- `develop`: integration branch; open pull requests against it
+- `main`: release branch for the hosted service
 
 ---
 
@@ -592,7 +589,7 @@ const useWorkspaceStore = create<State>((set) => ({
 const workspace = useWorkspaceStore((s) => s.currentWorkspace);
 ```
 
-Key stores: `authStore`, `workspaceStore`, `organizationStore`, `quarterStore`, `globalCreateStore`, `boardDisplayStore`
+Key stores: `authStore`, `workspaceStore`, `organizationStore`, `globalCreateStore`, `boardDisplayStore`
 
 ### UI Components
 - **shadcn/ui**: 30+ installed components (Button, Card, Dialog, Popover, Table, etc.)

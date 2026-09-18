@@ -4,6 +4,8 @@ Analytics and live chat for your website. Install as an npm module or add a scri
 
 The npm module is a thin integration wrapper for analytics and widget commands. In browser environments it loads the live widget runtime from `https://cdn.helpin.ai/lib.js`, so widget UI and CSS updates can ship from the CDN without requiring customer application redeploys.
 
+Self-hosted Community installations serve the same runtime from the API at `<PUBLIC_WIDGET_URL>/sdk/lib.js` (the `PUBLIC_SDK_URL` value in the bundle's `.env`). Use that URL in the script tag, or set `widgetRuntimeUrl` to it for npm installs. With `supportOnly: true` the SDK derives the runtime from `host` automatically.
+
 ## Installation
 
 ```bash
@@ -17,7 +19,7 @@ import { helpinClient } from '@helpin-ai/sdk-js';
 
 const client = helpinClient({
   widgetKey: 'your-widget-key',
-  host: 'https://client.helpin.ai',
+  host: 'https://client.helpin.ai', // Cloud; for Community use your PUBLIC_WIDGET_URL, e.g. http://localhost:8085
   namespace: 'helpin',
   autoBoot: false,
   // Optional: override the hosted widget runtime for staging or pinned deployments.
@@ -82,7 +84,7 @@ const client = helpinClient({
 client?.articleView('security-overview');
 ```
 
-Common field names such as `email`, `first_name`, `company`, `phone`, and `role` are mapped automatically. Use `fieldMappings` when a form uses non-standard names, or map a field to `ignore` to disable an automatic mapping. Every captured form still requires an explicit selector, stable form ID, and value allowlist; mappings never expand which values are collected. A form submission creates an untrusted lead identity. Call `id(...)` with a customer-server HMAC proof after login to upgrade it to verified identity.
+Common field names such as `email`, `first_name`, `company`, `phone`, and `role` are mapped automatically. Use `fieldMappings` when a form uses non-standard names, or map a field to `ignore` to disable an automatic mapping. Every captured form still requires an explicit selector, stable form ID, and value allowlist; mappings never expand which values are collected. A form submission creates an untrusted lead identity. After login, call `id(...)` with an `identity_verification` proof (`{ version: 'v1', issued_at, expires_at, signature }`) signed by your server to upgrade it to a verified identity; see the [widget identity guide](../../docs/community/widget-identity.md).
 
 By default, the widget boots automatically in browser environments when `widgetKey` and `host` are set. Pass `autoBoot: false` to keep the widget dormant until you explicitly call `boot()`, `show()`, `open()`, `openMessages()`, or `openNewMessage()`.
 
@@ -136,7 +138,8 @@ Configure via the `HelpinOptions` object passed to `helpinClient(...)`, or with 
 | `host` | Helpin host URL, with or without protocol |
 | `autoBoot` | Boot the widget on initialization (default: `true`) |
 | `namespace` | Global name for the script-tag build (default: `helpin`) |
-| `widgetRuntimeUrl` | Hosted widget runtime URL for npm installs (default: `https://cdn.helpin.ai/lib.js`) |
+| `widgetRuntimeUrl` | Widget runtime URL for npm installs (default: `https://cdn.helpin.ai/lib.js`; Community: your `PUBLIC_SDK_URL`) |
+| `supportOnly` | Support chat and identification only; no analytics collector or event queue. Loads the runtime from `host` + `/sdk/lib.js` unless `widgetRuntimeUrl` is set |
 | `widgetRuntimeChannel` / `widgetRuntimeVersion` | Optional runtime selection metadata for hosted/pinned widget deployments |
 | `autoPageview` | Track a pageview automatically on load |
 | `useBeaconApi` | Prefer the Beacon API for event transport |
@@ -193,15 +196,15 @@ Every method below is available on the object returned by `helpinClient(...)`.
 Pass the final article segment from its Helpin URL. For example:
 
 ```ts
-// https://contentstudio.helpin.center/articles/how-to-add-first-comment-2906b16e
-client.openArticle('how-to-add-first-comment-2906b16e');
+// https://acme.helpin.center/articles/getting-started-2906b16e
+client.openArticle('getting-started-2906b16e');
 ```
 
 For migrations from another help-center provider, map the old article ID to this Helpin article key. Use a normal link as a fallback when no reliable mapping exists:
 
 ```html
 <a
-  href="https://contentstudio.helpin.center/articles/how-to-add-first-comment-2906b16e"
+  href="https://acme.helpin.center/articles/getting-started-2906b16e"
   target="_blank"
   rel="noreferrer"
 >

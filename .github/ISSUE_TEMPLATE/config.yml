@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/helpin-ai/helpin/security/advisories/new
+    about: Use private reporting for exploitable issues. Never post exploits or secrets in a public issue.
+  - name: Getting help
+    url: https://github.com/helpin-ai/helpin/blob/develop/SUPPORT.md
+    about: Where to find the guides, how to ask a setup question, and what to include.
