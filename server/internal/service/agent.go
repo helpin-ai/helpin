@@ -5578,6 +5578,23 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 		return nil, nil, fmt.Errorf("unsupported intent %q", req.Intent)
 	}
 
+	// Dock approval and request-changes endpoints do not accept trusted history
+	// from the browser. Rebuild it from host-authenticated message rows on every
+	// resume so a later approval cannot erase the user's earlier authorization
+	// context in the runtime's last_resume metadata.
+	if run.DockChatID != nil && s.runMessageRepo != nil {
+		messages, _, historyErr := s.runMessageRepo.ListByDockChat(ctx, run.WorkspaceID, *run.DockChatID, nil, 100)
+		if historyErr != nil {
+			slog.WarnContext(ctx, "agent run resume: trusted Dock history unavailable", "workspace_id", run.WorkspaceID, "run_id", run.ID, "error", historyErr)
+		} else {
+			if shouldAddMessage && messageType != "approval" {
+				actor := strings.TrimSpace(actorID)
+				messages = append(messages, model.AgentRunMessage{Role: "user", ActorUserID: &actor, Content: replyText, MessageType: messageType})
+			}
+			req.TrustedUserMessages = trustedDockUserHistoryFromMessages(messages)
+		}
+	}
+
 	responsePayload := json.RawMessage(nil)
 	if len(req.ResponsePayload) > 0 && strings.TrimSpace(string(req.ResponsePayload)) != "" && strings.TrimSpace(string(req.ResponsePayload)) != "null" {
 		responsePayload = append(json.RawMessage(nil), req.ResponsePayload...)

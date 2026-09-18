@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -1040,6 +1041,18 @@ func TestSendRunMessageAllowsAwaitingApprovalRuns(t *testing.T) {
 
 func TestResumeRunAllowsPausedApprovalRuns(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
+	for _, statement := range []string{
+		`ALTER TABLE agent_run_messages ADD COLUMN dock_chat_id TEXT`,
+		`ALTER TABLE agent_run_messages ADD COLUMN dock_chat_sequence INTEGER`,
+		`ALTER TABLE agent_run_messages ADD COLUMN client_message_id TEXT`,
+		`ALTER TABLE agent_run_messages ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'sent'`,
+		`CREATE TABLE dock_chats (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, next_message_sequence INTEGER NOT NULL DEFAULT 0, updated_at DATETIME)`,
+		`INSERT INTO dock_chats (id, workspace_id, next_message_sequence, updated_at) VALUES ('chat-1', 'ws-1', 1, CURRENT_TIMESTAMP)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	agentRepo := repository.NewAgentRepository(db)
 	runRepo := repository.NewAgentRunRepository(db)
 	runMessageRepo := repository.NewAgentRunMessageRepository(db)
@@ -1071,8 +1084,13 @@ func TestResumeRunAllowsPausedApprovalRuns(t *testing.T) {
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
+	dockChatID := "chat-1"
+	run.DockChatID = &dockChatID
 	if err := runRepo.Create(context.Background(), run); err != nil {
 		t.Fatalf("create run: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO agent_run_messages (id, workspace_id, run_id, dock_chat_id, dock_chat_sequence, delivery_status, actor_user_id, role, content, message_type, sequence_no, created_at) VALUES ('trusted-prior', 'ws-1', ?, ?, 1, 'sent', 'user-1', 'user', 'Use run_python for the saved local files.', 'request_changes', 1, CURRENT_TIMESTAMP)`, run.ID, dockChatID).Error; err != nil {
+		t.Fatalf("insert trusted history: %v", err)
 	}
 
 	svc := &AgentService{
@@ -1111,6 +1129,16 @@ func TestResumeRunAllowsPausedApprovalRuns(t *testing.T) {
 	}
 	if resumeCall.req.Intent != model.AgentRunResumeIntentRequestChanges || resumeCall.req.Content != "Please tighten the requirements section." {
 		t.Fatalf("expected request_changes resume request, got %#v", resumeCall.req)
+	}
+	var responsePayload struct {
+		TrustedUserMessages []string `json:"trusted_user_messages"`
+	}
+	if err := json.Unmarshal(resumeCall.req.ResponsePayload, &responsePayload); err != nil {
+		t.Fatalf("decode trusted resume context: %v", err)
+	}
+	wantTrusted := []string{"Use run_python for the saved local files.", "Please tighten the requirements section."}
+	if !slices.Equal(responsePayload.TrustedUserMessages, wantTrusted) {
+		t.Fatalf("trusted resume context = %#v, want %#v", responsePayload.TrustedUserMessages, wantTrusted)
 	}
 }
 

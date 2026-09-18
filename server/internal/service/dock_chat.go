@@ -938,6 +938,14 @@ func (s *DockChatService) trustedDockUserHistory(ctx context.Context, chat *mode
 	if err != nil {
 		return nil
 	}
+	return trustedDockUserHistoryFromMessages(messages)
+}
+
+// trustedDockUserHistoryFromMessages keeps only authenticated human
+// instructions. Approval acknowledgements carry no new scope, while an
+// authenticated request-changes response is a real correction and must remain
+// available to authorization review on later resumes.
+func trustedDockUserHistoryFromMessages(messages []model.AgentRunMessage) []string {
 	trusted := make([]string, 0, dockChatTrustedUserTurns)
 	for _, message := range messages {
 		if message.Role != "user" || message.ActorUserID == nil || strings.TrimSpace(*message.ActorUserID) == "" {
@@ -948,7 +956,11 @@ func (s *DockChatService) trustedDockUserHistory(ctx context.Context, chat *mode
 			content = pattern.ReplaceAllString(content, "")
 		}
 		content = strings.TrimSpace(content)
-		if content == "" || content == "Approved. Continue." || strings.HasPrefix(content, "Changes requested:") {
+		if content == "" || content == "Approved. Continue." || message.MessageType == "approval" {
+			continue
+		}
+		content = strings.TrimSpace(strings.TrimPrefix(content, "Changes requested:"))
+		if content == "" {
 			continue
 		}
 		if len(content) > dockChatTrustedUserChars {
