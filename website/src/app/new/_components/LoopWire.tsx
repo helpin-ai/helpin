@@ -40,8 +40,8 @@ const SHIP: Item[] = [
 // Stepped wire geometry. Stage labels alternate between an upper and a lower level and the
 // line moves between them with an S-curve, entering and leaving at the viewport edges.
 const GAP = 24;
-const LEVEL_Y = [15, 65]; // y of the wire on each level; badges hang 12px beneath it
-const LEVEL_TOP = [27, 77]; // padding-top for nodes on each level: line, then a 12px gap, then the badge
+const LEVEL_Y = [15, 100]; // y of the wire on each level; badges hang 12px beneath it
+const LEVEL_TOP = [27, 112]; // padding-top for nodes on each level: line, then a 12px gap, then the badge
 const levelOf = (i: number) => i % 2;
 
 // x position of each stage label's left edge, in SVG coordinates (0 = viewport left).
@@ -195,7 +195,7 @@ export function LoopWire() {
 
   return (
     <div className="wire" ref={wrapRef} role="img" aria-label="One customer question moving through four stages: heard in chat and a meeting, decided into a task, shipped through an agent-opened pull request that a person approves and merges, and told back as a published article and a reply">
-      <svg className="wire-svg" width={size.vw || 0} height={96} aria-hidden="true" style={{ left: -Math.max(0, (size.vw - size.w) / 2) }}>
+      <svg className="wire-svg" width={size.vw || 0} height={132} aria-hidden="true" style={{ left: -Math.max(0, (size.vw - size.w) / 2) }}>
         <path ref={pathRef} className="track" d={d} fill="none" strokeWidth={1.5} />
         <path className="head" d={d} fill="none" strokeWidth={1.5} strokeLinecap="round" style={headStyle} />
       </svg>

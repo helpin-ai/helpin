@@ -218,7 +218,7 @@
   .hp3 .tl span.flip { animation: none; }
 }
 .hp3 .wire { position: relative; margin-top: 64px; }
-.hp3 .wire-svg { position: absolute; top: 0; height: 96px; color: var(--ink); pointer-events: none; overflow: visible; }
+.hp3 .wire-svg { position: absolute; top: 0; height: 132px; color: var(--ink); pointer-events: none; overflow: visible; }
 .hp3 .wire-svg path.track { stroke: var(--border-2); }
 .hp3 .wire-svg path.head { stroke: var(--ink); }
 .hp3 .wire-nodes { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; }
