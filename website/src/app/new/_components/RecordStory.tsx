@@ -83,20 +83,21 @@ export function RecordStory() {
           <div className="rs-col">
             <div className={`rs-card summary ${n >= 1 ? 'on' : ''}`} data-card="summary">
               <span className="rs-card-l">AI summary</span>
-              <p>Acme is evaluating SSO before renewal. Maya has requested Okta support twice and raised it again during the latest security review.</p>
-              <p>The SSO project is currently in progress.</p>
+              <p>Acme needs SSO before its production rollout.</p>
+              <p>Maya has asked about Okta twice, and the requirement came up again during the latest security review.</p>
+              <p>The linked SSO project is in progress.</p>
             </div>
             <div className={`rs-card ${n >= 2 ? 'on' : ''}`} data-card="conversations">
               <div className="rs-card-h"><span className="rs-card-l">Conversations</span><span className="rs-count">2 open</span></div>
               <b>Maya R.</b>
-              <blockquote>Does SSO work with Okta? Security needs the setup steps before migration.</blockquote>
+              <blockquote>Does SSO work with Okta? Security needs the setup steps before we migrate.</blockquote>
               <span>Last reply 18m ago</span>
             </div>
             <div className={`rs-card ${n >= 3 ? 'on' : ''}`} data-card="projects">
               <span className="rs-card-l">Projects</span>
               <b>SSO Enterprise Readiness</b>
               <div className="rs-bar"><i className={n >= 3 ? 'on' : undefined} style={{ width: '66.7%' }} /></div>
-              <span>8 / 12 tasks complete · 7 customer requests · 3 linked engineering issues</span>
+              <span>8 / 12 tasks complete · 7 customer requests · 3 engineering issues</span>
               <ul className="rs-tasks">
                 <li><span>Okta SAML mapping</span><em className="prog">In progress</em></li>
                 <li><span>SCIM provisioning</span><em>Planned</em></li>
@@ -120,12 +121,12 @@ export function RecordStory() {
             <div className={`rs-card ${n >= 6 ? 'on' : ''}`} data-card="docs">
               <span className="rs-card-l">Docs</span>
               <b>Set up SSO with Okta</b>
-              <span><em className="done">Published</em> · Updated after PR #482</span>
+              <span><em className="done">Published</em> · Updated after PR #728</span>
             </div>
             <div className={`rs-card ${n >= 7 ? 'on' : ''}`} data-card="activity">
               <span className="rs-card-l">Recent activity</span>
               <ul className="rs-act">
-                <li>PR #482 merged</li>
+                <li>PR #728 merged</li>
                 <li>SSO documentation updated</li>
                 <li>Maya notified</li>
               </ul>

@@ -6,7 +6,6 @@ const LINKS = [
   { label: 'Product', href: '#record' },
   { label: 'Developers', href: '#developers' },
   { label: 'Open Source', href: '#open-source' },
-  { label: 'Pricing', href: '#pricing' },
   { label: 'Docs', href: 'https://github.com/helpin-ai/helpin/blob/develop/docs/README.md' },
 ];
 

@@ -20,7 +20,7 @@ const jetbrainsMono = JetBrains_Mono({
 // Preview route. Not indexed until the direction is approved and it replaces /.
 export const metadata: Metadata = {
   title: 'Helpin — homepage preview',
-  description: 'Open-source support, docs, projects, and CRM for SaaS teams.',
+  description: 'Open-source workspace for SaaS teams. Hear customers. Decide what matters. Ship it.',
   robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
   alternates: { canonical: '/new' },
 };

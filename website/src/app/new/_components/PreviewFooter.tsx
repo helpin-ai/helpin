@@ -4,20 +4,21 @@ import { GITHUB_URL } from './ui';
 
 const COLUMNS: { title: string; links: { label: string; href: string }[] }[] = [
   { title: 'Product', links: [
-    { label: 'Customer records', href: '#record' }, { label: 'Inbox', href: '#loop' }, { label: 'Meetings', href: '#record' },
-    { label: 'Projects', href: '#projects' }, { label: 'Docs', href: '#record' }, { label: 'AI agents', href: '#agents' }, { label: 'Integrations', href: '#integrations' },
+    { label: 'Inbox', href: '#inbox' }, { label: 'Meetings', href: '#meetings' }, { label: 'Customer records', href: '#record' },
+    { label: 'Projects', href: '#projects' }, { label: 'CRM', href: '#crm' }, { label: 'Docs', href: '#knowledge' },
+    { label: 'AI agents', href: '#agents' },
   ] },
   { title: 'Developers', links: [
-    { label: 'Documentation', href: `${GITHUB_URL}/blob/develop/docs/README.md` }, { label: 'API', href: `${GITHUB_URL}/blob/develop/docs/README.md` },
+    { label: 'Docs', href: `${GITHUB_URL}/blob/develop/docs/README.md` }, { label: 'API', href: `${GITHUB_URL}/blob/develop/docs/README.md` },
     { label: 'SDK', href: `${GITHUB_URL}/tree/develop/packages/sdk-js` }, { label: 'MCP', href: `${GITHUB_URL}/blob/develop/docs/public-mcp-server.md` },
     { label: 'GitHub', href: GITHUB_URL }, { label: 'Self-hosting', href: `${GITHUB_URL}/blob/develop/community/README.md` },
   ] },
-  { title: 'Company', links: [
-    { label: 'About', href: '#' }, { label: 'Changelog', href: '#' }, { label: 'Blog', href: '#' }, { label: 'Contact', href: 'mailto:hello@helpin.ai' },
-  ] },
   { title: 'Open Source', links: [
-    { label: 'GitHub', href: GITHUB_URL }, { label: 'Contributing', href: `${GITHUB_URL}/blob/develop/CONTRIBUTING.md` },
+    { label: 'Repository', href: GITHUB_URL }, { label: 'Contributing', href: `${GITHUB_URL}/blob/develop/CONTRIBUTING.md` },
     { label: 'Issues', href: `${GITHUB_URL}/issues` }, { label: 'Releases', href: `${GITHUB_URL}/releases` },
+  ] },
+  { title: 'Company', links: [
+    { label: 'About', href: '#' }, { label: 'Blog', href: '#' }, { label: 'Changelog', href: '#' }, { label: 'Contact', href: 'mailto:hello@helpin.ai' },
   ] },
   { title: 'Legal', links: [
     { label: 'Privacy', href: '/privacy' }, { label: 'Terms', href: '/terms' }, { label: 'Security', href: `${GITHUB_URL}/blob/develop/SECURITY.md` },

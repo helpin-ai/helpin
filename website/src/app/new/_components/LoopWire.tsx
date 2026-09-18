@@ -43,11 +43,11 @@ type Scenario = {
 const SCENARIOS: Scenario[] = [
   {
     caption: 'Acme Inc. · SSO migration',
-    hear: { initial: 'M', text: 'Does SSO work with Okta? We move next month.', meta: 'Maya R. · Acme Inc. · chat',
+    hear: { initial: 'M', text: 'Does SSO work with Okta? We need it before rollout.', meta: 'Maya R. · Acme Inc. · chat',
       time: '14:02', speaker: 'Maya', quote: 'Security needs the Okta steps first.', chip: 'Timeline identified' },
     decide: { items: ['Timeline identified · High', 'Next step: confirm Okta support', 'HLP-142 created'],
       key: 'HLP-142', title: 'Okta SAML mapping' },
-    ship: { branch: 'HLP-142-okta-saml', items: ['Task planner scoped it', 'Code builder opened PR #482', 'Checks passed', 'Merged by Sam'], approver: 'Sam' },
+    ship: { branch: 'HLP-142-okta-saml', items: ['Task planner scoped it', 'Code builder opened PR #728', 'Checks passed', 'Merged by Sam'], approver: 'Sam' },
     tell: { doc: 'Set up SSO with Okta', section: 'Help center', reply: 'Okta is documented. Steps attached.', replyMeta: 'Sam · source linked', initial: 'S',
       deal: 'Enterprise renewal · $42k', outcome: 'Signed' },
   },
