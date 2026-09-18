@@ -45,7 +45,7 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain('label="Repository"');
     expect(panelSource).toContain('label="Base branch"');
     expect(panelSource).toContain('label="Task branch"');
-    expect(panelSource).toContain('label="Source"');
+    expect(panelSource).not.toContain('label="Source"');
     expect(panelSource).toContain('Use default');
     expect(panelSource).toContain('Use epic branch');
     expect(panelSource).toContain('ACTIVE_RUN_STATUSES.has(status)');

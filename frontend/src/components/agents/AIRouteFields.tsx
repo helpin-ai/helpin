@@ -44,7 +44,7 @@ export function AIRouteFields({
   const connection = connections.find((entry) => entry.id === route.connection_id);
   const controls = providerControls(route.model.provider);
   const showTwoColumns =
-    [controls.reasoningEffort, controls.serviceTier, controls.openrouterQuantizations].filter(
+    [controls.serviceTier, controls.openrouterQuantizations].filter(
       Boolean,
     ).length > 1;
 
@@ -118,50 +118,54 @@ export function AIRouteFields({
         />
       </div>
 
-      {(controls.reasoningEffort || controls.serviceTier || controls.openrouterQuantizations) && (
+      {controls.reasoningEffort && (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1"><Label htmlFor={`${id}-reasoning`}>Thinking level</Label><AISetupHelp label="About thinking level" description="Higher levels spend more time reasoning. Leave Default selected to use the provider’s setting." /></div>
+          <Select
+            value={route.model.controls.reasoning_effort ?? "default"}
+            disabled={disabled}
+            onValueChange={(value) =>
+              onChange({
+                ...route,
+                model: {
+                  ...route.model,
+                  controls: {
+                    ...route.model.controls,
+                    reasoning_effort: value === "default" ? undefined : value,
+                  },
+                },
+              })
+            }
+          >
+            <SelectTrigger
+              id={`${id}-reasoning`}
+              variant="underline"
+              className="w-full px-0.5"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(route.model.provider === "openai_chatgpt"
+                ? ["default", "low", "medium", "high", "xhigh", ...(["none", "minimal"].includes(route.model.controls.reasoning_effort ?? "") ? [route.model.controls.reasoning_effort!] : [])]
+                : REASONING_EFFORTS).map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value === "default" ? "Default" : value === "xhigh" ? "Extra high" : value.charAt(0).toUpperCase() + value.slice(1)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {(controls.serviceTier || controls.openrouterQuantizations) && (
         <details key={route.connection_id} className="group/advanced">
           <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
             <ArrowRight01Icon className="size-3.5 transition-transform group-open/advanced:rotate-90" />
             Advanced settings
-            {Object.values(route.model.controls).some(value => value !== undefined) && <span className="ml-auto text-xs">Customized</span>}
+            {[route.model.controls.service_tier, route.model.controls.openrouter].some(value => value !== undefined) && <span className="ml-auto text-xs">Customized</span>}
           </summary>
           <div className={showTwoColumns ? "mt-4 grid gap-4 sm:grid-cols-2" : "mt-4 space-y-4"}>
-          {controls.reasoningEffort && (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1"><Label htmlFor={`${id}-reasoning`}>Reasoning effort</Label><AISetupHelp label="About reasoning effort" description="Choose a reasoning level, or leave it at the provider default." /></div>
-              <Select
-                value={route.model.controls.reasoning_effort ?? "default"}
-                disabled={disabled}
-                onValueChange={(value) =>
-                  onChange({
-                    ...route,
-                    model: {
-                      ...route.model,
-                      controls: {
-                        ...route.model.controls,
-                        reasoning_effort: value === "default" ? undefined : value,
-                      },
-                    },
-                  })
-                }
-              >
-                <SelectTrigger
-                  id={`${id}-reasoning`}
-                  variant="underline"
-                  className="w-full px-0.5"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {REASONING_EFFORTS.map((value) => (
-                    <SelectItem key={value} value={value}>
-                      {value === "default" ? "Provider default" : value}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+
 
           {controls.serviceTier && (
             <div className="space-y-1.5">

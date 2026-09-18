@@ -46,3 +46,26 @@ func TestWidgetTelemetryValidationAndPrivacy(t *testing.T) {
 		})
 	}
 }
+
+func TestWidgetConnectionTelemetry(t *testing.T) {
+	for _, tt := range []struct {
+		body   string
+		status int
+	}{
+		{`{"stage":"connection","outcome":"closed","close_code":1000}`, 204},
+		{`{"stage":"connection","outcome":"error","close_code":1006}`, 204},
+		{`{"stage":"connection","outcome":"error"}`, 204},
+		{`{"stage":"connection","outcome":"error","close_code":5000}`, 400},
+		{`{"stage":"connection","outcome":"error","close_code":-1}`, 400},
+		{`{"stage":"upload","outcome":"closed"}`, 400},
+		{`{"stage":"upload","outcome":"error","close_code":1000}`, 400},
+	} {
+		t.Run(tt.body, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			WidgetTelemetry(observability.NewMetrics())(w, httptest.NewRequest("POST", "/widget/telemetry", strings.NewReader(tt.body)))
+			if w.Code != tt.status {
+				t.Fatalf("status=%d want=%d", w.Code, tt.status)
+			}
+		})
+	}
+}

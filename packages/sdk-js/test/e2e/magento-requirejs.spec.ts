@@ -4,7 +4,7 @@ import './types';
 /**
  * Magento 2 + RequireJS Integration Tests
  * 
- * Customer: Champagne & Gifts (champagneandgifts.co.uk)
+ * Customer: example Magento 2 store
  * Issue: "Mismatched anonymous define()" error when loading Helpin SDK
  * Solution: Safe loader that disables AMD detection without breaking RequireJS
  * 
@@ -379,7 +379,7 @@ test.describe('Magento Integration Summary', () => {
   test('CUSTOMER VALIDATION: Complete integration health check', async ({ page }) => {
     console.log('\n' + '='.repeat(80));
     console.log('🎯 CUSTOMER VALIDATION TEST');
-    console.log('Customer: Champagne & Gifts (Magento 2)');
+    console.log('Customer: example Magento 2 store');
     console.log('Issue: Mismatched anonymous define() + require is undefined');
     console.log('Solution: Safe AMD detection disable after RequireJS ready');
     console.log('='.repeat(80) + '\n');

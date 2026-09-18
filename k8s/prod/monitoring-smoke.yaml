@@ -4,8 +4,8 @@ metadata:
   name: helpin-widget-smoke
   namespace: helpin
 spec:
-  # Enable only after the API cleanup endpoint and new SDK are live.
-  suspend: true
+  # Verified live in Chromium and Firefox, including readback and cleanup.
+  suspend: false
   schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 120

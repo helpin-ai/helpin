@@ -10,7 +10,7 @@
 
 ## Source review — September 18, 2026
 
-This document preserves the original conversation-first support design and migration rationale. It is not an SDK installation guide, API reference, current backlog, or release certification. Customer-facing instructions belong at [Helpin documentation](https://helpin.ai/docs); repository integration details begin with the [SDK README](../../packages/sdk-js/README.md).
+This document preserves the original conversation-first support design and migration rationale. It is not an SDK installation guide, API reference, current backlog, or release certification. Customer-facing instructions belong in the planned hosted help center; repository integration details begin with the [SDK README](../../packages/sdk-js/README.md).
 
 | Topic | Current implementation and limits |
 |---|---|

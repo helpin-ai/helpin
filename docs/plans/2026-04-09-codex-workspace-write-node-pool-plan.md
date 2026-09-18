@@ -20,7 +20,7 @@ Agent Runtime connection and launch settings, and the
 [runtime client](../../server/internal/service/agent_runtime_client.go) handles
 remote execution requests. Use the current
 [local setup guide](../agent-runtime-local-setup.md) and
-[staging runbook](../agent-runtime-staging-runbook.md) to identify the execution
+the staging runbook (maintained privately) to identify the execution
 service and its deployment owner before planning sandbox changes. Editing the
 Helpin automation-worker manifest is not evidence that a separate runtime's
 sandbox policy has changed.

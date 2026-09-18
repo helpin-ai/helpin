@@ -7,11 +7,15 @@ const source = fs.readFileSync(`${__dirname}/smoke.cjs`, 'utf8');
 async function run(options = {}) {
   const events = {}, calls = [], logs = [];
   let uploaded;
+  let navigations = 0;
   const state = { env: { SMOKE_BROWSERS: 'chromium', SMOKE_METRICS_URL: 'https://metrics.test/import' }, exitCode: 0 };
   const page = {
     setDefaultTimeout() {}, async addInitScript() {}, on(name, fn) { events[name] = fn; },
     async goto() {
-      events.websocket({ url: () => 'wss://api.test/widget/ws', on: (_name, fn) => fn({ payload: JSON.stringify({ type: 'session:joined', data: { session_token: 'private-session' } }) }) });
+      if (navigations++ < (options.networkChanges || 0)) throw new Error("net::ERR_NETWORK_CHANGED private-url");
+      if (options.pageFails) throw new Error('net::ERR_HTTP2_PROTOCOL_ERROR https://private-signature');
+      if (options.scriptFails) events.requestfailed({ resourceType: () => 'script', url: () => 'https://cdn.helpin.ai/lib.js?private-secret', failure: () => ({ errorText: 'net::ERR_CONNECTION_RESET private-secret' }) });
+      events.websocket({ url: () => 'wss://api.test/widget/ws', on: (_name, fn) => { if (_name === 'framereceived') fn({ payload: JSON.stringify({ type: 'session:joined', data: { session_token: 'private-session' } }) }); } });
     },
     locator(selector) {
       return {
@@ -20,7 +24,7 @@ async function run(options = {}) {
           uploaded = file.buffer;
           events.response({
             request: () => ({ method: () => 'POST', postDataJSON: () => ({ file_name: file.name }), headers: () => ({ 'x-session-token': 'private-session' }) }),
-            url: () => 'https://api.test/widget/support/attachments', ok: () => true,
+            url: () => 'https://api.test/widget/support/attachments', ok: () => true, status: () => 200,
             json: async () => {
               if (options.badMetadata) throw new Error('private-response');
               return { attachment: { id: 'owned-test-image' }, public_url: 'https://storage.test/image?signature=private-signature' };
@@ -69,3 +73,27 @@ for (const option of ['badReadback', 'uploadFails', 'deleteFails', 'deleteThrows
     assert.match(result.calls.at(-1).body, /smoke_success\{browser="chromium"\} 0/);
   });
 }
+
+test('navigation failure exposes only an allowlisted network category', async () => {
+  const result = await run({ pageFails: true });
+  assert.equal(result.exitCode, 1);
+  assert.ok(result.logs.some(line => line.includes('ERR_HTTP2_PROTOCOL_ERROR')));
+});
+test('failed script diagnostics survive upload failure without exposing URLs', async () => {
+  const result = await run({ scriptFails: true, uploadFails: true });
+  assert.equal(result.exitCode, 1);
+  assert.ok(result.logs.some(line => line.includes('ERR_CONNECTION_RESET') && line.includes('widget_cdn')));
+});
+
+test('one transient network change is retried and remains visible in metrics', async () => {
+ const result=await run({networkChanges:1});
+ assert.equal(result.exitCode,0);
+ assert.ok(result.logs.some(line=>line.includes('retrying')));
+ assert.match(result.calls.at(-1).body,/smoke_navigation_retries\{browser="chromium"\} 1/);
+});
+test('repeated network changes still fail the check after one retry', async () => {
+ const result=await run({networkChanges:2});
+ assert.equal(result.exitCode,1);
+ assert.equal(result.logs.filter(line=>line.includes('retrying')).length,1);
+ assert.match(result.calls.at(-1).body,/smoke_success\{browser="chromium"\} 0/);
+});

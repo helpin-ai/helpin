@@ -6,11 +6,9 @@ when debugging the connection between the services.
 
 Use this runbook to execute Helpin agents against a local `agent-runtime`.
 Agent Runtime is the only agent executor: system agents, custom agents, and
-one-shot command agents all use this connection for `native_sdk`, `codex`, and
-`opencode` runs.
+one-shot command agents all use this connection; new runs use `native_sdk`.
 
-For the ownership model, see `docs/agents-and-automation.md`. For staging, see
-`docs/agent-runtime-staging-runbook.md`.
+For the ownership model, see [agents and automation](agents-and-automation.md).
 
 ## Complete stack for new contributors
 
@@ -54,8 +52,8 @@ Configure the `helpin` app entry with these host providers:
 - browser artifacts: `/api/internal/agent-runtime/artifacts`
 
 All callbacks must use Helpin's `INTERNAL_API_SECRET`. The canonical app shape
-and endpoint derivation are maintained in the Agent Runtime repository at
-`docs/app-configuration.md` and `docs/staging-app-config.md`.
+and endpoint derivation are maintained in the
+[Agent Runtime repository](https://github.com/helpin-ai/agent-runtime) (currently private).
 
 Example local runtime environment:
 

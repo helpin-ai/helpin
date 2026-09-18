@@ -19,7 +19,7 @@ it('names every supported provider and falls back to the raw identifier', () => 
 })
 
 it('groups suggested models by catalog tier and hides disabled entries', () => {
-  const groups = modelCatalogFor('openai')
+  const groups = modelCatalogFor('openai').filter(group => group.key !== 'latest')
   expect(groups.length).toBeGreaterThan(0)
   const order = AI_MODELS.tiers.map((tier) => tier.key).filter((key) => groups.some((group) => group.key === key))
   expect(groups.map((group) => group.key)).toEqual(order)
@@ -28,8 +28,9 @@ it('groups suggested models by catalog tier and hides disabled entries', () => {
   for (const model of disabled) expect(suggested).not.toContain(model.selection_model)
 })
 
-it('reuses the OpenAI catalog for ChatGPT and leaves compatible endpoints free text', () => {
-  expect(modelCatalogFor('openai_chatgpt')).toEqual(modelCatalogFor('openai'))
+it('suggests only the four requested ChatGPT models and leaves compatible endpoints free text', () => {
+  expect(modelCatalogFor('openai_chatgpt').flatMap(group => group.models.map(model => model.selectionModel))).toEqual(['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+  expect(catalogLabel('openai_chatgpt', 'gpt-6-astra')).toBe('GPT-6 Astra')
   expect(modelCatalogFor('openai_compatible')).toEqual([])
 })
 
@@ -59,4 +60,17 @@ it('exposes model controls only where the provider supports them', () => {
     serviceTier: false,
     openrouterQuantizations: false,
   })
+})
+
+it.each([
+  ['openai', ['gpt-6-astra', 'gpt-5.6-sol']],
+  ['anthropic', ['claude-fable-5-1', 'claude-opus-5']],
+  ['openrouter', ['openai/gpt-6-astra', 'openai/gpt-5.6-sol', 'anthropic/claude-fable-5.1', 'anthropic/claude-opus-5']],
+])('offers newer models for %s without duplicate suggestions', (provider, ids) => {
+  const groups = modelCatalogFor(provider)
+  expect(groups[0]).toMatchObject({ key: 'latest', label: 'Latest models' })
+  expect(groups[0].models.map(model => model.selectionModel)).toEqual(ids)
+  const all = groups.flatMap(group => group.models)
+  expect(new Set(all.map(model => model.selectionModel)).size).toBe(all.length)
+  for (const id of ids) expect(catalogLabel(provider, id)).toBeTruthy()
 })

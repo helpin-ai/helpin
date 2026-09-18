@@ -1,7 +1,9 @@
-# Email Architecture
+# Email architecture
 
-This document describes how email is handled across the Helpin app after the
-Postmark split into app mail, support replies, and support route ingestion.
+This guide explains how Helpin sends and receives email: application mail,
+support replies, and support route ingestion. Use it when configuring mail or
+changing email code. The hostnames and addresses below are Helpin Cloud's;
+self-hosted installations substitute their own verified domains.
 
 ## Overview
 
@@ -42,7 +44,9 @@ Notes:
 
 ## Postmark Servers
 
-Use three Postmark servers:
+Use three Postmark servers. Community installations may deliver application
+mail through `SMTP_HOST`/`SMTP_FROM` instead of the Postmark app server; support
+reply and route ingestion still require Postmark inbound webhooks.
 
 ### 1. App Mail
 

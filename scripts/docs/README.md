@@ -1,6 +1,7 @@
 # Check documentation names and links
 
-From the repository root:
+This guide is for contributors editing Markdown. It explains the naming and link
+checks that CI runs and how to run them locally. From the repository root:
 
 ```sh
 python3 scripts/docs/check_names.py

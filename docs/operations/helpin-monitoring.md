@@ -105,3 +105,27 @@ Deployment and live smoke verification remain pending explicit production
 approval; Kubernetes server-side dry-run succeeded. Local checks passed: Go race
 tests for metrics/telemetry/ownership/rate limits, Go vet/build, 29 SDK tests and
 16 browser upload checks across Chromium and Firefox.
+
+## Live verification — 2026-09-17 20:53 UTC
+
+- Both API replicas run `server-v0.95.408`, ready with zero restarts, and are
+  scraped successfully (`up=1`) on port 9090.
+- Shared monitoring comes from the infrastructure repository's Argo application
+  definitions (`argo-applications/victoriametrics.yaml`, `grafana-operator.yaml`,
+  and Grafana resources). Helpin-specific resources come from this repository's
+  `k8s/prod/monitoring*.yaml`, reconciled by the Helpin Argo application.
+- All 12 Grafana panel expressions return successful queries; connection and
+  alert-delivery panels return real samples. All 10 Helpin rules evaluate `ok`.
+- Manual Job `helpin-widget-smoke-verify-20260917` succeeded: Chromium 2.682s,
+  Firefox 4.056s, including upload, byte-for-byte readback and cleanup.
+- Both smoke success gauges equal 1. Browser telemetry for initialization,
+  storage, confirmation and overall upload reached VictoriaMetrics for both
+  browsers. No synthetic attachment records remained from the test.
+- The five-minute schedule is now enabled in Git after those gates passed.
+- Slack delivery is still unresolved: 73,769 attempts and 73,769 client-error
+  failures over the current counter lifetime. A replacement/reactivated webhook
+  and a controlled delivery check remain required; metrics and rules alone do
+  not constitute working notification delivery.
+- Connection-failure and known background-worker alerts are firing and need
+  separate root-cause investigation. Do not silence them by changing thresholds
+  without investigating the events first.

@@ -4,20 +4,31 @@ const { randomUUID } = require('node:crypto');
 const site = process.env.SMOKE_SITE || 'https://helpin.ai/';
 const metricsURL = process.env.SMOKE_METRICS_URL;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
-async function publish(browser, success, seconds) {
+async function publish(browser, success, seconds, navigationRetries) {
   if (!metricsURL) return;
   const now = Math.floor(Date.now() / 1000);
-  const body = `helpin_widget_smoke_success{browser="${browser}"} ${success}\nhelpin_widget_smoke_last_run_seconds{browser="${browser}"} ${now}\nhelpin_widget_smoke_duration_seconds{browser="${browser}"} ${seconds}\n`;
+  const body = `helpin_widget_smoke_success{browser="${browser}"} ${success}\nhelpin_widget_smoke_last_run_seconds{browser="${browser}"} ${now}\nhelpin_widget_smoke_duration_seconds{browser="${browser}"} ${seconds}\nhelpin_widget_smoke_navigation_retries{browser="${browser}"} ${navigationRetries}\n`;
   const response = await fetch(metricsURL, { method: 'POST', body, signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error('metrics_publish_failed');
+}
+// Fixed categories only: never emit URLs, response bodies or exception messages.
+function failureKind(error) {
+  const message = String(error?.message || error || '');
+  const code = message.match(/\b(?:ERR_[A-Z0-9_]{1,50}|NS_ERROR_[A-Z0-9_]{1,50}|NS_BINDING_ABORTED|SSL_ERROR_[A-Z0-9_]{1,50}|SEC_ERROR_[A-Z0-9_]{1,50})\b/);
+  if (code) return code[0];
+  if (error?.name === 'TimeoutError') return 'timeout';
+  return 'other';
 }
 async function check(kind) {
   let browser, page, attachment, session, api, downloadURL, failed = false;
   let metadataFailed = false;
+  let navigationRetries = 0;
   let stage = 'launch';
   const start = Date.now();
   const name = `helpin-monitor-${randomUUID()}.png`;
   const pending = [];
+  const network = [];
+  const record = event => { if (network.length < 12) network.push(event); };
   try {
     browser = await ({ chromium, firefox }[kind]).launch({ headless: true });
     page = await browser.newPage({ userAgent: kind === 'firefox'
@@ -25,9 +36,18 @@ async function check(kind) {
       : 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36' });
     page.setDefaultTimeout(45_000);
     await page.addInitScript(() => Object.defineProperty(navigator, 'webdriver', { get: () => false }));
+    page.on('requestfailed', request => {
+      const type = request.resourceType();
+      if (['document', 'script', 'fetch', 'xhr'].includes(type)) {
+        const host = new URL(request.url()).hostname;
+        const destination = host === 'cdn.helpin.ai' ? 'widget_cdn' : host === new URL(site).hostname ? 'site' : 'other';
+        record({ type, destination, failure: failureKind(request.failure()?.errorText) });
+      }
+    });
     page.on('websocket', socket => {
       const socketURL = new URL(socket.url());
       if (socketURL.pathname !== '/widget/ws') return;
+      socket.on('socketerror', () => record({ type: 'websocket', failure: 'socket_error' }));
       socket.on('framereceived', ({ payload }) => {
         try {
           const frame = JSON.parse(String(payload));
@@ -41,6 +61,7 @@ async function check(kind) {
     page.on('response', response => {
       const request = response.request();
       const url = new URL(response.url());
+      if (response.status() >= 400) record({ type: 'http', status: response.status() });
       if (request.method() !== 'POST' || url.pathname !== '/widget/support/attachments') return;
       pending.push((async () => {
         if (request.postDataJSON()?.file_name !== name || !response.ok()) return;
@@ -52,9 +73,22 @@ async function check(kind) {
       })().catch(() => { metadataFailed = true; }));
     });
     stage = 'page';
-    await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-    stage = 'connection';
+    let navigation;
+    try {
+      navigation = await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    } catch (error) {
+      // Chromium can observe network initialization immediately after launch.
+      // Retry only this specific pre-widget navigation error, once, and expose it.
+      if (failureKind(error) !== 'ERR_NETWORK_CHANGED') throw error;
+      navigationRetries = 1;
+      console.log(JSON.stringify({ browser: kind, stage: 'page', outcome: 'retrying', failure: 'ERR_NETWORK_CHANGED' }));
+      await new Promise(resolve => setTimeout(resolve, 250));
+      navigation = await page.goto(site, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    }
+    if (navigation && !navigation.ok()) throw new Error('page_http_error');
+    stage = 'launcher';
     await page.locator('.helpin-launcher').click();
+    stage = 'session';
     // Widget readiness only means config loaded; wait for the real session acknowledgement.
     const connectionDeadline = Date.now() + 45_000;
     while (!session && Date.now() < connectionDeadline) await new Promise(resolve => setTimeout(resolve, 100));
@@ -71,10 +105,10 @@ async function check(kind) {
       return Array.from(new Uint8Array(await response.arrayBuffer()));
     }, downloadURL);
     if (!Buffer.from(stored).equals(png)) throw new Error('readback_mismatch');
-  } catch {
+  } catch (error) {
     failed = true;
     // Never print browser errors: they can include signed URLs or session credentials.
-    console.error(JSON.stringify({ browser: kind, stage, outcome: 'failed' }));
+    console.error(JSON.stringify({ browser: kind, stage, outcome: 'failed', failure: failureKind(error), network }));
   } finally {
     await Promise.allSettled(pending);
     if (session && api && page) {
@@ -106,8 +140,8 @@ async function check(kind) {
     }
   }
   const seconds = (Date.now() - start) / 1000;
-  await publish(kind, failed ? 0 : 1, seconds);
-  console.log(JSON.stringify({ browser: kind, outcome: failed ? 'failed' : 'success', duration_seconds: seconds }));
+  await publish(kind, failed ? 0 : 1, seconds, navigationRetries);
+  console.log(JSON.stringify({ browser: kind, outcome: failed ? 'failed' : 'success', duration_seconds: seconds, navigation_retries: navigationRetries }));
   return !failed;
 }
 (async () => {

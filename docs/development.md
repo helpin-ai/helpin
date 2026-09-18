@@ -70,7 +70,7 @@ go run ./cmd/temporal-worker
 The [justfile](../justfile) provides shortcuts, including `just dev-full` for the
 API, frontend, and worker. Its backend shortcut requires Air. These commands
 use the default Community build; use `just backend-ee`, `just worker-ee`, and
-`just frontend-ee` when intentionally developing the EE edition.
+`just frontend-ee` when intentionally developing the Enterprise edition.
 
 ## Validate changes
 
@@ -88,7 +88,7 @@ pnpm --dir frontend build
 ```
 
 Some integration tests need configured services. Component test instructions and
-[CI](../.github/workflows/ci.yml) describe additional checks, including EE builds.
+[CI](../.github/workflows/ci.yml) describe additional checks, including Enterprise (`-tags ee`) builds.
 For documentation-only changes, run:
 
 ```bash
@@ -107,4 +107,3 @@ and the operator packaging check when changing bundled guides.
 - [Widget architecture and builds](widget-architecture.md)
 - [Event pipeline](../events-pipeline/README.md)
 - [Mobile support app](../apps/support-mobile/README.md)
-- [Native release runbook](ops/native-release-runbook.md)

@@ -1,4 +1,4 @@
-# Helpin Events Pipeline
+# Helpin events pipeline
 
 This directory contains Helpin's authenticated event-ingestion pipeline. It was
 originally derived from Usermaven, but Helpin's tenancy, identity, deployment,
@@ -43,10 +43,11 @@ startup command reads active widget credentials from Helpin's protected
 `/api/internal/widget-tokens` endpoint and prints the HTTPS event-lab URL for
 the selected workspace. Set `HELPIN_EVENT_TEST_WORKSPACE_ID` when the registry
 contains more than one workspace. The local API and event stack must use the
-same `INTERNAL_API_SECRET`. Caddy exposes the lab and event API through the
-existing
-`helpin-dev-fe.tryunhide.com` and `helpin-dev.tryunhide.com` DNS names; the
-underlying local service ports are not intended to be opened publicly.
+same `INTERNAL_API_SECRET`. Caddy exposes the lab and event API through the DNS
+names in `HELPIN_EVENT_API_HOST` and `HELPIN_EVENT_LAB_HOST` (defaults
+`helpin-dev.localhost` and `helpin-dev-fe.localhost`, also listed in
+`local/tokens.json`); set them to your own domain for public TLS. The underlying local service ports are not intended to be
+opened publicly.
 The repository's primary `docker-compose.yaml` provides shared application
 infrastructure only; event-pipeline development uses
 `events-pipeline/local/compose.yaml` through these `just` commands.
@@ -77,7 +78,7 @@ go run ./cmd/clickhouse-migrate validate
 go run ./cmd/clickhouse-migrate up
 ```
 
-Stage and production apply migrations before event consumers are updated. The
+Apply migrations before updating event consumers. The
 backend and migration job require `CLICKHOUSE_DSN`; transport-specific settings
 are defined in the deployment and local stack configuration rather than this
 document.
@@ -143,8 +144,10 @@ JetStream capacity calculation are in
 [`CAPACITY_BASELINE.md`](CAPACITY_BASELINE.md). That document is the canonical
 deployment-sizing reference; the benchmark's durability caveats apply.
 
-The environment prerequisites, exact Doppler contract, first Argo CD rollout
-order, and post-deploy checks are in [`DEPLOYMENT.md`](DEPLOYMENT.md). The
+For Helpin's own hosted deployment, the environment prerequisites, secret
+contract, rollout order, and post-deploy checks are in
+[`DEPLOYMENT.md`](DEPLOYMENT.md). Community installations do not include this
+pipeline. The
 manifests provision the dedicated Helpin ClickHouse/Keeper resources, NATS, and
 pipeline workloads. The environment-specific Doppler service tokens are
 checked in only as controller-bound SealedSecrets; operators, node labels, the

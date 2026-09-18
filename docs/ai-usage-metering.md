@@ -2,9 +2,9 @@
 
 Use this guide when adding an AI call, investigating recorded usage, or checking
 which edition owns charging. Both editions record execution usage. **Community
-has no financial pricing policy; EE adds pricing, reservations, and settlement.**
+has no financial pricing policy; Enterprise adds pricing, reservations, and settlement.**
 The build selects the lifecycle; an environment variable cannot turn a Community
-binary into EE. See [AI connections](ai-connections.md) for model selection.
+binary into Enterprise. See [AI connections](ai-connections.md) for model selection.
 
 ## Product model
 
@@ -14,7 +14,7 @@ Keep model execution, usage telemetry, and financial policy separate:
 - The selected connection/profile determines the provider, model, and accepted
   policy for the execution.
 - Provider token usage is normalized and recorded through the edition's lifecycle.
-- EE computes charges using the accepted rate snapshot and funding mode.
+- Enterprise computes charges using the accepted rate snapshot and funding mode.
 
 The old weighted-token formula, per-feature credit floors, and 5,000-unit pack
 examples previously on this page describe the legacy credit system. They are
@@ -29,9 +29,9 @@ validates the accepted Community policy, normalizes tokens, and persists
 execution usage. Charge calculation returns zero. This does not mean the
 configured external model provider is free; its account remains separately owned.
 
-## EE pricing and funding
+## Enterprise pricing and funding
 
-The [EE usage service](../server/ee/service/ai_usage.go) resolves an eligible route,
+The [Enterprise usage service](../server/ee/service/ai_usage.go) resolves an eligible route,
 freezes the pricing context, reserves usage before execution, and reconciles the
 actual result. Rates and route eligibility come from the versioned
 [pricing catalog](../server/ee/pricing/catalog.json), rather than a universal
@@ -75,7 +75,7 @@ Agent Runtime. Runtime usage callbacks and checkpoints feed the shared lifecycle
 settlement uses persisted execution telemetry. A Runtime-delivered support reply
 belongs to its run rather than creating an independent legacy reply-floor charge.
 
-Use stable idempotency keys across retries. The EE repository owns transactional
+Use stable idempotency keys across retries. The Enterprise repository owns transactional
 reservation, checkpoint, and reconciliation behavior; service-level hints cannot
 replace that boundary. Releasing or cancelling execution must preserve already
 recorded usage and the accepted policy.
@@ -87,13 +87,13 @@ recorded usage and the accepted policy.
 | Shared lifecycle types | [aiusage](../server/internal/aiusage/) |
 | Product call context and metered provider | [AI usage meter](../server/internal/service/ai_usage_meter.go) |
 | Community recording | [Community lifecycle](../server/internal/service/ai_usage_community.go) |
-| EE reservation and reconciliation | [EE usage service](../server/ee/service/ai_usage.go) |
-| EE transactional persistence | [Usage repository](../server/ee/repository/ai_usage.go) |
+| Enterprise reservation and reconciliation | [Enterprise usage service](../server/ee/service/ai_usage.go) |
+| Enterprise transactional persistence | [Usage repository](../server/ee/repository/ai_usage.go) |
 | Pricing arithmetic and funding modes | [Calculator](../server/ee/pricing/calculator.go) |
 | Accepted BYOK tariff | [Flat tariff resolution](../server/ee/service/ai_usage_flat.go) |
 
 When changing metering, verify retry idempotency, token normalization, accepted
 rate immutability, rejected/missing policy, and edition behavior. The colocated
-Community, EE service/repository, and pricing tests cover these boundaries.
+Community, Enterprise service/repository, and pricing tests cover these boundaries.
 Source inspection does not establish a deployment's active prices, allowances,
 or successful settlement; inspect its configured policy and ledger separately.

@@ -234,7 +234,7 @@ events-pipeline/scripts/run-k6-remote.sh
 
 To include Caddy and public TLS in the test, set `TARGET_URL` to the public
 route instead, for example
-`https://helpin-dev.tryunhide.com/api/v1/event`. The token above belongs only
+`https://events.example.com/api/v1/event`. The token above belongs only
 to the disposable E2E fixture.
 
 The arrival profile is the capacity test: it schedules 5,000 requests/s even

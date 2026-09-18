@@ -1,6 +1,6 @@
 # @helpin-ai/widget-core
 
-The internal Preact component library that powers the Helpin chat widget. Used internally by `@helpin-ai/sdk-js`, but can also be used directly when you need full control over how the widget is mounted and rendered.
+The internal Preact component library that powers the Helpin chat widget. It is consumed by `@helpin-ai/sdk-js` and is not published on npm.
 
 ## Use in this repository
 

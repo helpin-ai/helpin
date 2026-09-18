@@ -1,14 +1,28 @@
 # Community beta scope and known limitations
 
-The first release focuses on support chat, visitor identification, and public
-help-center articles. Agents assist that workflow. The default enabled modules
-are `support,docs,agents`; PM and CRM navigation and automation builders are
-outside that default. This is a deployment surface choice, not removal of their
-code: shared customer services remain available to Support, and some agent APIs,
-including coding-session routes, are classified under Agents. Coding workflows
-are outside this release's support-focused scope.
+This page describes what Community 0.1 includes, what is outside its supported
+surface, the limitations we track, and what is planned next. It applies to the
+published Community bundle; the release notes of your bundle record changes.
 
-Known limitations to address:
+## What Community 0.1 includes
+
+The first release focuses on support chat, visitor identification, and public
+help-center articles, with agents assisting that workflow. The default enabled
+modules are `support,docs,agents`.
+
+## Outside the default surface
+
+PM and CRM navigation and automation builders are outside the default modules.
+This is a deployment surface choice, not removal of their code: shared customer
+services remain available to Support, and some agent APIs, including
+coding-session routes, are classified under Agents. Coding workflows are outside
+this release's support-focused scope.
+
+Subscription billing, payment UI, the analytics collector, ClickHouse, and the
+desktop, mobile, admin, and email notice apps are not part of the Community
+bundle.
+
+## Known limitations
 
 - Retrieved knowledge is marked as untrusted reference data. Prompt-injection
   defenses remain layered: keep tools scoped and approvals enabled; trust marking
@@ -27,16 +41,20 @@ Known limitations to address:
 - The support-only SDK does not collect analytics events. ClickHouse and an
   analytics collector are not part of the bundle.
 
-Planned for 0.2 (Community packaging maintainers): tested upgrades from 0.1,
-automated public-edge/ACME fixtures, cached SDK loader upgrade compatibility,
-Postmark support-delivery fixtures, and a signing-secret setup UI. The 0.1 guide
-includes explicit backup/restore and external proxy instructions.
-
 These are tracked limitations, not a claim that an untested deployment is ready
 for public traffic. Follow the release gate and published patch notes.
 
-Implementation references: [Community module defaults](https://github.com/helpin-ai/helpin/blob/develop/server/internal/deployment/defaults_community.go),
+## Planned for 0.2
+
+Community packaging maintainers plan tested upgrades from 0.1, automated
+public-edge/ACME fixtures, cached SDK loader upgrade compatibility, Postmark
+support-delivery fixtures, and a signing-secret setup UI. The 0.1 guide already
+includes explicit backup/restore and external proxy instructions. These items
+are plans, not evidence of shipped features or completed deployment checks.
+
+## Implementation references
+
+[Community module defaults](https://github.com/helpin-ai/helpin/blob/develop/server/internal/deployment/defaults_community.go),
 [API module classification](https://github.com/helpin-ai/helpin/blob/develop/server/internal/deployment/modules.go),
 [Compose defaults](community/compose.yaml), and
-[provider wiring](https://github.com/helpin-ai/helpin/blob/develop/server/cmd/api/main.go). Future release items above are plans,
-not evidence of shipped features or completed deployment checks.
+[provider wiring](https://github.com/helpin-ai/helpin/blob/develop/server/cmd/api/main.go).

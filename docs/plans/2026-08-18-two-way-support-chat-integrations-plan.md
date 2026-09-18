@@ -962,7 +962,7 @@ Rollback:
 
 ## 17. References
 
-- Existing Helpin Mattermost PM proposal: `docs/mattermost-integration.md`
+- Existing Helpin Mattermost PM proposal: `docs/mattermost-integration.md` (moved to the private archive on September 18, 2026)
 - Existing support message path: `server/internal/service/support_inbox.go`
 - Existing attachment path: `server/internal/service/support_attachment.go`
 - Existing PostgreSQL outbox: `server/internal/service/customer_io_outbox.go`

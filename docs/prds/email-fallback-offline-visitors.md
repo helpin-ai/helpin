@@ -361,7 +361,7 @@ Reference: Crisp's email notification pattern (screenshot: `crisp-email-screensh
 
 **Rendered**: `Sarah Chen - Acme Support <messages@replies.helpin.ai>`
 
-This matches Crisp's pattern (`Fabi Pina - Usermaven <messages@crisp.usermaven.com>`). The visitor sees a real person's name in their inbox, not "noreply" or a generic system address.
+This matches Crisp's pattern (`Jordan Lee - Usermaven <messages@crisp.example.com>`). The visitor sees a real person's name in their inbox, not "noreply" or a generic system address.
 
 **Custom email domain** (future, not v1): Workspaces could configure `messages@support.acme.com` via Postmark's custom domain feature + DNS verification. For v1, all workspaces share the `replies.helpin.ai` domain.
 
@@ -400,7 +400,7 @@ The email uses a minimal, personal layout — no heavy branding, marketing heade
 
 | Element | Format | Notes |
 |---------|--------|-------|
-| Agent identity | `● {Agent Name} via {Workspace Name}.` | Small avatar circle (CSS) + agent name + "via" + workspace. Mirrors Crisp's "Fabi Pina via Usermaven." |
+| Agent identity | `● {Agent Name} via {Workspace Name}.` | Small avatar circle (CSS) + agent name + "via" + workspace. Mirrors Crisp's "Jordan Lee via Usermaven." |
 | Reply CTA | `Reply directly to this email, or go to chat.` | "chat" is a hyperlink to `{LastPageURL}#helpin-conv={conversation_id}` |
 | Attribution | `Sent from Helpin. Unsubscribe from these emails.` | "Helpin" links to `https://helpin.ai`. "Unsubscribe" is a `mailto:` link (see §7.6) |
 

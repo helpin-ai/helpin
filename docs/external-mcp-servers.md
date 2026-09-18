@@ -226,8 +226,8 @@ Mutation bodies are strict JSON with unknown-field rejection and a 128 KiB limit
 Agent Runtime must independently allow the same MCP hosts and have its run-credential encryption key configured. See its run-scoped MCP documentation for `AGENT_RUNTIME_MCP_*` variables.
 
 `EXTERNAL_MCP_ENABLED` defaults to `false` in the application configuration;
-the stage/prod manifests do not explicitly set this variable. Inspect the
-deployment's supplied environment before assuming its effective value. Enabling requires applying migration `202607300001_external_mcp_servers.sql`, setting secrets/configuration, confirming the public callback, configuring Agent Runtime's host allowlist, and changing the reviewed rollout switch.
+inspect your deployment's supplied environment before assuming its
+effective value. Enabling requires applying migration `202607300001_external_mcp_servers.sql`, setting secrets/configuration, confirming the public callback, configuring Agent Runtime's host allowlist, and changing the reviewed rollout switch.
 
 ## End-to-end Customer.io verification
 

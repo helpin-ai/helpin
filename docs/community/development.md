@@ -10,10 +10,10 @@ required for this path. Install Git, Docker Engine with Compose v2, Bash, and
 OpenSSL. Start with at least 8 GiB RAM and 20 GiB disk for evaluation, and allow
 additional memory and disk for source builds and image layers.
 
-Use a new parent directory for these checkouts. The Runtime repository currently
-requires access; do not interpret these commands as proof of public availability.
-Public release requires both repositories and the pinned Runtime source to be
-accessible to users.
+Use a new parent directory for these checkouts. Both repositories must be
+cloneable at the pinned Runtime revision for this path to work. While the Agent
+Runtime repository remains private, the source-build path is available to
+maintainers only and operators should use a published bundle.
 
 ```sh
 git clone https://github.com/helpin-ai/helpin.git
@@ -76,7 +76,8 @@ remove their own resources. They do not upload raw logs or credential-bearing tr
 - Main CI selects jobs through `scripts/ci/checks.py`. Mobile includes frontend
   changes; root configuration and workflow changes select all checks. Documentation
   changes run lightweight contract/link checks without rebuilding the stack.
-- Community jobs own builds/tests with EE source absent. EE jobs own EE builds/tests.
+- Community jobs build and test with the `ee/` directories absent. Enterprise jobs
+  own the `-tags ee` builds and tests.
 - PostgreSQL 16 checks historical migrations; PostgreSQL 17/pgvector checks the
   fresh ledger against API models and verifies contact anonymization.
 - PRs run relevant source/edition checks, schema parity and lightweight installer/
@@ -85,19 +86,18 @@ remove their own resources. They do not upload raw logs or credential-bearing tr
   architectures. Run it before merging Dockerfile or Compose changes when needed.
 - Release candidates run full native amd64 and arm64 acceptance, source validation,
   scans and SBOM generation. Publishing reuses the tested image archives.
-- `CI required` rejects failed, cancelled and unexpectedly skipped selected jobs.
-  Keep `CI required` as the aggregate protection check. Remove any separately
-  required `Community bundle` leaf check from branch protection: that PR job no
-  longer runs.
+- `CI required` rejects failed, cancelled and unexpectedly skipped selected jobs
+  and is the aggregate branch-protection check. The `Community bundle` workflow
+  runs on schedule or manual dispatch, not on pull requests.
 
 Fork PR jobs use GitHub-hosted runners without private credentials. Internal
-jobs retain ARC runners where already configured. Before making the repository
-public, restrict ARC runner-group access to trusted workflows/refs: a contributor
-can edit workflow YAML, so the runner selector alone is not an authorization boundary. While Runtime is private,
-scheduled/manual/release acceptance requires `COMMUNITY_RUNTIME_READ_TOKEN` with
-Contents: read on that repository. PR checks do not check out Runtime or need that
-token; do not supply private credentials or use `pull_request_target` for forks.
-Public release requires the pinned Runtime source to be publicly available.
+jobs retain ARC runners where already configured. ARC runner-group access is
+restricted to trusted workflows/refs because a contributor can edit workflow
+YAML; the runner selector alone is not an authorization boundary. While the
+Runtime repository is private, scheduled/manual/release acceptance uses
+`COMMUNITY_RUNTIME_READ_TOKEN` with Contents: read on that repository. PR checks
+do not check out Runtime or need that token; do not supply private credentials
+or use `pull_request_target` for forks.
 
 Go and Node are pinned in `.go-version` and `.node-version`; pnpm is declared in
 `package.json`. CI validates the Community image toolchain pins against those
@@ -117,8 +117,7 @@ from `scripts/ci/install-tool.sh` without running remote installer scripts.
    DNS/HTTPS acceptance. Configure the protected `community-release` environment.
    Give Helpin’s workflow token write access to the candidate GHCR image
    repositories, including `agent-runtime`, before dispatching a candidate.
-   Before public promotion, make the pinned Runtime source available publicly
-   and verify anonymous pulls of the candidate GHCR images.
+   Verify anonymous pulls of the candidate GHCR images before promotion.
 2. Dispatch **Community release candidate** on the intended commit with a new
    `community-v0.x.y[-rc.n]` tag and the HTTPS acceptance record.
 3. Both native jobs build/test/scan once. Protected jobs publish those exact
@@ -135,31 +134,3 @@ Image archive artifacts expire after seven days; completed operator bundle
 artifacts expire after thirty days. Promote or build a new candidate within that
 window. Candidate and promotion workflows share a publication lock and refuse
 already released tags before images are rebuilt or pushed. Never regenerate an old candidate's assets under an already published tag.
-
-## Cleanup validation — September 16, 2026
-
-Verified locally on Linux amd64:
-
-- CI selection/required-status/cache policy: 5 tests passed.
-- Runner, archive, image identity and promotion contracts: 14 tests passed;
-  publication calls are mocked. Installer/readiness: 4 tests passed.
-- Community backend build/tests with EE source absent, and full EE backend tests: passed.
-- PostgreSQL 16 migration regressions and PostgreSQL 17 schema/privacy checks: passed.
-- Community frontend build/artifact check: passed; 2,796 tests passed, 3 existing skips.
-- EE frontend build: passed; 2,829 tests passed, 1 existing skip.
-- Full isolated browser/AI/mail/restore acceptance: passed with the existing local
-  Community images. Restored credentials and private attachment bytes/policy passed.
-- Real SIGTERM cancellation with mocked Docker, failure cleanup and ownership
-  checks passed; no acceptance containers/volumes remained after live validation.
-- Compose-to-Bake definitions, workflow lint, shell checks and bundle links passed.
-
-Acceptance-only timings with existing images were approximately 58 seconds for
-smoke and 239 seconds for the final full run. These are local observations, not
-an end-to-end CI benchmark: builds, registry/cache transfer and runner scheduling
-are excluded. The PR path now omits full browser/mail/restore phases, host workspace
-installation for those phases, and duplicate Community frontend/API builds.
-
-Native arm64, fresh candidate image builds/scans, GitHub cache behavior and real
-registry/release promotion still run through their CI/release gates. They are not
-claimed by these local checks. No release, tag, repository visibility or branch
-protection setting was changed during this cleanup.

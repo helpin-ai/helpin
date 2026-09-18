@@ -7,7 +7,8 @@ from the working tree; Git history has not been rewritten.
 
 ## Documentation destinations
 
-Product tutorials belong in the [Helpin-hosted documentation](https://helpin.ai/docs).
+Product tutorials belong in the hosted help center, which is planned; until it
+is live, repository guides are the reference.
 Keep architecture, contribution guidance, and version-sensitive technical
 instructions in the repository. Link to the authoritative page rather than
 maintaining a second copy in the help center.
@@ -35,14 +36,14 @@ excluded from the inventory.
 | --- | --- | --- |
 | Root README, architecture, contribution/support/security/license documents | Public-facing entry points and policies | Retain; verify public URLs and policy ownership |
 | `docs/community/` operator guides | Installation, configuration, deployment, identity, backups, troubleshooting | Retain with release-specific validation; preserve bundle links |
-| [Community implementation status](community/implementation-status.md) | Historical branch and acceptance evidence; already described as maintainer-only | Keep out of public help-center imports and operator bundles; review repository inclusion separately |
+| [Community implementation status](community/implementation-status.md) | Historical branch and acceptance evidence; excluded from operator bundles | Keep out of public help-center imports and operator bundles; review repository inclusion separately |
 | [Local development](development.md), [local Runtime](agent-runtime-local-setup.md), [widget architecture](widget-architecture.md) | Contributor setup and build contracts | Retain; verify against a clean checkout and published dependencies |
-| [Staging Runtime runbook](agent-runtime-staging-runbook.md) | Deployment topology, environment-specific secret-store configuration, and shared-service operational assumptions | Move to a private operational knowledge base or replace with a sanitized generic guide before export |
-| [Native release runbook](ops/native-release-runbook.md) | Coordinated SaaS deployment, release inventory, and canary instructions | Private operational material; retain only generic contributor instructions publicly |
+| Staging Runtime runbook (moved to the private archive on September 18, 2026) | Deployment topology, environment-specific secret-store configuration, and shared-service operational assumptions | Move to a private operational knowledge base or replace with a sanitized generic guide before export |
+| Native release runbook (moved to the private archive on September 18, 2026) | Coordinated SaaS deployment, release inventory, and canary instructions | Private operational material; retain only generic contributor instructions publicly |
 | [Support email operations](ops/support-email-fallback-runbook.md) | Deployment-specific operational procedures | Review and sanitize; separate public configuration from internal response procedures |
 | [Pricing strategy](strategy/pricing-strategy.md), [backlog](strategy/backlog-and-ideas.md), and other `docs/strategy/` pages | Pricing options, competitive positioning, campaign planning, and uncommitted product direction | Default to private strategy material; publish only an explicitly approved roadmap |
 | [Customer lifecycle campaigns](customer-io/README.md) | SaaS lifecycle campaigns and event/data contracts | Review for private business policy and user-data fields; publish only integration contracts intentionally supported for contributors |
-| [Mattermost design](mattermost-integration.md) | Assumes a shared company deployment rather than arbitrary user installations | Rewrite as a generic integration guide if supported; otherwise retain privately as design history |
+| Mattermost design (moved to the private archive on September 18, 2026) | Assumes a shared company deployment rather than arbitrary user installations | Rewrite as a generic integration guide if supported; otherwise retain privately as design history |
 | [Billing audit](plans/2026-06-22-billing-audit-findings.md), billing plans/specifications, [AI profiles](ai-connections.md) | Mix current contracts with commercial policy and dated rollout/test evidence | Keep necessary Community configuration; review commercial material and historical evidence before public inclusion |
 | `docs/plans/`, `docs/specs/`, `docs/prds/`, `docs/research/` | Large body of dated design intent and assessments, not release documentation | Review individually; extract useful current contracts and keep unapproved history out of the public export |
 | `docs/mockups/`, `docs/testing/`, and non-Markdown assets | Not covered by the Markdown inventory/content sampling | Inspect screenshots, fixtures, HTML, and embedded data separately for personal/customer information |
@@ -57,10 +58,9 @@ excluded from the inventory.
 4. Complete the full-history secret and personal-data review, third-party review,
    and history/export decision in [publication gates](../community/PUBLICATION.md).
 5. Verify the hosted docs and repository support links anonymously before launch.
-   The project owner supplied `https://helpin.ai/docs`; both HEAD and GET
-   returned HTTP 404 during this review on September 17, 2026. Navigation marks
-   the hosted guides as forthcoming and retains working repository alternatives.
-   Remove that label after the hosted destination is published and verified.
+   No hosted help center exists yet; navigation says one is planned and links
+   repository guides. Remove that wording after the hosted destination is
+   published and verified.
 
 Link checks establish navigation integrity, not confidentiality or publication
 readiness. The document-inventory publication gate remains open until maintainers
@@ -81,7 +81,6 @@ in Git history. Incoming index links and retained-plan references were updated.
 
 Partially superseded inbox-performance and custom-sender requirements were kept
 because they explicitly retain requirements outside their replacements' scope.
-Uncommitted support-runtime documentation and related edits from the concurrent
-code cleanup were preserved. Publication-sensitive strategy and operational docs
+Publication-sensitive strategy and operational docs
 still require the disposition review above; age or privacy concerns alone were
 not treated as proof that a document is obsolete.

@@ -1,4 +1,4 @@
-# Internal Tool Framework
+# Internal tools framework
 
 ## Purpose
 
@@ -116,7 +116,7 @@ legacy aliases. Provider discovery and calls require exact bare canonical names;
 strips the prefix while preserving the historical tool identity. Do not create
 new prefixed data.
 
-Repo-local backend tools such as filesystem reads, patching, and shell execution may still be provided directly by a runtime. Helpin product and interaction tools should be available through the Helpin MCP bridge for both `native_sdk` and `codex`.
+Repo-local backend tools such as filesystem reads, patching, and shell execution may still be provided directly by a runtime. Helpin product and interaction tools should be available through the Helpin MCP bridge for `native_sdk` runs.
 
 ### Runtime Exposure
 
@@ -198,8 +198,7 @@ Each agent version owns one complete `system_prompt`. Product prompt modules
 may be used internally to generate a default version, but they are not exposed
 as attached skills and are not runtime dependencies. Approval and completion
 requirements are carried separately as structured runtime policy. Optional
-skills use these runtime-owned tools on both
-`native_sdk` and Codex:
+skills use these runtime-owned tools on `native_sdk` runs:
 
 - `find_skills {"query"?: string, "limit"?: integer}` lists or searches metadata for the current agent's optional skills.
 - `read_skill {"key"?: string, "skill_id"?: string, "path"?: string, "max_bytes"?: integer}` reads one selected package. Exactly one of `key` or `skill_id` is required; `path` defaults to `SKILL.md` and must remain inside the package.

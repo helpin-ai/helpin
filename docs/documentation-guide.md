@@ -11,12 +11,12 @@ conversation that led to the change.
 | --- | --- | --- |
 | Current architecture or integration guide | `docs/` | `agents-and-automation.md` |
 | Community installation and operations | `docs/community/` | `troubleshooting.md` |
-| Environment-specific operating procedure | `docs/ops/` or `docs/deployments/` | `native-release-runbook.md` |
+| Environment-specific operating procedure | `docs/ops/` or `docs/deployments/` | `database-migrations.md` |
 | Product requirements | `docs/prds/` | `support-live-chat.md` |
 | Implementation plan | `docs/plans/` | `2026-09-14-ai-settings-ux-plan.md` |
 | Design specification | `docs/specs/` | `2026-08-18-support-link-security-design.md` |
 | Research or assessment | `docs/research/` | `editor-list-exit-behavior.md` |
-| Product tutorials | [Helpin-hosted docs](https://helpin.ai/docs) | First support conversation |
+| Product tutorials | Hosted help center (planned) | First support conversation |
 
 The hosted help center is the destination for product tutorials. Repository
 technical guides remain versioned with the code. Link between the two rather

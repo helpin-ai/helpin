@@ -55,6 +55,31 @@ describe('WidgetManager', () => {
     });
   };
 
+  it.each([
+    [1000, true, true, 'closed'],
+    [1000, false, true, 'error'],
+    [1000, true, false, 'error'],
+    [1001, true, true, 'error'],
+    [1006, false, true, 'error'],
+    [1008, true, true, 'error'],
+    [1011, true, true, 'error'],
+  ])('classifies close code %s clean=%s joined=%s as %s', (code, wasClean, joined, outcome) => {
+    vi.useFakeTimers();
+    vi.stubGlobal('WebSocket', MockWebSocket);
+    const manager = widget as any;
+    manager.widgetKey = 'test-key';
+    manager.render = vi.fn();
+    manager.reportTelemetry = vi.fn();
+    manager.handleWSMessage = vi.fn();
+    manager.connectWebSocket();
+    const socket = MockWebSocket.instances.at(-1)!;
+    if (joined) socket.onmessage?.(new MessageEvent('message', { data: JSON.stringify({ type: 'session:joined' }) }));
+    socket.onclose?.(new CloseEvent('close', { code: code as number, wasClean: wasClean as boolean }));
+    expect(manager.reportTelemetry).toHaveBeenCalledWith(expect.objectContaining({ stage: 'connection', outcome, close_code: code }));
+    manager.disconnectWebSocket();
+    vi.useRealTimers();
+  });
+
   it('rejects private messages on initial history, conversation switching and live updates', () => {
     const manager = widget as any;
     manager.render = vi.fn();

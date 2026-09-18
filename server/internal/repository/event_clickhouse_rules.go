@@ -113,7 +113,7 @@ func (r *ClickHouseEventRepository) commercialEdgeRows(
 	projectSQL, args := clickHouseProjectFilter(projects)
 	args = append(args, start.UTC(), end.UTC(), eventName)
 	query := `SELECT '' AS anonymous_id, '' AS external_user_id, company_id AS company_external_id,
-		any(identity_method) AS identity_method, any(identity_trust) AS identity_trust,
+		any(identity_method) AS evidence_identity_method, any(identity_trust) AS evidence_identity_trust,
 		max(_timestamp) AS observed_at, count() AS event_count, uniqExact(session_id) AS session_count,
 		concat(toString(count()), ' ', any(event_type), ' event(s)') AS evidence,
 		any(event_type) AS event_name, 0 AS eligible_accounts
@@ -133,8 +133,8 @@ func (r *ClickHouseEventRepository) capturedFormRows(ctx context.Context, projec
 		args = append(args, formIDs)
 	}
 	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
-		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		any(company_id) AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'form_id'))), ', ') AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
@@ -152,8 +152,8 @@ func (r *ClickHouseEventRepository) identifiedArticleRows(ctx context.Context, p
 		args = append(args, articleIDs)
 	}
 	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
-		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		any(company_id) AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'article_id'))), ', ') AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
@@ -167,8 +167,8 @@ func (r *ClickHouseEventRepository) versionedInteractionRows(ctx context.Context
 	projectSQL, args := clickHouseProjectFilter(projects)
 	args = append(args, start.UTC(), end.UTC(), ruleKey, version)
 	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
-		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		any(company_id) AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(JSONExtractString(event_attributes, 'interaction_type'))), ', ') AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
@@ -188,8 +188,8 @@ func (r *ClickHouseEventRepository) pathActivityRows(ctx context.Context, projec
 	}
 	args = append(args, minimumSessions)
 	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
-		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		any(company_id) AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(doc_path)), ', ') AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `)
@@ -203,8 +203,8 @@ func (r *ClickHouseEventRepository) returnedAfterDormancyRows(ctx context.Contex
 	projectSQL, args := clickHouseProjectFilter(projects)
 	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC(), dormancyDays)
 	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
-		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, minIf(_timestamp, _timestamp >= ?) AS observed_at,
+		any(company_id) AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, minIf(_timestamp, _timestamp >= ?) AS observed_at,
 		countIf(_timestamp >= ?) AS event_count, uniqExactIf(session_id, _timestamp >= ?) AS session_count,
 		concat('Returned after ', toString(dateDiff('day', maxIf(_timestamp, _timestamp < ?), minIf(_timestamp, _timestamp >= ?))), ' days') AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
@@ -228,8 +228,8 @@ func (r *ClickHouseEventRepository) highIntentEventRows(ctx context.Context, pro
 	projectSQL, args := clickHouseProjectFilter(projects)
 	args = append(args, start.UTC(), end.UTC(), eventNames)
 	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
-		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		any(company_id) AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(event_type)), ', ') AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
@@ -243,8 +243,8 @@ func (r *ClickHouseEventRepository) sessionDepthRows(ctx context.Context, projec
 	projectSQL, args := clickHouseProjectFilter(projects)
 	args = append(args, start.UTC(), end.UTC(), minimumPageviews)
 	query := `SELECT any(user_anonymous_id) AS anonymous_id, any(user_id) AS external_user_id,
-		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		any(company_id) AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, max(_timestamp) AS observed_at,
 		countIf(event_type='pageview') AS event_count, 1 AS session_count,
 		concat(toString(countIf(event_type='pageview')), ' pageviews in one session') AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
@@ -256,8 +256,8 @@ func (r *ClickHouseEventRepository) newStakeholderRows(ctx context.Context, proj
 	projectSQL, args := clickHouseProjectFilter(projects)
 	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC())
 	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
-		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, min(_timestamp) AS observed_at,
+		any(company_id) AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, min(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count, 'First activity from this account visitor' AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND company_id != '' AND user_anonymous_id != ''` + excludeDetectedBotsSQL + ` GROUP BY user_anonymous_id
@@ -269,8 +269,8 @@ func (r *ClickHouseEventRepository) anonymousAccountRows(ctx context.Context, pr
 	projectSQL, args := clickHouseProjectFilter(projects)
 	args = append(args, start.UTC(), end.UTC(), minimumEvents)
 	query := `SELECT any(user_anonymous_id) AS anonymous_id, '' AS external_user_id,
-		company_id AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, max(_timestamp) AS observed_at,
+		company_id AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, max(_timestamp) AS observed_at,
 		count() AS event_count, uniqExact(session_id) AS session_count, 'Anonymous activity from a known account' AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
 		AND company_id != '' AND user_id = ''` + excludeDetectedBotsSQL + ` GROUP BY company_id HAVING count() >= ?`
@@ -281,8 +281,8 @@ func (r *ClickHouseEventRepository) campaignReturnRows(ctx context.Context, proj
 	projectSQL, args := clickHouseProjectFilter(projects)
 	args = append(args, lookbackStart.UTC(), end.UTC(), start.UTC(), start.UTC())
 	query := `SELECT user_anonymous_id AS anonymous_id, any(user_id) AS external_user_id,
-		any(company_id) AS company_external_id, any(identity_method) AS identity_method,
-		any(identity_trust) AS identity_trust, maxIf(_timestamp, _timestamp >= ?) AS observed_at,
+		any(company_id) AS company_external_id, any(identity_method) AS evidence_identity_method,
+		any(identity_trust) AS evidence_identity_trust, maxIf(_timestamp, _timestamp >= ?) AS observed_at,
 		countIf(_timestamp >= ?) AS event_count, uniqExactIf(session_id, _timestamp >= ?) AS session_count,
 		arrayStringConcat(arraySort(groupUniqArray(10)(utm_source)), ', ') AS evidence
 		FROM helpin.events FINAL WHERE project_id IN (` + projectSQL + `) AND _timestamp >= ? AND _timestamp < ?
@@ -314,8 +314,8 @@ func preIdentificationRuleQuery(projects []string, lookbackStart, start, end tim
 	SELECT event.user_anonymous_id AS anonymous_id,
 		argMinIf(event.user_id, event._timestamp, event.user_id != '') AS external_user_id,
 		argMax(event.company_id, event._timestamp) AS company_external_id,
-		argMinIf(event.identity_method, event._timestamp, event.user_id != '') AS identity_method,
-		argMinIf(event.identity_trust, event._timestamp, event.user_id != '') AS identity_trust,
+		argMinIf(event.identity_method, event._timestamp, event.user_id != '') AS evidence_identity_method,
+		argMinIf(event.identity_trust, event._timestamp, event.user_id != '') AS evidence_identity_trust,
 		transition.identified_at AS observed_at,
 		countIf(event.user_id = '' AND event._timestamp < transition.identified_at) AS event_count,
 		uniqExactIf(event.session_id, event.user_id = '' AND event._timestamp < transition.identified_at) AS session_count,

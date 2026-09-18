@@ -41,7 +41,8 @@ export default defineConfig(({ mode }) => {
     headers: {
       'Cache-Control': 'no-store',
     },
-    allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai", "azhar.dev.helpin.ai"],
+    // Extra dev hostnames (comma-separated), e.g. a tunnel or LAN name; localhost is always allowed.
+    allowedHosts: (process.env.VITE_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean),
     ...(hmrHost ? {
       hmr: { host: hmrHost, protocol: "wss", clientPort: hmrClientPort ?? 443 },
     } : {}),

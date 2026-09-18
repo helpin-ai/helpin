@@ -1,7 +1,8 @@
 # CRM signal architecture and operations
 
 This engineering and operations reference explains CRM signal detection, customer
-work, and activation for contributors and operators. It describes implementation
+work, and activation for contributors and operators. CRM is not enabled by
+default in Community 0.1 beta (`HELPIN_ENABLED_MODULES`). It describes implementation
 in this checkout, not deployment status or provider availability. Historical design decisions and
 the original phase plan remain in
 [`crm-buyer-signals-assessment.md`](crm-buyer-signals-assessment.md), but that
@@ -415,11 +416,11 @@ permission.
 The [customer-work blueprint](crm-customer-work-blueprint.md) owns the agreed
 complete target experience; the [automation connection plan](crm-playbook-automation-change-proposal.md)
 owns the planned Flow/Beacon/skill extension. This reference describes implemented
-behavior in the inspected branch, not production deployment. The additive foundation stores independent
+behavior in this checkout, not production deployment. The additive foundation stores independent
 customer situations in `crm_situations`, with source links in
 `crm_situation_references`. Source adapters now reconcile eligible signals and
 unresolved Review suggestions, using `crm_situation_source_links` for stable
-source-to-work mappings. The branch now has the unified Signals inbox and a
+source-to-work mappings. This checkout has the unified Signals inbox and a
 compatible Review redirect, described under [Review consolidation](#review-consolidation).
 This does not enable Playbook execution or new outbound automation.
 
@@ -911,8 +912,8 @@ Setup includes reviewed connection, separate activation, entry choice and usage
 limits. Signal drawers expose start/resume/pause and focused execution status.
 Exact action review reuses the existing composer and real PM/CRM pickers; result
 inspection never retries the action. Activity shows recorded configuration and
-execution events without presenting them as customer success. This is branch
-implementation, not a deployment or migration of application data.
+execution events without presenting them as customer success. This describes the
+implementation in this checkout, not a deployment or migration of application data.
 
 Browser verification renders the production pages with an isolated mocked API:
 `cd frontend && npx playwright test --config=playwright.crm.config.ts`.
@@ -1128,7 +1129,7 @@ and should be treated as the historical cutover boundary; it does not delete CRM
 events, suggestions, or external evidence.
 
 ClickHouse schema is versioned under `server/internal/chmigrate/sql`. Local
-event-stack startup runs the ClickHouse migration runner; stage and production
+event-stack startup runs the ClickHouse migration runner; other environments
 run the same migrations before event consumers are deployed. The backend needs
 `CLICKHOUSE_DSN` to evaluate behavioral rules. Without it, conversation and
 daily Postgres rules continue to work, while the behavioral cadence is skipped.

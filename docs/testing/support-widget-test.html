@@ -388,7 +388,7 @@
             </div>
             <div class="connection-row">
               <dt>API host</dt>
-              <dd>https://helpin-dev.tryunhide.com</dd>
+              <dd>http://localhost:8085</dd>
             </div>
             <div class="connection-row">
               <dt>Runtime</dt>
@@ -464,9 +464,9 @@
         var firstScript = document.getElementsByTagName("script")[0];
         runtime.defer = true;
         runtime.id = "helpin-widget";
-        runtime.setAttribute("data-widget-key", "c397f7127cc41494d46d57875095d059");
-        runtime.setAttribute("data-host", "https://helpin-dev.tryunhide.com");
-        runtime.src = "https://cdn.helpin.ai/lib.js";
+        runtime.setAttribute("data-widget-key", "your-widget-key");
+        runtime.setAttribute("data-host", "http://localhost:8085");
+        runtime.src = "http://localhost:8085/sdk/lib.js";
         runtime.addEventListener("load", function () {
           window.dispatchEvent(new CustomEvent("helpin-test:runtime-loaded"));
         });
@@ -559,7 +559,7 @@
         log("Embed snippet installed for the Usermaven workspace");
 
         window.fetch(
-          "https://helpin-dev.tryunhide.com/widget/config?widget_key=c397f7127cc41494d46d57875095d059"
+          "http://localhost:8085/widget/config?widget_key=your-widget-key"
         ).then(function (response) {
           if (!response.ok) {
             throw new Error("Widget config returned HTTP " + response.status);

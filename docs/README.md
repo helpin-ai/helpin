@@ -1,9 +1,9 @@
 # Helpin documentation
 
 Start here to run Helpin, understand the code, or contribute a change. Current
-technical guides are versioned in this repository. Product tutorials will be
-hosted at [helpin.ai/docs](https://helpin.ai/docs); until that destination is live,
-use the installation and support guides below.
+technical guides are versioned in this repository. A hosted product help center
+for tutorials is planned; until it is live, use the installation and support
+guides below.
 
 ## Choose your starting point
 
@@ -30,9 +30,12 @@ use the installation and support guides below.
 
 ## Customer relationships and signals
 
+CRM and PM are outside the Community 0.1 beta default modules; their code is in
+the monorepo.
+
 - [CRM architecture and data model](crm-overview.md): the CRM module and its connections to other Helpin modules.
 - [CRM signals](crm-signals.md): implemented detection, scoring, activation, and operations.
-- [Customer-work blueprint](crm-customer-work-blueprint.md): agreed Signals/Review and Playbooks experience.
+- [Customer-work blueprint](crm-customer-work-blueprint.md): Signals/Review and Playbooks product scope.
 - [Playbook automation](crm-playbook-automation-change-proposal.md): the implemented connection between Playbooks, Flows, and Beacon skills; deployment is a separate concern.
 - [Signal ingestion](crm-signal-ingestion.md): conversation and email extraction.
 - [Email synchronization](crm-email-sync.md): CRM mailbox synchronization.
@@ -74,9 +77,6 @@ page's status and the corresponding current guide before using its instructions.
 | [Roles and permissions](rbac/README.md) | Access-control analysis |
 | [Customer lifecycle campaigns](customer-io/README.md) | Campaign configuration and data contracts |
 
-Environment-specific references include the [Runtime staging runbook](agent-runtime-staging-runbook.md)
-and the [Mattermost integration design](mattermost-integration.md). Review their
-assumptions before adapting them to another installation.
 
 ## Publication boundary
 

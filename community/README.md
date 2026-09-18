@@ -1,24 +1,29 @@
 # Helpin Community 0.1 beta
 
-Self-host support chat, visitor identification, a staff inbox, a public help
-center, and support agents. No billing service or Helpin account is required.
-See [known limitations](../ROADMAP.md). Community 0.1 is a beta.
+This guide is for operators installing the self-hosted Community bundle. It
+covers requirements, installation, the first support conversation, and
+day-to-day commands. Community 0.1 is a beta; read the
+[scope and known limitations](../ROADMAP.md) before serving production traffic.
+Contributors building from a source checkout should use the
+[development guide](https://github.com/helpin-ai/helpin/blob/develop/docs/community/development.md)
+instead.
+
+## Requirements
+
+- Docker Engine and Docker Compose v2
+- Bash and OpenSSL
+- An amd64 or arm64 host; native architecture tests are a release gate, not an
+  inference from successful builds
+- At least 8 GiB RAM and 20 GiB free disk for evaluation
+
+These are evaluation starting points, not measured capacity promises.
 
 ## Install
 
-**Pre-release:** the current candidate is local and unpublished. The bundle steps
-below apply once a release is published. Contributors with repository access can
-use the [source-build guide](https://github.com/helpin-ai/helpin/blob/develop/docs/community/development.md#source-builds-and-acceptance)
-now. See [publication gates](https://github.com/helpin-ai/helpin/blob/develop/community/PUBLICATION.md) for remaining release requirements.
-
-Download the bundle and checksum from the [Community releases](https://github.com/helpin-ai/helpin/releases).
-Verify and extract the archive, then enter its `community/` directory. Candidate
-Actions artifacts are for maintainers until a release is published. Requirements: Docker Engine,
-Docker Compose v2, Bash, OpenSSL, and a supported amd64 or arm64 host. Native
-architecture tests are a release gate, not an inference from successful builds.
-Allow at least 8 GiB RAM and 20 GiB free disk for evaluation; source builds need
-considerably more. These are evaluation starting points, not measured capacity
-promises.
+Download the bundle archive and its checksum from the
+[releases page](https://github.com/helpin-ai/helpin/releases). If no bundle is
+published yet, build from source with the development guide above. Verify the
+checksum, extract the archive, and run from its `community/` directory:
 
 ```sh
 ./setup.sh install
@@ -27,52 +32,67 @@ promises.
 ./setup.sh status
 ```
 
-Open `http://localhost:8085`, sign up, and create your organization/workspace.
-Local signup does not require email. New accounts remain unverified. With working application mail, `AUTH_EMAIL_VERIFICATION_REQUIRED=true` enables
-verification emails and the verification UI; it does not block every unverified login.
+The installer generates secrets and writes `.env`; it never sources that file
+as shell code, and re-running `install` preserves existing values. Keep `.env`
+private and back up its encryption keys together with your data: changing the
+keys only in the environment makes stored encrypted credentials unreadable.
 
-In workspace settings, add your website origin first (scheme, hostname and port).
-The widget refuses visitor requests while the list is empty. Add the dashboard
-origin for previews and the help-center origin if it embeds chat. Copy the
-resulting support-only installation snippet to your website. The snippet uses
-this installation's public URLs; it does not send analytics to Helpin.
+Open `http://localhost:8085`, sign up, and create your organization and
+workspace. Local signup does not require email, and new accounts remain
+unverified. With working application mail, `AUTH_EMAIL_VERIFICATION_REQUIRED=true`
+enables verification emails and the verification UI; it does not block every
+unverified login.
 
-Configure API-key connections and a shared profile in Settings → AI, then choose
-a workspace default. Personal connections belong in personal AI settings. ChatGPT
-is optional and requires enabling it on both Helpin and Runtime; unattended runs
-remain subject to their existing policy. Knowledge embeddings and non-agent AI
-use separate server configuration; see [configuration](../docs/community/configuration.md).
+## Start your first conversation
 
-Create and publish your first article in Docs/Help Center. Configure its custom
-domain for public hosting. Locally, open
+1. In workspace settings, add your website origin first (scheme, hostname, and
+   port). The widget refuses visitor requests while the list is empty. Add the
+   dashboard origin for previews and the help-center origin if it embeds chat.
+2. Copy the generated support-only installation snippet into your website. The
+   snippet uses this installation's public URLs and sends no analytics to Helpin.
+3. Open the website, send a visitor message, and reply from the staff inbox.
+
+## Add AI and a help center
+
+Configure API-key connections and a shared profile under **Settings → AI**, then
+choose a workspace default. Personal connections belong in personal AI settings.
+ChatGPT is optional and must be enabled on both Helpin and Runtime; unattended
+runs remain subject to their existing policy. Knowledge embeddings and non-agent
+AI use separate server configuration; see
+[configuration](../docs/community/configuration.md).
+
+Create and publish your first article in Docs / Help Center. Configure its
+custom domain for public hosting. Locally, open
 `http://localhost:8086/?subdomain=YOUR_HELP_CENTER_SLUG`.
+
+## Operate
 
 ```sh
 ./setup.sh logs helpin-api agent-runtime-worker
 ./setup.sh stop
 ```
 
-Stop preserves named volumes. Never use `docker compose down -v` on an install
-you want to keep. The installer preserves existing `.env` values and never
-sources the file as shell code. Back up its encryption keys with your data;
-changing them only in the environment makes encrypted credentials unreadable.
+`stop` preserves named volumes. Never run `docker compose down -v` on an
+installation you want to keep.
+
+Published bundles pin exact image digests. Changing a version variable does not
+upgrade an installation; use a reviewed replacement bundle. Tested cross-version
+upgrades start in 0.2.
 
 ## Next steps
 
-- [Troubleshoot](../docs/community/troubleshooting.md): service startup, widget, AI, mail, and storage problems.
-- [Product help](https://helpin.ai/docs): forthcoming guides hosted in Helpin.
-- [Deploy publicly](../docs/community/deployment.md): DNS, HTTPS, website origins and storage.
-- [Configure the installation](../docs/community/configuration.md): SMTP, AI, embeddings and optional capabilities.
+- [Deploy publicly](../docs/community/deployment.md): DNS, HTTPS, website origins, and storage.
+- [Configure the installation](../docs/community/configuration.md): SMTP, AI, embeddings, and optional capabilities.
 - [Back up and restore](../docs/community/backups.md): preserve data and encryption keys.
-- [Develop and release](https://github.com/helpin-ai/helpin/blob/develop/docs/community/development.md): source builds, CI and candidate promotion.
-
-Published bundles pin exact image digests. Changing a version variable does not
-upgrade one; use a reviewed replacement bundle. Cross-version upgrades start in 0.2.
+- [Troubleshoot](../docs/community/troubleshooting.md): service startup, widget, AI, mail, and storage problems.
+- [Security policy](../SECURITY.md): supported versions and private vulnerability reporting.
+- [Get help](https://github.com/helpin-ai/helpin/blob/develop/SUPPORT.md): questions, bug reports, and feature requests.
+- [Develop and release](https://github.com/helpin-ai/helpin/blob/develop/docs/community/development.md): source builds, CI, and candidate promotion.
 
 ### Optional Ask Agent execution
 
-The Community image includes Python, pip and venv. One `agent-runtime-worker`
-service polls every queue, so ordinary chat, coding and `run_python` share a
+The Community image includes Python, pip, and venv. One `agent-runtime-worker`
+service polls every queue, so ordinary chat, coding, and `run_python` share a
 single process and the `execution_workspaces` volume. A long command therefore
 competes with chat for that worker; Community accepts that contention rather
 than running a second service. Enable execution explicitly in an owned Ask
@@ -95,16 +115,17 @@ docker compose up -d
 ```
 
 Only the API service mounts `apps.json`. Python's private venv, pip cache,
-temporary files and outputs live on `execution_workspaces`, so installation does
+temporary files, and outputs live on `execution_workspaces`, so installation does
 not write to the read-only root or shared system environment. Analysis scratch
 has a monitored 512 MiB operational limit and is removed when its run ends.
 There is no inactivity timer. Files and packages do not transfer to successor
 runs; explicitly published private artifacts remain downloadable.
 
-Commands **can read other runs' checkouts on the shared execution volume**.
-Filtered environments and process dumpability hardening reduce credential
-exposure but do not provide tenant or filesystem isolation. Enable this only for
-users trusted to execute in that worker container.
+When Landlock is unavailable and best-effort mode falls back, commands can read
+other runs' checkouts on the shared execution volume. Filtered environments and
+process dumpability hardening reduce credential exposure but do not provide
+tenant or filesystem isolation. Enable this only for users trusted to execute
+in that worker container.
 
 TypeSafe review is optional operator configuration on the runtime workers:
 `TYPESAFE_API_KEY`, `AGENT_RUNTIME_TYPESAFE_ENABLED=true`, and optionally
@@ -117,7 +138,7 @@ live command-review evaluations pass. No key/provider failure retains the existi
 risk-label policy, and human-only/never approval modes remain unchanged.
 
 Auto-approval only suppresses prompts for local-operation candidates. Pushes, PRs,
-network installation and API writes do not acquire authorization from review scores;
+network installation, and API writes do not acquire authorization from review scores;
 use the existing human approval flow. The seventh `external_send_requested` score
 is diagnostic only. High hazards escalate routine calls and appear in the approval
 summary. The reviewer does not enforce network isolation or package-name safety.

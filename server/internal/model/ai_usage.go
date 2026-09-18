@@ -5,6 +5,7 @@ import "time"
 const (
 	AIUsagePeriodOpen            = "open"
 	AIUsagePeriodClosed          = "closed"
+	AIUsagePeriodClosing         = "closing"
 	AIUsageEnforcementStrict     = "enforced"
 	AIUsageEnforcementExtra      = "extra_allowed"
 	AIUsageEnforcementSoft       = "soft"

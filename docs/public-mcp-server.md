@@ -4,11 +4,11 @@ This guide is for developers connecting external clients to Helpin through the
 Model Context Protocol (MCP). It covers authentication, workspace access, tools,
 and deployment configuration. Beta availability and enablement are stated below.
 
-**Status:** Implemented for controlled beta; enabled in checked-in staging and production manifests. Live deployment availability is not verified by this review.
+**Status:** Implemented for controlled beta. Live enablement on any environment is an operational decision separate from source defaults.
 
-**Production endpoint:** `https://mcp.helpin.ai/mcp`
+**Helpin Cloud endpoint:** `https://mcp.helpin.ai/mcp`
 
-**Staging endpoint:** `https://mcp.stage.helpin.ai/mcp`
+**Self-hosted installations:** the MCP endpoint is the value of `MCP_PUBLIC_BASE_URL` followed by `/mcp`.
 
 **Protocol transport:** Stateless MCP Streamable HTTP with JSON responses
 
@@ -19,7 +19,7 @@ Related documents:
 - [Public MCP Server PRD](prds/helpin-public-mcp-server.md)
 - [Public MCP Server Implementation Plan](plans/2026-07-10-helpin-public-mcp-server-plan.md)
 - [MCP UI PRD](prds/helpin-mcp-ui.md)
-- [Engineering Learnings and Next-Time Playbook](public-mcp-engineering-notes.md)
+- [Public MCP engineering notes](public-mcp-engineering-notes.md)
 
 ## 1. What Helpin MCP is
 
@@ -35,6 +35,8 @@ The server exposes Helpin capabilities across:
 - Helpin agents and durable agent runs
 
 The MCP server is an authorization and product-execution boundary. It is not a public wrapper around the internal Agent Runtime bridge. Public clients receive their own workspace-scoped identity, scopes, toolsets, policy checks, audit history, and revocation controls.
+
+PM and CRM toolsets require those modules to be enabled; Community 0.1 beta enables support, docs, and agents by default.
 
 ## 2. What users can accomplish
 
@@ -211,7 +213,7 @@ CRM and Support must be explicitly allowed by workspace policy and requested dur
 
 ## 7. Complete v1 tool catalog
 
-The fully enabled catalog contains exactly 45 tools. `tools/list` returns only the subset currently allowed for the principal.
+The fully enabled catalog contains 49 tools; the catalog regression test asserts that count. The tables below list the primary tools by toolset. `tools/list` returns only the subset currently allowed for the principal.
 
 ### 7.1 Workspace context and search
 
@@ -370,7 +372,7 @@ Retrying the same mutation with the same key and request returns the stored resu
 
 ## 9. Agent Runtime delegation
 
-MCP does not create a parallel agent system. `start_agent_run` creates a normal Helpin `agent_run`. The selected agent's saved configuration determines whether the run is executed by the Agent Runtime service or another configured runtime adapter.
+MCP does not create a parallel agent system. `start_agent_run` creates a normal Helpin `agent_run`. The selected agent's saved configuration is applied; the run is executed by Agent Runtime.
 
 ```mermaid
 sequenceDiagram
@@ -388,7 +390,7 @@ sequenceDiagram
     M->>A: Verify actor can use agent and target
     A->>DB: Create normal durable agent_run
     M->>DB: Record MCP client/run attribution
-    A->>AR: Launch through configured runtime adapter
+    A->>AR: Launch through Agent Runtime
     M-->>C: run_id + queued/running status
     loop Until terminal or awaiting input
         C->>M: get_agent_run(run_id)
@@ -671,7 +673,7 @@ The normal authenticated Helpin API also provides consent-model and workspace-ma
 | `MCP_CRM_ENABLED` | Enables CRM discovery and execution |
 | `MCP_SUPPORT_ENABLED` | Enables Support discovery and execution |
 
-The [staging](../k8s/stage/server.yaml) and [production](../k8s/prod/server.yaml) manifests set `MCP_SERVER_ENABLED=true`. The public MCP flags also default to true when unset in [configuration](../server/internal/config/config.go). Explicit Kubernetes environment values take precedence over `envFrom`/Doppler values. These are source defaults and desired configuration, not evidence of live deployment state.
+Deployment manifests for Helpin Cloud set `MCP_SERVER_ENABLED` explicitly. The public MCP flags also default to true when unset in [configuration](../server/internal/config/config.go). Explicit Kubernetes environment values take precedence over `envFrom`/Doppler values. These are source defaults and desired configuration, not evidence of live deployment state.
 
 The global switch stops OAuth issuance and MCP execution while leaving authenticated Helpin settings and revocation controls available.
 
@@ -686,10 +688,10 @@ flowchart TD
     Migrate --> Deploy[Deploy API, UI, and dedicated ingress]
     Deploy --> Disabled[MCP_SERVER_ENABLED=false]
     Disabled --> Verify[Verify DNS, TLS, metadata, OAuth, audit, and revocation]
-    Verify --> Workspace[Enable selected dogfood workspace policies]
+    Verify --> Workspace[Enable selected pilot workspace policies]
     Workspace --> Flag[Set environment rollout flag true]
     Flag --> Clients[Test supported clients and workflow matrix]
-    Clients --> Expand[Expand design-partner rollout]
+    Clients --> Expand[Expand rollout]
 
     Incident[Security or reliability incident] --> Off[Set global switch false]
     Off --> Revoke[Revoke affected workspace/client credentials]
@@ -706,7 +708,7 @@ Before enabling an environment:
 - verify revoke latency with already-issued access and refresh tokens
 - test tools, resources, prompts, and polling in supported clients
 - confirm audit cleanup and incident procedures
-- enable only approved dogfood/design-partner workspaces
+- enable only approved pilot workspaces
 
 ## 21. Implementation map
 
@@ -724,7 +726,6 @@ Before enabling an environment:
 | Settings UI | `frontend/src/pages/settings/MCPSettingsPage.tsx` |
 | OAuth consent UI | `frontend/src/pages/oauth/MCPAuthorizePage.tsx` |
 | Client workflow package | `integrations/helpin-mcp/` |
-| Stage/production routing | `k8s/stage/ingress.yaml`, `k8s/prod/ingress.yaml` |
 
 ## 22. Validation coverage
 
@@ -737,7 +738,7 @@ The implementation includes automated checks for:
 - strict tool schemas and rejection of workspace-override properties
 - workspace-policy scope/toolset narrowing and forced read-only behavior
 - platform domain flags
-- a catalog of exactly 30 tools
+- the 49-tool catalog
 - exclusion of deferred destructive, publishing, support-draft, and customer-send actions
 - persisted agent-start and active-run safety counts
 - MCP tool annotations and structured output schemas
@@ -751,7 +752,6 @@ Client interoperability, OAuth conformance, penetration testing, DNS/TLS validat
 
 ## 23. Current beta constraints
 
-- Staging and production are globally disabled until rollout approval.
 - General/search/write transport rate counters are process-local; persisted hourly and concurrent checks protect agent starts across instances. A distributed limiter is a future scale hardening step.
 - V1 uses polling for durable run completion and does not provide external webhooks, persistent MCP notifications, or native MCP Tasks.
 - Some reused command-backed list tools provide bounded projections rather than a uniform cursor contract across every product area.
@@ -765,7 +765,7 @@ The repository contains the complete controlled-beta implementation:
 - protocol transport and discovery
 - user OAuth and service credentials
 - workspace-bound authorization
-- 30-tool curated catalog
+- 49-tool curated catalog
 - resources and prompts
 - six client Skills
 - safe mutation replay

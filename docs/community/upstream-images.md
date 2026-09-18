@@ -1,5 +1,10 @@
 # Upstream infrastructure image maintenance
 
+This page is for operators and maintainers reviewing the infrastructure images
+the bundle pulls. It explains the pinning policy and the accepted scanner
+findings at the time of writing; the authoritative list for a given bundle is
+its `community/upstream-image-exceptions.json`.
+
 Community uses unmodified, digest-pinned pgvector/PostgreSQL, NATS, Garage,
 Redis, and Temporal images. Helpin maintains application images only. Updating
 an upstream digest requires the clean-install and restore gates; do not rebuild
