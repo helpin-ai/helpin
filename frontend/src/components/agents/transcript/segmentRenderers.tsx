@@ -512,13 +512,13 @@ function UserMessageBubble({ content }: { content: string }) {
   const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
 
   return (
-    <div className="max-w-[90%] rounded-2xl rounded-br-sm bg-quiet-user-bubble px-3.5 py-2.5 text-sm leading-relaxed text-quiet-text-primary shadow-sm">
+    <div className="max-w-[90%] rounded-2xl rounded-br-sm bg-blue-50 px-3.5 py-2.5 text-sm leading-relaxed text-foreground/85 shadow-sm dark:bg-blue-950/40 dark:text-foreground">
       {isLong ? (
         <div>
           <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
             <MarkdownContent content={content} className="text-inherit" />
             {!expanded && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-quiet-user-bubble to-transparent" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-blue-50 to-transparent dark:from-blue-950/40" />
             )}
           </div>
           <button

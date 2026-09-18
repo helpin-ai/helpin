@@ -615,7 +615,6 @@
   --color-quiet-hover: var(--quiet-hover);
   --color-quiet-row-hover: var(--quiet-row-hover);
   --color-quiet-icon-well: var(--quiet-icon-well);
-  --color-quiet-user-bubble: var(--quiet-user-bubble);
   --color-quiet-divider-strong: var(--quiet-divider-strong);
   --color-quiet-divider-light: var(--quiet-divider-light);
   --color-quiet-field: var(--quiet-field);
@@ -679,7 +678,6 @@
   --quiet-hover: #f5f4f2;
   --quiet-row-hover: #faf9f7;
   --quiet-icon-well: #f0efec;
-  --quiet-user-bubble: #e6f0ec;
   --quiet-divider-strong: #ecebe8;
   --quiet-divider-light: #f2f1ee;
   --quiet-field: #ddd9d4;
@@ -1537,7 +1535,6 @@
   --quiet-hover: var(--muted);
   --quiet-row-hover: color-mix(in oklab, var(--muted) 72%, transparent);
   --quiet-icon-well: var(--muted);
-  --quiet-user-bubble: #283b33;
   --quiet-divider-strong: var(--border);
   --quiet-divider-light: color-mix(in oklab, var(--border) 66%, transparent);
   --quiet-field: color-mix(in oklab, var(--foreground) 24%, transparent);
