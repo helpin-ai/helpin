@@ -217,7 +217,7 @@
   .hp3 .tl > div, .hp3 .sig > div { transition: none; }
   .hp3 .tl span.flip { animation: none; }
 }
-.hp3 .wire { position: relative; margin-top: 28px; }
+.hp3 .wire { position: relative; margin-top: 64px; }
 .hp3 .wire-svg { position: absolute; top: 0; height: 96px; color: var(--ink); pointer-events: none; overflow: visible; }
 .hp3 .wire-svg path { transition: stroke-dashoffset 1.9s cubic-bezier(.2,.7,.2,1); }
 .hp3 .wire-nodes { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; }
@@ -262,10 +262,9 @@
 @keyframes hp3-spin { to { transform: rotate(360deg); } }
 @keyframes hp3-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
 
-/* Hero order: wire first, then the headline block. */
-.hp3 .hero-inner-below { margin-top: 72px; }
-.hp3 section.hero { padding-block: 40px 72px; }
-@media (max-width: 960px) { .hp3 .hero-inner-below { margin-top: 48px; } }
+/* Hero order: headline block first, then the wire. */
+.hp3 section.hero { padding-block: 72px 72px; }
+@media (max-width: 960px) { .hp3 .wire { margin-top: 44px; } }
 
 /* Wire artifacts: one form per stage. */
 .hp3 .wart { display: grid; gap: 10px; align-content: start; font-size: 12.5px; min-height: 150px; }
