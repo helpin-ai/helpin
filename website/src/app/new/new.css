@@ -343,6 +343,7 @@
 /* Column guides: the five real column boundaries of the hero grid, behind the copy and the wire, fading out below. */
 .hp3 .hero-wrap { position: relative; }
 .hp3 .wgrid { position: absolute; left: 24px; right: 24px; top: -72px; bottom: -72px; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; pointer-events: none; -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 160px), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 160px), transparent 100%); }
+.hp3 .wgrid { opacity: .45; }
 .hp3 .wgrid i { display: block; border-left: 1px solid var(--border); }
 .hp3 .wgrid i:last-child { position: absolute; right: 0; top: 0; bottom: 0; border-left: 0; border-right: 1px solid var(--border); }
 .hp3 .hero-inner, .hp3 .wire { position: relative; z-index: 1; }
