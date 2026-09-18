@@ -1,6 +1,5 @@
 import { pmTriageService, type TriageView, type SupportTaskDraft } from '@/lib/services/pmTriageService';
 import { unwrapRequired } from '@/lib/queryUtils';
-import { SupportAIControl } from './SupportAIControl';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -953,7 +952,6 @@ export function MessageThread({
             {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
           </Button>
 
-          <SupportAIControl key={conversation.id} conversation={conversation} compact />
 
           <Button
             type="button"
@@ -1012,7 +1010,6 @@ export function MessageThread({
               Create Task
             </Button>
 
-            <SupportAIControl key={conversation.id} conversation={conversation} />
 
             {/* Resolve / Unresolve */}
             {conversation.status === 'resolved' ? (

@@ -48,7 +48,7 @@ describe('AI follow-up settings', () => {
     expect(close.value).toBe('1');
     expect(close.min).toBe('1');
     expect(close.max).toBe('720');
-    expect(container.querySelector('label[for="ai-follow-up-close"]')?.textContent).toBe('Close after final follow-up (hours)');
+    expect(container.querySelector('label[for="ai-follow-up-close"]')?.textContent).toBe('Close conversation');
     expect(container.querySelector<HTMLInputElement>('#ai-follow-up-second-delay')?.value).toBe('24');
     expect(container.textContent).toContain('closing shortly');
     expect(container.textContent).toContain('reply anytime');
