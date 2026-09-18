@@ -94,7 +94,7 @@ var runtimeToolRiskLevels = map[string]string{
 	"run_epic_delivery_pipeline": RiskLevelDestructive,
 }
 
-var sharedRuntimeTools = append(baseRuntimeTools, documentReadTools...)
+var sharedRuntimeTools = append(append(baseRuntimeTools, documentReadTools...), directGitTools...)
 
 var baseRuntimeTools = []RuntimeToolMetadata{
 	{CommandName: "support.finish_follow_up", Alias: "finish_support_follow_up", Category: "Support", Description: "Complete a scheduled inactivity assessment. Only callable from its assigned follow-up run. The server validates current ownership and message history before sending or handing off.", InputSchema: map[string]any{

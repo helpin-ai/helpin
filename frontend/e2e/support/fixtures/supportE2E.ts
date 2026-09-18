@@ -412,6 +412,9 @@ export async function installSupportAppMocks(page: Page, options: MockOptions = 
     if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}` && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
       return fulfillJSON(route, buildConversation(unreadCount))
     }
+    if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}/translation`) {
+      return fulfillJSON(route, { available: false, unavailable_reason: 'Translation is not configured.', languages: { en: 'English', de: 'German' }, preference: { reading_language: 'en', auto_translate_incoming: true, auto_translate_outgoing: true }, conversation: { customer_language: '', translation_mode: 'inherit' } })
+    }
     if (method === 'GET' && path === `/api/support/inbox/conversations/${CONVERSATION_ID}/messages` && url.searchParams.get('workspace_id') === WORKSPACE_ID) {
       return fulfillJSON(route, SUPPORT_MESSAGES)
     }

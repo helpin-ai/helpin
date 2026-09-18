@@ -9,6 +9,11 @@ function visibleSectionIDs(canManageSettings: boolean) {
 }
 
 describe('getSettingsSidebarGroups', () => {
+  it('shows global translation settings to support administrators', () => {
+    const ids = (permissions: string[]) => getSettingsSidebarGroups(true, new Set(permissions), ['support']).flatMap(group => group.sections.map(section => section.id));
+    expect(ids(['support.admin'])).toContain('support-translation');
+    expect(ids(['support.edit', 'settings.read'])).not.toContain('support-translation');
+  });
   it('omits disabled modules from the Community settings home and search source', () => {
     const groups = getSettingsSidebarGroups(true, new Set(['settings.read', 'workspace.read']), ['support', 'docs', 'agents']);
     const ids = groups.flatMap(group => group.sections.map(section => section.id));

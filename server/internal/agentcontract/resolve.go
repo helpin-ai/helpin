@@ -78,7 +78,7 @@ func ResolveAgentProfile(agent *model.Agent, invocationMode ...string) ResolvedP
 	resolved.RequiresRepo = hasRepoTools(resolved.Tools)
 	for _, name := range resolved.Tools {
 		switch CanonicalToolName(name) {
-		case "run_command", "write_file", "edit_file", "apply_patch", "create_branch", "commit_and_push", "start_preview":
+		case "run_python", "run_command", "write_file", "edit_file", "apply_patch", "create_branch", "commit_and_push", "start_preview":
 			resolved.Queue = "agent-native-coding"
 		}
 	}

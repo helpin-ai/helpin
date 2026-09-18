@@ -1,6 +1,5 @@
 import { pmTriageService, type TriageView, type SupportTaskDraft } from '@/lib/services/pmTriageService';
 import { unwrapRequired } from '@/lib/queryUtils';
-import { SupportAIControl } from './SupportAIControl';
 import { getReplyDeliveryMode, getReplyEmailSubject } from './replyDelivery';
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -37,7 +36,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { isAgentRunLifecycleEvent } from '@/lib/agentRunRealtime';
 import { getDayLabel, getEffectiveSenderType, getSupportReceiptStatus, isSameDay, getInitial, isAIActiveConversation, type SupportReceiptStatus } from './helpers';
-import { MessageBubble } from './MessageBubble';
+import { TranslatedMessageBubble } from './TranslatedMessageBubble';
 import { useJoinedMessagePosition } from './useJoinedMessagePosition';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
@@ -953,7 +952,6 @@ export function MessageThread({
             {createTaskFromConversation.isPending || analyzingTask ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <ClipboardIcon className="h-4 w-4" />}
           </Button>
 
-          <SupportAIControl key={conversation.id} conversation={conversation} compact />
 
           <Button
             type="button"
@@ -1012,7 +1010,6 @@ export function MessageThread({
               Create Task
             </Button>
 
-            <SupportAIControl key={conversation.id} conversation={conversation} />
 
             {/* Resolve / Unresolve */}
             {conversation.status === 'resolved' ? (
@@ -1205,7 +1202,8 @@ export function MessageThread({
                 data-support-message-id={item.message.id}
                 data-support-message-key={supportMessageRenderKey(item.message)}
               >
-                <MessageBubble
+                <TranslatedMessageBubble
+                  workspaceId={workspaceId}
                   message={item.message}
                   isConsecutive={item.isConsecutive}
                   isLastInGroup={item.isLastInGroup}

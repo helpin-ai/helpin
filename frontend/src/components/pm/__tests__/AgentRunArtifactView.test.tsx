@@ -56,3 +56,16 @@ describe('AgentRunArtifactView browser recordings', () => {
     expect(video?.preload).toBe('metadata');
   });
 });
+
+describe('private analysis outputs', () => {
+  it.each(['png', 'csv', 'json', 'txt'])('retrieves %s through the authenticated artifact endpoint', async (format) => {
+    const contentURL = vi.spyOn(automationService, 'getArtifactContentURL').mockResolvedValue({
+      data: { url: `https://signed.example/result.${format}`, expires_at: '2026-09-17T13:00:00Z' }, error: null,
+    });
+    await act(async () => root.render(<AgentRunArtifactView artifact={{ ...browserRecordingArtifact(), artifact_type: 'analysis_output', format }} />));
+    expect(contentURL).toHaveBeenCalledWith('ws-1', 'recording-1');
+    expect(container.querySelector('a[download]')?.getAttribute('href')).toBe(`https://signed.example/result.${format}`);
+    expect(Boolean(container.querySelector('img'))).toBe(format === 'png');
+    expect(container.querySelector('video')).toBeNull();
+  });
+});

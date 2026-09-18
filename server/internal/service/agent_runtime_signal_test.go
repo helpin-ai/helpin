@@ -41,6 +41,7 @@ type fakeAgentRuntimeSignalClient struct {
 	upsertErr            error
 	startRunErr          error
 	startRunErrs         []error
+	startRunHook         func(AgentRuntimeStartRunRequest)
 	resumeErr            error
 	cancelErr            error
 	startAuthErr         error
@@ -74,6 +75,9 @@ func (c *fakeAgentRuntimeSignalClient) UpsertAgent(_ context.Context, agent Agen
 
 func (c *fakeAgentRuntimeSignalClient) StartRun(_ context.Context, req AgentRuntimeStartRunRequest) (*AgentRuntimeRun, error) {
 	c.startRunCalls = append(c.startRunCalls, req)
+	if c.startRunHook != nil {
+		c.startRunHook(req)
+	}
 	if len(c.startRunErrs) > 0 {
 		err := c.startRunErrs[0]
 		c.startRunErrs = c.startRunErrs[1:]
@@ -242,6 +246,7 @@ func TestResumeRunForAgentRuntimeRunSignalsRuntimeAndKeepsLocalSideEffects(t *te
 func TestResumeDockAskRunSendsExplicitCompletionPolicy(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 	mustExec(t, db, `CREATE TABLE dock_chats (
+execution_enabled boolean NOT NULL DEFAULT false,
 		id text PRIMARY KEY,
 		workspace_id text NOT NULL,
 		next_message_sequence integer NOT NULL DEFAULT 0,

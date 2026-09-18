@@ -34,6 +34,7 @@ interface QuestionAnswerState {
 }
 
 const APPROVAL_PREVIEW_COLLAPSED_LENGTH = 480;
+const TOOL_APPROVAL_PREVIEW_LENGTH = 8_000;
 const approveButtonClassName = 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500';
 
 export function CodingInteractionCard(props: Props) {
@@ -440,7 +441,8 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
     // Only when there is no richer document/preview already representing the
     // request (task-plan/doc approvals carry a preview panel and intentionally
     // suppress the raw summary in favour of the rendered preview).
-    const approvalContext = (interaction.summary ?? approval?.summary)?.trim() || undefined;
+    const approvalContext = approvalToolInputPreview(requestPayload)
+      ?? cleanApprovalSummary(interaction.summary ?? approval?.summary);
     const showApprovalContext = Boolean(approvalContext) && !approval?.preview_panel_key && !attachedPreview;
     const buildApprovalResponse = (
       decision: CodingSessionApprovalResponsePayload['decision'],
@@ -476,7 +478,7 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               What the agent wants to do
             </div>
-            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground">
               {approvalContext}
             </pre>
           </div>
@@ -880,6 +882,61 @@ function approvalPreviewContent(preview?: PublishedPreview | null): string | nul
 
 function normalizePromptText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function cleanApprovalSummary(summary: string | undefined) {
+  const value = summary?.trim();
+  if (!value) return undefined;
+  return value.replace(/\s+TypeSafe review:.*?Scores do not authorize external effects\.\s*$/s, '').trim() || undefined;
+}
+
+function approvalToolInputPreview(payload: Record<string, unknown>): string | undefined {
+  const toolName = typeof payload.tool_name === 'string' ? payload.tool_name.trim() : '';
+  const rawInput = payload.input;
+  if (!toolName || !rawInput || typeof rawInput !== 'object' || Array.isArray(rawInput)) return undefined;
+  const input = rawInput as Record<string, unknown>;
+
+  if (toolName === 'run_python' && typeof input.source === 'string') {
+    const source = input.source.trim();
+    if (!source) return 'Run Python with an empty script.';
+    return boundedToolApprovalPreview(`Python script:\n${source}`);
+  }
+  if (toolName === 'run_command') {
+    const program = typeof input.program === 'string' ? input.program.trim() : '';
+    const args = Array.isArray(input.args)
+      ? input.args.filter((value): value is string => typeof value === 'string')
+      : [];
+    const command = [program, ...args].filter(Boolean).join(' ')
+      || (typeof input.command === 'string' ? input.command.trim() : '');
+    const cwd = typeof input.working_directory === 'string' ? input.working_directory.trim() : '';
+    if (command) return `Command: ${command}${cwd ? `\nWorking directory: ${cwd}` : ''}`;
+  }
+  if (toolName === 'commit_and_push') {
+    const message = typeof input.message === 'string' ? input.message.trim() : '';
+    return `Commit all workspace changes and push the current branch.${message ? `\nCommit message: ${message}` : ''}`;
+  }
+  if (toolName === 'open_pr') {
+    const title = typeof input.title === 'string' ? input.title.trim() : '';
+    return `Open a pull request.${title ? `\nTitle: ${title}` : ''}`;
+  }
+  if (toolName === 'publish_outputs' && Array.isArray(input.paths)) {
+    const paths = input.paths.filter((value): value is string => typeof value === 'string');
+    if (paths.length > 0) return `Publish private downloadable files:\n${paths.map((path) => `• ${path}`).join('\n')}`;
+  }
+  if ((toolName === 'write_file' || toolName === 'edit_file') && typeof input.path === 'string') {
+    return `${toolName === 'write_file' ? 'Write' : 'Edit'} file: ${input.path}`;
+  }
+
+  try {
+    return boundedToolApprovalPreview(`${toolName}:\n${JSON.stringify(input, null, 2)}`);
+  } catch {
+    return undefined;
+  }
+}
+
+function boundedToolApprovalPreview(value: string): string {
+  if (value.length <= TOOL_APPROVAL_PREVIEW_LENGTH) return value;
+  return `${value.slice(0, TOOL_APPROVAL_PREVIEW_LENGTH)}\n… preview truncated; the full input remains attached to this approval.`;
 }
 
 function dedupePromptSummary(summary: string | undefined, prompts: string[]) {

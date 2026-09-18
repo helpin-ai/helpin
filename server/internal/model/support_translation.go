@@ -1,0 +1,76 @@
+package model
+
+import "time"
+
+// SupportTranslation is a private snapshot, never a public widget message.
+// Source hashes identify exact text revisions without changing canonical messages.
+type SupportTranslation struct {
+	ID              string     `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID     string     `json:"-" gorm:"type:uuid;not null"`
+	ConversationID  string     `json:"conversation_id" gorm:"type:uuid;not null"`
+	Purpose         string     `json:"purpose"`
+	SourceMessageID *string    `json:"source_message_id,omitempty" gorm:"type:uuid"`
+	CreatedByUserID *string    `json:"-" gorm:"type:uuid"`
+	SentMessageID   *string    `json:"sent_message_id,omitempty" gorm:"type:uuid"`
+	SourceText      string     `json:"source_text"`
+	SourceHash      string     `json:"source_hash"`
+	SourceLanguage  string     `json:"source_language"`
+	TargetLanguage  string     `json:"target_language"`
+	TranslatedText  string     `json:"translated_text"`
+	SendKey         string     `json:"-"`
+	CacheKey        string     `json:"-"`
+	Provider        string     `json:"provider,omitempty"`
+	Model           string     `json:"model,omitempty"`
+	PipelineVersion string     `json:"-"`
+	Attempts        int        `json:"-"`
+	Status          string     `json:"status"`
+	ReviewStatus    string     `json:"review_status"`
+	JevAssessmentID *string    `json:"-" gorm:"type:uuid"`
+	SentByUserID    *string    `json:"-" gorm:"type:uuid"`
+	SentAt          *time.Time `json:"-"`
+	ErrorCode       string     `json:"error_code,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+}
+
+func (SupportTranslation) TableName() string { return "support_translations" }
+
+type SupportTranslationPreference struct {
+	WorkspaceID           string    `json:"-" gorm:"primaryKey;type:uuid"`
+	UserID                string    `json:"-" gorm:"primaryKey;type:uuid"`
+	ReadingLanguage       string    `json:"reading_language"`
+	AutoTranslateOutgoing bool      `json:"auto_translate_outgoing"`
+	AutoTranslateIncoming bool      `json:"auto_translate_incoming"`
+	UpdatedAt             time.Time `json:"-"`
+}
+
+func (SupportTranslationPreference) TableName() string { return "support_translation_preferences" }
+
+type SupportTranslationConversation struct {
+	WorkspaceID      string    `json:"-" gorm:"primaryKey;type:uuid"`
+	ConversationID   string    `json:"-" gorm:"primaryKey;type:uuid"`
+	CustomerLanguage string    `json:"customer_language"`
+	TranslationMode  string    `json:"translation_mode"`
+	UpdatedAt        time.Time `json:"-"`
+}
+
+func (SupportTranslationConversation) TableName() string { return "support_translation_conversations" }
+
+type SupportTranslationOptions struct {
+	DetectedCustomerLanguage string                         `json:"detected_customer_language,omitempty"`
+	Available                bool                           `json:"available"`
+	UnavailableReason        string                         `json:"unavailable_reason,omitempty"`
+	JevReview                bool                           `json:"jev_review"`
+	Languages                map[string]string              `json:"languages"`
+	Preference               SupportTranslationPreference   `json:"preference"`
+	Conversation             SupportTranslationConversation `json:"conversation"`
+}
+
+type SupportTranslateRequest struct {
+	DetectLanguageOnly bool   `json:"-"`
+	MessageID          string `json:"message_id,omitempty"`
+	Content            string `json:"content,omitempty"`
+	DraftID            string `json:"draft_id,omitempty"`
+	TargetLanguage     string `json:"target_language"`
+}

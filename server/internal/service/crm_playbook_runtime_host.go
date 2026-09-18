@@ -128,7 +128,7 @@ func (s *AgentRuntimeHostService) resolveCRMPlaybookCallback(ctx context.Context
 }
 
 func (s *AgentRuntimeHostService) resolveCRMPlaybookSkill(ctx context.Context, req AgentRuntimeSkillLookupRequest) (*AgentRuntimeWorkspaceSkill, bool, error) {
-	scope, err := s.resolveCRMPlaybookCallback(ctx, req.RunID, req.AgentID, req.Target, req.Metadata, req.Target.Metadata)
+	scope, err := s.resolveCRMPlaybookCallback(ctx, req.RunID, runtimeAgentBaseID(req.AgentID), req.Target, req.Metadata, req.Target.Metadata)
 	if err != nil || scope == nil {
 		return nil, err != nil, err
 	}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canClearDockContext, composerPlaceholderForContext, composerTextareaHeight, contextChipMaxWidth, sendControlClassName, usesSeparateComposerActionRow } from '../DockInput';
+import { canClearDockContext, composerPlaceholderForContext, composerTextareaHeight, sendControlClassName, usesSeparateComposerActionRow } from '../DockInput';
 
 describe('composerTextareaHeight', () => {
   it('keeps an empty composer to one line even when its placeholder measures taller', () => {
@@ -28,16 +28,6 @@ describe('canClearDockContext', () => {
 
   it('does not show a remove control when no clear action was provided', () => {
     expect(canClearDockContext('support_conversation', false)).toBe(false);
-  });
-});
-
-describe('contextChipMaxWidth', () => {
-  it('reserves room for Add context beside the active context', () => {
-    expect(contextChipMaxWidth(true)).toBe('calc(100% - 116px)');
-  });
-
-  it('uses the normal chip width when no additional context can be added', () => {
-    expect(contextChipMaxWidth(false)).toBeUndefined();
   });
 });
 

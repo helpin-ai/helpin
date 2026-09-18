@@ -5,6 +5,10 @@ umask 077
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 command -v docker >/dev/null || fail 'Install Docker Engine and the Docker Compose plugin first.'
 docker compose version >/dev/null || fail 'Docker Compose v2 is required.'
+# Inline config is inherited only by the agent-runtime worker. Never mount it where commands can read it.
+if [[ -f apps.json ]]; then
+  export AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat apps.json)"
+fi
 case "${1:-}" in
   install)
     command -v openssl >/dev/null || fail 'Install openssl to generate secrets.'

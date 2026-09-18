@@ -45,11 +45,12 @@ export const dockChatService = {
     const query = new URLSearchParams({ workspace_id: workspaceId, conversation_id: conversationId });
     return api.get<DockChat | null>(`/dock/chats/support-conversation?${query.toString()}`);
   },
-  createChat: (workspaceId: string, title = '', supportConversationId?: string, moduleId?: DockChatModule | null) =>
+  createChat: (workspaceId: string, title = '', supportConversationId?: string, moduleId?: DockChatModule | null, executionEnabled = false) =>
     api.post<DockChat>(`/dock/chats${qs(workspaceId)}`, {
       title,
       ...(supportConversationId ? { support_conversation_id: supportConversationId } : {}),
       ...(moduleId ? { module_id: moduleId, visibility: 'module' } : {}),
+      ...(executionEnabled ? { execution_enabled: true } : {}),
     }),
   getChat: (workspaceId: string, chatId: string, signal?: AbortSignal) =>
     api.get<DockChatDetail>(`/dock/chats/${encodeURIComponent(chatId)}${qs(workspaceId)}`, { signal }),

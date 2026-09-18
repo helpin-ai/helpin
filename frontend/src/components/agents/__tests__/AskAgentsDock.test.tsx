@@ -182,7 +182,7 @@ beforeEach(() => {
   root = createRoot(container);
   localStorage.clear();
   localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'chats', chatId: 'chat-1' }));
-  useDockStore.setState({ collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], transcripts: {}, drafts: {}, lastAttentionIds: [] });
+  useDockStore.setState({ transcriptView: 'timeline', collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], transcripts: {}, drafts: {}, lastAttentionIds: [] });
   useWorkspaceStore.setState({
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
@@ -344,9 +344,22 @@ describe('AskAgentsDock', () => {
     expect(document.body.textContent).toContain('Investigate the workspace');
     expect(document.body.textContent).not.toContain('Ask a question about your workspace, or describe work for an agent to do.');
 
+    const composerBeforeAcceptance = dockTextarea();
+    const scrollBeforeAcceptance = document.querySelector('[data-agent-dock-chat-scroll]');
+    expect(document.body.textContent).not.toContain('Loading chat…');
+    mocks.listChats.mockResolvedValue({ data: { chats: [createdChat] }, error: null });
     await act(async () => {
       resolveSend?.({ data: chatDetail({ chat: createdChat }), error: null });
     });
+    expect(dockTextarea()).toBe(composerBeforeAcceptance);
+    expect(document.querySelector('[data-agent-dock-chat-scroll]')).toBe(scrollBeforeAcceptance);
+    expect(document.body.textContent).toContain('Investigate the workspace');
+    expect(document.body.textContent).not.toContain('Loading chat…');
+    await act(async () => window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
+      detail: { mode: 'compose', intent: 'new_chat' },
+    })));
+    expect(dockTextarea()).not.toBe(composerBeforeAcceptance);
+    expect(document.body.textContent).not.toContain('Investigate the workspace');
   });
 
   it('renders a cached transcript immediately and keeps it when refresh fails', async () => {
@@ -610,7 +623,7 @@ describe('AskAgentsDock', () => {
 		});
 		await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'support draft message was not sent');
 
-		expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support');
+		expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', 'conv-new', 'support', false);
 		expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-new', expect.objectContaining({
 			content: 'Investigate this request',
 			page_context: supportContext,
@@ -1325,7 +1338,8 @@ describe('AskAgentsDock', () => {
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50, expect.any(AbortSignal));
   });
 
-  it('keeps earlier assistant progress and the final reply outside working groups', async () => {
+  it('keeps earlier assistant progress and the final reply outside working groups in Detailed view', async () => {
+    useDockStore.setState({ transcriptView: 'detailed' });
     mocks.listMessages.mockResolvedValue({
       data: {
         messages: [
@@ -1520,7 +1534,7 @@ describe('AskAgentsDock', () => {
     expect(useDockStore.getState().tab).toBe('chats');
   });
 
-  it('opens a local new-chat composer without creating an abandoned chat', async () => {
+  it('selects execution before creating a local chat on its first message', async () => {
     await renderDock();
     await waitForText('Sprint questions');
 
@@ -1543,6 +1557,18 @@ describe('AskAgentsDock', () => {
     await waitForText('New chat');
     expect(mocks.createChat).not.toHaveBeenCalled();
     expect(useDockStore.getState().activeChatId).toBeNull();
+    const executionPicker = document.body.querySelector<HTMLButtonElement>('[aria-label="Code and Python tools disabled"]');
+    expect(executionPicker).not.toBeNull();
+    await act(async () => {
+      executionPicker?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    });
+    await flush();
+    const executionChoice = Array.from(document.body.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')).find(
+      (item) => item.textContent?.includes('Code & Python'),
+    );
+    expect(executionChoice).toBeTruthy();
+    await act(async () => executionChoice?.click());
+    expect(document.body.querySelector('[aria-label="Code and Python tools enabled"]')).not.toBeNull();
 
     const createdChat: DockChat = { ...CHAT, id: 'chat-2', title: '' };
     mocks.createChat.mockResolvedValue({ data: createdChat, error: null });
@@ -1553,7 +1579,7 @@ describe('AskAgentsDock', () => {
       textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
     await waitForCondition(() => mocks.sendMessage.mock.calls.length === 1, 'draft chat message was not sent');
-    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', undefined, null);
+    expect(mocks.createChat).toHaveBeenCalledWith('ws-1', '', undefined, null, true);
     expect(mocks.sendMessage).toHaveBeenCalledWith('ws-1', 'chat-2', expect.objectContaining({ content: 'Investigate the signup issue' }));
   });
 
@@ -1789,7 +1815,7 @@ describe('AskAgentsDock', () => {
     });
 
     expect(panel?.getAttribute('data-maximized')).toBeNull();
-    expect(panel?.className).toContain('w-[min(900px,92vw)]');
+    expect(panel?.className).toContain('w-[min(1120px,92vw)]');
     expect(document.body.querySelector('[aria-label="Maximize agent dock"]')).not.toBeNull();
   });
 

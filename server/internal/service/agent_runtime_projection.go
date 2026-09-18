@@ -615,6 +615,10 @@ func reconciliationEventForRuntimeRun(runtimeRun *AgentRuntimeRun, localRun mode
 	default:
 		return AgentRuntimeEventEnvelope{}, false
 	}
+	var summary map[string]json.RawMessage
+	if json.Unmarshal(runtimeRun.OutputSummary, &summary) == nil && len(summary["interrupted_external_effects"]) > 0 {
+		event.Data["interrupted_external_effects"] = summary["interrupted_external_effects"]
+	}
 	if usage, ok := usageFromRuntimeOutputSummary(runtimeRun.OutputSummary); ok {
 		event.Data["usage"] = map[string]any{
 			"total_tokens":            usage.TotalTokens,
@@ -695,6 +699,16 @@ func (s *AgentRuntimeProjectionService) ApplyEvent(ctx context.Context, event Ag
 	changed, err := seedTerminalUsageBaseline(run)
 	if err != nil {
 		return err
+	}
+	if isTerminalRuntimeEvent(event.Type) {
+		if effects, ok := event.Data["interrupted_external_effects"]; ok {
+			payload, err := json.Marshal(map[string]any{"interrupted_external_effects": effects})
+			if err != nil {
+				return err
+			}
+			run.OutputSummary = mergeRuntimeOutputSummaryPayload(run.OutputSummary, payload)
+			changed = true
+		}
 	}
 	runtimeName := agentRuntimeName
 	if run.ExternalRuntime == nil || strings.TrimSpace(*run.ExternalRuntime) != runtimeName {

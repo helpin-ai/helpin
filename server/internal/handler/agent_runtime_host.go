@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -54,6 +55,14 @@ func (h *AgentRuntimeHostHandler) UploadBrowserAsset(w http.ResponseWriter, r *h
 		return
 	}
 	contentType := http.DetectContentType(sniff[:n])
+	if r.FormValue("artifact_type") == "analysis_output" && strings.HasPrefix(contentType, "text/plain") {
+		switch strings.ToLower(filepath.Ext(header.Filename)) {
+		case ".csv":
+			contentType = "text/csv"
+		case ".json":
+			contentType = "application/json"
+		}
+	}
 	asset, err := h.host.UploadBrowserAsset(r.Context(), service.AgentRuntimeBrowserAssetUpload{
 		AppID: r.FormValue("app_id"), RuntimeRunID: r.FormValue("run_id"), ArtifactType: r.FormValue("artifact_type"), Metadata: json.RawMessage(r.FormValue("metadata")),
 		FileName: header.Filename, ContentType: contentType, Size: header.Size, Body: file,

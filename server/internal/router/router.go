@@ -998,6 +998,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/status", h.SupportInbox.UpdateConversationStatus)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/follow-up/cancel", h.SupportInbox.CancelConversationFollowUp)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages", h.SupportInbox.ListConversationMessages)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/translation", h.SupportInbox.TranslationOptions)
+				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/translation/messages", h.SupportInbox.TranslateMessage)
+
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/message-pages", h.SupportInbox.ListConversationMessagePage)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/messages/{id}/email", h.SupportInbox.GetMessageEmailDetail)
 				if h.EmailImageProxy != nil {

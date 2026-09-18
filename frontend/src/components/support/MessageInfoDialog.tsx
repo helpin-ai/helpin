@@ -80,7 +80,7 @@ export function buildMessageInfoRows(info: SupportMessageInfo) {
     rows.push(['Edited', info.edited]);
   }
   if (info.translated) {
-    rows.push(['Translated', info.translated]);
+    rows.push(['Translated', info.translation_language || info.translated]);
   }
   if (info.automated) {
     rows.push(['Automated', info.automated]);
@@ -127,6 +127,7 @@ export function MessageInfoDialog({ workspaceId, conversationId, messageId, open
         ) : (
           <div className="py-6 text-sm text-muted-foreground">Message details are unavailable.</div>
         )}
+        {info?.original_text && <div className="space-y-2 text-sm"><p className="text-muted-foreground">Original reply</p><p dir="auto" className="max-h-48 overflow-auto whitespace-pre-wrap break-words">{info.original_text}</p></div>}
       </DialogContent>
     </Dialog>
   );

@@ -22,6 +22,7 @@ import { useDockStore } from '@/stores/dockStore';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { dockChatModuleForContext, type DockChat, type DockChatVisibility, type DockRunSummary } from '@/lib/dockTypes';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
+import { DockTranscriptViewPicker } from './dock/DockTranscriptViewPicker';
 import { DockRoster } from './dock/DockRoster';
 import { ChatView } from './dock/ChatView';
 import { DockRunView } from './dock/DockRunView';
@@ -132,6 +133,7 @@ export function AskAgentsDock({
     rosterRunId: string | null;
   } | null>(null);
   const [draftChat, setDraftChat] = useState(false);
+  const [draftIdentity, setDraftIdentity] = useState({ generation: 0, chatId: null as string | null });
   const [supportChatError, setSupportChatError] = useState<{ associationKey: string; message: string } | null>(null);
   const [supportChatRetry, setSupportChatRetry] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -178,7 +180,9 @@ export function AskAgentsDock({
     return available.filter(chat => chat.id === activeChatId || chat.title.trim() !== '' || chat.last_message_at != null);
   }, [activeChatId, chats, sharedChatLink.chat]);
   const activeChat = sharedChatLink.pending || sharedChatLink.error ? null : visibleChats.find((chat) => chat.id === activeChatId) ?? null;
-  const chatViewKey = draftChat
+  const chatViewKey = !embedded && (draftChat || (!!activeChat && activeChat.id === draftIdentity.chatId))
+    ? `global:draft:${draftIdentity.generation}`
+    : draftChat
     ? embedded
       ? `support:${associatedSupportConversationId ?? 'unknown'}:draft`
       : 'global:draft'
@@ -384,6 +388,7 @@ export function AskAgentsDock({
   const newChat = useCallback(() => {
     if (embedded) return;
     clearDraft('global:draft');
+    setDraftIdentity(current => ({ generation: current.generation + 1, chatId: null }));
     setDraftChat(true);
     setActiveChatId(null);
     setTab('chats');
@@ -391,17 +396,18 @@ export function AskAgentsDock({
     setCollapsed(false);
   }, [clearDraft, embedded, setActiveChatId, setCollapsed, setTab]);
 
-  const createDraftChat = useCallback(async () => {
+  const createDraftChat = useCallback(async (options?: { executionEnabled?: boolean }) => {
     if (!workspaceId) return null;
     const supportConversationId = embedded ? associatedSupportConversationId : undefined;
     const moduleId = embedded ? 'support' : creationModule;
-    const result = await dockChatService.createChat(workspaceId, '', supportConversationId, moduleId);
+    const result = await dockChatService.createChat(workspaceId, '', supportConversationId, moduleId, options?.executionEnabled);
     if (result.error || !result.data) {
       toast.error(result.error ?? 'Failed to create chat');
       return null;
     }
     invalidateChats();
     upsertChat(result.data);
+    setDraftIdentity(current => ({ ...current, chatId: result.data!.id }));
     setActiveChatId(result.data.id);
     setTab('chats');
     return result.data;
@@ -635,7 +641,7 @@ export function AskAgentsDock({
               'agent-dock-panel pointer-events-auto flex origin-bottom overflow-hidden bg-[#fffefa] will-change-[width,height] motion-safe:transition-[width,height,min-height,border-radius,box-shadow] motion-safe:duration-300 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:bg-[#242320]',
               maximized
                 ? 'h-full w-full min-h-0'
-                : 'h-[min(600px,calc(100dvh-104px))] w-[min(900px,92vw)] min-h-[360px] rounded-[18px] border border-[#e6e3dd] shadow-[0_30px_70px_-26px_rgba(28,27,25,.5)] dark:border-[#37352f]',
+                : 'h-[min(800px,calc(100dvh-104px))] w-[min(1120px,92vw)] min-h-0 rounded-[18px] border border-[#e6e3dd] shadow-[0_30px_70px_-26px_rgba(28,27,25,.5)] dark:border-[#37352f]',
             )}
           >
             <DockRoster
@@ -871,6 +877,7 @@ function DockPaneHeader({
           {presentation.label}
         </span>
       ) : null}
+      <DockTranscriptViewPicker />
       <div data-dock-actions className="flex items-center gap-0.5">
       {fullPath ? (
         <a href={fullPath} aria-label="Open full agent session" title="Open full session" className="grid h-8 w-8 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">

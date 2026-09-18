@@ -19,6 +19,7 @@ const (
 // backed the chat carry AgentRun.DockChatID, so the full history is a real FK
 // chain rather than a heuristic match.
 type DockChat struct {
+	ExecutionEnabled      bool               `json:"execution_enabled" gorm:"not null;default:false"`
 	ID                    string             `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID           string             `json:"workspace_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:1;uniqueIndex:idx_dock_chats_support_conversation,priority:1,where:archived_at IS NULL"`
 	UserID                string             `json:"user_id" gorm:"type:uuid;not null;index:idx_dock_chats_ws_user,priority:2;uniqueIndex:idx_dock_chats_support_conversation,priority:2,where:archived_at IS NULL"`
@@ -46,13 +47,15 @@ type CreateDockChatRequest struct {
 	SupportConversationID *string             `json:"support_conversation_id,omitempty"`
 	Visibility            *DockChatVisibility `json:"visibility,omitempty"`
 	ModuleID              *ModuleID           `json:"module_id,omitempty"`
+	ExecutionEnabled      bool                `json:"execution_enabled,omitempty"`
 }
 
 // UpdateDockChatRequest is the payload for renaming or archiving a dock chat.
 type UpdateDockChatRequest struct {
-	Title      *string             `json:"title,omitempty"`
-	Archived   *bool               `json:"archived,omitempty"`
-	Visibility *DockChatVisibility `json:"visibility,omitempty"`
+	ExecutionEnabled *bool               `json:"execution_enabled,omitempty"`
+	Title            *string             `json:"title,omitempty"`
+	Archived         *bool               `json:"archived,omitempty"`
+	Visibility       *DockChatVisibility `json:"visibility,omitempty"`
 }
 
 // SendDockChatMessageRequest is the payload for a user chat turn.
@@ -86,6 +89,7 @@ type DockChatDetail struct {
 	Chat            DockChat                `json:"chat"`
 	Run             *AgentRun               `json:"run,omitempty"`
 	AcceptedMessage *AgentRunMessage        `json:"accepted_message,omitempty"`
+	Artifacts       []AgentRunArtifact      `json:"artifacts,omitempty"`
 	PlanIDs         []string                `json:"plan_ids"`
 	Plans           []CommandBarPlanSummary `json:"plans,omitempty"`
 }

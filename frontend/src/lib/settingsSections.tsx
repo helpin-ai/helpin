@@ -103,6 +103,7 @@ export type SettingsSection =
   | 'crm-meetings'
   | 'crm-autonomy'
   | 'support-ai-assistant'
+  | 'support-translation'
   | 'chat-general'
   | 'inboxes-routing';
 
@@ -334,6 +335,15 @@ const allSettingsSections: SettingsSectionMeta[] = [
     description: 'Configure how support AI replies, drafts internal notes, and hands conversations to humans.',
     icon: Automations,
     group: 'Support',
+  },
+  {
+    id: 'support-translation',
+    label: 'Translation',
+    description: 'Manage automatic translation for all support conversations in this workspace.',
+    keywords: ['auto translate', 'live translation', 'languages'],
+    icon: ExternalMCP,
+    group: 'Support',
+    requiredPermission: 'support.admin',
   },
   {
     id: 'helpcenter',

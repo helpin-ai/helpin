@@ -13,6 +13,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/aiusage"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/observability"
 )
 
 // AICompleter is the mandatory product boundary for direct LLM completions.
@@ -37,11 +38,17 @@ type AICompletionRequest struct {
 
 // AICompletionService routes, meters, executes, and reconciles direct completions.
 type AICompletionService struct {
+	metrics  *observability.Metrics
 	provider llm.Provider
 	usage    AIUsageLifecycle
 	routes   AICompletionRouteRegistry
 	policy   *aipolicy.Registry
 	audit    aipolicy.ExecutionAudit
+}
+
+func (s *AICompletionService) SetMetrics(metrics *observability.Metrics) *AICompletionService {
+	s.metrics = metrics
+	return s
 }
 
 // SetGovernance enables app-wide action policy and execution auditing.
@@ -220,7 +227,21 @@ func (s *AICompletionService) completeAttempt(
 		return nil, retry, err
 	}
 
+	attemptStart := time.Now()
 	response, providerErr := s.provider.ChatCompletion(ctx, chat)
+	attemptDuration := time.Since(attemptStart)
+	attemptOutcome := "provider_error"
+	var measured *aiusage.TokenTelemetry
+	defer func() {
+		if input.FeatureKey == BillingFeatureSupportTranslation {
+			s.metrics.TranslationAttempt("translation", route.Provider, route.Model, attemptOutcome, attemptDuration, measured, preflight.Route.Rates)
+		}
+	}()
+	if response != nil && measurementStatus(response.TokensUsed) == "actual" {
+		u := response.TokensUsed
+		measured = &aiusage.TokenTelemetry{InputTokensTotal: int64(u.InputTokensTotal), CacheReadTokens: int64(u.CacheReadTokens), CacheWriteTokens: int64(u.CacheWriteTokens), CompletionTokensTotal: int64(u.CompletionTokensTotal), OutputTokens: int64(u.OutputTokens), ReasoningTokens: int64(u.ReasoningTokens), CompletionIncludesReasoning: u.CompletionIncludesReasoning}
+	}
+
 	// Finish metering and the audit even when an interactive request times out
 	// or its caller disconnects. Cleanup itself must remain bounded.
 	settlementCtx, cancelSettlement := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -259,6 +280,7 @@ func (s *AICompletionService) completeAttempt(
 			"workspace_id", input.WorkspaceID, "feature_key", input.FeatureKey, "error", reconcileErr)
 	}
 
+	attemptOutcome = "invalid_output"
 	if input.RequireComplete && isIncompleteFinishReason(response.FinishReason) {
 		completionErr := fmt.Errorf("model output was incomplete (finish_reason=%s)", response.FinishReason)
 		s.finishCompletionAudit(settlementCtx, auditExecution, response, "llm_contract", completionErr)
@@ -269,6 +291,10 @@ func (s *AICompletionService) completeAttempt(
 			s.finishCompletionAudit(settlementCtx, auditExecution, response, "llm_contract", err)
 			return nil, input.RetryInvalidOutput, err
 		}
+	}
+	attemptOutcome = "success"
+	if reconcileErr != nil {
+		attemptOutcome = "accounting_error"
 	}
 	s.finishCompletionAudit(settlementCtx, auditExecution, response, "", nil)
 	return response, false, nil

@@ -110,6 +110,13 @@ func (r *SupportMessageRepository) ListConversationPageBefore(
 // a missing value would silently render via the legacy fallback path.
 // Enforcing here means new emitters can't forget the event type.
 func (r *SupportMessageRepository) Create(ctx context.Context, message *model.SupportMessage) error {
+	if message != nil && message.TranslationID != "" {
+		return r.createTranslatedMessage(ctx, message)
+	}
+	return r.create(ctx, message)
+}
+
+func (r *SupportMessageRepository) create(ctx context.Context, message *model.SupportMessage) error {
 	if message != nil && message.MessageType == "system" {
 		if message.SystemEventType == nil || !model.IsValidSupportSystemEventType(*message.SystemEventType) {
 			return fmt.Errorf("create message: system message requires a valid system_event_type")

@@ -658,6 +658,8 @@ export interface SupportMessageActionResponse {
 }
 
 export interface SupportMessageInfo {
+  original_text?: string;
+  translation_language?: string;
   id: string;
   sent_at: string;
   sender: {
@@ -1018,6 +1020,8 @@ export interface CreateConversationRequest {
 export type SupportReplyDeliveryMode = 'chat_only' | 'chat_and_email' | 'email_only';
 
 export interface CreateMessageRequest {
+ auto_translate?: boolean;
+ translation_target_language?: string;
   content: string;
   client_message_id?: string;
   is_internal?: boolean;
@@ -1130,6 +1134,11 @@ export interface BusinessHoursDay {
 }
 
 export interface SupportInboxSettings {
+ translation_enabled?: boolean;
+ translation_incoming_enabled?: boolean;
+ translation_outgoing_enabled?: boolean;
+ translation_customer_language?: string;
+ default_agent_language?: string;
   require_email_before_chat: boolean;
   require_phone_after_email: boolean;
   welcome_message: string;
@@ -1219,4 +1228,40 @@ export interface SupportInstallationResponse extends WidgetOriginSettings {
   active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportTranslationPreference {
+ reading_language: string;
+ auto_translate_incoming: boolean;
+ auto_translate_outgoing: boolean;
+}
+export interface SupportTranslationConversation {
+ customer_language: string;
+ translation_mode: 'inherit' | 'on' | 'off';
+}
+export interface SupportTranslationOptions {
+ available: boolean;
+ unavailable_reason?: string;
+ jev_review: boolean;
+ languages: Record<string, string>;
+ detected_customer_language?: string;
+ preference: SupportTranslationPreference;
+ conversation: SupportTranslationConversation;
+}
+export interface SupportTranslation {
+ id: string;
+ conversation_id: string;
+ purpose: 'message_display' | 'outgoing_reply';
+ source_message_id?: string;
+ sent_message_id?: string;
+ source_text: string;
+ source_hash: string;
+ source_language: string;
+ target_language: string;
+ translated_text: string;
+ status: 'pending' | 'ready' | 'failed' | 'expired';
+ review_status: 'not_requested' | 'pending' | 'accepted' | 'needs_review' | 'unavailable' | 'shadow_accepted' | 'shadow_rejected';
+ error_code?: string;
+ created_at: string;
+ expires_at?: string;
 }

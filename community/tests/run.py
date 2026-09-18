@@ -93,6 +93,7 @@ def run(mode):
 
         try:
             command(['./setup.sh', 'install'])
+            env['AGENT_RUNTIME_EXECUTION_APP_CONFIG'] = (community / 'apps.json').read_text()
             command(compose + ['config', '--quiet'])
             command(compose + ['up', '-d', '--wait', '--wait-timeout', '300'])
             command(['node', 'tests/http-smoke.mjs'])
@@ -100,6 +101,7 @@ def run(mode):
                 command(['bash', 'tests/verification-mail.sh'])
                 command(['pnpm', '--dir', str(SOURCE.parent / 'packages/sdk-js'), 'exec', 'playwright',
                          'test', '--config=playwright.community.config.ts'])
+                env['AGENT_RUNTIME_EXECUTION_APP_CONFIG'] = (community / 'tests/apps.fixture.json').read_text()
                 command(fixture + ['up', '-d', '--wait', '--wait-timeout', '300'])
                 command(['node', 'tests/ai-mail-smoke.mjs'])
                 command(compose + ['up', '-d', '--wait', '--wait-timeout', '300', '--remove-orphans'])
