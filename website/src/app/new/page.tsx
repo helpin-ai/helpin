@@ -7,6 +7,9 @@ import { LoopSection } from './_components/LoopSection';
 import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { Chip, CtaRow, GithubIcon, SectionHead, SIGNUP_URL, GITHUB_URL } from './_components/ui';
 
+// Which timeline entry each record item lights up on hover or focus.
+const RECORD_KINDS = ['support', 'meeting', 'deal', 'task', 'reply', 'reply'];
+
 const RECORD_FACTS = [
   ['Conversations', 'Chat and email, with assignments, notes, tags, and replies.'],
   ['Meetings', 'Recordings, transcripts, summaries, decisions, objections, and next steps.'],
@@ -86,12 +89,12 @@ export default function NewHomePage() {
               <h2>Support, product, and sales read the same story.</h2>
               <p>A customer talks to support on Tuesday, comes up in a roadmap meeting on Wednesday, and renews on Friday.</p>
               <p>Most tools keep three versions of that story.</p>
-              <p className="rs-strong">Helpin keeps one. Everything attaches to the same customer record.</p>
+              <p className="rs-strong"><span className="rs-keep">Helpin keeps one.</span> Everything attaches to the same customer record.</p>
             </div>
             <RecordStory />
           </div>
           <div className="rs-items">
-            {RECORD_FACTS.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
+            {RECORD_FACTS.map(([k, v], i) => <div key={k} data-kind={RECORD_KINDS[i]} tabIndex={0}><h3>{k}</h3><p>{v}</p></div>)}
           </div>
         </div>
       </section>

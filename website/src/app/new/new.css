@@ -388,3 +388,64 @@
 .hp3 section.dark ::selection { background: rgba(63,191,131,.35); color: #fff; }
 @media (max-width: 960px) { .hp3 .rs-grid { grid-template-columns: 1fr; gap: 36px; } .hp3 .rs-items { grid-template-columns: 1fr; gap: 0; } .hp3 section.dark { padding-block: 64px; } .hp3 .rs-copy h2 { max-width: none; } }
 @media (prefers-reduced-motion: reduce) { .hp3 .rs-tl li { transition: none; } }
+
+/* Section two, bolder: three versions become one. */
+.hp3 .rs-eyebrow { font-family: var(--mono); font-weight: 500; letter-spacing: .1em; font-size: 12px; }
+.hp3 .rs-copy h2 { font-size: clamp(2.1rem, 3.6vw, 3rem); letter-spacing: -.03em; max-width: 16ch; }
+.hp3 .rs-keep { color: var(--d-fg); transition: color .5s cubic-bezier(.16,1,.3,1); }
+.hp3 section.dark:has(.rs-stage.play) .rs-keep { color: var(--d-accent); }
+.hp3 .rs-stage { position: relative; padding: 44px 0 0 44px; }
+.hp3 .rs-panel { position: relative; z-index: 1; transition: transform .8s cubic-bezier(.16,1,.3,1); }
+.hp3 .rs-head { grid-template-columns: 40px 1fr auto; }
+.hp3 .rs-live { align-self: center; font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--d-muted); border: 1px solid var(--d-line-2); border-radius: 999px; padding: 4px 10px; opacity: 0; transition: opacity .5s ease, color .5s ease, border-color .5s ease; }
+.hp3 .rs-stage.play .rs-live { opacity: 1; color: var(--d-accent); border-color: rgba(63,191,131,.5); }
+/* Fragments: the same customer in three tools. */
+.hp3 .rs-frag { position: absolute; z-index: 2; width: 250px; border: 1px solid var(--d-line-2); background: #0D0D0D; border-radius: 10px; padding: 12px 14px; display: grid; gap: 3px; font-size: 12.5px; box-shadow: 0 10px 30px rgba(0,0,0,.45); transition: transform .8s cubic-bezier(.16,1,.3,1), opacity .6s cubic-bezier(.16,1,.3,1); }
+.hp3 .rs-frag-l { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--d-muted); margin-bottom: 2px; }
+.hp3 .rs-frag b { font-weight: 600; color: var(--d-fg); font-size: 13px; line-height: 1.35; }
+.hp3 .rs-frag > span:last-child { color: var(--d-muted); font-size: 12px; }
+.hp3 .rs-frag-a { top: 0; left: 0; }
+.hp3 .rs-frag-b { right: -28px; top: 46%; }
+.hp3 .rs-frag-c { left: 8px; bottom: -22px; }
+.hp3 .rs-stage.merge .rs-frag, .hp3 .rs-stage.play .rs-frag { opacity: 0; pointer-events: none; }
+.hp3 .rs-stage.merge .rs-frag-a, .hp3 .rs-stage.play .rs-frag-a { transform: translate(140px, 120px) scale(.9); }
+.hp3 .rs-stage.merge .rs-frag-b, .hp3 .rs-stage.play .rs-frag-b { transform: translate(-160px, -20px) scale(.9); }
+.hp3 .rs-stage.merge .rs-frag-c, .hp3 .rs-stage.play .rs-frag-c { transform: translate(150px, -140px) scale(.9); }
+.hp3 .rs-stage.play .rs-frag { transition-duration: .3s; }
+/* Timeline connector draws down as entries arrive. */
+.hp3 .rs-tl::before { transform: scaleY(var(--rs-p, 0)); transform-origin: top; transition: transform .5s cubic-bezier(.16,1,.3,1); background: var(--d-accent); opacity: .55; }
+.hp3 .rs-tl li .rs-dot { transition: background-color .3s ease, border-color .3s ease, box-shadow .3s ease; }
+/* Hover or focus a record item: its entry on the timeline lights up. */
+.hp3 .rs-items > div { transition: color .25s ease; outline: none; cursor: default; }
+.hp3 .rs-items > div:hover h3, .hp3 .rs-items > div:focus-visible h3 { color: var(--d-accent); }
+.hp3 .rs-items > div:focus-visible { box-shadow: inset 0 -1px 0 var(--d-accent); }
+.hp3 section.dark:has(.rs-items > div[data-kind="support"]:hover) .rs-tl li.support,
+.hp3 section.dark:has(.rs-items > div[data-kind="meeting"]:hover) .rs-tl li.meeting,
+.hp3 section.dark:has(.rs-items > div[data-kind="task"]:hover) .rs-tl li.task,
+.hp3 section.dark:has(.rs-items > div[data-kind="reply"]:hover) .rs-tl li.reply,
+.hp3 section.dark:has(.rs-items > div[data-kind="support"]:focus-visible) .rs-tl li.support,
+.hp3 section.dark:has(.rs-items > div[data-kind="meeting"]:focus-visible) .rs-tl li.meeting,
+.hp3 section.dark:has(.rs-items > div[data-kind="task"]:focus-visible) .rs-tl li.task,
+.hp3 section.dark:has(.rs-items > div[data-kind="reply"]:focus-visible) .rs-tl li.reply { background: rgba(63,191,131,.08); border-radius: 8px; }
+.hp3 section.dark:has(.rs-items > div[data-kind="deal"]:hover) .rs-head span,
+.hp3 section.dark:has(.rs-items > div[data-kind="deal"]:focus-visible) .rs-head span { color: var(--d-accent); }
+.hp3 .rs-tl li { padding-inline: 8px; margin-inline: -8px; transition: opacity .55s cubic-bezier(.16,1,.3,1), transform .55s cubic-bezier(.16,1,.3,1), background-color .25s ease; }
+.hp3 .rs-tl::before { left: 84px; }
+.hp3 .rs-replay { justify-content: flex-start; margin-top: 10px; }
+.hp3 .rs-replay .replay { border-color: var(--d-line-2); background: transparent; color: var(--d-muted); }
+@media (max-width: 960px) {
+  .hp3 .rs-stage { padding: 0; }
+  .hp3 .rs-frag { display: none; }
+  .hp3 .rs-copy h2 { max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .rs-frag { display: none; }
+  .hp3 .rs-tl::before, .hp3 .rs-keep, .hp3 .rs-live, .hp3 .rs-panel { transition: none; }
+}
+/* Section two, after the capture round: the record waits quietly until the fragments merge. */
+.hp3 .rs-stage.rest .rs-panel { opacity: .42; }
+.hp3 .rs-stage.merge .rs-panel, .hp3 .rs-stage.play .rs-panel { opacity: 1; }
+.hp3 .rs-panel { transition: transform .8s cubic-bezier(.16,1,.3,1), opacity .7s cubic-bezier(.16,1,.3,1); }
+.hp3 .rs-frag-a { top: -8px; left: -36px; }
+.hp3 .rs-frag-c { left: -36px; bottom: -30px; }
+@media (max-width: 600px) { .hp3 .rs-live { display: none; } .hp3 .rs-head { grid-template-columns: 40px 1fr; } }
