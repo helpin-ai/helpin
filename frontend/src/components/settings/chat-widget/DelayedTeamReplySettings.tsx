@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Input } from '@/components/ui/input';
+import { QuietUnderlineInput } from '@/components/design-system/quiet';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -27,7 +27,7 @@ export function DelayedTeamReplySettings({ minutes, message, messageNoEmail, onM
       <div className="space-y-2">
         <Label htmlFor="delayed-team-reply-minutes">Wait before sending</Label>
         <div className="flex items-center gap-2">
-          <Input
+          <QuietUnderlineInput
             id="delayed-team-reply-minutes"
             type="number"
             min={1}
@@ -57,7 +57,7 @@ export function DelayedTeamReplySettings({ minutes, message, messageNoEmail, onM
       ].map((field) => (
         <div key={field.id} className="space-y-2">
           <Label htmlFor={field.id}>{field.label}</Label>
-          <Textarea id={field.id} value={field.value} onChange={(event) => field.onChange(event.target.value)} placeholder={field.fallback} maxLength={2000} rows={3} />
+          <Textarea id={field.id} value={field.value} onChange={(event) => field.onChange(event.target.value)} placeholder={field.fallback} maxLength={2000} rows={3} className="rounded-none border-0 border-b border-quiet-field bg-transparent px-0 shadow-none focus-visible:border-quiet-text-primary focus-visible:ring-0" />
 
         </div>
       ))}

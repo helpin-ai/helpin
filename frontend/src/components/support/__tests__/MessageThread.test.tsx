@@ -1,4 +1,4 @@
-vi.mock('../SupportAIControl', () => ({ SupportAIControl: ({ compact }: { compact?: boolean }) => <button data-testid="ai-control" data-compact={Boolean(compact)}>AI control</button> }));
+vi.mock('../SupportAIControl', () => ({ useSupportAIControl: () => ({ item: <div role="menuitem" data-testid="ai-control">AI control</div>, confirmation: null }) }));
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -20,6 +20,9 @@ const supportHooks = vi.hoisted(() => ({
 function createTestQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } })
 }
+
+// Translation polling is covered separately; keep transcript timer tests deterministic.
+vi.mock('@/hooks/queries/useSupportTranslation', () => ({ useSupportTranslationOptions: () => ({ data: { available: false, preference: { reading_language: 'en', auto_translate_incoming: false } } }) }))
 
 // This transcript fixture must not start the live widget's pageview timer.
 vi.mock('@/lib/helpin', () => ({ resetHelpinIdentity: vi.fn() }))
@@ -197,10 +200,8 @@ describe('MessageThread', () => {
     try {
       await act(async () => root.render(<QueryClientProvider client={client}><MessageThread workspaceId="ws-1" conversationId="conv-1" /></QueryClientProvider>))
       expect(container.querySelector('[data-testid="ai-run-approvals"]')?.getAttribute('data-enabled')).toBe(String(enabled))
-      const control = container.querySelector('[data-testid="ai-control"]')!
-      expect(control.closest('[data-slot="support-inbox-panel-header"]')).toBeTruthy()
-      expect(control.getAttribute('data-compact')).toBe('false')
-      expect(container.querySelectorAll('[data-testid="ai-control"]')).toHaveLength(1)
+      expect(container.querySelector('[data-testid="ai-control"]')).toBeNull()
+      expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
     } finally {
       act(() => root.unmount())
       client.clear()
@@ -464,10 +465,8 @@ describe('MessageThread', () => {
     expect(container.querySelector('[aria-label="Resolve conversation"]')).toBeTruthy()
     expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
     expect(container.textContent).not.toContain('Create Task')
-    const control = container.querySelector('[data-testid="ai-control"]')!
-    expect(control.closest('[data-slot="support-inbox-panel-header"]')).toBeTruthy()
-    expect(control.getAttribute('data-compact')).toBe('true')
-    expect(container.querySelectorAll('[data-testid="ai-control"]')).toHaveLength(1)
+      expect(container.querySelector('[data-testid="ai-control"]')).toBeNull()
+      expect(container.querySelector('[aria-label="Open conversation actions"]')).toBeTruthy()
 
     act(() => {
       returnButton?.click()
@@ -522,11 +521,11 @@ describe('MessageThread', () => {
     pages = appendMessageToNewestPage(pages, optimistic); render()
     const preview = order()
     const previewNode = container.querySelector('[data-support-message-id="optimistic-send"]')
-    expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
+    expect(previewNode?.querySelector('[data-testid="message-bubble"]')?.getAttribute("data-consecutive")).toBe("false")
     if (delivery === 'ack-first') { pages = replaceMessageInPages(pages, optimistic.id, saved)!; render() }
     if (delivery !== 'refetch-only') { pages = appendMessageToNewestPage(pages, joined); render() }
     const realtimeJoin = order()
-    expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
+    expect(previewNode?.querySelector('[data-testid="message-bubble"]')?.getAttribute("data-consecutive")).toBe("false")
     pages = appendMessageToNewestPage(pages, saved)
     pages = replaceMessageInPages(pages, optimistic.id, saved)!; render()
     const confirmed = order()
@@ -539,7 +538,7 @@ describe('MessageThread', () => {
     expect(refreshed).toEqual(['Customer question', 'Teammate reply'])
     expect(previewNode).toBe(savedNode)
     expect(container.querySelector('[data-support-message-id="saved-reply"]')).toBe(previewNode)
-    expect(previewNode?.firstElementChild?.getAttribute("data-consecutive")).toBe("false")
+    expect(previewNode?.querySelector('[data-testid="message-bubble"]')?.getAttribute("data-consecutive")).toBe("false")
     act(() => root.unmount()); client.clear()
   })
 
