@@ -40,8 +40,8 @@ const SHIP: Item[] = [
 // Stepped wire geometry. Stage labels alternate between an upper and a lower level and the
 // line moves between them with an S-curve, entering and leaving at the viewport edges.
 const GAP = 24;
-const LEVEL_Y = [15, 100]; // y of the wire on each level; badges hang 12px beneath it
-const LEVEL_TOP = [27, 112]; // padding-top for nodes on each level: line, then a 12px gap, then the badge
+const LEVEL_Y = [15, 100]; // y of the wire on each level; badges sit centred on it
+const LEVEL_TOP = [0, 85]; // padding-top for nodes on each level so the 30px badge is centred on the wire
 const levelOf = (i: number) => i % 2;
 
 // x position of each stage label's left edge, in SVG coordinates (0 = viewport left).
