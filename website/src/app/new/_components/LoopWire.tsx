@@ -29,6 +29,7 @@ type Scenario = {
   decide: { items: [string, string, string]; key: string; title: string };
   ship: { branch: string; items: [string, string, string, string]; approver: string };
   tell: { doc: string; section: string; reply: string; replyMeta: string; initial: string; deal: string; outcome: string };
+  receipt: { record: string; objects: string[]; byAgents: number; approvedBy: string; approvals: number };
 };
 
 // Four kinds of request, one loop each. Names and companies are examples for the demo workspace.
@@ -42,6 +43,7 @@ const SCENARIOS: Scenario[] = [
     ship: { branch: 'HLP-142-okta-saml-mapping', items: ['Task planner scoped the work', 'Code builder opened PR #318', 'Review agent: checks passed', 'Merged by Sam'], approver: 'Sam' },
     tell: { doc: 'Set up SSO with Okta', section: 'Help center · Security', reply: 'Okta is verified and documented. Here are the exact steps.', replyMeta: 'Sam · source: Set up SSO with Okta', initial: 'S',
       deal: 'Growth renewal · $48k', outcome: 'Renewal signed' },
+    receipt: { record: 'Acme Corp', objects: ['Conversation', 'Meeting summary', 'Signal', 'Task HLP-142', 'PR #318', 'Article', 'Deal'], byAgents: 4, approvedBy: 'Sam', approvals: 3 },
   },
   {
     caption: 'Nimbus · Billing details',
@@ -52,6 +54,7 @@ const SCENARIOS: Scenario[] = [
     ship: { branch: 'HLP-151-editable-billing-name', items: ['Task planner scoped the work', 'Code builder opened PR #322', 'Review agent: checks passed', 'Merged by Priya'], approver: 'Priya' },
     tell: { doc: 'Update your billing details', section: 'Help center · Billing', reply: 'You can now change the billing name yourself. Reissued August invoices are attached.', replyMeta: 'Priya · source: Update your billing details', initial: 'P',
       deal: 'Starter · 14 seats', outcome: 'Account retained' },
+    receipt: { record: 'Nimbus', objects: ['Email thread', 'Signal', 'Task HLP-151', 'PR #322', 'Article', 'Reissued invoices'], byAgents: 3, approvedBy: 'Priya', approvals: 3 },
   },
   {
     caption: 'Orbit Labs · Export bug',
@@ -62,6 +65,7 @@ const SCENARIOS: Scenario[] = [
     ship: { branch: 'HLP-158-export-timeout', items: ['Task planner scoped the work', 'Code builder opened PR #330', 'Review agent: checks passed', 'Merged by Sam'], approver: 'Sam' },
     tell: { doc: 'Exporting large workspaces', section: 'Help center · Data', reply: 'Fixed and deployed. Exports over 100k rows now stream in the background.', replyMeta: 'Sam · source: Exporting large workspaces', initial: 'S',
       deal: 'Growth · expansion', outcome: '+20 seats added' },
+    receipt: { record: 'Orbit Labs', objects: ['3 conversations', 'Coverage gap', 'Task HLP-158', 'PR #330', 'Article', 'Deal'], byAgents: 4, approvedBy: 'Sam', approvals: 3 },
   },
   {
     caption: 'Fieldline · Feature request',
@@ -72,36 +76,11 @@ const SCENARIOS: Scenario[] = [
     ship: { branch: 'HLP-160-slack-payment-alerts', items: ['Task planner scoped the work', 'Code builder opened PR #341', 'Review agent: checks passed', 'Merged by Priya'], approver: 'Priya' },
     tell: { doc: 'Set up Slack alerts', section: 'Help center · Integrations', reply: 'Shipped. Connect Slack under Settings and pick the channel for payment alerts.', replyMeta: 'Priya · source: Set up Slack alerts', initial: 'P',
       deal: 'Growth · new deal · $24k', outcome: 'Closed won' },
+    receipt: { record: 'Fieldline', objects: ['Conversation', 'Signal', 'Task HLP-160', 'PR #341', 'Article', 'Deal'], byAgents: 3, approvedBy: 'Priya', approvals: 3 },
   },
 ];
 
-const HOLD_TICKS = 8; // rest on the finished state before the next example
-
-// Who did the work in each stage. Shown under a stage once the dark line has left it.
-// Names are the shipped agent presets; the notetaker is the meeting bot.
-type Credit = { initial: string; name: string; did: string };
-const CREDITS: Credit[][] = [
-  [{ initial: 'S', name: 'Support agent', did: 'matched the question to the help center and drafted a note' },
-   { initial: 'N', name: 'Meeting notetaker', did: 'summarized the call and pulled the next steps' }],
-  [{ initial: 'C', name: 'CRM operator', did: 'scored the signal and proposed the next step' },
-   { initial: 'S', name: 'Support agent', did: 'drafted the task from the conversation' }],
-  [{ initial: 'T', name: 'Coding task planner', did: 'scoped the work' },
-   { initial: 'B', name: 'Code builder', did: 'implemented it and opened the pull request' },
-   { initial: 'R', name: 'Review agent', did: 'ran the checks' }],
-  [{ initial: 'D', name: 'Documentation agent', did: 'drafted the article from the coverage gap' },
-   { initial: 'S', name: 'Support agent', did: 'replied with the article as the source' }],
-];
-
-function Credits({ stage, t }: { stage: number; t: number }) {
-  const doneAt = [S.depart2, S.depart3, S.depart4, S.exit][stage];
-  return (
-    <div className={`credits ${t >= doneAt ? 'on' : ''}`}>
-      {CREDITS[stage].map((c) => (
-        <div key={c.name}><i>{c.initial}</i><b>{c.name}</b><span>{c.did}</span></div>
-      ))}
-    </div>
-  );
-}
+const HOLD_TICKS = 12; // rest on the finished state before the next example; the receipt shows here
 
 function decideItems(sc: Scenario): Item[] {
   return [{ at: S.d1, label: sc.decide.items[0] }, { at: S.d2, label: sc.decide.items[1] }, { at: S.d3, label: sc.decide.items[2] }];
@@ -247,7 +226,7 @@ export function LoopWire() {
     setT(0);
     const id = window.setInterval(() => {
       cur += 1;
-      if (cur <= LAST) { setT(cur); return; }
+      if (cur <= LAST + 2) { setT(cur); return; }
       if (cur >= LAST + HOLD_TICKS) {
         // Next example: reset the line without animating it backwards, then start over.
         settle.current = true;
@@ -315,7 +294,6 @@ export function LoopWire() {
               <span className="wchip am">{sc.hear.chip}</span>
             </div>
           </div>
-          <Credits stage={0} t={t} />
         </div>
 
         {/* 02 Decide: bare checklist of pills, then the task row */}
@@ -329,7 +307,6 @@ export function LoopWire() {
               <span className="tstate"><i />Todo</span>
             </div>
           </div>
-          <Credits stage={1} t={t} />
         </div>
 
         {/* 03 Ship: a dark run log */}
@@ -339,7 +316,6 @@ export function LoopWire() {
             <div className="lhead"><span>agent run · {sc.decide.key}</span><span className="mono">{sc.ship.branch}</span></div>
             <Checklist items={shipItems(sc)} t={t} cardAt={S.shipCard} />
           </div>
-          <Credits stage={2} t={t} />
         </div>
 
         {/* 04 Tell: document preview, a reply bubble, the deal */}
@@ -360,8 +336,12 @@ export function LoopWire() {
             </div>
             <div className={`deal ${on(S.deal) ?? ''}`}><i /><b>{sc.tell.deal}</b><span>{sc.tell.outcome}</span></div>
           </div>
-          <Credits stage={3} t={t} />
         </div>
+      </div>
+      <div className={`receipt ${t > LAST ? 'on' : ''}`} aria-hidden="true">
+        <div className="rhead">On the {sc.receipt.record} record now</div>
+        <div className="robjs">{sc.receipt.objects.map((o) => <span key={o}>{o}</span>)}</div>
+        <div className="rcount"><b>{sc.receipt.byAgents} created by agents</b><span>·</span><b>{sc.receipt.approvals} approved by {sc.receipt.approvedBy}</b></div>
       </div>
       <div className="wcaption" aria-hidden="true">
         <span className="wdots">{SCENARIOS.map((x, i) => <i key={x.caption} className={i === idx ? 'on' : undefined} />)}</span>
