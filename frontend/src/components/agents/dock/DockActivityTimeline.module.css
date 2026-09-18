@@ -1,0 +1,27 @@
+/* Shared visual rhythm with Usermaven's activity timeline. */
+.container { margin: 8px 0 16px; min-width: 0; color: var(--muted-foreground); }
+.summary { display: flex; align-items: center; gap: 8px; max-width: 100%; min-height: 44px; padding: 10px 0; text-align: start; font-size: 13px; line-height: 20px; cursor: pointer; }
+.summary:hover { color: var(--foreground); }
+.summary:focus-visible, .stepButton:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; border-radius: 6px; }
+.summaryIcon { display: grid; place-items: center; width: 20px; height: 20px; flex-shrink: 0; }
+.label { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.elapsed { flex-shrink: 0; font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
+.history { padding: 4px 0 16px; }
+.list { position: relative; list-style: none; margin: 0; padding: 0; }
+.list::before { content: ''; position: absolute; top: 10px; bottom: 10px; inset-inline-start: 9px; width: 1px; background: var(--border); }
+.row { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: 10px; min-width: 0; padding: 6px 0; }
+.marker { position: relative; z-index: 1; display: grid; place-items: center; width: 20px; height: 20px; background: transparent; color: var(--muted-foreground); border-radius: 50%; }
+.row[data-state='completed'] .marker { color: var(--quiet-positive); }
+.row[data-state='failed'] .marker, .row[data-state='failed'] .stepButton { color: var(--destructive); }
+.step { min-width: 0; font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
+.stepButton { display: flex; align-items: start; gap: 6px; max-width: 100%; text-align: start; cursor: pointer; }
+.stepButton:hover { color: var(--foreground); }
+.details { margin-top: 8px; max-height: 280px; overflow: auto; }
+.narration { padding: 10px 0; }
+.dot { width: 6px; height: 6px; margin: 7px; border-radius: 50%; background: var(--muted-foreground); }
+.narrativeText { font-size: 13px; line-height: 1.6; opacity: .88; }
+.preview { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 13px; line-height: 1.6; opacity: .88; }
+.expand { margin-top: 3px; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
+.shimmer { background: linear-gradient(105deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%); background-size: 250% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: sweep 1.8s ease-in-out infinite; }
+@keyframes sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@media (prefers-reduced-motion: reduce), (forced-colors: active) { .shimmer { animation: none; background: none; color: var(--muted-foreground); } }

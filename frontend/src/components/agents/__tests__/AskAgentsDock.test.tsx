@@ -182,7 +182,7 @@ beforeEach(() => {
   root = createRoot(container);
   localStorage.clear();
   localStorage.setItem('helpin:agent-dock-selection:ws-1', JSON.stringify({ tab: 'chats', chatId: 'chat-1' }));
-  useDockStore.setState({ collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], transcripts: {}, drafts: {}, lastAttentionIds: [] });
+  useDockStore.setState({ transcriptView: 'timeline', collapsed: false, view: 'chat', tab: 'chats', workspaceId: null, activeChatId: null, activeRunId: null, chats: [], transcripts: {}, drafts: {}, lastAttentionIds: [] });
   useWorkspaceStore.setState({
     currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
   });
@@ -1325,7 +1325,8 @@ describe('AskAgentsDock', () => {
     expect(mocks.listMessages).toHaveBeenCalledWith('ws-1', 'chat-1', undefined, 50, expect.any(AbortSignal));
   });
 
-  it('keeps earlier assistant progress and the final reply outside working groups', async () => {
+  it('keeps earlier assistant progress and the final reply outside working groups in Detailed view', async () => {
+    useDockStore.setState({ transcriptView: 'detailed' });
     mocks.listMessages.mockResolvedValue({
       data: {
         messages: [

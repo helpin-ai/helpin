@@ -207,6 +207,7 @@ export function DockRunView({
           <DockTranscript
             stream={streamState}
             active={transcriptStreaming}
+            runStatus={effectiveRun.status}
             useRuntimeTimeline={showRuntimeTimeline}
             workspaceId={workspaceId}
             fallbackActor={session?.triggered_by_user}

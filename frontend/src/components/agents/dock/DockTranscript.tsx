@@ -1,4 +1,8 @@
 import { Fragment, useState, type ReactNode } from 'react';
+import { useDockStore } from '@/stores/dockStore';
+import { Tick01Icon } from '@/lib/icons';
+import { DockActivityTimeline, DockActivitySteps } from './DockActivityTimeline';
+import { buildDockActivityTimeline } from './dockActivityTimeline';
 import { cn } from '@/lib/utils';
 import type { CodingSessionStreamState } from '@/lib/pmTypes';
 import {
@@ -95,6 +99,7 @@ function DockWorkDisclosure({
   chatId: string;
   summary: NonNullable<CodingSessionTranscriptMessage['dock_work_summary']>;
 }) {
+  const timelineView = useDockStore(state => state.transcriptView === 'timeline');
   const cacheKey = `${workspaceId}:${chatId}:${summary.message_id}`;
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<AgentRunMessage[] | null>(() => dockWorkDetailCache.get(cacheKey) ?? null);
@@ -131,22 +136,24 @@ function DockWorkDisclosure({
     <section className="py-1" data-dock-work-disclosure>
       <button
         type="button"
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+        className={cn("inline-flex items-center gap-2 text-[13px] font-medium text-muted-foreground hover:text-foreground", timelineView && "min-h-11 py-2.5")}
         aria-expanded={open}
         onClick={toggle}
       >
-        <span>Worked for {formatCodingSessionElapsed(summary.duration_ms)}</span>
+        {timelineView ? <><Tick01Icon className="h-4 w-4 text-quiet-positive" /><span>Work completed</span><span className="text-[11px] font-normal tabular-nums">{formatCodingSessionElapsed(summary.duration_ms)}</span></> : <span>Worked for {formatCodingSessionElapsed(summary.duration_ms)}</span>}
         <DisclosureChevron open={open} />
       </button>
       {open ? (
-        <div className="mt-2 border-l border-border/70 pl-3">
+        <div className={cn("mt-2", !timelineView && "border-l border-border/70 pl-3")}>
           {loading ? <div className="text-xs text-muted-foreground">Loading work…</div> : null}
           {error ? (
             <button type="button" className="text-xs text-destructive" onClick={() => void loadWork()}>
               Couldn’t load work. Retry
             </button>
           ) : null}
-          {workStream ? (
+          {workStream && timelineView ? (
+            <DockActivitySteps segments={collectSegments(workStream, { includeLive: false, include: DOCK_WORKING_SEGMENT_KINDS })} />
+          ) : workStream ? (
             <DockTranscript
               stream={workStream}
               active={false}
@@ -184,6 +191,7 @@ export function DockTranscript({
   compactAssistantProgress = false,
   completedRun = false,
   historyWorkOnly = false,
+  runStatus,
   subAgentRuns = [],
   latestSubmission,
   className,
@@ -207,12 +215,15 @@ export function DockTranscript({
   completedRun?: boolean;
   /** Render progress and tools without repeating the completed final answer. */
   historyWorkOnly?: boolean;
+  runStatus?: string;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
   /** Segments already visible before the latest local send, including undated snapshots. */
   latestSubmission?: DockMessageSubmission | null;
   className?: string;
 }) {
+  const transcriptView = useDockStore(state => state.transcriptView);
+  const timelineView = transcriptView === 'timeline' && compactAssistantProgress && !historyWorkOnly;
   const user = useAuthStore((state) => state.user);
   const { members } = useWorkspaceMembers(workspaceId);
   const actorsById = new Map<string, CodingSessionActor>(
@@ -258,7 +269,21 @@ export function DockTranscript({
     }
   }
   const latestAssistantSegmentId = segments[finalAssistantIndex(segments, !active)]?.id;
-  const workingTimeline = compactAssistantProgress
+  const sequences = transcriptSegmentSequences(stream);
+  const activityBoundaries = new Set<string>();
+  for (const item of subAgentRuns) {
+    const createdAt = Date.parse(item.createdAt);
+    const boundary = segments.find(segment => {
+      const time = segmentTimestamp(segment, times);
+      const sequence = segmentSequence(segment, sequences);
+      return (Number.isFinite(createdAt) && time !== null && time > createdAt)
+        || (item.resultSequence !== undefined && sequence !== null && sequence >= item.resultSequence);
+    });
+    if (boundary) activityBoundaries.add(boundary.id);
+  }
+  const workingTimeline = timelineView
+    ? buildDockActivityTimeline(segments, active, segment => segmentTimestamp(segment, times), activityBoundaries)
+    : compactAssistantProgress
     ? buildDockWorkingTimeline(segments, active, {
         collapseCompletedWork: completedRun || segments.some((segment) => segment.kind === 'assistant' && segment.final),
         turnState: stream.turn_state,
@@ -300,7 +325,6 @@ export function DockTranscript({
     if (segment.kind === 'assistant') intervalAssistantIndexes.push(index);
   }
   finalizeInterval(entries.length, !active);
-  const sequences = transcriptSegmentSequences(stream);
   const runsByBoundary = new Map<number, DockSubAgentTimelineItem[]>();
   for (const item of [...subAgentRuns].sort((left, right) => {
     const timeDelta = Date.parse(left.createdAt) - Date.parse(right.createdAt);
@@ -332,7 +356,9 @@ export function DockTranscript({
       {entries.map((entry, index) => {
         const workingGroup = 'workingGroup' in entry ? entry.workingGroup : undefined;
         const followsUserMessage = index > 0 && entries[index - 1].segment.kind === 'user';
-        const assistantPresentation = assistantPresentations.get(index);
+        const assistantPresentation = entry.segment.kind === 'assistant' && entry.segment.final
+          ? { presentation: 'final' as const, separator: index > 0 }
+          : assistantPresentations.get(index);
         if (historyWorkOnly && (
           entry.segment.kind === 'user'
           || entry.segment.kind === 'status'
@@ -365,7 +391,9 @@ export function DockTranscript({
               data-assistant-presentation={assistantPresentation?.presentation}
               data-final-response-separator={assistantPresentation?.separator ? 'true' : undefined}
             >
-              {workingGroup ? (
+              {workingGroup && timelineView ? (
+                <DockActivityTimeline group={workingGroup} runStatus={runStatus} />
+              ) : workingGroup ? (
                 <DockWorkingGroup
                   id={workingGroup.key}
                   segments={workingGroup.segments}

@@ -873,6 +873,7 @@ export function ChatView({
             stream={transformed.stream}
             latestSubmission={latestSubmission}
             active={isDockTranscriptStreaming(run)}
+            runStatus={run?.status}
             useRuntimeTimeline={showRuntimeTimeline}
             workspaceId={workspaceId}
             chatId={chatId}

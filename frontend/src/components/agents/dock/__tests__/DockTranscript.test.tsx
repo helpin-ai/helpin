@@ -8,6 +8,7 @@ import type {
   CodingSessionStreamState,
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
+import { useDockStore } from '@/stores/dockStore';
 import { useAuthStore } from '@/stores/authStore';
 import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
 import type { CodingSessionEvent } from '@/lib/pmTypes';
@@ -62,6 +63,7 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  useDockStore.setState({ transcriptView: 'detailed' });
   mocks.resolveTeamMemberAvatarSrc.mockReset();
   mocks.getMessageWorkDetail.mockReset();
   container = document.createElement('div');
@@ -932,5 +934,55 @@ describe('explicit turn delivery in the rendered dock', () => {
     expect(stream.turn_state).toMatchObject({ turn_id: 'turn-2', phase: 'working' });
     expect(status?.label).toBe('Working…');
     expect(status?.startedAt).toBe('2026-09-11T12:00:50Z');
+  });
+});
+
+describe('Timeline view', () => {
+  it('shows live activity with the branded loader and collapses it when the final answer arrives', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };
+    const answer = { ...assistantMessage('answer', 'Three tasks need attention.', 2), message_type: 'assistant_final' };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([progress])} active compactAssistantProgress />));
+    expect(container.querySelector('[data-agent-work-loader]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Activity steps"]')?.textContent).toContain('Reviewing your tasks.');
+    act(() => root.render(<DockTranscript stream={streamWithMessages([progress, answer])} active={false} compactAssistantProgress />));
+    expect(container.textContent).toContain('Work completed');
+    expect(container.textContent).toContain('Three tasks need attention.');
+    expect(container.textContent).not.toContain('Reviewing your tasks.');
+    act(() => container.querySelector<HTMLButtonElement>('[data-dock-activity-timeline] > button')?.click());
+    expect(container.textContent).toContain('Reviewing your tasks.');
+  });
+
+  it('preserves manual collapse during streaming and reveals failed steps when work stops', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };
+    const tool = toolTurn('search', 'search_tasks', 100, 'running');
+    const render = (active: boolean) => act(() => root.render(<DockTranscript
+      stream={streamWithMessages([progress, { ...assistantMessage('tools', '', 2), turn_segments: [tool] }])}
+      active={active} compactAssistantProgress runStatus={active ? 'running' : 'failed'} />));
+    render(true);
+    act(() => container.querySelector<HTMLButtonElement>('[data-dock-activity-timeline] > button')?.click());
+    render(true);
+    expect(container.querySelector('[aria-label="Activity steps"]')).toBeNull();
+    if (tool.kind !== 'tool_call') throw new Error('Expected a tool');
+    tool.tool_call.status = 'failed';
+    tool.tool_call.result = { error: 'Task search is unavailable.' };
+    render(false);
+    expect(container.textContent).toContain('Some steps failed');
+    expect(container.textContent).toContain('Task search is unavailable.');
+    expect(container.querySelector('[data-agent-work-loader]')).toBeNull();
+  });
+
+  it('changes presentation without losing messages and persists the preference', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([progress])} active compactAssistantProgress />));
+    expect(container.querySelector('[data-dock-activity-timeline]')).not.toBeNull();
+    act(() => useDockStore.getState().setTranscriptView('detailed'));
+    expect(container.querySelector('[data-dock-activity-timeline]')).toBeNull();
+    expect(container.textContent).toContain('Reviewing your tasks.');
+    expect(localStorage.getItem('helpin:agent-dock-transcript-view')).toBe('detailed');
+    act(() => useDockStore.getState().setTranscriptView('timeline'));
+    expect(container.querySelector('[data-dock-activity-timeline]')).not.toBeNull();
   });
 });

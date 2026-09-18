@@ -22,6 +22,7 @@ import { useDockStore } from '@/stores/dockStore';
 import { dockChatService } from '@/lib/services/dockChatService';
 import { dockChatModuleForContext, type DockChat, type DockChatVisibility, type DockRunSummary } from '@/lib/dockTypes';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
+import { DockTranscriptViewPicker } from './dock/DockTranscriptViewPicker';
 import { DockRoster } from './dock/DockRoster';
 import { ChatView } from './dock/ChatView';
 import { DockRunView } from './dock/DockRunView';
@@ -871,6 +872,7 @@ function DockPaneHeader({
           {presentation.label}
         </span>
       ) : null}
+      <DockTranscriptViewPicker />
       <div data-dock-actions className="flex items-center gap-0.5">
       {fullPath ? (
         <a href={fullPath} aria-label="Open full agent session" title="Open full session" className="grid h-8 w-8 place-items-center rounded-md text-[#a5a29b] transition hover:bg-[#f4f2ee] hover:text-[#4b4945] dark:hover:bg-[#302f2b]">
