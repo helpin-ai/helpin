@@ -358,3 +358,4 @@
 .hp3 .bub.reply img.bav { border-color: var(--em-t); }
 /* Faster entrances. */
 .hp3 .wart.decide, .hp3 .wart.log, .hp3 .bub, .hp3 .tline, .hp3 .trow, .hp3 .docp, .hp3 .deal, .hp3 .tl > div, .hp3 .sig > div { transition-duration: .4s, .4s, .4s; }
+.hp3 .log .lhead > span:first-child { white-space: nowrap; }
