@@ -350,7 +350,6 @@ export function LoopWire() {
       {shown ? (
         <div className="replay-row">
           <button type="button" className="replay" onClick={replay}>Replay this example</button>
-          <span>example {idx + 1} of {SCENARIOS.length} · tick {t} of {LAST}</span>
         </div>
       ) : null}
     </div>
