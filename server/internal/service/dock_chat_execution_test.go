@@ -45,22 +45,36 @@ func TestDockExecutionProjectionIsOptInAndSeparate(t *testing.T) {
 		!strings.Contains(enabled.SystemPrompt, "Do not search the container filesystem for a checkout") {
 		t.Fatal("direct execution instructions missing")
 	}
+	// Runs with and without a repository share one runtime agent record, so the
+	// projection must be identical; the workspace mode travels on the run.
 	run.RepositoryID = stringPointer("repo-1")
 	withRepository := runtimeAgentForDockExecution(run, ordinary)
+	if withRepository.ID != enabled.ID || string(withRepository.ExecutionConfig) != string(enabled.ExecutionConfig) {
+		t.Fatalf("execution projection varies per run: %s vs %s", withRepository.ExecutionConfig, enabled.ExecutionConfig)
+	}
 	var executionConfig map[string]interface{}
 	if err := json.Unmarshal(withRepository.ExecutionConfig, &executionConfig); err != nil {
 		t.Fatal(err)
 	}
 	workspaceConfig, _ := executionConfig["workspace"].(map[string]interface{})
-	if workspaceConfig["mode"] != "repository" || workspaceConfig["access"] != "read_write" {
+	if _, hasMode := workspaceConfig["mode"]; hasMode || workspaceConfig["access"] != "read_write" {
 		t.Fatalf("attached repository execution config = %#v", executionConfig)
 	}
-	req, err := runtimeStartRunRequest(run, agent, enabled)
+	req, err := runtimeStartRunRequest(run, agent, withRepository)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if req.AgentID != enabled.ID || !slices.Contains(req.AllowedTools, "run_python") {
 		t.Fatalf("incorrect routing: %+v", req)
+	}
+	if req.Metadata["workspace_mode"] != "repository" || req.Metadata["repository_id"] != "repo-1" {
+		t.Fatalf("repository run metadata missing workspace mode: %#v", req.Metadata)
+	}
+	run.RepositoryID = nil
+	if req, err = runtimeStartRunRequest(run, agent, enabled); err != nil {
+		t.Fatal(err)
+	} else if _, hasMode := req.Metadata["workspace_mode"]; hasMode {
+		t.Fatalf("run without repository carries workspace mode: %#v", req.Metadata)
 	}
 	trusted, ok := req.Metadata["trusted_user_messages"].([]string)
 	if !ok || len(trusted) != 1 || trusted[0] != "Analyze the data." {

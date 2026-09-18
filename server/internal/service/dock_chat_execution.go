@@ -37,12 +37,20 @@ func (s *DockChatService) authorizeChatExecution(ctx context.Context, workspaceI
 	return nil
 }
 
-func (s *DockChatService) scopedChatExecutionTools(ctx context.Context, chat *model.DockChat, userID string, agent *model.Agent) ([]string, error) {
-	if !chat.ExecutionEnabled {
-		return s.scopedChatTools(ctx, chat.WorkspaceID, userID, agent)
+// effectiveChatExecution reports whether this user's next run may execute.
+// A chat setting outlives the permission that enabled it; when the actor no
+// longer holds that permission the conversation degrades to ordinary tools
+// instead of failing, until an authorized actor turns the setting off.
+func (s *DockChatService) effectiveChatExecution(ctx context.Context, chat *model.DockChat, userID string) bool {
+	if chat == nil || !chat.ExecutionEnabled {
+		return false
 	}
-	if err := s.authorizeChatExecution(ctx, chat.WorkspaceID, userID); err != nil {
-		return nil, err
+	return s.authorizeChatExecution(ctx, chat.WorkspaceID, userID) == nil
+}
+
+func (s *DockChatService) scopedChatExecutionTools(ctx context.Context, chat *model.DockChat, userID string, agent *model.Agent) ([]string, error) {
+	if !s.effectiveChatExecution(ctx, chat, userID) {
+		return s.scopedChatTools(ctx, chat.WorkspaceID, userID, agent)
 	}
 	return s.scopedChatTools(ctx, chat.WorkspaceID, userID, withAskAgentDirectTools(agent))
 }
@@ -55,17 +63,18 @@ func runtimeAgentForDockExecution(run *model.AgentRun, agent AgentRuntimeAgent) 
 	if json.Unmarshal(run.Input, &input) != nil || !input.ExecutionEnabled {
 		return agent
 	}
-	agent.ID += "-execution"
+	agent.ID += runtimeExecutionAgentSuffix
 	agent.AllowedTools = appendPresetTools(agent.AllowedTools, askAgentDirectTools())
 	var config map[string]any
 	if json.Unmarshal(agent.ExecutionConfig, &config) != nil || config == nil {
 		config = map[string]any{}
 	}
-	workspaceConfig := map[string]any{"access": "read_write"}
-	if run.RepositoryID != nil && strings.TrimSpace(*run.RepositoryID) != "" {
-		workspaceConfig["mode"] = "repository"
-	}
-	config["workspace"] = workspaceConfig
+	// Every execution-enabled run of one Ask Agent upserts the same
+	// "<agent>-execution" runtime record and the runtime re-reads it on each
+	// resume, so the projection must not vary per run. Whether a run works in
+	// a repository is carried by the run's own "workspace_mode" metadata
+	// (see buildRuntimeStartRunRequest), not by the shared agent.
+	config["workspace"] = map[string]any{"access": "read_write"}
 	agent.ExecutionConfig, _ = json.Marshal(config)
 	agent.SystemPrompt = strings.ReplaceAll(agent.SystemPrompt, askAgentReadOnlyRepositoryInstruction, "")
 	agent.SystemPrompt += `

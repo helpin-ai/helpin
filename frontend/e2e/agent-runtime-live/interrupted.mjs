@@ -48,12 +48,20 @@ if (pending.summary !== 'Approve run_command for this agent run.' || /TypeSafe r
   throw new Error(`approval prompt exposed reviewer details: ${pending.summary}`);
 }
 await post(`/dock/chats/${chat.id}/interactions/${pending.id}/resolve?${q}`, { response_payload: { decision: 'approve' } });
-for (let attempt = 0; attempt < 30; attempt += 1) {
+let resumed = false;
+for (let attempt = 0; attempt < 120; attempt += 1) {
   const current = await state();
-  if (current.detail.run?.status === 'running') break;
-  await sleep(200);
+  if (current.detail.run?.status === 'running') { resumed = true; break; }
+  if (current.detail.run && ['failed', 'cancelled'].includes(current.detail.run.status)) {
+    throw new Error(`approved command ended ${current.detail.run.status} before launch`);
+  }
+  await sleep(250);
 }
-await sleep(700);
+if (!resumed) throw new Error('approved command did not resume within 30 seconds');
+// The run becomes active before the approved tool call reaches its launch
+// boundary. Keep this comfortably below the command's 30-second sleep while
+// allowing the runtime to persist its started/outcome-unknown checkpoint.
+await sleep(5_000);
 await patch(`/dock/chats/${chat.id}?${q}`, { execution_enabled: false });
 let oldRun;
 for (let attempt = 0; attempt < 40; attempt += 1) {

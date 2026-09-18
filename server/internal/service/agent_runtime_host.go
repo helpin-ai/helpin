@@ -416,7 +416,8 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 	if err := s.validateAppID(req.AppID); err != nil {
 		return nil, err
 	}
-	if scope, err := s.resolveCRMPlaybookCallback(ctx, req.RunID, req.AgentID, req.Target, req.Metadata, req.Target.Metadata); err != nil || scope != nil {
+	callbackAgentID := runtimeAgentBaseID(req.AgentID)
+	if scope, err := s.resolveCRMPlaybookCallback(ctx, req.RunID, callbackAgentID, req.Target, req.Metadata, req.Target.Metadata); err != nil || scope != nil {
 		if err != nil {
 			return nil, err
 		}
@@ -459,7 +460,7 @@ func (s *AgentRuntimeHostService) ResolveTargetContext(ctx context.Context, req 
 				return nil, err
 			}
 		}
-		if previewRun == nil || previewRun.TargetType != supportPreviewTarget || previewRun.TargetID != target.ID || previewRun.AgentID != req.AgentID || previewRun.WorkspaceID != workspaceID {
+		if previewRun == nil || previewRun.TargetType != supportPreviewTarget || previewRun.TargetID != target.ID || previewRun.AgentID != callbackAgentID || previewRun.WorkspaceID != workspaceID {
 			return nil, ErrAgentRuntimeHostForbidden
 		}
 		snapshot, err := supportPreviewSnapshot(previewRun)
@@ -839,7 +840,7 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 	if boundTarget.ID == "" {
 		boundTarget.ID = req.Meta.TargetID
 	}
-	if scope, err := s.resolveCRMPlaybookCallback(ctx, req.Meta.RunID, req.Meta.AgentID, boundTarget, req.Meta.RunInputMetadata, req.Meta.TargetMetadata, req.Meta.Target.Metadata, req.Meta.WorkspaceMetadata); err != nil || scope != nil {
+	if scope, err := s.resolveCRMPlaybookCallback(ctx, req.Meta.RunID, runtimeAgentBaseID(req.Meta.AgentID), boundTarget, req.Meta.RunInputMetadata, req.Meta.TargetMetadata, req.Meta.Target.Metadata, req.Meta.WorkspaceMetadata); err != nil || scope != nil {
 		if err != nil {
 			return nil, err
 		}
@@ -902,6 +903,16 @@ func (s *AgentRuntimeHostService) ExecuteCommand(ctx context.Context, req agentr
 	return &agentruntime.CommandExecutionResponse{Output: output}, nil
 }
 
+// runtimeExecutionAgentSuffix marks the runtime agent record that
+// runtimeAgentForDockExecution projects for execution-enabled Dock runs.
+const runtimeExecutionAgentSuffix = "-execution"
+
+// runtimeAgentBaseID maps a runtime agent ID back to the Helpin agent ID so
+// callbacks from execution runs pass the same agent checks as ordinary runs.
+func runtimeAgentBaseID(id string) string {
+	return strings.TrimSuffix(strings.TrimSpace(id), runtimeExecutionAgentSuffix)
+}
+
 func (s *AgentRuntimeHostService) enrichCommandAgentScope(ctx context.Context, meta *model.InternalCommandContext) error {
 	if s == nil || s.agentRepo == nil || meta == nil {
 		return nil
@@ -909,13 +920,13 @@ func (s *AgentRuntimeHostService) enrichCommandAgentScope(ctx context.Context, m
 	if strings.TrimSpace(meta.AgentID) == "" {
 		return fmt.Errorf("%w: agent_id is required to resolve command scope", ErrAgentRuntimeHostForbidden)
 	}
-	if strings.HasSuffix(meta.AgentID, "-execution") {
+	if baseID := runtimeAgentBaseID(meta.AgentID); baseID != meta.AgentID {
 		run, err := s.helpinRunForRuntimeRun(ctx, meta.RunID)
 		if err != nil {
 			return err
 		}
 		var input model.AgentRunInputPayload
-		if run == nil || run.WorkspaceID != meta.WorkspaceID || run.DockChatID == nil || json.Unmarshal(run.Input, &input) != nil || !input.ExecutionEnabled || meta.AgentID != run.AgentID+"-execution" {
+		if run == nil || run.WorkspaceID != meta.WorkspaceID || run.DockChatID == nil || json.Unmarshal(run.Input, &input) != nil || !input.ExecutionEnabled || baseID != run.AgentID {
 			return ErrAgentRuntimeHostForbidden
 		}
 		meta.AgentID = run.AgentID

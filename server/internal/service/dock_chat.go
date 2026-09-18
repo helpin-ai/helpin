@@ -586,7 +586,7 @@ func (s *DockChatService) runUsesCurrentScopedTools(ctx context.Context, chat *m
 	if err := json.Unmarshal(run.Input, &input); err != nil {
 		return false, nil
 	}
-	return input.ExecutionEnabled == chat.ExecutionEnabled && sameNormalizedToolSet(input.AllowedTools, current), nil
+	return input.ExecutionEnabled == s.effectiveChatExecution(ctx, chat, userID) && sameNormalizedToolSet(input.AllowedTools, current), nil
 }
 
 func sameNormalizedToolSet(left, right []string) bool {
@@ -837,6 +837,7 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 	if err != nil {
 		return err
 	}
+	executionEnabled := s.effectiveChatExecution(ctx, chat, userID)
 
 	var contextBlocks []string
 	var parentRunID *string
@@ -898,8 +899,8 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		startTargetRunOptions{
 			dockChatID:          &chat.ID,
 			clientMessageID:     clientMessageID,
-			executionEnabled:    chat.ExecutionEnabled,
-			repositoryID:        initialDockExecutionRepositoryID(chat.ExecutionEnabled, attachedContexts),
+			executionEnabled:    executionEnabled,
+			repositoryID:        initialDockExecutionRepositoryID(executionEnabled, attachedContexts),
 			trustedUserMessages: trustedUserMessages,
 			afterPersist: func(run *model.AgentRun) error {
 				if err := s.chatRepo.SetActiveRun(ctx, chat.WorkspaceID, chat.ID, run.ID); err != nil {

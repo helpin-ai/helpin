@@ -40,7 +40,12 @@ if (!chatID) {
   log('new coding chat', { chat_id: chatID, enabled_at_creation: true });
 }
 
-async function send(content) { return post(`/dock/chats/${chatID}/messages?${q}`, { client_message_id: crypto.randomUUID(), content, page_context: pageContext }); }
+let messageCountBeforeSend = 0;
+async function send(content) {
+  const existing = await get(`/dock/chats/${chatID}/messages?${q}&limit=100`);
+  messageCountBeforeSend = (existing.messages ?? []).length;
+  return post(`/dock/chats/${chatID}/messages?${q}`, { client_message_id: crypto.randomUUID(), content, page_context: pageContext });
+}
 async function current() {
   const [detail, messages, interactions] = await Promise.all([
     get(`/dock/chats/${chatID}?${q}`),
@@ -67,7 +72,7 @@ async function waitTurn(label, { expectedHuman = false, timeout = 420_000 } = {}
     const signature = `${run?.id}:${run?.status}:${run?.pause_reason ?? ''}:pending=${pending.length}:messages=${state.messages.length}`;
     if (signature !== last) { log(`${label} state`, signature); last = signature; }
     if (pending.length) { approvalCount += pending.length; await resolvePending(state, expectedHuman); await sleep(1_000); continue; }
-    if (run?.status === 'paused' && run.pause_reason === 'awaiting_user_message') return { state, approvalCount };
+    if (run?.status === 'paused' && run.pause_reason === 'awaiting_user_message' && state.messages.length >= messageCountBeforeSend + 2) return { state, approvalCount };
     if (run && ['completed', 'failed', 'cancelled'].includes(run.status)) return { state, approvalCount };
     await sleep(2_000);
   }

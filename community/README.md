@@ -71,14 +71,22 @@ upgrade one; use a reviewed replacement bundle. Cross-version upgrades start in 
 
 ### Optional Ask Agent execution
 
-The Community image now includes Python, pip and venv. Compose runs a separate
-`agent-runtime-execution` service on the existing coding queue, with concurrency 50 per worker process.
-Shared workers do not poll that queue or mount the execution volume. Enable
-execution explicitly in an owned Ask Agent conversation; the next message after
-a safe transition starts a separately routed run. Existing permissions and
-publication approvals still apply.
+The Community image includes Python, pip and venv. One `agent-runtime-worker`
+service polls every queue, so ordinary chat, coding and `run_python` share a
+single process and the `execution_workspaces` volume. A long command therefore
+competes with chat for that worker; Community accepts that contention rather
+than running a second service. Enable execution explicitly in an owned Ask
+Agent conversation; the next message after a safe transition starts a
+separately routed run. Existing permissions and publication approvals still
+apply.
 
-Use `./setup.sh start` to load `apps.json` as inline execution-worker configuration.
+The worker applies a Landlock filesystem ruleset to each command when the host
+kernel and Docker seccomp profile allow it, and otherwise logs one line and
+runs the command without it. Nothing fails closed and there are no host
+requirements.
+
+The worker reads its app configuration inline rather than from a mounted file,
+so commands cannot read it. Use `./setup.sh start` to load `apps.json` that way.
 For direct Compose commands, first export it without printing it:
 
 ```sh
@@ -86,7 +94,7 @@ export AGENT_RUNTIME_EXECUTION_APP_CONFIG="$(cat apps.json)"
 docker compose up -d
 ```
 
-The execution service does not mount `apps.json`. Python's private venv, pip cache,
+Only the API service mounts `apps.json`. Python's private venv, pip cache,
 temporary files and outputs live on `execution_workspaces`, so installation does
 not write to the read-only root or shared system environment. Analysis scratch
 has a monitored 512 MiB operational limit and is removed when its run ends.

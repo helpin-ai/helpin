@@ -29,7 +29,10 @@ const chat = await post(`/dock/chats?${q}`, { title: `E2E execution ${stamp}`, e
 if (!chat.execution_enabled) throw new Error('initial execution choice did not persist');
 log('execution chat', { chat_id: chat.id, enabled_at_creation: true });
 
+let messageCountBeforeSend = 0;
 async function send(content, pageContext) {
+  const existing = await get(`/dock/chats/${chat.id}/messages?${q}&limit=100`);
+  messageCountBeforeSend = (existing.messages ?? []).length;
   return post(`/dock/chats/${chat.id}/messages?${q}`, { client_message_id: crypto.randomUUID(), content, ...(pageContext ? { page_context: pageContext } : {}) });
 }
 async function state() {
@@ -55,7 +58,10 @@ async function waitTurn(label, { approve = false, timeout = 300_000 } = {}) {
     const signature = `${run?.id}:${run?.status}:${run?.pause_reason ?? ''}:pending=${pending.length}:messages=${current.messages.length}`;
     if (signature !== last) { log(`${label} state`, signature); last = signature; }
     if (approve && pending.length) { await resolvePending(current); await sleep(1_000); continue; }
-    if (run?.status === 'paused' && run.pause_reason === 'awaiting_user_message') return current;
+    // A follow-up is accepted before its resume signal necessarily changes the
+    // persisted run state. Do not mistake the previous turn's pause for this
+    // turn completing; wait for at least the new user and assistant messages.
+    if (run?.status === 'paused' && run.pause_reason === 'awaiting_user_message' && current.messages.length >= messageCountBeforeSend + 2) return current;
     if (run && ['completed', 'failed', 'cancelled'].includes(run.status)) return current;
     if (run?.status === 'paused' && pending.length) return current;
     await sleep(2_000);

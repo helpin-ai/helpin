@@ -196,26 +196,18 @@ services:
       test: [CMD, curl, -fsS, 'http://localhost:8090/readyz']
       interval: 10s
       retries: 30
+  # One worker serves every queue: ordinary chat, coding and run_python share
+  # this process and the execution_workspaces volume. Landlock is applied when
+  # the host kernel and seccomp profile allow it and skipped otherwise.
   agent-runtime-worker:
     image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.1.0-rc.1}
     restart: unless-stopped
-    entrypoint: [/agent-runtime-worker]
-    environment: *runtime-env
-    volumes: ['./apps.json:/etc/agent-runtime/apps.json:ro']
-    depends_on:
-      agent-runtime: {condition: service_healthy}
-    healthcheck:
-      test: [CMD, curl, -fsS, 'http://localhost:8091/readyz']
-      interval: 10s
-      retries: 30
-  agent-runtime-execution:
-    image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.1.0-rc.1}
-    restart: unless-stopped
-    entrypoint: [/agent-runtime-worker, --coding]
+    entrypoint: [/agent-runtime-worker, --all-queues]
     environment:
       <<: *runtime-env
       AGENT_RUNTIME_APP_CONFIG: ${AGENT_RUNTIME_EXECUTION_APP_CONFIG:?use setup.sh or export inline app configuration}
       AGENT_RUNTIME_WORKSPACE_ROOT: /tmp/agent-runtime-workspaces
+      AGENT_RUNTIME_EXECUTION_ISOLATION: best_effort
     volumes: [execution_workspaces:/tmp/agent-runtime-workspaces]
     read_only: true
     cap_drop: [ALL]

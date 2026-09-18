@@ -17,6 +17,7 @@ import type { DockChatDetail, DockChatMediaAttachment, DockEntityReference } fro
 import type { AgentRun, AgentRunMessage, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockExecutionPicker } from './DockExecutionPicker';
+import { resolveExecutionPickerDisabled } from './executionPickerState';
 import { DockArtifactDownloads } from './DockArtifactDownloads';
 import { DockTranscript, type DockMessageSubmission } from './DockTranscript';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
@@ -789,6 +790,13 @@ export function ChatView({
 
   const hasTranscriptMessages = (transformed?.stream.transcript_messages ?? persistedMessages)
     .some((message) => message.content.trim());
+  const executionPickerDisabled = resolveExecutionPickerDisabled({
+    changingExecution,
+    sending,
+    pendingEcho: Boolean(pendingEcho),
+    runStatus: run?.status,
+  });
+
   const starterSuggestions = !hasTranscriptMessages && !value.trim() && !sending && !pendingEcho
     ? starterSuggestionsForContext(effectivePageContext?.entity_type)
     : [];
@@ -1027,7 +1035,7 @@ export function ChatView({
                 executionPicker={(!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
                   <DockExecutionPicker
                     enabled={Boolean(executionEnabled)}
-                    disabled={changingExecution || sending || (!executionEnabled && Boolean(run && ['queued', 'running', 'pending'].includes(run.status)))}
+                    disabled={executionPickerDisabled}
                     onChange={changeExecution}
                   />
                 ) : null}
