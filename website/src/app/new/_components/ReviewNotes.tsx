@@ -14,6 +14,10 @@ export function ReviewNotesProvider({ children }: { children: React.ReactNode })
   return <Ctx.Provider value={{ shown: NOTES_ENABLED && shown, toggle: () => setShown((v) => !v) }}>{children}</Ctx.Provider>;
 }
 
+export function useReviewNotes() {
+  return useContext(Ctx);
+}
+
 export function ReviewNote({ tag, children }: { tag: string; children: React.ReactNode }) {
   const { shown } = useContext(Ctx);
   if (!shown) return null;

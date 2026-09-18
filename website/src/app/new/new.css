@@ -243,3 +243,24 @@
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 }
+
+/* Hero animation concept: rows and rail cards arrive in place; status text flips. */
+.hp3 {
+  .record { grid-template-columns: 9fr 3fr; }
+  .record.gridlines > div:first-child {
+    background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
+    background-size: calc(100% / 3) 100%;
+    background-position: -1px 0;
+  }
+  .record.gridlines > div:first-child > * { position: relative; }
+  .tl > div, .sig > div { transition: opacity .45s ease, transform .45s ease; }
+  .tl > div.pending, .sig > div.pending { opacity: 0; transform: translateY(6px); pointer-events: none; }
+  .tl span.flip { animation: hp3-flip 1.1s ease; border-radius: 3px; }
+  @keyframes hp3-flip { 0% { background: var(--em-t); } 100% { background: transparent; } }
+  .replay-row { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 8px; font-size: 12px; color: var(--note-ink); font-family: var(--mono); }
+  .replay { border: 1px solid var(--note-b); background: var(--note); color: var(--note-ink); border-radius: 6px; padding: 3px 10px; font: 600 12px var(--sans); cursor: pointer; }
+  @media (prefers-reduced-motion: reduce) {
+    .tl > div, .sig > div { transition: none; }
+    .tl span.flip { animation: none; }
+  }
+}

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { PreviewNav } from './_components/PreviewNav';
 import { PreviewFooter } from './_components/PreviewFooter';
-import { RecordFrame } from './_components/RecordFrame';
+import { LiveRecord } from './_components/LiveRecord';
 import { LoopSection } from './_components/LoopSection';
 import { ReviewBanner, ReviewNote, Flag } from './_components/ReviewNotes';
 import { Chip, CtaRow, SectionHead, SIGNUP_URL, GITHUB_URL } from './_components/ui';
@@ -72,9 +72,10 @@ export default function NewHomePage() {
             <CtaRow />
             <div className="assure"><span>AGPL-3.0</span><span>Unlimited seats</span><span>Self-host or Cloud</span></div>
           </div>
-          <RecordFrame />
+          <LiveRecord />
           <ReviewNote tag="Hero">
-            <p><b>Audience-first headline.</b> "SaaS teams" is the subject; the three verbs map to support and docs, projects, and CRM. The frame is a placeholder for a screenshot of the real company page in the seeded workspace.</p>
+            <p><b>Audience-first headline.</b> "SaaS teams" is the subject; the three verbs map to support and docs, projects, and CRM. The frame is a placeholder for the real company page in the seeded workspace.</p>
+            <p><b>Animation concept.</b> Events arrive on the record in place, one every two seconds: meeting, signal, chat, next step, task, PR, article, renewal. Status chips flip where the work moves. It plays once and rests; reduced-motion shows the finished state. The rail divider sits on the page grid, so it lines up with the last column boundary of the loop section below.</p>
             <p><Flag>DECISION</Flag> "View on GitHub" assumes the repository and a release bundle are public. <Flag>CLOUD</Flag> Until the Community module decision, this frame shows Cloud.</p>
           </ReviewNote>
         </div>
