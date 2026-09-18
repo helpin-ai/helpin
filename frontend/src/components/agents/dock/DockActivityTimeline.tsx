@@ -67,14 +67,27 @@ export function DockActivityTimeline({ group, runStatus }: { group: DockWorkingG
   const failed = group.segments.some(segment => segment.kind === 'tool' && segment.toolCall.status === 'failed');
   const [expanded, setExpanded] = useState(group.active || failed);
   const [wasActive, setWasActive] = useState(group.active);
+  const [manuallyToggled, setManuallyToggled] = useState(false);
+  const [contentMounted, setContentMounted] = useState(expanded);
   const [now, setNow] = useState(Date.now);
   const detailsId = useId();
   // Streaming updates keep the user's disclosure choice. A settled run folds
   // into the same compact completion summary used by Usermaven.
   if (wasActive !== group.active) {
     setWasActive(group.active);
-    setExpanded(group.active || failed);
+    if (failed || !manuallyToggled) {
+      if (group.active || failed) setExpanded(true);
+      else if (group.completed) setExpanded(false);
+    }
   }
+  const animateDisclosure = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === false;
+  if (expanded && !contentMounted) setContentMounted(true);
+  if (!expanded && contentMounted && !animateDisclosure) setContentMounted(false);
+  useEffect(() => {
+    if (expanded || !contentMounted) return;
+    const timer = window.setTimeout(() => setContentMounted(false), 220);
+    return () => window.clearTimeout(timer);
+  }, [contentMounted, expanded]);
   useEffect(() => {
     if (!group.active) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -93,7 +106,7 @@ export function DockActivityTimeline({ group, runStatus }: { group: DockWorkingG
     : 'Activity';
   return (
     <section className={styles.container} aria-label="Agent activity" data-dock-activity-timeline data-running={group.active}>
-      <button type="button" className={styles.summary} aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(!expanded)}>
+      <button type="button" className={styles.summary} aria-expanded={expanded} aria-controls={detailsId} onClick={() => { setManuallyToggled(true); setExpanded(!expanded); }}>
         <span className={cn(styles.summaryIcon, failed ? 'text-destructive' : 'text-muted-foreground')} aria-hidden="true">
           {group.active ? <AskAgentWorkAnimation className="h-5 w-5" /> : failed || (!group.completed && (runStatus === 'failed' || runStatus === 'cancelled')) ? <Cancel01Icon className="h-4 w-4" /> : <Tick01Icon className="h-3.5 w-3.5" />}
         </span>
@@ -101,8 +114,10 @@ export function DockActivityTimeline({ group, runStatus }: { group: DockWorkingG
         {duration !== undefined && duration > 0 && <span className={styles.elapsed}>{formatCodingSessionElapsed(duration)}</span>}
         <DisclosureChevron open={expanded} className="h-3 w-3 shrink-0 opacity-65" />
       </button>
-      {expanded && <div id={detailsId} className={styles.history}>
-        <DockActivitySteps segments={group.segments} active={group.active} />
+      {contentMounted && <div id={detailsId} className={styles.disclosure} data-open={expanded} aria-hidden={!expanded} inert={!expanded}>
+        <div className={styles.disclosureInner}>
+          <div className={styles.history}><DockActivitySteps segments={group.segments} active={group.active} /></div>
+        </div>
       </div>}
     </section>
   );
@@ -110,6 +125,6 @@ export function DockActivityTimeline({ group, runStatus }: { group: DockWorkingG
 
 export function DockActivitySteps({ segments, active = false }: { segments: TranscriptSegment[]; active?: boolean }) {
   return <ol className={styles.list} aria-label="Activity steps">
-    {segments.filter(segment => segment.kind !== 'assistant' || !segment.final).map(segment => <ActivityRow key={segment.id} segment={segment} active={active} />)}
+    {segments.filter(segment => segment.kind !== 'assistant' || !segment.final).map(segment => <ActivityRow key={segment.kind === 'tool' ? segment.toolCall.tool_call_id : segment.kind === 'assistant' ? segment.messageId ?? segment.id.replace(/^live:/, '') : segment.kind === 'reasoning' ? segment.reasoning.message_id : segment.id} segment={segment} active={active} />)}
   </ol>;
 }

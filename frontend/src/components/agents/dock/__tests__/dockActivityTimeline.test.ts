@@ -16,9 +16,20 @@ describe('activity timeline', () => {
   it('keeps a streaming final answer outside the activity summary', () => {
     const answer = { ...final, streaming: true } as TranscriptSegment;
     expect(buildDockActivityTimeline([progress, tool, answer], true, times)).toMatchObject([
-      { kind: 'working_group', active: false, completed: true, durationMs: 4000, segments: [progress, tool] },
+      { kind: 'working_group', active: true, completed: false, segments: [progress, tool] },
       { kind: 'segment', segment: answer },
     ]);
+  });
+  it('keeps work running through provisional narration until a final is confirmed', () => {
+    const narration: TranscriptSegment = { kind: 'assistant', id: 'narration', content: 'Checking the next item.', streaming: true };
+    const first = buildDockActivityTimeline([progress, tool, narration], true, times);
+    expect(first[0]).toMatchObject({ active: true, completed: false });
+    expect(first[0]).not.toHaveProperty('durationMs');
+    const nextTool = { ...tool, id: 'second', toolCall: { ...tool.toolCall, tool_call_id: 'second' } };
+    const next = buildDockActivityTimeline([progress, tool, narration, nextTool], true, times);
+    expect(next[0]).toMatchObject({ key: first[0].key, active: true });
+    const finished = buildDockActivityTimeline([progress, tool, narration, nextTool, final], false, times);
+    expect(finished[0]).toMatchObject({ key: first[0].key, active: false, completed: true, durationMs: 4000 });
   });
   it('does not hide unknown streaming answer text or turn explicit progress into a final', () => {
     const answer: TranscriptSegment = { kind: 'assistant', id: 'answer', content: 'A direct answer', streaming: true };

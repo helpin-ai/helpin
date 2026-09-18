@@ -9,7 +9,7 @@
 .history { padding: 4px 0 16px; }
 .list { position: relative; list-style: none; margin: 0; padding: 0; }
 .list::before { content: ''; position: absolute; top: 10px; bottom: 10px; inset-inline-start: 9px; width: 1px; background: var(--border); }
-.row { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: 10px; min-width: 0; padding: 6px 0; }
+.row { position: relative; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: 10px; min-width: 0; padding: 6px 0; animation: activityStepIn 140ms ease-out; }
 .marker { position: relative; z-index: 1; display: grid; place-items: center; width: 20px; height: 20px; background: transparent; color: var(--muted-foreground); border-radius: 50%; }
 .row[data-state='completed'] .marker { color: var(--quiet-positive); }
 .row[data-state='failed'] .marker, .row[data-state='failed'] .stepButton { color: var(--destructive); }
@@ -27,3 +27,11 @@
 @media (prefers-reduced-motion: reduce), (forced-colors: active) { .shimmer { animation: none; background: none; color: var(--muted-foreground); } }
 
 .activityHost:has([data-dock-activity-timeline][data-running='true']) [data-agent-live-status-region][data-working='true'] { display: none; }
+
+.disclosure { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 220ms ease, opacity 160ms ease; }
+.disclosure[data-open='true'] { grid-template-rows: 1fr; opacity: 1; }
+.disclosureInner { min-height: 0; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .disclosure { transition: none; } }
+
+@keyframes activityStepIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .row { animation: none; } }

@@ -36,7 +36,10 @@ export function buildDockActivityTimeline(
       const answer = segment.kind === 'assistant' && (segment.final || index === finalIndex
         || (trailing && active && index === interval.length - 1 && !segment.progress));
       if (answer) {
-        flushWork(false, timestampForSegment(segment), !!segment.final || index === finalIndex);
+        const completed = (segment.final && !segment.streaming) || index === finalIndex;
+        // Provisional prose and a still-streaming final are not completion events.
+        // Keep earlier tool rows open while the answer is being delivered.
+        flushWork(active && trailing && !completed, completed ? timestampForSegment(segment) : undefined, !!completed);
         entries.push({ kind: 'segment', key: segment.id, segment });
       } else {
         if (breakBefore.has(segment.id)) flushWork(false);

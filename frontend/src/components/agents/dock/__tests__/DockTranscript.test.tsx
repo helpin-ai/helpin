@@ -970,6 +970,21 @@ describe('Timeline view', () => {
     expect(container.querySelector('[data-agent-work-loader]')).toBeNull();
   });
 
+  it('keeps an expanded tool row mounted as live execution is saved', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const live = streamWithMessages([]);
+    live.live_turn_segments = [toolTurn('search', 'search_tasks', 100, 'running', '{"query":"sprint"}')];
+    act(() => root.render(<DockTranscript stream={live} active useRuntimeTimeline compactAssistantProgress />));
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="Activity steps"] button')!;
+    act(() => button.click());
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    const saved = streamWithMessages([{ ...assistantMessage('tools', '', 1), turn_segments: [toolTurn('search', 'search_tasks', 200, 'completed', '{"query":"sprint"}')] }]);
+    act(() => root.render(<DockTranscript stream={saved} active useRuntimeTimeline compactAssistantProgress />));
+    expect(container.querySelector('[aria-label="Activity steps"] button')).toBe(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain('{"query":"sprint"}');
+  });
+
   it('changes presentation without losing messages and persists the preference', () => {
     useDockStore.setState({ transcriptView: 'timeline' });
     const progress = { ...assistantMessage('progress', 'Reviewing your tasks.', 1), message_type: 'assistant_progress' };
