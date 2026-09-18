@@ -20,6 +20,23 @@ These are evaluation starting points, not measured capacity promises.
 
 ## Install
 
+The guided CLI installs and manages the release bundle. Once a release with CLI
+assets and the website installer are published:
+
+```sh
+curl -fsSL https://helpin.ai/install.sh | bash
+"$HOME/.local/bin/helpin" install
+```
+
+Choose local evaluation or public server setup. The CLI checks prerequisites,
+verifies the bundle, generates secrets, and waits for application readiness.
+Use `helpin` directly once `~/.local/bin` is on your PATH. See the
+[CLI guide](../docs/community/cli.md) for server configuration, unattended setup,
+and maintenance commands. CLI availability depends on publication; the manual
+bundle flow below remains supported.
+
+### Manual bundle installation
+
 Download the bundle archive and its checksum from the
 [releases page](https://github.com/helpin-ai/helpin/releases). If no bundle is
 published yet, build from source with the development guide above. Verify the

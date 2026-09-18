@@ -17,6 +17,8 @@ guides below.
 | Submit a fix or improve a guide | [Contributing](../CONTRIBUTING.md) and [documentation conventions](documentation-guide.md) |
 | Ask a question or report an issue | [Getting help](../SUPPORT.md) |
 
+- [Community CLI](community/cli.md): guided installation, configuration, and service management.
+
 ## Agents and automation
 
 - [Agents and automation](agents-and-automation.md): ownership, triggers, runs, and execution boundaries.

@@ -61,7 +61,23 @@ Docker Engine, Docker Compose v2, Bash, OpenSSL, and an amd64 or arm64 host.
 Allow at least **8 GiB RAM and 20 GiB free disk** for evaluation; source builds
 need more. These are starting points, not measured production capacity limits.
 
-### Install a published bundle
+### Guided installation
+
+Once a Community release with CLI assets and the website installer are published:
+
+```sh
+curl -fsSL https://helpin.ai/install.sh | bash
+"$HOME/.local/bin/helpin" install
+```
+
+The wizard checks Docker and resources, downloads and verifies the bundle,
+generates secrets, and starts Helpin. Choose local evaluation or a public server.
+Public hosting additionally requires DNS and an HTTPS proxy. The
+[CLI guide](docs/community/cli.md) covers configuration and commands such as
+`helpin status`, `helpin logs`, and `helpin doctor`. Add `~/.local/bin` to PATH
+as shown by the installer to use the short command.
+
+### Install a published bundle manually
 
 Download the bundle and its checksum from the
 [releases page](https://github.com/helpin-ai/helpin/releases), verify and

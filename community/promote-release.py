@@ -34,6 +34,15 @@ def validate(directory, run, repository):
     expected = f'{hashlib.sha256(archive.read_bytes()).hexdigest()}  {name}'
     if checksum.read_text().strip() != expected:
         raise ValueError('Candidate archive checksum does not match')
+    expected_cli = {'helpin-' + system + '-' + arch for system in ('linux', 'darwin') for arch in ('amd64', 'arm64')} | {'install.sh'}
+    assets = metadata.get('cli_assets', {})
+    if set(assets) != expected_cli:
+        raise ValueError('Incomplete CLI asset inventory')
+    for name, digest in assets.items():
+        if hashlib.sha256((directory / name).read_bytes()).hexdigest() != digest:
+            raise ValueError(f'CLI checksum mismatch: {name}')
+        if (directory / (name + '.sha256')).read_text().strip() != f'{digest}  {name}':
+            raise ValueError(f'CLI checksum file mismatch: {name}')
     return metadata, archive, checksum
 
 
@@ -68,7 +77,9 @@ def promote(directory, run_id, repository):
                      f"HTTPS acceptance: {metadata['public_host_evidence']}\n\n"
                      f"Verify the archive with `sha256sum -c {checksum.name}`, extract it, "
                      "and follow `helpin-community/community/README.md`.\n")
-    subprocess.run(['gh', 'release', 'create', tag, str(archive), str(checksum), str(directory / 'release.json'),
+    cli_files = [str(directory / name) for name in metadata['cli_assets']]
+    cli_files += [str(directory / (name + '.sha256')) for name in metadata['cli_assets']]
+    subprocess.run(['gh', 'release', 'create', tag, str(archive), str(checksum), str(directory / 'release.json'), *cli_files,
                     '--repo', repository, '--target', metadata['source_revision'], '--prerelease',
                     '--title', f'Helpin {tag}', '--notes-file', str(notes)], check=True)
 

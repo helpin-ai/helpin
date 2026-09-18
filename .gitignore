@@ -77,3 +77,6 @@ __pycache__/
 /artifacts/
 /test-results/
 /playwright-report/
+
+# Generated Community bundles and operator CLI release assets
+/release-artifacts/
