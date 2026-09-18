@@ -12,7 +12,7 @@ async function run(options = {}) {
     setDefaultTimeout() {}, async addInitScript() {}, on(name, fn) { events[name] = fn; },
     async goto() {
       if (options.pageFails) throw new Error('net::ERR_HTTP2_PROTOCOL_ERROR https://private-signature');
-      if (options.scriptFails) events.requestfailed({ resourceType: () => 'script', failure: () => ({ errorText: 'net::ERR_CONNECTION_RESET private-secret' }) });
+      if (options.scriptFails) events.requestfailed({ resourceType: () => 'script', url: () => 'https://cdn.helpin.ai/lib.js?private-secret', failure: () => ({ errorText: 'net::ERR_CONNECTION_RESET private-secret' }) });
       events.websocket({ url: () => 'wss://api.test/widget/ws', on: (_name, fn) => { if (_name === 'framereceived') fn({ payload: JSON.stringify({ type: 'session:joined', data: { session_token: 'private-session' } }) }); } });
     },
     locator(selector) {
@@ -80,5 +80,5 @@ test('navigation failure exposes only an allowlisted network category', async ()
 test('failed script diagnostics survive upload failure without exposing URLs', async () => {
   const result = await run({ scriptFails: true, uploadFails: true });
   assert.equal(result.exitCode, 1);
-  assert.ok(result.logs.some(line => line.includes('ERR_CONNECTION_RESET')));
+  assert.ok(result.logs.some(line => line.includes('ERR_CONNECTION_RESET') && line.includes('widget_cdn')));
 });

@@ -14,9 +14,8 @@ async function publish(browser, success, seconds) {
 // Fixed categories only: never emit URLs, response bodies or exception messages.
 function failureKind(error) {
   const message = String(error?.message || error || '');
-  for (const code of ['ERR_HTTP2_PROTOCOL_ERROR', 'ERR_QUIC_PROTOCOL_ERROR', 'ERR_NAME_NOT_RESOLVED', 'ERR_CONNECTION_RESET', 'ERR_CONNECTION_CLOSED', 'ERR_CONNECTION_TIMED_OUT', 'ERR_CERT_AUTHORITY_INVALID', 'ERR_ABORTED']) {
-    if (message.includes(code)) return code;
-  }
+  const code = message.match(/\b(?:ERR_[A-Z_]{1,50}|NS_ERROR_[A-Z_]{1,50}|NS_BINDING_ABORTED|SSL_ERROR_[A-Z_]{1,50}|SEC_ERROR_[A-Z_]{1,50})\b/);
+  if (code) return code[0];
   if (error?.name === 'TimeoutError') return 'timeout';
   return 'other';
 }
@@ -39,7 +38,9 @@ async function check(kind) {
     page.on('requestfailed', request => {
       const type = request.resourceType();
       if (['document', 'script', 'fetch', 'xhr'].includes(type)) {
-        record({ type, failure: failureKind(request.failure()?.errorText) });
+        const host = new URL(request.url()).hostname;
+        const destination = host === 'cdn.helpin.ai' ? 'widget_cdn' : host === new URL(site).hostname ? 'site' : 'other';
+        record({ type, destination, failure: failureKind(request.failure()?.errorText) });
       }
     });
     page.on('websocket', socket => {
