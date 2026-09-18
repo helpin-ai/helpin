@@ -340,3 +340,12 @@
 .hp3 .rcount span { color: var(--border-2); }
 @media (max-width: 960px) { .hp3 .receipt { grid-template-columns: 1fr; gap: 8px; } .hp3 .rcount { white-space: normal; flex-wrap: wrap; } }
 @media (prefers-reduced-motion: reduce) { .hp3 .receipt { transition: none; } }
+/* Column guides: the five real column boundaries of the wire's grid, fading out below the artifacts. */
+.hp3 .wire { padding-top: 20px; }
+.hp3 .wgrid { position: absolute; left: 0; right: 0; top: 0; bottom: -80px; display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 24px; pointer-events: none; -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 140px), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 140px), transparent 100%); }
+.hp3 .wgrid i { display: block; border-left: 1px solid var(--border); opacity: .9; }
+.hp3 .wgrid i:last-child { position: absolute; right: 0; top: 0; bottom: 0; border-left: 0; border-right: 1px solid var(--border); }
+.hp3 .wire-nodes, .hp3 .wire-svg { position: relative; z-index: 1; }
+.hp3 .wire-svg { position: absolute; }
+.hp3 .wire-svg { top: 20px; }
+@media (max-width: 960px) { .hp3 .wgrid { display: none; } .hp3 .wire { padding-top: 0; } }
