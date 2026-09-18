@@ -33,6 +33,7 @@ export interface DockChatDetail {
   chat: DockChat
   run?: AgentRun | null
   accepted_message?: AgentRunMessage | null
+  artifacts?: import('@/lib/pmTypes').AgentRunArtifact[]
   plan_ids: string[]
   plans?: CommandBarPlanSummary[]
 }

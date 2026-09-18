@@ -119,7 +119,8 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	}
 
 	message, err := svc.SendRunMessage(context.Background(), "ws-1", run.ID, "user-1", model.SendAgentRunMessageRequest{
-		Content: "good to go",
+		Content:             "good to go",
+		TrustedUserMessages: []string{"Build the requested report with local Python."},
 	})
 	if err != nil {
 		t.Fatalf("SendRunMessage returned error: %v", err)
@@ -138,6 +139,12 @@ func TestSendRunMessageTreatsExplicitApprovalAsNormalUserReply(t *testing.T) {
 	}
 	if resumeCall.req.Intent != model.AgentRunResumeIntentReply || resumeCall.req.Content != "good to go" {
 		t.Fatalf("expected reply resume request, got %#v", resumeCall.req)
+	}
+	var reviewContext struct {
+		TrustedUserMessages []string `json:"trusted_user_messages"`
+	}
+	if err := json.Unmarshal(resumeCall.req.ResponsePayload, &reviewContext); err != nil || len(reviewContext.TrustedUserMessages) != 1 || reviewContext.TrustedUserMessages[0] != "Build the requested report with local Python." {
+		t.Fatalf("trusted user history missing from runtime resume: %s (%v)", resumeCall.req.ResponsePayload, err)
 	}
 
 	updated, err := runRepo.GetByID(context.Background(), "ws-1", run.ID)

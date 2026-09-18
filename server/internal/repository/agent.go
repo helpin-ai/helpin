@@ -1575,6 +1575,23 @@ func (r *AgentRunArtifactRepository) ListByRun(ctx context.Context, workspaceID,
 	return artifacts, nil
 }
 
+// ListObjectArtifactsByDockChat returns durable private files from every run
+// that has backed a Dock conversation. A successor run must not make files
+// published by an earlier run disappear from the conversation.
+func (r *AgentRunArtifactRepository) ListObjectArtifactsByDockChat(ctx context.Context, workspaceID, dockChatID string) ([]model.AgentRunArtifact, error) {
+	var artifacts []model.AgentRunArtifact
+	if err := r.db.WithContext(ctx).
+		Table("agent_run_artifacts AS artifact").
+		Select("artifact.*").
+		Joins("JOIN agent_runs AS run ON run.id = artifact.run_id AND run.workspace_id = artifact.workspace_id").
+		Where("artifact.workspace_id = ? AND run.dock_chat_id = ? AND artifact.storage_mode = ?", workspaceID, dockChatID, "object").
+		Order("artifact.created_at ASC, artifact.sequence_no ASC, artifact.id ASC").
+		Scan(&artifacts).Error; err != nil {
+		return nil, fmt.Errorf("list dock chat object artifacts: %w", err)
+	}
+	return artifacts, nil
+}
+
 // GetByIDAndWorkspace returns one artifact without allowing cross-workspace lookup.
 func (r *AgentRunArtifactRepository) GetByIDAndWorkspace(ctx context.Context, workspaceID, artifactID string) (*model.AgentRunArtifact, error) {
 	var artifact model.AgentRunArtifact

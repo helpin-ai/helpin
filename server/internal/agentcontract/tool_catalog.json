@@ -1528,7 +1528,7 @@
     },
     {
       "name": "fetch_url",
-      "description": "Fetch a specific public URL and return extracted title, description, readable text, and links. Use this after finding or knowing an exact changelog, release notes, blog, docs, or source URL.",
+      "description": "Fetch a credential-free GET from a public URL and return extracted content. In an execution workspace, set output_path to save the bounded response for local Python analysis without a command approval. Never put credentials or private workspace data in the URL; use an approval-gated tool for authenticated or state-changing requests.",
       "category": "Web Search",
       "input_schema": {
         "properties": {
@@ -1540,6 +1540,10 @@
             "description": "Maximum extracted text characters to return. Defaults to 12000, max 30000.",
             "type": "integer"
           },
+          "output_path": {
+            "description": "Optional file path relative to the current execution workspace. Saves the exact response body (maximum 2 MiB) for later local analysis.",
+            "type": "string"
+          },
           "url": {
             "description": "Public http(s) URL to fetch directly.",
             "type": "string"
@@ -1548,6 +1552,7 @@
         "required": [
           "url"
         ],
+        "additionalProperties": false,
         "type": "object"
       },
       "presets": []
@@ -5443,7 +5448,7 @@
     },
     {
       "name": "run_python",
-      "description": "Run Python source in a fresh interpreter with a private run-local venv. Files and installed packages persist only in this run; analysis storage (512 MiB) is deleted when the run ends and never transfers to successor runs. Install dependencies with run_command (python3 -m pip install), subject to approval. Publish important outputs before finishing the turn. output_paths explicitly selects private CSV, PNG, JSON or text artifacts (10 files, 10 MiB each, 25 MiB total).",
+      "description": "Run local Python source in a fresh interpreter with a private run-local venv. For credential-free public GETs, first use fetch_url with output_path, then analyze the saved file here; network access inside Python is approval-gated. Files and installed packages persist only in this run; analysis storage (512 MiB) is deleted when the run ends and never transfers to successor runs. Install dependencies with run_command (python3 -m pip install), subject to approval. Publish important outputs before finishing the turn. output_paths explicitly selects private CSV, PNG, JSON or text artifacts (10 files, 10 MiB each, 25 MiB total).",
       "category": "Workspace",
       "input_schema": {
         "type": "object",

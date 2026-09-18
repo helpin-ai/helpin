@@ -97,6 +97,61 @@ execution_enabled boolean NOT NULL DEFAULT false,
 	}
 }
 
+func TestDockChatDetailIncludesPrivateArtifactsAcrossSuccessorRuns(t *testing.T) {
+	dbName := fmt.Sprintf("file:dock_chat_artifacts_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE agent_runs (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, dock_chat_id TEXT)`,
+		`CREATE TABLE agent_run_artifacts (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, run_id TEXT NOT NULL,
+			artifact_type TEXT NOT NULL, format TEXT NOT NULL, storage_mode TEXT NOT NULL,
+			inline_content TEXT, object_key TEXT, metadata TEXT NOT NULL DEFAULT '{}',
+			sequence_no INTEGER NOT NULL DEFAULT 0, created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create artifact fixture tables: %v", err)
+		}
+	}
+	for _, row := range []struct{ id, workspace, chat string }{
+		{"run-1", "ws-1", "chat-1"},
+		{"run-2", "ws-1", "chat-1"},
+		{"run-other-chat", "ws-1", "chat-2"},
+		{"run-other-workspace", "ws-2", "chat-1"},
+	} {
+		if err := db.Exec(`INSERT INTO agent_runs (id, workspace_id, dock_chat_id) VALUES (?, ?, ?)`, row.id, row.workspace, row.chat).Error; err != nil {
+			t.Fatalf("seed run: %v", err)
+		}
+	}
+	objects := []model.AgentRunArtifact{
+		{ID: "file-1", WorkspaceID: "ws-1", RunID: "run-1", ArtifactType: "analysis_output", Format: "csv", StorageMode: "object", ObjectKey: strPtr("private/file-1"), Metadata: []byte(`{"file_name":"first.csv"}`), SequenceNo: 1},
+		{ID: "file-2", WorkspaceID: "ws-1", RunID: "run-2", ArtifactType: "analysis_output", Format: "json", StorageMode: "object", ObjectKey: strPtr("private/file-2"), Metadata: []byte(`{"file_name":"second.json"}`), SequenceNo: 1},
+		{ID: "internal", WorkspaceID: "ws-1", RunID: "run-2", ArtifactType: model.AgentRunArtifactTypeToolCall, Format: "json", StorageMode: "object", ObjectKey: strPtr("private/internal"), Metadata: []byte(`{}`), SequenceNo: 2},
+		{ID: "inline", WorkspaceID: "ws-1", RunID: "run-2", ArtifactType: "analysis_output", Format: "txt", StorageMode: "inline", Metadata: []byte(`{}`), SequenceNo: 3},
+		{ID: "other-chat", WorkspaceID: "ws-1", RunID: "run-other-chat", ArtifactType: "analysis_output", Format: "csv", StorageMode: "object", ObjectKey: strPtr("private/other-chat"), Metadata: []byte(`{}`)},
+		{ID: "other-workspace", WorkspaceID: "ws-2", RunID: "run-other-workspace", ArtifactType: "analysis_output", Format: "csv", StorageMode: "object", ObjectKey: strPtr("private/other-workspace"), Metadata: []byte(`{}`)},
+	}
+	if err := db.Create(&objects).Error; err != nil {
+		t.Fatalf("seed artifacts: %v", err)
+	}
+	svc := (&DockChatService{}).SetArtifactRepository(repository.NewAgentRunArtifactRepository(db))
+	detail, err := svc.chatDetail(context.Background(), &model.DockChat{ID: "chat-1", WorkspaceID: "ws-1"})
+	if err != nil {
+		t.Fatalf("chat detail: %v", err)
+	}
+	if len(detail.Artifacts) != 2 || detail.Artifacts[0].ID != "file-1" || detail.Artifacts[1].ID != "file-2" {
+		t.Fatalf("artifacts = %#v", detail.Artifacts)
+	}
+	for _, artifact := range detail.Artifacts {
+		if artifact.ObjectKey != nil {
+			t.Fatalf("object key leaked for %s", artifact.ID)
+		}
+	}
+}
+
 func TestDockChatVisibilityScopesListAndReadAccess(t *testing.T) {
 	dbName := fmt.Sprintf("file:dock_chat_visibility_%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})

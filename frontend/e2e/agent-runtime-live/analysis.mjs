@@ -74,9 +74,10 @@ const base = `e2e-${stamp}`;
 await send(`This is an authorized local Python E2E test. Use run_python, without a repository, to create ${base}.json containing {"marker":"E2E_PYTHON_OK","phase":1} and ${base}.csv containing two rows. Explicitly publish both files with publish_outputs. Then use run_python a second time in this same turn to read ${base}.json and report E2E_PYTHON_OK. Do not use the network or delegate.`);
 let pythonState = await waitTurn('python auto-review');
 let pythonPending = pythonState.interactions.filter((item) => item.status === 'pending');
-const pythonAutoApproved = pythonPending.length === 0;
+const unexpectedPython = pythonPending.filter((item) => item.request_payload?.tool_name === 'run_python');
+if (unexpectedPython.length) throw new Error(`local Python prompted unexpectedly: ${JSON.stringify(unexpectedPython.map((item) => item.request_payload?.input))}`);
 if (pythonPending.length) {
-  log('python unexpected prompt', pythonPending.map((item) => ({ kind: item.interaction_kind, summary: item.summary, request_payload: item.request_payload })));
+  log('expected publication approval', pythonPending.map((item) => ({ kind: item.interaction_kind, summary: item.summary, tool: item.request_payload?.tool_name })));
   await resolvePending(pythonState);
   pythonState = await waitTurn('python after approval', { approve: true });
 }
@@ -84,17 +85,32 @@ if (pythonState.detail.run?.status === 'failed' || pythonState.detail.run?.statu
 const pythonText = pythonState.messages.filter((message) => message.role === 'assistant').map(text).join('\n');
 if (!pythonText.includes('E2E_PYTHON_OK')) throw new Error(`python marker missing: ${pythonText.slice(-1500)}`);
 const firstRunID = pythonState.detail.run?.id;
+const pythonAutoApproved = !pythonState.interactions.some((item) => item.request_payload?.tool_name === 'run_python');
+if (!pythonAutoApproved) throw new Error('initial local Python unexpectedly created an approval interaction');
 const firstEvents = await runEvents();
 log('python result', { run_id: firstRunID, auto_approved: pythonAutoApproved, event_summary: summarizeEvents(firstEvents) });
 
-await send(`Follow-up retention check: use run_python to read ${base}.json from the existing execution workspace. Do not recreate it. Report E2E_REUSE_OK and its marker value. Do not use the network.`);
+await send(`Follow-up retention check: call run_python with exactly this local source and no other filesystem inspection: import json; data=json.load(open("${base}.json")); print("E2E_REUSE_OK", data["marker"]). Do not recreate the file and do not use the network.`);
 let reuseState = await waitTurn('python reuse');
-if (reuseState.interactions.some((item) => item.status === 'pending')) { await resolvePending(reuseState); reuseState = await waitTurn('python reuse approved', { approve: true }); }
+const reusePending = reuseState.interactions.filter((item) => item.status === 'pending');
+if (reusePending.length) throw new Error(`same-run local Python prompted unexpectedly: ${JSON.stringify(reusePending.map((item) => ({ tool: item.request_payload?.tool_name, input: item.request_payload?.input })))}`);
 if (reuseState.detail.run?.status === 'failed' || reuseState.detail.run?.status === 'cancelled') throw new Error(`python reuse ended ${reuseState.detail.run.status}`);
 const reuseText = reuseState.messages.filter((message) => message.role === 'assistant').map(text).join('\n');
 if (!reuseText.includes('E2E_REUSE_OK') || !reuseText.includes('E2E_PYTHON_OK')) throw new Error(`reuse marker missing: ${reuseText.slice(-1500)}`);
 if (reuseState.detail.run?.id !== firstRunID) throw new Error(`follow-up changed run: ${firstRunID} -> ${reuseState.detail.run?.id}`);
 log('python reuse', { same_run: true, run_id: firstRunID });
+
+await send(`Public GET check: use fetch_url exactly once with url https://example.com/ and output_path ${base}-example.html. Then use run_python locally to read that saved file and report E2E_PUBLIC_GET_OK plus its byte count. Do not make any network request inside Python and do not use run_command.`);
+const fetchState = await waitTurn('public GET without approval');
+const fetchPending = fetchState.interactions.filter((item) => item.status === 'pending');
+if (fetchPending.length) {
+  throw new Error(`credential-free public GET flow prompted unexpectedly: ${JSON.stringify(fetchPending.map((item) => ({ tool: item.request_payload?.tool_name, input: item.request_payload?.input })))}`);
+}
+if (fetchState.detail.run?.status === 'failed' || fetchState.detail.run?.status === 'cancelled') throw new Error(`public GET flow ended ${fetchState.detail.run.status}`);
+const fetchText = fetchState.messages.filter((message) => message.role === 'assistant').map(text).join('\n');
+if (!fetchText.includes('E2E_PUBLIC_GET_OK')) throw new Error(`public GET marker missing: ${fetchText.slice(-1500)}`);
+if (fetchState.detail.run?.id !== firstRunID) throw new Error(`public GET follow-up changed run: ${firstRunID} -> ${fetchState.detail.run?.id}`);
+log('public GET', { same_run: true, approval_prompts: 0 });
 
 const artifacts = await get(`/pm/agent-runs/${firstRunID}/artifacts?${q}`);
 log('artifacts', (artifacts ?? []).map((artifact) => ({ id: artifact.id, type: artifact.artifact_type, content_type: artifact.content_type, file_name: artifact.file_name, visibility: artifact.visibility, download_url: artifact.download_url })));

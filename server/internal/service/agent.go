@@ -539,6 +539,9 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 	if input.WorkspaceContext != nil {
 		metadata["workspace_context"] = mapFromJSON(input.WorkspaceContext)
 	}
+	if len(input.TrustedUserMessages) > 0 {
+		metadata["trusted_user_messages"] = append([]string(nil), input.TrustedUserMessages...)
+	}
 	mode := strings.TrimSpace(run.InvocationMode)
 	if mode == "" && agent != nil {
 		mode = strings.TrimSpace(agent.DefaultInvocationMode)
@@ -4549,11 +4552,12 @@ type startTargetRunOptions struct {
 	// dockChatID marks the run as the backing run of a dock chat. Dock chat
 	// runs are keyed by their chat, not their target, so the per-target
 	// active-run guard does not apply to them.
-	executionEnabled bool
-	dockChatID       *string
-	clientMessageID  string
-	repositoryID     *string
-	afterPersist     func(*model.AgentRun) error
+	executionEnabled    bool
+	dockChatID          *string
+	clientMessageID     string
+	repositoryID        *string
+	trustedUserMessages []string
+	afterPersist        func(*model.AgentRun) error
 }
 
 func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
@@ -5194,6 +5198,7 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 				return nil, err
 			}
 			payload.ExecutionEnabled = true
+			payload.TrustedUserMessages = append([]string(nil), opts.trustedUserMessages...)
 			input, err = json.Marshal(payload)
 			if err != nil {
 				return nil, err
@@ -5393,9 +5398,10 @@ func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorI
 // SendRunMessage appends a user message to a paused interactive run and resumes the workflow.
 func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, actorID string, req model.SendAgentRunMessageRequest) (*model.AgentRunMessage, error) {
 	_, message, err := s.resumeRunWithIntent(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
-		Intent:          model.AgentRunResumeIntentReply,
-		Content:         req.Content,
-		ClientMessageID: req.ClientMessageID,
+		Intent:              model.AgentRunResumeIntentReply,
+		Content:             req.Content,
+		ClientMessageID:     req.ClientMessageID,
+		TrustedUserMessages: req.TrustedUserMessages,
 	})
 	if err != nil {
 		return nil, err
@@ -5575,6 +5581,17 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 	responsePayload := json.RawMessage(nil)
 	if len(req.ResponsePayload) > 0 && strings.TrimSpace(string(req.ResponsePayload)) != "" && strings.TrimSpace(string(req.ResponsePayload)) != "null" {
 		responsePayload = append(json.RawMessage(nil), req.ResponsePayload...)
+	}
+	if len(req.TrustedUserMessages) > 0 {
+		var payload map[string]interface{}
+		if len(responsePayload) > 0 {
+			_ = json.Unmarshal(responsePayload, &payload)
+		}
+		if payload == nil {
+			payload = map[string]interface{}{}
+		}
+		payload["trusted_user_messages"] = append([]string(nil), req.TrustedUserMessages...)
+		responsePayload, _ = json.Marshal(payload)
 	}
 	runtimeContent := replyText
 	if intent == model.AgentRunResumeIntentApprove && !shouldAddMessage {

@@ -19,7 +19,7 @@ pnpm test:e2e:agent-runtime:typesafe
 pnpm test:e2e:agent-runtime:interrupted
 ```
 
-The analysis check prints its chat and run IDs. Use those IDs to verify private artifact download and durability after terminal cleanup:
+The analysis check also verifies that a credential-free public GET can be saved into the live execution workspace and analyzed locally without a human prompt. It prints its chat and run IDs. Use those IDs to verify that private artifacts appear on the Dock chat, require authentication, download successfully, and survive terminal cleanup:
 
 ```bash
 HELPIN_E2E_CHAT_ID='<chat-id>' \

@@ -17,6 +17,7 @@ import type { DockChatDetail, DockChatMediaAttachment, DockEntityReference } fro
 import type { AgentRun, AgentRunMessage, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
 import { DockExecutionPicker } from './DockExecutionPicker';
+import { DockArtifactDownloads } from './DockArtifactDownloads';
 import { DockTranscript, type DockMessageSubmission } from './DockTranscript';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
@@ -909,6 +910,7 @@ export function ChatView({
             compactAssistantProgress
           />
         )}
+        <DockArtifactDownloads workspaceId={workspaceId} artifacts={detail?.artifacts ?? []} />
         {followUpSuggestions.length > 0 && (
           <div className="mt-2 border-t border-border/40 pt-1" data-agent-follow-up-suggestions>
             {followUpSuggestions.map((suggestion) => (

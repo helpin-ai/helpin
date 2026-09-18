@@ -89,6 +89,7 @@ type DockChatDetail struct {
 	Chat            DockChat                `json:"chat"`
 	Run             *AgentRun               `json:"run,omitempty"`
 	AcceptedMessage *AgentRunMessage        `json:"accepted_message,omitempty"`
+	Artifacts       []AgentRunArtifact      `json:"artifacts,omitempty"`
 	PlanIDs         []string                `json:"plan_ids"`
 	Plans           []CommandBarPlanSummary `json:"plans,omitempty"`
 }

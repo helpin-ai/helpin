@@ -24,6 +24,11 @@ const q = `workspace_id=${workspace.id}`;
 const artifacts = await request('GET', `/pm/agent-runs/${runID}/artifacts?${q}`);
 const outputs = artifacts.filter((item) => item.artifact_type === 'analysis_output');
 if (outputs.length < 2) throw new Error(`expected at least two analysis outputs, got ${outputs.length}`);
+const chat = await request('GET', `/dock/chats/${chatID}?${q}`);
+const visibleIDs = new Set((chat.artifacts ?? []).map((item) => item.id));
+for (const output of outputs) {
+  if (!visibleIDs.has(output.id)) throw new Error(`published artifact ${output.id} is missing from the Dock chat detail`);
+}
 
 async function verifyOutput(artifact) {
   const endpoint = `/agent-artifacts/${artifact.id}/content-url?${q}`;
@@ -50,4 +55,4 @@ for (let attempt = 0; attempt < 30; attempt += 1) {
 }
 if (!['cancelled', 'completed', 'failed'].includes(oldRun?.status)) throw new Error(`old run remained ${oldRun?.status}`);
 const after = await Promise.all(outputs.slice(0, 2).map(verifyOutput));
-console.log(JSON.stringify({ chat_id: chatID, run_id: runID, terminal_status: oldRun.status, authenticated_outputs_before_disable: before, authenticated_outputs_after_terminal_cleanup: after, unauthenticated_content_url_status: 401 }, null, 2));
+console.log(JSON.stringify({ chat_id: chatID, run_id: runID, terminal_status: oldRun.status, dock_visible_output_count: outputs.length, authenticated_outputs_before_disable: before, authenticated_outputs_after_terminal_cleanup: after, unauthenticated_content_url_status: 401 }, null, 2));

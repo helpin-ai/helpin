@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +36,9 @@ const (
 	dockChatCarryForwardTurns         = 20
 	dockChatCarryForwardChars         = 500
 	dockChatCarryForwardTotal         = 6000
+	dockChatTrustedUserTurns          = 20
+	dockChatTrustedUserChars          = 1000
+	dockChatTrustedUserTotal          = 12000
 	dockChatPageContextOpenTag        = "<page_context>"
 	dockChatReferencesOpenTag         = "<references>"
 	dockChatAttachmentsOpenTag        = "<attachments>"
@@ -44,6 +48,15 @@ const (
 	dockChatListDefaultLimit          = 30
 	dockChatListMaxLimit              = 50
 )
+
+var dockChatUntrustedContextPatterns = func() []*regexp.Regexp {
+	tags := []string{"previous_conversation", "child_run_result", "page_context", "references", "attachments", "source_attachments", "attachment_analysis"}
+	patterns := make([]*regexp.Regexp, 0, len(tags))
+	for _, tag := range tags {
+		patterns = append(patterns, regexp.MustCompile("(?is)<"+tag+">.*?</"+tag+">"))
+	}
+	return patterns
+}()
 
 type dockChatCursor struct {
 	ActivityAt time.Time `json:"activity_at"`
@@ -56,6 +69,7 @@ type DockChatService struct {
 	chatRepo            *repository.DockChatRepository
 	runRepo             *repository.AgentRunRepository
 	runMessageRepo      *repository.AgentRunMessageRepository
+	artifactRepo        *repository.AgentRunArtifactRepository
 	planRepo            *repository.CommandBarPlanRepository
 	agentService        *AgentService
 	commandService      *InternalCommandService
@@ -66,6 +80,14 @@ type DockChatService struct {
 	supportInboxService *SupportInboxService
 	mediaLLM            dockChatMediaLLM
 	externalMediaClient *http.Client
+}
+
+// SetArtifactRepository exposes durable private outputs in Dock chat details.
+func (s *DockChatService) SetArtifactRepository(repo *repository.AgentRunArtifactRepository) *DockChatService {
+	if s != nil {
+		s.artifactRepo = repo
+	}
+	return s
 }
 
 // SetPMAttachmentRepository enables first-class Ask media attachments.
@@ -473,7 +495,7 @@ func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, us
 			}
 		} else if err := s.setRunAttachedContexts(ctx, currentRun, attachedContexts); err != nil {
 			return nil, err
-		} else if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed, ClientMessageID: clientMessageID}); err != nil {
+		} else if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed, ClientMessageID: clientMessageID, TrustedUserMessages: s.trustedDockUserHistory(ctx, chat)}); err != nil {
 			if !isChatRunExpiredError(err) {
 				return nil, err
 			}
@@ -610,6 +632,19 @@ func (s *DockChatService) chatDetail(ctx context.Context, chat *model.DockChat) 
 			for _, plan := range plans {
 				detail.PlanIDs = append(detail.PlanIDs, plan.ID)
 			}
+		}
+	}
+	if s.artifactRepo != nil {
+		artifacts, err := s.artifactRepo.ListObjectArtifactsByDockChat(ctx, chat.WorkspaceID, chat.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, artifact := range artifacts {
+			if !isBrowserMediaArtifactType(strings.TrimSpace(artifact.ArtifactType)) || artifact.ObjectKey == nil || strings.TrimSpace(*artifact.ObjectKey) == "" {
+				continue
+			}
+			artifact.ObjectKey = nil
+			detail.Artifacts = append(detail.Artifacts, artifact)
 		}
 	}
 	return detail, nil
@@ -805,10 +840,12 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 
 	var contextBlocks []string
 	var parentRunID *string
+	var trustedUserMessages []string
 	if previousRun != nil {
 		if carry := s.buildCarryForward(ctx, previousRun); carry != "" {
 			contextBlocks = append(contextBlocks, carry)
 		}
+		trustedUserMessages = s.trustedDockUserHistory(ctx, chat)
 		parentRunID = &previousRun.ID
 	}
 	// Deliver any settled child-run results that could not be resumed into the
@@ -859,10 +896,11 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		nil,
 		parentRunID,
 		startTargetRunOptions{
-			dockChatID:       &chat.ID,
-			clientMessageID:  clientMessageID,
-			executionEnabled: chat.ExecutionEnabled,
-			repositoryID:     initialDockExecutionRepositoryID(chat.ExecutionEnabled, attachedContexts),
+			dockChatID:          &chat.ID,
+			clientMessageID:     clientMessageID,
+			executionEnabled:    chat.ExecutionEnabled,
+			repositoryID:        initialDockExecutionRepositoryID(chat.ExecutionEnabled, attachedContexts),
+			trustedUserMessages: trustedUserMessages,
 			afterPersist: func(run *model.AgentRun) error {
 				if err := s.chatRepo.SetActiveRun(ctx, chat.WorkspaceID, chat.ID, run.ID); err != nil {
 					return fmt.Errorf("set chat active run: %w", err)
@@ -887,6 +925,51 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		}
 	}
 	return nil
+}
+
+// trustedDockUserHistory carries only host-authenticated human turns across a
+// successor boundary. Mixed carry-forward transcript remains untrusted model
+// context and is never used as approval authorization.
+func (s *DockChatService) trustedDockUserHistory(ctx context.Context, chat *model.DockChat) []string {
+	if s == nil || s.runMessageRepo == nil || chat == nil {
+		return nil
+	}
+	messages, _, err := s.runMessageRepo.ListByDockChat(ctx, chat.WorkspaceID, chat.ID, nil, 100)
+	if err != nil {
+		return nil
+	}
+	trusted := make([]string, 0, dockChatTrustedUserTurns)
+	for _, message := range messages {
+		if message.Role != "user" || message.ActorUserID == nil || strings.TrimSpace(*message.ActorUserID) == "" {
+			continue
+		}
+		content := message.Content
+		for _, pattern := range dockChatUntrustedContextPatterns {
+			content = pattern.ReplaceAllString(content, "")
+		}
+		content = strings.TrimSpace(content)
+		if content == "" || content == "Approved. Continue." || strings.HasPrefix(content, "Changes requested:") {
+			continue
+		}
+		if len(content) > dockChatTrustedUserChars {
+			content = strings.TrimSpace(content[:dockChatTrustedUserChars]) + "…"
+		}
+		trusted = append(trusted, content)
+	}
+	if len(trusted) > dockChatTrustedUserTurns {
+		trusted = trusted[len(trusted)-dockChatTrustedUserTurns:]
+	}
+	total := 0
+	start := len(trusted)
+	for start > 0 {
+		candidate := trusted[start-1]
+		if total+len(candidate) > dockChatTrustedUserTotal {
+			break
+		}
+		total += len(candidate)
+		start--
+	}
+	return append([]string(nil), trusted[start:]...)
 }
 
 func initialDockExecutionRepositoryID(executionEnabled bool, contexts []model.AgentRunContextReference) *string {

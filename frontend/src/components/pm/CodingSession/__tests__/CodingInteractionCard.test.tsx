@@ -479,13 +479,33 @@ describe('CodingInteractionCard', () => {
       summary: 'Approve run_command for this agent run. TypeSafe review: external_send=0.97, user_asked=0.77. Scores do not authorize external effects.',
       request_payload: {
         tool_name: 'run_command',
+        input: { program: 'curl', args: ['https://data.example/results.csv'] },
         approval_review: { provider: 'typesafe', scores: { external_send: 0.97 } },
       },
     }));
 
-    expect(container.textContent).toContain('Approve run_command for this agent run.');
+    expect(container.textContent).toContain('Command: curl https://data.example/results.csv');
     expect(container.textContent).not.toContain('TypeSafe review');
     expect(container.textContent).not.toContain('external_send=');
+  });
+
+  it('shows the proposed Python source before approval', () => {
+    renderCard(vi.fn(), buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve tool call',
+      summary: 'Approve run_python for this agent run.',
+      request_payload: {
+        tool_name: 'run_python',
+        input: {
+          source: "from urllib.request import urlopen\nprint(urlopen('https://data.example/results.csv').status)",
+          timeout_seconds: 120,
+        },
+      },
+    }));
+
+    expect(container.textContent).toContain('Python script:');
+    expect(container.textContent).toContain('https://data.example/results.csv');
+    expect(container.textContent).not.toContain('Approve run_python for this agent run.');
   });
 
   it('does not duplicate the summary when a document preview already represents the request', () => {

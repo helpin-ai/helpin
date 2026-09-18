@@ -724,30 +724,34 @@ type AgentRunInputPayload struct {
 	ExecutionLocation string                  `json:"execution_location,omitempty"`
 	LocalExecution    *CLILocalRun            `json:"local_execution,omitempty"`
 
-	CredentialSource    string                     `json:"credential_source,omitempty"`
-	ModelProvider       string                     `json:"model_provider,omitempty"`
-	ModelConnectionID   string                     `json:"model_connection_id,omitempty"`
-	ModelName           string                     `json:"model_name,omitempty"`
-	DeliveryMode        string                     `json:"delivery_mode,omitempty"`
-	Trigger             *AgentRunTriggerContext    `json:"trigger,omitempty"`
-	CRMPlaybook         *CRMPlaybookRunContext     `json:"crm_playbook,omitempty"`
-	Target              *AgentRunTargetContext     `json:"target,omitempty"`
-	Event               *AgentRunEventContext      `json:"event,omitempty"`
-	Output              *AgentRunOutputContext     `json:"output,omitempty"`
-	WorkspaceContext    *AgentRunWorkspaceContext  `json:"workspace_context,omitempty"`
-	AttachedContexts    []AgentRunContextReference `json:"attached_contexts,omitempty"`
-	TaskID              string                     `json:"task_id,omitempty"`
-	EpicID              string                     `json:"epic_id,omitempty"`
-	ConversationID      string                     `json:"conversation_id,omitempty"`
-	AdditionalContext   string                     `json:"additional_context,omitempty"`
-	AllowedTools        []string                   `json:"allowed_tools,omitempty"`
-	Stage               string                     `json:"stage,omitempty"`
-	PlanDocumentID      string                     `json:"plan_document_id,omitempty"`
-	SpecDocumentID      string                     `json:"spec_document_id,omitempty"`
-	SpecVersionID       string                     `json:"spec_version_id,omitempty"`
-	PlanningMethodology string                     `json:"planning_methodology,omitempty"`
-	FlowOutputKind      string                     `json:"flow_output_kind,omitempty"`
-	AISelection         *AIExecutionSelection      `json:"ai_selection,omitempty"`
+	CredentialSource  string                     `json:"credential_source,omitempty"`
+	ModelProvider     string                     `json:"model_provider,omitempty"`
+	ModelConnectionID string                     `json:"model_connection_id,omitempty"`
+	ModelName         string                     `json:"model_name,omitempty"`
+	DeliveryMode      string                     `json:"delivery_mode,omitempty"`
+	Trigger           *AgentRunTriggerContext    `json:"trigger,omitempty"`
+	CRMPlaybook       *CRMPlaybookRunContext     `json:"crm_playbook,omitempty"`
+	Target            *AgentRunTargetContext     `json:"target,omitempty"`
+	Event             *AgentRunEventContext      `json:"event,omitempty"`
+	Output            *AgentRunOutputContext     `json:"output,omitempty"`
+	WorkspaceContext  *AgentRunWorkspaceContext  `json:"workspace_context,omitempty"`
+	AttachedContexts  []AgentRunContextReference `json:"attached_contexts,omitempty"`
+	TaskID            string                     `json:"task_id,omitempty"`
+	EpicID            string                     `json:"epic_id,omitempty"`
+	ConversationID    string                     `json:"conversation_id,omitempty"`
+	AdditionalContext string                     `json:"additional_context,omitempty"`
+	// TrustedUserMessages contains bounded, host-authenticated human turns from
+	// an earlier Dock chat run. It is kept separate from carry-forward context,
+	// which also contains untrusted assistant and tool output.
+	TrustedUserMessages []string              `json:"trusted_user_messages,omitempty"`
+	AllowedTools        []string              `json:"allowed_tools,omitempty"`
+	Stage               string                `json:"stage,omitempty"`
+	PlanDocumentID      string                `json:"plan_document_id,omitempty"`
+	SpecDocumentID      string                `json:"spec_document_id,omitempty"`
+	SpecVersionID       string                `json:"spec_version_id,omitempty"`
+	PlanningMethodology string                `json:"planning_methodology,omitempty"`
+	FlowOutputKind      string                `json:"flow_output_kind,omitempty"`
+	AISelection         *AIExecutionSelection `json:"ai_selection,omitempty"`
 }
 
 func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
@@ -781,8 +785,9 @@ func (p *AgentRunInputPayload) SetTarget(targetType, targetID string) {
 }
 
 type SendAgentRunMessageRequest struct {
-	Content         string `json:"content"`
-	ClientMessageID string `json:"client_message_id,omitempty"`
+	Content             string   `json:"content"`
+	ClientMessageID     string   `json:"client_message_id,omitempty"`
+	TrustedUserMessages []string `json:"-"`
 }
 
 type ContinueAgentRunRequest struct {
@@ -794,11 +799,12 @@ type SendAgentRunRequestChangesRequest struct {
 }
 
 type ResumeAgentRunRequest struct {
-	Intent          string          `json:"intent"`
-	Content         string          `json:"content,omitempty"`
-	SendMessage     bool            `json:"send_message,omitempty"`
-	ResponsePayload json.RawMessage `json:"response_payload,omitempty"`
-	ClientMessageID string          `json:"client_message_id,omitempty"`
+	Intent              string          `json:"intent"`
+	Content             string          `json:"content,omitempty"`
+	SendMessage         bool            `json:"send_message,omitempty"`
+	ResponsePayload     json.RawMessage `json:"response_payload,omitempty"`
+	ClientMessageID     string          `json:"client_message_id,omitempty"`
+	TrustedUserMessages []string        `json:"-"`
 }
 
 // RuntimeProfile describes the policy attached to a capability profile.
