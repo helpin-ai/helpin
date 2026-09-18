@@ -1,19 +1,19 @@
 import Link from 'next/link';
 import { PreviewNav } from './_components/PreviewNav';
 import { PreviewFooter } from './_components/PreviewFooter';
-import { LiveRecord } from './_components/LiveRecord';
+import { RecordStory } from './_components/RecordStory';
 import { LoopWire } from './_components/LoopWire';
 import { LoopSection } from './_components/LoopSection';
 import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { Chip, CtaRow, GithubIcon, SectionHead, SIGNUP_URL, GITHUB_URL } from './_components/ui';
 
 const RECORD_FACTS = [
-  ['Conversations', 'Website chat and email, in a shared inbox with assignment, notes, tags, and saved replies.'],
-  ['Meetings', 'A notetaker joins Google Meet, Zoom, Teams, or Webex. You get the recording, a speaker-attributed transcript, a summary, decisions, objections, and next steps.'],
-  ['Deals', 'Pipelines and stages, with buyer signals detected from email, meetings, and support, each linked to its source.'],
-  ['Tasks', 'Created from a conversation, a meeting action item, or a plan. Linked back to whatever started them.'],
-  ['Docs', 'Help-center articles and internal documents, including the ones a customer was sent and the ones their questions produced.'],
-  ['Emails and calls', 'Gmail and calendar sync put the thread and the appointment on the same timeline.'],
+  ['Conversations', 'Chat and email, with assignments, notes, tags, and replies.'],
+  ['Meetings', 'Recordings, transcripts, summaries, decisions, objections, and next steps.'],
+  ['Deals', 'Pipeline activity and buyer signals, linked back to the conversation or meeting that created them.'],
+  ['Tasks', 'Created from conversations, meetings, or plans — always connected to their source.'],
+  ['Docs', 'Help-center and internal docs, including what the customer was sent and what their questions created.'],
+  ['Emails & calls', 'Gmail and calendar activity appear on the same customer timeline.'],
 ];
 
 const AI_FACTS = [
@@ -77,23 +77,22 @@ export default function NewHomePage() {
         </div>
       </section>
 
-      {/* One record */}
-      <section id="record">
+      {/* One record (dark, signature) */}
+      <section id="record" className="dark">
         <div className="wrap">
-          <div className="onerec">
-            <div>
-              <SectionHead tight eyebrow="What Helpin is" title="One record per customer. Support, product, and sales read the same one."
-                lede="In a SaaS company of ten or forty people, the same customer talks to support on Tuesday, comes up in the roadmap meeting on Wednesday, and renews on Friday. Most tools keep three versions of that story. Helpin keeps one, and everything that happens attaches to it." />
-              <p className="lede" style={{ fontSize: 15.5 }}>What lands on the record:</p>
+          <div className="rs-grid">
+            <div className="rs-copy">
+              <span className="rs-eyebrow">One customer. One record.</span>
+              <h2>Support, product, and sales read the same story.</h2>
+              <p>A customer talks to support on Tuesday, comes up in a roadmap meeting on Wednesday, and renews on Friday.</p>
+              <p>Most tools keep three versions of that story.</p>
+              <p className="rs-strong">Helpin keeps one. Everything attaches to the same customer record.</p>
             </div>
-            <div className="facts tight">
-              {RECORD_FACTS.map(([k, v]) => <div key={k}><b>{k}</b><p>{v}</p></div>)}
-            </div>
+            <RecordStory />
           </div>
-          <LiveRecord />
-          <ReviewNote tag="Section 2">
-            <p><Flag>CONFIRMED</Flag> Meeting intelligence fields, Recall.ai and Vexa providers, Meet, Zoom, Teams, Webex; Gmail and calendar sync; associations across conversation, task, deal, contact, company. <Flag>VERIFY</Flag> Whether "calls" has its own capture path; whether "Emails" covers support email as well as Gmail-synced sales email.</p>
-          </ReviewNote>
+          <div className="rs-items">
+            {RECORD_FACTS.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
+          </div>
         </div>
       </section>
 
