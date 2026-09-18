@@ -19,6 +19,9 @@ export function Footer() {
   const pathname = usePathname();
   const isPricing = pathname === '/pricing';
 
+  // The /new homepage preview renders its own footer.
+  if (pathname?.startsWith('/new')) return null;
+
   return (
     <footer className="relative" style={{ backgroundImage: 'image-set(url(/images/footer-bg.webp) type("image/webp"), url(/images/footer-bg.jpg) type("image/jpeg"))', backgroundSize: 'cover', backgroundPosition: 'center bottom' }}>
       {/* Dark overlay */}
