@@ -58,6 +58,17 @@ x-runtime-env: &runtime-env
   AGENT_RUNTIME_MCP_ALLOW_PRIVATE_NETWORKS: ${AGENT_RUNTIME_MCP_ALLOW_PRIVATE_NETWORKS:-false}
   AGENT_RUNTIME_MCP_ALLOWED_HOSTS: ${AGENT_RUNTIME_MCP_ALLOWED_HOSTS:-}
   AGENT_RUNTIME_CHATGPT_ENABLED: ${AGENT_RUNTIME_CHATGPT_ENABLED:-false}
+  # Optional external command review; auto-approval needs passing live evaluations.
+  TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+  AGENT_RUNTIME_TYPESAFE_ENABLED: ${AGENT_RUNTIME_TYPESAFE_ENABLED:-false}
+  AGENT_RUNTIME_TYPESAFE_AUTO_APPROVE: ${AGENT_RUNTIME_TYPESAFE_AUTO_APPROVE:-false}
+  # Deprecated setting is forwarded only to disable stale single-choice opt-ins.
+  AGENT_RUNTIME_TYPESAFE_THRESHOLD: ${AGENT_RUNTIME_TYPESAFE_THRESHOLD:-}
+  AGENT_RUNTIME_TYPESAFE_ASKED_THRESHOLD: ${AGENT_RUNTIME_TYPESAFE_ASKED_THRESHOLD:-0.75}
+  AGENT_RUNTIME_TYPESAFE_HAZARD_THRESHOLD: ${AGENT_RUNTIME_TYPESAFE_HAZARD_THRESHOLD:-0.25}
+  AGENT_RUNTIME_TYPESAFE_ESCALATION_THRESHOLD: ${AGENT_RUNTIME_TYPESAFE_ESCALATION_THRESHOLD:-0.50}
+  AGENT_RUNTIME_TYPESAFE_MODEL: ${AGENT_RUNTIME_TYPESAFE_MODEL:-jev-latest}
+  AGENT_RUNTIME_TYPESAFE_EVALUATED_MODEL: ${AGENT_RUNTIME_TYPESAFE_EVALUATED_MODEL:-jev-1.13.0}
   AGENT_RUNTIME_EVENT_SINK: nats
   AGENT_RUNTIME_NATS_URL: nats://nats:4222
   TEMPORAL_ADDRESS: temporal:7233
@@ -185,12 +196,26 @@ services:
       test: [CMD, curl, -fsS, 'http://localhost:8090/readyz']
       interval: 10s
       retries: 30
+  # One worker serves every queue: ordinary chat, coding and run_python share
+  # this process and the execution_workspaces volume. Landlock is applied when
+  # the host kernel and seccomp profile allow it and skipped otherwise.
   agent-runtime-worker:
     image: ghcr.io/helpin-ai/agent-runtime:${AGENT_RUNTIME_VERSION:-community-v0.1.0-rc.1}
     restart: unless-stopped
-    entrypoint: [/agent-runtime-worker]
-    environment: *runtime-env
-    volumes: ['./apps.json:/etc/agent-runtime/apps.json:ro']
+    entrypoint: [/agent-runtime-worker, --all-queues]
+    environment:
+      <<: *runtime-env
+      AGENT_RUNTIME_APP_CONFIG: ${AGENT_RUNTIME_EXECUTION_APP_CONFIG:?use setup.sh or export inline app configuration}
+      AGENT_RUNTIME_WORKSPACE_ROOT: /tmp/agent-runtime-workspaces
+      AGENT_RUNTIME_EXECUTION_ISOLATION: best_effort
+    volumes: [execution_workspaces:/tmp/agent-runtime-workspaces]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: {soft: 0, hard: 0}
+    tmpfs: [/tmp]
+    stop_grace_period: 150s
     depends_on:
       agent-runtime: {condition: service_healthy}
     healthcheck:
@@ -224,6 +249,7 @@ services:
       interval: 10s
       retries: 10
 volumes:
+  execution_workspaces:
   postgres_data:
   redis_data:
   nats_data:

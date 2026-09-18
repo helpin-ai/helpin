@@ -539,6 +539,9 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 	if input.WorkspaceContext != nil {
 		metadata["workspace_context"] = mapFromJSON(input.WorkspaceContext)
 	}
+	if len(input.TrustedUserMessages) > 0 {
+		metadata["trusted_user_messages"] = append([]string(nil), input.TrustedUserMessages...)
+	}
 	mode := strings.TrimSpace(run.InvocationMode)
 	if mode == "" && agent != nil {
 		mode = strings.TrimSpace(agent.DefaultInvocationMode)
@@ -588,7 +591,7 @@ func buildRuntimeStartRunRequest(run *model.AgentRun, agent *model.Agent, runtim
 	}
 	return AgentRuntimeStartRunRequest{
 		HostRunID:       strings.TrimSpace(run.ID),
-		AgentID:         strings.TrimSpace(run.AgentID),
+		AgentID:         firstNonEmptyString(strings.TrimSpace(runtimeAgent.ID), strings.TrimSpace(run.AgentID)),
 		Target:          AgentRuntimeTargetRef{Type: strings.TrimSpace(run.TargetType), ID: strings.TrimSpace(run.TargetID), Metadata: metadata},
 		Instructions:    instructions,
 		AllowedTools:    allowedTools,
@@ -4549,8 +4552,12 @@ type startTargetRunOptions struct {
 	// dockChatID marks the run as the backing run of a dock chat. Dock chat
 	// runs are keyed by their chat, not their target, so the per-target
 	// active-run guard does not apply to them.
-	dockChatID      *string
-	clientMessageID string
+	executionEnabled    bool
+	dockChatID          *string
+	clientMessageID     string
+	repositoryID        *string
+	trustedUserMessages []string
+	afterPersist        func(*model.AgentRun) error
 }
 
 func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
@@ -5173,12 +5180,29 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 		if err != nil {
 			return nil, err
 		}
-		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+		validationAgent := agent
+		if opts.executionEnabled && opts.dockChatID != nil && agent.EffectivePresetKey() == model.AgentPresetAskAgent {
+			validationAgent = withAskAgentDirectTools(agent)
+		}
+		if err := validateRunAllowedTools(req.AllowedTools, validationAgent); err != nil {
 			return nil, err
 		}
 		input, err := buildAgentRunInputPayload("workspace", workspaceID, trigger, event, req.Output, req.AdditionalContext, req.AllowedTools, workspaceContext)
 		if err != nil {
 			return nil, fmt.Errorf("build workspace run input: %w", err)
+		}
+
+		if opts.executionEnabled && opts.dockChatID != nil {
+			var payload model.AgentRunInputPayload
+			if err := json.Unmarshal(input, &payload); err != nil {
+				return nil, err
+			}
+			payload.ExecutionEnabled = true
+			payload.TrustedUserMessages = append([]string(nil), opts.trustedUserMessages...)
+			input, err = json.Marshal(payload)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
@@ -5195,6 +5219,8 @@ func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceI
 			allowActiveParentRun: opts.allowActiveParentRun,
 			dockChatID:           opts.dockChatID,
 			clientMessageID:      opts.clientMessageID,
+			repositoryID:         opts.repositoryID,
+			afterPersist:         opts.afterPersist,
 			actorID:              actorID,
 			input:                input,
 			trigger:              trigger,
@@ -5372,9 +5398,10 @@ func (s *AgentService) ResumeRun(ctx context.Context, workspaceID, runID, actorI
 // SendRunMessage appends a user message to a paused interactive run and resumes the workflow.
 func (s *AgentService) SendRunMessage(ctx context.Context, workspaceID, runID, actorID string, req model.SendAgentRunMessageRequest) (*model.AgentRunMessage, error) {
 	_, message, err := s.resumeRunWithIntent(ctx, workspaceID, runID, actorID, model.ResumeAgentRunRequest{
-		Intent:          model.AgentRunResumeIntentReply,
-		Content:         req.Content,
-		ClientMessageID: req.ClientMessageID,
+		Intent:              model.AgentRunResumeIntentReply,
+		Content:             req.Content,
+		ClientMessageID:     req.ClientMessageID,
+		TrustedUserMessages: req.TrustedUserMessages,
 	})
 	if err != nil {
 		return nil, err
@@ -5551,9 +5578,37 @@ func (s *AgentService) resumeAgentRuntimeRunWithIntent(ctx context.Context, work
 		return nil, nil, fmt.Errorf("unsupported intent %q", req.Intent)
 	}
 
+	// Dock approval and request-changes endpoints do not accept trusted history
+	// from the browser. Rebuild it from host-authenticated message rows on every
+	// resume so a later approval cannot erase the user's earlier authorization
+	// context in the runtime's last_resume metadata.
+	if run.DockChatID != nil && s.runMessageRepo != nil {
+		messages, _, historyErr := s.runMessageRepo.ListByDockChat(ctx, run.WorkspaceID, *run.DockChatID, nil, 100)
+		if historyErr != nil {
+			slog.WarnContext(ctx, "agent run resume: trusted Dock history unavailable", "workspace_id", run.WorkspaceID, "run_id", run.ID, "error", historyErr)
+		} else {
+			if shouldAddMessage && messageType != "approval" {
+				actor := strings.TrimSpace(actorID)
+				messages = append(messages, model.AgentRunMessage{Role: "user", ActorUserID: &actor, Content: replyText, MessageType: messageType})
+			}
+			req.TrustedUserMessages = trustedDockUserHistoryFromMessages(messages)
+		}
+	}
+
 	responsePayload := json.RawMessage(nil)
 	if len(req.ResponsePayload) > 0 && strings.TrimSpace(string(req.ResponsePayload)) != "" && strings.TrimSpace(string(req.ResponsePayload)) != "null" {
 		responsePayload = append(json.RawMessage(nil), req.ResponsePayload...)
+	}
+	if len(req.TrustedUserMessages) > 0 {
+		var payload map[string]interface{}
+		if len(responsePayload) > 0 {
+			_ = json.Unmarshal(responsePayload, &payload)
+		}
+		if payload == nil {
+			payload = map[string]interface{}{}
+		}
+		payload["trusted_user_messages"] = append([]string(nil), req.TrustedUserMessages...)
+		responsePayload, _ = json.Marshal(payload)
 	}
 	runtimeContent := replyText
 	if intent == model.AgentRunResumeIntentApprove && !shouldAddMessage {
@@ -6292,6 +6347,7 @@ type createRunParams struct {
 	baseBranch           *string
 	workingBranch        *string
 	invocationMode       string
+	afterPersist         func(*model.AgentRun) error
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
@@ -6511,6 +6567,12 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		}
 	}
 	s.recordTriggerExecution(ctx, params.workspaceID, params.agent.ID, params.trigger, params.targetType, params.targetID, run, nil)
+	if params.afterPersist != nil {
+		if err := params.afterPersist(run); err != nil {
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+			return nil, err
+		}
+	}
 
 	if params.local != nil {
 		return run, nil
@@ -6534,6 +6596,8 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
+
+	runtimeAgent = runtimeAgentForDockExecution(run, runtimeAgent)
 
 	params.agent.Status = "working"
 	if params.taskID != nil {
@@ -6599,6 +6663,10 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 			return nil, err
 		}
 	}
+	if err := s.requireRunLaunchable(ctx, run); err != nil {
+		_ = s.markAgentIdle(ctx, params.workspaceID, params.agent.ID)
+		return nil, err
+	}
 	runtimeRun, err := runtimeLauncher.StartRun(ctx, startReq)
 	if err != nil && shouldRetryAgentRuntimeStart(err) {
 		slog.WarnContext(ctx, "retrying agent runtime start after transient failure", "error", err, "run_id", run.ID, "agent_id", params.agent.ID)
@@ -6613,6 +6681,19 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 		return nil, err
 	}
+	run.ExternalRuntime = strPtr(agentRuntimeName)
+	run.ExternalRuntimeID = strPtr(strings.TrimSpace(runtimeRun.ID))
+	bound, err := s.runRepo.BindExternalRuntimeIfActive(ctx, run.WorkspaceID, run.ID, agentRuntimeName, strings.TrimSpace(runtimeRun.ID))
+	if err != nil {
+		_, _ = s.agentRuntimeClient.CancelRun(ctx, strings.TrimSpace(runtimeRun.ID))
+		s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
+		return nil, err
+	}
+	if !bound {
+		_, _ = s.agentRuntimeClient.CancelRun(ctx, strings.TrimSpace(runtimeRun.ID))
+		_ = s.markAgentIdle(ctx, params.workspaceID, params.agent.ID)
+		return nil, fmt.Errorf("agent run %s was cancelled during runtime admission", run.ID)
+	}
 	if len(resolvedMCP.Bindings) > 0 {
 		if err := s.externalMCPService.PersistRunBindings(ctx, run.ID, strings.TrimSpace(runtimeRun.ID), resolvedMCP.Bindings); err != nil {
 			if s.agentRuntimeClient != nil {
@@ -6624,13 +6705,10 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	}
 	if s.runMessageRepo != nil && run.DockChatID != nil {
 		if err := s.runMessageRepo.UpdatePendingDeliveryByRun(ctx, run.WorkspaceID, run.ID, "sent"); err != nil {
+			_, _ = s.agentRuntimeClient.CancelRun(ctx, strings.TrimSpace(runtimeRun.ID))
+			s.failRunStart(ctx, run, params.agent, params.workspaceID, err)
 			return nil, err
 		}
-	}
-	run.ExternalRuntime = strPtr(agentRuntimeName)
-	run.ExternalRuntimeID = strPtr(strings.TrimSpace(runtimeRun.ID))
-	if err := s.runRepo.Update(ctx, run); err != nil {
-		return nil, err
 	}
 	// Bind first, then recheck: a disconnect racing admission must revoke this run.
 	if credential != nil {
@@ -6654,6 +6732,20 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 		Attributes: map[string]any{"entity_id": run.ID, "agent_id": run.AgentID, "target_type": run.TargetType, "target_id": run.TargetID, "runtime_kind": run.RuntimeKind, "invocation_mode": run.InvocationMode, "module": "automation"},
 	})
 	return run, nil
+}
+
+func (s *AgentService) requireRunLaunchable(ctx context.Context, run *model.AgentRun) error {
+	if run == nil {
+		return fmt.Errorf("agent run is unavailable before runtime admission")
+	}
+	current, err := s.runRepo.GetByID(ctx, run.WorkspaceID, run.ID)
+	if err != nil {
+		return fmt.Errorf("recheck agent run before runtime admission: %w", err)
+	}
+	if current == nil || !model.IsAgentRunActiveStatus(current.Status) {
+		return fmt.Errorf("agent run %s is no longer active; runtime admission cancelled", run.ID)
+	}
+	return nil
 }
 
 func (s *AgentService) auditActorIDForRun(ctx context.Context, run *model.AgentRun) string {

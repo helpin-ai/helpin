@@ -18,5 +18,5 @@ services:
     environment: *fixture-env
   agent-runtime:
     volumes: ['./tests/apps.fixture.json:/etc/agent-runtime/apps.json:ro']
-  agent-runtime-worker:
-    volumes: ['./tests/apps.fixture.json:/etc/agent-runtime/apps.json:ro']
+  # agent-runtime-worker takes the fixture inline through
+  # AGENT_RUNTIME_EXECUTION_APP_CONFIG (see tests/run.py); it mounts no config.

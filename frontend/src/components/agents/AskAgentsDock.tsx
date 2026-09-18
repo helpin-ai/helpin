@@ -396,11 +396,11 @@ export function AskAgentsDock({
     setCollapsed(false);
   }, [clearDraft, embedded, setActiveChatId, setCollapsed, setTab]);
 
-  const createDraftChat = useCallback(async () => {
+  const createDraftChat = useCallback(async (options?: { executionEnabled?: boolean }) => {
     if (!workspaceId) return null;
     const supportConversationId = embedded ? associatedSupportConversationId : undefined;
     const moduleId = embedded ? 'support' : creationModule;
-    const result = await dockChatService.createChat(workspaceId, '', supportConversationId, moduleId);
+    const result = await dockChatService.createChat(workspaceId, '', supportConversationId, moduleId, options?.executionEnabled);
     if (result.error || !result.data) {
       toast.error(result.error ?? 'Failed to create chat');
       return null;

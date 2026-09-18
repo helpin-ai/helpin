@@ -40,6 +40,7 @@ class RunnerTest(unittest.TestCase):
                     calls.append((args, cwd, env.copy()))
                     if args == ['./setup.sh', 'install']:
                         (cwd / '.env').write_text('fixture\n')
+                        (cwd / 'apps.json').write_text((cwd / 'apps.example.json').read_text())
                     if args == ['node', 'tests/http-smoke.mjs']:
                         raise failure
                     return subprocess.CompletedProcess(args, 0)
@@ -57,6 +58,7 @@ class RunnerTest(unittest.TestCase):
         def invoke(args, cwd, env, check):
             if args == ['./setup.sh', 'install']:
                 (cwd / '.env').write_text('fixture\n')
+                (cwd / 'apps.json').write_text((cwd / 'apps.example.json').read_text())
             return subprocess.CompletedProcess(args, 1 if 'down' in args else 0)
         with patch.object(runner, 'execute', side_effect=invoke):
             with self.assertRaisesRegex(RuntimeError, 'cleanup'):

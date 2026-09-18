@@ -473,6 +473,7 @@ func taskDependencyGraphHasCycle(graph map[string][]string) bool {
 }
 
 func (s *InternalCommandService) registerDefaults() {
+	s.registerDirectGitCommands()
 	s.register(InternalCommandDefinition{
 		Name:                 "agents.list_agents",
 		Module:               "agents",

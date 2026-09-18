@@ -17,6 +17,9 @@ import { parseDockPlanConfirm } from '@/lib/dockTypes';
 import type { DockChatDetail, DockChatMediaAttachment, DockEntityReference } from '@/lib/dockTypes';
 import type { AgentRun, AgentRunMessage, CodingSessionInteraction, CommandBarPageContext, CommandBarPlanSummary } from '@/lib/pmTypes';
 import { DockInput } from './DockInput';
+import { DockExecutionPicker } from './DockExecutionPicker';
+import { resolveExecutionPickerDisabled } from './executionPickerState';
+import { DockArtifactDownloads } from './DockArtifactDownloads';
 import { DockTranscript, type DockMessageSubmission } from './DockTranscript';
 import { DockPlanConfirmCard } from './DockPlanConfirmCard';
 import { ExecutionStrip } from './ExecutionStrip';
@@ -57,7 +60,7 @@ interface ChatViewProps {
   chatId?: string;
   rosterRunId?: string | null;
   active?: boolean;
-  onCreateChat?: () => Promise<{ id: string } | null>;
+  onCreateChat?: (options?: { executionEnabled?: boolean }) => Promise<{ id: string } | null>;
   scrollToLatestRequest: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
@@ -116,6 +119,8 @@ export function ChatView({
   const cachedTranscript = chatId ? useDockStore.getState().transcripts[chatId] : undefined;
   const cacheTranscript = useDockStore((state) => state.cacheTranscript);
   const [aiConnection, setAIConnection] = useState<AIConnectionSelection>({});
+  const [changingExecution, setChangingExecution] = useState(false);
+  const [draftExecutionEnabled, setDraftExecutionEnabled] = useState(false);
   const [detail, setDetail] = useState<DockChatDetail | null>(cachedTranscript?.detail ?? null);
   const [detailLoading, setDetailLoading] = useState(!!chatId && !cachedTranscript);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -170,6 +175,7 @@ export function ChatView({
 
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.id === workspaceId ? state.currentWorkspace.slug : undefined);
   const run = detail?.run ?? null;
+  const executionEnabled = detail?.chat.execution_enabled ?? draftExecutionEnabled;
   const acceptedSelection = run?.input?.ai_selection;
   const acceptedProfileId = acceptedSelection && typeof acceptedSelection === 'object' && 'profile_id' in acceptedSelection && typeof acceptedSelection.profile_id === 'string'
     ? acceptedSelection.profile_id : typeof run?.input?.ai_profile_id === 'string' ? run.input.ai_profile_id : undefined;
@@ -225,6 +231,30 @@ export function ChatView({
     if (res.data) { detailRefreshed.current = true; setDetail(res.data); }
     return res.data ?? null;
   }, [chatId, detailReader]);
+
+  const changeExecution = useCallback(async (enabled: boolean) => {
+    if (!chatId) {
+      setDraftExecutionEnabled(enabled);
+      return;
+    }
+    setChangingExecution(true);
+    try {
+      const response = await dockChatService.updateChat(workspaceId, chatId, { execution_enabled: enabled });
+      if (response.error || !response.data) {
+        toast.error(response.error ?? 'Could not update execution settings.');
+        return;
+      }
+      setDetail((current) => current ? { ...current, chat: response.data! } : current);
+      onChatChanged?.();
+      toast.message(enabled
+        ? 'Code and Python tools will be available for your next message.'
+        : 'Execution stopped. Check any interrupted external action before retrying.');
+    } catch {
+      toast.error('Could not update execution settings.');
+    } finally {
+      setChangingExecution(false);
+    }
+  }, [chatId, onChatChanged, workspaceId]);
 
   const refreshMessages = useCallback(async (automatic = false) => {
 	if (!chatId) return [];
@@ -551,7 +581,7 @@ export function ChatView({
       try {
         let targetChatId = chatId;
         if (!targetChatId) {
-          const created = await onCreateChat?.();
+          const created = await onCreateChat?.({ executionEnabled: draftExecutionEnabled });
           if (!created) throw new Error('Unable to create chat. Please retry.');
           targetChatId = created.id;
         }
@@ -626,7 +656,7 @@ export function ChatView({
         setSending(false);
       }
     },
-    [agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
+    [agentDefaultUnavailable, aiConnection, chatId, currentUserId, detail?.chat.title, draftExecutionEnabled, effectivePageContext, mediaAttachments, mergedStream, onChatChanged, onCreateChat, references, refetch, refreshMessages, run, sending, workspaceId],
   );
 
   const submit = async () => {
@@ -765,6 +795,13 @@ export function ChatView({
 
   const hasTranscriptMessages = (transformed?.stream.transcript_messages ?? persistedMessages)
     .some((message) => message.content.trim());
+  const executionPickerDisabled = resolveExecutionPickerDisabled({
+    changingExecution,
+    sending,
+    pendingEcho: Boolean(pendingEcho),
+    runStatus: run?.status,
+  });
+
   const starterSuggestions = !hasTranscriptMessages && !value.trim() && !sending && !pendingEcho
     ? starterSuggestionsForContext(effectivePageContext?.entity_type)
     : [];
@@ -889,6 +926,7 @@ export function ChatView({
             compactAssistantProgress
           />
         )}
+        <DockArtifactDownloads workspaceId={workspaceId} artifacts={detail?.artifacts ?? []} />
         {followUpSuggestions.length > 0 && (
           <div className="mt-2 border-t border-border/40 pt-1" data-agent-follow-up-suggestions>
             {followUpSuggestions.map((suggestion) => (
@@ -1004,6 +1042,13 @@ export function ChatView({
           <div className="p-2">
               <DockInput
                 mode="conversation"
+                executionPicker={(!chatId || (detail && detail.chat.user_id === currentUserId)) ? (
+                  <DockExecutionPicker
+                    enabled={Boolean(executionEnabled)}
+                    disabled={executionPickerDisabled}
+                    onChange={changeExecution}
+                  />
+                ) : null}
                 profilePicker={run ? (
                   acceptedProfileId ? <AIConnectionPicker workspaceId={workspaceId} inDock compact locked value={{ ai_profile_id: acceptedProfileId }} onChange={() => {}} />
                     : <span className="text-xs text-quiet-text-secondary" title="This conversation keeps its saved AI configuration">Saved profile</span>

@@ -289,6 +289,7 @@ func TestDockChatLaunchWithProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE dock_chats (
+execution_enabled boolean NOT NULL DEFAULT false,
  id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, title TEXT,
  visibility TEXT, module_id TEXT, support_conversation_id TEXT, active_run_id TEXT,
  next_message_sequence INTEGER, last_message_at DATETIME, archived_at DATETIME,
@@ -302,7 +303,7 @@ func TestDockChatLaunchWithProfile(t *testing.T) {
 	client := &fakeAgentRuntimeSignalClient{}
 	agents := (&AgentService{agentRepo: repository.NewAgentRepository(db), runRepo: repository.NewAgentRunRepository(db)}).SetAIConnectionService(profiles.connections).SetAIProfileService(profiles).SetAgentRuntimeClient(client).SetAgentRuntimeLaunchEnabled(true)
 	dock := &DockChatService{agentService: agents, chatRepo: repository.NewDockChatRepository(db)}
-	if err := dock.startChatRun(ctx, chat, "owner", "Review this task", nil, nil, "", "", "", p.ID); err != nil {
+	if err := dock.startChatRun(ctx, chat, "owner", "Review this task", nil, nil, "", nil, "", "", p.ID); err != nil {
 		t.Fatal(err)
 	}
 	if chat.ActiveRunID == nil || len(client.startRunCalls) != 1 {

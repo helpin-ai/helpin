@@ -752,3 +752,42 @@ func TestAgentRuntimeHostPreviewRepositorySpecUsesSavedRunPolicy(t *testing.T) {
 	}
 
 }
+
+func TestRuntimeAgentBaseIDStripsExecutionSuffix(t *testing.T) {
+	for input, want := range map[string]string{"agent-1": "agent-1", "agent-1-execution": "agent-1", " agent-1-execution ": "agent-1", "": ""} {
+		if got := runtimeAgentBaseID(input); got != want {
+			t.Errorf("runtimeAgentBaseID(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestResolveTargetContextAcceptsExecutionRuntimeAgentForPreview(t *testing.T) {
+	_, preview, _, runtime, ctx := previewFixture(t)
+	profiles, primary, _ := setupAIProfileTest(t)
+	profile, err := profiles.Save(ctx, "workspace", "owner", "", model.SaveAIProfileRequest{Name: "Support", Scope: "workspace", Primary: primary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = profiles.SetDefault(ctx, "workspace", "owner", profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	preview.agents.SetAIConnectionService(profiles.connections).SetAIProfileService(profiles)
+	if _, err = preview.Start(ctx, "workspace", "agent-1", model.SupportAIPreviewRequest{Message: "How do I install?"}); err != nil {
+		t.Fatal(err)
+	}
+	target := runtime.startRunCalls[0].Target
+	host := NewAgentRuntimeHostService("helpin", preview.agents.runRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	// The execution projection reports "<agent>-execution"; it must pass the
+	// same ownership check as the ordinary agent ID.
+	resolved, err := host.ResolveTargetContext(ctx, agentruntime.TargetContextRequest{AppID: "helpin", AgentID: "agent-1-execution", RunID: "run_runtime_1", Target: target})
+	if err != nil {
+		t.Fatalf("ResolveTargetContext with execution agent ID: %v", err)
+	}
+	if resolved == nil || resolved.Summary != "Support preview" {
+		t.Fatalf("unexpected preview context: %#v", resolved)
+	}
+	_, err = host.ResolveTargetContext(ctx, agentruntime.TargetContextRequest{AppID: "helpin", AgentID: "agent-2-execution", RunID: "run_runtime_1", Target: target})
+	if !errors.Is(err, ErrAgentRuntimeHostForbidden) {
+		t.Fatalf("foreign execution agent error = %v, want forbidden", err)
+	}
+}

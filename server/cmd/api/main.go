@@ -1622,6 +1622,7 @@ func main() {
 	dockChatService := service.NewDockChatService(dockChatRepo, agentRunRepo, agentRunMessageRepo, commandBarPlanRepo, agentService, commandService, authzService).
 		SetTitleLLM(supportLLMProvider).
 		SetPMAttachmentRepository(pmAttachmentRepo).
+		SetArtifactRepository(agentRunArtifactRepo).
 		SetMediaSourceService(supportInboxService).
 		SetMediaAnalyzer(pmAttachmentService, supportLLMProvider)
 	publicShareRepo := repository.NewPublicShareRepository(db)

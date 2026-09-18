@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +36,9 @@ const (
 	dockChatCarryForwardTurns         = 20
 	dockChatCarryForwardChars         = 500
 	dockChatCarryForwardTotal         = 6000
+	dockChatTrustedUserTurns          = 20
+	dockChatTrustedUserChars          = 1000
+	dockChatTrustedUserTotal          = 12000
 	dockChatPageContextOpenTag        = "<page_context>"
 	dockChatReferencesOpenTag         = "<references>"
 	dockChatAttachmentsOpenTag        = "<attachments>"
@@ -44,6 +48,15 @@ const (
 	dockChatListDefaultLimit          = 30
 	dockChatListMaxLimit              = 50
 )
+
+var dockChatUntrustedContextPatterns = func() []*regexp.Regexp {
+	tags := []string{"previous_conversation", "child_run_result", "page_context", "references", "attachments", "source_attachments", "attachment_analysis"}
+	patterns := make([]*regexp.Regexp, 0, len(tags))
+	for _, tag := range tags {
+		patterns = append(patterns, regexp.MustCompile("(?is)<"+tag+">.*?</"+tag+">"))
+	}
+	return patterns
+}()
 
 type dockChatCursor struct {
 	ActivityAt time.Time `json:"activity_at"`
@@ -56,6 +69,7 @@ type DockChatService struct {
 	chatRepo            *repository.DockChatRepository
 	runRepo             *repository.AgentRunRepository
 	runMessageRepo      *repository.AgentRunMessageRepository
+	artifactRepo        *repository.AgentRunArtifactRepository
 	planRepo            *repository.CommandBarPlanRepository
 	agentService        *AgentService
 	commandService      *InternalCommandService
@@ -66,6 +80,14 @@ type DockChatService struct {
 	supportInboxService *SupportInboxService
 	mediaLLM            dockChatMediaLLM
 	externalMediaClient *http.Client
+}
+
+// SetArtifactRepository exposes durable private outputs in Dock chat details.
+func (s *DockChatService) SetArtifactRepository(repo *repository.AgentRunArtifactRepository) *DockChatService {
+	if s != nil {
+		s.artifactRepo = repo
+	}
+	return s
 }
 
 // SetPMAttachmentRepository enables first-class Ask media attachments.
@@ -190,6 +212,11 @@ func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID st
 	if err != nil {
 		return nil, err
 	}
+	if req.ExecutionEnabled {
+		if err := s.authorizeChatExecution(ctx, workspaceID, userID); err != nil {
+			return nil, err
+		}
+	}
 	if req.SupportConversationID != nil {
 		conversationID := strings.TrimSpace(*req.SupportConversationID)
 		if conversationID == "" {
@@ -211,6 +238,7 @@ func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID st
 		Visibility:            visibility,
 		ModuleID:              moduleID,
 		SupportConversationID: req.SupportConversationID,
+		ExecutionEnabled:      req.ExecutionEnabled,
 	}
 	if err := s.chatRepo.Create(ctx, chat); err != nil {
 		if req.SupportConversationID != nil {
@@ -231,11 +259,43 @@ func (s *DockChatService) CreateChat(ctx context.Context, workspaceID, userID st
 
 // UpdateChat renames or archives/unarchives a chat.
 func (s *DockChatService) UpdateChat(ctx context.Context, workspaceID, userID, chatID string, req model.UpdateDockChatRequest) (*model.DockChat, error) {
+	var result *model.DockChat
+	err := s.chatRepo.WithTurnLock(ctx, workspaceID, chatID, func() error {
+		var err error
+		result, err = s.updateChatLocked(ctx, workspaceID, userID, chatID, req)
+		return err
+	})
+	return result, err
+}
+
+func (s *DockChatService) updateChatLocked(ctx context.Context, workspaceID, userID, chatID string, req model.UpdateDockChatRequest) (*model.DockChat, error) {
 	chat, err := s.ownedChat(ctx, workspaceID, userID, chatID)
 	if err != nil {
 		return nil, err
 	}
 	updates := map[string]interface{}{}
+	if req.ExecutionEnabled != nil && *req.ExecutionEnabled != chat.ExecutionEnabled {
+		if *req.ExecutionEnabled {
+			if err := s.authorizeChatExecution(ctx, workspaceID, userID); err != nil {
+				return nil, err
+			}
+		}
+		if chat.ActiveRunID != nil {
+			run, err := s.runRepo.GetByID(ctx, workspaceID, *chat.ActiveRunID)
+			if err != nil {
+				return nil, err
+			}
+			if run != nil && model.IsAgentRunActiveStatus(run.Status) {
+				if *req.ExecutionEnabled && !model.IsAgentRunPausedStatus(run.Status) {
+					return nil, fmt.Errorf("wait for the current turn to finish before enabling execution")
+				}
+				if _, err := s.agentService.CancelRun(ctx, workspaceID, run.ID, userID); err != nil {
+					return nil, err
+				}
+			}
+		}
+		updates["execution_enabled"] = *req.ExecutionEnabled
+	}
 	if req.Title != nil {
 		updates["title"] = strings.TrimSpace(*req.Title)
 	}
@@ -321,6 +381,16 @@ func (s *DockChatService) OwnedActiveRunForChat(ctx context.Context, workspaceID
 // run carrying forward context when the previous run ended (idle expiry,
 // completion, failure).
 func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, chatID string, req model.SendDockChatMessageRequest) (*model.DockChatDetail, error) {
+	var result *model.DockChatDetail
+	err := s.chatRepo.WithTurnLockRelease(ctx, workspaceID, chatID, func(release func() error) error {
+		var err error
+		result, err = s.sendMessageLocked(ctx, workspaceID, userID, chatID, req, release)
+		return err
+	})
+	return result, err
+}
+
+func (s *DockChatService) sendMessageLocked(ctx context.Context, workspaceID, userID, chatID string, req model.SendDockChatMessageRequest, releaseTurnLock func() error) (*model.DockChatDetail, error) {
 	if req.AIProfileID != "" && (req.ModelConnectionID != "" || req.ModelName != "") {
 		return nil, fmt.Errorf("select a profile or legacy connection, not both")
 	}
@@ -404,7 +474,7 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 	switch {
 	case currentRun == nil || !model.IsAgentRunActiveStatus(currentRun.Status):
 		// First message, or the previous backing run ended.
-		if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
+		if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, releaseTurnLock, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
 			return nil, err
 		}
 	case model.IsAgentRunPausedStatus(currentRun.Status):
@@ -420,19 +490,19 @@ func (s *DockChatService) SendMessage(ctx context.Context, workspaceID, userID, 
 			if _, err := s.agentService.CancelRun(ctx, workspaceID, currentRun.ID, userID); err != nil {
 				return nil, fmt.Errorf("rotate stale chat run: %w", err)
 			}
-			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
+			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, releaseTurnLock, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
 				return nil, err
 			}
 		} else if err := s.setRunAttachedContexts(ctx, currentRun, attachedContexts); err != nil {
 			return nil, err
-		} else if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed, ClientMessageID: clientMessageID}); err != nil {
+		} else if _, err := s.agentService.SendRunMessage(ctx, workspaceID, currentRun.ID, userID, model.SendAgentRunMessageRequest{Content: composed, ClientMessageID: clientMessageID, TrustedUserMessages: s.trustedDockUserHistory(ctx, chat)}); err != nil {
 			if !isChatRunExpiredError(err) {
 				return nil, err
 			}
 			// The runtime idle-expired the run; it is completed on its side.
 			// Continue the conversation through a successor run.
 			clientMessageID = uuid.NewString()
-			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
+			if err := s.startChatRun(ctx, chat, userID, composed, attachedContexts, currentRun, clientMessageID, releaseTurnLock, req.ModelConnectionID, req.ModelName, req.AIProfileID); err != nil {
 				return nil, err
 			}
 		}
@@ -508,7 +578,7 @@ func (s *DockChatService) runUsesCurrentScopedTools(ctx context.Context, chat *m
 	if err != nil {
 		return false, fmt.Errorf("ensure ask agent for tool contract: %w", err)
 	}
-	current, err := s.scopedChatTools(ctx, chat.WorkspaceID, userID, agent)
+	current, err := s.scopedChatExecutionTools(ctx, chat, userID, agent)
 	if err != nil {
 		return false, err
 	}
@@ -516,7 +586,7 @@ func (s *DockChatService) runUsesCurrentScopedTools(ctx context.Context, chat *m
 	if err := json.Unmarshal(run.Input, &input); err != nil {
 		return false, nil
 	}
-	return sameNormalizedToolSet(input.AllowedTools, current), nil
+	return input.ExecutionEnabled == s.effectiveChatExecution(ctx, chat, userID) && sameNormalizedToolSet(input.AllowedTools, current), nil
 }
 
 func sameNormalizedToolSet(left, right []string) bool {
@@ -562,6 +632,19 @@ func (s *DockChatService) chatDetail(ctx context.Context, chat *model.DockChat) 
 			for _, plan := range plans {
 				detail.PlanIDs = append(detail.PlanIDs, plan.ID)
 			}
+		}
+	}
+	if s.artifactRepo != nil {
+		artifacts, err := s.artifactRepo.ListObjectArtifactsByDockChat(ctx, chat.WorkspaceID, chat.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, artifact := range artifacts {
+			if !isBrowserMediaArtifactType(strings.TrimSpace(artifact.ArtifactType)) || artifact.ObjectKey == nil || strings.TrimSpace(*artifact.ObjectKey) == "" {
+				continue
+			}
+			artifact.ObjectKey = nil
+			detail.Artifacts = append(detail.Artifacts, artifact)
 		}
 	}
 	return detail, nil
@@ -745,22 +828,25 @@ func validDockChatModule(moduleID model.ModuleID) bool {
 
 // startChatRun starts a (possibly successor) backing run for the chat and
 // repoints the chat at it.
-func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, attachedContexts []model.AgentRunContextReference, previousRun *model.AgentRun, clientMessageID string, selection ...string) error {
+func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat, userID, composedTurn string, attachedContexts []model.AgentRunContextReference, previousRun *model.AgentRun, clientMessageID string, releaseTurnLock func() error, selection ...string) error {
 	agent, err := s.agentService.ensureBuiltInAgent(ctx, chat.WorkspaceID, userID, model.AgentPresetAskAgent)
 	if err != nil {
 		return fmt.Errorf("ensure ask agent: %w", err)
 	}
-	allowedTools, err := s.scopedChatTools(ctx, chat.WorkspaceID, userID, agent)
+	allowedTools, err := s.scopedChatExecutionTools(ctx, chat, userID, agent)
 	if err != nil {
 		return err
 	}
+	executionEnabled := s.effectiveChatExecution(ctx, chat, userID)
 
 	var contextBlocks []string
 	var parentRunID *string
+	var trustedUserMessages []string
 	if previousRun != nil {
 		if carry := s.buildCarryForward(ctx, previousRun); carry != "" {
 			contextBlocks = append(contextBlocks, carry)
 		}
+		trustedUserMessages = s.trustedDockUserHistory(ctx, chat)
 		parentRunID = &previousRun.ID
 	}
 	// Deliver any settled child-run results that could not be resumed into the
@@ -795,7 +881,7 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 	if len(selection) >= 3 {
 		profileID = selection[2]
 	}
-	run, err := s.agentService.startTargetRunWithOptions(
+	_, err = s.agentService.startTargetRunWithOptions(
 		ctx,
 		chat.WorkspaceID,
 		"workspace",
@@ -810,15 +896,29 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		trigger,
 		nil,
 		parentRunID,
-		startTargetRunOptions{dockChatID: &chat.ID, clientMessageID: clientMessageID},
+		startTargetRunOptions{
+			dockChatID:          &chat.ID,
+			clientMessageID:     clientMessageID,
+			executionEnabled:    executionEnabled,
+			repositoryID:        initialDockExecutionRepositoryID(executionEnabled, attachedContexts),
+			trustedUserMessages: trustedUserMessages,
+			afterPersist: func(run *model.AgentRun) error {
+				if err := s.chatRepo.SetActiveRun(ctx, chat.WorkspaceID, chat.ID, run.ID); err != nil {
+					return fmt.Errorf("set chat active run: %w", err)
+				}
+				chat.ActiveRunID = &run.ID
+				if releaseTurnLock != nil {
+					if err := releaseTurnLock(); err != nil {
+						return fmt.Errorf("release dock turn admission lock: %w", err)
+					}
+				}
+				return nil
+			},
+		},
 	)
 	if err != nil {
 		return err
 	}
-	if err := s.chatRepo.SetActiveRun(ctx, chat.WorkspaceID, chat.ID, run.ID); err != nil {
-		return fmt.Errorf("set chat active run: %w", err)
-	}
-	chat.ActiveRunID = &run.ID
 	for _, planID := range pendingPlanIDs {
 		if err := s.planRepo.MarkParentNotified(ctx, chat.WorkspaceID, planID); err != nil {
 			slog.WarnContext(ctx, "dock chat: mark plan notified after carry-forward failed",
@@ -826,6 +926,84 @@ func (s *DockChatService) startChatRun(ctx context.Context, chat *model.DockChat
 		}
 	}
 	return nil
+}
+
+// trustedDockUserHistory carries only host-authenticated human turns across a
+// successor boundary. Mixed carry-forward transcript remains untrusted model
+// context and is never used as approval authorization.
+func (s *DockChatService) trustedDockUserHistory(ctx context.Context, chat *model.DockChat) []string {
+	if s == nil || s.runMessageRepo == nil || chat == nil {
+		return nil
+	}
+	messages, _, err := s.runMessageRepo.ListByDockChat(ctx, chat.WorkspaceID, chat.ID, nil, 100)
+	if err != nil {
+		return nil
+	}
+	return trustedDockUserHistoryFromMessages(messages)
+}
+
+// trustedDockUserHistoryFromMessages keeps only authenticated human
+// instructions. Approval acknowledgements carry no new scope, while an
+// authenticated request-changes response is a real correction and must remain
+// available to authorization review on later resumes.
+func trustedDockUserHistoryFromMessages(messages []model.AgentRunMessage) []string {
+	trusted := make([]string, 0, dockChatTrustedUserTurns)
+	for _, message := range messages {
+		if message.Role != "user" || message.ActorUserID == nil || strings.TrimSpace(*message.ActorUserID) == "" {
+			continue
+		}
+		content := message.Content
+		for _, pattern := range dockChatUntrustedContextPatterns {
+			content = pattern.ReplaceAllString(content, "")
+		}
+		content = strings.TrimSpace(content)
+		if content == "" || content == "Approved. Continue." || message.MessageType == "approval" {
+			continue
+		}
+		content = strings.TrimSpace(strings.TrimPrefix(content, "Changes requested:"))
+		if content == "" {
+			continue
+		}
+		if len(content) > dockChatTrustedUserChars {
+			content = strings.TrimSpace(content[:dockChatTrustedUserChars]) + "…"
+		}
+		trusted = append(trusted, content)
+	}
+	if len(trusted) > dockChatTrustedUserTurns {
+		trusted = trusted[len(trusted)-dockChatTrustedUserTurns:]
+	}
+	total := 0
+	start := len(trusted)
+	for start > 0 {
+		candidate := trusted[start-1]
+		if total+len(candidate) > dockChatTrustedUserTotal {
+			break
+		}
+		total += len(candidate)
+		start--
+	}
+	return append([]string(nil), trusted[start:]...)
+}
+
+func initialDockExecutionRepositoryID(executionEnabled bool, contexts []model.AgentRunContextReference) *string {
+	if !executionEnabled {
+		return nil
+	}
+	var repositoryID string
+	for _, attached := range contexts {
+		if strings.TrimSpace(attached.EntityType) != "repository" || strings.TrimSpace(attached.EntityID) == "" {
+			continue
+		}
+		candidate := strings.TrimSpace(attached.EntityID)
+		if repositoryID != "" && repositoryID != candidate {
+			return nil
+		}
+		repositoryID = candidate
+	}
+	if repositoryID == "" {
+		return nil
+	}
+	return &repositoryID
 }
 
 func dockChatAttachedContexts(chat *model.DockChat, pageContext map[string]interface{}, references []model.DockEntityReference) []model.AgentRunContextReference {
@@ -918,7 +1096,11 @@ func (s *DockChatService) buildCarryForward(ctx context.Context, previousRun *mo
 	if previousRun == nil {
 		return ""
 	}
-	messages, err := s.runMessageRepo.ListByRun(ctx, previousRun.WorkspaceID, previousRun.ID)
+	var messages []model.AgentRunMessage
+	var err error
+	if s.runMessageRepo != nil {
+		messages, err = s.runMessageRepo.ListByRun(ctx, previousRun.WorkspaceID, previousRun.ID)
+	}
 	if err != nil {
 		messages = nil
 	}
@@ -928,6 +1110,13 @@ func (s *DockChatService) buildCarryForward(ctx context.Context, previousRun *mo
 
 	var b strings.Builder
 	b.WriteString("<previous_conversation>\n")
+	b.WriteString("The previous execution workspace is unavailable in this successor run. Files and packages do not transfer. Published artifacts remain available. Never repeat an external mutation to reconstruct missing files or results. An interrupted command, push or PR may have completed externally; verify remote state and report uncertainty before retrying.\n")
+	var summary map[string]json.RawMessage
+	if json.Unmarshal(previousRun.OutputSummary, &summary) == nil && len(summary["interrupted_external_effects"]) > 0 {
+		b.WriteString("Interrupted operations (started, outcome unknown): ")
+		b.Write(summary["interrupted_external_effects"])
+		b.WriteString("\n")
+	}
 	b.WriteString("This chat continues an earlier conversation whose run ended (")
 	b.WriteString(strings.TrimSpace(previousRun.Status))
 	b.WriteString("). Recent transcript:\n")

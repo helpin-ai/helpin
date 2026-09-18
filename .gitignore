@@ -66,6 +66,7 @@ packages/*/lib/
 *.log
 .gocache/
 .playwright-mcp/
+.agent-runtime/
 # Build cache
 .cache/
 __pycache__/

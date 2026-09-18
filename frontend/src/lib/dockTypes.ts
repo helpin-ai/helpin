@@ -13,6 +13,7 @@ import type {
 
 /** One dock conversation with creator-owned settings and explicit visibility. */
 export interface DockChat {
+  execution_enabled?: boolean
   id: string
   workspace_id: string
   user_id: string
@@ -32,6 +33,7 @@ export interface DockChatDetail {
   chat: DockChat
   run?: AgentRun | null
   accepted_message?: AgentRunMessage | null
+  artifacts?: import('@/lib/pmTypes').AgentRunArtifact[]
   plan_ids: string[]
   plans?: CommandBarPlanSummary[]
 }
@@ -86,6 +88,7 @@ export interface GenerateDockChatTitleRequest {
 }
 
 export interface UpdateDockChatRequest {
+  execution_enabled?: boolean
   title?: string
   archived?: boolean
   visibility?: DockChatVisibility

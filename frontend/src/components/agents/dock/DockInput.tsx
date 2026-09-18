@@ -117,6 +117,7 @@ export interface DockInputProps {
   placeholder?: string;
   showShortcutHint?: boolean;
   profilePicker?: ReactNode;
+  executionPicker?: ReactNode;
 }
 
 export function composerTextareaHeight({
@@ -183,6 +184,7 @@ export function DockInput({
   placeholder: placeholderOverride,
   showShortcutHint = true,
   profilePicker,
+  executionPicker,
 }: DockInputProps) {
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const ref = textareaRef ?? localRef;
@@ -453,6 +455,7 @@ export function DockInput({
           <div className="flex w-full min-w-0 items-center gap-2 pt-1" data-composer-actions>
             {attachmentButton}
             <div className="ml-auto flex min-w-0 items-center gap-1.5">
+              {executionPicker}
               {profilePicker}
               {submitControl}
             </div>
