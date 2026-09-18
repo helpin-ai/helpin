@@ -84,15 +84,36 @@ export function RecordStory() {
           </div>
           <span className="rs-live">One record</span>
         </div>
-        <ol className="rs-tl" aria-hidden="true" style={{ ['--rs-p' as string]: progress }}>
-          {ENTRIES.map((e, i) => (
-            <li key={e.title} className={`${e.kind} ${i < n ? 'on' : ''}`}>
-              <span className="rs-when">{e.when}</span>
-              <span className="rs-dot" />
-              <span className="rs-body"><b>{e.title}</b><span>{e.sub}</span></span>
-            </li>
-          ))}
-        </ol>
+        <div className="rs-tabs" aria-hidden="true">
+          {['Overview', 'Tasks', 'Emails', 'Meetings', 'Deals', 'Support', 'Notes'].map((t, i) => <span key={t} className={i === 0 ? 'on' : undefined}>{t}</span>)}
+        </div>
+        <div className="rs-cols">
+          <ol className="rs-tl" aria-hidden="true" style={{ ['--rs-p' as string]: progress }}>
+            {ENTRIES.map((e, i) => (
+              <li key={e.title} className={`${e.kind} ${i < n ? 'on' : ''}`}>
+                <span className="rs-when">{e.when}</span>
+                <span className="rs-dot" />
+                <span className="rs-body"><b>{e.title}</b><span>{e.sub}</span></span>
+              </li>
+            ))}
+          </ol>
+          <aside className="rs-rail" aria-hidden="true">
+            <div className={`rs-card ${n >= 3 ? 'on' : ''}`}>
+              <span className="rs-card-l">Signals</span>
+              <b>Timeline identified</b><span>“Okta migration before the renewal” · Open meeting</span>
+              <b>Relationship risk</b><span>Security sign-off pending · View ticket</span>
+            </div>
+            <div className={`rs-card ${n >= 3 ? 'on' : ''}`}>
+              <span className="rs-card-l">Next step</span>
+              <b>Confirm Okta support before renewal</b><span>Accept · Dismiss</span>
+            </div>
+            <div className={`rs-card ${n >= 4 ? 'on' : ''}`}>
+              <span className="rs-card-l">Linked</span>
+              <b>HLP-142 · Okta SAML mapping</b><span>{n >= 6 ? 'Done · PR #318 merged' : 'In progress · Sam K.'}</span>
+              <b>Set up SSO with Okta</b><span>{n >= 7 ? 'Help center · published' : 'Help center · draft'}</span>
+            </div>
+          </aside>
+        </div>
       </div>
       {shown ? (
         <div className="replay-row rs-replay">
