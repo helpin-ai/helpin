@@ -127,6 +127,12 @@ func parseSettings(raw string) model.SupportInboxSettings {
 
 // mergeSettingsUpdate applies non-nil patch fields onto current settings.
 func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateInstallationSettingsRequest) model.SupportInboxSettings {
+	if patch.TranslationEnabled != nil {
+		current.TranslationEnabled = *patch.TranslationEnabled
+	}
+	if patch.DefaultAgentLanguage != nil {
+		current.DefaultAgentLanguage = *patch.DefaultAgentLanguage
+	}
 	if patch.RequireEmailBeforeChat != nil {
 		current.RequireEmailBeforeChat = *patch.RequireEmailBeforeChat
 	}
@@ -679,6 +685,9 @@ func (s *SupportInboxService) UpdateInstallationSettings(ctx context.Context, wo
 
 	current := parseSettings(inst.Settings)
 	merged := mergeSettingsUpdate(current, req)
+	if supportTranslationLanguages[merged.DefaultAgentLanguage] == "" {
+		return nil, nil, fmt.Errorf("unsupported default translation language")
+	}
 	if merged.DelayedTeamReplyMinutes < 1 || merged.DelayedTeamReplyMinutes > 1440 {
 		return nil, nil, fmt.Errorf("delayed team reply wait must be between 1 and 1440 minutes")
 	}

@@ -15,6 +15,7 @@ import (
 
 // Metrics owns a process-local registry with bounded, content-free labels.
 type Metrics struct {
+	translation     *translationMetrics
 	registry        *prometheus.Registry
 	requests        *prometheus.CounterVec
 	latency         *prometheus.HistogramVec
@@ -38,6 +39,7 @@ func NewMetrics() *Metrics {
 		logs:            prometheus.NewCounterVec(prometheus.CounterOpts{Name: "helpin_background_errors_total", Help: "Known background worker errors."}, []string{"worker"}),
 	}
 	m.registry.MustRegister(m.requests, m.latency, m.widget, m.widgetLatency, m.decisions, m.decisionLatency, m.logs, collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	m.translation = newTranslationMetrics(m.registry)
 	return m
 }
 

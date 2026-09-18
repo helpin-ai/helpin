@@ -55,6 +55,7 @@ func defaultActions() []Action {
 	seeds := []featureSeed{
 		{"ai_routing", "AI triage and routing", CategorySupportAI, "support", true, ModalityChat},
 		{"crm_signal_detection", "CRM signal detection", CategoryCRMAI, "crm", true, ModalityChat},
+		{"support_translation", "Support translation", CategorySupportAI, "support", true, ModalityChat},
 		{"support_reply_rewrite", "Support reply rewrite", CategorySupportAI, "support", true, ModalityChat},
 		{"pm_comment_rewrite", "Project comment rewrite", CategoryProjectAI, "project", true, ModalityChat},
 		{"crm_email_rewrite", "CRM email rewrite", CategoryCRMAI, "crm", true, ModalityChat},
