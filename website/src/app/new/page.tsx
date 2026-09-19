@@ -27,6 +27,12 @@ const RECORD_FACTS = [
     "wide": false
   },
   {
+    "title": "Coding agents",
+    "description": "Give coding agents the customer context behind each task. Work in a connected repository, prepare changes, and bring a pull request back for review.",
+    "image": "coding",
+    "wide": true
+  },
+  {
     "title": "Deals",
     "description": "See the conversations, objections, and buyer signals behind each deal and renewal.",
     "image": "deals",

@@ -1,14 +1,15 @@
 'use client';
 
 import { useId, type CSSProperties, type ReactNode, type SVGProps } from 'react';
-import { CalendarDays, Check, FileText, GitPullRequest, Link2, Mail, Mic, ShieldCheck, Sparkles, Tag, Users, type LucideIcon } from 'lucide-react';
+import { CalendarDays, Check, Code2, FileText, GitBranch, GitPullRequest, Link2, Mail, Mic, ShieldCheck, Sparkles, Tag, Users, type LucideIcon } from 'lucide-react';
 import { useBentoPlayback } from './useBentoPlayback';
 
-export type RecordVariant = 'conversations' | 'meetings' | 'projects' | 'deals' | 'docs' | 'email-calendar';
+export type RecordVariant = 'conversations' | 'meetings' | 'projects' | 'deals' | 'docs' | 'email-calendar' | 'coding';
 const LABELS: Record<RecordVariant, [string, string]> = {
   conversations: ['Customer conversations', 'Maya at OrbitDesk asks about setting up Okta SSO, testing with a pilot group, and who owns the rollout. Helpin AI answers each follow-up with linked guides and project context, applies relevant tags, and keeps the conversation connected to the same rollout project.'],
   meetings: ['Customer meetings', 'OrbitDesk’s security review connects the recording, speaker notes, and two next steps: validate the Okta setup and share the guide.'],
   projects: ['Customer projects', 'SSO Enterprise Readiness connects seven customer requests to tasks: Okta mapping in review, SCIM planned, and role mapping shipped. Eight of twelve tasks are complete.'],
+  coding: ['Coding agents with customer context', 'Forge works on the Okta SAML mapping task with Maya’s OrbitDesk rollout request attached, prepares a role-mapping code change, and returns pull request 728 for Sam to review.'],
   deals: ['Customer deals', 'OrbitDesk’s $42,000 renewal is in negotiation. Its SSO approval requirement is connected to Maya’s security review.'],
   docs: ['Customer documentation', 'A published Okta setup guide with three steps is connected to PR 728, shared with Maya at OrbitDesk, and used in a Helpin AI reply.'],
   'email-calendar': ['Customer email and calendar', 'OrbitDesk’s timeline connects Maya’s rollout email, the security review meeting, and the Okta guide shared by Helpin AI.'],
@@ -129,6 +130,34 @@ function Projects({ id }: { id: string }) {
   </>;
 }
 
+function Coding({ id }: { id: string }) {
+  return <>
+    <Panel id={id} x={32} y={24} width={536} height={352} stacked />
+    <Glyph icon={Code2} x={54} y={42} size={22} /><text x={86} y={59} className="cr-title">Okta SAML mapping</text>
+    <text x={544} y={58} textAnchor="end" className="cr-caption">HLP-142</text>
+    <rect x={54} y={77} width={492} height={48} rx={10} fill="#192d23" stroke="#2c4d3a" />
+    <Avatar x={78} y={101} /><text x={104} y={96} className="cr-caption">Maya · OrbitDesk</text>
+    <text x={104} y={115} className="cr-body">SSO is blocking our rollout.</text>
+    <text x={530} y={105} textAnchor="end" className="cr-accent">7 requests</text>
+    <Connection d="M300 125 V148" start={.3} />
+    <rect x={54} y={148} width={492} height={137} rx={12} fill="#0c1812" stroke="#30503d" />
+    <HelpinMark x={68} y={160} /><text x={105} y={177} className="cr-ai-label">Forge · Coding agent</text>
+    <g className="cr-coding-working"><circle className="cr-coding-pulse" cx={457} cy={173} r={3} fill="#dfc47d" /><text x={469} y={177} className="cr-caption">Working</text></g>
+    <g className="cr-coding-ready"><Checkmark x={435} y={172} /><text x={451} y={177} className="cr-accent">Changes ready</text></g>
+    <path d="M68 197 H532" stroke="#253f30" />
+    <text x={72} y={222} className="cr-code-muted">18</text><text x={104} y={222} className="cr-code">const member = &#123;</text>
+    <Reveal start={1.25}><rect className="cr-code-insert" x={65} y={230} width={470} height={24} rx={4} /><text x={72} y={246} className="cr-code-added">+</text><text x={104} y={246} className="cr-code-added">  role: mapOktaGroup(group),</text></Reveal>
+    <text x={72} y={272} className="cr-code-muted">20</text><text x={104} y={272} className="cr-code">&#125;;</text>
+    <Connection d="M300 285 V310" start={2.65} />
+    <Reveal start={3.3}>
+      <rect x={54} y={310} width={492} height={48} rx={10} fill="#193226" stroke="#38654b" />
+      <Glyph icon={GitPullRequest} x={68} y={322} size={22} /><text x={104} y={330} className="cr-body">PR #728 · Okta role mapping</text>
+      <Glyph icon={GitBranch} x={104} y={338} size={12} /><text x={122} y={349} className="cr-caption">orbitdesk / platform</text>
+      <Avatar x={414} y={334} initial="S" /><text x={438} y={331} className="cr-accent">Ready for review</text><text x={438} y={349} className="cr-caption">Assigned to Sam</text>
+    </Reveal>
+  </>;
+}
+
 function Deals({ id }: { id: string }) {
   return <>
     <Panel id={id} x={84} y={42} width={432} height={287} stacked />
@@ -173,7 +202,7 @@ export function CustomerRecordBento({ variant }: { variant: RecordVariant }) {
   const id = `cr-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const { container, playing, cycle } = useBentoPlayback(variant === 'conversations' ? 30000 : 7500);
   const [title, description] = LABELS[variant];
-  const Scene = { conversations: Conversations, meetings: Meetings, projects: Projects, deals: Deals, docs: Docs, 'email-calendar': Timeline }[variant];
+  const Scene = { conversations: Conversations, meetings: Meetings, projects: Projects, coding: Coding, deals: Deals, docs: Docs, 'email-calendar': Timeline }[variant];
   return <div ref={container} className={`record-bento-art cr-scene cr-${variant}`} data-playing={playing}>
     <svg key={cycle} className="cr-svg" viewBox="0 0 600 400" width={600} height={400} role="img" aria-labelledby={`${id}-title ${id}-description`}>
       <title id={`${id}-title`}>{title}</title><desc id={`${id}-description`}>{description}</desc>
