@@ -83,10 +83,8 @@ export default function NewHomePage() {
         <div className="wrap">
           <div className="rs-copy record-intro">
             <span className="rs-eyebrow">One customer. One record.</span>
-            <h2>Everything your team knows about a customer, connected.</h2>
-            <p>Conversations, meetings, projects, deals, docs, and engineering activity stay attached to the same customer record.</p>
-            <p>Support sees what’s shipping. Product sees who’s asking. Sales sees what matters to the account.</p>
-            <p className="rs-strong">And your agents work from the same context.</p>
+            <h2>Every agent starts with the full picture.</h2>
+            <p>Conversations, meetings, projects, deals, and docs connected around each customer. Your team and agents work from the same history.</p>
           </div>
           <div className="record-bento">
             {RECORD_FACTS.map(({ title, description, image, alt, wide }) => (
@@ -115,7 +113,7 @@ export default function NewHomePage() {
       {/* Product areas: one line each, detail lives on the product page. */}
       <section id="product">
         <div className="wrap">
-          <SectionHead eyebrow="What’s inside" title="One workspace. Five places the context lives." lede="Each area stands on its own. Together they keep the customer attached to the work." />
+          <SectionHead eyebrow="What’s inside" title="One workspace. Agents across the work." lede="From the support inbox to product tasks and customer follow-ups, give agents the context and tools to move work forward." />
           <figure className="product-showcase">
             <a className="product-showcase-image" href="/new/product/workspace-product-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin demo workspace image at full size (opens in a new tab)">
               <img
