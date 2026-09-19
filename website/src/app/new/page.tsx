@@ -68,9 +68,9 @@ export default function NewHomePage() {
         <div className="wrap hero-wrap">
           <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
-            <span className="eyebrow">The open-source workspace for SaaS teams</span>
-            <h1>Hear customers.<br />Decide what matters.<br />Ship it.</h1>
-            <p className="lede">Connect customer conversations to product work, engineering, docs, and CRM. Helpin keeps the context attached as work moves — with your team in control.</p>
+            <span className="eyebrow">The open-source workspace for teams and agents</span>
+            <h1>Agents that turn customer conversations into work.</h1>
+            <p className="lede">Answer customers, plan product work, update docs, and prepare follow-ups with agents that share your team’s context. You decide what they can do.</p>
             <CtaRow />
             <div className="assure"><span>Open source</span><span>Self-hostable</span><span>Bring your own models</span><span>Cloud available</span></div>
           </div>
