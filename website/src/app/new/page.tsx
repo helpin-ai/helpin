@@ -116,10 +116,19 @@ export default function NewHomePage() {
       <section id="product">
         <div className="wrap">
           <SectionHead eyebrow="What’s inside" title="One workspace. Five places the context lives." lede="Each area stands on its own. Together they keep the customer attached to the work." />
-          <div className="img-ph" role="img" aria-label="Product image placeholder">
-            <span className="img-ph-l">Product image</span>
-            <span className="img-ph-m">2240 × 1260 · replace with a workspace screenshot from the seeded demo</span>
-          </div>
+          <figure className="product-showcase">
+            <a className="product-showcase-image" href="/new/product/workspace-product-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin demo workspace image at full size (opens in a new tab)">
+              <img
+                src="/new/product/workspace-product-v1.webp"
+                alt="Helpin Studio task board showing Acme’s SSO rollout: Okta SAML mapping and setup docs in progress, security requirements in review, and role mapping shipped."
+                width={1727}
+                height={910}
+                loading="lazy"
+                decoding="async"
+              />
+            </a>
+            <figcaption><span>From Acme’s SSO request to rollout.</span><a href="/new/product/workspace-product-v1.webp" target="_blank" rel="noopener noreferrer">View full size ↗</a></figcaption>
+          </figure>
           <div className="pstrip">
             <a href="/new/product#inbox"><h3>Inbox</h3><p>Chat and email in one shared inbox, with the customer’s history beside every reply.</p><span>Learn more →</span></a>
             <a href="/new/product#meetings"><h3>Meetings</h3><p>Calls recorded, transcribed, summarized, and turned into work.</p><span>Learn more →</span></a>

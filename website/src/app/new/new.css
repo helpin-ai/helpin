@@ -616,6 +616,15 @@
 .hp3 .rn > .tag { justify-self: start; }
 
 /* Homepage product strip: five areas, one line each, linking to the product page. */
+.hp3 #product > .wrap > .sec-head { margin-inline: auto; text-align: center; }
+.hp3 #product > .wrap > .sec-head .lede { margin-inline: auto; }
+.hp3 .product-showcase { margin: 0 auto 48px; padding: clamp(8px, 2vw, 24px); border: 1px solid var(--border); border-radius: 20px; background: radial-gradient(ellipse at 50% 0%, #dcefe3, transparent 72%), var(--bg2); }
+.hp3 .product-showcase-image { display: block; overflow: hidden; border: 1px solid var(--border-2); border-radius: 10px; background: #fff; box-shadow: 0 12px 32px rgba(19, 45, 30, .08); }
+.hp3 .product-showcase-image img { display: block; width: 100%; height: auto; }
+.hp3 .product-showcase figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; padding: 18px 4px 2px; color: var(--t2); font-size: 13px; }
+.hp3 .product-showcase figcaption a { color: var(--em); font-weight: 600; }
+.hp3 .product-showcase figcaption a:hover { text-decoration: underline; }
+
 .hp3 .pstrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 32px; border-top: 1px solid var(--border); }
 .hp3 .pstrip > a { display: grid; gap: 8px; align-content: start; padding: 24px 0; border-bottom: 1px solid var(--border); color: inherit; }
 .hp3 .pstrip h3 { font-size: 17px; }
