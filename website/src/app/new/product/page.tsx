@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { PreviewNav } from '../_components/PreviewNav';
 import { PreviewFooter } from '../_components/PreviewFooter';
-import { ReviewNote, Flag } from '../_components/ReviewNotes';
 import { CtaRow, SectionHead, GITHUB_URL } from '../_components/ui';
 
 export const metadata: Metadata = {
@@ -88,9 +87,6 @@ export default function ProductPage() {
             </aside>
           </div>
           <div className="flow big"><span>Feedback</span><Arrow /><span>Project</span><Arrow /><span>Engineering</span><Arrow /><span>Shipped</span><Arrow /><span>Customer</span></div>
-          <ReviewNote tag="Projects">
-            <p><Flag>VERIFY</Flag> "Structured product requests" as a distinct object, request counts per project, and "renewals depend on it" roll-ups are not confirmed in code. Projects, tasks, epics, owners, states, GitHub and GitLab links, and task-from-conversation are.</p>
-          </ReviewNote>
         </div>
       </section>
 
@@ -117,9 +113,6 @@ export default function ProductPage() {
             {AGENTS.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
           </div>
           <p className="section-close">Different agents. Shared context.</p>
-          <ReviewNote tag="Agents">
-            <p><Flag>VERIFY</Flag> Shipped presets are Support, Documentation, Epic planner, Coding task planner, Code builder, Review, CRM operator, Marketer, Command, Ask, Researcher. "Triage," "Product," "Engineering," and "Customer" are marketing names for capabilities spread across those presets and triage rules; confirm the mapping or rename.</p>
-          </ReviewNote>
         </div>
       </section>
 
@@ -131,9 +124,6 @@ export default function ProductPage() {
             {DEVELOPERS.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
           </div>
           <div className="links"><a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/README.md`}>Read the docs →</a></div>
-          <ReviewNote tag="Developers">
-            <p><Flag>CONFIRMED</Flag> API routes, SDK packages, MCP server, GitHub and GitLab, Docker Compose. <Flag>VERIFY</Flag> Public REST API documentation and outbound webhooks were not found in the audit.</p>
-          </ReviewNote>
         </div>
       </section>
 

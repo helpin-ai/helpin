@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useReviewNotes } from './ReviewNotes';
+import { useEffect, useRef, useState } from 'react';
 
 // Section two visual. At rest, three tool fragments hold three versions of the same
 // customer: a support thread, a roadmap row, a CRM card. When the section enters view
@@ -16,8 +15,6 @@ export function RecordStory() {
   const ref = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<'rest' | 'merge' | 'play'>('rest');
   const [n, setN] = useState(0);
-  const [run, setRun] = useState(0);
-  const { shown } = useReviewNotes();
 
   useEffect(() => {
     const el = ref.current;
@@ -43,9 +40,8 @@ export function RecordStory() {
     }, { threshold: 0.45 });
     io.observe(el);
     return () => { io.disconnect(); timers.forEach((t) => { window.clearTimeout(t); window.clearInterval(t); }); };
-  }, [run]);
+  }, []);
 
-  const replay = useCallback(() => setRun((r) => r + 1), []);
   const progress = n / CARDS;
 
   return (
@@ -134,11 +130,6 @@ export function RecordStory() {
           </div>
         </div>
       </div>
-      {shown ? (
-        <div className="replay-row rs-replay">
-          <button type="button" className="replay" onClick={replay}>Replay this section</button>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { Instrument_Sans, JetBrains_Mono } from 'next/font/google';
-import { ReviewNotesProvider, ReviewToggle } from './_components/ReviewNotes';
 import './new.css';
 
 const instrumentSans = Instrument_Sans({
@@ -27,11 +26,8 @@ export const metadata: Metadata = {
 
 export default function NewHomeLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ReviewNotesProvider>
-      <div className={`hp3 ${instrumentSans.variable} ${jetbrainsMono.variable}`}>
-        {children}
-        <ReviewToggle />
-      </div>
-    </ReviewNotesProvider>
+    <div className={`hp3 ${instrumentSans.variable} ${jetbrainsMono.variable}`}>
+      {children}
+    </div>
   );
 }

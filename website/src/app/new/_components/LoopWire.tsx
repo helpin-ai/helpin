@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useReviewNotes } from './ReviewNotes';
+import { useEffect, useRef, useState } from 'react';
 
 // Hero concept: one wire, four stages, one customer. The line draws left to right,
 // each stage hangs its artifact off the wire, and work inside the stages ticks off.
@@ -32,7 +31,6 @@ function Avatar({ initial, size = 24 }: { initial: string; size?: number }) {
 }
 
 type Scenario = {
-  caption: string;
   hear: { initial: string; text: string; meta: string; time: string; speaker: string; quote: string; chip: string };
   decide: { items: [string, string, string]; key: string; title: string };
   ship: { branch: string; items: [string, string, string, string]; approver: string };
@@ -42,7 +40,6 @@ type Scenario = {
 // Four kinds of request, one loop each. Names and companies are examples for the demo workspace.
 const SCENARIOS: Scenario[] = [
   {
-    caption: 'Acme Inc. · SSO migration',
     hear: { initial: 'M', text: 'Does SSO work with Okta? We need it before rollout.', meta: 'Maya R. · Acme Inc. · chat',
       time: '14:02', speaker: 'Maya', quote: 'Security needs the Okta steps first.', chip: 'Timeline identified' },
     decide: { items: ['Timeline identified · High', 'Next step: confirm Okta support', 'HLP-142 created'],
@@ -52,7 +49,6 @@ const SCENARIOS: Scenario[] = [
       deal: 'Enterprise renewal · $42k', outcome: 'Signed' },
   },
   {
-    caption: 'Nimbus · Billing details',
     hear: { initial: 'D', text: 'Invoices still show our old company name.', meta: 'Dev P. · Nimbus · email',
       time: '09:41', speaker: 'Dev', quote: 'Every invoice since June is wrong.', chip: 'Relationship risk' },
     decide: { items: ['Relationship risk · Medium', 'Next step: reissue August invoices', 'HLP-151 created'],
@@ -62,7 +58,6 @@ const SCENARIOS: Scenario[] = [
       deal: 'Starter · 14 seats', outcome: 'Retained' },
   },
   {
-    caption: 'Orbit Labs · Export bug',
     hear: { initial: 'L', text: 'CSV export times out on our big workspace.', meta: 'Lin Z. · Orbit Labs · chat',
       time: '16:20', speaker: 'Lin', quote: 'Three analysts are blocked.', chip: 'Champion identified' },
     decide: { items: ['Coverage gap · 3 reports', 'Next step: prioritise the fix', 'HLP-158 created'],
@@ -72,7 +67,6 @@ const SCENARIOS: Scenario[] = [
       deal: 'Growth · expansion', outcome: '+20 seats' },
   },
   {
-    caption: 'Fieldline · Feature request',
     hear: { initial: 'A', text: 'Can we get Slack alerts for failed payments?', meta: 'Aisha K. · Fieldline · chat',
       time: '11:15', speaker: 'Aisha', quote: 'With alerts we would move the whole team.', chip: 'Buying intent' },
     decide: { items: ['Buying intent · High', 'Next step: add to Q4 roadmap', 'HLP-160 created'],
@@ -186,7 +180,6 @@ function Checklist({ items, t, cardAt }: { items: Item[]; t: number; cardAt: num
 
 export function LoopWire() {
   const [t, setT] = useState(0);
-  const [run, setRun] = useState(0);
   const [idx, setIdx] = useState(0);
   const [inView, setInView] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -198,7 +191,6 @@ export function LoopWire() {
   const pathRef = useRef<SVGPathElement>(null);
   const prevTarget = useRef(0);
   const settle = useRef(true); // true right after a re-measure: jump, don't animate
-  const { shown } = useReviewNotes();
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -252,11 +244,10 @@ export function LoopWire() {
       }
     }, TICK_MS);
     return () => window.clearInterval(id);
-  }, [run, inView]);
+  }, [inView]);
 
   const sc = SCENARIOS[idx];
 
-  const replay = useCallback(() => { settle.current = true; setRun((r) => r + 1); }, []);
   const on = (at: number) => (t >= at ? 'on' : undefined);
 
   // Stage badges are always visible. A badge fills as the dark line closes in on it
@@ -356,15 +347,6 @@ export function LoopWire() {
           </div>
         </div>
       </div>
-      <div className="wcaption" aria-hidden="true">
-        <span className="wdots">{SCENARIOS.map((x, i) => <i key={x.caption} className={i === idx ? 'on' : undefined} />)}</span>
-        <span>{sc.caption}</span>
-      </div>
-      {shown ? (
-        <div className="replay-row">
-          <button type="button" className="replay" onClick={replay}>Replay this example</button>
-        </div>
-      ) : null}
     </div>
   );
 }
