@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
-import { Check, Code2, Database, FileText, GitBranch, ListChecks, MessageSquare, Plug, RotateCcw, Ticket, Video, type LucideIcon } from 'lucide-react';
+import { Check, Code2, Database, FileText, GitBranch, ListChecks, MessageSquare, Plug, Ticket, Video, type LucideIcon } from 'lucide-react';
 
 type Variant = 'answers' | 'coordination' | 'mcp';
 const DESCRIPTIONS: Record<Variant, { title: string; description: string }> = {
@@ -96,8 +96,6 @@ function Mcp({ id }: { id: string }) {
 export function AskAgentBento({ variant }: { variant: Variant }) {
   const id = `ab-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const container = useRef<HTMLDivElement>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasPlayed = useRef(false);
   const [reducedMotion, setReducedMotion] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [cycle, setCycle] = useState(0);
@@ -118,22 +116,26 @@ export function AskAgentBento({ variant }: { variant: Variant }) {
     }
     const element = container.current;
     if (!element) return;
+    let visible = false;
+    const update = () => setPlaying(visible && !document.hidden);
     const observer = new IntersectionObserver(([entry]) => {
-      if (entry.intersectionRatio >= .5 && !hasPlayed.current) {
-        hasPlayed.current = true;
-        setPlaying(true);
-      } else if (!entry.isIntersecting) {
-        setPlaying(false);
-      }
+      visible = entry.intersectionRatio >= .5;
+      update();
     }, { threshold: .5 });
     observer.observe(element);
-    return () => observer.disconnect();
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', update);
+    };
   }, [reducedMotion]);
 
   useEffect(() => {
-    if (playing) timer.current = setTimeout(() => setPlaying(false), 4800);
-    return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [playing, cycle]);
+    if (!playing) return;
+    // Let the completed scene settle briefly before replaying the sequence.
+    const timer = setInterval(() => setCycle(value => value + 1), 6000);
+    return () => clearInterval(timer);
+  }, [playing]);
 
   return <div ref={container} className="ask-agent-art ab-scene" data-playing={playing && !reducedMotion}>
     <svg key={cycle} className="ab-svg" viewBox="0 0 520 350" width={520} height={350} role="img" aria-labelledby={`${id}-title ${id}-description`}>
@@ -141,6 +143,5 @@ export function AskAgentBento({ variant }: { variant: Variant }) {
       <defs><linearGradient id={`${id}-panel`} x1="0" y1="0" x2="1" y2="1"><stop stopColor="#182b27" /><stop offset="1" stopColor="#0d1917" /></linearGradient></defs>
       {variant === 'answers' ? <Answers id={id} /> : variant === 'coordination' ? <Coordination id={id} /> : <Mcp id={id} />}
     </svg>
-    {!reducedMotion && <button className="ab-replay" type="button" aria-label={`Replay ${title.toLowerCase()} animation`} disabled={playing} onClick={() => { hasPlayed.current = true; setCycle(value => value + 1); setPlaying(true); }}><RotateCcw size={12} aria-hidden="true" />Replay</button>}
   </div>;
 }
