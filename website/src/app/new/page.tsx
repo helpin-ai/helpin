@@ -2,6 +2,7 @@ import { PreviewNav } from './_components/PreviewNav';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
 import { ProductExplorer } from './_components/ProductExplorer';
+import { AgentControlArt } from './_components/AgentControlArt';
 import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
@@ -65,8 +66,8 @@ export default function NewHomePage() {
           <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
             <span className="eyebrow">The open-source workspace for SaaS teams</span>
-            <h1>Customer support, product work, and CRM—for teams and agents.</h1>
-            <p className="lede">Work with agents to answer customers, plan tasks, and prepare follow-ups. Helpin connects the customer history behind every step.</p>
+            <h1><span>Support, product, and CRM.</span>{' '}<span>One customer history.</span>{' '}<span>AI that does the work.</span></h1>
+            <p className="lede">AI agents answer customers, plan tasks, and prepare follow-ups — with the full context of every account behind each step.</p>
             <CtaRow />
             <div className="assure"><span>Open source</span><span>Self-hostable</span><span>Bring your own models</span><span>Cloud available</span></div>
           </div>
@@ -158,35 +159,30 @@ export default function NewHomePage() {
             <figcaption>One place to manage your agents and see their latest runs.</figcaption>
           </figure>
           <div className="ctrl">
-            <div>
-              <span className="k">Tool access</span>
-              <h3>Give each agent the right tools.</h3>
-              <p className="ctrl-description">Choose the workspace tools and connected services each agent can use to do its job.</p>
-              <div className="ctrl-card">
-                <span className="ctrl-example-label">Support agent · Selected tools</span>
-                <ul className="ctrl-tools"><li>Search knowledge<span>Enabled</span></li><li>Read conversations<span>Enabled</span></li><li>Draft replies<span>Enabled</span></li></ul>
+            <article>
+              <AgentControlArt variant="tools" />
+              <div className="ctrl-copy">
+                <span className="k">Tool access</span>
+                <h3>Give each agent the right tools.</h3>
+                <p className="ctrl-description">Choose the workspace tools and connected services each agent can use to do its job.</p>
               </div>
-            </div>
-            <div>
-              <span className="k">Approvals</span>
-              <h3>Set when agents ask first.</h3>
-              <p className="ctrl-description">Set an approval mode for each agent. Review actions that need permission before they go ahead.</p>
-              <div className="ctrl-card">
-                <span className="ctrl-example-label">Approval requested</span>
-                <p>Send this reply to Maya?</p>
-                <blockquote>The Okta setup guide is ready for your pilot.</blockquote>
-                <div className="ctrl-btns"><span className="btnm">Approve</span><span className="btno">Reject</span></div>
+            </article>
+            <article>
+              <AgentControlArt variant="approvals" />
+              <div className="ctrl-copy">
+                <span className="k">Approvals</span>
+                <h3>Set when agents ask first.</h3>
+                <p className="ctrl-description">Set an approval mode for each agent. Review actions that need permission before they go ahead.</p>
               </div>
-            </div>
-            <div>
-              <span className="k">Triggers</span>
-              <h3>Put repeat work on a schedule.</h3>
-              <p className="ctrl-description">Start agents from an event or a schedule, using the tools and approval settings you’ve chosen.</p>
-              <div className="ctrl-card">
-                <span className="ctrl-example-label">Scheduled rollout review</span>
-                <ol className="chain"><li>Every weekday morning</li><li>Review open rollout tasks</li><li>Summarize the blockers</li></ol>
+            </article>
+            <article>
+              <AgentControlArt variant="triggers" />
+              <div className="ctrl-copy">
+                <span className="k">Triggers</span>
+                <h3>Put repeat work on a schedule.</h3>
+                <p className="ctrl-description">Start agents from an event or a schedule, using the tools and approval settings you’ve chosen.</p>
               </div>
-            </div>
+            </article>
           </div>
           <p className="section-close"><a className="inline-link" href="/new/product#agents">Explore agents and automation →</a></p>
         </div>

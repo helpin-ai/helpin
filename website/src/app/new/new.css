@@ -342,10 +342,11 @@
 .hp3 .hero-inner, .hp3 .wire { position: relative; z-index: 1; }
 @media (max-width: 960px) { .hp3 .wgrid { display: none; } }
 /* Fixes from the screenshot round. */
-/* Hero above the fold at 1440x900: tighter vertical rhythm, two-line headline. */
+/* Hero copy uses one sentence per line on wide screens. */
 .hp3 section.hero { padding-block: 52px 64px; }
 .hp3 .hero-inner { gap: 18px; max-width: 760px; }
 .hp3 .hero h1 { font-size: clamp(2.4rem, 4.4vw, 3.5rem); }
+.hp3 .hero h1 > span { display: block; text-wrap: balance; }
 .hp3 .hero .lede { font-size: 18px; max-width: 54ch; }
 .hp3 .wire { margin-top: 44px; }
 /* Phone: the record must never widen the page. A late rule had reset it to two columns. */
@@ -586,26 +587,44 @@
 .hp3 .control-screenshot a:focus-visible { outline: 2px solid var(--em); outline-offset: 5px; }
 .hp3 .control-screenshot img { display: block; width: 100%; height: auto; }
 .hp3 .control-screenshot figcaption { margin-top: 16px; text-align: center; color: var(--t2); font-size: 14px; }
-.hp3 .ctrl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; border-top: 1px solid var(--border); padding-top: 32px; }
-.hp3 .ctrl > div { display: flex; flex-direction: column; align-items: stretch; }
-.hp3 .ctrl h3 { font-size: 20px; margin-bottom: 12px; }
-.hp3 .ctrl-description { color: var(--t2); font-size: 15px; line-height: 1.65; margin-bottom: 22px; }
-.hp3 .ctrl .ctrl-card { margin-top: auto; min-height: 190px; align-content: start; }
-.hp3 .ctrl-example-label { font-size: 11px; font-weight: 600; color: var(--t2); letter-spacing: .02em; }
-.hp3 .ctrl-card blockquote { margin: 0; border-left: 2px solid var(--border-2); padding-left: 10px; color: var(--t2); font-size: 13px; line-height: 1.5; }
-.hp3 .ctrl-tools { list-style: none; margin: 0; padding: 0; }
-.hp3 .ctrl-tools li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; font-size: 13px; }
-.hp3 .ctrl-tools li + li { border-top: 1px solid var(--border); }
-.hp3 .ctrl-tools li span { font-size: 11px; color: var(--em); }
-.hp3 .ctrl-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: #fff; display: grid; gap: 12px; margin-bottom: 12px; }
-.hp3 .ctrl-card p { font-size: 14.5px; line-height: 1.5; }
-.hp3 .ctrl-btns { display: flex; gap: 8px; }
-.hp3 .ctrl-btns .btnm, .hp3 .ctrl-btns .btno { font-size: 12.5px; padding: 6px 12px; }
-.hp3 .ctrl .muted { font-size: 14px; }
-.hp3 .chain { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; counter-reset: c; }
-.hp3 .chain li { position: relative; padding: 10px 0 10px 22px; font-size: 15px; font-weight: 600; }
-.hp3 .chain li::before { content: ""; position: absolute; left: 3px; top: 1.05em; width: 8px; height: 8px; border-radius: 50%; background: var(--em); }
-.hp3 .chain li:not(:last-child)::after { content: ""; position: absolute; left: 6.5px; top: calc(1.05em + 10px); bottom: -1.05em; width: 1px; background: var(--border-2); }
+.hp3 .ctrl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.hp3 .ctrl > article { overflow: hidden; background: #fff; border: 1px solid var(--border); border-radius: 16px; }
+.hp3 .ctrl-copy { padding: 26px 24px 28px; }
+.hp3 .ctrl h3 { font-size: 20px; line-height: 1.4; margin-bottom: 12px; letter-spacing: -.4px; }
+.hp3 .ctrl-description { color: var(--t2); font-size: 15px; line-height: 1.65; }
+.hp3 .control-art { overflow: hidden; background: radial-gradient(ellipse at 50% 35%, #fff 0%, #f5f7f6 58%, #eef1ef 100%); border-bottom: 1px solid var(--border); }
+.hp3 .ca-svg { display: block; width: 100%; height: auto; color: #53665b; }
+.hp3 .ca-svg text { font-family: var(--sans); fill: #26372e; }
+.hp3 .ca-panel { fill: #fff; stroke: #dfe6e1; stroke-width: 1; filter: drop-shadow(0 5px 8px rgba(30,50,39,.035)); }
+.hp3 .ca-title { font-size: 14px; font-weight: 600; }
+.hp3 .ca-body { font-size: 13px; font-weight: 500; }
+.hp3 .ca-svg .ca-meta { font-size: 10.5px; fill: #718078; }
+.hp3 .ca-small { font-size: 11px; font-weight: 500; }
+.hp3 .ca-svg .ca-green { color: #138253; fill: #138253; }
+.hp3 .ca-amber { color: #987426; }
+.hp3 .ca-svg .ca-button { fill: #fff; font-size: 12px; font-weight: 500; }
+.hp3 .ca-divider { stroke: #edf0ee; }
+.hp3 .ca-wire { stroke: #d8e2dc; fill: none; stroke-width: 2; }
+.hp3 .ca-route { stroke: #64ad86; fill: none; stroke-width: 2; }
+.hp3 .ca-tool-highlight { fill: #edf6f0; opacity: 0; }
+.hp3 .ca-node-active { fill: #eaf5ed; fill-opacity: .25; stroke: #8bbb9c; opacity: 0; }
+.hp3 .ca-pending, .hp3 .ca-cursor { visibility: hidden; }
+.hp3 .ca-cursor { color: #233b2d; filter: drop-shadow(0 2px 2px rgba(0,0,0,.1)); }
+.hp3 .control-art[data-playing="true"] .ca-tick { stroke-dasharray: 1; animation: ca-draw .4s ease var(--ca-delay) both; }
+.hp3 .control-art[data-playing="true"] .ca-tool-highlight { animation: ca-highlight 1.1s ease var(--ca-delay) both; }
+.hp3 .control-art[data-playing="true"] .ca-node-active { animation: ca-highlight 1.3s ease var(--ca-delay) both; }
+.hp3 .control-art[data-playing="true"] .ca-route { stroke-dasharray: 1; animation: ca-draw 2.1s ease .1s both; }
+.hp3 .control-art[data-playing="true"] .ca-pending { animation: ca-pending 2.3s steps(1, end) both; }
+.hp3 .control-art[data-playing="true"] .ca-approved { animation: ca-approved .001s steps(1, end) 2.3s both; }
+.hp3 .control-art[data-playing="true"] .ca-cursor { animation: ca-cursor 1.4s cubic-bezier(.2,.8,.2,1) 1s both; }
+@keyframes ca-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes ca-highlight { 0%,100% { opacity: 0; } 25%,60% { opacity: 1; } }
+@keyframes ca-pending { from { visibility: visible; } to { visibility: hidden; } }
+@keyframes ca-approved { from { visibility: hidden; } to { visibility: visible; } }
+@keyframes ca-cursor { 0% { visibility: hidden; transform: translate(48px,26px); } 15% { visibility: visible; } 65%,85% { visibility: visible; transform: translate(0,0); } 100% { visibility: hidden; transform: translate(0,0); } }
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .control-art[data-playing="true"] :is(.ca-tick, .ca-tool-highlight, .ca-node-active, .ca-route, .ca-pending, .ca-approved, .ca-cursor) { animation: none; }
+}
 /* 09 integrations */
 .hp3 .intg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 32px; border-top: 1px solid var(--border); padding-top: 28px; }
 .hp3 .intg ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 15.5px; font-weight: 600; }
