@@ -114,12 +114,40 @@ export default function NewHomePage() {
       {/* Explore each product area alongside the workspace image. */}
       <section id="product">
         <div className="wrap">
-          <SectionHead eyebrow="What’s inside" title="One workspace. From first reply to follow-up." lede="Follow a customer request through the inbox, a meeting, a project, and the next follow-up." />
+          <SectionHead eyebrow="What’s inside" title="Close the loop in one workspace." lede="Connect the customer question, the product work, and the follow-up—so your team doesn’t have to piece the story together across tools." />
           <ProductExplorer />
-          <div id="ask-agent" className="ask-agent-intro">
-            <SectionHead eyebrow="Ask Agent" title="Ask a question. Hand off the work." lede="Ask about a customer, investigate an issue, or describe a task. Ask Agent uses your workspace context to find answers and coordinate the work—from wherever you’re working." />
-            <a className="btn-link" href="/new/product#agents">Explore agents →</a>
+        </div>
+      </section>
+
+      {/* Ask Agent: answers, execution, and connected tools. */}
+      <section id="ask-agent" className="ask-agent-section" aria-labelledby="ask-agent-title">
+        <div className="wrap">
+          <div className="ask-agent-intro">
+            <span className="eyebrow">Ask Agent</span>
+            <h2 id="ask-agent-title">Ask a question.<br />Hand off the work.</h2>
+            <p className="lede">Ask about a customer, investigate an issue, or describe a task. Ask Agent uses your workspace context to find answers and coordinate the work—from wherever you’re working.</p>
           </div>
+          <div className="ask-agent-capabilities">
+            <article>
+              <span className="ask-agent-label">Your workspace</span>
+              <h3>Find the answer across the work.</h3>
+              <p>Bring together customer conversations, meeting notes, tasks, and docs to understand what happened and what needs attention.</p>
+              <div className="ask-agent-example"><span>Try asking</span><blockquote>What’s blocking OrbitDesk’s rollout?</blockquote></div>
+            </article>
+            <article>
+              <span className="ask-agent-label">Your next step</span>
+              <h3>Turn the answer into action.</h3>
+              <p>Create tasks, update docs, or hand work to a specialist agent. Follow progress and get the results back in the conversation.</p>
+              <div className="ask-agent-example"><span>Try asking</span><blockquote>Create rollout tasks from the security review.</blockquote></div>
+            </article>
+            <article>
+              <span className="ask-agent-label">External MCP</span>
+              <h3>Bring your other tools into the conversation.</h3>
+              <p>Connect external MCP servers and choose the tools each agent can use. Ask Agent coordinates those agents to pull in data and bring their findings back.</p>
+              <div className="ask-agent-example"><span>With a connected agent</span><blockquote>Check the issue status in our connected tracker.</blockquote></div>
+            </article>
+          </div>
+          <div className="ask-agent-links"><a className="btn-link" href="/new/product#agents">Explore agents →</a><a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external tools →</a></div>
         </div>
       </section>
 
@@ -171,7 +199,7 @@ export default function NewHomePage() {
           <div className="final">
             <span className="eyebrow">Close the loop</span>
             <h2>Start with a customer.<br />End with something shipped.</h2>
-            <p className="lede">Bring your team and agents together to answer customers, act on requests, and follow through.</p>
+            <p className="lede">We built Helpin and the agent system behind it for our own products—to keep customer questions, product work, and follow-ups in one place.</p>
             <CtaRow />
             <div className="assure"><span>Open source</span><span>Self-hostable</span><span>Built for SaaS teams</span></div>
           </div>
