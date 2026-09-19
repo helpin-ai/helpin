@@ -32,7 +32,7 @@ export function PreviewFooter() {
         <div className="fgrid">
           <div>
             <Link href="/new" className="logo" aria-label="Helpin"><HelpinBrand /></Link>
-            <p className="tagline">Open-source workspace for SaaS teams.</p>
+            <p className="tagline">The open-source workspace for SaaS teams and agents.</p>
             <p className="tagline strong">Hear customers. Decide what matters. Ship it.</p>
           </div>
           {COLUMNS.map((c) => (

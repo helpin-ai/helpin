@@ -42,32 +42,32 @@ const AREAS = [
   {
     id: 'inbox', label: 'Inbox',
     image: INBOX_IMAGE,
-    title: 'Answer with the whole story.',
-    description: 'Agents draft replies using customer history and product knowledge. Your team reviews the answer with the context already attached.',
+    title: 'Answer customers with agents that know their history.',
+    description: 'Draft replies from past conversations and product knowledge. Review the answer, add a note, or turn the request into a task.',
   },
   {
     id: 'meetings', label: 'Meetings',
     image: MEETINGS_IMAGE,
-    title: 'Keep the work moving after the call.',
-    description: 'Capture decisions and next steps from customer meetings. Give agents the conversation behind every action item.',
+    title: 'Turn meeting decisions into next steps.',
+    description: 'Record and transcribe customer calls. Work with agents to summarize decisions and turn action items into tasks.',
   },
   {
     id: 'projects', label: 'Projects',
     image: PROJECTS_IMAGE,
-    title: 'From customer request to engineering work.',
-    description: 'Agents help turn feedback into tasks, plan the next steps, and carry the customer’s requirements into development.',
+    title: 'Turn customer requests into planned work.',
+    description: 'Use agents to break requests into tasks and plan the next steps. Set priorities and owners, then connect the work to engineering.',
   },
   {
     id: 'crm', label: 'CRM',
     image: CRM_IMAGE,
-    title: 'Know what matters before you follow up.',
-    description: 'Give agents the conversations, deal history, and buyer signals behind each account so they can prepare a relevant next step.',
+    title: 'See what’s holding up the deal.',
+    description: 'See the support issue, feature request, or meeting objection behind a deal. Ask agents to review the account and prepare your follow-up.',
   },
   {
     id: 'knowledge', label: 'Knowledge',
     image: KNOWLEDGE_IMAGE,
-    title: 'Turn what changed into useful answers.',
-    description: 'Agents help draft and update documentation from customer questions and product work, with the source material close at hand.',
+    title: 'Give customers and agents answers they can use.',
+    description: 'Create help articles and internal docs alongside the work. Use agents to draft answers from repeated questions and update docs as the product changes.',
   },
 ] as const;
 
