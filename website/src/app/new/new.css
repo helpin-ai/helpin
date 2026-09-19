@@ -659,7 +659,27 @@
 .hp3 .record-intro h2 { max-width: 24ch; margin-inline: auto; text-wrap: balance; }
 .hp3 .record-intro p { max-width: 66ch; margin-inline: auto; }
 .hp3 .record-bento { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-.hp3 .record-bento-card { min-width: 0; overflow: hidden; border: 1px solid var(--d-line-2); border-radius: 20px; background: var(--d-bg); }
+.hp3 .record-bento-card { position: relative; isolation: isolate; min-width: 0; overflow: hidden; border: 1px solid var(--d-line-2); border-radius: 20px; background: var(--d-bg); transition: border-color .6s ease; }
+.hp3 .record-bento-card::before {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 32% 68%, rgba(63, 191, 131, .2), transparent 45%), radial-gradient(ellipse at 76% 28%, rgba(36, 128, 111, .1), transparent 42%);
+  opacity: .65;
+  transform: translate(-8%, 8%);
+  transition: transform .9s cubic-bezier(.22, 1, .36, 1), opacity .7s ease;
+}
+.hp3 .record-bento-card > * { position: relative; z-index: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .hp3 .record-bento-card:hover { border-color: rgba(63, 191, 131, .35); }
+  .hp3 .record-bento-card:hover::before { transform: translate(15%, -12%); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .record-bento-card, .hp3 .record-bento-card::before { transition: none; }
+  .hp3 .record-bento-card:hover::before { transform: translate(-8%, 8%); }
+}
 .hp3 .record-bento-copy { padding: 32px 32px 8px; }
 .hp3 .record-bento-copy h3 { margin-bottom: 10px; color: var(--d-fg); font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
 .hp3 .record-bento-copy p { max-width: 44ch; color: #b4b6b3; font-size: 16px; line-height: 1.6; }
