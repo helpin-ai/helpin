@@ -94,16 +94,15 @@ function shipItems(sc: Scenario): Item[] {
 
 // Stepped wire geometry. Stage labels alternate between an upper and a lower level and the
 // line moves between them with an S-curve, entering and leaving at the viewport edges.
-const GAP = 40;
 const LEVEL_Y = [15, 100]; // y of the wire on each level; badges sit centred on it
 const LEVEL_TOP = [0, 85]; // padding-top for nodes on each level so the 30px badge is centred on the wire
 const levelOf = (i: number) => i % 2;
 
 // x position of each stage label's left edge, in SVG coordinates (0 = viewport left).
-function stageXs(w: number, vw: number): number[] {
+function stageXs(w: number, vw: number, gap: number): number[] {
   const ox = Math.max(0, (vw - w) / 2);
-  const cw = (w - GAP * 3) / 4;
-  return [0, 1, 2, 3].map((i) => ox + i * (cw + GAP) - 2);
+  const cw = (w - gap * 3) / 4;
+  return [0, 1, 2, 3].map((i) => ox + i * (cw + gap) - 2);
 }
 
 // Path length at which the path reaches a given x. The wire is monotonic in x.
@@ -116,10 +115,10 @@ function lengthAtX(path: SVGPathElement, total: number, x: number): number {
   return (lo + hi) / 2;
 }
 
-function wirePath(w: number, vw: number): string {
+function wirePath(w: number, vw: number, gap: number): string {
   if (!w || !vw) return '';
   const ox = Math.max(0, (vw - w) / 2);
-  const cw = (w - GAP * 3) / 4;
+  const cw = (w - gap * 3) / 4;
   const y = (i: number) => LEVEL_Y[levelOf(i)];
   const r = 12; // corner radius of each step
   let d = `M ${-ox} ${y(0)}`;
@@ -127,7 +126,7 @@ function wirePath(w: number, vw: number): string {
     const next = i + 1;
     if (next < 4) {
       // Step down or up just before the next stage: two small rounded corners and a short vertical.
-      const xStep = ox + next * (cw + GAP) - 28;
+      const xStep = ox + next * (cw + gap) - 28;
       const y1 = y(i), y2 = y(next);
       const down = y2 > y1;
       const s1 = down ? 1 : 0; // sweep flags for a right-turning then left-turning corner
@@ -183,7 +182,7 @@ export function LoopWire() {
   const [idx, setIdx] = useState(0);
   const [inView, setInView] = useState(true);
   const [mounted, setMounted] = useState(false);
-  const [size, setSize] = useState({ w: 0, vw: 0 });
+  const [size, setSize] = useState({ w: 0, vw: 0, gap: 40 });
   const [len, setLen] = useState(0);
   const [marks, setMarks] = useState<number[]>([]);
   const [reduced, setReduced] = useState(false);
@@ -195,7 +194,11 @@ export function LoopWire() {
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const measure = () => setSize({ w: el.clientWidth, vw: window.innerWidth });
+    const measure = () => {
+      const nodes = el.querySelector('.wire-nodes');
+      const gap = nodes ? parseFloat(getComputedStyle(nodes).columnGap) : 40;
+      setSize({ w: el.clientWidth, vw: window.innerWidth, gap });
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -203,15 +206,15 @@ export function LoopWire() {
     return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
   }, []);
 
-  const d = wirePath(size.w, size.vw);
+  const d = wirePath(size.w, size.vw, size.gap);
   useEffect(() => {
     const path = pathRef.current;
     if (!path || !d) return;
     const total = path.getTotalLength();
     setLen(total);
-    setMarks(stageXs(size.w, size.vw).map((x) => lengthAtX(path, total, x)));
+    setMarks(stageXs(size.w, size.vw, size.gap).map((x) => lengthAtX(path, total, x)));
     settle.current = true;
-  }, [d, size.w, size.vw]);
+  }, [d, size.w, size.vw, size.gap]);
 
   useEffect(() => {
     const id = window.setTimeout(() => setMounted(true), 120);
