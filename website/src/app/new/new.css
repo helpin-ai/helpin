@@ -711,11 +711,23 @@
 .hp3 .ask-agent-screenshot img { display: block; width: 100%; height: auto; }
 .hp3 .ask-agent-screenshot figcaption { margin-top: 16px; color: #b5c9bd; text-align: center; font-size: 14px; }
 .hp3 .ask-agent-capabilities { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
-.hp3 .ask-agent-capabilities article { display: flex; flex-direction: column; padding: 28px; min-width: 0; border: 1px solid #2c483a; border-radius: 16px; background: rgba(255,255,255,.025); }
+.hp3 .ask-agent-capabilities article { position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; padding: 28px; min-width: 0; border: 1px solid #2c483a; border-radius: 16px; background: rgba(255,255,255,.025); transition: border-color .6s ease; }
+.hp3 .ask-agent-capabilities article::before { content: ''; position: absolute; inset: -40%; z-index: 0; pointer-events: none; background: radial-gradient(ellipse at 32% 68%, rgba(63,191,131,.16), transparent 45%), radial-gradient(ellipse at 76% 28%, rgba(36,128,111,.1), transparent 42%); opacity: .65; transform: translate(-8%,8%); transition: transform .9s cubic-bezier(.22,1,.36,1), opacity .7s ease; }
+.hp3 .ask-agent-capabilities article > * { position: relative; z-index: 1; }
+.hp3 .ask-agent-art { margin: auto -20px 24px; }
+.hp3 .ask-agent-art img { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; }
+@media (hover: hover) and (pointer: fine) {
+  .hp3 .ask-agent-capabilities article:hover { border-color: rgba(129,222,176,.5); }
+  .hp3 .ask-agent-capabilities article:hover::before { transform: translate(15%,-12%); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .ask-agent-capabilities article, .hp3 .ask-agent-capabilities article::before { transition: none; }
+  .hp3 .ask-agent-capabilities article:hover::before { transform: translate(-8%,8%); }
+}
 .hp3 .ask-agent-label { color: #81deb0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 20px; }
 .hp3 .ask-agent-capabilities h3 { font-size: 23px; line-height: 1.25; margin-bottom: 16px; }
 .hp3 .ask-agent-capabilities p { color: #b5c9bd; font-size: 16px; line-height: 1.6; margin-bottom: 28px; }
-.hp3 .ask-agent-example { margin-top: auto; border-top: 1px solid #2c483a; padding-top: 20px; }
+.hp3 .ask-agent-example { border-top: 1px solid #2c483a; padding-top: 20px; }
 .hp3 .ask-agent-example > span { color: #b5c9bd; font-size: 12px; }
 .hp3 .ask-agent-example blockquote { margin: 8px 0 0; font-size: 17px; line-height: 1.5; }
 .hp3 .ask-agent-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 20px 32px; margin-top: 36px; }
