@@ -595,12 +595,12 @@
 .hp3 .self-host-features p, .hp3 .developer-features p { color: var(--t2); font-size: 14px; line-height: 1.65; }
 .hp3 .developer-section { background: #fff; }
 .hp3 .developer-section .sec-head { max-width: 760px; }
-.hp3 .developer-cli-feature { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(0,1fr); align-items: center; min-height: 400px; overflow: hidden; border: 1px solid #e7ede9; border-radius: 20px; background: #f8faf9; }
-.hp3 .developer-visual { margin: 0; min-width: 0; overflow: hidden; }
-.hp3 .developer-visual a { display: block; width: 125%; transform: translateX(-5%); border-radius: 12px; }
+.hp3 .developer-cli-feature { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1fr); align-items: center; min-height: 400px; overflow: hidden; border: 1px solid #e7ede9; border-radius: 20px; background: #f8faf9; }
+.hp3 .developer-visual { margin: 0; min-width: 0; padding: 24px 8px 24px 16px; mix-blend-mode: darken; }
+.hp3 .developer-visual a { display: block; width: 100%; border-radius: 12px; }
 .hp3 .developer-visual a:focus-visible { outline: 2px solid var(--em); outline-offset: -6px; }
-.hp3 .developer-visual img { display: block; width: 100%; height: auto; mask-image: linear-gradient(to right, #000 52%, transparent 82%); }
-.hp3 .developer-cli-copy { position: relative; padding: 44px 44px 44px 8px; }
+.hp3 .developer-visual img { display: block; width: 100%; height: auto; }
+.hp3 .developer-cli-copy { position: relative; padding: 44px 40px 44px 20px; }
 .hp3 .developer-cli-copy .eyebrow { display: block; margin-bottom: 18px; }
 .hp3 .developer-cli-copy h3 { font-size: clamp(28px,3vw,38px); line-height: 1.12; letter-spacing: -.8px; margin-bottom: 18px; }
 .hp3 .developer-cli-copy p { color: var(--t2); font-size: 15px; line-height: 1.75; max-width: 40ch; margin-bottom: 26px; }
@@ -619,8 +619,7 @@
 }
 @media (max-width: 700px) {
   .hp3 .developer-cli-feature { grid-template-columns: 1fr; }
-  .hp3 .developer-visual a { width: 100%; transform: none; }
-  .hp3 .developer-visual img { mask-image: linear-gradient(to bottom, #000 75%, transparent 100%); }
+  .hp3 .developer-visual { padding: 20px 14px 0; }
   .hp3 .developer-cli-copy { padding: 12px 26px 30px; }
   .hp3 .developer-features { grid-template-columns: 1fr; }
   .hp3 .developer-features article { padding: 24px; }
