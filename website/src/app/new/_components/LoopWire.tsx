@@ -5,9 +5,9 @@ import { Pause, Play, Link2, Check as CheckIcon } from 'lucide-react';
 import { useBentoPlayback } from './useBentoPlayback';
 
 // One illustrative OrbitDesk workflow. Static rendering shows the complete story;
-// playback only highlights the handoffs, without hiding any later-stage cards.
+// playback restores progressive reveals as the wire reaches each stage.
 const TICK_MS = 100;
-const LAST = 115;
+const LAST = 120;
 const QUESTION = 'Our CSV export times out on larger reports.';
 const S = { decide: 30, ship: 55, reviewed: 83, released: 91, tell: 95, sent: 110 };
 
@@ -65,19 +65,20 @@ function wirePath(w: number, vw: number, gap: number): string {
   return d;
 }
 
-function WorkStep({ label, at, t, review = false }: { label: string; at: number; t: number; review?: boolean }) {
+function WorkStep({ label, at, start, t, review = false }: { label: string; at: number; start: number; t: number; review?: boolean }) {
   const done = t >= at;
+  const state = done ? 'done' : t >= start ? 'active' : 'todo';
   return (
-    <li className={`${done ? 'done' : 'todo'}${review ? ' wire-review' : ''}`}>
-      <i className={`ck${done ? ' done' : ''}`}><CheckIcon size={9} strokeWidth={2} /></i>
+    <li className={`${state}${review ? ' wire-review' : ''}`}>
+      <i className={`ck ${state}`}><CheckIcon size={9} strokeWidth={2} /></i>
       {review ? <Avatar name="sam" /> : null}
-      <span>{label}</span>
+      <span>{review && !done ? 'Waiting for review' : label}</span>
     </li>
   );
 }
 
 export function LoopWire() {
-  const { container, playing: automatic, cycle } = useBentoPlayback(14500);
+  const { container, playing: automatic, cycle } = useBentoPlayback(15000);
   const [paused, setPaused] = useState(false);
   const [tick, setTick] = useState(0);
   const playing = automatic && !paused;
@@ -126,8 +127,8 @@ export function LoopWire() {
   const stage = t < S.decide ? 0 : t < S.ship ? 1 : t < S.tell ? 2 : 3;
   const badge = (index: number) => `wlabel in ${t >= LAST || index < stage ? 'done' : index === stage ? 'running' : ''}`;
   const target = t >= LAST ? len : marks[stage] || 0;
-  const typing = playing && t < 23;
-  const typedQuestion = typing ? QUESTION.slice(0, Math.max(1, Math.floor(QUESTION.length * t / 22))) : QUESTION;
+  const typing = playing && t >= 5 && t < 25;
+  const typedQuestion = typing ? QUESTION.slice(0, Math.max(1, Math.floor(QUESTION.length * (t - 5) / 20))) : QUESTION;
 
   return (
     <div className="wire wire-story" ref={container} data-playing={playing} data-step={stage}>
@@ -144,43 +145,43 @@ export function LoopWire() {
           <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(0)] }}>
             <div className={badge(0)}><i /><span>01 Hear</span></div>
             <div className="wart hear">
-              <div className="bub on">
+              <div className="bub on wire-reveal" data-revealed={t >= 5}>
                 <Avatar name="maya" />
                 <div>
                   <p className="wire-question"><span className="wire-question-space">{QUESTION}</span><span className="wire-question-text">{typedQuestion}{typing ? <i className="wire-caret" /> : null}</span></p>
                   <small>Maya Chen · Northstar Labs</small>
                 </div>
               </div>
-              <div className={`wire-ai-note${t >= 24 ? ' complete' : ''}`}>
+              <div className="wire-ai-note wire-reveal" data-revealed={t >= 25}>
                 <img src="/brand/helpin-icon-ink.svg" width={16} height={16} alt="" />
                 <div><b>Helpin AI</b><p>I’ll flag this for the team and keep you updated here.</p></div>
               </div>
-              <div className="wire-tags"><span className="wchip">Bug</span><span className="wchip">CSV export</span></div>
+              <div className="wire-tags wire-reveal" data-revealed={t >= 28}><span className="wchip">Bug</span><span className="wchip">CSV export</span></div>
             </div>
           </div>
 
           <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(1)] }}>
             <div className={badge(1)}><i /><span>02 Decide</span></div>
-            <div className={`wart decide on wire-task${t >= 45 ? ' connected' : ''}`}>
+            <div className={`wart decide on wire-task wire-reveal${t >= 48 ? ' connected' : ''}`} data-revealed={t >= 38}>
               <div className="wire-task-meta"><span className="tkey">ORB-492</span><span className="wchip am">Bug</span></div>
               <h3>Fix large CSV exports</h3>
               <p>Keep larger reports from timing out.</p>
-              <div className="wire-source"><Link2 size={13} /><span>Maya’s conversation</span><CheckIcon className="wire-source-check" size={13} /></div>
-              <div className="wire-source"><Link2 size={13} /><span>Northstar Labs</span><CheckIcon className="wire-source-check" size={13} /></div>
+              <div className="wire-source wire-reveal" data-revealed={t >= 42}><Link2 size={13} /><span>Maya’s conversation</span><CheckIcon className="wire-source-check" size={13} /></div>
+              <div className="wire-source wire-reveal" data-revealed={t >= 46}><Link2 size={13} /><span>Northstar Labs</span><CheckIcon className="wire-source-check" size={13} /></div>
               <div className="wire-task-owner"><Avatar name="sam" /><span>Sam Rivera · Engineering</span></div>
             </div>
           </div>
 
           <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(2)] }}>
             <div className={badge(2)}><i /><span>03 Ship</span></div>
-            <div className="wart log on">
+            <div className="wart log on wire-reveal" data-revealed={t >= 63}>
               <div className="lhead"><span>Code Builder</span><span>ORB-492</span></div>
-              <p className="wire-code-title">Fix prepared for review</p>
+              <p className="wire-code-title">CSV export fix</p>
               <ul className="wl">
-                <WorkStep label="Pull request prepared" at={62} t={t} />
-                <WorkStep label="Checks passed" at={73} t={t} />
-                <WorkStep label="Reviewed by Sam" at={S.reviewed} t={t} review />
-                <WorkStep label="Released by the team" at={S.released} t={t} />
+                <WorkStep label="Pull request prepared" at={68} start={63} t={t} />
+                <WorkStep label="Checks passed" at={76} start={68} t={t} />
+                <WorkStep label="Reviewed by Sam" at={S.reviewed} start={76} t={t} review />
+                <WorkStep label="Released by the team" at={S.released} start={S.reviewed} t={t} />
               </ul>
               <div className="wire-code-link"><Link2 size={12} />Customer conversation attached</div>
             </div>
@@ -189,13 +190,13 @@ export function LoopWire() {
           <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(3)] }}>
             <div className={badge(3)}><i /><span>04 Tell</span></div>
             <div className={`wart tell${t >= S.sent ? ' delivered' : ''}`}>
-              <div className="wire-followup"><span>Original conversation</span><span className="wire-delivery">{t >= S.sent ? 'Sent' : 'Draft'}</span></div>
-              <div className="bub reply on">
+              <div className="wire-followup wire-reveal" data-revealed={t >= 103}><span>Original conversation</span><span className="wire-delivery">{t >= S.sent ? 'Sent' : 'Draft'}</span></div>
+              <div className="bub reply on wire-reveal" data-revealed={t >= 105}>
                 <div><p>The export fix is live. Please try your report again.</p><small>To Maya · Northstar Labs</small></div>
                 <Avatar name="sam" />
               </div>
-              <div className="wire-followup-note"><CheckIcon size={13} /><span>{t >= S.sent ? 'Approved by Sam · Sent after release' : 'Sam reviews before sending'}</span></div>
-              <div className="wire-resolution"><CheckIcon size={15} /><span>Customer notified. Loop closed.</span></div>
+              <div className="wire-followup-note wire-reveal" data-revealed={t >= 108}><CheckIcon size={13} /><span>{t >= S.sent ? 'Approved by Sam · Sent after release' : 'Sam reviews before sending'}</span></div>
+              <div className="wire-resolution wire-reveal" data-revealed={t >= 115}><CheckIcon size={15} /><span>Customer notified. Loop closed.</span></div>
             </div>
           </div>
         </div>
