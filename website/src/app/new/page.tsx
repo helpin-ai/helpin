@@ -125,25 +125,31 @@ export default function NewHomePage() {
           <div className="ask-agent-intro">
             <span className="eyebrow">Ask Agent</span>
             <h2 id="ask-agent-title">Ask a question.<br />Hand off the work.</h2>
-            <p className="lede">Ask about a customer, investigate an issue, or describe a task. Ask Agent uses your workspace context to find answers and coordinate the work—from wherever you’re working.</p>
+            <p className="lede">Ask about a customer, investigate an issue, or describe the work you need done. Ask Agent finds the context, coordinates specialist agents, and brings the results back to one conversation.</p>
           </div>
+          <figure className="ask-agent-screenshot">
+            <a href="/new/product/workspace-ask-agent-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Ask Agent screenshot at full size (opens in a new tab)">
+              <img src="/new/product/workspace-ask-agent-4k-v1.webp" alt="Helpin Ask Agent demo reviewing OrbitDesk’s SSO rollout, with four specialist sub-agents, findings, a completed five-step work plan, and a customer follow-up draft." width={3840} height={2016} loading="lazy" decoding="async" />
+            </a>
+            <figcaption>An example rollout review: four sub-agents, one work plan, and a follow-up ready for review.</figcaption>
+          </figure>
           <div className="ask-agent-capabilities">
             <article>
               <span className="ask-agent-label">Your workspace</span>
-              <h3>Find the answer across the work.</h3>
-              <p>Bring together customer conversations, meeting notes, tasks, and docs to understand what happened and what needs attention.</p>
+              <h3>Find answers across your workspace.</h3>
+              <p>Find the customer question, the meeting decision, and the task behind it. Ask Agent brings them together in one answer.</p>
               <div className="ask-agent-example"><span>Try asking</span><blockquote>What’s blocking OrbitDesk’s rollout?</blockquote></div>
             </article>
             <article>
-              <span className="ask-agent-label">Your next step</span>
-              <h3>Turn the answer into action.</h3>
-              <p>Create tasks, update docs, or hand work to a specialist agent. Follow progress and get the results back in the conversation.</p>
-              <div className="ask-agent-example"><span>Try asking</span><blockquote>Create rollout tasks from the security review.</blockquote></div>
+              <span className="ask-agent-label">Your agents</span>
+              <h3>Coordinate agents from start to finish.</h3>
+              <p>Break complex requests into a plan. Run sub-agents in parallel, sequence dependent steps, and bring their results back to the conversation.</p>
+              <div className="ask-agent-example"><span>Try asking</span><blockquote>Review the rollout blockers, then create a plan from the findings.</blockquote></div>
             </article>
             <article>
               <span className="ask-agent-label">External MCP</span>
               <h3>Bring your other tools into the conversation.</h3>
-              <p>Connect external MCP servers and choose the tools each agent can use. Ask Agent coordinates those agents to pull in data and bring their findings back.</p>
+              <p>Give agents selected tools from external MCP servers. Pull in external data and use it alongside customer history, tasks, and docs.</p>
               <div className="ask-agent-example"><span>With a connected agent</span><blockquote>Check the issue status in our connected tracker.</blockquote></div>
             </article>
           </div>
