@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { useId, type CSSProperties } from 'react';
+import { useBentoPlayback } from './useBentoPlayback';
 import { Check, Code2, Database, FileText, GitBranch, ListChecks, MessageSquare, Plug, Ticket, Video, type LucideIcon } from 'lucide-react';
 
 type Variant = 'answers' | 'coordination' | 'mcp';
@@ -95,49 +96,10 @@ function Mcp({ id }: { id: string }) {
 
 export function AskAgentBento({ variant }: { variant: Variant }) {
   const id = `ab-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
-  const container = useRef<HTMLDivElement>(null);
-  const [reducedMotion, setReducedMotion] = useState(true);
-  const [playing, setPlaying] = useState(false);
-  const [cycle, setCycle] = useState(0);
+  const { container, playing, cycle } = useBentoPlayback();
   const { title, description } = DESCRIPTIONS[variant];
 
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const update = () => setReducedMotion(media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
-
-  useEffect(() => {
-    if (reducedMotion) {
-      setPlaying(false);
-      return;
-    }
-    const element = container.current;
-    if (!element) return;
-    let visible = false;
-    const update = () => setPlaying(visible && !document.hidden);
-    const observer = new IntersectionObserver(([entry]) => {
-      visible = entry.intersectionRatio >= .5;
-      update();
-    }, { threshold: .5 });
-    observer.observe(element);
-    document.addEventListener('visibilitychange', update);
-    return () => {
-      observer.disconnect();
-      document.removeEventListener('visibilitychange', update);
-    };
-  }, [reducedMotion]);
-
-  useEffect(() => {
-    if (!playing) return;
-    // Let the completed scene settle briefly before replaying the sequence.
-    const timer = setInterval(() => setCycle(value => value + 1), 6000);
-    return () => clearInterval(timer);
-  }, [playing]);
-
-  return <div ref={container} className="ask-agent-art ab-scene" data-playing={playing && !reducedMotion}>
+  return <div ref={container} className="ask-agent-art ab-scene" data-playing={playing}>
     <svg key={cycle} className="ab-svg" viewBox="0 0 520 350" width={520} height={350} role="img" aria-labelledby={`${id}-title ${id}-description`}>
       <title id={`${id}-title`}>{title}</title><desc id={`${id}-description`}>{description}</desc>
       <defs><linearGradient id={`${id}-panel`} x1="0" y1="0" x2="1" y2="1"><stop stopColor="#182b27" /><stop offset="1" stopColor="#0d1917" /></linearGradient></defs>

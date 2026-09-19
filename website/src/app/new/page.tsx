@@ -3,53 +3,48 @@ import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
 import { ProductExplorer } from './_components/ProductExplorer';
 import { AskAgentBento } from './_components/AskAgentBento';
+import { CustomerRecordBento } from './_components/CustomerRecordBento';
 import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 
 const RECORD_FACTS = [
   {
     "title": "Conversations",
-    "description": "Keep chats, emails, replies, and internal notes together with the customer behind them.",
+    "description": "Let Helpin AI answer first, tag conversations, and pass the full history to your team when needed.",
     "image": "conversations",
-    "alt": "Maya’s Okta question, a linked SSO project, an internal note, and a teammate assignment in one conversation.",
     "wide": true
   },
   {
     "title": "Meetings",
     "description": "Keep recordings, transcripts, decisions, and next steps attached to the customer.",
     "image": "meetings",
-    "alt": "Acme’s security review with a speaker-attributed transcript, decisions, and two action items.",
     "wide": false
   },
   {
     "title": "Projects",
     "description": "See the requests and conversations behind each project, alongside its tasks and progress.",
     "image": "projects",
-    "alt": "SSO Enterprise Readiness with customer requests, task statuses, and eight of twelve tasks complete.",
     "wide": false
   },
   {
     "title": "Deals",
     "description": "See the conversations, objections, and buyer signals behind each deal and renewal.",
     "image": "deals",
-    "alt": "Acme’s $42,000 enterprise renewal, negotiation stage, and security requirement linked to Maya’s conversation.",
     "wide": false
   },
   {
     "title": "Docs",
     "description": "See the guides customers read, the answers your team shared, and the questions still open.",
     "image": "docs",
-    "alt": "A published Okta setup article shared with Maya, its linked product update, and a customer question revealing a knowledge gap.",
     "wide": false
   },
   {
     "title": "Email & calendar",
     "description": "Follow customer emails, calls, and meetings on one timeline.",
     "image": "email-calendar",
-    "alt": "Acme’s customer timeline connecting Maya’s email, the security review meeting, and the shared setup guide.",
     "wide": true
   }
-];
+] as const;
 
 const OPEN_SOURCE = [
   ['Open source', 'Read the code. Change it. Build on it.'],
@@ -89,22 +84,13 @@ export default function NewHomePage() {
             <p>Conversations, meetings, projects, deals, and docs connected around each customer. Your team and agents work from the same history.</p>
           </div>
           <div className="record-bento">
-            {RECORD_FACTS.map(({ title, description, image, alt, wide }) => (
+            {RECORD_FACTS.map(({ title, description, image, wide }) => (
               <article className={`record-bento-card${wide ? ' record-bento-wide' : ''}`} key={title}>
                 <div className="record-bento-copy">
                   <h3>{title}</h3>
                   <p>{description}</p>
                 </div>
-                <div className="record-bento-art">
-                  <img
-                    src={`/new/bento/customer-${image}-v2.webp`}
-                    alt={alt}
-                    width={1536}
-                    height={1024}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </div>
+                <CustomerRecordBento variant={image} />
               </article>
             ))}
           </div>
