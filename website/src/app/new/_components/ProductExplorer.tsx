@@ -4,36 +4,36 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 
 const PROJECTS_IMAGE = {
-  src: '/new/product/workspace-projects-4k-v2.webp',
-  alt: 'Helpin Studio SSO task board: Okta mapping and setup docs in progress, OrbitDesk’s security requirements in review, and role mapping shipped.',
+  src: '/new/product/workspace-projects-4k-v3.webp',
+  alt: 'OrbitDesk engineering board with customer-reported bugs, feature requests, documentation, and follow-ups across Planned, In Progress, In Review, and Shipped.',
   width: 3840,
   height: 2160,
 };
 
 const INBOX_IMAGE = {
-  src: '/new/product/workspace-inbox-4k-v3.webp',
-  alt: 'Helpin inbox demo with OrbitDesk’s Maya Chen asking about Okta SSO, an internal note, a Helpin AI reply draft, and the linked SSO project beside the conversation.',
+  src: '/new/product/workspace-inbox-4k-v4.webp',
+  alt: 'OrbitDesk workspace inbox with Northstar Labs’ Maya Chen asking about Okta SSO, an internal note, a Helpin AI reply draft, and the linked SSO project.',
   width: 3840,
   height: 2160,
 };
 
 const MEETINGS_IMAGE = {
-  src: '/new/product/workspace-meetings-4k-v2.webp',
-  alt: 'Helpin Meetings demo showing OrbitDesk’s SSO rollout review, a transcript-based summary, recording player, decisions, action items, and linked customer records.',
+  src: '/new/product/workspace-meetings-4k-v3.webp',
+  alt: 'OrbitDesk workspace meeting review for Northstar Labs, showing an Okta SSO rollout summary, recording player, decisions, assigned action items, and linked customer records.',
   width: 3840,
   height: 2160,
 };
 
 const CRM_IMAGE = {
-  src: '/new/product/workspace-crm-4k-v2.webp',
-  alt: 'Helpin CRM demo with OrbitDesk’s Maya Chen, an SSO rollout summary, a reviewed buying signal, recent support and meeting activity, and linked company details.',
+  src: '/new/product/workspace-crm-4k-v3.webp',
+  alt: 'OrbitDesk CRM with Northstar Labs contact Maya Chen, an SSO rollout summary, a reviewed buying signal, customer activity, and linked company, deal, and project records.',
   width: 3840,
   height: 2160,
 };
 
 const KNOWLEDGE_IMAGE = {
-  src: '/new/product/workspace-knowledge-4k-v2.webp',
-  alt: 'Helpin Knowledge demo showing the OrbitDesk Help Center, eight documentation collections, and guides for Okta SSO, group-to-role mapping, and team invitations.',
+  src: '/new/product/workspace-knowledge-4k-v3.webp',
+  alt: 'OrbitDesk workspace and Help Center, showing eight documentation collections and guides for Okta SSO, role mapping, SCIM provisioning, agent approvals, and workspace permissions.',
   width: 3840,
   height: 2160,
 };
