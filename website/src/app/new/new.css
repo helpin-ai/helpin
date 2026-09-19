@@ -205,8 +205,15 @@
 
 /* Spacious, dark footer shared by the preview pages. */
 .hp3 .pfoot { position: relative; isolation: isolate; background: #081b16; color: #a4b8af; padding: 72px 0 26px; font-size: 14px; }
-.hp3 .pfoot::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: linear-gradient(rgba(181,239,204,.14) 1px, transparent 1px), linear-gradient(90deg, rgba(181,239,204,.14) 1px, transparent 1px); background-size: 64px 64px; background-position: center top; mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 65%, transparent); }
-@media (max-width: 600px) { .hp3 .pfoot::before { background-size: 48px 48px; } }
+.hp3 .pfoot::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: linear-gradient(rgba(139,222,176,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(139,222,176,.035) 1px, transparent 1px); background-size: 64px 64px; background-position: center top; mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 65%, transparent); }
+/* A sparse pulse at every third grid intersection, behind the footer content. */
+.hp3 .pfoot::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: radial-gradient(circle at 1px 1px, rgba(157,231,187,.7) 1px, rgba(157,231,187,.18) 2px, transparent 4px); background-size: 192px 192px; background-position: center top; mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 65%, transparent); opacity: .2; animation: footer-dot-pulse 5s ease-in-out infinite; }
+@keyframes footer-dot-pulse { 0%, 100% { opacity: .16; } 50% { opacity: .58; } }
+@media (max-width: 600px) {
+  .hp3 .pfoot::before { background-size: 48px 48px; }
+  .hp3 .pfoot::after { background-size: 144px 144px; }
+}
+@media (prefers-reduced-motion: reduce) { .hp3 .pfoot::after { animation: none; opacity: .3; } }
 .hp3 .pfoot .wrap { max-width: 1280px; padding-inline: 40px; }
 .hp3 .footer-main { display: grid; grid-template-columns: minmax(180px,1fr) minmax(0,3fr); gap: 64px; }
 .hp3 .footer-brand .logo { color: #f5faf7; }
