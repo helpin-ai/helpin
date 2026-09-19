@@ -17,6 +17,13 @@ const INBOX_IMAGE = {
   height: 1536,
 };
 
+const MEETINGS_IMAGE = {
+  src: '/new/product/workspace-meetings-4k-v1.webp',
+  alt: 'Helpin Meetings demo showing OrbitDesk’s SSO rollout review, a transcript-based summary, a complete recording player, and linked customer, deal, and task records.',
+  width: 3840,
+  height: 1536,
+};
+
 const AREAS = [
   {
     id: 'inbox', label: 'Inbox',
@@ -26,7 +33,7 @@ const AREAS = [
   },
   {
     id: 'meetings', label: 'Meetings',
-    image: PROJECTS_IMAGE,
+    image: MEETINGS_IMAGE,
     title: 'Keep the work moving after the call.',
     description: 'Capture decisions and next steps from customer meetings. Give agents the conversation behind every action item.',
   },
