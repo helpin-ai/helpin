@@ -127,8 +127,8 @@ export function LoopWire() {
   const stage = t < S.decide ? 0 : t < S.ship ? 1 : t < S.tell ? 2 : 3;
   const badge = (index: number) => `wlabel in ${t >= LAST || index < stage ? 'done' : index === stage ? 'running' : ''}`;
   const target = t >= LAST ? len : marks[stage] || 0;
-  const typing = playing && t >= 5 && t < 25;
-  const typedQuestion = typing ? QUESTION.slice(0, Math.max(1, Math.floor(QUESTION.length * (t - 5) / 20))) : QUESTION;
+  const typing = playing && t >= 5 && t < 15;
+  const typedQuestion = typing ? QUESTION.slice(0, Math.max(1, Math.floor(QUESTION.length * (t - 5) / 10))) : QUESTION;
 
   return (
     <div className="wire wire-story" ref={container} data-playing={playing} data-step={stage}>
