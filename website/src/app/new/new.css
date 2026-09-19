@@ -581,6 +581,12 @@
 .hp3 .six > div { padding: 22px 0; border-bottom: 1px solid var(--border); }
 .hp3 .six h3 { font-size: 17px; margin-bottom: 6px; }
 .hp3 .six p { color: var(--t2); font-size: 15px; max-width: 34ch; }
+/* Open source uses the same near-black surface as the customer record. */
+.hp3 #open-source { --ink: #f2f5f3; --t2: #b4bdb7; --t3: #9aa79e; --border: rgba(255,255,255,.12); --border-2: rgba(255,255,255,.22); --em: #72dfad; }
+.hp3 #open-source .btn-primary { background: #f2f5f3; color: #101713; }
+.hp3 #open-source .btn-primary:hover { background: #dff3e7; }
+.hp3 #open-source .btn-link { color: var(--em); }
+.hp3 #open-source .btn-link:hover { border-color: var(--em); }
 /* 06 control */
 .hp3 .control-screenshot { margin: 0 0 48px; }
 .hp3 .control-screenshot a { display: block; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 48px rgba(19,21,20,.07); }

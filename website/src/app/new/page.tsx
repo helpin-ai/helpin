@@ -195,7 +195,7 @@ export default function NewHomePage() {
       </section>
 
       {/* Open source */}
-      <section id="open-source">
+      <section id="open-source" className="dark">
         <div className="wrap">
           <SectionHead eyebrow="Open by design" title="Your customer context should belong to you."
             lede="Run Helpin on your infrastructure or use ours. Choose your models and extend the product around your team." />
