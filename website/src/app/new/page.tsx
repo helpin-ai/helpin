@@ -81,7 +81,7 @@ export default function NewHomePage() {
           <div className="rs-copy record-intro">
             <span className="rs-eyebrow">One customer. One record.</span>
             <h2>Every agent starts with the full picture.</h2>
-            <p>Conversations, meetings, projects, deals, and docs connected around each customer. Your team and agents work from the same history.</p>
+            <p>Conversations, meetings, projects, deals, docs, and engineering activity connected around each customer. Your team, support agents, and coding agents work from the same history.</p>
           </div>
           <div className="record-bento">
             {RECORD_FACTS.map(({ title, description, image, wide }) => (
