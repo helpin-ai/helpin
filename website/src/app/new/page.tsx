@@ -1,6 +1,7 @@
 import { PreviewNav } from './_components/PreviewNav';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
+import { ProductExplorer } from './_components/ProductExplorer';
 import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 
@@ -110,30 +111,11 @@ export default function NewHomePage() {
         </div>
       </section>
 
-      {/* Product areas: one line each, detail lives on the product page. */}
+      {/* Explore each product area alongside the workspace image. */}
       <section id="product">
         <div className="wrap">
           <SectionHead eyebrow="What’s inside" title="One workspace. Agents across the work." lede="From the support inbox to product tasks and customer follow-ups, give agents the context and tools to move work forward." />
-          <figure className="product-showcase">
-            <a className="product-showcase-image" href="/new/product/workspace-product-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin demo workspace image at full size (opens in a new tab)">
-              <img
-                src="/new/product/workspace-product-v1.webp"
-                alt="Helpin Studio task board showing Acme’s SSO rollout: Okta SAML mapping and setup docs in progress, security requirements in review, and role mapping shipped."
-                width={1727}
-                height={910}
-                loading="lazy"
-                decoding="async"
-              />
-            </a>
-            <figcaption><span>From Acme’s SSO request to rollout.</span><a href="/new/product/workspace-product-v1.webp" target="_blank" rel="noopener noreferrer">View full size ↗</a></figcaption>
-          </figure>
-          <div className="pstrip">
-            <a href="/new/product#inbox"><h3>Inbox</h3><p>Chat and email in one shared inbox, with the customer’s history beside every reply.</p><span>Learn more →</span></a>
-            <a href="/new/product#meetings"><h3>Meetings</h3><p>Calls recorded, transcribed, summarized, and turned into work.</p><span>Learn more →</span></a>
-            <a href="/new/product#projects"><h3>Projects</h3><p>Customer requests become projects and tasks that reach GitHub and GitLab with the why attached.</p><span>Learn more →</span></a>
-            <a href="/new/product#crm"><h3>CRM</h3><p>Deals, renewals, and buyer signals next to the conversations that explain them.</p><span>Learn more →</span></a>
-            <a href="/new/product#knowledge"><h3>Knowledge</h3><p>Help-center and internal docs that grow from what customers ask.</p><span>Learn more →</span></a>
-          </div>
+          <ProductExplorer />
         </div>
       </section>
 

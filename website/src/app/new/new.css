@@ -615,22 +615,9 @@
 @media (max-width: 600px) { .hp3 .intg { grid-template-columns: 1fr; } }
 .hp3 .rn > .tag { justify-self: start; }
 
-/* Homepage product strip: five areas, one line each, linking to the product page. */
+/* Interactive homepage product explorer. */
 .hp3 #product > .wrap > .sec-head { margin-inline: auto; text-align: center; }
 .hp3 #product > .wrap > .sec-head .lede { margin-inline: auto; }
-.hp3 .product-showcase { margin: 0 auto 48px; padding: clamp(8px, 2vw, 24px); border: 1px solid var(--border); border-radius: 20px; background: radial-gradient(ellipse at 50% 0%, #dcefe3, transparent 72%), var(--bg2); }
-.hp3 .product-showcase-image { display: block; overflow: hidden; border: 1px solid var(--border-2); border-radius: 10px; background: #fff; box-shadow: 0 12px 32px rgba(19, 45, 30, .08); }
-.hp3 .product-showcase-image img { display: block; width: 100%; height: auto; }
-.hp3 .product-showcase figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; padding: 18px 4px 2px; color: var(--t2); font-size: 13px; }
-.hp3 .product-showcase figcaption a { color: var(--em); font-weight: 600; }
-.hp3 .product-showcase figcaption a:hover { text-decoration: underline; }
-
-.hp3 .pstrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 32px; border-top: 1px solid var(--border); }
-.hp3 .pstrip > a { display: grid; gap: 8px; align-content: start; padding: 24px 0; border-bottom: 1px solid var(--border); color: inherit; }
-.hp3 .pstrip h3 { font-size: 17px; }
-.hp3 .pstrip p { color: var(--t2); font-size: 14.5px; }
-.hp3 .pstrip span { font-size: 14px; font-weight: 600; color: var(--em); }
-.hp3 .pstrip > a:hover h3 { color: var(--em); }
 .hp3 .inline-link { font-size: 16px; font-weight: 600; color: var(--em); margin-left: 12px; }
 .hp3 .inline-link:hover { border-bottom: 1px solid var(--em); }
 /* Product page */
@@ -639,7 +626,6 @@
 .hp3 .jump { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
 .hp3 .jump a { border: 1px solid var(--border-2); border-radius: 999px; padding: 6px 14px; font-size: 14px; font-weight: 600; }
 .hp3 .jump a:hover { border-color: var(--ink); }
-@media (max-width: 960px) { .hp3 .pstrip { grid-template-columns: 1fr; gap: 0; } }
 /* Image placeholder: the frame a product screenshot will fill. */
 .hp3 .img-ph { aspect-ratio: 16 / 9; max-width: 100%; border: 1px solid var(--border); border-radius: 12px; background: var(--bg2); background-image: linear-gradient(45deg, transparent 49.5%, var(--border) 49.5%, var(--border) 50.5%, transparent 50.5%), linear-gradient(-45deg, transparent 49.5%, var(--border) 49.5%, var(--border) 50.5%, transparent 50.5%); display: grid; place-content: center; gap: 6px; text-align: center; margin-bottom: 48px; }
 .hp3 .img-ph-l { font-weight: 600; font-size: 15px; background: var(--bg2); padding: 0 8px; }
@@ -707,4 +693,46 @@
   .hp3 .record-bento-copy, .hp3 .record-bento-wide .record-bento-copy { padding: 24px 24px 8px; }
   .hp3 .record-bento-copy h3 { font-size: 22px; }
   .hp3 .record-bento-copy p, .hp3 .record-bento-wide .record-bento-copy p { max-width: none; }
+}
+
+.hp3 #product > .wrap { max-width: 1280px; }
+.hp3 .product-explorer { display: grid; grid-template-columns: 220px minmax(0, 1fr); border: 1px solid var(--border); background: #fff; }
+.hp3 .px-navigation { border-right: 1px solid var(--border); padding: 64px 0; }
+.hp3 .px-tabs { display: grid; gap: 4px; }
+.hp3 .px-tabs button { position: relative; border: 0; border-radius: 0; padding: 13px 38px; background: transparent; color: var(--t3); font: inherit; font-size: 16px; text-align: left; cursor: pointer; transition: color .2s; }
+.hp3 .px-tabs button:hover { color: var(--ink); }
+.hp3 .px-tabs button[aria-selected="true"] { color: var(--ink); font-weight: 600; }
+.hp3 .px-tabs button[aria-selected="true"]::before { content: ''; position: absolute; left: -1px; top: 12px; bottom: 12px; width: 2px; background: var(--em); }
+.hp3 .px-tabs button:focus-visible { outline-offset: -4px; }
+.hp3 .px-panel { min-width: 0; }
+.hp3 .px-panel[hidden] { display: none; }
+.hp3 .px-panel:focus-visible { outline: 2px solid var(--em); outline-offset: -3px; }
+.hp3 .px-copy { padding: 40px 48px; min-height: 238px; font-size: clamp(20px, 2vw, 25px); line-height: 1.35; letter-spacing: -.025em; }
+.hp3 .px-copy h3 { display: inline; font: inherit; font-weight: 600; }
+.hp3 .px-copy p { display: inline; color: var(--t3); }
+.hp3 .px-copy a { display: flex; align-items: center; gap: 6px; width: fit-content; margin-top: 18px; font-size: 13px; letter-spacing: 0; font-weight: 600; color: var(--em); }
+.hp3 .px-copy a:hover { text-decoration: underline; }
+.hp3 .px-stage { padding: 40px; border-top: 1px solid var(--border); background: #f5f6f7; }
+.hp3 .px-product-image { display: block; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; }
+.hp3 .px-product-image img { display: block; width: 100%; height: auto; }
+@keyframes product-panel-in { from { opacity: 0; } to { opacity: 1; } }
+.hp3 .px-panel:not([hidden]) { animation: product-panel-in .25s ease-out; }
+@media (max-width: 960px) and (min-width: 761px) {
+  .hp3 .product-explorer { grid-template-columns: 160px minmax(0, 1fr); }
+  .hp3 .px-tabs button { padding-inline: 26px; }
+  .hp3 .px-copy { padding: 32px; min-height: 260px; }
+  .hp3 .px-stage { padding: 24px; }
+}
+@media (max-width: 760px) {
+  .hp3 .product-explorer { grid-template-columns: minmax(0, 1fr); }
+  .hp3 .px-navigation { padding: 0; border-right: 0; border-bottom: 1px solid var(--border); min-width: 0; }
+  .hp3 .px-tabs { display: flex; gap: 0; overflow-x: auto; scrollbar-width: thin; scroll-padding-inline: 12px; }
+  .hp3 .px-tabs button { flex-shrink: 0; padding: 18px 16px; font-size: 14px; }
+  .hp3 .px-tabs button[aria-selected="true"]::before { left: 16px; right: 16px; top: auto; bottom: 0; width: auto; height: 2px; }
+  .hp3 .px-copy { padding: 28px 24px; min-height: 275px; font-size: 20px; }
+  .hp3 .px-stage { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .px-panel:not([hidden]) { animation: none; }
+  .hp3 .px-tabs button { transition: none; }
 }
