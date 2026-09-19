@@ -67,8 +67,8 @@ export default function NewHomePage() {
           <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
             <span className="eyebrow">The open-source workspace for SaaS teams</span>
-            <h1>Turn every customer conversation into resolved work.</h1>
-            <p className="lede">AI agents answer customers, create tasks, prepare follow-ups, and keep work moving — with the full context across support, product, and CRM.</p>
+            <h1>Turn customer conversations into work that gets done.</h1>
+            <p className="lede">AI agents answer questions, turn requests into tasks, and prepare customer follow-ups—with your conversations, product work, and CRM connected.</p>
             <CtaRow />
             <div className="assure hero-assure">
               <span><Braces size={15} aria-hidden="true" />Open source</span>
