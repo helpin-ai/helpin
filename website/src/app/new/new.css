@@ -715,7 +715,35 @@
 .hp3 .ask-agent-capabilities article::before { content: ''; position: absolute; inset: -40%; z-index: 0; pointer-events: none; background: radial-gradient(ellipse at 32% 68%, rgba(63,191,131,.16), transparent 45%), radial-gradient(ellipse at 76% 28%, rgba(36,128,111,.1), transparent 42%); opacity: .65; transform: translate(-8%,8%); transition: transform .9s cubic-bezier(.22,1,.36,1), opacity .7s ease; }
 .hp3 .ask-agent-capabilities article > * { position: relative; z-index: 1; }
 .hp3 .ask-agent-art { margin: auto -20px 24px; }
-.hp3 .ask-agent-art img { display: block; width: 100%; height: auto; aspect-ratio: 3 / 2; }
+/* Native SVG stories: a single short sequence, then a readable resting state. */
+.hp3 .ab-scene { padding-bottom: 26px; }
+.hp3 .ab-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.hp3 .ab-svg text { font-family: var(--sans); fill: #f0f7f3; }
+.hp3 .ab-node-label { font-size: 16px; font-weight: 600; letter-spacing: -.2px; }
+.hp3 .ab-panel-title { font-size: 18px; font-weight: 600; }
+.hp3 .ab-answer-title { font-size: 23px; font-weight: 600; letter-spacing: -.5px; }
+.hp3 .ab-svg .ab-detail { font-size: 17px; fill: #b5c9bd; }
+.hp3 .ab-svg .ab-caption { font-size: 11px; fill: #95b9a7; letter-spacing: .15px; }
+.hp3 .ab-panel { stroke: #36584a; stroke-width: 1.1; }
+.hp3 .ab-wire { stroke: #477c61; stroke-width: 1.5; }
+.hp3 .ab-flow { stroke: #74efb6; stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 16 100; stroke-dashoffset: 116; opacity: 0; filter: drop-shadow(0 0 3px #3fbf83); }
+.hp3 .ab-node-glow, .hp3 .ab-result-glow { fill: #3fbf83; fill-opacity: .06; stroke: #61dca1; stroke-width: 1.5; opacity: .25; }
+.hp3 .ab-replay { position: absolute; right: 12px; bottom: 0; display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 0; border-radius: 4px; background: transparent; color: #b5c9bd; font: inherit; font-size: 11px; cursor: pointer; }
+.hp3 .ab-replay:hover { color: #81deb0; background: rgba(63,191,131,.08); }
+.hp3 .ab-replay:disabled { opacity: .45; cursor: default; }
+.hp3 .ab-replay:focus-visible { outline: 2px solid #81deb0; outline-offset: 2px; }
+.hp3 .ab-scene[data-playing="true"] .ab-flow { animation: ab-travel 1.25s ease-in-out var(--ab-delay) both; }
+.hp3 .ab-scene[data-playing="true"] .ab-node-glow { animation: ab-illuminate 1.1s ease var(--ab-delay) both; }
+.hp3 .ab-scene[data-playing="true"] .ab-result-glow { animation: ab-illuminate 1.4s ease var(--ab-delay) both; }
+.hp3 .ab-scene[data-playing="true"] .ab-answer-reveal { animation: ab-resolve .8s ease var(--ab-delay) both; }
+.hp3 .ab-scene[data-playing="true"] .ab-check { animation: ab-resolve .45s ease var(--ab-delay) both; }
+@keyframes ab-travel { 0% { opacity: 0; stroke-dashoffset: 116; } 15%, 80% { opacity: 1; } 100% { opacity: 0; stroke-dashoffset: 0; } }
+@keyframes ab-illuminate { 0% { opacity: .25; } 45% { opacity: 1; filter: drop-shadow(0 0 5px rgba(63,191,131,.35)); } 100% { opacity: .45; } }
+@keyframes ab-resolve { from { opacity: .35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .ab-scene[data-playing="true"] .ab-flow, .hp3 .ab-scene[data-playing="true"] .ab-node-glow, .hp3 .ab-scene[data-playing="true"] .ab-result-glow, .hp3 .ab-scene[data-playing="true"] .ab-answer-reveal, .hp3 .ab-scene[data-playing="true"] .ab-check { animation: none; }
+  .hp3 .ab-replay { display: none; }
+}
 @media (hover: hover) and (pointer: fine) {
   .hp3 .ask-agent-capabilities article:hover { border-color: rgba(129,222,176,.5); }
   .hp3 .ask-agent-capabilities article:hover::before { transform: translate(15%,-12%); opacity: 1; }
@@ -727,7 +755,7 @@
 .hp3 .ask-agent-label { color: #81deb0; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 20px; }
 .hp3 .ask-agent-capabilities h3 { font-size: 23px; line-height: 1.25; margin-bottom: 16px; }
 .hp3 .ask-agent-capabilities p { color: #b5c9bd; font-size: 16px; line-height: 1.6; margin-bottom: 28px; }
-.hp3 .ask-agent-example { border-top: 1px solid #2c483a; padding-top: 20px; }
+.hp3 .ask-agent-example { min-height: 108px; border-top: 1px solid #2c483a; padding-top: 20px; }
 .hp3 .ask-agent-example > span { color: #b5c9bd; font-size: 12px; }
 .hp3 .ask-agent-example blockquote { margin: 8px 0 0; font-size: 17px; line-height: 1.5; }
 .hp3 .ask-agent-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 20px 32px; margin-top: 36px; }

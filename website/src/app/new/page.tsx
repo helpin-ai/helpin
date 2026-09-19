@@ -2,6 +2,7 @@ import { PreviewNav } from './_components/PreviewNav';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
 import { ProductExplorer } from './_components/ProductExplorer';
+import { AskAgentBento } from './_components/AskAgentBento';
 import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 
@@ -138,27 +139,21 @@ export default function NewHomePage() {
               <span className="ask-agent-label">Your workspace</span>
               <h3>Find answers across your workspace.</h3>
               <p>Find the customer question, the meeting decision, and the task behind it. Ask Agent brings them together in one answer.</p>
-              <div className="ask-agent-art">
-                <img src="/new/bento/ask-agent-answers-v1.webp" alt="Conversation, meeting, and project records connected to an Ask Agent answer about SSO approval and the Okta setup guide." width={1536} height={1024} loading="lazy" decoding="async" />
-              </div>
+              <AskAgentBento variant="answers" />
               <div className="ask-agent-example"><span>Try asking</span><blockquote>What’s blocking OrbitDesk’s rollout?</blockquote></div>
             </article>
             <article>
               <span className="ask-agent-label">Your agents</span>
               <h3>Coordinate agents from start to finish.</h3>
               <p>Break complex requests into a plan. Run sub-agents in parallel, sequence dependent steps, and bring their results back to the conversation.</p>
-              <div className="ask-agent-art">
-                <img src="/new/bento/ask-agent-coordination-v1.webp" alt="A rollout review branches into parallel Engineering and Docs agents, then joins into shared next steps." width={1536} height={1024} loading="lazy" decoding="async" />
-              </div>
+              <AskAgentBento variant="coordination" />
               <div className="ask-agent-example"><span>Try asking</span><blockquote>Review the rollout blockers, then create a plan from the findings.</blockquote></div>
             </article>
             <article>
               <span className="ask-agent-label">External MCP</span>
               <h3>Bring your other tools into the conversation.</h3>
               <p>Give agents selected tools from external MCP servers. Pull in external data and use it alongside customer history, tasks, and docs.</p>
-              <div className="ask-agent-art">
-                <img src="/new/bento/ask-agent-mcp-v1.webp" alt="Issue tracker and customer data tools connect through MCP to provide context for Ask Agent." width={1536} height={1024} loading="lazy" decoding="async" />
-              </div>
+              <AskAgentBento variant="mcp" />
               <div className="ask-agent-example"><span>With a connected agent</span><blockquote>Check the issue status in our connected tracker.</blockquote></div>
             </article>
           </div>
