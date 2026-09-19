@@ -1,12 +1,8 @@
 import { PreviewNav } from './_components/PreviewNav';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
-import { RecordStory } from './_components/RecordStory';
 import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
-
-// Which record card each item lights up on hover or focus.
-const RECORD_KINDS = ['conversations', 'meetings', 'projects', 'deal', 'docs', 'meetings'];
 
 const RECORD_FACTS = [
   ['Conversations', 'See every chat, email, note, assignment, and reply in context.'],
@@ -49,18 +45,39 @@ export default function NewHomePage() {
       {/* 03 One customer record (dark) */}
       <section id="record" className="dark">
         <div className="wrap">
-          <div className="rs-grid">
-            <div className="rs-copy">
-              <span className="rs-eyebrow">One customer. One record.</span>
-              <h2>Everything your team knows about a customer, connected.</h2>
-              <p>Conversations, meetings, projects, deals, docs, and engineering activity stay attached to the same customer record.</p>
-              <p>Support sees what’s shipping. Product sees who’s asking. Sales sees what matters to the account.</p>
-              <p className="rs-strong">And your agents work from the same context.</p>
-            </div>
-            <RecordStory />
+          <div className="rs-copy record-intro">
+            <span className="rs-eyebrow">One customer. One record.</span>
+            <h2>Everything your team knows about a customer, connected.</h2>
+            <p>Conversations, meetings, projects, deals, docs, and engineering activity stay attached to the same customer record.</p>
+            <p>Support sees what’s shipping. Product sees who’s asking. Sales sees what matters to the account.</p>
+            <p className="rs-strong">And your agents work from the same context.</p>
           </div>
-          <div className="rs-items">
-            {RECORD_FACTS.map(([k, v], i) => <div key={k} data-kind={RECORD_KINDS[i]} tabIndex={0}><h3>{k}</h3><p>{v}</p></div>)}
+          <div className="record-bento">
+            {RECORD_FACTS.slice(0, 3).map(([title, description], i) => (
+              <article className={`record-bento-card${i === 0 ? ' record-bento-wide' : ''}`} key={title}>
+                <div className="record-bento-copy">
+                  <h3>{title}</h3>
+                  <p>{description}</p>
+                </div>
+                <div className="record-bento-art">
+                  <img
+                    src={`/new/bento/customer-${title.toLowerCase()}-v1.webp`}
+                    alt={[
+                      'Maya’s Okta question, a linked SSO project, an internal note, and a teammate assignment in one conversation.',
+                      'Acme’s security review with a speaker-attributed transcript, decisions, and two action items.',
+                      'SSO Enterprise Readiness with customer requests, task statuses, and eight of twelve tasks complete.',
+                    ][i]}
+                    width={1536}
+                    height={1024}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className="rs-items record-related">
+            {RECORD_FACTS.slice(3).map(([title, description]) => <div key={title}><h3>{title}</h3><p>{description}</p></div>)}
           </div>
           <p className="rs-close"><span className="rs-keep">One customer.</span> Every interaction. Full context.</p>
         </div>
