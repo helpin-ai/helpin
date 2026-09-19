@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
-import { ArrowUpRight, Pause, Play } from 'lucide-react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 
 const AREAS = [
   {
@@ -31,67 +31,107 @@ const AREAS = [
   },
 ] as const;
 
-const CYCLE_MS = 6500;
-
 export function ProductExplorer() {
-  const [active, setActive] = useState(2);
+  const [active, setActive] = useState(0);
   const [horizontal, setHorizontal] = useState(false);
-  const [inView, setInView] = useState(false);
-  const [pageVisible, setPageVisible] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(true);
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const [paused, setPaused] = useState(false);
+  const [scrollDriven, setScrollDriven] = useState(false);
+  const track = useRef<HTMLDivElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const tabList = useRef<HTMLDivElement>(null);
-  const playing = inView && pageVisible && !reducedMotion && !hovered && !focused && !paused;
   const tabs = useRef<Array<HTMLButtonElement | null>>([]);
+  const geometry = useRef({ start: 0, step: 1 });
 
   useEffect(() => {
-    const media = window.matchMedia('(max-width: 760px)');
-    const update = () => setHorizontal(media.matches);
+    const narrow = window.matchMedia('(max-width: 760px)');
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => {
+      setHorizontal(narrow.matches);
+      setReducedMotion(motion.matches);
+    };
     update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
-
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotion = () => setReducedMotion(media.matches);
-    const updateVisibility = () => setPageVisible(!document.hidden);
-    updateMotion();
-    updateVisibility();
-    media.addEventListener('change', updateMotion);
-    document.addEventListener('visibilitychange', updateVisibility);
-    const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting && entry.intersectionRatio >= 0.25), { threshold: 0.25 });
-    if (container.current) observer.observe(container.current);
+    narrow.addEventListener('change', update);
+    motion.addEventListener('change', update);
     return () => {
-      media.removeEventListener('change', updateMotion);
-      document.removeEventListener('visibilitychange', updateVisibility);
-      observer.disconnect();
+      narrow.removeEventListener('change', update);
+      motion.removeEventListener('change', update);
     };
   }, []);
 
   useEffect(() => {
-    if (!playing) return;
-    const timer = window.setTimeout(() => setActive(index => (index + 1) % AREAS.length), CYCLE_MS);
-    return () => window.clearTimeout(timer);
-  }, [active, playing]);
+    const rail = track.current;
+    const scene = container.current;
+    if (!rail || !scene) return;
+    let frame = 0;
+    let enabled = false;
+
+    const update = () => {
+      frame = 0;
+      if (!enabled) return;
+      const { start, step } = geometry.current;
+      const position = Math.max(0, Math.min(AREAS.length, (window.scrollY - start) / step));
+      const index = Math.min(AREAS.length - 1, Math.floor(position));
+      const fraction = Math.min(1, position - index);
+      // Fade only around scene boundaries. Holding the scroll holds the frame.
+      const entering = index === 0 ? 1 : Math.min(1, fraction / 0.16);
+      const leaving = index === AREAS.length - 1 ? 1 : Math.min(1, (1 - fraction) / 0.12);
+      const opacity = Math.max(0, Math.min(entering, leaving));
+      rail.style.setProperty('--px-opacity', String(opacity));
+      rail.style.setProperty('--px-shift', `${(1 - opacity) * 12}px`);
+      rail.style.setProperty('--px-progress', String(fraction));
+      setActive(index);
+    };
+    const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
+    const measure = () => {
+      const top = parseFloat(getComputedStyle(scene).top) || 80;
+      const sceneHeight = scene.offsetHeight;
+      // Short viewports use manual tabs so content never becomes trapped offscreen.
+      enabled = !reducedMotion && sceneHeight <= window.innerHeight - top - 12;
+      setScrollDriven(enabled);
+      if (enabled) {
+        const step = window.innerHeight * 0.7;
+        rail.style.height = `${sceneHeight + step * AREAS.length}px`;
+        geometry.current = { start: rail.getBoundingClientRect().top + window.scrollY - top, step };
+        schedule();
+      } else {
+        rail.style.removeProperty('height');
+        rail.style.removeProperty('--px-opacity');
+        rail.style.removeProperty('--px-shift');
+        rail.style.removeProperty('--px-progress');
+      }
+    };
+    measure();
+    const resize = new ResizeObserver(measure);
+    resize.observe(scene);
+    // Earlier lazy-loaded content can change this section's document offset.
+    resize.observe(document.body);
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', measure);
+    return () => {
+      resize.disconnect();
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', measure);
+      window.cancelAnimationFrame(frame);
+      rail.style.removeProperty('height');
+    };
+  }, [reducedMotion]);
 
   useEffect(() => {
-    if (!horizontal || !inView) return;
+    if (!horizontal) return;
     const list = tabList.current;
     const tab = tabs.current[active];
     if (!list || !tab) return;
     const listRect = list.getBoundingClientRect();
     const tabRect = tab.getBoundingClientRect();
-    // Scroll only the tab rail; autoplay must never move the page.
-    list.scrollTo({ left: list.scrollLeft + tabRect.left - listRect.left - (list.clientWidth - tabRect.width) / 2, behavior: reducedMotion ? 'instant' : 'smooth' });
-  }, [active, horizontal, inView, reducedMotion]);
+    list.scrollTo({ left: list.scrollLeft + tabRect.left - listRect.left - (list.clientWidth - tabRect.width) / 2, behavior: 'instant' });
+  }, [active, horizontal]);
 
   function selectTab(index: number) {
-    setPaused(true);
     setActive(index);
+    if (scrollDriven) {
+      const { start, step } = geometry.current;
+      window.scrollTo({ top: start + (index + 0.35) * step, behavior: 'instant' });
+    }
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -106,20 +146,14 @@ export function ProductExplorer() {
     event.preventDefault();
     selectTab(next);
     tabs.current[next]?.focus({ preventScroll: true });
-    tabs.current[next]?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
   }
 
-  return <div ref={container} className={`product-explorer${playing ? ' is-playing' : ''}`} style={{ '--px-cycle': `${CYCLE_MS}ms` } as CSSProperties}
-    onPointerEnter={event => { if (event.pointerType === 'mouse') setHovered(true); }}
-    onPointerLeave={() => setHovered(false)}
-    onFocusCapture={event => setFocused(!event.target.closest('.px-playback'))}
-    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
-
+  return <div ref={track} className={`px-scroll-track${scrollDriven ? ' is-scroll-driven' : ''}`}>
+    <div ref={container} className="product-explorer">
     <div className="px-navigation">
       <div ref={tabList} className="px-tabs" role="tablist" aria-label="Product areas" aria-orientation={horizontal ? 'horizontal' : 'vertical'}>
         {AREAS.map(({ id, label }, index) => <button key={id} ref={node => { tabs.current[index] = node; }} type="button" role="tab" id={`product-tab-${id}`} aria-controls={`product-panel-${id}`} aria-selected={active === index} tabIndex={active === index ? 0 : -1} onClick={() => selectTab(index)} onKeyDown={event => onKeyDown(event, index)}>{label}{active === index && <span className="px-tab-progress" aria-hidden="true" />}</button>)}
       </div>
-      {!reducedMotion && <button className="px-playback" type="button" onClick={() => setPaused(value => !value)} aria-label={paused ? 'Play feature slideshow' : 'Pause feature slideshow'}>{paused ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}<span>{paused ? 'Play' : 'Pause'}</span></button>}
     </div>
     {AREAS.map((area, index) => <div className="px-panel" role="tabpanel" id={`product-panel-${area.id}`} aria-labelledby={`product-tab-${area.id}`} hidden={active !== index} tabIndex={0} key={area.id}>
       <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={`/new/product#${area.id}`}>Explore {area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
@@ -130,5 +164,6 @@ export function ProductExplorer() {
         </a>
       </div>
     </div>)}
+    </div>
   </div>;
 }

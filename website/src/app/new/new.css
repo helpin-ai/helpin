@@ -696,7 +696,9 @@
 }
 
 .hp3 #product > .wrap { max-width: 1280px; }
-.hp3 .product-explorer { display: grid; grid-template-columns: 220px minmax(0, 1fr); background: #fff; }
+.hp3 .px-scroll-track { --px-opacity: 1; --px-shift: 0px; --px-progress: 1; position: relative; }
+.hp3 .product-explorer { top: 80px; display: grid; grid-template-columns: 220px minmax(0, 1fr); background: #fff; }
+.hp3 .is-scroll-driven .product-explorer { position: sticky; }
 .hp3 .px-navigation { padding: 64px 0; }
 .hp3 .px-tabs { display: grid; gap: 4px; }
 .hp3 .px-tabs button { position: relative; border: 0; border-radius: 0; padding: 13px 38px; background: transparent; color: var(--t3); font: inherit; font-size: 16px; text-align: left; cursor: pointer; opacity: .65; transition: color .45s ease, opacity .45s ease; }
@@ -704,11 +706,7 @@
 .hp3 .px-tabs button[aria-selected="true"] { color: var(--ink); font-weight: 600; opacity: 1; }
 .hp3 .px-tabs button[aria-selected="true"]::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 2px; background: var(--em-t); }
 .hp3 .px-tab-progress { position: absolute; left: 0; top: 12px; bottom: 12px; width: 2px; background: var(--em); transform-origin: top; }
-.hp3 .is-playing .px-tab-progress { animation: product-tab-progress var(--px-cycle) linear both; }
-.hp3 .px-playback { display: flex; align-items: center; gap: 7px; margin: 28px 38px 0; padding: 5px 0; border: 0; background: transparent; color: var(--t3); font: inherit; font-size: 12px; cursor: pointer; }
-.hp3 .px-playback:hover { color: var(--ink); }
-@keyframes product-tab-progress { from { transform: scaleY(0); } to { transform: scaleY(1); } }
-@keyframes product-tab-progress-horizontal { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.hp3 .px-tab-progress { transform: scaleY(var(--px-progress)); }
 .hp3 .px-tabs button:focus-visible { outline-offset: -4px; }
 .hp3 .px-panel { min-width: 0; }
 .hp3 .px-panel[hidden] { display: none; }
@@ -721,8 +719,8 @@
 .hp3 .px-stage { padding: 40px; background: #f5f6f7; }
 .hp3 .px-product-image { display: block; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff; }
 .hp3 .px-product-image img { display: block; width: 100%; height: auto; }
-@keyframes product-copy-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.hp3 .px-panel:not([hidden]) .px-copy { animation: product-copy-in .65s cubic-bezier(.22, 1, .36, 1) both; }
+.hp3 .px-panel:not([hidden]) .px-copy, .hp3 .px-panel:not([hidden]) .px-stage { opacity: var(--px-opacity); transform: translateY(var(--px-shift)); }
+.hp3 .px-product-image img { max-height: calc(100svh - 430px); object-fit: contain; }
 @media (max-width: 960px) and (min-width: 761px) {
   .hp3 .product-explorer { grid-template-columns: 160px minmax(0, 1fr); }
   .hp3 .px-tabs button { padding-inline: 26px; }
@@ -735,8 +733,9 @@
   .hp3 .px-tabs { display: flex; gap: 0; overflow-x: auto; scrollbar-width: thin; scroll-padding-inline: 12px; }
   .hp3 .px-tabs button { flex-shrink: 0; padding: 18px 16px; font-size: 14px; }
   .hp3 .px-tabs button[aria-selected="true"]::before, .hp3 .px-tab-progress { left: 16px; right: 16px; top: auto; bottom: 0; width: auto; height: 2px; transform-origin: left; }
-  .hp3 .is-playing .px-tab-progress { animation-name: product-tab-progress-horizontal; }
-  .hp3 .px-playback { margin: 8px 16px 0; }
+  .hp3 .px-tab-progress { transform: scaleX(var(--px-progress)); }
+  .hp3 .product-explorer { top: 72px; }
+  .hp3 .px-product-image img { max-height: calc(100svh - 490px); }
   .hp3 .px-copy { padding: 28px 24px; min-height: 275px; font-size: 20px; }
   .hp3 .px-stage { padding: 16px; }
 }
@@ -744,6 +743,12 @@
   .hp3 .px-copy { min-height: 320px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hp3 .px-panel:not([hidden]) .px-copy, .hp3 .is-playing .px-tab-progress { animation: none; }
+  .hp3 .px-panel:not([hidden]) .px-copy, .hp3 .px-panel:not([hidden]) .px-stage { opacity: 1; transform: none; }
   .hp3 .px-tabs button { transition: none; }
+}
+
+@media (max-height: 700px) {
+  .hp3 .px-copy { min-height: 0; padding-block: 20px; font-size: 19px; }
+  .hp3 .px-stage { padding-block: 16px; }
+  .hp3 .px-product-image img { max-height: max(120px, calc(100svh - 410px)); }
 }
