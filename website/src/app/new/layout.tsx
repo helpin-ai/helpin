@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Instrument_Sans, JetBrains_Mono } from 'next/font/google';
+import { ScrollReveal } from './_components/ScrollReveal';
 import './new.css';
 
 const instrumentSans = Instrument_Sans({
@@ -28,6 +29,7 @@ export default function NewHomeLayout({ children }: { children: React.ReactNode 
   return (
     <div className={`hp3 ${instrumentSans.variable} ${jetbrainsMono.variable}`}>
       {children}
+      <ScrollReveal />
     </div>
   );
 }

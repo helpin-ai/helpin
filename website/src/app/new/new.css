@@ -40,6 +40,14 @@
 .hp3 .assure { font-size: 14px; color: var(--t3); display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
 .hp3 .assure span::before { content: "·"; margin-right: 14px; color: var(--border-2); }
 .hp3 .assure span:first-child::before { content: ""; margin: 0; }
+.hp3 .hero-assure { gap: 10px 22px; font-size: 13px; }
+.hp3 .hero-assure span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.hp3 .hero-assure span::before { display: none; }
+.hp3 .hero-assure svg { flex: none; color: #527363; stroke-width: 1.6; }
+@media (max-width: 600px) {
+  .hp3 .hero-assure { gap: 10px 16px; max-width: 340px; }
+}
+
 .hp3 .hero-frame { margin-top: 56px; }
 .hp3 .frame { border: 1px solid var(--border); border-radius: 10px; background: #fff; overflow: hidden; box-shadow: 0 1px 2px rgba(19,21,20,.04); }
 .hp3 .frame-bar { height: 36px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; padding: 0 14px; background: var(--bg2); font-size: 12px; color: var(--t3); }
@@ -196,7 +204,9 @@
 }
 
 /* Spacious, dark footer shared by the preview pages. */
-.hp3 .pfoot { background: #081b16; color: #a4b8af; padding: 72px 0 26px; font-size: 14px; }
+.hp3 .pfoot { position: relative; isolation: isolate; background: #081b16; color: #a4b8af; padding: 72px 0 26px; font-size: 14px; }
+.hp3 .pfoot::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: linear-gradient(rgba(139,222,176,.075) 1px, transparent 1px), linear-gradient(90deg, rgba(139,222,176,.075) 1px, transparent 1px); background-size: 64px 64px; background-position: center top; mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 65%, transparent); }
+@media (max-width: 600px) { .hp3 .pfoot::before { background-size: 48px 48px; } }
 .hp3 .pfoot .wrap { max-width: 1280px; padding-inline: 40px; }
 .hp3 .footer-main { display: grid; grid-template-columns: minmax(180px,1fr) minmax(0,3fr); gap: 64px; }
 .hp3 .footer-brand .logo { color: #f5faf7; }
@@ -397,7 +407,8 @@
 .hp3 .hero h1 { font-size: clamp(2.4rem, 4.4vw, 3.5rem); }
 .hp3 .hero h1 > span { display: block; text-wrap: balance; }
 .hp3 .hero .lede { font-size: 18px; max-width: 54ch; }
-.hp3 .wire { margin-top: 44px; }
+.hp3 .hero-wrap > .wire { margin-top: 88px; }
+@media (max-width: 600px) { .hp3 .hero-wrap > .wire { margin-top: 64px; } }
 /* Phone: the record must never widen the page. A late rule had reset it to two columns. */
 @media (max-width: 960px) {
   .hp3 .record { grid-template-columns: minmax(0, 1fr); }

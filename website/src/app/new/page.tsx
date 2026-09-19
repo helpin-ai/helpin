@@ -1,4 +1,4 @@
-import { Braces, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
+import { Braces, BrainCircuit, Cloud, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
 import { PreviewNav } from './_components/PreviewNav';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
@@ -69,7 +69,12 @@ export default function NewHomePage() {
             <h1><span>Support, product, and CRM.</span>{' '}<span>One customer history.</span>{' '}<span>AI that does the work.</span></h1>
             <p className="lede">AI agents answer customers, plan tasks, and prepare follow-ups — with the full context of every account behind each step.</p>
             <CtaRow />
-            <div className="assure"><span>Open source</span><span>Self-hostable</span><span>Bring your own models</span><span>Cloud available</span></div>
+            <div className="assure hero-assure">
+              <span><Braces size={15} aria-hidden="true" />Open source</span>
+              <span><Server size={15} aria-hidden="true" />Self-hostable</span>
+              <span><BrainCircuit size={15} aria-hidden="true" />Bring your own models</span>
+              <span><Cloud size={15} aria-hidden="true" />Cloud available</span>
+            </div>
           </div>
           <LoopWire />
         </div>
