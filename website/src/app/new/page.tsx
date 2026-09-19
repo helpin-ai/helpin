@@ -81,38 +81,6 @@ export default function NewHomePage() {
         </div>
       </section>
 
-      {/* 03 One customer record (dark) */}
-      <section id="record" className="dark">
-        <GridFlow />
-        <div className="wrap">
-          <div className="rs-copy record-intro">
-            <span className="rs-eyebrow">One customer. One record.</span>
-            <h2>Every agent starts with the full picture.</h2>
-            <p>Conversations, meetings, projects, deals, docs, and engineering activity connected around each customer. Your team, support agents, and coding agents work from the same history.</p>
-          </div>
-          <div className="record-bento">
-            {RECORD_FACTS.map(({ title, description, image, wide }) => (
-              <article className={`record-bento-card${wide ? ' record-bento-wide' : ''}`} key={title}>
-                <div className="record-bento-copy">
-                  <h3>{title}</h3>
-                  <p>{description}</p>
-                </div>
-                <CustomerRecordBento variant={image} />
-              </article>
-            ))}
-          </div>
-          <p className="rs-close"><span className="rs-keep">One customer.</span> Every interaction. Full context.</p>
-        </div>
-      </section>
-
-      {/* Explore each product area alongside the workspace image. */}
-      <section id="product">
-        <div className="wrap">
-          <SectionHead eyebrow="What’s inside" title="Close the loop in one workspace." lede="Connect the customer question, the product work, and the follow-up—so your team doesn’t have to piece the story together across tools." />
-          <ProductExplorer />
-        </div>
-      </section>
-
       {/* Ask Agent: answers, execution, and connected tools. */}
       <section id="ask-agent" className="ask-agent-section" aria-labelledby="ask-agent-title">
         <div className="wrap">
@@ -151,6 +119,38 @@ export default function NewHomePage() {
             </article>
           </div>
           <div className="ask-agent-links"><a className="btn-link" href="/new/product#agents">Explore agents →</a><a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external tools →</a></div>
+        </div>
+      </section>
+
+      {/* 03 One customer record (dark) */}
+      <section id="record" className="dark">
+        <GridFlow />
+        <div className="wrap">
+          <div className="rs-copy record-intro">
+            <span className="rs-eyebrow">One customer. One record.</span>
+            <h2>Every agent starts with the full picture.</h2>
+            <p>Conversations, meetings, projects, deals, docs, and engineering activity connected around each customer. Your team, support agents, and coding agents work from the same history.</p>
+          </div>
+          <div className="record-bento">
+            {RECORD_FACTS.map(({ title, description, image, wide }) => (
+              <article className={`record-bento-card${wide ? ' record-bento-wide' : ''}`} key={title}>
+                <div className="record-bento-copy">
+                  <h3>{title}</h3>
+                  <p>{description}</p>
+                </div>
+                <CustomerRecordBento variant={image} />
+              </article>
+            ))}
+          </div>
+          <p className="rs-close"><span className="rs-keep">One customer.</span> Every interaction. Full context.</p>
+        </div>
+      </section>
+
+      {/* Explore each product area alongside the workspace image. */}
+      <section id="product">
+        <div className="wrap">
+          <SectionHead eyebrow="What’s inside" title="Close the loop in one workspace." lede="Connect the customer question, the product work, and the follow-up—so your team doesn’t have to piece the story together across tools." />
+          <ProductExplorer />
         </div>
       </section>
 
