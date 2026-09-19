@@ -4,7 +4,6 @@ import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
 import { ProductExplorer } from './_components/ProductExplorer';
 import { HostingDiagram } from './_components/HostingDiagram';
-import { DeveloperWorkbench } from './_components/DeveloperWorkbench';
 import { AgentControlArt } from './_components/AgentControlArt';
 import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
@@ -214,14 +213,18 @@ export default function NewHomePage() {
         <div className="wrap">
           <SectionHead eyebrow="Built to be extended" title="Connect your stack. Build your own workflows."
             lede="Use APIs, SDKs, webhooks, and MCP to connect Helpin to your product and tools. Set up and manage your instance with the Helpin CLI." />
-          <DeveloperWorkbench />
+          <figure className="developer-visual">
+            <a href="/new/product/helpin-cli-tilted-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin CLI illustration at full size (opens in a new tab)">
+              <img src="/new/product/helpin-cli-tilted-1920-v1.webp" srcSet="/new/product/helpin-cli-tilted-1920-v1.webp 1920w, /new/product/helpin-cli-tilted-4k-v1.webp 3840w" sizes="(max-width: 1120px) calc(100vw - 48px), 1072px" width={3840} height={2160} alt="An angled Helpin CLI terminal showing installation checks, diagnostics, status, and logs, with a softly blurred right edge." loading="lazy" decoding="async" />
+            </a>
+          </figure>
           <div className="developer-features">
             <article><Braces size={22} aria-hidden="true" /><h3>REST API</h3><p>Work with customers, conversations, projects, and docs through Helpin’s APIs.</p></article>
             <article><Code2 size={22} aria-hidden="true" /><h3>SDKs</h3><p>Add support to your app and carry customer identity into each conversation.</p></article>
             <article><Webhook size={22} aria-hidden="true" /><h3>Webhooks</h3><p>Use GitHub and GitLab events to trigger the work that follows a code change.</p></article>
             <article><Plug size={22} aria-hidden="true" /><h3>MCP, both ways</h3><p>Give AI clients access to Helpin, and connect selected external tools to your agents.</p></article>
           </div>
-          <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer">Read the developer docs →</a><a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external MCP tools →</a></div>
+          <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer">Read the developer docs →</a><a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Explore the Helpin CLI →</a><a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external MCP tools →</a></div>
         </div>
       </section>
 
