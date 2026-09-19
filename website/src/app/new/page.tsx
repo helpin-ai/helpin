@@ -97,7 +97,7 @@ export default function NewHomePage() {
                 </div>
                 <div className="record-bento-art">
                   <img
-                    src={`/new/bento/customer-${image}-v1.webp`}
+                    src={`/new/bento/customer-${image}-v2.webp`}
                     alt={alt}
                     width={1536}
                     height={1024}
