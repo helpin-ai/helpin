@@ -36,7 +36,7 @@ function TypedText({ children, start, pace = .025, ...props }: SVGProps<SVGTextE
   </text>;
 }
 function Checkmark({ x, y }: { x: number; y: number }) {
-  return <g><circle cx={x} cy={y} r={9} fill="#143c2c" stroke="#59bd8d" /><Glyph icon={Check} x={x - 6} y={y - 6} size={12} /></g>;
+  return <g><circle cx={x} cy={y} r={9} fill="#143c2c" stroke="#59bd8d" /><path className="cr-check-stroke" d={`M${x-4} ${y} l3 3 5 -6`} fill="none" stroke="#72dfad" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" pathLength={1} /></g>;
 }
 function Avatar({ x, y, initial = 'M' }: { x: number; y: number; initial?: string }) {
   const clipId = `cr-avatar-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -104,11 +104,12 @@ function Meetings({ id }: { id: string }) {
     <Glyph icon={Mic} x={98} y={56} /><text x={134} y={77} className="cr-title">Security &amp; rollout review</text><text x={98} y={102} className="cr-muted">OrbitDesk · 42 min</text><Glyph icon={Sparkles} x={354} y={89} size={16} /><text x={377} y={102} className="cr-caption">AI meeting notes</text>
     <rect x={96} y={119} width={408} height={58} rx={10} fill="#101e18" />
     {bars.map((height, i) => <rect key={i} className="cr-wave" x={116 + i * 15.8} y={148 - height / 2} width={4} height={height} rx={2} fill="#62ce98" style={at(i * .045)} />)}
-    <Reveal start={.6}><Avatar x={113} y={208} /><TypedText start={.75} x={141} y={213} className="cr-body">SSO is required before rollout.</TypedText></Reveal>
-    <Reveal start={1.8}><Avatar x={113} y={250} initial="S" /><TypedText start={1.9} x={141} y={255} className="cr-body">We’ll validate the Okta setup.</TypedText></Reveal>
+    <rect className="cr-highlight" x={135} y={192} width={366} height={31} rx={6} style={at(.6)} /><rect className="cr-highlight" x={135} y={234} width={366} height={31} rx={6} style={at(1.8)} />
+    <Reveal start={.6}><Avatar x={113} y={208} /><text x={141} y={213} className="cr-body">SSO is required before rollout.</text></Reveal>
+    <Reveal start={1.8}><Avatar x={113} y={250} initial="S" /><text x={141} y={255} className="cr-body">We’ll validate the Okta setup.</text></Reveal>
     <path d="M98 280 H502" stroke="#294236" />
-    <Reveal start={3}><Checkmark x={109} y={307} /><TypedText start={3.1} x={129} y={312} className="cr-muted">Validate Okta setup</TypedText></Reveal>
-    <Reveal start={3.75}><Checkmark x={109} y={339} /><TypedText start={3.85} x={129} y={344} className="cr-muted">Share the setup guide</TypedText><text x={500} y={344} textAnchor="end" className="cr-accent">2 action items</text></Reveal>
+    <Reveal start={3}><Checkmark x={109} y={307} /><text x={129} y={312} className="cr-muted">Validate Okta setup</text></Reveal>
+    <Reveal start={3.75}><Checkmark x={109} y={339} /><text x={129} y={344} className="cr-muted">Share the setup guide</text><text x={500} y={344} textAnchor="end" className="cr-accent">2 action items</text></Reveal>
   </>;
 }
 
@@ -123,7 +124,7 @@ function Projects({ id }: { id: string }) {
       ['Okta SAML mapping','In review','#e8c77d'],
       ['SCIM provisioning','Planned','#a9b9b0'],
       ['Role mapping','Shipped','#72dfad'],
-    ].map(([name,status,color],i)=><Reveal key={name} start={.65+i*.85}><path d={`M87 ${163+i*48} H510`} stroke="#294236" />{i===2?<Checkmark x={98} y={185+i*48} />:<circle cx={98} cy={185+i*48} r={8} fill="none" stroke="#789d88" />}<TypedText start={.8+i*.85} x={119} y={191+i*48} className="cr-body">{name}</TypedText><text x={508} y={191+i*48} textAnchor="end" className="cr-status" fill={color}>{status}</text></Reveal>)}
+    ].map(([name,status,color],i)=><Reveal key={name} start={.65+i*.85}><rect className="cr-highlight" x={87} y={168+i*48} width={423} height={35} rx={6} style={at(.65+i*.85)} /><path d={`M87 ${163+i*48} H510`} stroke="#294236" />{i===2?<Checkmark x={98} y={185+i*48} />:<circle cx={98} cy={185+i*48} r={8} fill="none" stroke="#789d88" />}<text x={119} y={191+i*48} className="cr-body">{name}</text><text x={508} y={191+i*48} textAnchor="end" className="cr-status" fill={color}>{status}</text></Reveal>)}
     <Reveal start={2.9}><Glyph icon={Users} x={87} y={315} size={20} /><text x={116} y={332} className="cr-muted">Maya + 6 customers waiting · 3 linked issues</text></Reveal>
   </>;
 }
@@ -134,10 +135,10 @@ function Deals({ id }: { id: string }) {
     <text x={108} y={80} className="cr-title">OrbitDesk enterprise renewal</text>
     <text x={108} y={133} className="cr-amount">$42,000</text><text x={491} y={128} textAnchor="end" className="cr-accent">Negotiation</text>
     <Connection d="M119 170 H481" start={.3} />
-    {['Lead','Qualified','Proposal','Negotiation'].map((label,i)=><g key={label}><circle cx={119+i*120.5} cy={170} r={5} fill={i===3?'#6bdfaa':'#365744'} /><text x={119+i*120.5} y={194} textAnchor="middle" className="cr-caption">{label}</text></g>)}
-    <Reveal start={1.8}><rect x={107} y={217} width={386} height={85} rx={12} fill="#2a271a" stroke="#655437" /><Glyph icon={ShieldCheck} x={124} y={233} color="#e8c77d" size={20} /><text x={155} y={248} className="cr-status" fill="#e8c77d">From the security review</text><TypedText start={2.05} x={124} y={278} className="cr-body">SSO approval required before renewal.</TypedText></Reveal>
+    {['Lead','Qualified','Proposal','Negotiation'].map((label,i)=><g key={label}><circle className="cr-stage-ring" cx={119+i*120.5} cy={170} r={10} fill="none" stroke="#72dfad" style={at(.3+i*.4)} /><circle cx={119+i*120.5} cy={170} r={5} fill={i===3?'#6bdfaa':'#365744'} /><text x={119+i*120.5} y={194} textAnchor="middle" className="cr-caption">{label}</text></g>)}
+    <Reveal start={1.8}><rect x={107} y={217} width={386} height={85} rx={12} fill="#2a271a" stroke="#655437" /><Glyph icon={ShieldCheck} x={124} y={233} color="#e8c77d" size={20} /><text x={155} y={248} className="cr-status" fill="#e8c77d">From the security review</text><text x={124} y={278} className="cr-body">SSO approval required before renewal.</text></Reveal>
     <Connection d="M300 302 V337" start={2.8} />
-    <Reveal start={3.25}><Panel id={id} x={138} y={337} width={324} height={45} /><Glyph icon={Mic} x={154} y={349} size={20} /><TypedText start={3.55} x={184} y={366} className="cr-muted">Maya · Security review</TypedText></Reveal>
+    <Reveal start={3.25}><Panel id={id} x={138} y={337} width={324} height={45} /><Glyph icon={Mic} x={154} y={349} size={20} /><text x={184} y={366} className="cr-muted">Maya · Security review</text></Reveal>
   </>;
 }
 
@@ -146,11 +147,11 @@ function Docs({ id }: { id: string }) {
     <Panel id={id} x={109} y={34} width={388} height={298} stacked />
     <Glyph icon={FileText} x={132} y={58} /><text x={168} y={79} className="cr-title">Set up SSO with Okta</text>
     <rect x={132} y={101} width={86} height={27} rx={13} fill="#193b2c" /><text x={175} y={120} textAnchor="middle" className="cr-accent">Published</text>
-    {['Create a SAML application','Map roles and attributes','Test with your pilot team'].map((label,i)=><Reveal key={label} start={.3+i*.85}><circle cx={144} cy={159+i*45} r={12} fill="#173b2b" /><text x={144} y={165+i*45} textAnchor="middle" className="cr-accent">{i+1}</text><TypedText start={.45+i*.85} x={168} y={165+i*45} className="cr-body">{label}</TypedText></Reveal>)}
+    {['Create a SAML application','Map roles and attributes','Test with your pilot team'].map((label,i)=><Reveal key={label} start={.3+i*.85}><circle cx={144} cy={159+i*45} r={12} fill="#173b2b" /><circle className="cr-draw-ring" cx={144} cy={159+i*45} r={12} fill="none" stroke="#62ce98" strokeWidth={1.2} pathLength={1} /><text x={144} y={165+i*45} textAnchor="middle" className="cr-accent">{i+1}</text><text x={168} y={165+i*45} className="cr-body">{label}</text></Reveal>)}
     <path d="M132 281 H473" stroke="#294236" /><Glyph icon={GitPullRequest} x={132} y={296} size={18} /><text x={161} y={311} className="cr-muted">Updated after PR #728</text>
     <Connection d="M305 332 V358 H257" start={2.5} />
-    <Reveal start={3.3}><Glyph icon={Sparkles} x={323} y={349} size={17} /><TypedText start={3.7} x={347} y={363} className="cr-accent">Used in AI reply</TypedText></Reveal>
-    <Reveal start={3}><Panel id={id} x={40} y={328} width={217} height={56} /><Avatar x={70} y={356} /><TypedText start={3.1} x={97} y={351} className="cr-body">Shared with Maya</TypedText><text x={97} y={372} className="cr-caption">OrbitDesk</text></Reveal>
+    <Reveal start={3.3}><Glyph icon={Sparkles} x={323} y={349} size={17} /><text x={347} y={363} className="cr-accent">Used in AI reply</text></Reveal>
+    <Reveal start={3}><Panel id={id} x={40} y={328} width={217} height={56} /><Avatar x={70} y={356} /><text x={97} y={351} className="cr-body">Shared with Maya</text><text x={97} y={372} className="cr-caption">OrbitDesk</text></Reveal>
   </>;
 }
 
@@ -163,8 +164,8 @@ function Timeline({ id }: { id: string }) {
   return <>
     <Panel id={id} x={46} y={35} width={508} height={334} stacked />
     <text x={73} y={74} className="cr-title">OrbitDesk</text><text x={525} y={73} textAnchor="end" className="cr-muted">Email &amp; calendar</text>
-    <Connection d="M94 133 V313" start={.2} />
-    {items.map(({icon,title,detail,time},i)=><Reveal key={title} start={.5+i*1.1}><circle cx={94} cy={133+i*90} r={7} fill="#173b2b" stroke="#64cf9b" /><rect x={117} y={102+i*90} width={412} height={69} rx={12} fill="#14251e" stroke="#2c4438" /><Glyph icon={icon} x={133} y={124+i*90} size={23} /><TypedText start={.65+i*1.1} x={170} y={129+i*90} className="cr-body">{title}</TypedText><text x={170} y={153+i*90} className="cr-muted">{detail}</text><text x={514} y={129+i*90} textAnchor="end" className="cr-caption">{time}</text></Reveal>)}
+    <path d="M94 133 V313" className="cr-wire" fill="none" /><path d="M94 133 V313" className="cr-timeline-progress" pathLength={1} fill="none" stroke="#72dfad" strokeWidth={2} />
+    {items.map(({icon,title,detail,time},i)=><Reveal key={title} start={.5+i*1.1}><circle cx={94} cy={133+i*90} r={7} fill="#173b2b" stroke="#64cf9b" /><rect x={117} y={102+i*90} width={412} height={69} rx={12} fill="#14251e" stroke="#2c4438" /><Glyph icon={icon} x={133} y={124+i*90} size={23} /><text x={170} y={129+i*90} className="cr-body">{title}</text><text x={170} y={153+i*90} className="cr-muted">{detail}</text><text x={514} y={129+i*90} textAnchor="end" className="cr-caption">{time}</text></Reveal>)}
   </>;
 }
 
