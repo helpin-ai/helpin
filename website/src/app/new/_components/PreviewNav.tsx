@@ -7,8 +7,8 @@ import { GITHUB_URL, SIGNUP_URL, GithubIcon } from './ui';
 
 const LINKS = [
   { label: 'Product', href: '/new/product' },
-  { label: 'Developers', href: '/new/product#developers' },
-  { label: 'Open Source', href: '#open-source' },
+  { label: 'Developers', href: '/new#developers' },
+  { label: 'Open Source', href: '/new#open-source' },
   { label: 'Docs', href: 'https://github.com/helpin-ai/helpin/blob/develop/docs/README.md' },
 ];
 

@@ -1,7 +1,10 @@
+import { Braces, Code2, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
 import { PreviewNav } from './_components/PreviewNav';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
 import { ProductExplorer } from './_components/ProductExplorer';
+import { HostingDiagram } from './_components/HostingDiagram';
+import { DeveloperWorkbench } from './_components/DeveloperWorkbench';
 import { AgentControlArt } from './_components/AgentControlArt';
 import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
@@ -52,14 +55,6 @@ const RECORD_FACTS = [
   }
 ] as const;
 
-const OPEN_SOURCE = [
-  ['Open source', 'Read the code. Change it. Build on it.'],
-  ['Self-host', 'Run Helpin inside your own infrastructure.'],
-  ['Helpin Cloud', "Let Helpin manage the infrastructure."],
-  ['Bring your own models', 'Choose from supported model providers.'],
-  ['Own your data', 'Choose where your customer and product data lives.'],
-  ['Build your own workflows', 'Connect your tools through the API, SDK, webhooks, and MCP.'],
-];
 
 export default function NewHomePage() {
   return (
@@ -194,15 +189,39 @@ export default function NewHomePage() {
         </div>
       </section>
 
-      {/* Open source */}
-      <section id="open-source" className="dark">
+      {/* Self-hosting */}
+      <section id="open-source" className="dark self-host-section">
         <div className="wrap">
-          <SectionHead eyebrow="Open by design" title="Your customer context should belong to you."
-            lede="Run Helpin on your infrastructure or use ours. Choose your models and extend the product around your team." />
-          <div className="six">
-            {OPEN_SOURCE.map(([k, v]) => <div key={k}><h3>{k}</h3><p>{v}</p></div>)}
+          <div className="self-host-intro">
+            <div>
+              <SectionHead eyebrow="Open source. Self-hosted." title="Run Helpin on your infrastructure."
+                lede="Deploy Helpin Community with Docker Compose. Start with support, docs, and agents, with control over your data and configuration." />
+              <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
+              <p className="self-host-license">Open source · AGPL-3.0</p>
+            </div>
+            <HostingDiagram />
           </div>
-          <div className="links"><a className="btn btn-primary" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the repository →</a><a className="btn-link" href="/new/product#developers">API, SDK, MCP, and integrations →</a><span className="mono muted">AGPL-3.0</span></div>
+          <div className="self-host-features">
+            <article><Server size={23} aria-hidden="true" /><h3>Deploy with Docker.</h3><p>Run the Community bundle on your own machine or server with Docker Compose.</p></article>
+            <article><Database size={23} aria-hidden="true" /><h3>Keep your data with you.</h3><p>Manage your database, attachments, configuration, and backups on infrastructure you control.</p></article>
+            <article><SlidersHorizontal size={23} aria-hidden="true" /><h3>Choose your connections.</h3><p>Configure supported model providers, application mail, and the public URLs for your installation.</p></article>
+          </div>
+        </div>
+      </section>
+
+      {/* Developer tools and installation CLI */}
+      <section id="developers" className="developer-section">
+        <div className="wrap">
+          <SectionHead eyebrow="Built to be extended" title="Connect your stack. Build your own workflows."
+            lede="Use APIs, SDKs, webhooks, and MCP to connect Helpin to your product and tools. Set up and manage your instance with the Helpin CLI." />
+          <DeveloperWorkbench />
+          <div className="developer-features">
+            <article><Braces size={22} aria-hidden="true" /><h3>REST API</h3><p>Work with customers, conversations, projects, and docs through Helpin’s APIs.</p></article>
+            <article><Code2 size={22} aria-hidden="true" /><h3>SDKs</h3><p>Add support to your app and carry customer identity into each conversation.</p></article>
+            <article><Webhook size={22} aria-hidden="true" /><h3>Webhooks</h3><p>Use GitHub and GitLab events to trigger the work that follows a code change.</p></article>
+            <article><Plug size={22} aria-hidden="true" /><h3>MCP, both ways</h3><p>Give AI clients access to Helpin, and connect selected external tools to your agents.</p></article>
+          </div>
+          <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer">Read the developer docs →</a><a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external MCP tools →</a></div>
         </div>
       </section>
 
