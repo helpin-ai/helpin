@@ -24,6 +24,13 @@ const MEETINGS_IMAGE = {
   height: 1536,
 };
 
+const CRM_IMAGE = {
+  src: '/new/product/workspace-crm-4k-v1.webp',
+  alt: 'Helpin CRM demo with OrbitDesk’s Maya Chen, an SSO rollout summary, a reviewed buying signal, recent support and meeting activity, and linked company details.',
+  width: 3840,
+  height: 1536,
+};
+
 const AREAS = [
   {
     id: 'inbox', label: 'Inbox',
@@ -45,7 +52,7 @@ const AREAS = [
   },
   {
     id: 'crm', label: 'CRM',
-    image: PROJECTS_IMAGE,
+    image: CRM_IMAGE,
     title: 'Know what matters before you follow up.',
     description: 'Give agents the conversations, deal history, and buyer signals behind each account so they can prepare a relevant next step.',
   },
