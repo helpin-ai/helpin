@@ -1,5 +1,6 @@
 import { Braces, BrainCircuit, Cloud, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
 import { PreviewNav } from './_components/PreviewNav';
+import { GridFlow } from './_components/GridFlow';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
 import { ProductExplorer } from './_components/ProductExplorer';
@@ -82,6 +83,7 @@ export default function NewHomePage() {
 
       {/* 03 One customer record (dark) */}
       <section id="record" className="dark">
+        <GridFlow />
         <div className="wrap">
           <div className="rs-copy record-intro">
             <span className="rs-eyebrow">One customer. One record.</span>

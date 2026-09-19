@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { GridFlow } from './GridFlow';
 import { ArrowUpRight, Mail } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { GITHUB_URL, GithubIcon } from './ui';
@@ -41,6 +42,7 @@ const COLUMNS = [
 export function PreviewFooter() {
   return (
     <footer className="pfoot">
+      <GridFlow />
       <div className="wrap">
         <div className="footer-main">
           <div className="footer-brand">
