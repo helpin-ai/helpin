@@ -698,6 +698,12 @@
 }
 
 .hp3 #product > .wrap { max-width: 1280px; }
+.hp3 .ask-agent-intro { max-width: 720px; margin: 80px auto 0; text-align: center; scroll-margin-top: 96px; }
+.hp3 .ask-agent-intro .sec-head { margin-bottom: 24px; }
+.hp3 .ask-agent-intro .lede { margin-inline: auto; }
+@media (max-width: 760px) {
+  .hp3 .ask-agent-intro { margin-top: 48px; }
+}
 .hp3 .px-scroll-track { --px-opacity: 1; --px-shift: 0px; --px-progress: 1; position: relative; }
 .hp3 .product-explorer { top: 80px; display: grid; grid-template-columns: 220px minmax(0, 1fr); background: #fff; }
 .hp3 .is-scroll-driven .product-explorer { position: sticky; }

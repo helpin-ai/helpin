@@ -116,6 +116,10 @@ export default function NewHomePage() {
         <div className="wrap">
           <SectionHead eyebrow="What’s inside" title="One workspace. Agents across the work." lede="From the support inbox to product tasks and customer follow-ups, give agents the context and tools to move work forward." />
           <ProductExplorer />
+          <div id="ask-agent" className="ask-agent-intro">
+            <SectionHead eyebrow="Ask Agent" title="Ask a question. Hand off the work." lede="Ask about a customer, investigate an issue, or describe a task. Ask Agent uses your workspace context to find answers and coordinate the work—from wherever you’re working." />
+            <a className="btn-link" href="/new/product#agents">Explore agents →</a>
+          </div>
         </div>
       </section>
 
