@@ -22,7 +22,9 @@
 .hp3 section.hero { border-top: 0; padding-block: 72px 64px; }
 .hp3 .sec-head { display: grid; gap: 16px; max-width: 720px; margin-bottom: 48px; }
 .hp3 .sec-head h2 { font-size: clamp(1.75rem, 3vw, 2.5rem); line-height: 1.15; }
-.hp3 .pnav { position: sticky; top: 0; background: rgba(255,255,255,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); z-index: 40; }
+.hp3 .pnav { position: sticky; top: 0; background: rgba(255,255,255,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); z-index: 40; transition: transform .22s ease; }
+.hp3 .pnav[data-hidden="true"] { transform: translateY(-100%); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .hp3 .pnav { transition: none; } }
 .hp3 .pnav .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
 .hp3 .logo { display: inline-flex; align-items: center; }
 .hp3 .navlinks { display: flex; gap: 22px; font-size: 15px; font-weight: 500; color: var(--t2); }
