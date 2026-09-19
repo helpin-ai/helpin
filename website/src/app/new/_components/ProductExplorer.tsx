@@ -159,8 +159,8 @@ export function ProductExplorer() {
       <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={`/new/product#${area.id}`}>Explore {area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
       {/* Keep the approved workspace image intact until individual product screenshots are supplied. */}
       <div className="px-stage">
-        <a className="px-product-image" href="/new/product/workspace-product-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin workspace board at full size (opens in a new tab)">
-          <img src="/new/product/workspace-product-v1.webp" alt="Helpin Studio SSO task board: Okta mapping and setup docs in progress, Acme’s security requirements in review, and role mapping shipped." width={1727} height={910} loading="lazy" decoding="async" />
+        <a className="px-product-image" href="/new/product/workspace-projects-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin workspace board at full size (opens in a new tab)">
+          <img src="/new/product/workspace-projects-4k-v1.webp" alt="Helpin Studio SSO task board: Okta mapping and setup docs in progress, Acme’s security requirements in review, and role mapping shipped." width={3840} height={1536} loading="lazy" decoding="async" />
         </a>
       </div>
     </div>)}
