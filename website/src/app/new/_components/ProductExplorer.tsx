@@ -31,6 +31,13 @@ const CRM_IMAGE = {
   height: 1536,
 };
 
+const KNOWLEDGE_IMAGE = {
+  src: '/new/product/workspace-knowledge-4k-v1.webp',
+  alt: 'Helpin Knowledge demo showing the OrbitDesk Help Center, eight documentation collections, and guides for Okta SSO, group-to-role mapping, and team invitations.',
+  width: 3840,
+  height: 1536,
+};
+
 const AREAS = [
   {
     id: 'inbox', label: 'Inbox',
@@ -58,7 +65,7 @@ const AREAS = [
   },
   {
     id: 'knowledge', label: 'Knowledge',
-    image: PROJECTS_IMAGE,
+    image: KNOWLEDGE_IMAGE,
     title: 'Turn what changed into useful answers.',
     description: 'Agents help draft and update documentation from customer questions and product work, with the source material close at hand.',
   },
