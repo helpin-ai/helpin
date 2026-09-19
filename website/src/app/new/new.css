@@ -609,21 +609,35 @@
 .hp3 .ca-tool-highlight { fill: #edf6f0; opacity: 0; }
 .hp3 .ca-node-active { fill: #eaf5ed; fill-opacity: .25; stroke: #8bbb9c; opacity: 0; }
 .hp3 .ca-pending, .hp3 .ca-cursor { visibility: hidden; }
+.hp3 .ca-approved, .hp3 .ca-success-badge, .hp3 .ca-success-ripple { transform-box: fill-box; transform-origin: center; }
+.hp3 .ca-approved .ca-tick { stroke: #fff; }
+.hp3 .ca-success-outline, .hp3 .ca-success-ripple { opacity: 0; }
 .hp3 .ca-cursor { color: #233b2d; filter: drop-shadow(0 2px 2px rgba(0,0,0,.1)); }
 .hp3 .control-art[data-playing="true"] .ca-tick { stroke-dasharray: 1; animation: ca-draw .4s ease var(--ca-delay) both; }
 .hp3 .control-art[data-playing="true"] .ca-tool-highlight { animation: ca-highlight 1.1s ease var(--ca-delay) both; }
 .hp3 .control-art[data-playing="true"] .ca-node-active { animation: ca-highlight 1.3s ease var(--ca-delay) both; }
 .hp3 .control-art[data-playing="true"] .ca-route { stroke-dasharray: 1; animation: ca-draw 2.1s ease .1s both; }
 .hp3 .control-art[data-playing="true"] .ca-pending { animation: ca-pending 2.3s steps(1, end) both; }
-.hp3 .control-art[data-playing="true"] .ca-approved { animation: ca-approved .001s steps(1, end) 2.3s both; }
+.hp3 .control-art[data-playing="true"] .ca-approved { animation: ca-approved .5s cubic-bezier(.2,.8,.2,1) 2.3s both; }
+.hp3 .control-art[data-playing="true"] .ca-success-badge { animation: ca-badge .45s cubic-bezier(.2,.8,.2,1) 2.45s both; }
+.hp3 .control-art[data-playing="true"] .ca-success-ripple { animation: ca-ripple .85s ease-out 2.45s both; }
+.hp3 .control-art[data-playing="true"] .ca-success-outline { animation: ca-success-outline 1.15s ease 2.3s both; }
 .hp3 .control-art[data-playing="true"] .ca-cursor { animation: ca-cursor 1.4s cubic-bezier(.2,.8,.2,1) 1s both; }
 @keyframes ca-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 @keyframes ca-highlight { 0%,100% { opacity: 0; } 25%,60% { opacity: 1; } }
 @keyframes ca-pending { from { visibility: visible; } to { visibility: hidden; } }
-@keyframes ca-approved { from { visibility: hidden; } to { visibility: visible; } }
+@keyframes ca-approved {
+  0% { visibility: hidden; opacity: 0; transform: translateY(4px) scale(.96); }
+  1% { visibility: visible; }
+  70% { opacity: 1; transform: translateY(0) scale(1.025); }
+  100% { visibility: visible; opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes ca-badge { 0% { transform: scale(.4); } 70% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes ca-ripple { 0% { opacity: .6; transform: scale(1); } 100% { opacity: 0; transform: scale(1.13,1.55); } }
+@keyframes ca-success-outline { 0% { opacity: 0; } 30% { opacity: .75; } 100% { opacity: .3; } }
 @keyframes ca-cursor { 0% { visibility: hidden; transform: translate(48px,26px); } 15% { visibility: visible; } 65%,85% { visibility: visible; transform: translate(0,0); } 100% { visibility: hidden; transform: translate(0,0); } }
 @media (prefers-reduced-motion: reduce) {
-  .hp3 .control-art[data-playing="true"] :is(.ca-tick, .ca-tool-highlight, .ca-node-active, .ca-route, .ca-pending, .ca-approved, .ca-cursor) { animation: none; }
+  .hp3 .control-art[data-playing="true"] :is(.ca-tick, .ca-tool-highlight, .ca-node-active, .ca-route, .ca-pending, .ca-approved, .ca-cursor, .ca-success-badge, .ca-success-ripple, .ca-success-outline) { animation: none; }
 }
 /* 09 integrations */
 .hp3 .intg { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 32px; border-top: 1px solid var(--border); padding-top: 28px; }

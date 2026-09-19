@@ -46,13 +46,19 @@ function Approvals({ id }: { id: string }) {
     <text x={100} y={65} className="ca-title">Review before sending</text><text x={100} y={84} className="ca-meta">Support agent · Proposed action</text>
     <path d="M59 102 H361" className="ca-divider" />
     <image href="/new/avatars/maya.webp" x={56} y={108} width={24} height={24} clipPath={`url(#${id}-avatar)`} /><text x={89} y={124} className="ca-body">Reply to Maya</text>
-    <rect x={58} y={144} width={304} height={61} rx={8} fill="#f5f7f6" /><text x={72} y={167} className="ca-body">The Okta setup guide is ready<tspan x={72} dy={20}>for your pilot.</tspan></text>
+    <rect x={58} y={144} width={304} height={61} rx={8} fill="#f5f7f6" /><text x={72} y={179} className="ca-body ca-reply">The Okta setup guide is ready for your pilot.</text>
     <g className="ca-pending">
-      <rect x={58} y={225} width={96} height={32} rx={7} fill="#173e2e" /><text x={106} y={245} textAnchor="middle" className="ca-button">Approve</text>
-      <rect x={164} y={225} width={78} height={32} rx={7} fill="#fff" stroke="#dfe6e1" /><text x={203} y={245} textAnchor="middle" className="ca-small">Reject</text>
+      <rect x={108} y={225} width={96} height={32} rx={7} fill="#173e2e" /><text x={156} y={245} textAnchor="middle" className="ca-button">Approve</text>
+      <rect x={216} y={225} width={96} height={32} rx={7} fill="#fff" stroke="#dfe6e1" /><text x={264} y={245} textAnchor="middle" className="ca-small">Cancel</text>
     </g>
-    <g className="ca-approved"><rect x={58} y={225} width={200} height={32} rx={7} fill="#edf6f0" /><Tick x={70} y={237} start={2.35} /><text x={93} y={245} className="ca-green ca-small">Approved by Sam</text></g>
-    <g className="ca-cursor" aria-hidden="true"><Icon icon={MousePointer2} x={130} y={243} size={23} /></g>
+    <rect className="ca-success-outline" x={40} y={35} width={340} height={254} rx={14} fill="none" stroke="#41a871" />
+    <g className="ca-approved">
+      <rect className="ca-success-ripple" x={108} y={225} width={204} height={32} rx={7} fill="none" stroke="#35a46a" />
+      <rect x={108} y={225} width={204} height={32} rx={7} fill="#dff3e7" stroke="#a4d8b9" />
+      <circle className="ca-success-badge" cx={132} cy={241} r={10} fill="#168451" />
+      <Tick x={126} y={237} start={2.55} /><text x={152} y={245} className="ca-green ca-small">Approved by Sam</text>
+    </g>
+    <g className="ca-cursor" aria-hidden="true"><Icon icon={MousePointer2} x={178} y={243} size={23} /></g>
   </>;
 }
 function Triggers() {
