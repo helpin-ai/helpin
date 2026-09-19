@@ -172,6 +172,29 @@
 .hp3 .final { text-align: center; display: grid; gap: 18px; justify-items: center; }
 .hp3 .final h2 { font-size: clamp(1.9rem, 3.4vw, 2.75rem); }
 .hp3 .final .lede { text-align: center; }
+.hp3 section.final-cta { padding-block: 0; background: #fcfefd; }
+.hp3 .final-cta > .wrap { position: relative; isolation: isolate; border-inline: 1px solid var(--border); }
+.hp3 .final-cta > .wrap::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: radial-gradient(circle, rgba(15,122,80,.2) .8px, transparent 1px); background-size: 16px 16px; mask-image: radial-gradient(ellipse at center, rgba(0,0,0,.25) 15%, #000 65%, transparent 100%); }
+.hp3 .final-cta .final { min-height: 480px; padding-block: 104px; align-content: center; gap: 22px; }
+.hp3 .final-cta h2 { font-size: clamp(2rem,4vw,3rem); line-height: 1.12; letter-spacing: -.035em; color: #102c20; }
+.hp3 .final-cta .lede { max-width: 52ch; font-size: 16px; line-height: 1.7; }
+.hp3 .final-cta .cta-row { margin-top: 6px; }
+.hp3 .final-cta .btn { height: 44px; padding-inline: 20px; }
+.hp3 .final-cta .btn-primary { background: #143d2a; border-color: #143d2a; }
+.hp3 .final-cta .btn-primary:hover { background: #0b2b1b; border-color: #0b2b1b; }
+.hp3 .final-cta .assure { font-size: 12px; gap: 12px; }
+.hp3 .final-cta .assure span::before { margin-right: 12px; }
+@media (max-width: 600px) {
+  .hp3 .final-cta > .wrap { border-inline: 0; }
+  .hp3 .final-cta .final { min-height: 440px; padding-block: 72px; gap: 20px; }
+  .hp3 .final-cta h2 { font-size: clamp(1.8rem,7vw,2.4rem); }
+  .hp3 .final-cta .lede { font-size: 15px; max-width: 34ch; }
+  .hp3 .final-cta .cta-row { gap: 10px; }
+  .hp3 .final-cta .btn { font-size: 14px; padding-inline: 15px; }
+  .hp3 .final-cta .assure { gap: 8px; font-size: 11px; }
+  .hp3 .final-cta .assure span::before { margin-right: 8px; }
+}
+
 /* Spacious, dark footer shared by the preview pages. */
 .hp3 .pfoot { background: #081b16; color: #a4b8af; padding: 72px 0 26px; font-size: 14px; }
 .hp3 .pfoot .wrap { max-width: 1280px; padding-inline: 40px; }

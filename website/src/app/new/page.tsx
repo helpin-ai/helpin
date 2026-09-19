@@ -249,12 +249,12 @@ export default function NewHomePage() {
       </section>
 
       {/* 13 Final CTA */}
-      <section>
+      <section className="final-cta" aria-labelledby="final-cta-title">
         <div className="wrap">
           <div className="final">
             <span className="eyebrow">Close the loop</span>
-            <h2>Start with a customer.<br />End with something shipped.</h2>
-            <p className="lede">We built Helpin and the agent system behind it for our own products—to keep customer questions, product work, and follow-ups in one place.</p>
+            <h2 id="final-cta-title">Start with a customer.<br />End with something shipped.</h2>
+            <p className="lede">Give your team and agents the context to turn customer questions into work that ships.</p>
             <CtaRow />
             <div className="assure"><span>Open source</span><span>Self-hostable</span><span>Built for SaaS teams</span></div>
           </div>
