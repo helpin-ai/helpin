@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ArrowRight, ArrowUpRight, BookOpen, Bot, Braces, Building2, ChevronDown, Kanban, Menu, MessagesSquare, Plug, Server, Terminal, Users, Video, Webhook, X } from 'lucide-react';
@@ -41,8 +41,27 @@ export function PreviewNav() {
   const mobileToggle = useRef<HTMLButtonElement>(null);
   const productToggle = useRef<HTMLButtonElement>(null);
   const developerToggle = useRef<HTMLButtonElement>(null);
+  const hoverClose = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openedByHover = useRef(false);
+  const cancelHoverClose = () => { if (hoverClose.current) clearTimeout(hoverClose.current); };
   const expanded = open !== null || mobileOpen;
-  const close = () => { setOpen(null); setMobileOpen(false); };
+  const close = () => { cancelHoverClose(); openedByHover.current = false; setOpen(null); setMobileOpen(false); };
+  const enterProduct = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType !== 'mouse') return;
+    cancelHoverClose();
+    if (open !== 'product') { openedByHover.current = true; setOpen('product'); }
+  };
+  const leaveProduct = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType !== 'mouse') return;
+    cancelHoverClose();
+    // Let the pointer cross the small gap between the trigger and the panel.
+    hoverClose.current = setTimeout(() => {
+      if (productToggle.current?.matches(':focus-visible') || nav.current?.querySelector('#preview-product-menu :focus-visible')) return;
+      openedByHover.current = false;
+      setOpen(current => current === 'product' ? null : current);
+    }, 200);
+  };
+  useEffect(() => () => { if (hoverClose.current) clearTimeout(hoverClose.current); }, []);
 
   useEffect(() => { setOpen(null); setMobileOpen(false); }, [pathname]);
 
@@ -106,7 +125,7 @@ export function PreviewNav() {
   };
   const openWithKeyboard = (event: KeyboardEvent<HTMLButtonElement>, name: MenuName) => {
     if (event.key !== 'ArrowDown') return;
-    event.preventDefault(); setOpen(name);
+    event.preventDefault(); cancelHoverClose(); openedByHover.current = false; setOpen(name);
     window.requestAnimationFrame(() => nav.current?.querySelector<HTMLElement>(`#preview-${name}-menu a`)?.focus());
   };
 
@@ -120,7 +139,7 @@ export function PreviewNav() {
         <div className="wrap nav-bar">
           <Link href="/new" className="logo" aria-label="Helpin homepage" onClick={close}><HelpinBrand /></Link>
           <div className="navlinks">
-            <button ref={productToggle} className="nav-trigger" aria-expanded={open === 'product'} aria-controls="preview-product-menu" onClick={() => setOpen(open === 'product' ? null : 'product')} onKeyDown={event => openWithKeyboard(event, 'product')}>Product<ChevronDown size={13} /></button>
+            <button ref={productToggle} className="nav-trigger" aria-expanded={open === 'product'} aria-controls="preview-product-menu" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} onClick={event => { cancelHoverClose(); setOpen(openedByHover.current && event.detail > 0 ? 'product' : open === 'product' ? null : 'product'); openedByHover.current = false; }} onKeyDown={event => openWithKeyboard(event, 'product')}>Product<ChevronDown size={13} /></button>
             <Link className="nav-direct" href="/new#ask-agent" onClick={close}>Ask Agent</Link>
             <button ref={developerToggle} className="nav-trigger" aria-expanded={open === 'developers'} aria-controls="preview-developers-menu" onClick={() => setOpen(open === 'developers' ? null : 'developers')} onKeyDown={event => openWithKeyboard(event, 'developers')}>Developers<ChevronDown size={13} /></button>
             <Link className="nav-direct" href="/new#open-source" onClick={close}>Open source</Link>
@@ -133,7 +152,7 @@ export function PreviewNav() {
           </div>
         </div>
 
-        <div id="preview-product-menu" className="nav-panel nav-product-panel" hidden={open !== 'product'} onClick={event => { if ((event.target as HTMLElement).closest('a')) close(); }}>
+        <div id="preview-product-menu" className="nav-panel nav-product-panel" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} hidden={open !== 'product'} onClick={event => { if ((event.target as HTMLElement).closest('a')) close(); }}>
           <div className="nav-panel-main">
             <p className="nav-section-label">Your customer workspace</p>
             <div className="nav-resource-grid">{PRODUCTS.map(item => <ResourceLink item={item} key={item.label} />)}</div>
