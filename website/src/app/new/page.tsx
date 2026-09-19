@@ -4,7 +4,6 @@ import { LoopWire } from './_components/LoopWire';
 import { ProductExplorer } from './_components/ProductExplorer';
 import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
-import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 
 const RECORD_FACTS = [
@@ -147,33 +146,43 @@ export default function NewHomePage() {
         </div>
       </section>
 
-      {/* AI control */}
+      {/* Agent controls */}
       <section id="control">
         <div className="wrap">
-          <SectionHead eyebrow="You set the boundaries" title="You decide what agents can do." lede="Start with suggestions. Add approvals. Automate workflows when you’re ready." />
+          <SectionHead eyebrow="Agents, on your terms" title="Give agents work. Keep control."
+            lede="Choose the tools each agent can use, when it needs approval, and what starts the work." />
           <div className="ctrl">
             <div>
-              <span className="k">Suggestions</span>
-              <h3>Agents suggest. You decide.</h3>
-              <div className="ctrl-card"><p>OrbitDesk may be reporting a regression. Create an engineering issue?</p><div className="ctrl-btns"><span className="btnm">Create issue</span><span className="btno">Dismiss</span></div></div>
-              <p className="muted">Nothing happens until you approve it.</p>
+              <span className="k">Tool access</span>
+              <h3>Give each agent the right tools.</h3>
+              <p className="ctrl-description">Choose the workspace tools and connected services each agent can use to do its job.</p>
+              <div className="ctrl-card">
+                <span className="ctrl-example-label">Support agent · Selected tools</span>
+                <ul className="ctrl-tools"><li>Search knowledge<span>Enabled</span></li><li>Read conversations<span>Enabled</span></li><li>Draft replies<span>Enabled</span></li></ul>
+              </div>
             </div>
             <div>
               <span className="k">Approvals</span>
-              <h3>Review before agents act.</h3>
-              <div className="ctrl-card"><p>PR #728 resolves an issue reported by seven customers. Send them an update?</p><div className="ctrl-btns"><span className="btnm">Approve</span><span className="btno">Edit</span></div></div>
-              <p className="muted">Review the action before it happens.</p>
+              <h3>Set when agents ask first.</h3>
+              <p className="ctrl-description">Set an approval mode for each agent. Review actions that need permission before they go ahead.</p>
+              <div className="ctrl-card">
+                <span className="ctrl-example-label">Approval requested</span>
+                <p>Send this reply to Maya?</p>
+                <blockquote>The Okta setup guide is ready for your pilot.</blockquote>
+                <div className="ctrl-btns"><span className="btnm">Approve</span><span className="btno">Reject</span></div>
+              </div>
             </div>
             <div>
-              <span className="k">Automation</span>
-              <h3>Let trusted workflows run.</h3>
-              <ol className="chain"><li>Task received</li><li>Agent does the work</li><li>Results ready for your team</li></ol>
+              <span className="k">Triggers</span>
+              <h3>Put repeat work on a schedule.</h3>
+              <p className="ctrl-description">Start agents from an event or a schedule, using the tools and approval settings you’ve chosen.</p>
+              <div className="ctrl-card">
+                <span className="ctrl-example-label">Scheduled rollout review</span>
+                <ol className="chain"><li>Every weekday morning</li><li>Review open rollout tasks</li><li>Summarize the blockers</li></ol>
+              </div>
             </div>
           </div>
-          <p className="section-close">Automate what you trust. Keep control of the rest. <a className="inline-link" href="/new/product#agents">Meet the agents →</a></p>
-          <ReviewNote tag="AI control">
-            <p><Flag>CONFIRMED</Flag> Per-agent approval modes, approval and review-checkpoint prompts, automation rules with triggers and actions.</p>
-          </ReviewNote>
+          <p className="section-close"><a className="inline-link" href="/new/product#agents">Explore agents and automation →</a></p>
         </div>
       </section>
 

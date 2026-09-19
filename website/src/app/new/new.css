@@ -582,7 +582,16 @@
 .hp3 .six p { color: var(--t2); font-size: 15px; max-width: 34ch; }
 /* 06 control */
 .hp3 .ctrl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; border-top: 1px solid var(--border); padding-top: 32px; }
-.hp3 .ctrl h3 { font-size: 20px; margin-bottom: 14px; }
+.hp3 .ctrl > div { display: flex; flex-direction: column; align-items: stretch; }
+.hp3 .ctrl h3 { font-size: 20px; margin-bottom: 12px; }
+.hp3 .ctrl-description { color: var(--t2); font-size: 15px; line-height: 1.65; margin-bottom: 22px; }
+.hp3 .ctrl .ctrl-card { margin-top: auto; min-height: 190px; align-content: start; }
+.hp3 .ctrl-example-label { font-size: 11px; font-weight: 600; color: var(--t2); letter-spacing: .02em; }
+.hp3 .ctrl-card blockquote { margin: 0; border-left: 2px solid var(--border-2); padding-left: 10px; color: var(--t2); font-size: 13px; line-height: 1.5; }
+.hp3 .ctrl-tools { list-style: none; margin: 0; padding: 0; }
+.hp3 .ctrl-tools li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; font-size: 13px; }
+.hp3 .ctrl-tools li + li { border-top: 1px solid var(--border); }
+.hp3 .ctrl-tools li span { font-size: 11px; color: var(--em); }
 .hp3 .ctrl-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: #fff; display: grid; gap: 12px; margin-bottom: 12px; }
 .hp3 .ctrl-card p { font-size: 14.5px; line-height: 1.5; }
 .hp3 .ctrl-btns { display: flex; gap: 8px; }
