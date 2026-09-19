@@ -3,29 +3,48 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 
+const PROJECTS_IMAGE = {
+  src: '/new/product/workspace-projects-4k-v1.webp',
+  alt: 'Helpin Studio SSO task board: Okta mapping and setup docs in progress, Acme’s security requirements in review, and role mapping shipped.',
+  width: 3840,
+  height: 1536,
+};
+
+const INBOX_IMAGE = {
+  src: '/new/product/workspace-inbox-4k-v2.webp',
+  alt: 'Helpin inbox demo with OrbitDesk’s Maya Chen asking about Okta SSO, a reply linked to the SSO project, AI inbox folders, and customer details beside the conversation.',
+  width: 3840,
+  height: 1536,
+};
+
 const AREAS = [
   {
     id: 'inbox', label: 'Inbox',
+    image: INBOX_IMAGE,
     title: 'Answer with the whole story.',
     description: 'Agents draft replies using customer history and product knowledge. Your team reviews the answer with the context already attached.',
   },
   {
     id: 'meetings', label: 'Meetings',
+    image: PROJECTS_IMAGE,
     title: 'Keep the work moving after the call.',
     description: 'Capture decisions and next steps from customer meetings. Give agents the conversation behind every action item.',
   },
   {
     id: 'projects', label: 'Projects',
+    image: PROJECTS_IMAGE,
     title: 'From customer request to engineering work.',
     description: 'Agents help turn feedback into tasks, plan the next steps, and carry the customer’s requirements into development.',
   },
   {
     id: 'crm', label: 'CRM',
+    image: PROJECTS_IMAGE,
     title: 'Know what matters before you follow up.',
     description: 'Give agents the conversations, deal history, and buyer signals behind each account so they can prepare a relevant next step.',
   },
   {
     id: 'knowledge', label: 'Knowledge',
+    image: PROJECTS_IMAGE,
     title: 'Turn what changed into useful answers.',
     description: 'Agents help draft and update documentation from customer questions and product work, with the source material close at hand.',
   },
@@ -157,10 +176,9 @@ export function ProductExplorer() {
     </div>
     {AREAS.map((area, index) => <div className="px-panel" role="tabpanel" id={`product-panel-${area.id}`} aria-labelledby={`product-tab-${area.id}`} hidden={active !== index} tabIndex={0} key={area.id}>
       <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={`/new/product#${area.id}`}>Explore {area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
-      {/* Keep the approved workspace image intact until individual product screenshots are supplied. */}
       <div className="px-stage">
-        <a className="px-product-image" href="/new/product/workspace-projects-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin workspace board at full size (opens in a new tab)">
-          <img src="/new/product/workspace-projects-4k-v1.webp" alt="Helpin Studio SSO task board: Okta mapping and setup docs in progress, Acme’s security requirements in review, and role mapping shipped." width={3840} height={1536} loading="lazy" decoding="async" />
+        <a className="px-product-image" href={area.image.src} target="_blank" rel="noopener noreferrer" aria-label={`View the ${area.label.toLowerCase()} demo image at full size (opens in a new tab)`}>
+          <img src={area.image.src} alt={area.image.alt} width={area.image.width} height={area.image.height} loading="lazy" decoding="async" />
         </a>
       </div>
     </div>)}
