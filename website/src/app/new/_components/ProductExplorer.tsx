@@ -4,38 +4,38 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 
 const PROJECTS_IMAGE = {
-  src: '/new/product/workspace-projects-4k-v1.webp',
-  alt: 'Helpin Studio SSO task board: Okta mapping and setup docs in progress, Acme’s security requirements in review, and role mapping shipped.',
+  src: '/new/product/workspace-projects-4k-v2.webp',
+  alt: 'Helpin Studio SSO task board: Okta mapping and setup docs in progress, OrbitDesk’s security requirements in review, and role mapping shipped.',
   width: 3840,
-  height: 1536,
+  height: 2160,
 };
 
 const INBOX_IMAGE = {
-  src: '/new/product/workspace-inbox-4k-v2.webp',
-  alt: 'Helpin inbox demo with OrbitDesk’s Maya Chen asking about Okta SSO, a reply linked to the SSO project, AI inbox folders, and customer details beside the conversation.',
+  src: '/new/product/workspace-inbox-4k-v3.webp',
+  alt: 'Helpin inbox demo with OrbitDesk’s Maya Chen asking about Okta SSO, an internal note, a Helpin AI reply draft, and the linked SSO project beside the conversation.',
   width: 3840,
-  height: 1536,
+  height: 2160,
 };
 
 const MEETINGS_IMAGE = {
-  src: '/new/product/workspace-meetings-4k-v1.webp',
-  alt: 'Helpin Meetings demo showing OrbitDesk’s SSO rollout review, a transcript-based summary, a complete recording player, and linked customer, deal, and task records.',
+  src: '/new/product/workspace-meetings-4k-v2.webp',
+  alt: 'Helpin Meetings demo showing OrbitDesk’s SSO rollout review, a transcript-based summary, recording player, decisions, action items, and linked customer records.',
   width: 3840,
-  height: 1536,
+  height: 2160,
 };
 
 const CRM_IMAGE = {
-  src: '/new/product/workspace-crm-4k-v1.webp',
+  src: '/new/product/workspace-crm-4k-v2.webp',
   alt: 'Helpin CRM demo with OrbitDesk’s Maya Chen, an SSO rollout summary, a reviewed buying signal, recent support and meeting activity, and linked company details.',
   width: 3840,
-  height: 1536,
+  height: 2160,
 };
 
 const KNOWLEDGE_IMAGE = {
-  src: '/new/product/workspace-knowledge-4k-v1.webp',
+  src: '/new/product/workspace-knowledge-4k-v2.webp',
   alt: 'Helpin Knowledge demo showing the OrbitDesk Help Center, eight documentation collections, and guides for Okta SSO, group-to-role mapping, and team invitations.',
   width: 3840,
-  height: 1536,
+  height: 2160,
 };
 
 const AREAS = [
@@ -199,7 +199,12 @@ export function ProductExplorer() {
       <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={`/new/product#${area.id}`}>Explore {area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
       <div className="px-stage">
         <a className="px-product-image" href={area.image.src} target="_blank" rel="noopener noreferrer" aria-label={`View the ${area.label.toLowerCase()} demo image at full size (opens in a new tab)`}>
-          <img src={area.image.src} alt={area.image.alt} width={area.image.width} height={area.image.height} loading="lazy" decoding="async" />
+          <img
+            src={area.image.src.replace('-4k-', '-1920-')}
+            srcSet={`${area.image.src.replace('-4k-', '-960-')} 960w, ${area.image.src.replace('-4k-', '-1920-')} 1920w, ${area.image.src} 3840w`}
+            sizes="(max-width: 760px) calc(100vw - 80px), (max-width: 960px) calc(100vw - 256px), (max-width: 1280px) calc(100vw - 316px), 964px"
+            alt={area.image.alt} width={area.image.width} height={area.image.height} loading="lazy" decoding="async"
+          />
         </a>
       </div>
     </div>)}
