@@ -636,7 +636,7 @@
 .hp3 .img-ph-l { font-weight: 600; font-size: 15px; background: var(--bg2); padding: 0 8px; }
 .hp3 .img-ph-m { font-family: var(--mono); font-size: 12px; color: var(--t3); background: var(--bg2); padding: 0 8px; }
 
-/* Customer record: centered introduction and three illustrated feature cards. */
+/* Customer record: centered introduction and six illustrated feature cards. */
 .hp3 .record-intro { max-width: 820px; margin: 0 auto 56px; text-align: center; }
 .hp3 .record-intro h2 { max-width: 24ch; margin-inline: auto; text-wrap: balance; }
 .hp3 .record-intro p { max-width: 66ch; margin-inline: auto; }
@@ -650,8 +650,7 @@
 .hp3 .record-bento-wide { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.5fr); align-items: center; }
 .hp3 .record-bento-wide .record-bento-copy { padding: 40px; }
 .hp3 .record-bento-wide .record-bento-copy p { max-width: 28ch; }
-.hp3 .record-related { margin-top: 36px; }
-.hp3 .record-related > div:hover h3 { color: var(--d-fg); }
+.hp3 #record .rs-close { text-align: center; }
 .hp3 #record .rs-keep { color: var(--d-accent); }
 @media (max-width: 700px) {
   .hp3 .record-intro { margin-bottom: 32px; }

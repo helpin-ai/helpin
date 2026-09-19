@@ -5,12 +5,48 @@ import { ReviewNote, Flag } from './_components/ReviewNotes';
 import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 
 const RECORD_FACTS = [
-  ['Conversations', 'See every chat, email, note, assignment, and reply in context.'],
-  ['Meetings', 'Record, transcribe, summarize, and turn decisions and next steps into work.'],
-  ['Projects', 'Turn customer needs into projects, tasks, priorities, owners, and progress.'],
-  ['Deals', 'Connect pipeline activity, renewals, and buyer signals to the conversations behind them.'],
-  ['Docs', 'See what customers read, what your team shared, and where new knowledge is needed.'],
-  ['Email & calendar', 'Keep customer threads, calls, and meetings on the same timeline.'],
+  {
+    "title": "Conversations",
+    "description": "See every chat, email, note, assignment, and reply in context.",
+    "image": "conversations",
+    "alt": "Maya’s Okta question, a linked SSO project, an internal note, and a teammate assignment in one conversation.",
+    "wide": true
+  },
+  {
+    "title": "Meetings",
+    "description": "Record, transcribe, summarize, and turn decisions and next steps into work.",
+    "image": "meetings",
+    "alt": "Acme’s security review with a speaker-attributed transcript, decisions, and two action items.",
+    "wide": false
+  },
+  {
+    "title": "Projects",
+    "description": "Turn customer needs into projects, tasks, priorities, owners, and progress.",
+    "image": "projects",
+    "alt": "SSO Enterprise Readiness with customer requests, task statuses, and eight of twelve tasks complete.",
+    "wide": false
+  },
+  {
+    "title": "Deals",
+    "description": "Connect pipeline activity, renewals, and buyer signals to the conversations behind them.",
+    "image": "deals",
+    "alt": "Acme’s $42,000 enterprise renewal, negotiation stage, and security requirement linked to Maya’s conversation.",
+    "wide": false
+  },
+  {
+    "title": "Docs",
+    "description": "See what customers read, what your team shared, and where new knowledge is needed.",
+    "image": "docs",
+    "alt": "A published Okta setup article shared with Maya, its linked product update, and a customer question revealing a knowledge gap.",
+    "wide": false
+  },
+  {
+    "title": "Email & calendar",
+    "description": "Keep customer threads, calls, and meetings on the same timeline.",
+    "image": "email-calendar",
+    "alt": "Acme’s customer timeline connecting Maya’s email, the security review meeting, and the shared setup guide.",
+    "wide": true
+  }
 ];
 
 const OPEN_SOURCE = [
@@ -53,20 +89,16 @@ export default function NewHomePage() {
             <p className="rs-strong">And your agents work from the same context.</p>
           </div>
           <div className="record-bento">
-            {RECORD_FACTS.slice(0, 3).map(([title, description], i) => (
-              <article className={`record-bento-card${i === 0 ? ' record-bento-wide' : ''}`} key={title}>
+            {RECORD_FACTS.map(({ title, description, image, alt, wide }) => (
+              <article className={`record-bento-card${wide ? ' record-bento-wide' : ''}`} key={title}>
                 <div className="record-bento-copy">
                   <h3>{title}</h3>
                   <p>{description}</p>
                 </div>
                 <div className="record-bento-art">
                   <img
-                    src={`/new/bento/customer-${title.toLowerCase()}-v1.webp`}
-                    alt={[
-                      'Maya’s Okta question, a linked SSO project, an internal note, and a teammate assignment in one conversation.',
-                      'Acme’s security review with a speaker-attributed transcript, decisions, and two action items.',
-                      'SSO Enterprise Readiness with customer requests, task statuses, and eight of twelve tasks complete.',
-                    ][i]}
+                    src={`/new/bento/customer-${image}-v1.webp`}
+                    alt={alt}
                     width={1536}
                     height={1024}
                     loading="lazy"
@@ -75,9 +107,6 @@ export default function NewHomePage() {
                 </div>
               </article>
             ))}
-          </div>
-          <div className="rs-items record-related">
-            {RECORD_FACTS.slice(3).map(([title, description]) => <div key={title}><h3>{title}</h3><p>{description}</p></div>)}
           </div>
           <p className="rs-close"><span className="rs-keep">One customer.</span> Every interaction. Full context.</p>
         </div>
