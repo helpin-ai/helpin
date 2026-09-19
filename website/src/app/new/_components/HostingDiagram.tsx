@@ -16,7 +16,7 @@ export function HostingDiagram() {
       <text x={75} y={63} className="hosting-label">YOUR INFRASTRUCTURE</text>
       <rect x={160} y={94} width={280} height={78} rx={14} fill="#172b20" stroke="#47755a" />
       <rect x={178} y={112} width={40} height={40} rx={10} fill="#244733" /><image href="/brand/helpin-icon-white.svg" x={186} y={120} width={24} height={24} />
-      <text x={233} y={127} className="hosting-title">Helpin</text><text x={233} y={148} className="hosting-detail">Support · Docs · Agents</text>
+      <text x={233} y={140} className="hosting-title">Helpin</text>
       {['M300 172 V195 H126 V228','M300 172 V228','M300 172 V195 H474 V228'].map((d,i) => <g key={d} fill="none"><path d={d} stroke="#355341" strokeWidth={1.5} /><path className="hosting-flow" d={d} pathLength={100} style={{'--hosting-delay':`${.2+i*.3}s`} as CSSProperties} /></g>)}
       {[
         { x: 52, icon: Database, title: 'Database', detail: 'PostgreSQL' },
