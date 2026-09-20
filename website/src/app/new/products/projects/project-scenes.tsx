@@ -1,24 +1,23 @@
 'use client';
 
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowDown, CalendarDays, Check, GitPullRequest, Link2, MessageSquare, Pause, Play, Target } from 'lucide-react';
+import { ArrowDown, ArrowUp, CalendarDays, Check, GitPullRequest, Link2, MessageSquare, Pause, Play, Plus, Target } from 'lucide-react';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
 
 type Variant = 'context'|'sprint'|'roadmap'|'agents';
 const SCENES: Record<Variant,{label:string;description:string}> = {
-  context: { label: 'customer request', description: 'Illustrative OrbitDesk workflow: Maya at Northstar Labs requests Slack alerts for failed syncs. Task ORB-491 keeps her original conversation, customer company, and requirements attached, with Sam assigned.' },
+  context: { label: 'customer request', description: 'Ask Agent preview: Sam asks for a task draft based on Maya’s request for Slack alerts when a sync fails. The original conversation and Northstar Labs stay linked. The proposed task suggests high priority and Sam as owner, ready for human review; nothing has been created or assigned.' },
   sprint: { label: 'sprint planning', description: 'Illustrative sprint closeout: Sprint 24 finishes with six of eight tasks completed. Two unfinished tasks are carried into Sprint 25, with the previous sprint recorded.' },
   roadmap: { label: 'roadmap', description: 'Illustrative roadmap: the objective Improve integration reliability groups three scheduled epics: Sync alerts, Webhook reliability, and Export performance, with dates and health visible.' },
   agents: { label: 'project agents', description: 'Illustrative agent workflow: Atlas prepares a plan for sync alerts, Scribe refines task ORB-491, Forge prepares changes and tests, and Lens returns review findings. Sam reviews the proposed change, which is not merged.' },
 };
 function Step({children,at=0,className=''}:{children:ReactNode;at?:number;className?:string}) { return <div className={`ps-step ${className}`} style={{'--ps-delay':`${at}s`} as CSSProperties}>{children}</div>; }
 function Context() { return <>
-  <div className="ps-customer"><img src="/new/avatars/maya.webp" width={32} height={32} alt="" /><div><strong>Maya Chen</strong><span>Northstar Labs · Customer conversation</span></div></div>
-  <div className="ps-question">Can you alert our team in Slack when a sync fails? We only notice when a customer reports it.</div>
-  <div className="ps-link-line"><span /><Link2 size={15} /><span /></div>
-  <Step at={.7} className="ps-request-task"><div><span className="ps-key">ORB-491</span><span className="ps-badge">Feature</span></div><h3>Add Slack alerts for failed syncs</h3><p>Notify the team with the failed sync, affected account, and a link to investigate.</p><div className="ps-task-properties"><span>Planned</span><span>High priority</span><span><img src="/new/avatars/sam.webp" width={18} height={18} alt="" />Sam Rivera</span></div></Step>
-  <Step at={1.8} className="ps-context-link"><MessageSquare size={14} /><span>Maya’s conversation attached</span><Check size={13} /></Step>
-  <Step at={2.6} className="ps-context-link"><Link2 size={14} /><span>Northstar Labs linked</span><Check size={13} /></Step>
+  <div className="ps-ask-user"><img src="/new/avatars/sam.webp" width={25} height={25} alt="" /><p>Review Maya’s request. Draft a task and suggest a priority and owner.</p></div>
+  <Step at={.6} className="ps-ask-source"><div className="ps-customer"><img src="/new/avatars/maya.webp" width={27} height={27} alt="" /><div><strong>Maya Chen</strong><span>Northstar Labs · Original conversation</span></div><MessageSquare size={14}/></div><p>“Can you alert our team in Slack when a sync fails? We only notice when a customer reports it.”</p></Step>
+  <Step at={1.5} className="ps-ask-answer"><div><img src="/brand/helpin-icon-white.svg" width={19} height={19} alt=""/><strong>Ask Agent</strong></div><p>The team is finding failed syncs through customer reports. I’d prioritize an alert with enough context to investigate.</p></Step>
+  <Step at={2.4} className="ps-request-task"><div><span className="ps-key">PROPOSED TASK</span><span className="ps-badge">For review</span></div><h3>Add Slack alerts for failed syncs</h3><p>Include the failed sync, affected account, and a link to investigate.</p><div className="ps-task-properties"><span>Suggested priority <b>High</b></span><span>Suggested owner <img src="/new/avatars/sam.webp" width={18} height={18} alt="" /><b>Sam</b></span></div><div className="ps-ask-sources"><span><MessageSquare size={12}/>Maya’s conversation</span><span><Link2 size={12}/>Northstar Labs</span></div></Step>
+  <div className="ps-ask-composer"><span>Ask a follow-up…</span><div><Plus size={14}/><span>Workspace context</span><span className="ps-ask-send"><ArrowUp size={14}/></span></div></div>
 </>; }
 function Sprint() { return <>
   <div className="ps-sprint-head"><div><span className="ps-key">ENGINEERING</span><h3>Sprint 24</h3></div><span className="ps-badge">Completed</span></div>
@@ -52,5 +51,5 @@ function Agents() { return <>
 export function ProjectScene({variant}:{variant:Variant}) {
   const {container,playing,cycle}=useBentoPlayback(10000);
   const [paused,setPaused]=useState(false);
-  return <div className={`project-scene ps-${variant}`} ref={container} data-playing={playing&&!paused}><div className="ps-toolbar"><span><span className="ps-workspace">O</span>OrbitDesk<span className="ps-toolbar-separator">/</span>{variant==='roadmap'?'Roadmap':variant==='sprint'?'Sprints':'Projects'}</span><button type="button" aria-label={`${paused?'Play':'Pause'} ${SCENES[variant].label} animation`} aria-pressed={paused} onClick={()=>setPaused(!paused)}>{paused?<Play size={12} aria-hidden="true"/>:<Pause size={12} aria-hidden="true"/>}</button></div><div className="ps-scene-content" key={cycle} role="img" aria-label={SCENES[variant].description}><div aria-hidden="true">{variant==='context'?<Context/>:variant==='sprint'?<Sprint/>:variant==='roadmap'?<Roadmap/>:<Agents/>}</div></div></div>;
+  return <div className={`project-scene ps-${variant}`} ref={container} data-playing={playing&&!paused}><div className="ps-toolbar">{variant==='context'?<span className="ps-ask-heading"><img src="/brand/helpin-icon-white.svg" width={26} height={26} alt=""/><span><strong>Ask Agent</strong><small>OrbitDesk · Customer request</small></span></span>:<span><span className="ps-workspace">O</span>OrbitDesk<span className="ps-toolbar-separator">/</span>{variant==='roadmap'?'Roadmap':variant==='sprint'?'Sprints':'Projects'}</span>}<button type="button" aria-label={`${paused?'Play':'Pause'} ${SCENES[variant].label} animation`} aria-pressed={paused} onClick={()=>setPaused(!paused)}>{paused?<Play size={12} aria-hidden="true"/>:<Pause size={12} aria-hidden="true"/>}</button></div><div className="ps-scene-content" key={cycle} role="img" aria-label={SCENES[variant].description}><div aria-hidden="true">{variant==='context'?<Context/>:variant==='sprint'?<Sprint/>:variant==='roadmap'?<Roadmap/>:<Agents/>}</div></div></div>;
 }
