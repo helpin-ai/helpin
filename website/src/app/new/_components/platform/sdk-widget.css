@@ -1,0 +1,29 @@
+/* Use the real widget renderer; only its embedded frame is website-specific. */
+.hp3 .sdk-widget-example{margin-top:20px;min-width:0}
+.hp3 .sdk-widget-launch{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}
+.hp3 .sdk-widget-launch>div{display:flex;align-items:center;gap:8px;font-size:12px}
+.hp3 .sdk-widget-launch strong{font-weight:500}
+.hp3 .sdk-widget-launch button{display:flex;align-items:center;gap:6px;border:1px solid #c9ddcf;border-radius:6px;padding:8px 10px;background:#edf6ef;color:#286444;font-size:10px;cursor:pointer}
+.hp3 .sdk-widget-launch button:hover{background:#e0eee4}
+.hp3 .sdk-widget-launch button:disabled{opacity:.5;cursor:wait}
+.hp3 .sdk-widget-viewport{height:380px;position:relative;border:1px solid #d6e3da;border-radius:12px;background:white;box-shadow:0 12px 28px #183e250a;overflow:hidden}
+.hp3 .sdk-widget-mount{position:absolute;inset:0;visibility:hidden}
+.hp3 .sdk-widget-viewport[data-ready=true][data-open=true] .sdk-widget-mount{visibility:visible}
+.hp3 .sdk-widget-mount .helpin-widget{--helpin-font-sans:'Helpin Platform UI',sans-serif;--helpin-primary:#0f7a50;--helpin-primary-hover:#0b6340}
+.hp3 .sdk-widget-mount .helpin-chat-window{position:relative;inset:auto;width:100%;max-width:none;height:100%;max-height:none;border:0;border-radius:0;box-shadow:none;z-index:auto;transform:none;transition:none;opacity:1}
+.hp3 .sdk-widget-mount .helpin-conversation-back,.hp3 .sdk-widget-mount [aria-label="More options"]{display:none}
+.hp3 .sdk-widget-mount .helpin-conversation-thread{min-height:0}
+.hp3 .sdk-widget-mount .helpin-message-list{scroll-behavior:auto;overscroll-behavior:contain}
+.hp3 .sdk-widget-mount .helpin-message-content,.hp3 .sdk-widget-mount .helpin-compose-input{font-size:12px;line-height:1.65}
+.hp3 .sdk-widget-mount .helpin-message-content p{margin:0}
+.hp3 .sdk-widget-fallback,.hp3 .sdk-widget-closed{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;height:100%;padding:30px;text-align:center;color:#48725a}
+.hp3 .sdk-widget-fallback strong,.hp3 .sdk-widget-closed strong{font-size:14px;font-weight:500}
+.hp3 .sdk-widget-fallback p,.hp3 .sdk-widget-closed p{font-size:12px;line-height:1.8;color:#778f80}
+.hp3 .sdk-widget-note{font-size:10px;line-height:1.7;color:#7c9284;margin-top:12px}
+@media(max-width:960px) and (min-width:701px){.hp3 .platform-page .sdk-body{grid-template-columns:1fr}.hp3 .platform-page .sdk-code pre{min-height:330px;font-size:12px}.hp3 .sdk-widget-example{max-width:420px;width:100%;align-self:center}}
+@media(max-width:600px){.hp3 .sdk-widget-launch{gap:6px}.hp3 .sdk-widget-launch>div{font-size:11px}.hp3 .sdk-widget-launch button{font-size:9px;padding:8px}.hp3 .sdk-widget-viewport{height:390px}}
+@media(prefers-reduced-motion:reduce){.hp3 .sdk-widget-mount *,.hp3 .sdk-widget-mount *::before,.hp3 .sdk-widget-mount *::after{animation:none!important;transition:none!important}}
+.hp3 .sdk-widget-mount .helpin-conversation-brand{min-width:0;flex:1}
+.hp3 .sdk-widget-mount .helpin-conversation-brand-copy{min-width:0}
+.hp3 .sdk-widget-mount .helpin-conversation-subtitle{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hp3 .sdk-widget-mount .helpin-conversation-header-actions{flex:none}
