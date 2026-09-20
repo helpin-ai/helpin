@@ -60,6 +60,10 @@
 .hp3 .support-faqs details p { margin-top: 15px; padding-right: 28px; font-size: 14px; line-height: 1.8; color: var(--t2); }
 .hp3 .support-faqs > a { margin-top: 26px; }
 .hp3 .support-page section.final-cta { padding-block: 0; }
+.hp3 .support-page .final-cta-connected .final { padding-top: 56px; }
+@media (min-width: 961px) {
+  .hp3 .support-page .final-cta-connected .final { min-height: 688px; padding-top: 272px; }
+}
 @media (max-width: 960px) {
   .hp3 .support-page section { padding-block: 72px; }
   .hp3 .support-connected-grid { gap: 35px; }
