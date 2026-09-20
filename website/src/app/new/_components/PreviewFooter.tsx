@@ -82,7 +82,8 @@ export function PreviewFooter() {
           <a className="footer-open" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">Open source. Yours to build.<ArrowUpRight size={14} aria-hidden="true" /></a>
         </div>
         <div className="footer-bottom">
-          <nav className="footer-legal" aria-label="Legal">
+          <nav className="footer-legal" aria-label="Legal and brand resources">
+            <Link href="/new/branding">Branding</Link>
             <Link href="/privacy">Privacy</Link>
             <Link href="/terms">Terms</Link>
             <a href={`${GITHUB_URL}/blob/develop/SECURITY.md`} target="_blank" rel="noopener noreferrer">Security</a>
