@@ -9,8 +9,8 @@ import { useBentoPlayback } from '../../_components/useBentoPlayback';
 type Variant = 'context'|'sprint'|'roadmap'|'agents';
 const SCENES: Record<Variant,{label:string;description:string}> = {
   context: { label: 'customer request', description: 'Illustrative request-to-task workflow in OrbitDesk. Maya at Northstar Labs asks for Slack alerts when syncs fail. Ask Agent prepares requirements, Engineering as the team, High priority, Sam as owner, and Sprint 24. Sam approves the plan, then task ORB-491 is created with the original conversation and company linked. The conversation also shows the linked task.' },
-  sprint: { label: 'sprint planning', description: 'Illustrative sprint closeout: Sprint 24 finishes with six of eight tasks completed. Two unfinished tasks are carried into Sprint 25, with the previous sprint recorded.' },
-  roadmap: { label: 'roadmap', description: 'Illustrative roadmap: the objective Improve integration reliability groups three scheduled epics: Sync alerts, Webhook reliability, and Export performance, with dates and health visible.' },
+  sprint: { label: 'sprint planning', description: 'Illustrative sprint planning and closeout. Two selected backlog tasks join six existing tasks in Sprint 24. Later, six of eight tasks are completed. The two unfinished tasks carry into Sprint 25, retaining the original sprint history.' },
+  roadmap: { label: 'roadmap', description: 'Illustrative roadmap: the objective Make integration failures easier to act on groups three scheduled epics: Sync alerts, Webhook reliability, and Rollout readiness, with dates and health visible.' },
   agents: { label: 'project agents', description: 'Illustrative agent workflow: Atlas prepares a plan for sync alerts, Scribe refines task ORB-491, Forge prepares changes and tests, and Lens returns review findings. Sam reviews the proposed change, which is not merged.' },
 };
 function Step({children,at=0,className=''}:{children:ReactNode;at?:number;className?:string}) { return <div className={`ps-step ${className}`} style={{'--ps-delay':`${at}s`} as CSSProperties}>{children}</div>; }
@@ -26,16 +26,17 @@ function Agents() { return <>
 </>; }
 export function ProjectScene({variant}:{variant:Variant}) {
   const planning = variant === 'sprint' || variant === 'roadmap' || variant === 'context';
-  const {container,playing,cycle}=useBentoPlayback(planning ? 14000 : 10000);
+  const {container,playing,cycle}=useBentoPlayback(variant === 'sprint' ? 18000 : planning ? 14000 : 10000);
   const [paused,setPaused]=useState(false);
   const active = playing && !paused;
   const [frame, setFrame] = useState(3);
   useEffect(() => {
     if (!active || !planning) return;
     setFrame(0);
-    const timers = [2000, 4500, 7000].map((time, index) => setTimeout(() => setFrame(index + 1), time));
+    const times = variant === 'sprint' ? [2000, 5500, 8500, 11000] : [2000, 4500, 7000];
+    const timers = times.map((time, index) => setTimeout(() => setFrame(index + 1), time));
     return () => timers.forEach(clearTimeout);
-  }, [active, planning, cycle]);
-  const phase = active ? frame : 3;
+  }, [active, planning, cycle, variant]);
+  const phase = active ? frame : variant === 'sprint' ? 4 : 3;
   return <div className={`project-scene ps-${variant}`} ref={container} data-playing={active} data-phase={planning ? phase : undefined}><div className="ps-toolbar"><span><span className="ps-workspace">O</span>OrbitDesk<span className="ps-toolbar-separator">/</span>{variant==='context'?'Requests':variant==='roadmap'?'Roadmap':variant==='sprint'?'Sprints':'Projects'}</span><button type="button" aria-label={`${paused?'Play':'Pause'} ${SCENES[variant].label} animation`} aria-pressed={paused} onClick={()=>setPaused(!paused)}>{paused?<Play size={12} aria-hidden="true"/>:<Pause size={12} aria-hidden="true"/>}</button></div><div className="ps-scene-content" key={cycle} role="img" aria-label={SCENES[variant].description}><div aria-hidden="true">{variant==='context'?<ProjectIntake phase={phase}/>:variant==='sprint'?<SprintPlanning phase={phase}/>:variant==='roadmap'?<RoadmapPlanning phase={phase}/>:<Agents/>}</div></div></div>;
 }

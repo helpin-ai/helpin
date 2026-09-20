@@ -66,3 +66,7 @@
 @media(max-width:1100px) and (min-width:761px){.hp3 .projects-page .projects-planning-grid .project-scene{padding:20px 16px}.hp3 .pp-carry-tasks>div>div{display:grid;gap:2px}.hp3 .pp-epic-count{display:none}.hp3 .pp-objective{padding-inline:10px}.hp3 .pp-objective strong{font-size:11px}}
 @media(max-width:400px){.hp3 .projects-page .projects-planning-grid .project-scene{padding:20px 14px}.hp3 .pp-carry-tasks>div>div{display:grid;gap:2px}.hp3 .pp-carry-tasks>div{padding-inline:6px;gap:5px}.hp3 .pp-carry-tasks small{font-size:7px}.hp3 .pp-carry-tasks strong{font-size:9px}.hp3 .pp-epic-count{display:none}.hp3 .pp-epic-heading>strong{font-size:11px}.hp3 .pp-source-summary{padding:12px;gap:8px}.hp3 .pp-source-summary strong{font-size:10px}.hp3 .pp-source-summary small{font-size:9px}.hp3 .pp-transfer-caption{font-size:8px}.hp3 .pp-transfer-path{gap:5px}.hp3 .pp-transfer-path>span:not(.pp-transfer-caption){width:10px}.hp3 .pp-status{font-size:8px}.hp3 .pp-objective strong{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.hp3 .projects-planning-grid .project-scene *{animation:none!important;transition:none!important}}
+
+.hp3 .pp-owner-jules{background:#635388}
+.hp3 .pp-sprint[data-stage="2"] .pp-carry-tasks{transition:none}
+.hp3 .pp-sprint .pp-closeout{min-height:32px}
