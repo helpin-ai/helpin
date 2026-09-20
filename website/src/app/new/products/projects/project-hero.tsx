@@ -10,7 +10,7 @@ function Property({ icon, label, children }: { icon: TaskIconName | ReactNode; l
 }
 
 // Presentational snapshot of TaskDetailPanel / QuietDetailHeader, using the same
-// Inter font, dark popover tokens, field order and icon geometry. No app mutations.
+// Inter font, field order and icon geometry, with marketing surface colors. No app mutations.
 export function ProjectHero() {
   const { container, playing, cycle } = useBentoPlayback(9500);
   const [paused, setPaused] = useState(false);
