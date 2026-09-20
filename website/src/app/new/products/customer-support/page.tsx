@@ -10,6 +10,7 @@ import { SupportControls } from './support-controls';
 import { SupportKnowledge } from './support-knowledge';
 import { SupportInboxFeatures } from './support-inbox-features';
 import { SupportInboxShowcase } from './support-inbox-showcase';
+import { SupportWorkspace } from './support-workspace';
 import { SupportHeroScene } from './support-hero-scene';
 import './support.css';
 
@@ -106,9 +107,7 @@ export default function CustomerSupportPage() {
       <section id="support-connected" className="support-connected-section">
         <div className="wrap support-connected-grid">
           <div><SectionHead eyebrow="Beyond the inbox" title="When the answer needs a fix, keep it moving." lede="Discuss the issue with Ask Agent, create a linked task, and bring in a coding agent to prepare a fix. Assign it to your team for review, with the customer conversation attached." /><Link className="btn-link" href="/new#ask-agent">Explore Ask Agent <ArrowRight size={16} aria-hidden="true" /></Link></div>
-          <figure className="support-connected-visual">
-            <img src="/new/support/ask-agent-support-sep20-1920.webp" srcSet="/new/support/ask-agent-support-sep20-960.webp 960w, /new/support/ask-agent-support-sep20-1440.webp 1440w, /new/support/ask-agent-support-sep20-1920.webp 1920w, /new/support/ask-agent-support-sep20-3840.webp 3840w" sizes="(max-width: 1000px) calc(100vw - 48px), (max-width: 1240px) 62vw, 763px" width={3840} height={2160} alt="Illustrative OrbitDesk inbox with Ask Agent open over Maya’s CSV export conversation. Ask Agent reviews the issue, creates EXP-142, coordinates a coding agent’s pagination fix and regression test, and assigns Sam Rivera to review the proposed change. The fix is not merged." loading="lazy" decoding="async" />
-          </figure>
+          <div className="support-connected-preview"><SupportWorkspace variant="agent" /></div>
         </div>
       </section>
 

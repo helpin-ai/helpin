@@ -2,6 +2,10 @@
    Flattened selectors (no CSS nesting) for broad browser support. When the direction is approved,
    these tokens replace the coral/serif set in globals.css. */
 .hp3 { --ink: #131514; --t2: #4F5A55; --t3: #66716C; --border: #E4E9E6; --border-2: #CFD6D2; --bg: #FFFFFF; --bg2: #F6F8F7; --em: #0F7A50; --em-h: #0B6340; --em-t: #E7F4ED; --amber: #8A6400; --amber-bg: #FFFBEC; --amber-b: #F0E2B0; --note: #FBF1DF; --note-ink: #7A4B00; --note-b: #E9CF9A; --sans: var(--font-hp3-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; --mono: var(--font-hp3-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+/* Shared dark marketing/art surfaces, sampled from Support and AI Agents.
+   Keep product status/tag colors semantic; these tokens govern the surface. */
+.hp3 { --surface-dark: #090909; --art-dark: #0B2119; --art-dark-soft: #112D20; --art-dark-raised: #193A2B; --art-dark-border: #BCE2CB26; --on-dark: #EDF5EF; --on-dark-muted: #B2C6BA; --on-dark-accent: #9CDBB3; }
+
 .hp3 *, .hp3 *::before, .hp3 *::after { box-sizing: border-box; }
 .hp3 a { color: inherit; text-decoration: none; }
 .hp3 h1, .hp3 h2, .hp3 h3, .hp3 h4 { margin: 0; font-weight: 600; letter-spacing: -.02em; text-wrap: balance; }

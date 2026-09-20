@@ -21,9 +21,9 @@
 .hp3 .projects-details{gap:0 48px;margin-top:40px}
 .hp3 .projects-details article{padding-block:28px}
 .hp3 .projects-page .projects-loop{background:#f6f8f7}
-.hp3 .projects-page .ps-agents{background:#101311;border-color:#2c3830}
+.hp3 .projects-page .ps-agents{background:var(--art-dark);border-color:#2c3830}
 .hp3 .projects-page .ps-agents .ps-toolbar button{background:#1b2520;border-color:#405449}
-.hp3 .projects-page .ps-agent-steps>.ps-step{background:#1b231e;border-color:#35463b}
+.hp3 .projects-page .ps-agent-steps>.ps-step{background:var(--art-dark-raised);border-color:#35463b}
 .hp3 .projects-planning-grid{gap:20px}
 .hp3 .projects-planning-copy{padding:28px 26px 24px}
 .hp3 .projects-planning-copy h3{font-size:22px;letter-spacing:-.025em}

@@ -1,0 +1,76 @@
+/* A compact connected story in the homepage's dark workflow palette. */
+.hp3 .projects-page section.projects-loop{background:var(--surface-dark);color:var(--on-dark)}
+.hp3 .projects-loop>.wrap.projects-delivery-stage{max-width:1240px;display:block;text-align:center}
+.hp3 .projects-delivery-heading{max-width:790px;margin:0 auto 42px}
+.hp3 .projects-delivery-heading .sec-head{margin-bottom:18px}
+.hp3 .projects-delivery-heading h2{color:var(--on-dark)}
+.hp3 .projects-delivery-heading .eyebrow{color:var(--on-dark-accent)}
+.hp3 .projects-delivery-heading .lede{color:var(--on-dark-muted)}
+.hp3 .projects-delivery-heading .projects-agent-copy{font-size:14px;line-height:1.8;max-width:680px;margin-inline:auto;color:var(--on-dark-muted)}
+.hp3 .projects-delivery-stage>.projects-inline-link{margin-top:22px;color:var(--on-dark-accent)}
+.hp3 .projects-delivery-art{color:var(--on-dark);text-align:left}
+.hp3 .pdl-flow{display:grid;grid-template-columns:minmax(0,1fr) 36px minmax(0,1fr) 36px minmax(0,1fr);align-items:stretch}
+.hp3 .pdl-card{display:flex;flex-direction:column;min-width:0;min-height:310px;padding:25px;border:1px solid var(--art-dark-border);border-radius:16px;background:linear-gradient(145deg,var(--art-dark-soft),var(--art-dark));transition:border-color .5s}
+.hp3 .pdl-label{font:10px/1.6 var(--mono);letter-spacing:.06em;color:var(--on-dark-muted)}
+.hp3 .pdl-person{display:flex;align-items:center;gap:11px;margin-top:24px}
+.hp3 .pdl-person>img,.hp3 .pdl-card-foot>img{border-radius:50%;flex:none}
+.hp3 .pdl-person strong{display:block;font-size:14px;font-weight:500}
+.hp3 .pdl-person span{display:block;font-size:11px;color:var(--on-dark-muted);margin-top:2px}
+.hp3 .pdl-quote{font-size:17px;line-height:1.65;margin:19px 0 23px;letter-spacing:-.02em}
+.hp3 .pdl-card h3{font-size:19px;line-height:1.4;font-weight:500;letter-spacing:-.025em;margin:21px 0 19px;color:var(--on-dark)}
+.hp3 .pdl-agent{display:flex;align-items:center;gap:10px;min-height:57px}
+.hp3 .pdl-agent>img,.hp3 .pdl-agent>svg{flex:none}
+.hp3 .pdl-agent strong{display:block;font-size:12px;font-weight:500}
+.hp3 .pdl-agent span{display:block;font-size:10px;line-height:1.6;color:var(--on-dark-muted);margin-top:3px}
+.hp3 .pdl-agent>svg{color:var(--on-dark-accent);margin-left:auto}
+.hp3 .pdl-card-foot{display:flex;align-items:center;gap:8px;min-height:42px;padding-top:16px;margin-top:auto;font-size:10px;line-height:1.6;color:var(--on-dark-muted)}
+.hp3 .pdl-card-foot>svg{color:var(--on-dark-accent);flex:none}
+.hp3 .pdl-story{justify-content:space-between;border-top:1px solid var(--art-dark-border);margin-top:17px}
+.hp3 .pdl-story>span:first-child{font:10px var(--mono)}
+.hp3 .pdl-story>span:last-child{display:flex;align-items:center;gap:6px;font-size:10px;min-width:78px}
+.hp3 .pdl-story i{width:5px;height:5px;border-radius:50%;background:currentColor}
+.hp3 .pdl-story [data-done=true]{color:var(--on-dark-accent)}
+.hp3 .pdl-update-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hp3 .pdl-update-heading>span{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--on-dark-muted)}
+.hp3 .pdl-reply{font-size:14px;line-height:1.85;color:var(--on-dark-muted)}
+.hp3 .pdl-guide{display:flex;align-items:center;gap:8px;font-size:11px;line-height:1.6;padding:11px 0;margin-top:8px;color:var(--on-dark-accent)}
+.hp3 .pdl-guide>svg{flex:none}
+.hp3 .pdl-update[data-sent=true],.hp3 .pdl-work[data-active=true]{border-color:#52885e}
+.hp3 .pdl-update[data-sent=true] .pdl-update-heading>span{color:var(--on-dark-accent)}
+.hp3 .pdl-connector{position:relative;align-self:center;height:1px;background:#365b45;overflow:hidden}
+.hp3 .pdl-connector>i{position:absolute;inset:0;background:var(--on-dark-accent);transform:translateX(-100%);opacity:0}
+.hp3 .projects-delivery-art[data-playing=true] .pdl-connector[data-active=true]>i{opacity:1;animation:pdl-flow 1.6s ease-in-out infinite}
+.hp3 .projects-delivery-art[data-playing=true][data-phase="1"] .pdl-agent{animation:pdl-working 2s ease-in-out infinite}
+.hp3 .pdl-footer{display:flex;align-items:center;justify-content:center;gap:15px;min-height:58px;font-size:11px;color:var(--on-dark-muted)}
+.hp3 .pdl-playback{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--art-dark-border);border-radius:50%;color:var(--on-dark-muted);background:transparent;cursor:pointer}
+.hp3 .pdl-playback:focus-visible{outline:2px solid var(--on-dark-accent);outline-offset:4px}
+.hp3 .projects-delivery-art[data-playing=false] *{animation:none;transition:none}
+@keyframes pdl-flow{to{transform:translateX(100%)}}
+@keyframes pdl-working{50%{opacity:.65}}
+@media(max-width:1100px) and (min-width:761px){
+ .hp3 .pdl-flow{grid-template-columns:minmax(0,1fr) 20px minmax(0,1fr) 20px minmax(0,1fr)}
+ .hp3 .pdl-card{padding:20px 16px}
+ .hp3 .pdl-card h3{font-size:16px}
+ .hp3 .pdl-quote{font-size:15px}.hp3 .pdl-reply{font-size:12px}
+ .hp3 .pdl-agent{min-height:68px;gap:7px}.hp3 .pdl-agent>img{width:24px;height:24px}
+ .hp3 .pdl-agent strong{font-size:11px}.hp3 .pdl-agent span{font-size:9px}
+ .hp3 .pdl-agent>svg{width:11px}.hp3 .pdl-card-foot{font-size:9px;min-height:48px}
+}
+@media(max-width:760px){
+ .hp3 .projects-delivery-heading{margin-bottom:30px}
+ .hp3 .projects-delivery-heading .projects-agent-copy{font-size:13px}
+ .hp3 .pdl-flow{grid-template-columns:minmax(0,1fr);max-width:430px;margin-inline:auto}
+ .hp3 .pdl-card{min-height:0;padding:24px}
+ .hp3 .pdl-connector{width:1px;height:26px;justify-self:center}
+ .hp3 .pdl-connector>i{transform:translateY(-100%)}
+ .hp3 .projects-delivery-art[data-playing=true] .pdl-connector[data-active=true]>i{animation-name:pdl-flow-mobile}
+ .hp3 .pdl-person{margin-top:18px}.hp3 .pdl-quote{margin:16px 0 5px}
+ .hp3 .pdl-card h3{margin-top:17px;margin-bottom:14px}
+ .hp3 .pdl-card-foot{min-height:45px}
+ .hp3 .pdl-update .pdl-card-foot{min-height:51px}
+}
+@keyframes pdl-flow-mobile{to{transform:translateY(100%)}}
+@media(prefers-reduced-motion:reduce){
+ .hp3 .projects-delivery-art *{animation:none!important;transition:none!important}
+ .hp3 .pdl-playback{display:none}
+}
