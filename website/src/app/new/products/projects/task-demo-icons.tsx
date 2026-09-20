@@ -506,6 +506,208 @@ const icons = {
         "key": "1"
       }
     ]
+  ],
+  "PlusSignIcon": [
+    [
+      "path",
+      {
+        "d": "M12 4V20M20 12H4",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "0"
+      }
+    ]
+  ],
+  "FilterHorizontalIcon": [
+    [
+      "path",
+      {
+        "d": "M3 7H6",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "0"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M3 17H9",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "1"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M18 17L21 17",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "2"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M15 7L21 7",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "3"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M6 7C6 6.06812 6 5.60218 6.15224 5.23463C6.35523 4.74458 6.74458 4.35523 7.23463 4.15224C7.60218 4 8.06812 4 9 4C9.93188 4 10.3978 4 10.7654 4.15224C11.2554 4.35523 11.6448 4.74458 11.8478 5.23463C12 5.60218 12 6.06812 12 7C12 7.93188 12 8.39782 11.8478 8.76537C11.6448 9.25542 11.2554 9.64477 10.7654 9.84776C10.3978 10 9.93188 10 9 10C8.06812 10 7.60218 10 7.23463 9.84776C6.74458 9.64477 6.35523 9.25542 6.15224 8.76537C6 8.39782 6 7.93188 6 7Z",
+        "stroke": "currentColor",
+        "strokeWidth": 2,
+        "key": "4"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M12 17C12 16.0681 12 15.6022 12.1522 15.2346C12.3552 14.7446 12.7446 14.3552 13.2346 14.1522C13.6022 14 14.0681 14 15 14C15.9319 14 16.3978 14 16.7654 14.1522C17.2554 14.3552 17.6448 14.7446 17.8478 15.2346C18 15.6022 18 16.0681 18 17C18 17.9319 18 18.3978 17.8478 18.7654C17.6448 19.2554 17.2554 19.6448 16.7654 19.8478C16.3978 20 15.9319 20 15 20C14.0681 20 13.6022 20 13.2346 19.8478C12.7446 19.6448 12.3552 19.2554 12.1522 18.7654C12 18.3978 12 17.9319 12 17Z",
+        "stroke": "currentColor",
+        "strokeWidth": 2,
+        "key": "5"
+      }
+    ]
+  ],
+  "Search01Icon": [
+    [
+      "path",
+      {
+        "d": "M17 17L21 21",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "0"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M19 11C19 6.58172 15.4183 3 11 3C6.58172 3 3 6.58172 3 11C3 15.4183 6.58172 19 11 19C15.4183 19 19 15.4183 19 11Z",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "1"
+      }
+    ]
+  ],
+  "ViewIcon": [
+    [
+      "path",
+      {
+        "d": "M21.544 11.045C21.848 11.4713 22 11.6845 22 12C22 12.3155 21.848 12.5287 21.544 12.955C20.1779 14.8706 16.6892 19 12 19C7.31078 19 3.8221 14.8706 2.45604 12.955C2.15201 12.5287 2 12.3155 2 12C2 11.6845 2.15201 11.4713 2.45604 11.045C3.8221 9.12944 7.31078 5 12 5C16.6892 5 20.1779 9.12944 21.544 11.045Z",
+        "stroke": "currentColor",
+        "strokeWidth": 2,
+        "key": "0"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15C13.6569 15 15 13.6569 15 12Z",
+        "stroke": "currentColor",
+        "strokeWidth": 2,
+        "key": "1"
+      }
+    ]
+  ],
+  "File01Icon": [
+    [
+      "path",
+      {
+        "d": "M8 7L16 7",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "0"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M8 11L12 11",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "1"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M13 21.5V21C13 18.1716 13 16.7574 13.8787 15.8787C14.7574 15 16.1716 15 19 15H19.5M20 13.3431V10C20 6.22876 20 4.34315 18.8284 3.17157C17.6569 2 15.7712 2 12 2C8.22877 2 6.34315 2 5.17157 3.17157C4 4.34314 4 6.22876 4 10L4 14.5442C4 17.7892 4 19.4117 4.88607 20.5107C5.06508 20.7327 5.26731 20.9349 5.48933 21.1139C6.58831 22 8.21082 22 11.4558 22C12.1614 22 12.5141 22 12.8372 21.886C12.9044 21.8623 12.9702 21.835 13.0345 21.8043C13.3436 21.6564 13.593 21.407 14.0919 20.9081L18.8284 16.1716C19.4065 15.5935 19.6955 15.3045 19.8478 14.9369C20 14.5694 20 14.1606 20 13.3431Z",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "2"
+      }
+    ]
+  ],
+  "ChartColumnIcon": [
+    [
+      "path",
+      {
+        "d": "M8 9V17",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "0"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M13 5V17",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "1"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M18 13V17",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "2"
+      }
+    ],
+    [
+      "path",
+      {
+        "d": "M3 3V13C3 16.7712 3 18.6569 4.17157 19.8284C5.34315 21 7.22876 21 11 21H21",
+        "stroke": "currentColor",
+        "strokeLinecap": "round",
+        "strokeLinejoin": "round",
+        "strokeWidth": 2,
+        "key": "3"
+      }
+    ]
   ]
 };
 export type TaskIconName = keyof typeof icons;
