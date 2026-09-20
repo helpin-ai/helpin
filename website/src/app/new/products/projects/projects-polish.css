@@ -16,7 +16,7 @@
 .hp3 .projects-hero-points{justify-content:flex-start;gap:12px 18px;font-size:11px;line-height:1.6}
 .hp3 .projects-split{gap:64px}
 .hp3 .projects-progress-grid{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)}
-.hp3 .projects-board-agent-image{background:#101010;border-color:#353b37;padding:6px;box-shadow:0 24px 70px #00000038}
+.hp3 .projects-board-agent-image{background:#171b18;border-color:#303a33;padding:6px;box-shadow:0 24px 70px #00000038}
 .hp3 .projects-board-agent-image img{border-radius:7px}
 .hp3 .projects-details{gap:0 48px;margin-top:40px}
 .hp3 .projects-details article{padding-block:28px}
