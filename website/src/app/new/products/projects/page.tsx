@@ -18,6 +18,7 @@ import './project-focus.css';
 import './planning-scenes.css';
 import './project-intake.css';
 import './project-objectives.css';
+import './project-palette.css';
 
 export const metadata: Metadata = {
   title: 'Projects — Helpin',
