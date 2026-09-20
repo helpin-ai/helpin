@@ -5,13 +5,14 @@ import { BookOpen, Bot, CircleDollarSign, FolderKanban, MessageSquare, Pause, Pl
 import { useBentoPlayback } from './useBentoPlayback';
 import './connected-workspace.css';
 
+// Paths run from each outer node into the Helpin hub so every pulse travels inward.
 const NODES: { label: string; icon: LucideIcon; x: number; y: number; width: number; path: string }[] = [
   { label: 'Conversations', icon: MessageSquare, x: 108, y: 184, width: 158, path: 'M187 184 H232 Q248 184 248 168 V134 Q248 118 264 118 H608' },
   { label: 'Knowledge', icon: BookOpen, x: 142, y: 338, width: 136, path: 'M210 338 H228 Q244 338 244 322 V190 Q244 174 260 174 H504 Q520 174 520 158 V150 Q520 134 536 134 H608' },
   { label: 'Customers', icon: Users, x: 108, y: 490, width: 136, path: 'M176 490 H202 Q218 490 218 474 V218 Q218 202 234 202 H542 Q558 202 558 186 V168 Q558 152 574 152 H608' },
-  { label: 'AI agents', icon: Bot, x: 1172, y: 184, width: 128, path: 'M672 118 H1016 Q1032 118 1032 134 V168 Q1032 184 1048 184 H1108' },
-  { label: 'Projects', icon: FolderKanban, x: 1138, y: 338, width: 120, path: 'M672 134 H744 Q760 134 760 150 V158 Q760 174 776 174 H1020 Q1036 174 1036 190 V322 Q1036 338 1052 338 H1078' },
-  { label: 'CRM', icon: CircleDollarSign, x: 1172, y: 490, width: 100, path: 'M672 152 H706 Q722 152 722 168 V186 Q722 202 738 202 H1046 Q1062 202 1062 218 V474 Q1062 490 1078 490 H1122' },
+  { label: 'AI agents', icon: Bot, x: 1172, y: 184, width: 128, path: 'M1108 184 H1048 Q1032 184 1032 168 V134 Q1032 118 1016 118 H672' },
+  { label: 'Projects', icon: FolderKanban, x: 1138, y: 338, width: 120, path: 'M1078 338 H1052 Q1036 338 1036 322 V190 Q1036 174 1020 174 H776 Q760 174 760 158 V150 Q760 134 744 134 H672' },
+  { label: 'CRM', icon: CircleDollarSign, x: 1172, y: 490, width: 100, path: 'M1122 490 H1078 Q1062 490 1062 474 V218 Q1062 202 1046 202 H738 Q722 202 722 186 V168 Q722 152 706 152 H672' },
 ];
 
 function Node({ label, icon: Icon, x, y, width }: { label: string; icon: LucideIcon; x: number; y: number; width: number }) {
@@ -33,7 +34,7 @@ export function ConnectedWorkspace() {
         <Hub x={640} y={134} />
       </svg>
       <svg className="connection-mobile" viewBox="0 0 360 184" width={360} height={184} fill="none">
-        {['M96 37 H132 Q148 37 148 53 V76 H156', 'M96 145 H132 Q148 145 148 129 V108 H156', 'M204 76 H212 V53 Q212 37 228 37 H264', 'M204 108 H212 V129 Q212 145 228 145 H264'].map((path, index) => <g key={path} style={{ '--connection-delay': `${index * .3}s` } as CSSProperties}><path d={path} className="connection-line" /><path d={path} pathLength={100} className="connection-pulse" /></g>)}
+        {['M96 37 H132 Q148 37 148 53 V76 H156', 'M96 145 H132 Q148 145 148 129 V108 H156', 'M264 37 H228 Q212 37 212 53 V76 H204', 'M264 145 H228 Q212 145 212 129 V108 H204'].map((path, index) => <g key={path} style={{ '--connection-delay': `${index * .3}s` } as CSSProperties}><path d={path} className="connection-line" /><path d={path} pathLength={100} className="connection-pulse" /></g>)}
         <Node label="Support" icon={MessageSquare} x={64} y={37} width={116} /><Node label="Knowledge" icon={BookOpen} x={71} y={145} width={130} />
         <Node label="Agents" icon={Bot} x={302} y={37} width={104} /><Node label="Projects" icon={FolderKanban} x={296} y={145} width={116} />
         <Hub x={180} y={92} size={48} />
