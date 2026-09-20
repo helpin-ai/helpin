@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// Both bento sections share the same visibility, motion, and loop behavior.
+// Start just before a scene enters view and keep it running until it fully leaves.
+// A single 50% cutoff repeatedly restarted scenes during small scroll movements.
 export function useBentoPlayback(duration = 6000) {
   const container = useRef<HTMLDivElement>(null);
   const [reducedMotion, setReducedMotion] = useState(true);
@@ -27,9 +28,9 @@ export function useBentoPlayback(duration = 6000) {
     let visible = false;
     const update = () => setPlaying(visible && !document.hidden);
     const observer = new IntersectionObserver(([entry]) => {
-      visible = entry.intersectionRatio >= .5;
+      visible = entry.isIntersecting;
       update();
-    }, { threshold: .5 });
+    }, { threshold: 0, rootMargin: '120px 0px' });
     observer.observe(element);
     document.addEventListener('visibilitychange', update);
     return () => {

@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 // to their own motion. Content stays visible without JavaScript or observer support.
 const GROUPS = [
   '.sec-head', '.record-intro', '.ask-agent-intro', '.final',
-  '.record-bento', '.ask-agent-capabilities', '.ctrl',
+  '.record-bento-copy', '.ask-agent-capabilities > article', '.ctrl-copy',
   '.self-host-features', '.developer-features', '.developer-cli-copy',
   '.pm-items', '.six', '.steps.big', '.footer-nav',
 ];
@@ -33,7 +33,10 @@ export function ScrollReveal() {
     for (const selector of GROUPS) {
       root.querySelectorAll(selector).forEach(group => {
         Array.from(group.children).forEach((child, index) => {
-          if (child instanceof HTMLElement) targets.set(child, Math.min(index, 3) * 75);
+          if (!(child instanceof HTMLElement)) return;
+          // Keep the illustration's viewport geometry stable while its own scene runs.
+          if (child.matches('[data-playing]') || child.querySelector('[data-playing]')) return;
+          targets.set(child, Math.min(index, 3) * 50);
         });
       });
     }
@@ -55,22 +58,40 @@ export function ScrollReveal() {
           observer?.unobserve(element);
           if (revealed.has(element)) continue;
           revealed.add(element);
-          // A restored scroll position or keyboard jump should never hide focused content.
-          if (element.contains(document.activeElement)) continue;
-          const animation = element.animate(
-            [{ opacity: 0, translate: '0 18px' }, { opacity: 1, translate: '0 0' }],
-            { duration: 650, delay: targets.get(element) ?? 0, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'backwards' },
-          );
-          running.set(element, animation);
-          animation.onfinish = () => running.delete(element);
+          const animation = running.get(element);
+          if (!animation) continue;
+          if (element.contains(document.activeElement)) {
+            animation.cancel();
+            running.delete(element);
+          } else {
+            animation.play();
+          }
         }
-      }, { threshold: 0, rootMargin: '0px 0px 24px 0px' });
+      }, { threshold: 0, rootMargin: '0px 0px 120px 0px' });
 
-      targets.forEach((_, element) => {
-        // Don't replay sections already above the viewport on a deep link or restoration.
-        if (element.getBoundingClientRect().bottom <= 0) revealed.add(element);
-        if (!revealed.has(element)) observer?.observe(element);
-      });
+      // Read geometry together, before applying any animation styles. Content that
+      // is already visible (including restored scroll positions) must never blink.
+      const positions = Array.from(targets, ([element, delay]) => ({
+        element, delay, top: element.getBoundingClientRect().top,
+      }));
+      for (const { element, delay, top } of positions) {
+        if (top < window.innerHeight || element.contains(document.activeElement)) revealed.add(element);
+        if (revealed.has(element)) continue;
+        // Prepare the hidden start state offscreen, rather than hiding a card once
+        // it has already appeared. Large product images only fade; text moves gently.
+        const translate = element.querySelector('img, svg') ? '0 0' : '0 12px';
+        const animation = element.animate(
+          [{ opacity: 0, translate }, { opacity: 1, translate: '0 0' }],
+          { duration: 500, delay, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'both' },
+        );
+        animation.pause();
+        running.set(element, animation);
+        animation.onfinish = () => {
+          animation.cancel();
+          running.delete(element);
+        };
+        observer.observe(element);
+      }
     };
 
     const onFocus = (event: Event) => {
