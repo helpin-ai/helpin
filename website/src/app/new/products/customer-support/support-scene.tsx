@@ -11,9 +11,9 @@ const CONTENT = {
     steps: [
       { icon: MessageSquare, label: 'Maya asks', text: 'Can we start with an admin-only pilot?' },
       { icon: BookOpen, label: 'Knowledge found', text: 'Okta setup guide', detail: 'Product knowledge' },
-      { icon: FileText, label: 'Draft ready for review', text: 'Yes. Let’s start with your admins. Here’s the setup guide.', detail: 'Helpin AI draft' },
+      { icon: CheckCheck, label: 'Helpin AI replies', text: 'Yes. Start with your admin group using the Okta setup guide.', detail: 'Source: Okta setup guide' },
     ],
-    status: 'Ready for your review',
+    status: 'Answer sent to Maya',
   },
   handoff: {
     title: 'A handoff with the history',
