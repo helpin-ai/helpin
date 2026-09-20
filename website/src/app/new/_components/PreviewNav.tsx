@@ -10,7 +10,7 @@ import { GITHUB_URL, SIGNUP_URL, GithubIcon } from './ui';
 const PRODUCTS = [
   { label: 'Customer support', description: 'Answers, handoffs, and a shared inbox.', href: '/new/products/customer-support', icon: MessagesSquare },
   { label: 'Meetings', description: 'Conversations become next steps.', href: '/new/product#meetings', icon: Video },
-  { label: 'Projects', description: 'Customer requests connected to work.', href: '/new/product#projects', icon: Kanban },
+  { label: 'Projects', description: 'Customer requests connected to work.', href: '/new/products/projects', icon: Kanban },
   { label: 'CRM', description: 'The history behind every account.', href: '/new/product#crm', icon: Building2 },
   { label: 'Knowledge', description: 'Answers for customers and agents.', href: '/new/product#knowledge', icon: BookOpen },
   { label: 'Customer records', description: 'One customer. The full picture.', href: '/new#record', icon: Users },

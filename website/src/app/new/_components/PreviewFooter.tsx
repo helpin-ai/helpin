@@ -10,7 +10,7 @@ const COLUMNS = [
     { label: 'Customer records', href: '/new#record' },
     { label: 'Inbox', href: '/new/product#inbox' },
     { label: 'Meetings', href: '/new/product#meetings' },
-    { label: 'Projects', href: '/new/product#projects' },
+    { label: 'Projects', href: '/new/products/projects' },
     { label: 'CRM', href: '/new/product#crm' },
     { label: 'Knowledge', href: '/new/product#knowledge' },
   ] },
