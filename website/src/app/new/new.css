@@ -36,6 +36,8 @@
 .hp3 .hero-inner { display: grid; gap: 22px; justify-items: center; text-align: center; max-width: 860px; margin: 0 auto; }
 .hp3 .hero h1 { font-size: clamp(2.5rem, 5.2vw, 4rem); line-height: 1.05; letter-spacing: -.028em; }
 .hp3 .hero .lede { font-size: 19px; max-width: 58ch; }
+.hp3 .hero .btn-primary { background: var(--em); border-color: var(--em); color: #fff; }
+.hp3 .hero .btn-primary:hover { background: var(--em-h); border-color: var(--em-h); }
 .hp3 .cta-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
 .hp3 .assure { font-size: 14px; color: var(--t3); display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
 .hp3 .assure span::before { content: "·"; margin-right: 14px; color: var(--border-2); }

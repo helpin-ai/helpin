@@ -122,3 +122,22 @@
   .hp3 .ptd-detail-body { padding: 20px; }
   .hp3 .ptd-detail-body h2 { font-size: 22px; }
 }
+
+/* A compact task-to-customer handoff, with an explicit review before sending. */
+.hp3 .pd-top .pd-complete{margin-left:auto;white-space:nowrap}
+.hp3 .pd-playback{display:grid;place-items:center;width:27px;height:27px;flex:none;border:1px solid #cbdcd0;border-radius:50%;background:#f2f7f3;color:#42694e;cursor:pointer}
+.hp3 .pd-playback:focus-visible{outline:2px solid #0f7a50;outline-offset:4px}
+.hp3 .pd-original{margin-top:20px;padding:15px;border:1px solid #dfe8e2;border-radius:8px;background:#fafcfb}
+.hp3 .pd-original>div{display:flex;align-items:center;gap:8px}.hp3 .pd-original img{border-radius:50%}.hp3 .pd-original>div>span{flex:1}.hp3 .pd-original strong{display:block;font-size:11px;font-weight:500}.hp3 .pd-original small{display:block;font-size:9px;color:#5e7567;margin-top:4px}.hp3 .pd-original>div>svg{color:#6c8b77}
+.hp3 .pd-original p{font-size:11px;line-height:1.7;color:#4f6557;margin:11px 0}.hp3 .pd-original>span{display:flex;align-items:center;gap:5px;font-size:9px;color:#52745e}
+.hp3 .project-delivery .pd-reply{margin-top:16px;min-height:190px;transition:opacity .45s,transform .45s,border-color .45s,background .45s}
+.hp3 .pd-reply[data-ready=false]{opacity:.35;transform:translateY(6px)}
+.hp3 .pd-reply[data-sent=true]{border-color:#91b59c;background:#edf6ef}
+.hp3 .pd-reply[data-sent=true]>div>span{color:#28643a}
+.hp3 .pd-guide{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#346c46;margin-top:12px}
+.hp3 .project-delivery .pd-owner{min-height:26px;transition:color .4s}.hp3 .pd-owner[data-approved=true]{color:#296a40}.hp3 .pd-owner>svg{margin-left:auto}
+.hp3 .pd-sent{display:flex;align-items:center;gap:7px;min-height:42px;margin-top:14px;padding:10px 12px;border-radius:6px;font-size:10px;line-height:1.6;background:#f3f6f4;color:#63796b;transition:background .4s,color .4s}
+.hp3 .pd-sent>svg{flex:none}.hp3 .pd-sent[data-sent=true]{background:#e4f2e8;color:#27653b}
+.hp3 .project-delivery[data-playing=false] *{transition:none}
+@media(max-width:400px){.hp3 .pd-top{gap:8px}.hp3 .pd-top .ps-key{font-size:8px}.hp3 .pd-original{padding:12px}.hp3 .project-delivery .pd-reply{min-height:246px}}
+@media(prefers-reduced-motion:reduce){.hp3 .project-delivery *{transition:none!important;animation:none!important}.hp3 .pd-playback{visibility:hidden}}

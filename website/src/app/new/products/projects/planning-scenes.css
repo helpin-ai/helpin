@@ -1,0 +1,72 @@
+/* Sprint and roadmap previews share the Projects charcoal/sage palette. */
+.hp3 .projects-page .projects-planning-grid .project-scene{padding:24px;background:#171b18;border-color:#303a33;color:#e6ece8}
+.hp3 .projects-planning-grid .ps-toolbar{color:#a4afa7;border-bottom:1px solid #303a33;padding-bottom:18px;margin-bottom:22px}
+.hp3 .projects-planning-grid .ps-toolbar button{background:#222d26;border-color:#46574b;color:#c5d8cb}
+.hp3 .projects-planning-grid .ps-toolbar button:focus-visible{outline:2px solid #b8ddbb;outline-offset:4px}
+.hp3 .projects-planning-grid .ps-toolbar-separator{color:#687d6e}
+.hp3 .pp-sprint,.hp3 .pp-roadmap{min-height:521px;font-size:12px}
+.hp3 .pp-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.hp3 .pp-eyebrow{font:9px var(--mono);letter-spacing:.06em;color:#a4afa7}
+.hp3 .pp-heading h3{font:600 22px/1.3 'Helpin Projects UI',sans-serif;color:#e6ece8;letter-spacing:-.02em;margin:5px 0 0}
+.hp3 .pp-status{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border:1px solid #435047;border-radius:5px;background:#29322d;color:#bdcac2;font-size:9px;line-height:1.4;white-space:nowrap;transition:color .35s,background .35s,border-color .35s}
+.hp3 .pp-status>i{width:5px;height:5px;border-radius:50%;background:currentColor}
+.hp3 .pp-status[data-tone=sage]{background:#293b2e;border-color:#465f4d;color:#b5d3bc}
+.hp3 .pp-status[data-tone=amber]{background:#3c3326;border-color:#65543b;color:#dfbc84}
+.hp3 .pp-date{display:flex;align-items:center;gap:6px;font-size:10px;color:#9baa9f;margin-top:9px}
+.hp3 .pp-progress-label{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:#a4afa7;margin-top:24px}
+.hp3 .pp-progress-label strong{font-weight:500;color:#d5e5d9}
+.hp3 .pp-progress{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:12px}
+.hp3 .pp-progress>span{display:grid;place-items:center;height:18px;border-radius:3px;border:1px solid #62533c;background:#3f3628;color:#15271c;transition:background .4s}
+.hp3 .pp-progress>span[data-done=true]{background:#a1bea8;border-color:#a1bea8}
+.hp3 .pp-progress-legend{display:flex;justify-content:space-between;gap:12px;margin:10px 0 18px;font-size:9px;color:#a4afa7}
+.hp3 .pp-progress-legend>span{display:flex;align-items:center;gap:5px}.hp3 .pp-progress-legend i{width:5px;height:5px;border-radius:50%;background:#a1bea8}.hp3 .pp-progress-legend>span:last-child i{background:#caa770}
+.hp3 .pp-transfer{position:relative;height:314px}
+.hp3 .pp-source{position:absolute;inset:0 0 auto;height:108px;border:1px solid #35443a;border-radius:8px;background:#1b231e}
+.hp3 .pp-source-summary{display:flex;align-items:center;gap:10px;height:100%;padding:18px;color:#a5c7ae;transition:opacity .4s ease .5s}
+.hp3 .pp-source-summary strong{display:block;font-size:11px;font-weight:500;color:#d0e0d5}.hp3 .pp-source-summary small{display:block;font-size:10px;margin-top:6px;color:#a4afa7}
+.hp3 .pp-transfer[data-carried=false] .pp-source-summary{opacity:0;transition-delay:0s}
+.hp3 .pp-transfer-path{position:absolute;top:111px;left:0;right:0;height:34px;display:flex;align-items:center;justify-content:center;gap:8px;font-size:9px;color:#a4afa7}
+.hp3 .pp-transfer-path>span:not(.pp-transfer-caption){width:20px;height:1px;background:#43594b}.hp3 .pp-transfer-path>svg{color:#b5d3bc}
+.hp3 .pp-destination{position:absolute;top:146px;left:0;right:0;height:168px;padding:12px 14px;border:1px solid #35443a;border-radius:8px;background:#1b231e;transition:border-color .4s,background .4s}
+.hp3 .pp-transfer[data-carried=true] .pp-destination{border-color:#5c7b64;background:#202c23}
+.hp3 .pp-destination>div{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hp3 .pp-destination h4{font:500 13px 'Helpin Projects UI',sans-serif;color:#e6ece8;letter-spacing:0;margin:0}.hp3 .pp-destination .pp-date{margin-top:5px;font-size:9px}
+.hp3 .pp-carry-tasks{position:absolute;top:12px;left:14px;right:14px;display:grid;gap:8px;transform:translateY(196px);transition:transform .85s cubic-bezier(.22,1,.36,1)}
+.hp3 .pp-transfer[data-carried=false] .pp-carry-tasks{transform:translateY(0)}
+.hp3 .pp-carry-tasks>div{display:flex;align-items:center;gap:8px;height:38px;background:#27332b;border:1px solid #43564a;border-radius:5px;padding:6px 9px;box-shadow:0 3px 9px #0002}
+.hp3 .pp-task-state{width:6px;height:6px;background:#c7a16d;border-radius:50%;flex:none}
+.hp3 .pp-carry-tasks>div>div{display:flex;align-items:center;gap:7px;min-width:0;flex:1}
+.hp3 .pp-carry-tasks small{font:8px var(--mono);color:#9cafa2;flex:none}.hp3 .pp-carry-tasks strong{font-size:10px;font-weight:400;color:#d6e2d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hp3 .pp-carry-tasks img,.hp3 .pp-owner{width:20px;height:20px;flex:none;border-radius:50%}.hp3 .pp-owner{display:grid;place-items:center;background:#876038;color:#f1e6d8;font-size:7px}
+.hp3 .pp-closeout{display:flex;justify-content:center;align-items:center;gap:7px;margin-top:17px;font-size:10px;color:#93a699;min-height:18px;transition:color .4s}
+.hp3 .pp-closeout[data-recorded=true]{color:#b5d3bc}
+.hp3 .pp-objective{display:flex;align-items:center;gap:10px;background:#202b24;border:1px solid #3e5145;border-radius:8px;padding:15px 12px;min-height:74px}
+.hp3 .pp-objective>span:first-child{display:grid;place-items:center;width:32px;height:32px;flex:none;border-radius:7px;background:#314637;color:#b5d3bc}
+.hp3 .pp-objective>div{flex:1;min-width:0}.hp3 .pp-objective small{font:8px var(--mono);letter-spacing:.06em;color:#a4afa7}.hp3 .pp-objective strong{display:block;margin-top:5px;font-size:12px;font-weight:500;line-height:1.5;color:#e1ebe4}
+.hp3 .pp-epic-count{font-size:9px;color:#b5c8bb;white-space:nowrap}
+.hp3 .pp-months{display:grid;grid-template-columns:30fr 31fr 30fr;margin-top:26px;font:9px var(--mono);color:#a4afa7}
+.hp3 .pp-months>span{border-left:1px solid #3a4a40;padding:0 0 10px 8px}
+.hp3 .pp-roadmap-rows{background:linear-gradient(90deg,#3a4a4055 1px,transparent 1px),linear-gradient(90deg,transparent calc(30 / 91 * 100%),#3a4a4055 calc(30 / 91 * 100%),#3a4a4055 calc(30 / 91 * 100% + 1px),transparent calc(30 / 91 * 100% + 1px)),linear-gradient(90deg,transparent calc(61 / 91 * 100%),#3a4a4055 calc(61 / 91 * 100%),#3a4a4055 calc(61 / 91 * 100% + 1px),transparent calc(61 / 91 * 100% + 1px))}
+.hp3 .pp-epic{padding:14px 0 13px;border-top:1px solid #35443a80;transition:background .4s}.hp3 .pp-epic[data-focused=true]{background:#a1bea807}
+.hp3 .pp-epic-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-inline:8px}
+.hp3 .pp-epic-heading>strong{font-size:12px;font-weight:500;color:#d6e2d9}.hp3 .pp-epic-meta{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 8px 0;font-size:9px;color:#9baa9f}.hp3 .pp-epic-meta>span:first-child{display:flex;align-items:center;gap:5px}
+.hp3 .pp-epic-track{position:relative;height:18px;margin-top:12px}
+.hp3 .pp-epic-bar{position:absolute;left:var(--pp-start);width:var(--pp-width);height:18px;color:#94bda0}
+.hp3 .pp-epic-bar[data-tone=amber]{color:#c9a66f}.hp3 .pp-epic-bar[data-tone=neutral]{color:#93a89b}
+.hp3 .pp-epic-bar>span{position:absolute;inset:0;background:color-mix(in srgb,currentColor 32%,#171b18);border:1px solid currentColor;border-radius:4px;transform-origin:left;transition:transform .85s cubic-bezier(.22,1,.36,1),opacity .4s}
+.hp3 .pp-epic[data-drawn=false] .pp-epic-bar>span{transform:scaleX(.02);opacity:.25}
+.hp3 .pp-epic-bar>i{position:absolute;top:6px;width:5px;height:5px;border-radius:50%;background:currentColor;transition:opacity .4s .4s}.hp3 .pp-epic-bar>i:nth-child(2){left:6px}.hp3 .pp-epic-bar>i:last-child{right:6px}.hp3 .pp-epic[data-drawn=false] .pp-epic-bar>i{opacity:0}
+.hp3 .pp-roadmap-focus{display:flex;align-items:center;gap:10px;margin-top:18px;min-height:69px;padding:12px;background:#202a23;border:1px solid #394b3e;border-radius:7px}.hp3 .pp-focus-icon{display:grid;place-items:center;width:30px;height:30px;flex:none;color:#a9c3b1}.hp3 .pp-roadmap-focus strong{font-size:11px;font-weight:500;color:#d6e2d9}.hp3 .pp-roadmap-focus p{font-size:10px;line-height:1.6;color:#a4afa7;margin:5px 0 0}
+.hp3 .pp-roadmap-footer{display:flex;align-items:center;gap:6px;margin-top:17px;font-size:9px;color:#9baa9f}.hp3 .pp-roadmap-footer>span:last-child{margin-left:auto}
+.hp3 .project-scene[data-playing=true] .pp-progress>span[data-done=true]{animation:pp-task-done .5s ease var(--pp-delay) both}
+.hp3 .project-scene[data-playing=true][data-phase="2"] .pp-transfer-path>svg{animation:pp-carry-arrow .85s ease both}
+@keyframes pp-task-done{from{background:#2c3a30;border-color:#43564a;color:transparent}to{background:#a1bea8;border-color:#a1bea8;color:#15271c}}
+@keyframes pp-carry-arrow{0%{transform:translateY(-5px);opacity:.3}100%{transform:none;opacity:1}}
+.hp3 .projects-planning-grid .project-scene[data-playing=false] *{transition:none}
+@media(max-width:1100px) and (min-width:761px){.hp3 .projects-page .projects-planning-grid .project-scene{padding:20px 16px}.hp3 .pp-carry-tasks>div>div{display:grid;gap:2px}.hp3 .pp-epic-count{display:none}.hp3 .pp-objective{padding-inline:10px}.hp3 .pp-objective strong{font-size:11px}}
+@media(max-width:400px){.hp3 .projects-page .projects-planning-grid .project-scene{padding:20px 14px}.hp3 .pp-carry-tasks>div>div{display:grid;gap:2px}.hp3 .pp-carry-tasks>div{padding-inline:6px;gap:5px}.hp3 .pp-carry-tasks small{font-size:7px}.hp3 .pp-carry-tasks strong{font-size:9px}.hp3 .pp-epic-count{display:none}.hp3 .pp-epic-heading>strong{font-size:11px}.hp3 .pp-source-summary{padding:12px;gap:8px}.hp3 .pp-source-summary strong{font-size:10px}.hp3 .pp-source-summary small{font-size:9px}.hp3 .pp-transfer-caption{font-size:8px}.hp3 .pp-transfer-path{gap:5px}.hp3 .pp-transfer-path>span:not(.pp-transfer-caption){width:10px}.hp3 .pp-status{font-size:8px}.hp3 .pp-objective strong{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.hp3 .projects-planning-grid .project-scene *{animation:none!important;transition:none!important}}
+
+.hp3 .pp-owner-jules{background:#635388}
+.hp3 .pp-sprint[data-stage="2"] .pp-carry-tasks{transition:none}
+.hp3 .pp-sprint .pp-closeout{min-height:32px}

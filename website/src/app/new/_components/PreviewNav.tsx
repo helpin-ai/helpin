@@ -11,15 +11,15 @@ const PRODUCTS = [
   { label: 'Customer support', description: 'Answers, handoffs, and a shared inbox.', href: '/new/products/customer-support', icon: MessagesSquare },
   { label: 'Meetings', description: 'Conversations become next steps.', href: '/new/products/meetings', icon: Video },
   { label: 'Projects', description: 'Customer requests connected to work.', href: '/new/products/projects', icon: Kanban },
-  { label: 'CRM', description: 'The history behind every account.', href: '/new/product#crm', icon: Building2 },
+  { label: 'CRM', description: 'The history behind every account.', href: '/new/products/crm', icon: Building2 },
   { label: 'Knowledge', description: 'Answers for customers and agents.', href: '/new/products/knowledge', icon: BookOpen },
   { label: 'Customer records', description: 'One customer. The full picture.', href: '/new#record', icon: Users },
 ];
 const DEVELOPERS = [
-  { label: 'APIs & SDKs', description: 'Connect Helpin to your product.', href: '/new#developers', icon: Braces },
-  { label: 'MCP', description: 'Give AI tools workspace context.', href: `${GITHUB_URL}/blob/develop/docs/public-mcp-server.md`, icon: Plug },
-  { label: 'Webhooks', description: 'Build around workspace events.', href: `${GITHUB_URL}/blob/develop/docs/README.md`, icon: Webhook },
-  { label: 'Helpin CLI', description: 'Set up and manage your instance.', href: `${GITHUB_URL}/blob/develop/community/README.md`, icon: Terminal },
+  { label: 'APIs & SDKs', description: 'Connect Helpin to your product.', href: '/new/developers#sdk', icon: Braces },
+  { label: 'MCP', description: 'Give AI tools workspace context.', href: '/new/developers#mcp', icon: Plug },
+  { label: 'Webhooks', description: 'Build around workspace events.', href: '/new/developers#webhooks', icon: Webhook },
+  { label: 'Helpin CLI', description: 'Set up and manage your instance.', href: '/new/self-hosting#cli', icon: Terminal },
 ];
 type MenuName = 'product' | 'developers';
 
@@ -142,7 +142,7 @@ export function PreviewNav() {
             <button ref={productToggle} className="nav-trigger" aria-expanded={open === 'product'} aria-controls="preview-product-menu" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} onClick={event => { cancelHoverClose(); setOpen(openedByHover.current && event.detail > 0 ? 'product' : open === 'product' ? null : 'product'); openedByHover.current = false; }} onKeyDown={event => openWithKeyboard(event, 'product')}>Product<ChevronDown size={13} /></button>
             <Link className="nav-direct" href="/new/products/ai-agents" onClick={close}>AI Agents</Link>
             <button ref={developerToggle} className="nav-trigger" aria-expanded={open === 'developers'} aria-controls="preview-developers-menu" onClick={() => setOpen(open === 'developers' ? null : 'developers')} onKeyDown={event => openWithKeyboard(event, 'developers')}>Developers<ChevronDown size={13} /></button>
-            <Link className="nav-direct" href="/new#open-source" onClick={close}>Open source</Link>
+            <Link className="nav-direct" href="/new/self-hosting" onClick={close}>Open source</Link>
           </div>
           <div className="navright">
             <a className="gh" href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon /><span>GitHub</span></a>
@@ -173,7 +173,7 @@ export function PreviewNav() {
             <div className="nav-resource-grid">{DEVELOPERS.map(item => <ResourceLink item={item} key={item.label} />)}</div>
             <div className="nav-developer-footer">
               <a href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer"><BookOpen size={15} />Read the docs<ArrowUpRight size={13} /></a>
-              <Link href="/new#open-source"><Server size={15} />Self-host Helpin<ArrowRight size={13} /></Link>
+              <Link href="/new/self-hosting"><Server size={15} />Self-host Helpin<ArrowRight size={13} /></Link>
             </div>
           </div>
         </div>
@@ -184,8 +184,8 @@ export function PreviewNav() {
           <div className="nav-mobile-products">{PRODUCTS.map(item => <ResourceLink item={item} key={item.label} />)}</div>
           <Link className="nav-mobile-overview" href="/new/product">Explore the platform<ArrowRight size={14} /></Link>
           <div className="nav-mobile-resources">
-            <Link href="/new#developers"><Braces size={17} />Developers<ArrowRight size={13} /></Link>
-            <Link href="/new#open-source"><Server size={17} />Open source & self-hosting<ArrowRight size={13} /></Link>
+            <Link href="/new/developers"><Braces size={17} />Developers<ArrowRight size={13} /></Link>
+            <Link href="/new/self-hosting"><Server size={17} />Open source & self-hosting<ArrowRight size={13} /></Link>
             <a href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer"><BookOpen size={17} />Documentation<ArrowUpRight size={13} /></a>
           </div>
           <div className="nav-mobile-bottom"><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon size={17} />View on GitHub</a><a href="https://app.helpin.ai">Sign in<ArrowRight size={14} /></a></div>
