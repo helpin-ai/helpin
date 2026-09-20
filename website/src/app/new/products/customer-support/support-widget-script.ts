@@ -21,12 +21,12 @@ export const DEMO_CONFIG: WidgetConfig = {
 };
 
 const SCRIPT: Omit<Message, 'conversationId' | 'isInternal' | 'createdAt'>[] = [
-  { id: 'question', role: 'customer', content: 'Can we pilot Okta with just our admins?' },
-  { id: 'answer', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'Yes. Start with an admin-only group, following the Okta setup guide.', aiReplyKind: 'answer', sources: [{ docId: 'okta-guide', title: 'Okta setup guide', snippet: 'Start your pilot with an admin-only group.', confidence: 1, language: 'en' }] },
-  { id: 'followup', role: 'customer', content: 'Thanks! The group mapping gives our admins the wrong role. Can you check?' },
-  { id: 'handoff', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'I’m passing that to Sam with your pilot details, so you won’t need to explain it again.' },
+  { id: 'question', role: 'customer', content: 'How do I export just the contacts I selected?' },
+  { id: 'answer', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'Select your contacts, then choose Export → Selected contacts.', aiReplyKind: 'answer', sources: [{ docId: 'export-guide', title: 'Export your contacts', snippet: 'Select contacts, then choose Export → Selected contacts.', confidence: 1, language: 'en' }] },
+  { id: 'followup', role: 'customer', content: 'It stops at 10,000 rows. We need all 18,400 for our report.' },
+  { id: 'handoff', role: 'ai', senderAvatar: '/brand/helpin-icon-ink.svg', content: 'I’m passing this to Sam with your export details, so you won’t need to explain it again.' },
   { id: 'joined', role: 'system', content: 'Sam Rivera joined the conversation', systemEventType: 'teammate_joined', senderName: 'Sam Rivera', senderAvatar: '/new/avatars/sam.webp' },
-  { id: 'teammate', role: 'agent', content: 'Hi Maya. I’ve linked this to our SSO project. I’ll follow up here after engineering checks the role mapping.', senderName: 'Sam Rivera', senderAvatar: '/new/avatars/sam.webp' },
+  { id: 'teammate', role: 'agent', content: 'Hi Maya. I’ve linked your report to EXP-142. I’ll update you here after engineering investigates.', senderName: 'Sam Rivera', senderAvatar: '/new/avatars/sam.webp' },
 ];
 
 export const DEMO_MESSAGES: Message[] = SCRIPT.map(message => ({

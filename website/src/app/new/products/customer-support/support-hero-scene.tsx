@@ -28,12 +28,12 @@ export function SupportHeroScene() {
     connectionStatus: 'connected',
     messages: frame.messages,
     isAIThinking: frame.isAIThinking,
-    aiProgressLabel: elapsed < 6100 ? 'Checking the setup guide…' : 'Gathering the context…',
+    aiProgressLabel: elapsed < 6100 ? 'Checking the export guide…' : 'Gathering the context…',
     isTyping: frame.isTyping,
     typingAgentName: 'Sam',
     typingAgentAvatar: '/new/avatars/sam.webp',
     activeTeammate: frame.handedOff ? { userId: 'sam-demo', name: 'Sam Rivera', avatarUrl: '/new/avatars/sam.webp', status: 'online' } : undefined,
-    activeConversation: { id: 'website-demo', subject: 'Okta admin pilot', status: 'open', flowState: frame.handedOff ? 'assigned_to_human' : 'ai_handling' },
+    activeConversation: { id: 'website-demo', subject: 'CSV export stops early', status: 'open', flowState: frame.handedOff ? 'assigned_to_human' : 'ai_handling' },
     contactCaptureCompleted: true,
   };
   const currentOptions = useRef(options);
@@ -95,10 +95,10 @@ export function SupportHeroScene() {
 
   return <div className="support-hero-art support-widget-art" ref={container} data-playing={active} data-stage={frame.stage}>
     <div className="support-hero-art-label"><span>FROM THE CUSTOMER’S SIDE</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} support widget animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}</button></div>
-    <div className="support-widget-shell" role="img" aria-label="Illustrative OrbitDesk chat: Maya asks about an Okta admin pilot. Helpin AI answers from the setup guide. Maya reports incorrect roles. Helpin passes the context to Sam, who links the issue to the SSO project and will follow up after engineering investigates.">
+    <div className="support-widget-shell" role="img" aria-label="Illustrative OrbitDesk chat: Maya asks how to export selected contacts. Helpin AI answers from the export guide. Maya reports that the export stops at 10,000 rows. Helpin passes the context to Sam, who links the report to EXP-142 and will follow up after engineering investigates.">
       <div className="support-widget-workspace" aria-hidden="true"><span className="support-workspace-logo">O</span><strong>OrbitDesk</strong><span>Customer support</span></div>
       <div className="support-widget-viewport" data-ready={ready}>
-        <div className="support-widget-fallback" aria-hidden="true"><div className="support-widget-fallback-header"><img src="/brand/helpin-icon-ink.svg" width={24} height={24} alt="" /><strong>Helpin AI <small>OrbitDesk support</small></strong></div><div className="support-widget-transcript">{DEMO_MESSAGES.map(message => <div key={message.id} className={`support-widget-fallback-message support-widget-fallback-${message.role}`}><span>{message.role === 'customer' ? 'Maya Chen' : message.senderName || 'Helpin AI'}</span><p>{message.content}</p>{message.sources && <small>Source: Okta setup guide</small>}</div>)}</div></div>
+        <div className="support-widget-fallback" aria-hidden="true"><div className="support-widget-fallback-header"><img src="/brand/helpin-icon-ink.svg" width={24} height={24} alt="" /><strong>Helpin AI <small>OrbitDesk support</small></strong></div><div className="support-widget-transcript">{DEMO_MESSAGES.map(message => <div key={message.id} className={`support-widget-fallback-message support-widget-fallback-${message.role}`}><span>{message.role === 'customer' ? 'Maya Chen' : message.senderName || 'Helpin AI'}</span><p>{message.content}</p>{message.sources && <small>Source: {message.sources.map(source => source.title).join(', ')}</small>}</div>)}</div></div>
         <div className="support-widget-mount" ref={mount} inert aria-hidden="true" />
       </div>
     </div>

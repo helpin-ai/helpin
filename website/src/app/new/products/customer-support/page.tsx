@@ -6,6 +6,7 @@ import { PreviewFooter } from '../../_components/PreviewFooter';
 import { SectionHead, SIGNUP_URL, GITHUB_URL } from '../../_components/ui';
 import { SupportScene } from './support-scene';
 import { SupportControls } from './support-controls';
+import { SupportKnowledge } from './support-knowledge';
 import { SupportInboxFeatures } from './support-inbox-features';
 import { SupportInboxShowcase } from './support-inbox-showcase';
 import { SupportHeroScene } from './support-hero-scene';
@@ -34,6 +35,7 @@ const FAQS = [
   ['Can we keep our existing support email address?', 'Yes. Set up forwarding from your existing address to the Helpin forwarding address for your shared or team inbox, then verify it with a test email. To reply from your own domain, configure and verify a sender address as well.'],
   ['How do routing and assignment work?', 'Routing rules can match message content or sender details and direct conversations to a team inbox. AI triage can suggest a destination; automatic moves can be enabled in your settings. Team inboxes support manual assignment, with round-robin assignment available on eligible plans.'],
   ['Can we organize the inbox around our own workflow?', 'Yes. Create conversation tags and combine filters such as owner, status, and tags into saved views. Keep views personal or share them with the team.'],
+  ['Where do AI answers come from?', 'Choose the docs, website pages, and uploaded files available to your agents. Coverage gaps help your team identify missing knowledge and review suggested articles or updates before publishing.'],
   ['Can agents reply directly to customers?', 'Yes. Enable AI-first replies for your support inbox to let the configured agent respond to customers. You can also use internal AI assistance or turn automatic replies off. Your team can review and edit drafts before sending.'],
   ['What happens when a customer needs a person?', 'Helpin can hand the conversation over to your team. The customer’s messages, AI replies, and handoff notes stay in the thread so your team can continue with the context in view.'],
   ['How does support connect to product work?', 'In the full workspace, you can create tasks from a conversation and link customer requests to projects. That gives the team doing the work the original customer context, and helps support see who needs a follow-up.'],
@@ -64,7 +66,7 @@ export default function CustomerSupportPage() {
         </div>
       </section>
 
-      <nav className="support-page-nav" aria-label="On this page"><div className="wrap"><span>Customer Support</span><a href="#support-inbox">Shared inbox</a><a href="#support-operations">Inbox tools</a><a href="#support-workflow">AI & teamwork</a><a href="#support-connected">Connected work</a><a href="#support-controls">Controls</a><a href="#support-faq">FAQs</a></div></nav>
+      <nav className="support-page-nav" aria-label="On this page"><div className="wrap"><span>Customer Support</span><a href="#support-inbox">Shared inbox</a><a href="#support-operations">Inbox tools</a><a href="#support-knowledge">Knowledge</a><a href="#support-workflow">AI & teamwork</a><a href="#support-connected">Connected work</a><a href="#support-controls">Controls</a><a href="#support-faq">FAQs</a></div></nav>
 
       <section id="support-inbox" className="support-inbox-section">
         <div className="wrap">
@@ -79,6 +81,13 @@ export default function CustomerSupportPage() {
           <SupportInboxFeatures />
           <h3 className="support-tools-heading">The details that make teamwork work.</h3>
           <div className="support-features support-operation-tools">{FEATURES.map(({ icon: Icon, title, copy }) => <article key={title}><Icon size={23} strokeWidth={1.5} aria-hidden="true" /><h3>{title}</h3><p>{copy}</p></article>)}</div>
+        </div>
+      </section>
+
+      <section id="support-knowledge" className="support-knowledge-section">
+        <div className="wrap support-knowledge-grid">
+          <SectionHead eyebrow="Knowledge that gets better" title="Better answers start with what your team knows." lede="Connect your docs, website, and files. Find questions your knowledge doesn’t cover, then review suggested articles and updates." />
+          <SupportKnowledge />
         </div>
       </section>
 
