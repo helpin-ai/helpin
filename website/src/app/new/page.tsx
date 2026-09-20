@@ -1,5 +1,6 @@
 import { Braces, BrainCircuit, Cloud, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
 import { PreviewNav } from './_components/PreviewNav';
+import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { GridFlow } from './_components/GridFlow';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
@@ -256,8 +257,9 @@ export default function NewHomePage() {
       </section>
 
       {/* 13 Final CTA */}
-      <section className="final-cta" aria-labelledby="final-cta-title">
+      <section className="final-cta final-cta-connected" aria-labelledby="final-cta-title">
         <div className="wrap">
+          <ConnectedWorkspace />
           <div className="final">
             <span className="eyebrow">Close the loop</span>
             <h2 id="final-cta-title">Every conversation has a next step.<br />Take it with Helpin.</h2>
