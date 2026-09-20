@@ -140,7 +140,7 @@ export function PreviewNav() {
           <Link href="/new" className="logo" aria-label="Helpin homepage" onClick={close}><HelpinBrand /></Link>
           <div className="navlinks">
             <button ref={productToggle} className="nav-trigger" aria-expanded={open === 'product'} aria-controls="preview-product-menu" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} onClick={event => { cancelHoverClose(); setOpen(openedByHover.current && event.detail > 0 ? 'product' : open === 'product' ? null : 'product'); openedByHover.current = false; }} onKeyDown={event => openWithKeyboard(event, 'product')}>Product<ChevronDown size={13} /></button>
-            <Link className="nav-direct" href="/new/products/ai-agents" onClick={close}>Ask Agent</Link>
+            <Link className="nav-direct" href="/new/products/ai-agents" onClick={close}>AI Agents</Link>
             <button ref={developerToggle} className="nav-trigger" aria-expanded={open === 'developers'} aria-controls="preview-developers-menu" onClick={() => setOpen(open === 'developers' ? null : 'developers')} onKeyDown={event => openWithKeyboard(event, 'developers')}>Developers<ChevronDown size={13} /></button>
             <Link className="nav-direct" href="/new#open-source" onClick={close}>Open source</Link>
           </div>
@@ -158,7 +158,7 @@ export function PreviewNav() {
             <div className="nav-resource-grid">{PRODUCTS.map(item => <ResourceLink item={item} key={item.label} />)}</div>
             <Link className="nav-panel-footer" href="/new/product">Explore the platform<ArrowRight size={14} /></Link>
           </div>
-          <Link href="/new/products/ai-agents" className="nav-agent-feature">
+          <Link href="/new/products/ai-agents#agent-ask" className="nav-agent-feature">
             <span className="nav-feature-mark"><Bot size={25} strokeWidth={1.5} /></span>
             <span className="nav-section-label">Meet Ask Agent</span>
             <strong>Ask a question.<br />Hand off the work.</strong>
@@ -179,7 +179,7 @@ export function PreviewNav() {
         </div>
 
         <div id="preview-mobile-menu" className="nav-mobile-panel" hidden={!mobileOpen} onClick={event => { if ((event.target as HTMLElement).closest('a')) close(); }}>
-          <Link className="nav-mobile-agent" href="/new/products/ai-agents"><Bot size={21} /><span><b>Ask Agent</b><small>Ask a question. Hand off the work.</small></span><ArrowRight size={17} /></Link>
+          <Link className="nav-mobile-agent" href="/new/products/ai-agents"><Bot size={21} /><span><b>AI Agents</b><small>Meet the agents behind the work.</small></span><ArrowRight size={17} /></Link>
           <p className="nav-section-label">Product</p>
           <div className="nav-mobile-products">{PRODUCTS.map(item => <ResourceLink item={item} key={item.label} />)}</div>
           <Link className="nav-mobile-overview" href="/new/product">Explore the platform<ArrowRight size={14} /></Link>

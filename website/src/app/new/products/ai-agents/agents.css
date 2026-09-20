@@ -191,3 +191,51 @@
   .hp3 .awa-toolbar button { visibility: hidden; }
   .hp3 .agents-faqs summary svg { transition: none; }
 }
+/* The agent lineup leads the page; Ask Agent explains how their work connects. */
+.hp3 .agents-hero-roster { display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 12px; margin: 56px auto 4px; }
+.hp3 .agents-hero-roster a { display: flex; flex-direction: column; align-items: center; gap: 7px; text-align: center; padding: 18px 6px; border: 1px solid #45664f; border-radius: 12px; background: #ffffff06; transition: background .2s, border-color .2s; }
+.hp3 .agents-hero-roster a:hover { background: #ffffff0d; border-color: #82ad8b; }
+.hp3 .agents-hero-roster img { background: #f4f8f3; border-radius: 13px; }
+.hp3 .agents-hero-roster a > span { font-size: 13px; font-weight: 500; }
+.hp3 .agents-hero-roster small { font-size: 10px; line-height: 1.4; color: #b3cbbc; }
+.hp3 .agents-directory .sec-head, .hp3 .agents-ask-section .sec-head { text-align: center; margin-inline: auto; }
+.hp3 .agents-directory-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 18px; }
+.hp3 .agents-directory-grid article { display: flex; flex-direction: column; padding: 25px 22px 22px; background: #fff; border: 1px solid #dee7e0; border-radius: 12px; scroll-margin-top: 100px; }
+.hp3 .agents-directory-grid article:target { border-color: #87b698; box-shadow: 0 0 0 3px #e7f4ed; }
+.hp3 .agents-directory-persona { display: flex; gap: 12px; align-items: center; margin-bottom: 21px; }
+.hp3 .agents-directory-persona img { background: #f6f8f6; border: 1px solid #e8eee9; border-radius: 14px; }
+.hp3 .agents-directory-persona span { font-size: 14px; color: #5c7364; }
+.hp3 .agents-directory-grid h3 { font-size: 19px; line-height: 1.3; text-wrap: initial; }
+.hp3 .agents-directory-grid article > p { color: var(--t2); font-size: 13px; line-height: 1.8; margin: 12px 0 24px; }
+.hp3 .agents-directory-outcome { margin-top: auto; border-top: 1px solid #e6ece7; padding-top: 15px; font-size: 11px; line-height: 1.6; color: #52745e; }
+.hp3 .agents-custom-strip { display: flex; align-items: center; gap: 18px; padding: 26px 30px; margin-top: 24px; background: #f2f7f3; border: 1px solid #dfe9e1; border-radius: 12px; }
+.hp3 .agents-custom-strip > svg { color: #527c61; flex: none; }
+.hp3 .agents-custom-strip h3 { font-size: 18px; }
+.hp3 .agents-custom-strip p { font-size: 13px; color: #667b6c; margin-top: 5px; }
+.hp3 .agents-custom-strip a { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: auto; font-size: 13px; color: #216b43; font-weight: 500; }
+.hp3 .agents-directory-availability { font-size: 12px; line-height: 1.8; color: #6a7c70; max-width: 740px; text-align: center; margin: 24px auto 0; }
+.hp3 .agents-ask-section { background: #f6f8f7; }
+.hp3 .agents-ask-section .agents-product-image { margin-top: 0; border-color: #d9e5dd; background: #e9f0eb; box-shadow: 0 20px 60px #1c392510; }
+.hp3 .agents-ask-caption { font-size: 12px; text-align: center; margin: 20px auto 0; color: #5c7364; }
+.hp3 .agents-workflows { background: #fff; }
+.hp3 .awa-parallel img { border-radius: 7px; }
+@media (max-width: 1100px) {
+  .hp3 .agents-hero-roster { grid-template-columns: repeat(4,minmax(0,1fr)); max-width: 780px; }
+  .hp3 .agents-directory-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 700px) {
+  .hp3 .agents-custom-strip { flex-wrap: wrap; padding: 24px; gap: 12px; }
+  .hp3 .agents-custom-strip > svg { display: none; }
+  .hp3 .agents-custom-strip a { margin-left: 0; }
+}
+@media (max-width: 600px) {
+  .hp3 .agents-directory-grid { grid-template-columns: 1fr; }
+  .hp3 .agents-directory-grid article { padding: 24px; }
+  .hp3 .agents-directory-persona { margin-bottom: 16px; }
+  .hp3 .agents-hero-roster { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 38px; }
+  .hp3 .agents-hero-roster a { display: grid; grid-template-columns: 36px 1fr; gap: 4px 10px; padding: 12px; text-align: left; }
+  .hp3 .agents-hero-roster img { width: 36px; height: 36px; grid-row: span 2; border-radius: 9px; }
+  .hp3 .agents-hero-roster a > span { align-self: end; font-size: 12px; }
+  .hp3 .agents-hero-roster small { align-self: start; font-size: 9px; }
+}
+@media (prefers-reduced-motion: reduce) { .hp3 .agents-hero-roster a { transition: none; } }

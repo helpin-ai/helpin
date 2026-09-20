@@ -10,7 +10,7 @@ const LABELS: Record<Variant, string> = {
 };
 const DESCRIPTIONS: Record<Variant, string> = {
   context: 'Illustrative OrbitDesk workflow: a conversation, export guide, and linked task establish that Maya’s export stops at 10,000 of 18,400 rows. EXP-142 is awaiting review.',
-  coordination: 'Illustrative agent plan: review Maya’s export issue, run repository investigation and knowledge review in parallel, then combine both findings into a fix plan.',
+  coordination: 'Illustrative agent plan: review Maya’s export issue, run Forge’s repository investigation and Quill’s knowledge review in parallel, then combine both findings into a fix plan.',
   tools: 'Illustrative external MCP connection: issue lookup and issue search are selected for the agent. Issue editing is not selected. Ask Agent retrieves EXP-142’s review status.',
   coding: 'Illustrative coding workflow: EXP-142 links Maya’s report to a proposed pagination fix and a regression test. The changes are ready for Sam to review and have not been merged.',
   approval: 'Illustrative approval checkpoint: an agent requests approval to create a task for the incomplete CSV export. Sam approves the request, allowing the agent to continue.',
@@ -36,8 +36,8 @@ function Coordination() {
     <div className="awa-branch" aria-hidden="true" />
     <span className="awa-parallel-label">IN PARALLEL</span>
     <div className="awa-parallel">
-      <Step at={.7}><Code2 size={20} /><strong>Engineering</strong><span>Inspect pagination</span><small><Check size={12} />Finding ready</small></Step>
-      <Step at={.7}><BookOpen size={20} /><strong>Knowledge</strong><span>Review export docs</span><small><Check size={12} />Finding ready</small></Step>
+      <Step at={.7}><img src="/new/agents/forge.svg" width={28} height={28} alt="" /><strong>Forge</strong><span>Inspect pagination</span><small><Check size={12} />Finding ready</small></Step>
+      <Step at={.7}><img src="/new/agents/quill.svg" width={28} height={28} alt="" /><strong>Quill</strong><span>Review export docs</span><small><Check size={12} />Finding ready</small></Step>
     </div>
     <div className="awa-merge" aria-hidden="true" />
     <Step at={2.8} className="awa-plan-result"><AgentMark /><div><strong>One plan, both findings</strong><p>Fix pagination. Add a regression test. Review the troubleshooting guide.</p></div></Step>
@@ -73,7 +73,7 @@ export function AgentWorkflowArt({ variant }: { variant: Variant }) {
   const { container, playing, cycle } = useBentoPlayback(10000);
   const [paused, setPaused] = useState(false);
   return <div ref={container} className={`awa-art awa-${variant}`} data-playing={playing && !paused}>
-    <div className="awa-toolbar"><span><span className="awa-workspace-mark">O</span>OrbitDesk<span className="awa-toolbar-slash">/</span>{variant === 'coding' ? 'Code Builder' : 'Ask Agent'}</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} ${LABELS[variant]} animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}</button></div>
+    <div className="awa-toolbar"><span><span className="awa-workspace-mark">O</span>OrbitDesk<span className="awa-toolbar-slash">/</span>{variant === 'coding' ? 'Forge · Code Builder' : 'Ask Agent'}</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} ${LABELS[variant]} animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}</button></div>
     <div className="awa-scene" key={cycle} role="img" aria-label={DESCRIPTIONS[variant]}><div aria-hidden="true">{variant === 'context' ? <Context /> : variant === 'coordination' ? <Coordination /> : variant === 'tools' ? <Tools /> : variant === 'coding' ? <Coding /> : <Approval />}</div></div>
   </div>;
 }
