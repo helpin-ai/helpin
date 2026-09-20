@@ -1,0 +1,40 @@
+Use case: ui-mockup / compositing. Native 3840x2160, sharp 4K product screenshot for Helpin Projects.
+Input 1 is the actual Helpin dark task board. Preserve its full-width board structure, neutral charcoal surfaces, task card styling, compact typography, left rail and navigation.
+Input 2 is the actual floating Ask Agent window. Use its warm dark surface, Helpin robot mark, header controls and black message composer. Replace all original workspace and chat data with the fictional content below.
+
+CRITICAL COMPOSITION CHANGE: The TASK BOARD is the main image and extends across the entire application width behind the overlay. Do not divide the screen into a left board and a right assistant column. No docked assistant, no full-height assistant, no permanent vertical split. Add ONE compact FLOATING Ask Agent conversation window over the lower-right area of the board, like a tool opened on top of the app. The window should occupy about 40% of the image width and 40% of its height, inset from the right and bottom by 70px, with a fine warm gray border, 24px native-pixel corner radius and a soft realistic black shadow. The board must remain clearly visible above, left of, and around the floating window. The overlay has ONLY a conversation area, header, and composer: no chat-history sidebar. This is a compact marketing crop of the real Ask Agent conversation, not a new app design. Do not show more than one agent window. Do not add an outside browser/device frame or marketing copy.
+
+Full application background #161616, sidebar #191919, cards #232323, subtle borders #353535, text #e8e7e3, muted text #a4a4a0. The floating Ask Agent uses warm charcoal #24231f and composer #111110 as in the second reference. No green tint on dark surfaces, no neon or gradients. Semantic column accents gray, indigo, orange, purple. Retain exact typography feel of the screenshots. Text should be compact yet legible at marketing image size.
+
+OrbitDesk workspace in the upper-left, with green square white O monogram. Preserve recognizable Helpin app shell. Compact rail: Projects selected, Support, Docs, CRM, Automation, Settings, profile avatar at bottom. Project navigation: My Work, Objectives, Roadmap, Reports; Engineering expanded with Tasks selected, Epics, Sprints. Bottom Search OrbitDesk. No notification count badges or setup progress metrics.
+Board header: Tasks (Engineering), white Add task button. Tabs: Views, Everything, Owned by me, Requested by me. Filters and small team avatars. Board stretches right to the image edge, even behind the floating widget.
+
+Four equally sized board columns, starting just to the right of the sidebar and extending to the right edge. Columns have a thin semantic-colored top line. Two task cards each, with the same restrained compact style as reference. Task titles at the TOP of each card so they stay visible above the floating overlay. Cards need generous horizontal room and moderate height, not skinny towers. Put first row roughly y=520 to 850 and second row y=910 to 1240. Floating widget begins roughly y=1190 and extends to y=2090; slight overlap over lower card metadata is fine, but do not obscure any task title or the four column labels. Preserve open board space below rather than fill it with invented rows.
+
+Exact columns and cards:
+Backlog, count 2, estimate total 3 (gray)
+ORB-501 Add a workspace activity digest; Feature, Medium; 2 pts; Sam Rivera.
+ORB-502 Fix timezone in scheduled reports; Bug, Low; 1 pt; Jules Park.
+Ready, count 2, estimate total 5 (indigo)
+ORB-491 Add Slack alerts for failed syncs; Feature, High; 3 pts; Sam Rivera.
+ORB-493 Add recurring task templates; Feature, Medium; 2 pts; Jules Park.
+In Progress, count 2, estimate total 5 (orange)
+ORB-494 Fix duplicate webhook delivery; Bug, High; 3 pts; Alex Morgan.
+ORB-498 Add API retry limits; Feature, Medium; 2 pts; Alex Morgan.
+In Review, count 2, estimate total 3 (purple)
+ORB-492 Fix missing rows in CSV exports; Bug, High; 2 pts; Sam Rivera.
+ORB-495 Keep saved filters after refresh; Bug, Medium; 1 pt; Jules Park.
+Compact card metadata: short priority icon, points, consistent small avatars. Sprint 24 label on Ready, In Progress, In Review cards. No dates needed. No completed badge. Preserve task IDs and spelling. Do not show real names/content from the source screenshots.
+
+FLOATING ASK AGENT window, warm charcoal, crisp and clean:
+Header with the actual white Helpin robot icon, 'Ask Agent', subdued 'Sprint 24', minimal expand and close controls at right. Under header small user line with Sam avatar: 'What needs our attention this sprint?'
+Assistant byline: Helpin AI, using the actual robot icon, not a sparkle.
+Concise answer with good line spacing and plain text:
+'Alex is working on webhook delivery and API retries. Sam’s export fix and Jules’s filter fix are ready for review.'
+Second paragraph:
+'Next: review ORB-492 and ORB-495. Then confirm when Sam can start Maya’s Slack alert request, ORB-491.'
+Task keys may be understated inline links. The summary must reflect the actual visible cards.
+Small muted 'Summary only · No tasks changed'.
+Bottom black composer 'Message agent…', paperclip, small send arrow. All widget text must fit, no clipped buttons, no huge empty panel. No history pane. No glowing effect. The compact floating widget is visibly sitting OVER the full board, with breathing room on right and bottom, not replacing any board column.
+
+Output only the final 4K image. Generated fictional OrbitDesk demonstration. No watermark, no outside captions, no changed task statuses or claims of sent messages. Preserve real Helpin dark visual language. The board is the protagonist; the smaller floating Ask Agent window is a supporting layer.
