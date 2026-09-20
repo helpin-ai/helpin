@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, ChevronRight, Inbox, Mail, MessageSquare, Clock3, Languages, Paperclip, Search, ShieldCheck, SlidersHorizontal, Sparkles, Users, Wrench, Zap } from 'lucide-react';
+import { ArrowRight, ChevronRight, Inbox, MessageSquare, Clock3, Languages, Paperclip, Search, ShieldCheck, SlidersHorizontal, Sparkles, Users, Wrench, Zap } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
 import { SectionHead, SIGNUP_URL, GITHUB_URL } from '../../_components/ui';
@@ -94,14 +94,10 @@ export default function CustomerSupportPage() {
 
       <section id="support-connected" className="support-connected-section">
         <div className="wrap support-connected-grid">
-          <div><SectionHead eyebrow="Beyond the inbox" title="When the answer needs a fix, keep it moving." lede="Turn bugs and feature requests into linked tasks and projects. Engineering gets the original conversation. Support can see the work and prepare an update for the customers waiting on it." /><Link className="btn-link" href="/new/product#projects">Explore connected projects <ArrowRight size={16} aria-hidden="true" /></Link></div>
-          <div className="support-work-card">
-            <div className="support-work-card-top"><span className="support-work-id">SSO / 142</span><span className="support-work-status"><span className="support-live-dot" /> In progress</span></div>
-            <h3>Investigate incorrect Okta group roles</h3><p>Check why Northstar’s admin group receives the wrong role before the wider rollout.</p>
-            <div className="support-work-owner"><img src="/new/avatars/sam.webp" width={26} height={26} alt="" /><span>Sam Rivera</span><span>SSO Enterprise Readiness</span></div>
-            <div className="support-work-request"><span className="support-step-number">ORIGINAL CUSTOMER REQUEST</span><p>“The group mapping gives our admins the wrong role.”</p><span>Maya Chen · Northstar Labs</span></div>
-            <div className="support-work-bottom"><Mail size={16} aria-hidden="true" /><span>The customer is still part of the story.</span></div>
-          </div>
+          <div><SectionHead eyebrow="Beyond the inbox" title="When the answer needs a fix, keep it moving." lede="Discuss the issue with Ask Agent, create a linked task, and bring in a coding agent to prepare a fix. Assign it to your team for review, with the customer conversation attached." /><Link className="btn-link" href="/new#ask-agent">Explore Ask Agent <ArrowRight size={16} aria-hidden="true" /></Link></div>
+          <figure className="support-connected-visual">
+            <img src="/new/support/ask-agent-support-sep20-1920.webp" srcSet="/new/support/ask-agent-support-sep20-960.webp 960w, /new/support/ask-agent-support-sep20-1440.webp 1440w, /new/support/ask-agent-support-sep20-1920.webp 1920w, /new/support/ask-agent-support-sep20-3840.webp 3840w" sizes="(max-width: 1000px) calc(100vw - 48px), (max-width: 1240px) 62vw, 763px" width={3840} height={2160} alt="Illustrative OrbitDesk inbox with Ask Agent open over Maya’s CSV export conversation. Ask Agent reviews the issue, creates EXP-142, coordinates a coding agent’s pagination fix and regression test, and assigns Sam Rivera to review the proposed change. The fix is not merged." loading="lazy" decoding="async" />
+          </figure>
         </div>
       </section>
 

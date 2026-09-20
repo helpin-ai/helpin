@@ -1,0 +1,25 @@
+Use case: ui-mockup / precise-object-edit.
+Asset: a polished marketing product image for Helpin's customer support page, placed to the right of the heading 'When the answer needs a fix, keep it moving.'
+INPUT ROLES: Image 1 is the genuine Ask Agent overlay layout reference. Image 2 is the approved fictional OrbitDesk inbox and typography/identity reference. Use Image 2's fictional data, not ANY original names, domains, messages or identities from Image 1.
+Produce a native 3840 x 2160 landscape image. Preserve Helpin's actual interface style: Inter font, normal regular body weights, crisp thin borders, white and near-white UI surfaces, dark text, restrained forest-green accents, small Lucide-style icons, actual Helpin mark when visible in the references. No browser chrome, no marketing text outside the UI, no perspective, no device mockup, no dark neon styling.
+COMPOSITION: a restrained layered product composition on a very pale sage-white background (#f5f8f6). Show an OrbitDesk support inbox behind, occupying the upper-left and most of the frame; it should preserve the four-column structure from Image 2, but may be subordinate and slightly smaller. Overlay a large, prominent Ask Agent conversation panel on the right, beginning about 42% across the full canvas, near the top, ending near the bottom. Panel should occupy about 56% of the canvas width and 90% of its height. Use a clean 18px-equivalent corner radius, a thin gray-green outline, and a soft realistic shadow separating it from the support screen. The support inbox and Maya's CSV export conversation should remain recognizable to the left. The Ask Agent overlay is the primary readable focal point. Use concise content and comfortably sized type, not a dense wall of text.
+IDENTITY: Workspace OrbitDesk with a green square O mark. Customer Maya Chen of Northstar Labs, maya@northstar.example. Teammate Sam Rivera. No actual customer data, ContentStudio, original customer messages or private URLs. Keep font shapes and proportions consistent with the provided UI.
+BACKGROUND INBOX: selected conversation '#142 — CSV export stops early'. Maya: 'Our CSV export stops at 10,000 rows. We need all 18,400 rows for our monthly report.' Tags Bug and Exports. Technical Support inbox. The reply composer and Ask Agent control may remain visible to the left of the overlay. Use the same fictional list names as Image 2.
+ASK AGENT OVERLAY: actual Helpin icon on forest-green square, header 'Ask Agent', secondary line 'Support · CSV export stops early', small standard collapse/close icons. Maintain the reference's chat/assistant panel character, not a generic dashboard.
+At the top of the conversation, a light neutral user message:
+'Investigate Maya’s export issue. Create a task, have a coding agent prepare a fix, and assign it to Sam for review.'
+Then Helpin AI assistant response with readable, structured progress and small icons, not oversized boxes:
+'Here’s what I’ve done.'
+1. 'Reviewed the conversation'
+   'The export stops at 10,000 rows with filters applied.'
+2. 'Created EXP-142'
+   'Fix incomplete CSV exports'
+   A small link pill 'Maya’s conversation attached'
+3. 'Coding agent prepared a fix'
+   'Updated pagination and added a regression test.'
+   Small code-change summary '+ export all filtered rows' with a quiet green accent. No large code editor.
+4. 'Assigned to Sam Rivera'
+   'Ready for review · Not merged'
+Use small green completed checks for preparation steps. Mark the resulting fix as awaiting human review, never as merged, deployed, or shipped. A short concluding sentence: 'The task and proposed fix are linked to Maya’s conversation.'
+At the bottom keep the actual Ask Agent composer design: context chip 'CSV export stops early', subtle '+ Add context', placeholder 'Ask a follow-up…', attach icon and send arrow. It should look like an authentic support-side Ask Agent conversation with a useful result.
+Spacing should feel meticulously designed. The foreground panel's text must remain legible when this 4K image is rendered at about 750px width on a website. Favor the short exact labels above over incidental detail. Do not add fake performance metrics, timestamps promising speed, unnecessary badges, or marketing annotations.
