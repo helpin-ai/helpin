@@ -163,3 +163,39 @@
 .hp3 .developers-page .event-workflow .event-timeline>.platform-step>span{background:#1c3023;border-color:#3c5c46;color:#a1dcb1}
 .hp3 .developers-page .event-workflow .event-timeline strong{color:#dcebe1}
 .hp3 .developers-page .event-workflow .event-timeline small{color:#afc3b6}
+/* A green resource section pairs each developer interface with its outcome. */
+.hp3 .platform-page section.developer-resources-green{background:#e4efe3;border-block:1px solid #d4e3d3}
+.hp3 .developer-resources-intro{display:grid;grid-template-columns:.88fr 1.12fr;align-items:center;gap:65px;margin-bottom:55px}
+.hp3 .developer-resources-intro .sec-head{margin-bottom:0}
+.hp3 .developer-resources-intro .sec-head h2{max-width:440px}
+.hp3 .developer-resources-intro .sec-head .lede{color:#526e58;max-width:440px}
+.hp3 .developer-interfaces{position:relative;isolation:isolate;padding:16px 0 20px 16px;font-family:'Helpin Platform UI',sans-serif}
+.hp3 .developer-interfaces-glow{position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse at 55% 60%,#b2d0ab88,transparent 70%)}
+.hp3 .developer-interfaces-sheet{position:relative;background:#f8fcf6;border:1px solid #b6cfb5;border-radius:14px;box-shadow:0 20px 45px #244e2910,8px 8px 0 #d7e6d2,9px 9px 0 #b9d0b5;overflow:hidden}
+.hp3 .developer-interfaces-heading{display:flex;align-items:center;gap:10px;padding:22px;border-bottom:1px solid #dce8d7;color:#23482c}
+.hp3 .developer-interfaces-heading strong{font-size:13px;font-weight:500}
+.hp3 .developer-interfaces-heading>span{font-size:8px;letter-spacing:.09em;margin-left:auto;color:#55795c}
+.hp3 .developer-interface-rows{padding:7px 22px}
+.hp3 .developer-interface-row{display:grid;grid-template-columns:1.12fr 35px 1fr;align-items:center;padding:17px 0;border-bottom:1px solid #e2ebde}
+.hp3 .developer-interface-row:last-child{border:0}
+.hp3 .developer-interface-code>span{display:flex;align-items:center;gap:7px;font-size:9px;font-weight:500;letter-spacing:.04em;color:#547c5c;margin-bottom:8px}
+.hp3 .developer-interface-code code{display:block;font-family:var(--mono);font-size:10px;line-height:1.7;color:#244b2e;white-space:nowrap}
+.hp3 .developer-interface-connector{display:flex;align-items:center;color:#67946d;margin-inline:3px 9px}
+.hp3 .developer-interface-connector i{height:1px;background:#b7cdb4;flex:1}
+.hp3 .developer-interface-connector svg{flex:none;margin-left:-4px}
+.hp3 .developer-interface-outcome{background:#e8f2e3;border:1px solid #d7e7ce;border-radius:6px;padding:11px 9px;font-size:10px;line-height:1.6;color:#3b6343;text-align:center}
+.hp3 .developer-interfaces-footer{display:flex;gap:8px;align-items:center;padding:15px 22px;border-top:1px solid #dce8d7;font-size:9px;color:#5c7e60;background:#eef5e9}
+.hp3 .developer-interfaces-footer>span{width:5px;height:5px;border-radius:50%;background:#609368}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid{border-color:#bdd1ba}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid>a{background:transparent;border-color:#bdd1ba;transition:background .2s}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid>a:hover{background:#f4faf080}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid>a:focus-visible{outline:2px solid #376642;outline-offset:-3px;background:#f4faf0}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid h3{color:#23452b}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid p{color:#526f58}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid svg{color:#477952}
+.hp3 .developers-page .developer-resources-green .platform-self-host-link{background:#d9e8d4;border-color:#bdd1ba}
+.hp3 .developers-page .developer-resources-green .platform-self-host-link p{color:#526f58}
+@media(max-width:1100px){.hp3 .developer-resources-intro{gap:35px;grid-template-columns:.85fr 1.15fr}.hp3 .developer-interfaces-heading>span{font-size:7px}.hp3 .developer-interface-code code{font-size:9px}.hp3 .developer-interface-outcome{font-size:9px;padding-inline:6px}.hp3 .developer-interface-rows{padding-inline:18px}}
+@media(max-width:960px){.hp3 .developer-resources-intro{grid-template-columns:1fr;gap:25px}.hp3 .developer-resources-intro .sec-head h2,.hp3 .developer-resources-intro .sec-head .lede{max-width:600px}.hp3 .developer-interfaces{max-width:590px;width:100%;justify-self:center;padding-left:0}.hp3 .developer-interface-code code{font-size:11px}.hp3 .developer-interface-outcome{font-size:11px}.hp3 .developer-interfaces-heading>span{font-size:8px}.hp3 .developer-interface-row{padding-block:19px}}
+@media(max-width:600px){.hp3 .developer-resources-intro{gap:16px;margin-bottom:35px}.hp3 .developer-interfaces{padding-right:8px}.hp3 .developer-interfaces-heading{padding:18px 15px;gap:8px}.hp3 .developer-interfaces-heading strong{font-size:12px}.hp3 .developer-interfaces-heading>span{display:none}.hp3 .developer-interface-rows{padding-inline:14px}.hp3 .developer-interface-row{grid-template-columns:1.15fr 22px 1fr;padding-block:15px}.hp3 .developer-interface-code code{font-size:8px}.hp3 .developer-interface-code>span{font-size:8px}.hp3 .developer-interface-outcome{font-size:9px;padding:9px 6px}.hp3 .developer-interface-connector{margin-inline:2px}.hp3 .developer-interfaces-footer{padding:14px;font-size:8px}}
+@media(prefers-reduced-motion:reduce){.hp3 .developers-page .developer-resources-green .platform-resource-grid>a{transition:none}}
