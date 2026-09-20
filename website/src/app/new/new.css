@@ -1233,3 +1233,6 @@
 @media (prefers-reduced-motion: reduce) {
   .hp3 .nav-panel, .hp3 .nav-trigger svg, .hp3 .nav-resource { animation: none; transition: none; }
 }
+
+/* Keep protocol detail secondary to the connected-tools outcome. */
+.hp3 .ask-agent-links .ask-agent-technical-link { font-size: 13px; font-weight: 500; color: var(--t3); }

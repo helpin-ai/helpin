@@ -8,7 +8,7 @@ type Variant = 'answers' | 'coordination' | 'mcp';
 const DESCRIPTIONS: Record<Variant, { title: string; description: string }> = {
   answers: { title: 'Workspace answers', description: 'Conversation, meeting, and project context converge into an Ask Agent answer: SSO approval is pending and the Okta guide is needed.' },
   coordination: { title: 'Agent coordination', description: 'A rollout review branches into Engineering and Docs agents working in parallel. Both results feed the next steps.' },
-  mcp: { title: 'External MCP tools', description: 'Selected issue tracker and customer data tools connect through MCP to bring context into Ask Agent.' },
+  mcp: { title: 'Connected tools', description: 'Selected issue tracker and customer data tools bring outside context into Ask Agent.' },
 };
 const delay = (seconds: number) => ({ '--ab-delay': `${seconds}s` }) as CSSProperties;
 
@@ -79,7 +79,7 @@ function Mcp({ id }: { id: string }) {
     <g transform="translate(230 130)">
       <rect className="ab-panel" width={60} height={84} rx={14} fill={`url(#${id}-panel)`} />
       <rect className="ab-node-glow" width={60} height={84} rx={14} style={delay(1.3)} />
-      <Icon icon={Plug} x={16} y={14} /><text x={30} y={67} textAnchor="middle" className="ab-node-label">MCP</text>
+      <Icon icon={Plug} x={16} y={14} /><text x={30} y={67} textAnchor="middle" className="ab-node-label">Tools</text>
     </g>
     <g transform="translate(336 82)">
       <rect className="ab-panel" width={168} height={194} rx={16} fill={`url(#${id}-panel)`} />
