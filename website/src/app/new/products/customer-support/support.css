@@ -47,8 +47,7 @@
 .hp3 .support-page section.support-connected-section { background: #fff; }
 .hp3 .support-connected-grid { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.4fr); align-items: center; gap: 48px; }
 .hp3 .support-connected-grid .sec-head { margin-bottom: 25px; max-width: 400px; }
-.hp3 .support-connected-visual { margin: 0; min-width: 0; }
-.hp3 .support-connected-visual img { display: block; width: 100%; height: auto; border-radius: 14px; }
+.hp3 .support-connected-preview { min-width: 0; padding: 20px 16px 24px; border: 1px solid #e2ebe4; border-radius: 18px; background: radial-gradient(ellipse at 75% 20%, #f6faf7, transparent 70%), #edf4ef; }
 @media (max-width: 1000px) {
   .hp3 .support-connected-grid { grid-template-columns: 1fr; gap: 40px; }
   .hp3 .support-connected-grid .sec-head { max-width: 680px; }
