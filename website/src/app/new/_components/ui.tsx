@@ -32,12 +32,13 @@ export function Chip({ tone, children }: { tone?: 'em' | 'am'; children: React.R
   );
 }
 
-export function SectionHead({ eyebrow, title, lede, tight }: { eyebrow: string; title: string; lede?: string; tight?: boolean }) {
+export function SectionHead({ eyebrow, title, lede, secondaryLede, tight }: { eyebrow: string; title: string; lede?: string; secondaryLede?: string; tight?: boolean }) {
   return (
     <div className="sec-head" style={tight ? { marginBottom: 28 } : undefined}>
       <span className="eyebrow">{eyebrow}</span>
       <h2>{title}</h2>
       {lede ? <p className="lede">{lede}</p> : null}
+      {secondaryLede ? <p className="lede">{secondaryLede}</p> : null}
     </div>
   );
 }

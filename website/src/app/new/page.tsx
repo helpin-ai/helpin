@@ -1,314 +1,271 @@
-import Link from 'next/link';
+import { Braces, BrainCircuit, Cloud, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
 import { PreviewNav } from './_components/PreviewNav';
+import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
+import { GridFlow } from './_components/GridFlow';
 import { PreviewFooter } from './_components/PreviewFooter';
-import { LiveRecord } from './_components/LiveRecord';
 import { LoopWire } from './_components/LoopWire';
-import { LoopSection } from './_components/LoopSection';
-import { ReviewNote, Flag } from './_components/ReviewNotes';
-import { Chip, CtaRow, GithubIcon, SectionHead, SIGNUP_URL, GITHUB_URL } from './_components/ui';
+import { ProductExplorer } from './_components/ProductExplorer';
+import { HostingDiagram } from './_components/HostingDiagram';
+import { AgentControlArt } from './_components/AgentControlArt';
+import { AskAgentBento } from './_components/AskAgentBento';
+import { CustomerRecordBento } from './_components/CustomerRecordBento';
+import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 
 const RECORD_FACTS = [
-  ['Conversations', 'Website chat and email, in a shared inbox with assignment, notes, tags, and saved replies.'],
-  ['Meetings', 'A notetaker joins Google Meet, Zoom, Teams, or Webex. You get the recording, a speaker-attributed transcript, a summary, decisions, objections, and next steps.'],
-  ['Deals', 'Pipelines and stages, with buyer signals detected from email, meetings, and support, each linked to its source.'],
-  ['Tasks', 'Created from a conversation, a meeting action item, or a plan. Linked back to whatever started them.'],
-  ['Docs', 'Help-center articles and internal documents, including the ones a customer was sent and the ones their questions produced.'],
-  ['Emails and calls', 'Gmail and calendar sync put the thread and the appointment on the same timeline.'],
-];
+  {
+    "title": "Conversations",
+    "description": "Let Helpin AI answer first, tag conversations, and pass the full history to your team when needed.",
+    "image": "conversations",
+    "wide": true
+  },
+  {
+    "title": "Meetings",
+    "description": "Keep recordings, transcripts, decisions, and next steps attached to the customer.",
+    "image": "meetings",
+    "wide": false
+  },
+  {
+    "title": "Projects",
+    "description": "See the requests and conversations behind each project, alongside its tasks and progress.",
+    "image": "projects",
+    "wide": false
+  },
+  {
+    "title": "Engineering",
+    "description": "Give coding agents the customer context behind each task. Work in a connected repository, prepare changes, and bring a pull request back for review.",
+    "image": "coding",
+    "wide": true
+  },
+  {
+    "title": "Deals",
+    "description": "See the conversations, objections, and buyer signals behind each deal and renewal.",
+    "image": "deals",
+    "wide": false
+  },
+  {
+    "title": "Knowledge",
+    "description": "See the guides customers read, the answers your team shared, and the questions still open.",
+    "image": "docs",
+    "wide": false
+  },
+  {
+    "title": "Email & calendar",
+    "description": "Follow customer emails, calls, and meetings on one timeline.",
+    "image": "email-calendar",
+    "wide": true
+  }
+] as const;
 
-const AI_FACTS = [
-  ['Handoff is built in', 'A customer can ask for a person at any time. When the team is busy or offline, conversations queue instead of stalling.'],
-  ['Actions can ask first', 'Any agent can be set to request approval before it runs a command, changes files, or takes an action. The request appears where you are working.'],
-  ['Watch it work', 'Runs stream live. You see the steps and the reasoning as they happen, and you can reply mid-run when the agent needs a decision.'],
-  ['Sources on every answer', 'Each AI draft shows the article it used. If it used nothing, the question is logged as a gap.'],
-  ['Your keys, your models', 'Anthropic, OpenAI, or OpenRouter. Change the model per agent. Community uses only the keys you connect.'],
-];
-
-const AGENTS = [
-  ['Support agent', 'Answers from your docs, drafts notes, escalates.'],
-  ['Documentation agent', 'Drafts and updates articles from gaps and changes.'],
-  ['Epic planner', 'Turns an epic and your notes into scoped tasks.'],
-  ['Coding task planner', 'Scopes a task before code is written.'],
-  ['Code builder', 'Implements on a branch and opens the PR.'],
-  ['Review agent', 'Reviews the PR and runs checks.'],
-  ['CRM operator', 'Updates deals and contacts from what happened.'],
-  ['Researcher', 'Investigates a question across the web and your workspace.'],
-  ['Marketer', 'Drafts changelogs and announcements from shipped work.'],
-  ['Ask and Command', 'Answer a question, or run an instruction on any object.'],
-];
-
-const OS_FACTS = [
-  ['AGPL-3.0', 'The application is AGPL-3.0-only. The JavaScript SDK and widget are Apache-2.0, so embedding them in your product carries no copyleft obligation.'],
-  ['One database you own', 'Conversations, deals, tasks, articles, transcripts, and AI credentials live in your Postgres and your object storage.'],
-  ['Your own model keys', 'Community has no managed AI route and no AI billing. Connect Anthropic, OpenAI, or OpenRouter and pay your provider directly.'],
-  ['Nothing phones home', 'No telemetry, no Helpin account required, and the support widget sends no analytics events to us.'],
-  ['Docker Compose', 'One bundle with Postgres, Redis, NATS, Temporal, and object storage. Backup, restore, and public-deployment guides included.'],
-];
-
-const FAQS: [string, string][] = [
-  ['Will the AI do things without my team seeing?', 'In support, only in "AI replies first" mode, and only with a confident match in your published articles. Elsewhere, any agent can be set to ask before it runs a command, changes files, or takes an action, and the request appears where you are working. We recommend starting with approvals on.'],
-  ['How do meetings get in?', 'A notetaker joins your Google Meet, Zoom, Teams, or Webex call. Afterwards the meeting sits on the customer\'s record with the recording, a transcript, a summary, decisions, objections, and next steps. Action items become tasks when a person accepts them.'],
-  ['Which AI models can I use?', 'Anthropic, OpenAI, or OpenRouter, which routes to Gemini and other models. Community uses only the keys you connect. Cloud includes a monthly allowance and lets you connect your own keys as well.'],
-  ['What is in the open-source edition?', 'Website chat, the shared inbox, email support, the public help center, and AI agents on your own keys. Projects and CRM are being added to Community; the edition table above shows the current state.'],
-  ['Can I move from Intercom, Linear, or HubSpot?', 'Today Helpin imports help-center content from Help Scout and Nextra, projects from Shortcut, and contacts from CSV. There is no Intercom, Linear, or HubSpot importer yet. Tell us what you need to move and we\'ll say plainly whether we can help.'],
-  ['Does it replace GitHub or my editor?', 'No. Helpin connects to GitHub or GitLab, opens pull requests on your repositories, and shows PR status on the task. Claude Code, Codex, or any MCP client can work inside your Helpin workspace through the MCP server.'],
-  ['What do I need to self-host?', 'Docker Engine with Compose v2, Bash, OpenSSL, and an amd64 or arm64 host with about 8 GB of RAM and 20 GB of disk for evaluation. The install guide covers DNS, HTTPS, backups, and upgrades. There is no Kubernetes chart yet.'],
-  ['Is it ready for production?', 'Cloud is what we run our own products on. Community 0.1 is a beta with a published list of known limitations; read it before putting it in front of customers.'],
-  ['What is the license, exactly?', 'The application is AGPL-3.0-only. The SDK and widget packages are Apache-2.0. Code in enterprise directories, which covers billing and managed AI, is under a separate Helpin Enterprise License and is not needed to run Community.'],
-];
 
 export default function NewHomePage() {
   return (
     <>
       <PreviewNav />
 
-      {/* Hero */}
+      {/* 01 Hero */}
       <section className="hero">
         <div className="wrap hero-wrap">
           <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
-            <span className="eyebrow">The open-source workspace for SaaS teams</span>
-            <h1>Hear customers.<br />Decide what matters.<br />Ship it.</h1>
-            <p className="lede">Support, product, engineering, docs, and CRM share one customer record. Helpin's AI agents carry context from conversation to task to pull request to answer — while you decide what gets executed.</p>
+            <span className="eyebrow">The customer workspace for teams and AI agents</span>
+            <h1>Turn customer conversations into work that gets done.</h1>
+            <p className="lede">AI agents answer customers, turn requests into work, and follow through—with your conversations, tasks, deals, docs, and customer history connected.</p>
             <CtaRow />
-            <div className="assure"><span>AGPL-3.0</span><span>Unlimited seats</span><span>Self-host or Cloud</span></div>
+            <div className="assure hero-assure">
+              <span><Braces size={15} aria-hidden="true" />Open source</span>
+              <span><Server size={15} aria-hidden="true" />Self-hostable</span>
+              <span><BrainCircuit size={15} aria-hidden="true" />Bring your own models</span>
+              <span><Cloud size={15} aria-hidden="true" />Cloud available</span>
+            </div>
           </div>
           <LoopWire />
         </div>
       </section>
 
-      {/* One record */}
-      <section id="record">
+      {/* Shared customer history: the context behind the work. */}
+      <section id="record" className="dark">
+        <GridFlow />
         <div className="wrap">
-          <div className="onerec">
-            <div>
-              <SectionHead tight eyebrow="What Helpin is" title="One record per customer. Support, product, and sales read the same one."
-                lede="In a SaaS company of ten or forty people, the same customer talks to support on Tuesday, comes up in the roadmap meeting on Wednesday, and renews on Friday. Most tools keep three versions of that story. Helpin keeps one, and everything that happens attaches to it." />
-              <p className="lede" style={{ fontSize: 15.5 }}>What lands on the record:</p>
-            </div>
-            <div className="facts tight">
-              {RECORD_FACTS.map(([k, v]) => <div key={k}><b>{k}</b><p>{v}</p></div>)}
-            </div>
+          <div className="rs-copy record-intro">
+            <span className="rs-eyebrow">One customer. One record.</span>
+            <h2>Your team and agents work from the same customer history.</h2>
+            <p>Conversations, meetings, projects, deals, knowledge, and engineering activity—connected around each customer.</p>
           </div>
-          <LiveRecord />
-          <ReviewNote tag="Section 2">
-            <p><Flag>CONFIRMED</Flag> Meeting intelligence fields, Recall.ai and Vexa providers, Meet, Zoom, Teams, Webex; Gmail and calendar sync; associations across conversation, task, deal, contact, company. <Flag>VERIFY</Flag> Whether "calls" has its own capture path; whether "Emails" covers support email as well as Gmail-synced sales email.</p>
-          </ReviewNote>
-        </div>
-      </section>
-
-      {/* The loop */}
-      <section id="loop">
-        <div className="wrap">
-          <SectionHead eyebrow="How it works" title="One customer, start to finish." lede="This is the loop Helpin is built around. Here it is with one account and one week." />
-          <LoopSection />
-          <div className="outcome">
-            <span className="k">OUTCOME</span>
-            <p>One account, one week, five tools' worth of work, in one record. Nobody copied anything between systems, and the help center is one article better.</p>
-          </div>
-          <ReviewNote tag="Signature demo">
-            <p><b>Four verbs, seven frames, one customer.</b> Also the script for the recorded demo. Capture every frame from the seeded workspace.</p>
-            <p><Flag>CAREFUL</Flag> Meeting action items become tasks only after a person accepts them. The PR is merged by a person. Deal stage changes are human actions unless deal automation is on (Growth). <Flag>CLOUD</Flag> Decide and Ship need PM and CRM, which are not in Community 0.1.</p>
-          </ReviewNote>
-        </div>
-      </section>
-
-      {/* AI control */}
-      <section id="ai">
-        <div className="wrap">
-          <div className="modes">
-            <div>
-              <SectionHead tight eyebrow="AI, on your terms" title="You decide when the AI acts."
-                lede="In support, the agent has three settings. Most teams start at private notes and move up once the drafts have earned it. Everywhere else, actions can be set to ask first." />
-              <div className="seg">
-                <div><div className="t"><i />Off</div><p>People reply. AI only helps with search and rewriting drafts.</p></div>
-                <div className="on"><div className="t"><i />Private notes</div><p>AI drafts a reply as an internal note on each new conversation. Your team edits and sends.</p></div>
-                <div><div className="t"><i />AI replies first</div><p>AI answers when it finds a confident match. Everything else waits for a person.</p></div>
-              </div>
-              <div className="approval" aria-label="An agent run paused for approval">
-                <div className="row"><b>Code builder is asking</b><Chip tone="am">Paused</Chip></div>
-                <div>Wants to run <span className="mono">pnpm test</span> and push branch <span className="mono">HLP-142-okta-saml-mapping</span>.</div>
-                <div className="row"><span className="btnm">Approve</span><span className="links">Reply to agent · Open run</span></div>
-              </div>
-            </div>
-            <div className="facts">
-              {AI_FACTS.map(([k, v]) => <div key={k}><b>{k}</b><p>{v}</p></div>)}
-            </div>
-          </div>
-          <ReviewNote tag="Section 4">
-            <p><Flag>CONFIRMED</Flag> Support modes off / internal note / AI-first; escalation and handoff states; approval, review-checkpoint, and user-input interactions with a pending-interaction card; live streaming of run segments and reasoning; providers Anthropic, OpenAI, OpenRouter. <Flag>VERIFY</Flag> Exact wording of the paused-run card.</p>
-          </ReviewNote>
-        </div>
-      </section>
-
-      {/* Agents and rules */}
-      <section id="agents">
-        <div className="wrap">
-          <div className="two">
-            <div>
-              <SectionHead tight eyebrow="Agents and automations" title="Ten agents with a job each. Rules that run them."
-                lede="Every agent runs on the same runtime and sees the same record. Pick one, give it a target, and choose whether it asks first." />
-              <div className="agents">
-                {AGENTS.map(([k, v]) => <div key={k}><b>{k}</b><span>{v}</span></div>)}
-              </div>
-              <p className="footnote">Build your own: choose tools, targets, schedule, and approval mode. <Chip>Growth</Chip></p>
-            </div>
-            <div>
-              <h3 className="sub-h3">When this happens, do that.</h3>
-              <p className="lede sub-lede">Triggers from tasks, pull requests, releases, published docs, approvals, or a schedule. Actions that run an agent, move a task, merge a branch, or run a command.</p>
-              <div className="rules">
-                <div className="rule"><div className="sw" /><div><b>When a PR is merged</b> → run Review agent, then move task to <b>Done</b><br /><span>Team: Product · stop on match</span></div></div>
-                <div className="rule"><div className="sw" /><div><b>When a task enters "Ready"</b> → run Coding task planner<br /><span>Only if the description mentions a customer</span></div></div>
-                <div className="rule"><div className="sw" /><div><b>Every Monday 08:00</b> → run Marketer on last week's releases<br /><span>Cron · requires approval before publishing</span></div></div>
-              </div>
-              <p className="footnote">Conditions can be written in plain language. Automations are included on Growth.</p>
-            </div>
-          </div>
-          <ReviewNote tag="Section 5">
-            <p><Flag>CONFIRMED</Flag> Ten presets plus researcher; custom agents gated by entitlement. Triggers, actions, ordering, stop-on-match, natural-language conditions, automation_flows entitlement. <Flag>VERIFY</Flag> One-line job descriptions against each preset's prompt and tools; replace the example rules with rules from the seeded workspace.</p>
-          </ReviewNote>
-        </div>
-      </section>
-
-      {/* Open source */}
-      <section className="os" id="os">
-        <div className="wrap">
-          <div className="os-grid">
-            <div>
-              <SectionHead tight eyebrow="Open source" title="Run it yourself, or let us."
-                lede="The Community edition is the same product on your own servers. It's open source because the record of what your customers said and what you did about it should be yours to keep." />
-              <div className="facts">
-                {OS_FACTS.map(([k, v]) => <div key={k}><b>{k}</b><p>{v}</p></div>)}
-              </div>
-              <div className="links">
-                <a className="btn btn-primary" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View on GitHub</a>
-                <a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Read the install guide →</a>
-              </div>
-            </div>
-            <div>
-              <table>
-                <thead><tr><th></th><th>Community, self-hosted</th><th>Cloud</th></tr></thead>
-                <tbody>
-                  <tr><td>Price</td><td>Free, AGPL-3.0</td><td>From $99/month, unlimited seats</td></tr>
-                  <tr><td>Chat, inbox, help center, AI agents</td><td className="tick">Included</td><td className="tick">Included</td></tr>
-                  <tr><td>Projects and CRM</td><td className="tick">Included <span className="pending">pending decision</span></td><td className="tick">Included</td></tr>
-                  <tr><td>Meeting notetaker</td><td className="dash">To decide <span className="pending">pending decision</span></td><td className="tick">Included</td></tr>
-                  <tr><td>AI model keys</td><td>Bring your own</td><td>Included allowance, or bring your own</td></tr>
-                  <tr><td>Hosting, upgrades, backups</td><td>You</td><td>Us</td></tr>
-                  <tr><td>Support</td><td>Community, best effort</td><td>Priority on Growth</td></tr>
-                </tbody>
-              </table>
-              <p className="small-note">Community 0.1 ships support, docs, and agents and is a beta. Read the scope and known limitations before serving production traffic.</p>
-            </div>
-          </div>
-          <ReviewNote tag="Section 6">
-            <p><Flag>DECISION</Flag> Projects and CRM in Community; meeting notetaker in Community (it needs a Recall.ai or Vexa account). <Flag>CONFIRMED</Flag> License scopes; BYOK-only Community; no telemetry; Compose bundle contents; no Helm chart. <Flag>VERIFY</Flag> Which Growth entitlements are ungated on a self-hosted install.</p>
-          </ReviewNote>
-        </div>
-      </section>
-
-      {/* Developers */}
-      <section id="dev">
-        <div className="wrap">
-          <SectionHead eyebrow="For developers" title="Built to be run, extended, and worked on by agents." />
-          <div className="dev">
-            <div>
-              <h3>Install</h3>
-              <pre>{'curl -fsSL https://helpin.ai/install.sh | bash\nhelpin install\n'}<span className="c">{'# or, from a downloaded bundle:\n./setup.sh install · edit .env · ./setup.sh start'}</span></pre>
-              <p>A guided installer that checks Docker, verifies the bundle, generates secrets, and starts the services. Linux or macOS, Docker Engine, Compose v2, 8 GB RAM and 20 GB disk to evaluate.</p>
-            </div>
-            <div>
-              <h3>MCP, both directions</h3>
-              <p>Connect Claude Code, Codex, or any MCP client to your workspace over OAuth 2.1, with scoped tools and workspace permissions re-checked on every call. Give your own agents external MCP servers too, with Linear, Sentry, and Customer.io presets, each run on a short-lived credential.</p>
-            </div>
-            <div>
-              <h3>Git, SDK, runtime</h3>
-              <p>GitHub App and GitLab integration with branch templates and PR status on the task. Apache-2.0 JavaScript SDK with React, Vue, and Next.js packages. Agent runs on the native runtime, Codex, or OpenCode.</p>
-            </div>
-          </div>
-          <div className="links">
-            <a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/README.md`}>Documentation →</a>
-            <a className="btn-link" href={`${GITHUB_URL}/blob/develop/ARCHITECTURE.md`}>Architecture →</a>
-            <a className="btn-link" href={`${GITHUB_URL}/blob/develop/CONTRIBUTING.md`}>Contributing →</a>
-            <a className="btn-link" href={`${GITHUB_URL}/blob/develop/SECURITY.md`}>Security policy →</a>
-          </div>
-          <ReviewNote tag="Section 7">
-            <p><Flag>CONFIRMED</Flag> A CLI at community/cli with install, status, logs, and doctor; the curl bootstrap requires a published Community release with CLI assets. MCP server at /mcp with OAuth 2.1; external MCP connections in Settings; GitHub App and GitLab; runtime kinds native, codex, opencode. <Flag>BLOCKER</Flag> Source builds still need the private agent-runtime repository; no release bundle is confirmed.</p>
-          </ReviewNote>
-        </div>
-      </section>
-
-      {/* Proof */}
-      <section id="proof">
-        <div className="wrap">
-          <div className="proof">
-            <div>
-              <SectionHead tight eyebrow="Who's behind it" title="Built by a team that runs support, sales, and product on it."
-                lede="Helpin is made by the team behind ContentStudio, ContentPen, and Usermaven. We built it for our own customer queues and our own roadmap first, and we publish what works and what doesn't, in the open." />
-              <div className="logos"><span>ContentStudio</span><span>ContentPen</span><span>Usermaven</span><span>Replug</span></div>
-              <p className="disclose">Products from the same company. Not third-party customers.</p>
-            </div>
-            <div className="quote">
-              <p>“[Real pilot quote goes here. One sentence about the before, one about the after, with a measurable change if the customer agrees to it.]”</p>
-              <small>Name, role, company — with written approval</small>
-            </div>
-          </div>
-          <ReviewNote tag="Section 8">
-            <p><Flag>VERIFY</Flag> That the named products run support, sales, or product work in Helpin today. <Flag>NEEDS EVIDENCE</Flag> No testimonial or metric exists yet; keep the placeholder until a pilot yields one.</p>
-          </ReviewNote>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing">
-        <div className="wrap">
-          <SectionHead eyebrow="Pricing" title="Free to run yourself. One price per workspace to let us." />
-          <div className="plans">
-            <div className="plan">
-              <h3>Community</h3><div className="price">Free<small> · self-hosted</small></div>
-              <ul><li>Chat, inbox, help center, AI agents</li><li>Projects and CRM <span className="pending">pending decision</span></li><li>Your own model keys</li><li>AGPL-3.0, no telemetry</li></ul>
-              <a className="btn btn-secondary" href={`${GITHUB_URL}/blob/develop/community/README.md`}>Read the install guide</a>
-            </div>
-            <div className="plan">
-              <h3>Starter</h3><div className="price">$99<small> / month</small></div>
-              <ul><li>Unlimited seats</li><li>Every module included</li><li>Standard AI allowance</li><li>Help center on your domain, GitHub integration</li></ul>
-              <Link className="btn btn-primary" href={`${SIGNUP_URL}?plan=starter`}>Start free trial</Link>
-            </div>
-            <div className="plan">
-              <h3>Growth</h3><div className="price">$299<small> / month</small></div>
-              <ul><li>Everything in Starter</li><li>3× AI allowance</li><li>Custom agents, automations, scheduling, AI routing</li><li>Remove branding, priority support</li></ul>
-              <Link className="btn btn-primary" href={`${SIGNUP_URL}?plan=growth`}>Start free trial</Link>
-            </div>
-          </div>
-          <p className="footnote">14-day Growth trial, no card required. Annual billing is 20% less. <Link href="/pricing" style={{ textDecoration: 'underline' }}>Full plan details</Link>.</p>
-          <ReviewNote tag="Section 9">
-            <p><Flag>CONFIRMED</Flag> Prices, unlimited seats, trial, annual discount; Growth entitlements. <Flag>DROP</Flag> "SLA management" and PM "custom fields" from the live matrix. <Flag>VERIFY</Flag> Meeting notetaker availability by plan; desktop and mobile apps are at beta stage and stay off the page.</p>
-          </ReviewNote>
-        </div>
-      </section>
-
-      {/* FAQ */}
-      <section id="faq">
-        <div className="wrap">
-          <SectionHead eyebrow="Questions" title="Before you decide." />
-          <div className="faq">
-            {FAQS.map(([q, a], i) => (
-              <details key={q} open={i === 0}><summary>{q}</summary><p>{a}</p></details>
+          <div className="record-bento">
+            {RECORD_FACTS.map(({ title, description, image, wide }) => (
+              <article className={`record-bento-card${wide ? ' record-bento-wide' : ''}`} key={title}>
+                <div className="record-bento-copy">
+                  <h3>{title}</h3>
+                  <p>{description}</p>
+                </div>
+                <CustomerRecordBento variant={image} />
+              </article>
             ))}
           </div>
-          <ReviewNote tag="Section 10">
-            <p><Flag>DECISION</Flag> The open-source answer says "being added"; change it to match whatever 0.2 ships. <Flag>VERIFY</Flag> "Cloud is what we run our own products on" needs the proof-section confirmation.</p>
-          </ReviewNote>
+          <p className="rs-close"><span className="rs-keep">One customer.</span> Every interaction. Full context.</p>
         </div>
       </section>
 
-      {/* Final CTA */}
-      <section>
+      {/* Ask Agent: answers, execution, and connected tools. */}
+      <section id="ask-agent" className="ask-agent-section" aria-labelledby="ask-agent-title">
         <div className="wrap">
+          <div className="ask-agent-intro">
+            <span className="eyebrow">Ask Agent</span>
+            <h2 id="ask-agent-title">Ask a question.<br />Hand off the work.</h2>
+            <p className="lede">Ask about a customer, investigate an issue, or describe the work you need done. Ask Agent finds the context, coordinates specialist agents, and brings the results back to one conversation.</p>
+          </div>
+          <figure className="ask-agent-screenshot">
+            <a href="/new/product/workspace-ask-agent-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Ask Agent screenshot at full size (opens in a new tab)">
+              <img src="/new/product/workspace-ask-agent-4k-v1.webp" alt="Helpin Ask Agent demo reviewing OrbitDesk’s SSO rollout, with four specialist sub-agents, findings, a completed five-step work plan, and a customer follow-up draft." width={3840} height={2016} loading="lazy" decoding="async" />
+            </a>
+            <figcaption>An example rollout review: four sub-agents, one work plan, and a follow-up ready for review.</figcaption>
+          </figure>
+          <div className="ask-agent-capabilities">
+            <article>
+              <span className="ask-agent-label">Your workspace</span>
+              <h3>Find answers across your workspace.</h3>
+              <p>Find the customer question, the meeting decision, and the task behind it. Ask Agent brings them together in one answer.</p>
+              <AskAgentBento variant="answers" />
+              <div className="ask-agent-example"><span>Try asking</span><blockquote>What’s blocking OrbitDesk’s rollout?</blockquote></div>
+            </article>
+            <article>
+              <span className="ask-agent-label">Your agents</span>
+              <h3>Coordinate agents from start to finish.</h3>
+              <p>Break complex requests into a plan. Run sub-agents in parallel, sequence dependent steps, and bring their results back to the conversation.</p>
+              <AskAgentBento variant="coordination" />
+              <div className="ask-agent-example"><span>Try asking</span><blockquote>Review the rollout blockers, then create a plan from the findings.</blockquote></div>
+            </article>
+            <article>
+              <span className="ask-agent-label">Connected tools</span>
+              <h3>Work with tools outside Helpin.</h3>
+              <p>Let agents check your connected tools and bring the result back into the same conversation.</p>
+              <AskAgentBento variant="mcp" />
+              <div className="ask-agent-example"><span>With a connected agent</span><blockquote>Check the issue status in our connected tracker.</blockquote></div>
+            </article>
+          </div>
+          <div className="ask-agent-links"><a className="btn-link" href="/new/product#agents">Explore agents →</a><a className="btn-link ask-agent-technical-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Powered by MCP →</a></div>
+        </div>
+      </section>
+
+      {/* Explore each product area alongside the workspace image. */}
+      <section id="product">
+        <div className="wrap">
+          <SectionHead eyebrow="What’s inside" title="Everything your team needs to close the loop." lede="Explore the products that turn customer context into answers, actions, and follow-ups." />
+          <ProductExplorer />
+        </div>
+      </section>
+
+      {/* Agent controls */}
+      <section id="control">
+        <div className="wrap">
+          <SectionHead eyebrow="Agents, on your terms" title="Give agents work. Keep control."
+            lede="Choose the tools each agent can use, when it needs approval, and what starts the work." />
+          <figure className="control-screenshot">
+            <a href="/new/product/agents-directory-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Agents directory screenshot at full size (opens in a new tab)">
+              <img src="/new/product/agents-directory-1920-v1.webp" srcSet="/new/product/agents-directory-1920-v1.webp 1920w, /new/product/agents-directory-4k-v1.webp 3840w" sizes="(max-width: 1120px) calc(100vw - 48px), 1072px" alt="Helpin’s Agents directory in the OrbitDesk demo workspace, showing eight agents, their configurations, recent runs, approval requests, and connected flows." width={3840} height={2016} loading="lazy" decoding="async" />
+            </a>
+            <figcaption>One place to manage your agents and see their latest runs.</figcaption>
+          </figure>
+          <div className="ctrl">
+            <article>
+              <AgentControlArt variant="tools" />
+              <div className="ctrl-copy">
+                <span className="k">Tool access</span>
+                <h3>Give each agent the right tools.</h3>
+                <p className="ctrl-description">Choose the workspace tools and connected services each agent can use to do its job.</p>
+              </div>
+            </article>
+            <article>
+              <AgentControlArt variant="approvals" />
+              <div className="ctrl-copy">
+                <span className="k">Approvals</span>
+                <h3>Set when agents ask first.</h3>
+                <p className="ctrl-description">Set an approval mode for each agent. Review actions that need permission before they go ahead.</p>
+              </div>
+            </article>
+            <article>
+              <AgentControlArt variant="triggers" />
+              <div className="ctrl-copy">
+                <span className="k">Triggers</span>
+                <h3>Put repeat work on a schedule.</h3>
+                <p className="ctrl-description">Start agents from an event or a schedule, using the tools and approval settings you’ve chosen.</p>
+              </div>
+            </article>
+          </div>
+          <p className="section-close"><a className="inline-link" href="/new/product#agents">Explore agents and automation →</a></p>
+        </div>
+      </section>
+
+      {/* Self-hosting */}
+      <section id="open-source" className="dark self-host-section">
+        <div className="wrap">
+          <div className="self-host-intro">
+            <div>
+              <SectionHead eyebrow="Open source" title="Your customer history stays yours."
+                lede="Run Helpin on your infrastructure and control your data and models. Choose Helpin Cloud when you’d rather leave the hosting to us." />
+              <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
+              <p className="self-host-license">Open source · AGPL-3.0</p>
+            </div>
+            <HostingDiagram />
+          </div>
+          <div className="self-host-features">
+            <article><Server size={23} aria-hidden="true" /><h3>Deploy with Docker.</h3><p>Self-host Community’s support, docs, and agents with Docker Compose.</p></article>
+            <article><Database size={23} aria-hidden="true" /><h3>Keep your data with you.</h3><p>Own your customer history, files, and backups.</p></article>
+            <article><SlidersHorizontal size={23} aria-hidden="true" /><h3>Choose your connections.</h3><p>Choose supported models and configure your connections.</p></article>
+          </div>
+        </div>
+      </section>
+
+      {/* Developer tools and installation CLI */}
+      <section id="developers" className="developer-section">
+        <div className="wrap">
+          <SectionHead eyebrow="Built to be extended" title="Connect your stack. Build your own workflows."
+            lede="Connect your product and tools with APIs, SDKs, MCP, and webhooks." />
+          <article className="developer-cli-feature">
+            <figure className="developer-visual">
+              <a href="/new/product/helpin-cli-tilted-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin CLI illustration at full size (opens in a new tab)">
+                <img src="/new/product/helpin-cli-tilted-1920-v1.webp" srcSet="/new/product/helpin-cli-tilted-1920-v1.webp 1920w, /new/product/helpin-cli-tilted-4k-v1.webp 3840w" sizes="(max-width: 700px) calc(100vw - 78px), (max-width: 1120px) 55vw, 590px" width={3840} height={2160} alt="An angled Helpin CLI terminal showing installation checks, diagnostics, status, and logs, with a softly blurred right edge." loading="lazy" decoding="async" />
+              </a>
+            </figure>
+            <div className="developer-cli-copy">
+              <span className="eyebrow">Helpin CLI</span>
+              <h3>Your instance.<br />One terminal.</h3>
+              <p>Install, configure, and manage your Helpin instance from the terminal.</p>
+              <a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Explore the Helpin CLI →</a>
+            </div>
+          </article>
+          <div className="developer-features">
+            <article>
+              <span className="developer-feature-icon"><Braces size={22} aria-hidden="true" /></span>
+              <h3>APIs &amp; SDKs</h3><p>Connect customer data and bring support into your product.</p>
+              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer">Developer docs →</a>
+              <a className="inline-link" href={`${GITHUB_URL}/tree/develop/packages/sdk-js`} target="_blank" rel="noopener noreferrer">Explore the SDK →</a>
+            </article>
+            <article>
+              <span className="developer-feature-icon"><Plug size={22} aria-hidden="true" /></span>
+              <h3>MCP, both ways</h3><p>Bring Helpin context to AI tools, and external tools to agents.</p>
+              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/public-mcp-server.md`} target="_blank" rel="noopener noreferrer">Connect AI tools →</a>
+              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external tools →</a>
+            </article>
+            <article>
+              <span className="developer-feature-icon"><Webhook size={22} aria-hidden="true" /></span>
+              <h3>Webhooks &amp; triggers</h3><p>Start agent runs from GitHub, GitLab, and workflow events.</p>
+              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/agents-and-automation.md`} target="_blank" rel="noopener noreferrer">Explore automation →</a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      {/* 13 Final CTA */}
+      <section className="final-cta final-cta-connected" aria-labelledby="final-cta-title">
+        <div className="wrap">
+          <ConnectedWorkspace />
           <div className="final">
-            <h2>Start with one inbox, one repo, and one calendar.</h2>
-            <p className="lede">Connect website chat, link a repository, invite the notetaker to one call, and turn on private notes. See the record fill itself in the first week.</p>
+            <span className="eyebrow">Close the loop</span>
+            <h2 id="final-cta-title">Every conversation has a next step.<br />Turn it into action.</h2>
+            <p className="lede">Bring your customer history, team, and AI agents together to answer, decide, and get the work done.</p>
             <CtaRow />
+            <div className="assure"><span>Open source</span><span>Self-hostable</span><span>Built for SaaS teams</span></div>
           </div>
         </div>
       </section>

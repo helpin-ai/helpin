@@ -1,0 +1,14 @@
+Use case: precise-object-edit.
+Image 1 is the edit target: the completed OrbitDesk API reference screenshot.
+Make one tiny, precise correction ONLY in the bottom-right dark Example response code panel. Its JSON currently has incorrect closing brackets. Replace only this response code with this EXACT valid JSON, preserving the same monospaced type, syntax colors, spacing, and dark background:
+{
+  "data": [
+    {
+      "id": "int_042",
+      "provider": "slack",
+      "status": "connected"
+    }
+  ]
+}
+The closing sequence must clearly be: line 7 a right curly brace }, line 8 a right square bracket ], line 9 a right curly brace }. Do not confuse a square bracket with a curly brace. Use nine correctly aligned line numbers if line numbers are shown. Keep all nine lines inside the response panel with comfortable padding; reduce line spacing slightly only inside this code panel if necessary.
+Everything outside this small response-code area must remain unchanged: OrbitDesk identity, header and navigation, all fonts and typography, endpoint labels, request fields, curl code, columns, white background, layout, color, and 3840x2160 dimensions. Do not redesign, rewrite, crop, move, blur, or change anything else.

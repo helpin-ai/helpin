@@ -1,0 +1,15 @@
+{
+  "name": "Helpin website palette",
+  "colors": [
+    { "name": "Forest", "hex": "#081B16", "role": "Dark backgrounds and signature brand moments", "group": "primary" },
+    { "name": "Helpin green", "hex": "#0F7A50", "role": "Accent text, active states, and focused actions", "group": "primary" },
+    { "name": "Sage", "hex": "#B8DDBB", "role": "Highlighted headlines on forest backgrounds", "group": "primary" },
+    { "name": "White", "hex": "#FFFFFF", "role": "Open space, cards, and text on dark backgrounds", "group": "primary" },
+    { "name": "Ink", "hex": "#131514", "role": "Headlines, body text, and primary buttons", "group": "supporting" },
+    { "name": "Secondary text", "hex": "#4F5A55", "role": "Descriptions and supporting copy", "group": "supporting" },
+    { "name": "Soft surface", "hex": "#F6F8F7", "role": "Quiet panels and alternate backgrounds", "group": "supporting" },
+    { "name": "Green mist", "hex": "#E7F4ED", "role": "Subtle green highlights and accent surfaces", "group": "supporting" },
+    { "name": "Hairline", "hex": "#E4E9E6", "role": "Dividers and decorative card borders", "group": "supporting" },
+    { "name": "Logo ink", "hex": "#242424", "role": "The original dark Helpin symbol", "group": "supporting" }
+  ]
+}

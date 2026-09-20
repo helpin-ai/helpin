@@ -1,0 +1,13 @@
+<!-- Native Helpin persona artwork, copied from frontend/src/components/agents/AgentAvatar.tsx. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80" fill="none">
+          <rect x="10" y="16" width="60" height="48" rx="12" fill="#1D9E75" opacity=".12" />
+          <rect x="14" y="20" width="52" height="40" rx="10" fill="#1D9E75" />
+          <rect x="22" y="30" width="12" height="8" rx="3" fill="#E1F5EE" />
+          <rect x="46" y="30" width="12" height="8" rx="3" fill="#E1F5EE" />
+          <circle cx="28" cy="34" r="2.5" fill="#04342C" />
+          <circle cx="52" cy="34" r="2.5" fill="#04342C" />
+          <path d="M32 46Q40 52 48 46" stroke="#E1F5EE" stroke-width="2.5" stroke-linecap="round" />
+          <rect x="30" y="6" width="20" height="16" rx="6" fill="#1D9E75" />
+          <rect x="34" y="2" width="12" height="8" rx="4" fill="#0F6E56" />
+          <rect x="36" y="10" width="8" height="4" rx="2" fill="#5DCAA5" />
+        </svg>
