@@ -9,7 +9,7 @@ const COLUMNS = [
     { label: 'Overview', href: '/new#product' },
     { label: 'Customer records', href: '/new#record' },
     { label: 'Inbox', href: '/new/product#inbox' },
-    { label: 'Meetings', href: '/new/product#meetings' },
+    { label: 'Meetings', href: '/new/products/meetings' },
     { label: 'Projects', href: '/new/products/projects' },
     { label: 'CRM', href: '/new/product#crm' },
     { label: 'Knowledge', href: '/new/products/knowledge' },
