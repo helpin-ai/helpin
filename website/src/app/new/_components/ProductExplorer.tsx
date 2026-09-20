@@ -18,10 +18,10 @@ const INBOX_IMAGE = {
 };
 
 const MEETINGS_IMAGE = {
-  src: '/new/product/workspace-meetings-4k-v3.webp',
-  alt: 'OrbitDesk workspace meeting review for Northstar Labs, showing an Okta SSO rollout summary, recording player, decisions, assigned action items, and linked customer records.',
-  width: 3840,
-  height: 2160,
+  src: '/new/meetings/recording-preview-1672-v4.webp',
+  alt: 'OrbitDesk workspace meeting review for Northstar Labs, showing an Okta SSO rollout summary, a three-person call preview, decisions, assigned action items, and linked customer records.',
+  width: 1672,
+  height: 941,
 };
 
 const CRM_IMAGE = {
@@ -196,12 +196,12 @@ export function ProductExplorer() {
       </div>
     </div>
     {AREAS.map((area, index) => <div className="px-panel" role="tabpanel" id={`product-panel-${area.id}`} aria-labelledby={`product-tab-${area.id}`} hidden={active !== index} tabIndex={0} key={area.id}>
-      <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={`/new/product#${area.id}`}>Explore {area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
+      <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.id === 'crm' ? '/new/products/crm' : `/new/product#${area.id}`}>Explore {area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
       <div className="px-stage">
         <a className="px-product-image" href={area.image.src} target="_blank" rel="noopener noreferrer" aria-label={`View the ${area.label.toLowerCase()} demo image at full size (opens in a new tab)`}>
           <img
             src={area.image.src.replace('-4k-', '-1920-')}
-            srcSet={`${area.image.src.replace('-4k-', '-960-')} 960w, ${area.image.src.replace('-4k-', '-1920-')} 1920w, ${area.image.src} 3840w`}
+            srcSet={area.id === 'meetings' ? '/new/meetings/recording-preview-960-v4.webp 960w, /new/meetings/recording-preview-1672-v4.webp 1672w' : `${area.image.src.replace('-4k-', '-960-')} 960w, ${area.image.src.replace('-4k-', '-1920-')} 1920w, ${area.image.src} 3840w`}
             sizes="(max-width: 760px) calc(100vw - 80px), (max-width: 960px) calc(100vw - 256px), (max-width: 1280px) calc(100vw - 316px), 964px"
             alt={area.image.alt} width={area.image.width} height={area.image.height} loading="lazy" decoding="async"
           />

@@ -11,7 +11,7 @@ const COLUMNS = [
     { label: 'Inbox', href: '/new/product#inbox' },
     { label: 'Meetings', href: '/new/products/meetings' },
     { label: 'Projects', href: '/new/products/projects' },
-    { label: 'CRM', href: '/new/product#crm' },
+    { label: 'CRM', href: '/new/products/crm' },
     { label: 'Knowledge', href: '/new/products/knowledge' },
   ] },
   { title: 'Agents & workflows', links: [
