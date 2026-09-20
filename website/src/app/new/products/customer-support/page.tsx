@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, ChevronRight, Inbox, MessageSquare, Clock3, Languages, Paperclip, Search, ShieldCheck, SlidersHorizontal, Sparkles, Users, Wrench, Zap } from 'lucide-react';
+import { ArrowRight, ChevronRight, Inbox, MessageSquare, Clock3, Languages, Paperclip, Search, Sparkles, Users, Zap } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
 import { SectionHead, SIGNUP_URL, GITHUB_URL } from '../../_components/ui';
 import { SupportScene } from './support-scene';
+import { SupportControls } from './support-controls';
 import { SupportInboxFeatures } from './support-inbox-features';
 import { SupportInboxShowcase } from './support-inbox-showcase';
 import { SupportHeroScene } from './support-hero-scene';
@@ -104,11 +105,7 @@ export default function CustomerSupportPage() {
       <section id="support-controls" className="support-controls-section">
         <div className="wrap">
           <SectionHead eyebrow="Your support. Your settings." title="Choose when agents act and when people step in." lede="Set how AI responds in your inbox, which tools an agent can use, and which actions need approval." />
-          <div className="support-features">
-            <article><SlidersHorizontal size={23} strokeWidth={1.5} aria-hidden="true" /><h3>Choose how AI responds.</h3><p>Use AI-first replies, keep assistance internal, or turn automatic replies off for your inbox.</p></article>
-            <article><Wrench size={23} strokeWidth={1.5} aria-hidden="true" /><h3>Give agents the right tools.</h3><p>Select the tools each agent can use for its work, including tools from connected MCP servers.</p></article>
-            <article><ShieldCheck size={23} strokeWidth={1.5} aria-hidden="true" /><h3>Review actions that need you.</h3><p>Configure agent approval settings so your team can review requested tool actions before they run.</p></article>
-          </div>
+          <SupportControls />
         </div>
       </section>
 
