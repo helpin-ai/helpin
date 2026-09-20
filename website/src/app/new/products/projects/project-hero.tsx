@@ -1,27 +1,54 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
-import { Check, Link2, MessageSquare, Pause, Play, Square } from 'lucide-react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
+import { Pause, Play } from 'lucide-react';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
+import { TaskCalendarIcon, TaskFeatureIcon, TaskIcon, TaskPriorityIcon, TaskSprintIcon, TaskTickIcon, type TaskIconName } from './task-demo-icons';
 
+function Property({ icon, label, children }: { icon: TaskIconName | ReactNode; label: string; children: ReactNode }) {
+  return <div className="pth-property"><span className="pth-property-icon">{typeof icon === 'string' ? <TaskIcon name={icon as TaskIconName} /> : icon}</span><span className="pth-property-label">{label}</span><span className="pth-property-value">{children}</span></div>;
+}
+
+// Presentational snapshot of TaskDetailPanel / QuietDetailHeader, using the same
+// Inter font, dark popover tokens, field order and icon geometry. No app mutations.
 export function ProjectHero() {
   const { container, playing, cycle } = useBentoPlayback(9500);
   const [paused, setPaused] = useState(false);
-  const delay = (seconds: number) => ({ '--hero-delay': `${seconds}s` }) as CSSProperties;
+  const delay = (seconds: number) => ({ '--task-delay': `${seconds}s` }) as CSSProperties;
   return <div className="project-hero-art" ref={container} data-playing={playing && !paused}>
     <div className="project-hero-art-label"><span>FROM CUSTOMER REQUEST TO CLEAR TASK</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} project planning animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12} /> : <Pause size={12} />}</button></div>
-    <div className="project-hero-task" key={cycle} role="img" aria-label="OrbitDesk task ORB-491, Add Slack alerts for failed syncs, is planned and owned by Sam. Maya’s original request from Northstar Labs stays attached. Atlas has drafted requirements for Sam to review before work starts.">
+    <div className="project-hero-task" key={cycle} role="img" aria-label="Illustrative Helpin task detail in OrbitDesk. ORB-491, Add Slack alerts for failed syncs. The Overview describes Maya’s request from Northstar Labs, a three-step workflow and three acceptance criteria. The task is ready, owned and requested by Sam Rivera, high priority, and planned for Sprint 24. These are requirements to review, not completed work.">
       <div aria-hidden="true">
-        <div className="pht-toolbar"><span className="ps-workspace">O</span><strong>OrbitDesk</strong><span>/</span><span>Projects</span><span className="pht-task-key">ORB-491</span></div>
-        <div className="pht-body">
-          <div className="pht-type"><span/>Feature request</div>
+        <div className="pth-header">
+          <div className="pth-breadcrumb"><span><TaskIcon name="CheckListIcon" />Tasks</span><TaskIcon name="ArrowRight01Icon" /><span><TaskIcon name="Layers01Icon" />Sync reliability</span><TaskIcon name="ArrowRight01Icon" /><span><TaskSprintIcon />Sprint 24</span></div>
           <h2>Add Slack alerts for failed syncs</h2>
-          <div className="pht-properties"><span className="pht-status">Planned</span><span>High priority</span><span><img src="/new/avatars/sam.webp" width={22} height={22} alt=""/>Sam Rivera</span></div>
-          <div className="pht-request pht-reveal" style={delay(.35)}><div><img src="/new/avatars/maya.webp" width={28} height={28} alt=""/><span><strong>Maya Chen</strong><small>Northstar Labs</small></span><MessageSquare size={14}/></div><p>“Can you alert our team in Slack when a sync fails? We only notice when a customer reports it.”</p></div>
-          <div className="pht-requirements pht-reveal" style={delay(1.3)}><span>WHAT NEEDS TO BE TRUE</span><div><Square size={13}/>Notify the team when a sync fails</div><div><Square size={13}/>Include the affected account and error</div><div><Square size={13}/>Link directly to the sync details</div></div>
-          <div className="pht-agent pht-reveal" style={delay(2.3)}><img src="/new/agents/atlas.svg" width={34} height={34} alt=""/><div><strong>Atlas prepared the task outline</strong><span>Requirements ready for Sam’s review</span></div><Check size={15}/></div>
+          <div className="pth-meta"><span>ORB-491</span><i />Engineering</div>
+          <div className="pth-actions"><div><TaskIcon name="Link01Icon" /><TaskIcon name="MoreVerticalIcon" /><TaskIcon name="ArrowUpRight01Icon" /><TaskIcon name="Cancel01Icon" /></div><span className="pth-saved"><TaskTickIcon />All changes saved</span></div>
         </div>
-        <div className="pht-footer"><Link2 size={13}/><span>The original request stays attached</span><span>1 conversation</span></div>
+        <div className="pth-layout">
+          <div className="pth-main">
+            <div className="pth-tabs"><span className="pth-tab-active">Overview</span><span>Delivery</span></div>
+            <div className="pth-description">
+              <div className="pth-intro"><p>Notify the team in Slack when a sync fails, so they can investigate before a customer reports it.</p><span className="pth-edit"><TaskIcon name="PencilEdit01Icon" /></span></div>
+              <p>Maya at Northstar Labs needs the affected account, the error, and a link to investigate in each alert.</p>
+              <h3>Workflow</h3>
+              <ol><li>Detect a failed sync.</li><li>Send an alert to the connected Slack channel.</li><li>Open the sync details from the alert.</li></ol>
+              <h3>Acceptance criteria</h3>
+              <ul className="pth-criteria"><li style={delay(.5)}>Include the account and failure reason.</li><li style={delay(1.25)}>Link directly to the affected sync.</li><li style={delay(2)}>Send one alert per failed sync.</li></ul>
+            </div>
+          </div>
+          <div className="pth-sidebar">
+            <div className="pth-id"><span>Task ID:</span><strong>ORB-491</strong><TaskIcon name="Copy01Icon" /><TaskIcon name="GitBranchIcon" /></div>
+            <div className="pth-property-group"><Property icon="UserGroupIcon" label="Team">Engineering</Property><Property icon="HashtagIcon" label="State"><i className="pth-state" />Ready</Property></div>
+            <div className="pth-property-group"><Property icon="UserIcon" label="Owners"><img src="/new/avatars/sam.webp" width={18} height={18} alt="" />Sam Rivera</Property><Property icon="UserIcon" label="Requester"><img src="/new/avatars/sam.webp" width={18} height={18} alt="" />Sam Rivera</Property></div>
+            <div className="pth-property-group"><Property icon="DashboardSpeed01Icon" label="Priority"><TaskPriorityIcon />High</Property><Property icon="HashtagIcon" label="Type"><TaskFeatureIcon />Feature</Property><Property icon="Tag01Icon" label="Labels"><span className="pth-label">+ Add label</span></Property></div>
+            <div className="pth-property-group"><Property icon="Layers01Icon" label="Epic"><span className="pth-epic">Sync reliability</span></Property><Property icon={<TaskSprintIcon />} label="Sprint">Sprint 24</Property></div>
+            <div className="pth-property-group"><Property icon="LayoutGridIcon" label="Estimate">3 points</Property><Property icon={<TaskCalendarIcon />} label="Due date">Sep 25</Property></div>
+            <div className="pth-property-group"><Property icon={<TaskSprintIcon />} label="Recurrence">None</Property></div>
+            <div className="pth-rail-section"><span><TaskIcon name="ArrowRight01Icon" />Delivery</span><span>Not configured</span></div>
+            <div className="pth-rail-section"><span><TaskIcon name="ArrowRight01Icon" />Related</span></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>;

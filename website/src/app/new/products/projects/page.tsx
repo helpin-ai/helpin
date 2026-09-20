@@ -12,6 +12,7 @@ import { ProjectDelivery } from './project-delivery';
 import './projects.css';
 import './project-outcomes.css';
 import './projects-polish.css';
+import './project-hero.css';
 
 export const metadata: Metadata = {
   title: 'Projects — Helpin',
