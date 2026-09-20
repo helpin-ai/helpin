@@ -24,11 +24,11 @@ const COLUMNS = [
   ] },
   { title: 'Developers', links: [
     { label: 'Documentation', href: `${GITHUB_URL}/blob/develop/docs/README.md` },
-    { label: 'APIs & SDKs', href: '/new#developers' },
+    { label: 'APIs & SDKs', href: '/new/developers' },
     { label: 'JavaScript SDK', href: `${GITHUB_URL}/tree/develop/packages/sdk-js` },
     { label: 'MCP server', href: `${GITHUB_URL}/blob/develop/docs/public-mcp-server.md` },
-    { label: 'Helpin CLI', href: `${GITHUB_URL}/blob/develop/community/README.md` },
-    { label: 'Self-hosting', href: '/new#open-source' },
+    { label: 'Helpin CLI', href: '/new/self-hosting#cli' },
+    { label: 'Self-hosting', href: '/new/self-hosting' },
   ] },
   { title: 'Open source', links: [
     { label: 'Repository', href: GITHUB_URL },
