@@ -1,6 +1,6 @@
 .hp3 .kp-demo { font-family: 'Helpin Knowledge UI',var(--sans); }
 /* Publishing: one URL, the actual delivery layer, and a complete article response. */
-.hp3 .knowledge-publishing-section { background: radial-gradient(ellipse at 45% 40%,#16382a,transparent 65%),#081b16; color: #edf5ef; }
+.hp3 .knowledge-publishing-section { background: radial-gradient(ellipse at 45% 40%,rgba(34,75,49,.16),transparent 65%),#090909; color: #edf5ef; }
 .hp3 .knowledge-publishing-section .sec-head { max-width: 750px; text-align: center; margin-inline: auto; }
 .hp3 .knowledge-publishing-section .eyebrow { color: #a9d4b5; }
 .hp3 .knowledge-publishing-section .lede { color: #b4c7bb; }

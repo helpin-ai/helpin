@@ -3,7 +3,7 @@
 .hp3 .agents-page .sec-head { max-width: 740px; }
 .hp3 .agents-page .sec-head h2 { font-size: clamp(1.9rem, 3.4vw, 2.7rem); }
 .hp3 .agents-page .sec-head .lede { font-size: 16px; line-height: 1.85; }
-.hp3 .agents-page section.agents-hero { padding: 28px 0 64px; background: radial-gradient(ellipse at 75% 0%, #244a34, transparent 55%), #081b16; color: #f1f7f3; }
+.hp3 .agents-page section.agents-hero { padding: 28px 0 64px; background: radial-gradient(ellipse at 75% 0%, rgba(36,74,52,.18), transparent 55%), #090909; color: #f1f7f3; }
 .hp3 .agents-breadcrumb { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #b0c7b8; margin-bottom: 46px; }
 .hp3 .agents-hero-copy { display: grid; gap: 24px; text-align: center; justify-items: center; max-width: 800px; margin: 0 auto; }
 .hp3 .agents-hero .eyebrow { color: #b5dbbd; }
@@ -33,7 +33,7 @@
 .hp3 .agents-prompt > span { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--t3); }
 .hp3 .agents-prompt p { font-size: 12px; line-height: 1.7; color: #345541; margin-top: 8px; }
 .hp3 .agents-split { display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); align-items: center; gap: 90px; }
-.hp3 .agents-coding { background: #081b16; color: #edf5ef; }
+.hp3 .agents-coding { background: #090909; color: #edf5ef; }
 .hp3 .agents-coding .eyebrow { color: #acd8b8; }
 .hp3 .agents-coding .lede { color: #b9cdbf; }
 .hp3 .agents-coding .sec-head { margin-bottom: 28px; }

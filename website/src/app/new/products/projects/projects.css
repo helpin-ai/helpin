@@ -3,7 +3,7 @@
 .hp3 .projects-page section[id] { scroll-margin-top: 82px; }
 .hp3 .projects-page .sec-head h2 { font-size: clamp(1.9rem,3.4vw,2.7rem); line-height: 1.15; }
 .hp3 .projects-page .sec-head .lede { font-size: 16px; line-height: 1.85; }
-.hp3 .projects-page section.projects-hero { padding: 28px 0 64px; background: radial-gradient(ellipse at 78% 5%, #264b35, transparent 57%), #081b16; color: #f0f7f2; }
+.hp3 .projects-page section.projects-hero { padding: 28px 0 64px; background: radial-gradient(ellipse at 78% 5%, rgba(38,75,53,.18), transparent 57%), #090909; color: #f0f7f2; }
 .hp3 .projects-breadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: 45px; color: #aec5b7; font-size: 11px; }
 .hp3 .projects-hero-copy { display: grid; gap: 24px; max-width: 890px; margin: 0 auto; text-align: center; justify-items: center; }
 .hp3 .projects-hero .eyebrow { color: #b4d9bd; }
@@ -30,7 +30,7 @@
 .hp3 .projects-details svg { color: #5d816b; margin-bottom: 14px; }
 .hp3 .projects-details h3 { font-size: 18px; line-height: 1.4; margin-bottom: 10px; text-wrap: initial; }
 .hp3 .projects-details p { font-size: 14px; line-height: 1.8; color: var(--t2); }
-.hp3 .projects-planning { background: #081b16; color: #edf5ef; }
+.hp3 .projects-planning { background: #090909; color: #edf5ef; }
 .hp3 .projects-planning .eyebrow { color: #a8d5b4; }
 .hp3 .projects-planning .lede { color: #b6cbbb; }
 .hp3 .projects-planning-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
