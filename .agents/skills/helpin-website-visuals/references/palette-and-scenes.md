@@ -43,7 +43,7 @@ The user explicitly prefers the original charcoal/sage treatment for the Kanban 
 | Hairline | `#303A33` |
 | Main / secondary text | `#E6ECE8` / `#A4AFA7` |
 
-Use restrained sage highlights and the original semantic state colors. Do not apply the forest workflow palette to the entire Kanban or its Ask Agent/task overlay: broad dark-green surfaces overpower this full product layout. Page consistency comes from the shared section palette and hierarchy, not recoloring every product preview identically.
+Give the outer Kanban preview container an explicit charcoal background and matching radius; transparent wrappers can expose a white page surface. Use restrained sage highlights and the original semantic state colors. Do not apply the forest workflow palette to the entire Kanban or its Ask Agent/task overlay: broad dark-green surfaces overpower this full product layout. Page consistency comes from the shared section palette and hierarchy, not recoloring every product preview identically.
 
 ## Approved implementation references
 

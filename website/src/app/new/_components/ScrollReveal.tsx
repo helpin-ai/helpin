@@ -9,12 +9,13 @@ const GROUPS = [
   '.sec-head', '.record-intro', '.ask-agent-intro', '.final',
   '.record-bento-copy', '.ask-agent-capabilities > article', '.ctrl-copy',
   '.self-host-features', '.developer-features', '.developer-cli-copy',
-  '.pm-items', '.six', '.steps.big', '.footer-nav',
+  '.pm-items', '.six', '.steps.big', '.footer-nav', '.support-features',
 ];
 const SINGLE_ITEMS = [
   '.ask-agent-screenshot', '.control-screenshot', '.developer-visual',
   '.self-host-intro .links', '.self-host-license', '.ask-agent-links',
   '.section-close', '.rs-close', '.footer-brand', '.footer-community', '.footer-bottom',
+  '.support-context-card', '.support-work-card',
 ];
 
 export function ScrollReveal() {

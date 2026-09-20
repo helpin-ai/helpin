@@ -71,7 +71,7 @@
 
 /* KanbanBoard + TaskCard: colored status line, totals, type icon, sprint,
    priority/estimate footer and owner avatar. A focused app crop, not a new UI. */
-.hp3 .project-hero-stage{position:relative;isolation:isolate;padding:234px 24px 24px 29%;min-width:0}
+.hp3 .project-hero-stage{position:relative;isolation:isolate;background:#171b18;border-radius:12px;padding:234px 24px 24px 29%;min-width:0}
 .hp3 .project-hero-stage>.project-hero-task{position:relative;z-index:1;box-shadow:0 24px 80px #0008}
 .hp3 .project-hero-board{position:absolute;inset:0;display:grid;grid-template-columns:164px minmax(0,1fr);background:#171b18;border:1px solid #303a33;border-radius:12px;overflow:hidden;color:#e6ece8;font-size:12px;text-align:left;opacity:.65}
 .hp3 .project-hero-board svg{flex:none;color:#a4afa7}
@@ -188,7 +188,7 @@
 .hp3 .phb-agent-count+.phb-group{margin-left:0}
 @media(max-width:1100px){.hp3 .phb-toolbar{gap:10px}.hp3 .phb-members{display:none}}
 
-.hp3 .projects-board-agent-preview{margin-top:48px}
+.hp3 .projects-board-agent-preview{margin-top:48px;background:#171b18;border-radius:12px}
 
 /* The release follow-up completes the story after the engineering handoff. */
 .hp3 .pth-followup{position:absolute;z-index:3;left:24px;bottom:40px;width:410px;border:1px solid #4d6153;border-radius:12px;background:#202820;color:#e6ece8;box-shadow:0 24px 65px #0006;overflow:hidden;transition:opacity .55s ease,transform .65s cubic-bezier(.22,1,.36,1)}

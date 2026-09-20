@@ -8,7 +8,7 @@ const COLUMNS = [
   { title: 'Product', links: [
     { label: 'Overview', href: '/new#product' },
     { label: 'Customer records', href: '/new#record' },
-    { label: 'Inbox', href: '/new/product#inbox' },
+    { label: 'Customer Support', href: '/new/products/customer-support' },
     { label: 'Meetings', href: '/new/products/meetings' },
     { label: 'Projects', href: '/new/products/projects' },
     { label: 'CRM', href: '/new/products/crm' },
