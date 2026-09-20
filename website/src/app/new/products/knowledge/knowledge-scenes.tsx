@@ -4,16 +4,6 @@ import { useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowDown, BookOpen, Check, FileText, Globe, LockKeyhole, Pause, Play } from 'lucide-react';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
 
-const ARTICLES = [
-  { title: 'Connect your first integration', collection: 'Getting started', body: 'Bring your tools into OrbitDesk and keep the activity in one workspace.', steps: ['Open Settings → Integrations.', 'Choose the service you want to connect.', 'Authorize access and confirm your workspace.'] },
-  { title: 'Invite your team', collection: 'Workspace & team', body: 'Give teammates access to the workspace and choose their role.', steps: ['Open your workspace members settings.', 'Add your teammate’s email address.', 'Choose a role and send the invitation.'] },
-  { title: 'Export your customer list', collection: 'Working with data', body: 'Create a CSV of the customer records in your current view.', steps: ['Open Customers and apply your filters.', 'Choose Export from the view menu.', 'Download the CSV when your export is ready.'] },
-];
-export function KnowledgeLibrary() {
-  const [selected, setSelected] = useState(0);
-  const article = ARTICLES[selected];
-  return <div className="kl-library"><div className="kl-top"><span><b className="ks-mark">O</b><strong>OrbitDesk</strong><span>/</span>Help Center</span><span className="kl-public"><Globe size={13} />Public space</span></div><div className="kl-body"><nav aria-label="Example help center articles"><span className="kl-caption">YOUR GUIDES</span>{ARTICLES.map((item,index)=><button key={item.title} type="button" aria-pressed={selected===index} aria-controls="knowledge-example-article" onClick={()=>setSelected(index)}><BookOpen size={15}/><span>{item.title}<small>{item.collection}</small></span></button>)}<div className="kl-internal"><LockKeyhole size={14}/><span>Internal playbooks<small>In a separate team space</small></span></div></nav><article id="knowledge-example-article" aria-live="polite" aria-atomic="true"><div className="kl-article-meta"><span>{article.collection}</span><span><Check size={12}/>Published</span></div><h3>{article.title}</h3><p>{article.body}</p><ol>{article.steps.map(step=><li key={step}>{step}</li>)}</ol><div className="kl-author"><img src="/new/avatars/sam.webp" width={24} height={24} alt=""/><span>Written by Sam Rivera</span></div></article></div></div>;
-}
 function Step({children,at=0,className=''}:{children:ReactNode;at?:number;className?:string}) {return <div className={`ks-step ${className}`} style={{'--ks-delay':`${at}s`} as CSSProperties}>{children}</div>;}
 function Sources(){return <><span className="ks-caption">SELECTED KNOWLEDGE</span><div className="ks-source-list">{[
   {Icon:BookOpen,title:'OrbitDesk Help Center',detail:'Getting started · Selected collection'},
