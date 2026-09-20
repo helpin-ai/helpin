@@ -60,6 +60,16 @@ func (s *SupportCoverageDailyAnalyzer) classifyCoverageWithJev(ctx context.Conte
 	if conversation != "support_query" || category == "no_gap" || kind == "none" {
 		return nil
 	}
+	// Independent answers can each clear the confidence threshold while
+	// disagreeing on the corrective surface. Fall back to grounded analysis
+	// instead of forcing a contradictory classification into the narrative.
+	expectedKind := map[string]string{
+		"knowledge": "content", "structure": "content", "conflict": "content",
+		"context": "data", "action": "action", "workflow": "action", "policy": "policy",
+	}
+	if expected := expectedKind[category]; expected != "" && kind != expected {
+		return nil
+	}
 	classification.HasGap, classification.GapCategory, classification.GapKind = true, category, kind
 	return classification
 }

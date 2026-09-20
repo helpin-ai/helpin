@@ -55,3 +55,31 @@ func TestJevCoverageClassificationPreservesGroundedGeneration(t *testing.T) {
 		})
 	}
 }
+
+func TestJevCoverageClassificationRequiresConsistentCorrectiveSurface(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		category string
+		kind     string
+		accepted bool
+	}{
+		{"missing knowledge", "knowledge", "content", true},
+		{"missing account data", "context", "data", true},
+		{"missing action", "action", "action", true},
+		{"missing policy", "policy", "policy", true},
+		{"knowledge misrouted to action", "knowledge", "action", false},
+		{"account data misrouted to docs", "context", "content", false},
+		{"workflow misrouted to docs", "workflow", "content", false},
+		{"conflicting sources misrouted to data", "conflict", "data", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decisions, provider, _, _ := setupJevDecisionTest(t, "primary")
+			provider.choices = map[string]string{"conversation_type": "support_query", "gap_category": tc.category, "gap_kind": tc.kind}
+			analyzer := NewSupportCoverageDailyAnalyzer(nil, "test", "test").SetJevDecisions(decisions)
+			got := analyzer.classifyCoverageWithJev(context.Background(), CoverageConversationAnalysisInput{WorkspaceID: "workspace", ConversationID: "conversation"})
+			if (got != nil) != tc.accepted {
+				t.Fatalf("classification accepted = %v, want %v", got != nil, tc.accepted)
+			}
+		})
+	}
+}
