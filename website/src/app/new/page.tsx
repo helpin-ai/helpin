@@ -260,8 +260,8 @@ export default function NewHomePage() {
         <div className="wrap">
           <div className="final">
             <span className="eyebrow">Close the loop</span>
-            <h2 id="final-cta-title">Start with a customer.<br />End with something shipped.</h2>
-            <p className="lede">Give your team and agents the context to turn customer questions into work that ships.</p>
+            <h2 id="final-cta-title">Every conversation has a next step.<br />Take it with Helpin.</h2>
+            <p className="lede">Bring customer context, your team, and AI agents together to answer questions, resolve issues, and get work done.</p>
             <CtaRow />
             <div className="assure"><span>Open source</span><span>Self-hostable</span><span>Built for SaaS teams</span></div>
           </div>
