@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Check, ChevronRight, Inbox, Mail, MessageSquare, Clock3, Languages, Paperclip, PanelRight, Search, ShieldCheck, SlidersHorizontal, Sparkles, Users, Wrench, Zap } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, Inbox, Mail, MessageSquare, Clock3, Languages, Paperclip, PanelRight, Search, ShieldCheck, SlidersHorizontal, Sparkles, Users, Wrench, Zap } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
 import { SectionHead, SIGNUP_URL, GITHUB_URL } from '../../_components/ui';
@@ -65,17 +65,8 @@ export default function CustomerSupportPage() {
       <nav className="support-page-nav" aria-label="On this page"><div className="wrap"><span>Customer Support</span><a href="#support-inbox">Shared inbox</a><a href="#support-operations">Inbox tools</a><a href="#support-workflow">AI & teamwork</a><a href="#support-connected">Connected work</a><a href="#support-controls">Controls</a><a href="#support-faq">FAQs</a></div></nav>
 
       <section id="support-inbox" className="support-inbox-section">
-        <div className="wrap support-intro-grid">
-          <SectionHead eyebrow="Start with the customer" title="Every conversation. The context to answer." lede="Bring live chat and forwarded email into one inbox. Route conversations to the right team, organize them with tags and saved views, and keep customer history beside every reply." />
-          <div className="support-context-card">
-            <div className="support-context-person"><img src="/new/avatars/maya.webp" alt="" width={48} height={48} /><div><strong>Maya Chen</strong><span>Northstar Labs · Customer</span></div><span className="support-context-tag">SSO rollout</span></div>
-            <div className="support-context-row"><MessageSquare size={18} aria-hidden="true" /><div><span>THE CONVERSATION</span><p>“Can we pilot Okta with our admins first?”</p></div></div>
-            <div className="support-context-row"><BookOpen size={18} aria-hidden="true" /><div><span>THE KNOWLEDGE</span><p>Okta setup guide, ready to share</p></div></div>
-            <div className="support-context-row"><PanelRight size={18} aria-hidden="true" /><div><span>THE LINKED WORK</span><p>SSO Enterprise Readiness <small>In progress</small></p></div></div>
-            <div className="support-context-foot"><span className="support-live-dot" /> One customer record. Right beside the reply.</div>
-          </div>
-        </div>
         <div className="wrap">
+          <SectionHead eyebrow="Start with the customer" title="Every conversation. The context to answer." lede="Bring live chat and forwarded email into one inbox. Route conversations to the right team, organize them with tags and saved views, and keep customer history beside every reply." />
           <figure className="support-product-shot">
             <div className="support-shot-heading"><span><span className="support-live-dot" /> One inbox. The whole customer story.</span><span className="support-demo-label">EXAMPLE WORKSPACE</span></div>
             <a href="/new/support/inbox-1672-v2.webp" target="_blank" rel="noopener noreferrer" aria-label="View the full-size support inbox illustration (opens in a new tab)">
