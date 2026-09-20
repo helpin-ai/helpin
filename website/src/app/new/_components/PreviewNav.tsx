@@ -12,7 +12,7 @@ const PRODUCTS = [
   { label: 'Meetings', description: 'Conversations become next steps.', href: '/new/product#meetings', icon: Video },
   { label: 'Projects', description: 'Customer requests connected to work.', href: '/new/products/projects', icon: Kanban },
   { label: 'CRM', description: 'The history behind every account.', href: '/new/product#crm', icon: Building2 },
-  { label: 'Knowledge', description: 'Answers for customers and agents.', href: '/new/product#knowledge', icon: BookOpen },
+  { label: 'Knowledge', description: 'Answers for customers and agents.', href: '/new/products/knowledge', icon: BookOpen },
   { label: 'Customer records', description: 'One customer. The full picture.', href: '/new#record', icon: Users },
 ];
 const DEVELOPERS = [

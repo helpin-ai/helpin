@@ -12,7 +12,7 @@ const COLUMNS = [
     { label: 'Meetings', href: '/new/product#meetings' },
     { label: 'Projects', href: '/new/products/projects' },
     { label: 'CRM', href: '/new/product#crm' },
-    { label: 'Knowledge', href: '/new/product#knowledge' },
+    { label: 'Knowledge', href: '/new/products/knowledge' },
   ] },
   { title: 'Agents & workflows', links: [
     { label: 'Ask Agent', href: '/new#ask-agent' },
