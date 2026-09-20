@@ -95,6 +95,7 @@ export default function ProductPage() {
           <SectionHead eyebrow="CRM with the conversation attached" title="Know what’s happening before the next sales call." lede="Manage companies, contacts, deals, stages, and renewals alongside the customer activity that explains them." />
           <ul className="steps big"><li>See the support issue holding up a deal.</li><li>See the feature request tied to a renewal.</li><li>See the meeting where the objection came up.</li><li>See what changed before you follow up.</li></ul>
           <p className="section-close">The record tells you more than the stage.</p>
+          <p className="section-close"><a className="btn-link" href="/new/products/crm">Explore CRM →</a></p>
         </div>
       </section>
 
