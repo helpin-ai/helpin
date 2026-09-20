@@ -1,5 +1,5 @@
 /* Inbox workflows: one complete, independently animated story per card. */
-.hp3 .support-page section.support-operations { --ink: #edf5ef; --t2: #b2c6ba; --t3: #99b3a4; --em: #9cdbb3; --border: #c2e6d11f; color: var(--ink); background: radial-gradient(ellipse at 50% 0%, #163b2a 0, transparent 65%), #081b16; }
+.hp3 .support-page section.support-operations { --ink: #edf5ef; --t2: #b2c6ba; --t3: #99b3a4; --em: #9cdbb3; --border: #c2e6d11f; color: var(--ink); background: radial-gradient(ellipse at 50% 0%, rgba(34,75,49,.16) 0, transparent 65%), #090909; }
 .hp3 .support-operations > .wrap > .sec-head { max-width: 790px; margin-inline: auto; text-align: center; }
 .hp3 .support-operations .sec-head .eyebrow { color: #9cdbb3; justify-content: center; }
 .hp3 .support-operations .sec-head .lede { color: var(--t2); max-width: 720px; margin-inline: auto; }

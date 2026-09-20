@@ -1,9 +1,9 @@
 /* Support product page. Shared brand tokens live in /new/new.css. */
-.hp3 .support-page { --support-dark: #081b16; }
+.hp3 .support-page { --support-dark: #090909; }
 .hp3 .support-page section[id] { scroll-margin-top: 82px; }
 .hp3 .support-page .wrap { max-width: 1240px; }
 .hp3 .support-page section { padding-block: 96px; }
-.hp3 .support-page section.support-hero { position: relative; isolation: isolate; padding-block: 28px 88px; color: #f1f7f3; background: radial-gradient(ellipse at 85% 45%, rgba(78,132,89,.27), transparent 57%), linear-gradient(120deg, #081b16 30%, #112d20); }
+.hp3 .support-page section.support-hero { position: relative; isolation: isolate; padding-block: 28px 88px; color: #f1f7f3; background: radial-gradient(ellipse at 85% 45%, rgba(55,99,66,.12), transparent 57%), #090909; }
 .hp3 .support-hero::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: linear-gradient(rgba(171,211,176,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(171,211,176,.045) 1px, transparent 1px); background-size: 88px 88px; background-position: center; mask-image: radial-gradient(ellipse at 85% 50%, #000, transparent 72%); }
 .hp3 .support-hero-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 64px; align-items: center; }
 .hp3 .support-hero .hero-inner { gap: 22px; max-width: none; margin: 0; text-align: left; justify-items: start; }

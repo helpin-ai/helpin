@@ -3,7 +3,7 @@
 .hp3 .knowledge-page section[id] { scroll-margin-top: 82px; }
 .hp3 .knowledge-page .sec-head h2 { font-size: clamp(1.9rem,3.4vw,2.7rem); line-height: 1.15; }
 .hp3 .knowledge-page .sec-head .lede { font-size: 16px; line-height: 1.85; }
-.hp3 .knowledge-page section.knowledge-hero { padding: 28px 0 64px; background: radial-gradient(ellipse at 78% 5%, #264b35, transparent 57%), #081b16; color: #f0f7f2; }
+.hp3 .knowledge-page section.knowledge-hero { padding: 28px 0 64px; background: radial-gradient(ellipse at 78% 5%, rgba(38,75,53,.18), transparent 57%), #090909; color: #f0f7f2; }
 .hp3 .knowledge-breadcrumb { display: flex; align-items: center; gap: 8px; margin-bottom: 45px; color: #aec5b7; font-size: 11px; }
 .hp3 .knowledge-hero-copy { display: grid; gap: 24px; max-width: 890px; margin: 0 auto; text-align: center; justify-items: center; }
 .hp3 .knowledge-hero .eyebrow { color: #b4d9bd; }
