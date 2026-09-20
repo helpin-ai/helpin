@@ -1095,6 +1095,9 @@ importers:
       '@helpin-ai/sdk-js':
         specifier: 0.0.40
         version: 0.0.40
+      '@helpin-ai/widget-core':
+        specifier: workspace:*
+        version: link:../packages/widget-core
       clsx:
         specifier: ^2.1.1
         version: 2.1.1

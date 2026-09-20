@@ -1,27 +1,107 @@
 'use client';
 
-import { useState } from 'react';
-import { BookOpen, Check, GitPullRequest, PanelRight, Pause, Play } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { MountWidgetOptions } from '@helpin-ai/widget-core';
+import { Pause, Play } from 'lucide-react';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
+import { DEMO_CONFIG, DEMO_DURATION, DEMO_MESSAGES, demoFrame } from './support-widget-script';
+import '@helpin-ai/widget-core/src/styles/widget.css';
+import './support-widget-demo.css';
+
+type WidgetRuntime = typeof import('@helpin-ai/widget-core');
 
 export function SupportHeroScene() {
-  const { container, playing, cycle } = useBentoPlayback(8500);
+  const { container, playing } = useBentoPlayback(DEMO_DURATION);
+  const mount = useRef<HTMLDivElement>(null);
+  const runtime = useRef<WidgetRuntime | null>(null);
+  const [ready, setReady] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [elapsed, setElapsed] = useState(DEMO_DURATION);
+  const timestamp = useRef('2026-09-20T09:14:00Z');
+  const active = playing && !paused;
+  const frame = demoFrame(active ? elapsed : DEMO_DURATION, timestamp.current);
+  const options: MountWidgetOptions = {
+    config: DEMO_CONFIG,
+    isOpen: true,
+    showLauncher: false,
+    initialView: 'conversation',
+    connectionStatus: 'connected',
+    messages: frame.messages,
+    isAIThinking: frame.isAIThinking,
+    aiProgressLabel: elapsed < 6100 ? 'Checking the setup guide…' : 'Gathering the context…',
+    isTyping: frame.isTyping,
+    typingAgentName: 'Sam',
+    typingAgentAvatar: '/new/avatars/sam.webp',
+    activeTeammate: frame.handedOff ? { userId: 'sam-demo', name: 'Sam Rivera', avatarUrl: '/new/avatars/sam.webp', status: 'online' } : undefined,
+    activeConversation: { id: 'website-demo', subject: 'Okta admin pilot', status: 'open', flowState: frame.handedOff ? 'assigned_to_human' : 'ai_handling' },
+    contactCaptureCompleted: true,
+  };
+  const currentOptions = useRef(options);
+  currentOptions.current = options;
 
-  return <div className="support-hero-art" ref={container} data-playing={playing && !paused}>
-    <div className="support-hero-art-label"><span>ANSWER. HAND OFF. KEEP IT MOVING.</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} support inbox animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}</button></div>
-    <div className="support-hero-window">
-      <div className="support-hero-window-bar"><span className="support-hero-workspace"><span className="support-workspace-logo" aria-hidden="true">O</span><strong>OrbitDesk</strong><span className="support-hero-divider">/</span><span>Shared inbox</span></span><PanelRight size={16} aria-hidden="true" /></div>
-      <div className="support-hero-window-body" key={cycle} role="img" aria-label="Illustrative support workflow: Maya asks about an Okta admin pilot and incorrect roles. Helpin AI answers from the setup guide. The role-mapping issue is linked to SSO Enterprise Readiness, and Sam receives the conversation with a handoff note."><div className="support-hero-window-content" aria-hidden="true">
-        <div className="support-hero-thread">
-          <div className="support-hero-message"><div className="support-hero-author"><img src="/new/avatars/maya.webp" alt="" width={28} height={28} /><strong>Maya Chen</strong><span>Northstar Labs</span></div><p>Can we pilot Okta with just our admins? The group mapping gives them the wrong role.</p></div>
-          <div className="support-hero-answer"><div className="support-hero-answer-label"><span className="support-hero-ai-mark"><img src="/brand/helpin-icon-ink.svg" width={14} height={14} alt="" /></span><strong>Helpin AI</strong></div><p>Yes. Use an admin-only group for the pilot, following the Okta setup guide. I’m passing the role-mapping issue to our team.</p><div className="support-hero-source"><BookOpen size={13} aria-hidden="true" /> Okta setup guide</div><div className="support-hero-sent"><Check size={13} aria-hidden="true" /> Answer sent to Maya</div></div>
-          <div className="support-hero-linked"><GitPullRequest size={14} /><div><strong>SSO / 142 · Role mapping</strong><span>Conversation linked · In progress</span></div><Check size={13} /></div>
-          <div className="support-hero-note"><span><img src="/new/avatars/sam.webp" width={20} height={20} alt="" /> Handed to Sam · Internal note</span><p>Admin pilot guide shared. Incorrect roles need investigation. Original conversation attached.</p></div>
-        </div>
-        <div className="support-hero-customer"><span className="support-hero-rail-label">CUSTOMER CONTEXT</span><div className="support-hero-identity"><img src="/new/avatars/maya.webp" width={44} height={44} alt="" /><strong>Maya Chen</strong><span>Northstar Labs</span></div><div className="support-hero-rail-item support-hero-assigned"><span>Assigned to</span><strong>Sam Rivera</strong></div><div className="support-hero-rail-item"><span>Linked project</span><strong>SSO Enterprise Readiness</strong><small><span className="support-live-dot" /> In progress</small></div><div className="support-hero-rail-item"><span>Knowledge</span><strong><BookOpen size={13} aria-hidden="true" /> Okta setup guide</strong></div></div>
-      </div></div>
+  useEffect(() => {
+    const target = mount.current;
+    if (!target) return;
+    let cancelled = false;
+    timestamp.current = new Date().toISOString();
+    // The package bundles its own Preact renderer. Mount it imperatively rather
+    // than rendering Preact components through React's renderer.
+    import('@helpin-ai/widget-core').then(module => {
+      if (cancelled) return;
+      runtime.current = module;
+      module.mountWidget(target, currentOptions.current);
+      setReady(true);
+    }).catch(() => {
+      // The complete server-rendered transcript remains visible if loading fails.
+    });
+    return () => {
+      cancelled = true;
+      runtime.current?.unmountWidget(target);
+      runtime.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const target = mount.current;
+    if (!ready || !target) return;
+    // The shared list follows new messages. Also keep the last reply in view
+    // when this inline container reflows (especially in the static state).
+    let frameId = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        const list = target.querySelector<HTMLElement>('.helpin-message-list');
+        if (list) list.scrollTop = list.scrollHeight;
+      });
+    });
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frameId);
+    };
+  }, [ready]);
+
+  useEffect(() => {
+    if (!ready || !active) return;
+    setElapsed(0);
+    const started = performance.now();
+    const timer = window.setInterval(() => setElapsed((performance.now() - started) % DEMO_DURATION), 50);
+    return () => window.clearInterval(timer);
+  }, [ready, active]);
+
+  useEffect(() => {
+    if (ready && mount.current) runtime.current?.mountWidget(mount.current, options);
+  });
+
+  return <div className="support-hero-art support-widget-art" ref={container} data-playing={active} data-stage={frame.stage}>
+    <div className="support-hero-art-label"><span>FROM THE CUSTOMER’S SIDE</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} support widget animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}</button></div>
+    <div className="support-widget-shell" role="img" aria-label="Illustrative OrbitDesk chat: Maya asks about an Okta admin pilot. Helpin AI answers from the setup guide. Maya reports incorrect roles. Helpin passes the context to Sam, who links the issue to the SSO project and will follow up after engineering investigates.">
+      <div className="support-widget-workspace" aria-hidden="true"><span className="support-workspace-logo">O</span><strong>OrbitDesk</strong><span>Customer support</span></div>
+      <div className="support-widget-viewport" data-ready={ready}>
+        <div className="support-widget-fallback" aria-hidden="true"><div className="support-widget-fallback-header"><img src="/brand/helpin-icon-ink.svg" width={24} height={24} alt="" /><strong>Helpin AI <small>OrbitDesk support</small></strong></div><div className="support-widget-transcript">{DEMO_MESSAGES.map(message => <div key={message.id} className={`support-widget-fallback-message support-widget-fallback-${message.role}`}><span>{message.role === 'customer' ? 'Maya Chen' : message.senderName || 'Helpin AI'}</span><p>{message.content}</p>{message.sources && <small>Source: Okta setup guide</small>}</div>)}</div></div>
+        <div className="support-widget-mount" ref={mount} inert aria-hidden="true" />
+      </div>
     </div>
-    <p className="support-hero-art-caption"><span className="support-live-dot" /> The conversation, the context, and the next step. <span>Illustrative demo</span></p>
+    <p className="support-hero-art-caption"><span className="support-live-dot" /><span className="support-widget-stage" aria-hidden="true">{frame.stage}</span><span>Illustrative conversation</span></p>
   </div>;
 }

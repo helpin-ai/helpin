@@ -1,0 +1,43 @@
+/* Layout only: the conversation itself is rendered by @helpin-ai/widget-core. */
+.hp3 .support-hero .support-widget-art { width: 100%; max-width: 470px; justify-self: center; }
+.hp3 .support-widget-shell { border: 1px solid #d5e0d8; border-radius: 16px; background: #fff; box-shadow: 0 28px 70px rgba(0,10,4,.25), 0 0 0 7px rgba(183,215,187,.045); overflow: hidden; color: var(--ink); }
+.hp3 .support-widget-workspace { display: flex; gap: 9px; align-items: center; padding: 13px 18px; border-bottom: 1px solid #e4e9e6; font-size: 12px; background: #f6f8f7; }
+.hp3 .support-widget-workspace > span:last-child { margin-left: auto; color: #66716c; font-size: 11px; }
+.hp3 .support-widget-viewport { height: 620px; position: relative; }
+.hp3 .support-widget-mount { position: absolute; inset: 0; opacity: 0; overflow: hidden; pointer-events: none; }
+.hp3 .support-widget-viewport[data-ready='true'] .support-widget-mount { opacity: 1; }
+.hp3 .support-widget-viewport[data-ready='true'] .support-widget-fallback { visibility: hidden; }
+.hp3 .support-widget-mount .helpin-widget { --helpin-font-sans: var(--sans); --helpin-primary: #0f7a50; --helpin-primary-hover: #0b6340; }
+.hp3 .support-widget-mount .helpin-chat-window { position: relative; inset: auto; width: 100%; max-width: none; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; z-index: auto; transform: none; transition: none; opacity: 1; }
+.hp3 .support-widget-mount .helpin-message-list { scroll-behavior: auto; overscroll-behavior: contain; }
+.hp3 .support-widget-mount .helpin-conversation-thread { min-height: 0; }
+.hp3 .support-widget-mount .helpin-message-content { font-size: 13px; line-height: 1.65; }
+.hp3 .support-widget-mount .helpin-message-content p { margin: 0; }
+.hp3 .support-widget-mount .helpin-conversation-back,
+.hp3 .support-widget-mount .helpin-conversation-header-actions { visibility: hidden; }
+.hp3 .support-widget-mount .helpin-compose-input { font-size: 13px; }
+.hp3 .support-widget-art .support-hero-art-caption { font-size: 10px; min-height: 36px; align-content: start; }
+.hp3 .support-widget-fallback { height: 100%; display: flex; flex-direction: column; background: #fff; }
+.hp3 .support-widget-fallback-header { display: flex; gap: 10px; align-items: center; padding: 18px; border-bottom: 1px solid #e4e9e6; font-size: 13px; }
+.hp3 .support-widget-fallback-header small { display: block; font-size: 11px; font-weight: 400; color: #66716c; }
+.hp3 .support-widget-transcript { padding: 18px; overflow: auto; font-size: 12px; line-height: 1.6; }
+.hp3 .support-widget-fallback-message { margin-bottom: 15px; max-width: 92%; }
+.hp3 .support-widget-fallback-message > span { display: block; font-size: 10px; font-weight: 600; margin-bottom: 4px; }
+.hp3 .support-widget-fallback-message > p { padding: 10px 12px; background: #f3f6f4; border-radius: 9px; }
+.hp3 .support-widget-fallback-message > small { color: #66716c; font-size: 10px; }
+.hp3 .support-widget-fallback-customer { margin-left: auto; }
+.hp3 .support-widget-fallback-customer > p { color: #fff; background: #0f7a50; }
+.hp3 .support-widget-fallback-system { color: #66716c; font-size: 10px; }
+.hp3 .support-widget-fallback-system > span { display: none; }
+@media (max-width: 480px) {
+  .hp3 .support-widget-viewport { height: 590px; }
+  .hp3 .support-widget-workspace { padding-inline: 14px; }
+  .hp3 .support-widget-mount .helpin-message-content { font-size: 12px; }
+}
+/* Pausing reveals the complete, stationary conversation, including widget motion. */
+.hp3 .support-widget-art[data-playing='false'] .support-widget-mount *,
+.hp3 .support-widget-art[data-playing='false'] .support-widget-mount *::before,
+.hp3 .support-widget-art[data-playing='false'] .support-widget-mount *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .support-widget-mount *, .hp3 .support-widget-mount *::before, .hp3 .support-widget-mount *::after { animation: none !important; transition: none !important; }
+}
