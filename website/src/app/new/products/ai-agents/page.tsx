@@ -49,7 +49,7 @@ export default function AIAgentsPage() {
           <div className="agents-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>AI agents</span></div>
           <div className="agents-hero-copy">
             <span className="eyebrow">AI agents for your workspace</span>
-            <h1 id="agents-title">Specialist agents.<br /><span>One customer history.</span></h1>
+            <h1 id="agents-title">Give your team agents <span>that understand the work.</span></h1>
             <p className="lede">Answer customers, plan product work, write code, keep docs current, and move deals forward—with agents that share your workspace context.</p>
             <CtaRow secondaryHref="#agent-directory" secondaryLabel="Meet the agents" />
             <div className="agents-hero-assure"><span><GitBranch size={14} />Coordinate agents</span><span><Plug size={14} />Connect your tools</span><span><ShieldCheck size={14} />Control approvals</span></div>
