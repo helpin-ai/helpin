@@ -1,18 +1,26 @@
-import { FileSearchIcon } from '@/lib/icons'
 import type { SupportCoverageGapListItem } from '@/lib/supportCoverageTypes'
-import { GAP_KIND_COLORS, V1_GAP_TYPE_LABELS, resolveGapKindDisplay } from '@/lib/supportCoverageTypes'
+import {
+  GAP_KIND_COLORS,
+  V1_GAP_TYPE_LABELS,
+  resolveGapKindDisplay,
+} from '@/lib/supportCoverageTypes'
 import { cn, timeAgo } from '@/lib/utils'
 
 const ROW_GRID_FULL =
-  'grid w-full grid-cols-[minmax(0,1fr)_140px_90px_90px] items-center gap-4 px-4 py-3 text-left'
+  'grid w-full grid-cols-1 items-center gap-2 px-2 py-4 text-left sm:grid-cols-[minmax(0,1fr)_150px_100px_90px] sm:gap-4'
 const ROW_GRID_COMPACT =
-  'grid w-full grid-cols-[minmax(0,1fr)_120px_90px] items-center gap-3 px-3 py-3 text-left'
+  'grid w-full grid-cols-1 items-center gap-2 px-3 py-3 text-left sm:grid-cols-[minmax(0,1fr)_120px_90px] sm:gap-3'
 
 function KindDot({ gapKind }: { gapKind: string }) {
   const kind = resolveGapKindDisplay(gapKind)
   const colors = GAP_KIND_COLORS[kind] ?? GAP_KIND_COLORS.content
   return (
-    <span className={cn('inline-block h-2.5 w-2.5 shrink-0 rounded-full', colors.dot)} />
+    <span
+      className={cn(
+        'inline-block h-2.5 w-2.5 shrink-0 rounded-full',
+        colors.dot,
+      )}
+    />
   )
 }
 
@@ -33,8 +41,7 @@ export function GapList({
 }) {
   if (gaps.length === 0) {
     return (
-      <div className="flex flex-col items-center py-14 text-muted-foreground">
-        <FileSearchIcon className="mb-3 h-10 w-10 text-muted-foreground/30" />
+      <div className="space-y-2 py-10 text-quiet-text-tertiary">
         <p className="text-sm font-medium text-foreground">{emptyTitle}</p>
         <p className="mt-1 text-xs text-muted-foreground/70">
           {emptyDescription}
@@ -44,17 +51,17 @@ export function GapList({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
+    <div className="min-w-0 border-y border-quiet-divider-strong">
       {!compact && (
         <div
           className={cn(
             ROW_GRID_FULL,
-            'border-b border-border/40 bg-muted/20 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70'
+            'hidden border-b border-quiet-divider-strong py-2 text-xs font-medium text-quiet-text-tertiary sm:grid',
           )}
         >
           <span>Gap</span>
-          <span>Type</span>
-          <span>Evidence</span>
+          <span>Needed improvement</span>
+          <span>Evidence · 30d</span>
           <span>Last seen</span>
         </div>
       )}
@@ -62,6 +69,14 @@ export function GapList({
         {gaps.map((gap) => {
           const title = gap.canonical_title || gap.title
           const preview = gap.title !== title ? gap.title : gap.topic_title
+          const improvement =
+            gap.gap_kind === 'data'
+              ? 'Customer data'
+              : gap.gap_kind === 'action'
+                ? 'Action or workflow'
+                : gap.gap_kind === 'policy'
+                  ? 'Policy or escalation'
+                  : (V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type)
           const flags = [
             gap.split_review_needed ? 'Review split' : '',
             gap.recurrence_reopened ? 'Reopened' : '',
@@ -71,16 +86,21 @@ export function GapList({
               key={gap.id}
               type="button"
               onClick={() => onSelect(gap.id)}
+              aria-current={selectedGapId === gap.id ? true : undefined}
               className={cn(
                 compact ? ROW_GRID_COMPACT : ROW_GRID_FULL,
-                'transition-colors hover:bg-muted/35',
-                selectedGapId === gap.id && 'bg-muted/60'
+                'transition-colors hover:bg-quiet-row-hover focus-visible:outline-2 focus-visible:outline-ring',
+                selectedGapId === gap.id && 'bg-muted/60',
               )}
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{title}</p>
+                <p className="line-clamp-2 break-words text-sm font-semibold">
+                  {title}
+                </p>
                 {preview && (
-                  <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{preview}</p>
+                  <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                    {preview}
+                  </p>
                 )}
                 {!compact && flags.length > 0 && (
                   <p className="mt-1 line-clamp-1 text-[11px] font-medium text-amber-700">
@@ -92,18 +112,19 @@ export function GapList({
               {!compact ? (
                 <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <KindDot gapKind={gap.gap_kind} />
-                  {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
+                  {improvement}
                 </span>
               ) : (
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <KindDot gapKind={gap.gap_kind} />
-                  <span className="truncate">{V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}</span>
+                  <span className="truncate">{improvement}</span>
                 </span>
               )}
 
               {!compact && (
                 <span className="text-xs tabular-nums text-muted-foreground">
-                  {gap.evidence_30d} in 30d
+                  {gap.evidence_30d} records
+                  <span className="sm:hidden"> in 30 days</span>
                 </span>
               )}
 

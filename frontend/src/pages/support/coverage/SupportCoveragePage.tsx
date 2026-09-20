@@ -1,7 +1,17 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  QuietPageHeader,
+  QuietPageViewport,
+} from '@/components/design-system/quiet'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { CoverageInsights } from '@/components/support/coverage/CoverageInsights'
+import { UpgradeRequiredDialog } from '@edition'
+import {
+  getUpgradeRequiredReason,
+  type UpgradeRequiredReason,
+} from '@edition/errors'
 import {
   Sheet,
   SheetClose,
@@ -15,10 +25,16 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+} from '@/components/design-system/quiet-dropdown-select'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
+import { PMFilterBar } from '@/components/pm/PMFilterControls'
 import { GapList } from '@/components/support/coverage/GapList'
+import { CoverageEmptyState } from '@/components/support/coverage/CoverageEmptyState'
 import { useAgents } from '@/hooks/queries/useAgents'
 import { useDocsCollections, useDocsSpaces } from '@/hooks/queries/useDocs'
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession'
@@ -65,27 +81,53 @@ export function SupportCoveragePage() {
   const [total, setTotal] = useState(0)
   const [loadedPage, setLoadedPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const detailRequest = useRef(0)
+  const activeGapId = useRef<string | null>(null)
+  const listRequest = useRef(0)
+  const [upgradeReason, setUpgradeReason] =
+    useState<UpgradeRequiredReason | null>(null)
+  const [statusUpdating, setStatusUpdating] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [selectedGapId, setSelectedGapId] = useState<string | null>(null)
-  const [selectedGap, setSelectedGap] = useState<SupportCoverageGapDetail | null>(null)
+  const [selectedGap, setSelectedGap] =
+    useState<SupportCoverageGapDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('open')
+  const [statusFilter, setStatusFilter] =
+    useState<(typeof STATUS_FILTERS)[number]>('open')
   const [kindFilter, setKindFilter] = useState<KindFilterValue>('all')
-  const [showMergeSuggestionsOnly, setShowMergeSuggestionsOnly] = useState(false)
+  const [showMergeSuggestionsOnly, setShowMergeSuggestionsOnly] =
+    useState(false)
   const [mergeSuggestionCount, setMergeSuggestionCount] = useState(0)
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [targetSpaceId, setTargetSpaceId] = useState('')
   const [targetCollectionId, setTargetCollectionId] = useState('')
   const [applying, setApplying] = useState(false)
-  const [confirmSuggestionId, setConfirmSuggestionId] = useState<string | null>(null)
-  const [startingDocsAgentGapId, setStartingDocsAgentGapId] = useState<string | null>(null)
-	const [coverageSurface, setCoverageSurface] = useState<'topics' | 'signals' | 'health'>('topics')
-	const [topicsV2, setTopicsV2] = useState<CoverageTopicV2[]>([])
-	const [signalsV2, setSignalsV2] = useState<CoverageSignalV2[]>([])
-	const [healthV2, setHealthV2] = useState<CoveragePipelineHealthV2 | null>(null)
-	const [selectedTopicV2, setSelectedTopicV2] = useState<CoverageTopicDetailV2 | null>(null)
-	const [signalTopicSelections, setSignalTopicSelections] = useState<Record<string, string>>({})
+  const [confirmSuggestionId, setConfirmSuggestionId] = useState<string | null>(
+    null,
+  )
+  const [startingDocsAgentGapId, setStartingDocsAgentGapId] = useState<
+    string | null
+  >(null)
+  const [coverageSurface, setCoverageSurface] = useState('gaps')
+  const [topicsV2, setTopicsV2] = useState<CoverageTopicV2[]>([])
+  const [signalsV2, setSignalsV2] = useState<CoverageSignalV2[]>([])
+  const [healthV2, setHealthV2] = useState<CoveragePipelineHealthV2 | null>(
+    null,
+  )
+  const [selectedTopicV2, setSelectedTopicV2] =
+    useState<CoverageTopicDetailV2 | null>(null)
+  const [topicLoading, setTopicLoading] = useState(false)
+  const [insightErrors, setInsightErrors] = useState<Record<string, string>>({})
+  const [pendingSignalId, setPendingSignalId] = useState<string | null>(null)
+  const [pendingAttemptId, setPendingAttemptId] = useState<string | null>(null)
+  const topicRequest = useRef(0)
+  const [signalTopicSelections, setSignalTopicSelections] = useState<
+    Record<string, string>
+  >({})
 
   const { data: agents = [] } = useAgents(wsId)
   const { data: spaces } = useDocsSpaces(wsId)
@@ -100,9 +142,14 @@ export function SupportCoveragePage() {
   const canRebuildClusters = has('settings.manage')
   const canReviewMergeSuggestions = has('support.edit')
   const [rebuildingClusters, setRebuildingClusters] = useState(false)
-  const [latestClusterRun, setLatestClusterRun] = useState<SupportCoverageClusterRebuildRun | null>(null)
-  const [mergeSuggestions, setMergeSuggestions] = useState<SupportCoverageGapMergeSuggestion[]>([])
-  const [mergeActionSuggestionId, setMergeActionSuggestionId] = useState<string | null>(null)
+  const [latestClusterRun, setLatestClusterRun] =
+    useState<SupportCoverageClusterRebuildRun | null>(null)
+  const [mergeSuggestions, setMergeSuggestions] = useState<
+    SupportCoverageGapMergeSuggestion[]
+  >([])
+  const [mergeActionSuggestionId, setMergeActionSuggestionId] = useState<
+    string | null
+  >(null)
 
   const listFilters = useCallback(
     (page: number) => ({
@@ -135,21 +182,25 @@ export function SupportCoveragePage() {
         toast.error('Failed to rebuild gap clusters')
       } else if (!isClusterRebuildResult(data)) {
         toast.error('Failed to rebuild gap clusters')
-      } else if (data.status === 'failed' || data.embedding_status === 'failed') {
+      } else if (
+        data.status === 'failed' ||
+        data.embedding_status === 'failed'
+      ) {
         toast.error(formatClusterRebuildSuccess(data))
       } else {
         toast.success(formatClusterRebuildSuccess(data))
-        const [summaryRes, gapsRes, latestRes, mergeSuggestionRes] = await Promise.all([
-          supportCoverageService.getSummary(wsId),
-          supportCoverageService.listGaps(wsId, listFilters(1)),
-          supportCoverageService.getLatestClusterRebuild(wsId),
-          supportCoverageService.listGaps(wsId, {
-            status: 'open',
-            page: '1',
-            per_page: '1',
-            has_merge_suggestions: 'true',
-          }),
-        ])
+        const [summaryRes, gapsRes, latestRes, mergeSuggestionRes] =
+          await Promise.all([
+            supportCoverageService.getSummary(wsId),
+            supportCoverageService.listGaps(wsId, listFilters(1)),
+            supportCoverageService.getLatestClusterRebuild(wsId),
+            supportCoverageService.listGaps(wsId, {
+              status: 'open',
+              page: '1',
+              per_page: '1',
+              has_merge_suggestions: 'true',
+            }),
+          ])
         if (summaryRes.data) setSummary(summaryRes.data)
         if (gapsRes.data) {
           setGaps(gapsRes.data.items || [])
@@ -165,7 +216,8 @@ export function SupportCoveragePage() {
       setRebuildingClusters(false)
     }
   }, [wsId, rebuildingClusters, listFilters])
-  const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []
+  const externalSpaces =
+    spaces?.filter((space) => space.type === 'external_capable') ?? []
   const documentationAgent = agents.find(
     (agent) =>
       agent.is_system &&
@@ -182,10 +234,24 @@ export function SupportCoveragePage() {
     let cancelled = false
 
     async function loadCoverage() {
+      listRequest.current += 1
+      setLoadingMore(false)
       setLoading(true)
+      setLoadError(null)
+      detailRequest.current += 1
+      topicRequest.current += 1
+      setSelectedTopicV2(null)
+      setTopicLoading(false)
+      activeGapId.current = null
       setSelectedGapId(null)
       setSelectedGap(null)
-      const [summaryRes, gapsRes, latestClusterRes, mergeSuggestionRes, healthV2Res] = await Promise.all([
+      const [
+        summaryRes,
+        gapsRes,
+        latestClusterRes,
+        mergeSuggestionRes,
+        healthV2Res,
+      ] = await Promise.all([
         supportCoverageService.getSummary(wsId),
         supportCoverageService.listGaps(wsId, listFilters(1)),
         supportCoverageService.getLatestClusterRebuild(wsId),
@@ -195,32 +261,42 @@ export function SupportCoveragePage() {
           per_page: '1',
           has_merge_suggestions: 'true',
         }),
-		supportCoverageService.getPipelineHealthV2(wsId),
+        supportCoverageService.getPipelineHealthV2(wsId),
       ])
       if (cancelled) return
-	  let topicsV2: CoverageTopicV2[] = []
-	  let signalsV2: CoverageSignalV2[] = []
-	  if (healthV2Res.data?.rollout.read_v2_enabled) {
-		const [topicsRes, signalsRes] = await Promise.all([
-		  supportCoverageService.listTopicsV2(wsId),
-		  supportCoverageService.listSignalsV2(wsId),
-		])
-		if (cancelled) return
-		topicsV2 = topicsRes.data?.items ?? []
-		signalsV2 = signalsRes.data?.items ?? []
-	  }
-      if (summaryRes.data) setSummary(summaryRes.data)
-      setLatestClusterRun(latestClusterRes.data ?? null)
-      if (gapsRes.data) {
-        setGaps(gapsRes.data.items || [])
-        setTotal(gapsRes.data.total || 0)
-        setLoadedPage(1)
+      const errors: Record<string, string> = {}
+      if (healthV2Res.error) errors.health = 'Could not load analysis status.'
+      let topicsV2: CoverageTopicV2[] = []
+      let signalsV2: CoverageSignalV2[] = []
+      if (healthV2Res.data?.rollout.read_v2_enabled) {
+        const [topicsRes, signalsRes] = await Promise.all([
+          supportCoverageService.listTopicsV2(wsId),
+          supportCoverageService.listSignalsV2(wsId),
+        ])
+        if (cancelled) return
+        if (topicsRes.error) errors.topics = 'Could not load topics.'
+        if (signalsRes.error) errors.signals = 'Could not load signals.'
+        topicsV2 = topicsRes.data?.items ?? []
+        signalsV2 = signalsRes.data?.items ?? []
       }
+      setSummary(summaryRes.data ?? null)
+      setGaps(gapsRes.data?.items ?? [])
+      setTotal(gapsRes.data?.total ?? 0)
+      setLoadError(
+        gapsRes.error ? 'Could not load coverage gaps. Try again.' : null,
+      )
+      setInsightErrors(errors)
+      setLatestClusterRun(latestClusterRes.data ?? null)
+      setLoadedPage(1)
       setMergeSuggestionCount(mergeSuggestionRes.data?.total ?? 0)
-	  setTopicsV2(topicsV2)
-	  setSignalsV2(signalsV2)
-	  setHealthV2(healthV2Res.data ?? null)
-	  if (!healthV2Res.data?.rollout.read_v2_enabled) setCoverageSurface('health')
+      setTopicsV2(topicsV2)
+      setSignalsV2(signalsV2)
+      setHealthV2(healthV2Res.data ?? null)
+      if (!healthV2Res.data?.rollout.read_v2_enabled) {
+        setCoverageSurface((current) =>
+          current === 'topics' || current === 'signals' ? 'gaps' : current,
+        )
+      }
       setLoading(false)
     }
 
@@ -228,51 +304,112 @@ export function SupportCoveragePage() {
     return () => {
       cancelled = true
     }
-  }, [wsId, listFilters])
+  }, [wsId, listFilters, reloadKey])
 
-	const openTopicV2 = async (topicId: string) => {
-	  const { data, error } = await supportCoverageService.getTopicV2(wsId, topicId)
-	  if (error) { toast.error('Failed to load coverage topic'); return }
-	  setSelectedTopicV2(data ?? null)
-	}
+  const openTopicV2 = async (topicId: string) => {
+    const request = ++topicRequest.current
+    setSelectedTopicV2(null)
+    setTopicLoading(true)
+    const { data, error } = await supportCoverageService.getTopicV2(
+      wsId,
+      topicId,
+    )
+    if (request !== topicRequest.current) return
+    setTopicLoading(false)
+    if (error) {
+      toast.error('Could not load this topic. Try again.')
+      return
+    }
+    setSelectedTopicV2(data ?? null)
+  }
 
-	const reviewSignalV2 = async (signalId: string) => {
-	  const topicId = signalTopicSelections[signalId]
-	  if (!topicId) return
-	  const { error } = await supportCoverageService.reviewSignalV2(wsId, signalId, topicId)
-	  if (error) { toast.error('Failed to attach signal'); return }
-	  setSignalsV2((current) => current.filter((signal) => signal.id !== signalId))
-	  toast.success('Signal attached to topic')
-	}
+  const reviewSignalV2 = async (signalId: string) => {
+    const topicId = signalTopicSelections[signalId]
+    if (!topicId || pendingSignalId) return
+    setPendingSignalId(signalId)
+    const { error } = await supportCoverageService.reviewSignalV2(
+      wsId,
+      signalId,
+      topicId,
+    )
+    setPendingSignalId(null)
+    if (error) {
+      toast.error('Failed to attach signal')
+      return
+    }
+    setSignalsV2((current) =>
+      current.filter((signal) => signal.id !== signalId),
+    )
+    const { data } = await supportCoverageService.listTopicsV2(wsId)
+    if (data) setTopicsV2(data.items ?? [])
+    toast.success('Signal attached to topic')
+  }
 
-	const dismissSignalV2 = async (signalId: string) => {
-	  const { error } = await supportCoverageService.dismissSignalV2(wsId, signalId)
-	  if (error) { toast.error('Failed to dismiss signal'); return }
-	  setSignalsV2((current) => current.filter((signal) => signal.id !== signalId))
-	}
+  const dismissSignalV2 = async (signalId: string) => {
+    if (pendingSignalId) return
+    setPendingSignalId(signalId)
+    const { error } = await supportCoverageService.dismissSignalV2(
+      wsId,
+      signalId,
+    )
+    setPendingSignalId(null)
+    if (error) {
+      toast.error('Failed to dismiss signal')
+      return
+    }
+    setSignalsV2((current) =>
+      current.filter((signal) => signal.id !== signalId),
+    )
+  }
 
-	const replayAttemptV2 = async (attemptId: string) => {
-	  const { error } = await supportCoverageService.replayAttemptV2(wsId, attemptId)
-	  if (error) { toast.error('Failed to queue retry'); return }
-	  toast.success('Coverage attempt queued for retry')
-	  const { data } = await supportCoverageService.getPipelineHealthV2(wsId)
-	  if (data) setHealthV2(data)
-	}
+  const replayAttemptV2 = async (attemptId: string) => {
+    if (pendingAttemptId) return
+    setPendingAttemptId(attemptId)
+    const { error } = await supportCoverageService.replayAttemptV2(
+      wsId,
+      attemptId,
+    )
+    if (error) {
+      setPendingAttemptId(null)
+      toast.error('Failed to queue retry')
+      return
+    }
+    toast.success('Coverage attempt queued for retry')
+    const { data } = await supportCoverageService.getPipelineHealthV2(wsId)
+    if (data) setHealthV2(data)
+    setPendingAttemptId(null)
+  }
+
+  const showAIError = (error: string) => {
+    const reason = getUpgradeRequiredReason(error)
+    if (reason) setUpgradeReason(reason)
+    else setGenerateError(error)
+  }
 
   const refreshGap = async (gapId: string) => {
+    if (activeGapId.current !== gapId) return
+    const request = detailRequest.current
     const [{ data }, suggestionsRes] = await Promise.all([
       supportCoverageService.getGap(wsId, gapId),
       supportCoverageService.listMergeSuggestions(wsId, gapId),
     ])
+    if (request !== detailRequest.current) return
     if (data) setSelectedGap(data)
+    else toast.error('Could not refresh the gap. Close it and try again.')
     if (suggestionsRes.data) setMergeSuggestions(suggestionsRes.data)
   }
 
   const refreshList = async () => {
-    const [{ data }] = await Promise.all([
+    const request = listRequest.current
+    const [{ data }, , summaryRes] = await Promise.all([
       supportCoverageService.listGaps(wsId, listFilters(1)),
       refreshMergeSuggestionCount(),
+      supportCoverageService.getSummary(wsId),
     ])
+    if (request !== listRequest.current) return
+    if (!data)
+      toast.error('Could not refresh the list. Use Refresh to try again.')
+    if (summaryRes.data) setSummary(summaryRes.data)
     if (data) {
       setGaps(data.items || [])
       setTotal(data.total || 0)
@@ -282,9 +419,14 @@ export function SupportCoveragePage() {
 
   const handleLoadMore = async () => {
     if (loadingMore || gaps.length >= total) return
+    const request = listRequest.current
     const nextPage = loadedPage + 1
     setLoadingMore(true)
-    const { data, error } = await supportCoverageService.listGaps(wsId, listFilters(nextPage))
+    const { data, error } = await supportCoverageService.listGaps(
+      wsId,
+      listFilters(nextPage),
+    )
+    if (request !== listRequest.current) return
     setLoadingMore(false)
     if (error) {
       toast.error(error || 'Failed to load more gaps')
@@ -298,6 +440,9 @@ export function SupportCoveragePage() {
   }
 
   const openDetail = async (gapId: string) => {
+    activeGapId.current = gapId
+    const request = ++detailRequest.current
+    setDetailError(null)
     setSelectedGapId(gapId)
     setSelectedGap(null)
     setDetailLoading(true)
@@ -310,12 +455,17 @@ export function SupportCoveragePage() {
       supportCoverageService.getGap(wsId, gapId),
       supportCoverageService.listMergeSuggestions(wsId, gapId),
     ])
+    if (request !== detailRequest.current) return
     if (data) setSelectedGap(data)
+    else setDetailError('Could not load this gap. Try again.')
     if (suggestionsRes.data) setMergeSuggestions(suggestionsRes.data)
     setDetailLoading(false)
   }
 
   const closeDetail = () => {
+    activeGapId.current = null
+    detailRequest.current += 1
+    setDetailError(null)
     setSelectedGapId(null)
     setSelectedGap(null)
     setDetailLoading(false)
@@ -326,15 +476,36 @@ export function SupportCoveragePage() {
   }
 
   const handleStatusUpdate = async (gapId: string, status: string) => {
-    await supportCoverageService.updateGapStatus(wsId, gapId, status)
-    closeDetail()
+    if (statusUpdating) return
+    setStatusUpdating(true)
+    const { error } = await supportCoverageService.updateGapStatus(
+      wsId,
+      gapId,
+      status,
+    )
+    setStatusUpdating(false)
+    if (error) {
+      toast.error('Could not update this gap. Your changes were not saved.')
+      return
+    }
+    toast.success(
+      status === 'done'
+        ? 'Gap marked done'
+        : status === 'open'
+          ? 'Gap reopened'
+          : 'Gap rejected',
+    )
+    if (activeGapId.current === gapId) closeDetail()
     await refreshList()
   }
 
   const handleApplyMergeSuggestion = async (suggestionId: string) => {
     if (!selectedGap || mergeActionSuggestionId) return
     setMergeActionSuggestionId(suggestionId)
-    const { error } = await supportCoverageService.applyMergeSuggestion(wsId, suggestionId)
+    const { error } = await supportCoverageService.applyMergeSuggestion(
+      wsId,
+      suggestionId,
+    )
     setMergeActionSuggestionId(null)
     if (error) {
       toast.error(error || 'Failed to merge gaps')
@@ -348,13 +519,18 @@ export function SupportCoveragePage() {
   const handleDismissMergeSuggestion = async (suggestionId: string) => {
     if (!selectedGap || mergeActionSuggestionId) return
     setMergeActionSuggestionId(suggestionId)
-    const { error } = await supportCoverageService.dismissMergeSuggestion(wsId, suggestionId)
+    const { error } = await supportCoverageService.dismissMergeSuggestion(
+      wsId,
+      suggestionId,
+    )
     setMergeActionSuggestionId(null)
     if (error) {
       toast.error(error || 'Failed to dismiss suggestion')
       return
     }
-    setMergeSuggestions((current) => current.filter((suggestion) => suggestion.id !== suggestionId))
+    setMergeSuggestions((current) =>
+      current.filter((suggestion) => suggestion.id !== suggestionId),
+    )
     await refreshList()
   }
 
@@ -362,12 +538,16 @@ export function SupportCoveragePage() {
     if (!selectedGap || selectedGap.related_articles.length === 0) return
     setGenerating(true)
     setGenerateError(null)
-    const { error } = await supportCoverageService.createArticleUpdate(wsId, selectedGap.id, {
-      target_document_id: selectedGap.related_articles[0].document_id,
-    })
+    const { error } = await supportCoverageService.createArticleUpdate(
+      wsId,
+      selectedGap.id,
+      {
+        target_document_id: selectedGap.related_articles[0].document_id,
+      },
+    )
     setGenerating(false)
     if (error) {
-      setGenerateError(error)
+      showAIError(error)
       return
     }
     await refreshGap(selectedGap.id)
@@ -377,13 +557,17 @@ export function SupportCoveragePage() {
     if (!selectedGap || !targetSpaceId) return
     setGenerating(true)
     setGenerateError(null)
-    const { error } = await supportCoverageService.createArticleDraft(wsId, selectedGap.id, {
-      target_space_id: targetSpaceId,
-      target_collection_id: targetCollectionId || undefined,
-    })
+    const { error } = await supportCoverageService.createArticleDraft(
+      wsId,
+      selectedGap.id,
+      {
+        target_space_id: targetSpaceId,
+        target_collection_id: targetCollectionId || undefined,
+      },
+    )
     setGenerating(false)
     if (error) {
-      setGenerateError(error)
+      showAIError(error)
       return
     }
     await refreshGap(selectedGap.id)
@@ -391,25 +575,44 @@ export function SupportCoveragePage() {
 
   const handleApplySuggestion = async (
     suggestionId: string,
-    override?: { route?: 'create_article' | 'update_article'; target_document_id?: string },
+    override?: {
+      route?: 'create_article' | 'update_article'
+      target_document_id?: string
+    },
   ) => {
     setApplying(true)
-    await supportCoverageService.applySuggestion(wsId, suggestionId, override)
+    const { error } = await supportCoverageService.applySuggestion(
+      wsId,
+      suggestionId,
+      override,
+    )
     setApplying(false)
+    if (error) {
+      showAIError(error)
+      return
+    }
+    toast.success('Suggestion applied')
     setConfirmSuggestionId(null)
     if (selectedGap) await refreshGap(selectedGap.id)
     await refreshList()
   }
 
   const handleDiscardSuggestion = async (suggestionId: string) => {
-    await supportCoverageService.discardSuggestion(wsId, suggestionId)
+    const { error } = await supportCoverageService.discardSuggestion(
+      wsId,
+      suggestionId,
+    )
+    if (error) {
+      toast.error('Could not discard this suggestion')
+      return
+    }
     if (selectedGap) await refreshGap(selectedGap.id)
   }
 
   const handleRegenerate = async (gapId: string) => {
     const { error } = await supportCoverageService.regenerate(wsId, gapId)
     if (error) {
-      setGenerateError(error)
+      showAIError(error)
       return
     }
     await refreshGap(gapId)
@@ -422,335 +625,440 @@ export function SupportCoveragePage() {
       agent_id: documentationAgent.id,
       target_type: 'support_coverage_gap',
       target_id: gapId,
-      additional_context: 'Convert this support coverage gap into the right documentation work. Draft or propose changes for review before publishing.',
+      additional_context:
+        'Convert this support coverage gap into the right documentation work. Draft or propose changes for review before publishing.',
     })
     setStartingDocsAgentGapId(null)
     if (error) {
-      toast.error(error || 'Failed to start Quill')
+      showAIError(error)
       return
     }
     toast.success('Quill started')
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loading01Icon className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <header className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">Coverage Gaps</h2>
-          <p className="text-sm text-muted-foreground">
-            Issues AI couldn't fully resolve — with recommended fixes to close each gap.
-          </p>
-          {summary?.last_analyzed_at && (
-            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
+    <QuietPageViewport contentClassName="space-y-5">
+      <QuietPageHeader
+        title="Support coverage"
+        description="Find recurring customer needs, review the evidence, and close the gaps in your support."
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={loading}
+            onClick={() => setReloadKey((key) => key + 1)}
+          >
+            Refresh
+          </Button>
+        }
+      />
+      {summary &&
+        (summary.total_open_gaps > 0 ||
+          summary.new_gaps_this_week > 0 ||
+          summary.gaps_fixed_this_week > 0 ||
+          summary.total_evidence_count > 0 ||
+          summary.last_analyzed_at) && (
+          <div
+            className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-quiet-text-tertiary"
+            aria-label="Coverage summary"
+          >
+            <span>
+              <strong className="font-semibold text-quiet-text-primary">
+                {summary.total_open_gaps}
+              </strong>{' '}
+              open gaps
+            </span>
+            <span>
+              <strong className="font-semibold text-quiet-text-primary">
+                {summary.new_gaps_this_week}
+              </strong>{' '}
+              new this week
+            </span>
+            <span>
+              <strong className="font-semibold text-quiet-positive">
+                {summary.gaps_fixed_this_week}
+              </strong>{' '}
+              closed this week
+            </span>
+            <span>
+              <strong className="font-semibold text-quiet-text-primary">
+                {summary.total_evidence_count}
+              </strong>{' '}
+              evidence records
+            </span>
+            {summary.last_analyzed_at && (
               <span>Last analyzed {timeAgo(summary.last_analyzed_at)}</span>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium text-muted-foreground/70 hover:bg-muted hover:text-foreground"
-                    aria-label="How coverage analysis works"
-                  >
-                    ?
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" align="start" className="max-w-[300px] text-xs leading-relaxed">
-                  Analysis runs from recent support conversations. It identifies unresolved customer
-                  needs, attaches new evidence to existing gaps when possible, and creates new gaps
-                  when AI support could not fully resolve an issue.
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          )}
+            )}
+          </div>
+        )}
+      <Tabs
+        value={coverageSurface}
+        onValueChange={setCoverageSurface}
+        className="gap-5"
+      >
+        <div className="overflow-x-auto">
+          <TabsList
+            variant="quiet"
+            aria-label="Coverage views"
+            className="min-w-full"
+          >
+            <TabsTrigger value="gaps">Gaps to resolve</TabsTrigger>
+            {healthV2?.rollout.read_v2_enabled && (
+              <>
+                <TabsTrigger value="topics">Customer topics</TabsTrigger>
+                <TabsTrigger value="signals">
+                  Needs review{' '}
+                  <span className="text-quiet-muted">{signalsV2.length}</span>
+                </TabsTrigger>
+              </>
+            )}
+            {(healthV2?.rollout.read_v2_enabled || isAdmin) && (
+              <TabsTrigger value="health">Analysis status</TabsTrigger>
+            )}
+          </TabsList>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          {canRebuildClusters && (
+        <TabsContent value="gaps" className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Select
+              size="sm"
+              value={kindFilter}
+              onValueChange={(value) => setKindFilter(value as KindFilterValue)}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-[150px]"
+                aria-label="Gap type"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                {KIND_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={cn('h-2 w-2 rounded-full', option.dot)}
+                      />
+                      <span>{option.label}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {mergeSuggestionCount > 0 && !showMergeSuggestionsOnly && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMergeSuggestionsOnly(true)
+                  setStatusFilter('open')
+                }}
+                className="ml-auto text-xs font-medium text-amber-700 underline-offset-4 transition-colors hover:text-amber-800 hover:underline dark:text-amber-300 dark:hover:text-amber-200"
+              >
+                Show {mergeSuggestionCount} merge{' '}
+                {mergeSuggestionCount === 1 ? 'suggestion' : 'suggestions'}
+              </button>
+            )}
+            <div
+              className={cn(
+                'flex items-center gap-1',
+                mergeSuggestionCount === 0 || showMergeSuggestionsOnly
+                  ? 'ml-auto'
+                  : '',
+              )}
+            >
+              {STATUS_FILTERS.map((status) => (
+                <button
+                  key={status}
+                  aria-pressed={statusFilter === status}
+                  type="button"
+                  disabled={showMergeSuggestionsOnly && status !== 'open'}
+                  onClick={() => {
+                    setStatusFilter(status)
+                    if (status !== 'open') setShowMergeSuggestionsOnly(false)
+                  }}
+                  className={cn(
+                    'border-b-2 border-transparent px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40',
+                    statusFilter === status
+                      ? 'border-quiet-text-primary font-semibold text-quiet-text-primary'
+                      : 'text-muted-foreground hover:bg-muted',
+                  )}
+                >
+                  {GAP_STATUS_LABELS[status]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <PMFilterBar
+            definitions={[
+              {
+                key: 'kind',
+                label: 'Gap type',
+                singleSelect: true,
+                options: KIND_OPTIONS.filter(
+                  (option) => option.value !== 'all',
+                ).map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                })),
+              },
+            ]}
+            values={{ kind: kindFilter === 'all' ? [] : [kindFilter] }}
+            visibleKeys={new Set(kindFilter === 'all' ? [] : ['kind'])}
+            onToggle={(_, value) =>
+              setKindFilter((current) =>
+                current === value ? 'all' : (value as KindFilterValue),
+              )
+            }
+            onRemove={() => setKindFilter('all')}
+            onClearAll={() => setKindFilter('all')}
+          />
+          <div className="space-y-1">
+            {showMergeSuggestionsOnly && (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+                <span>
+                  Viewing merge suggestions for open gaps. Review similar gaps
+                  and merge or keep separate.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowMergeSuggestionsOnly(false)}
+                  className="font-medium underline-offset-4 hover:underline"
+                >
+                  Back to all gaps
+                </button>
+              </div>
+            )}
+            <div>
+              {loading ? (
+                <p
+                  role="status"
+                  className="py-10 text-sm text-quiet-text-tertiary"
+                >
+                  Loading coverage…
+                </p>
+              ) : loadError ? (
+                <div role="alert" className="py-8 space-y-3">
+                  <p>{loadError}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setReloadKey((key) => key + 1)}
+                  >
+                    Try again
+                  </Button>
+                </div>
+              ) : gaps.length === 0 ? (
+                <CoverageEmptyState
+                  status={statusFilter}
+                  filtered={kindFilter !== 'all'}
+                  mergeReview={showMergeSuggestionsOnly}
+                  hasHistory={Boolean(
+                    summary?.last_analyzed_at || summary?.total_evidence_count,
+                  )}
+                  wsSlug={wsSlug}
+                  onClearFilters={() => {
+                    setKindFilter('all')
+                    setShowMergeSuggestionsOnly(false)
+                  }}
+                  onShowOpen={() => setStatusFilter('open')}
+                  onViewAnalysis={
+                    healthV2?.rollout.read_v2_enabled || isAdmin
+                      ? () => setCoverageSurface('health')
+                      : undefined
+                  }
+                />
+              ) : (
+                <GapList
+                  gaps={gaps}
+                  selectedGapId={selectedGapId ?? undefined}
+                  onSelect={openDetail}
+                />
+              )}
+              {!loading && !loadError && gaps.length > 0 && (
+                <div className="flex items-center justify-between px-1 pt-3">
+                  <span className="text-xs text-muted-foreground">
+                    Showing {gaps.length} of {total} gaps
+                  </span>
+                  {gaps.length < total && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={loadingMore}
+                      onClick={handleLoadMore}
+                    >
+                      {loadingMore ? 'Loading…' : 'Load more'}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+        <CoverageInsights
+          topics={topicsV2}
+          signals={signalsV2}
+          health={healthV2}
+          selectedTopic={selectedTopicV2}
+          topicLoading={topicLoading}
+          wsSlug={wsSlug}
+          errors={insightErrors}
+          loading={loading}
+          signalTopicSelections={signalTopicSelections}
+          onSelectSignalTopic={(signalId, topicId) =>
+            setSignalTopicSelections((current) => ({
+              ...current,
+              [signalId]: topicId,
+            }))
+          }
+          onOpenTopic={openTopicV2}
+          onCloseTopic={() => {
+            topicRequest.current += 1
+            setSelectedTopicV2(null)
+            setTopicLoading(false)
+          }}
+          onAttachSignal={reviewSignalV2}
+          onDismissSignal={dismissSignalV2}
+          canEdit={canReviewMergeSuggestions}
+          canManage={canRebuildClusters}
+          pendingSignalId={pendingSignalId}
+          pendingAttemptId={pendingAttemptId}
+          onRetryAttempt={replayAttemptV2}
+          onRefresh={() => setReloadKey((key) => key + 1)}
+        />
+      </Tabs>
+      {canRebuildClusters &&
+        coverageSurface === 'gaps' &&
+        summary &&
+        summary.total_open_gaps > 0 && (
+          <div className="flex flex-wrap items-center gap-3 border-t border-quiet-divider-strong pt-4">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   disabled={rebuildingClusters}
                   onClick={handleRebuildClusters}
                 >
-                  {rebuildingClusters ? 'Rebuilding…' : 'Rebuild gap clusters'}
+                  {rebuildingClusters
+                    ? 'Checking duplicates…'
+                    : 'Check for duplicate gaps'}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom" align="end" className="max-w-[280px] text-xs leading-relaxed">
-                Rechecks existing open gaps for duplicates, merges only high-confidence matches, and
-                creates merge reviews for uncertain matches. It does not re-run the analyzer.
+              <TooltipContent>
+                Merge high-confidence duplicates and suggest uncertain matches
+                for review.
               </TooltipContent>
             </Tooltip>
-          )}
-          {latestClusterRun?.completed_at && (
-            <span className="text-[11px] text-muted-foreground/60">
-              Last clustered {timeAgo(latestClusterRun.completed_at)} · {latestClusterRun.auto_merged} merged · {latestClusterRun.suggestions_created} review
-            </span>
-          )}
-        </div>
-      </header>
-
-	  {(healthV2?.rollout.read_v2_enabled || isAdmin) && <section className="space-y-3" aria-label="Coverage v2 surfaces">
-		<div className="flex rounded-lg border border-border/60 bg-muted/30 p-1">
-		  {(healthV2?.rollout.read_v2_enabled ? (['topics', 'signals', 'health'] as const) : (['health'] as const)).map((surface) => (
-			<button key={surface} type="button" onClick={() => setCoverageSurface(surface)} className={cn('rounded-md px-3 py-1.5 text-xs font-medium capitalize', coverageSurface === surface ? 'bg-background shadow-sm' : 'text-muted-foreground')}>
-			  {surface === 'signals' ? `Unreviewed signals (${signalsV2.length})` : surface === 'health' ? 'Pipeline health' : `Topics (${topicsV2.length})`}
-			</button>
-		  ))}
-		</div>
-
-		{coverageSurface === 'topics' && (
-		  <div className="grid gap-3 md:grid-cols-2">
-			{topicsV2.map((topic) => (
-			  <button key={topic.id} type="button" onClick={() => void openTopicV2(topic.id)} className="rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted/30">
-				<p className="font-medium">{topic.title}</p>
-				<p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{topic.customer_need}</p>
-				<p className="mt-3 text-xs text-muted-foreground">{topic.conversation_count} conversations · {topic.customer_count} customers · {topic.finding_count} findings</p>
-			  </button>
-			))}
-			{topicsV2.length === 0 && <p className="text-sm text-muted-foreground">No canonical topics yet. Qualified findings will appear after analysis.</p>}
-		  </div>
-		)}
-
-		{coverageSurface === 'signals' && (
-		  <div className="space-y-2">
-			{signalsV2.map((signal) => <div key={signal.id} className="rounded-lg border bg-card p-3"><p className="text-sm font-medium">{signal.normalized_query}</p><p className="mt-1 text-xs text-muted-foreground">{signal.source_kind.replace('_', ' ')} · {signal.meaningful_tokens} meaningful tokens · {timeAgo(signal.observed_at)}</p>{canReviewMergeSuggestions && <div className="mt-3 flex gap-2"><select aria-label={`Topic for ${signal.normalized_query}`} value={signalTopicSelections[signal.id] ?? ''} onChange={(event) => setSignalTopicSelections((current) => ({ ...current, [signal.id]: event.target.value }))} className="min-w-0 flex-1 rounded-md border bg-background px-2 text-xs"><option value="">Select a topic</option>{topicsV2.map((topic) => <option key={topic.id} value={topic.id}>{topic.title}</option>)}</select><Button size="sm" variant="outline" disabled={!signalTopicSelections[signal.id]} onClick={() => void reviewSignalV2(signal.id)}>Attach</Button><Button size="sm" variant="ghost" onClick={() => void dismissSignalV2(signal.id)}>Dismiss</Button></div>}</div>)}
-			{signalsV2.length === 0 && <p className="text-sm text-muted-foreground">No unreviewed signals.</p>}
-		  </div>
-		)}
-
-		{coverageSurface === 'health' && (
-		  <div className="rounded-lg border bg-card p-4">
-			<p className="font-medium">{healthV2?.healthy ? 'Pipeline healthy' : 'Pipeline needs attention'}</p>
-			{healthV2?.latest_batch && <p className="mt-1 text-xs text-muted-foreground">Latest batch: {healthV2.latest_batch.status} · {healthV2.latest_batch.succeeded_count}/{healthV2.latest_batch.candidate_count} succeeded</p>}
-			<div className="mt-3 space-y-2">
-			  {healthV2?.failures.map((failure) => <div key={failure.id} className="flex items-start justify-between gap-3 rounded-md bg-muted/40 p-3"><div><p className="text-sm font-medium">{failure.failure_class || failure.stage}</p><p className="text-xs text-muted-foreground">{failure.failure_message || 'Waiting for retry'}</p></div>{canRebuildClusters && <Button size="sm" variant="outline" onClick={() => void replayAttemptV2(failure.id)}>Retry</Button>}</div>)}
-			</div>
-		  </div>
-		)}
-	  </section>}
-
-	  {selectedTopicV2 && (
-		<Card>
-		  <CardHeader><CardTitle className="flex items-center justify-between text-base"><span>{selectedTopicV2.topic.title}</span><Button variant="ghost" size="sm" onClick={() => setSelectedTopicV2(null)}>Close</Button></CardTitle></CardHeader>
-		  <CardContent className="space-y-4">
-			{selectedTopicV2.findings.map((finding) => <div key={finding.id} className="grid gap-3 rounded-lg border p-4 md:grid-cols-2"><div><p className="text-xs font-medium uppercase text-muted-foreground">Customer need</p><p className="text-sm">{finding.customer_need}</p></div><div><p className="text-xs font-medium uppercase text-muted-foreground">AI answer / failure</p><p className="text-sm">{finding.ai_answer || finding.ai_failure}</p></div><div><p className="text-xs font-medium uppercase text-muted-foreground">Human answer</p><p className="text-sm">{finding.human_answer || 'No human answer observed'}</p></div><div><p className="text-xs font-medium uppercase text-muted-foreground">Recommended fix</p><p className="text-sm font-medium">{finding.fix_type.replaceAll('_', ' ')} · {finding.fix_target}</p><p className="text-sm text-muted-foreground">{finding.rationale}</p><p className="mt-1 text-sm">{finding.suggested_change}</p></div></div>)}
-			<p className="text-xs text-muted-foreground">Recommendations are Support AI analysis. Docs AI is used only after you explicitly start a draft or documentation action below.</p>
-		  </CardContent>
-		</Card>
-	  )}
-
-      {summary && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-xs font-medium text-muted-foreground">New This Week</CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <p className="text-2xl font-bold">{summary.new_gaps_this_week}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-xs font-medium text-muted-foreground">Open Gaps</CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <p className="text-2xl font-bold">{summary.total_open_gaps}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-xs font-medium text-muted-foreground">Done This Week</CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <p className="text-2xl font-bold text-green-600">{summary.gaps_fixed_this_week}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="p-3 pb-1">
-              <CardTitle className="text-xs font-medium text-muted-foreground">Evidence</CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <p className="text-2xl font-bold">{summary.total_evidence_count}</p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Select
-          size="sm"
-          value={kindFilter}
-          onValueChange={(value) => setKindFilter(value as KindFilterValue)}
-        >
-          <SelectTrigger size="sm" className="w-[150px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent align="start">
-            {KIND_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                <span className="flex items-center gap-2">
-                  <span className={cn('h-2 w-2 rounded-full', option.dot)} />
-                  <span>{option.label}</span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {mergeSuggestionCount > 0 && !showMergeSuggestionsOnly && (
-          <button
-            type="button"
-            onClick={() => {
-              setShowMergeSuggestionsOnly(true)
-              setStatusFilter('open')
-            }}
-            className="ml-auto text-xs font-medium text-amber-700 underline-offset-4 transition-colors hover:text-amber-800 hover:underline dark:text-amber-300 dark:hover:text-amber-200"
-          >
-            Show {mergeSuggestionCount} merge {mergeSuggestionCount === 1 ? 'suggestion' : 'suggestions'}
-          </button>
-        )}
-        <div className={cn(
-          'flex rounded-lg border border-border/60 bg-muted/30 p-0.5',
-          mergeSuggestionCount === 0 || showMergeSuggestionsOnly ? 'ml-auto' : '',
-        )}>
-          {STATUS_FILTERS.map((status) => (
-            <button
-              key={status}
-              type="button"
-              disabled={showMergeSuggestionsOnly && status !== 'open'}
-              onClick={() => {
-                setStatusFilter(status)
-                if (status !== 'open') setShowMergeSuggestionsOnly(false)
-              }}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-40',
-                statusFilter === status
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-muted',
-              )}
-            >
-              {GAP_STATUS_LABELS[status]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        {showMergeSuggestionsOnly && (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-            <span>
-              Viewing merge suggestions for open gaps. Review similar gaps and merge or keep separate.
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowMergeSuggestionsOnly(false)}
-              className="font-medium underline-offset-4 hover:underline"
-            >
-              Back to all gaps
-            </button>
+            {latestClusterRun?.completed_at && (
+              <span className="text-xs text-quiet-text-tertiary">
+                Last checked {timeAgo(latestClusterRun.completed_at)} ·{' '}
+                {latestClusterRun.auto_merged} merged ·{' '}
+                {latestClusterRun.suggestions_created} for review
+              </span>
+            )}
           </div>
         )}
-        <div>
-          <GapList
-            gaps={gaps}
-            selectedGapId={selectedGapId ?? undefined}
-            onSelect={openDetail}
-            emptyTitle={showMergeSuggestionsOnly ? 'No merge suggestions pending.' : undefined}
-            emptyDescription={
-              showMergeSuggestionsOnly
-                ? 'Rebuild gap clusters to find similar open gaps that need review.'
-                : undefined
-            }
-          />
-          {gaps.length > 0 && (
-            <div className="flex items-center justify-between px-1 pt-3">
-              <span className="text-xs text-muted-foreground">
-                Showing {gaps.length} of {total} gaps
-              </span>
-              {gaps.length < total && (
+      <Sheet
+        open={Boolean(selectedGapId)}
+        onOpenChange={(open) => !open && closeDetail()}
+      >
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          overlayClassName="bg-black/20"
+          className="overflow-y-auto border-l border-border/50 bg-card p-0 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:w-[min(1000px,calc(100vw-24px))] data-[side=right]:sm:max-w-none"
+        >
+          <SheetTitle className="sr-only">Coverage gap details</SheetTitle>
+          <SheetDescription className="sr-only">
+            Review evidence, recommendations, merge suggestions, and actions for
+            the selected coverage gap.
+          </SheetDescription>
+          {selectedGap ? (
+            <GapDetailPane
+              key={selectedGap.id}
+              gap={selectedGap}
+              wsSlug={wsSlug}
+              loading={detailLoading}
+              canGenerate={canGenerate}
+              canEdit={canReviewMergeSuggestions}
+              statusUpdating={statusUpdating}
+              canRunDocumentationAgent={
+                canGenerate && Boolean(documentationAgent)
+              }
+              startingDocumentationAgent={
+                startingDocsAgentGapId === selectedGap.id
+              }
+              externalSpaces={externalSpaces}
+              collections={collections}
+              targetSpaceId={targetSpaceId}
+              targetCollectionId={targetCollectionId}
+              generating={generating}
+              generateError={generateError}
+              applying={applying}
+              confirmSuggestionId={confirmSuggestionId}
+              mergeSuggestions={mergeSuggestions}
+              canReviewMergeSuggestions={canReviewMergeSuggestions}
+              mergeActionSuggestionId={mergeActionSuggestionId}
+              onClose={closeDetail}
+              onTargetSpaceChange={(spaceId) => {
+                setTargetSpaceId(spaceId)
+                setTargetCollectionId('')
+              }}
+              onTargetCollectionChange={setTargetCollectionId}
+              onSuggestImprovements={handleSuggestImprovements}
+              onDraftNewArticle={handleDraftNewArticle}
+              onRunDocumentationAgent={handleRunDocumentationAgent}
+              onApplySuggestion={handleApplySuggestion}
+              onDiscardSuggestion={handleDiscardSuggestion}
+              onSetConfirmSuggestion={setConfirmSuggestionId}
+              onApplyMergeSuggestion={handleApplyMergeSuggestion}
+              onDismissMergeSuggestion={handleDismissMergeSuggestion}
+              onStatusUpdate={handleStatusUpdate}
+              onRegenerate={handleRegenerate}
+            />
+          ) : (
+            <div className="relative flex min-h-svh items-center justify-center">
+              <SheetClose asChild>
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={loadingMore}
-                  onClick={handleLoadMore}
+                  variant="ghost"
+                  size="icon-sm"
+                  className="absolute right-4 top-4 text-muted-foreground"
                 >
-                  {loadingMore ? 'Loading…' : 'Load more'}
+                  x<span className="sr-only">Close</span>
                 </Button>
+              </SheetClose>
+              {detailError ? (
+                <div role="alert" className="space-y-3 p-6">
+                  <p>{detailError}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      selectedGapId && void openDetail(selectedGapId)
+                    }
+                  >
+                    Try again
+                  </Button>
+                </div>
+              ) : (
+                <Loading01Icon
+                  aria-label="Loading gap"
+                  className="h-5 w-5 animate-spin text-muted-foreground"
+                />
               )}
             </div>
           )}
-        </div>
-
-        <Sheet open={Boolean(selectedGapId)} onOpenChange={(open) => !open && closeDetail()}>
-          <SheetContent
-            side="right"
-            showCloseButton={false}
-            overlayClassName="bg-black/20"
-            className="overflow-y-auto border-l border-border/50 bg-card p-0 shadow-2xl data-[side=right]:w-full data-[side=right]:sm:w-[min(1000px,calc(100vw-24px))] data-[side=right]:sm:max-w-none"
-          >
-            <SheetTitle className="sr-only">Coverage gap details</SheetTitle>
-            <SheetDescription className="sr-only">
-              Review evidence, recommendations, merge suggestions, and actions for the selected coverage gap.
-            </SheetDescription>
-            {selectedGap ? (
-              <GapDetailPane
-                gap={selectedGap}
-                wsSlug={wsSlug}
-                loading={detailLoading}
-                canGenerate={canGenerate}
-                canRunDocumentationAgent={canGenerate && Boolean(documentationAgent)}
-                startingDocumentationAgent={startingDocsAgentGapId === selectedGap.id}
-                externalSpaces={externalSpaces}
-                collections={collections}
-                targetSpaceId={targetSpaceId}
-                targetCollectionId={targetCollectionId}
-                generating={generating}
-                generateError={generateError}
-                applying={applying}
-                confirmSuggestionId={confirmSuggestionId}
-                mergeSuggestions={mergeSuggestions}
-                canReviewMergeSuggestions={canReviewMergeSuggestions}
-                mergeActionSuggestionId={mergeActionSuggestionId}
-                onClose={closeDetail}
-                onTargetSpaceChange={setTargetSpaceId}
-                onTargetCollectionChange={setTargetCollectionId}
-                onSuggestImprovements={handleSuggestImprovements}
-                onDraftNewArticle={handleDraftNewArticle}
-                onRunDocumentationAgent={handleRunDocumentationAgent}
-                onApplySuggestion={handleApplySuggestion}
-                onDiscardSuggestion={handleDiscardSuggestion}
-                onSetConfirmSuggestion={setConfirmSuggestionId}
-                onApplyMergeSuggestion={handleApplyMergeSuggestion}
-                onDismissMergeSuggestion={handleDismissMergeSuggestion}
-                onStatusUpdate={handleStatusUpdate}
-                onRegenerate={handleRegenerate}
-              />
-            ) : (
-              <div className="relative flex min-h-svh items-center justify-center">
-                <SheetClose asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="absolute right-4 top-4 text-muted-foreground"
-                  >
-                    x<span className="sr-only">Close</span>
-                  </Button>
-                </SheetClose>
-                <Loading01Icon className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            )}
-          </SheetContent>
-        </Sheet>
-      </div>
-    </div>
+        </SheetContent>
+      </Sheet>
+      <UpgradeRequiredDialog
+        open={upgradeReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setUpgradeReason(null)
+        }}
+        reason={upgradeReason}
+      />
+    </QuietPageViewport>
   )
 }
