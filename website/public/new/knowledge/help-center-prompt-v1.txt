@@ -1,0 +1,39 @@
+Use case: precise-object-edit. Asset: a polished, high resolution public help-center screenshot for the Helpin Knowledge marketing page.
+Image 1 is the exact EDIT TARGET: the real Helpin-powered Usermaven public documentation reader. Preserve this real product layout and typography. This is a flat application screenshot, not a new design or a mockup in a device.
+
+OUTPUT: 3840x2160 landscape, sharp native 4K UI detail. Extend the original viewport downward to show useful article content rather than enlarging text or leaving empty space. Straight-on, edge-to-edge white application canvas. No browser chrome, no padding around the screenshot, no rounded outer frame, no shadows, no tilt, no marketing headlines.
+
+PRESERVE: top horizontal bar, left nested documentation navigation around 22% width, central article around 55%, right compact 'On this page' table of contents around 20%. Same quiet hairlines, clean white surfaces, original Inter-style font and weights, compact realistic navigation type. Article headings are black, body charcoal gray, secondary labels medium gray. Retain top search, Help Docs and Developers / API Docs navigation, Go to Website button, and small theme icon.
+
+IDENTITY: replace ALL Usermaven wording and branding with fictional SaaS OrbitDesk. Top-left logo is a small forest-green rounded square with a white O, followed by 'OrbitDesk' in dark text. No Usermaven logo, no purple or pink accents, no Acme, no Shopify. Use a restrained forest-green accent for active navigation, breadcrumb, button, and chat launcher. Very pale green active-row background. Do not add the app's workspace management sidebar to this public website.
+
+ARTICLE STORY: a useful onboarding guide for a SaaS customer connecting Slack to OrbitDesk. The selected article in left navigation, the center title, and the table of contents must match. Use exact headings and short text below with impeccable spelling. Keep the source's generous editorial article spacing and readable compact body text. No giant empty region.
+
+Top nav: 'Help Docs' | 'Developers / API Docs' | search placeholder 'Search for articles...' | 'Go to Website'.
+Left navigation group: 'New to OrbitDesk?' then expanded 'Getting Started'. Visible rows:
+'What is OrbitDesk?'
+'Connect your first integration' [selected]
+'Invite your team'
+'Workspace permissions'
+'Import customer records'
+'Export customer data'
+Then collapsed groups 'Integrations & API', 'Projects & tasks', 'AI agents', 'Troubleshooting'.
+
+Central breadcrumb: 'Getting Started'.
+Main heading: 'Connect your first integration'
+Intro: 'Connect Slack to OrbitDesk so your team can follow customer activity without losing the context.'
+Second short paragraph: 'Choose a workspace, review access, and confirm the connection before starting your first sync.'
+Divider, then section heading: 'Choose your integration'
+Body: 'Open Settings, select Integrations, and choose Slack.'
+Next section heading: 'Authorize access'
+Body: 'Sign in to Slack and review the permissions requested for your connection.'
+Next section heading: 'Confirm your workspace'
+Body: 'Select the OrbitDesk workspace that should receive the activity, then confirm the connection.'
+A small pale green information callout: 'Check the workspace before starting your first sync.'
+Next section heading: 'Start your first sync'
+Body: 'Start the sync and check the connection status in Integrations.'
+
+Right table of contents heading: 'On this page'. Links: 'Choose your integration', 'Authorize access', 'Confirm your workspace', 'Start your first sync'. Highlight 'Choose your integration' subtly in green. No unrelated marketing attribution navigation.
+Bottom right: a small forest-green circular chat launcher with a simple white conversation outline, matching the real product's placement.
+
+Constraints: preserve the recognizable real Helpin help-center design, font proportions, 3-column hierarchy, white background, and restrained controls. Improve alignment, spacing, crispness, and the coherent demo content only. No invented usage counts, speed metrics, customer proof, testimonials, new UI controls, floating AI panels, or extra decoration. Remove pointer/hover URL overlays and cropped stray text from the source. Full clean viewport, all main headings readable.

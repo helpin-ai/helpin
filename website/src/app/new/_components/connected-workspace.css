@@ -1,0 +1,45 @@
+/* The network surrounds the closing copy; only the motion control takes pointer events. */
+.hp3 .final-cta-connected > .wrap { max-width: 1280px; }
+.hp3 .final-cta-connected .final { position: relative; z-index: 1; min-height: 640px; padding: 224px 0 84px; max-width: 790px; margin-inline: auto; }
+.hp3 .final-cta-connected h2 { font-size: clamp(2rem, 3.5vw, 2.8rem); }
+.hp3 .final-cta-connected > .wrap::before { opacity: .7; }
+.hp3 .connected-workspace { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.hp3 .connection-art, .hp3 .connection-desktop { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hp3 .connection-desktop { object-fit: contain; }
+.hp3 .connection-mobile { display: none; }
+.hp3 .connection-line { stroke: #c7ddcf; stroke-width: 1.2; }
+.hp3 .connection-pulse { stroke: #4c9867; stroke-width: 1.8; stroke-linecap: round; stroke-dasharray: 7 100; stroke-dashoffset: 107; opacity: 0; }
+.hp3 .connected-workspace[data-playing='true'] .connection-pulse { animation: connection-travel 4.8s cubic-bezier(.4,0,.2,1) var(--connection-delay) both; }
+.hp3 .connection-node { fill: #fcfefd; stroke: #d8e6dc; stroke-width: 1; }
+.hp3 .connection-node-icon { color: #5c816a; }
+.hp3 .connection-node-label { font-family: var(--sans); fill: #587162; font-size: 12px; font-weight: 500; }
+.hp3 .connection-hub { fill: #143d2a; stroke: #24563c; }
+.hp3 .connection-hub-halo { fill: #eaf3ed; stroke: #dcebe0; }
+.hp3 .connection-toggle { position: absolute; bottom: 20px; right: 20px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; border: 1px solid #d8e6dc; background: #fcfefd; color: #587162; cursor: pointer; pointer-events: auto; z-index: 2; }
+@keyframes connection-travel {
+  0% { stroke-dashoffset: 107; opacity: 0; }
+  10% { opacity: .85; }
+  85% { opacity: .85; }
+  100% { stroke-dashoffset: -7; opacity: 0; }
+}
+@media (min-width: 961px) and (max-width: 1150px) {
+  .hp3 .final-cta-connected .final { max-width: 650px; }
+  .hp3 .final-cta-connected h2 { font-size: 36px; }
+}
+@media (max-width: 960px) {
+  .hp3 .final-cta-connected > .wrap { padding-top: 38px; }
+  .hp3 .connected-workspace { position: relative; inset: auto; height: 184px; max-width: 360px; margin-inline: auto; }
+  .hp3 .connection-art { position: relative; }
+  .hp3 .connection-desktop { display: none; }
+  .hp3 .connection-mobile { display: block; width: 100%; height: 100%; }
+  .hp3 .connection-toggle { bottom: 76px; right: 2px; width: 26px; height: 26px; }
+  .hp3 .final-cta-connected .final { min-height: 0; padding-block: 30px 68px; max-width: 680px; }
+}
+@media (max-width: 400px) {
+  .hp3 .connected-workspace { height: 155px; }
+  .hp3 .connection-toggle { bottom: 64px; width: 24px; height: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .connected-workspace[data-playing='true'] .connection-pulse { animation: none; opacity: 0; }
+  .hp3 .connection-toggle { display: none; }
+}
