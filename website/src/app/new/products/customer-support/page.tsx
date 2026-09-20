@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Check, ChevronRight, Inbox, Mail, MessageSquare, MessagesSquare, PanelRight, ShieldCheck, SlidersHorizontal, Tag, Users, Wrench } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, ChevronRight, Inbox, Mail, MessageSquare, Clock3, Languages, Paperclip, PanelRight, Search, ShieldCheck, SlidersHorizontal, Sparkles, Users, Wrench, Zap } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
 import { SectionHead, SIGNUP_URL, GITHUB_URL } from '../../_components/ui';
 import { SupportScene } from './support-scene';
+import { SupportInboxFeatures } from './support-inbox-features';
 import { SupportHeroScene } from './support-hero-scene';
 import './support.css';
 
@@ -16,16 +17,21 @@ export const metadata: Metadata = {
 };
 
 const FEATURES = [
-  { icon: MessagesSquare, title: 'Chat and email, together', copy: 'Keep customer conversations in a shared inbox, with the history ready when your team replies.' },
-  { icon: Users, title: 'Clear ownership for every reply', copy: 'Assign conversations to teammates and organize work with team inboxes.' },
-  { icon: MessageSquare, title: 'Internal notes. Shared context.', copy: 'Leave internal notes so the next teammate knows what has already been tried.' },
-  { icon: Tag, title: 'Tags that keep work organized', copy: 'Use tags and conversation states to keep requests organized and follow-ups visible.' },
-  { icon: BookOpen, title: 'Knowledge within reach', copy: 'Use help articles and saved replies to give useful answers without starting from scratch.' },
-  { icon: PanelRight, title: 'Customer context beside the thread', copy: 'See who you are helping, their company, and linked work while you respond.' },
+  { icon: MessageSquare, title: 'Internal notes & mentions', copy: 'Discuss the next step privately and mention a teammate inside the conversation.' },
+  { icon: Zap, title: 'Saved replies', copy: 'Reuse answers with shortcuts and customer variables, then edit them before sending.' },
+  { icon: Users, title: 'Team presence', copy: 'See who is viewing or typing in a conversation before you jump in with another reply.' },
+  { icon: Search, title: 'Conversation search', copy: 'Find past questions and replies without opening every thread in your inbox.' },
+  { icon: Languages, title: 'Message translation', copy: 'Read incoming messages in your language and translate outgoing replies for the customer.' },
+  { icon: Clock3, title: 'Office hours & reply times', copy: 'Set working hours and expected reply times so customers know when your team is available.' },
+  { icon: Paperclip, title: 'Files & attachments', copy: 'Share screenshots and files in the conversation so the details stay with the request.' },
+  { icon: Sparkles, title: 'AI follow-ups', copy: 'Configure follow-ups for quiet conversations and let your team cancel a pending follow-up when needed.' },
 ];
 
 const FAQS = [
   ['Can we use Helpin for both live chat and email?', 'Yes. Helpin brings chat and email conversations into the support inbox. Add the support widget to your product and configure support email for your workspace. Self-hosted email delivery requires the optional Postmark integration.'],
+  ['Can we keep our existing support email address?', 'Yes. Set up forwarding from your existing address to the Helpin forwarding address for your shared or team inbox, then verify it with a test email. To reply from your own domain, configure and verify a sender address as well.'],
+  ['How do routing and assignment work?', 'Routing rules can match message content or sender details and direct conversations to a team inbox. AI triage can suggest a destination; automatic moves can be enabled in your settings. Team inboxes support manual assignment, with round-robin assignment available on eligible plans.'],
+  ['Can we organize the inbox around our own workflow?', 'Yes. Create conversation tags and combine filters such as owner, status, and tags into saved views. Keep views personal or share them with the team.'],
   ['Can agents reply directly to customers?', 'Yes. Enable AI-first replies for your support inbox to let the configured agent respond to customers. You can also use internal AI assistance or turn automatic replies off. Your team can review and edit drafts before sending.'],
   ['What happens when a customer needs a person?', 'Helpin can hand the conversation over to your team. The customer’s messages, AI replies, and handoff notes stay in the thread so your team can continue with the context in view.'],
   ['How does support connect to product work?', 'In the full workspace, you can create tasks from a conversation and link customer requests to projects. That gives the team doing the work the original customer context, and helps support see who needs a follow-up.'],
@@ -56,11 +62,11 @@ export default function CustomerSupportPage() {
         </div>
       </section>
 
-      <nav className="support-page-nav" aria-label="On this page"><div className="wrap"><span>Customer Support</span><a href="#support-inbox">Shared inbox</a><a href="#support-workflow">AI & teamwork</a><a href="#support-connected">Connected work</a><a href="#support-controls">Controls</a><a href="#support-faq">FAQs</a></div></nav>
+      <nav className="support-page-nav" aria-label="On this page"><div className="wrap"><span>Customer Support</span><a href="#support-inbox">Shared inbox</a><a href="#support-operations">Inbox tools</a><a href="#support-workflow">AI & teamwork</a><a href="#support-connected">Connected work</a><a href="#support-controls">Controls</a><a href="#support-faq">FAQs</a></div></nav>
 
       <section id="support-inbox" className="support-inbox-section">
         <div className="wrap support-intro-grid">
-          <SectionHead eyebrow="Start with the customer" title="Every conversation. The context to answer." lede="Bring chat, email, customer history, and linked work into one shared inbox. Your team and agents can see what came before and what still needs attention." />
+          <SectionHead eyebrow="Start with the customer" title="Every conversation. The context to answer." lede="Bring live chat and forwarded email into one inbox. Route conversations to the right team, organize them with tags and saved views, and keep customer history beside every reply." />
           <div className="support-context-card">
             <div className="support-context-person"><img src="/new/avatars/maya.webp" alt="" width={48} height={48} /><div><strong>Maya Chen</strong><span>Northstar Labs · Customer</span></div><span className="support-context-tag">SSO rollout</span></div>
             <div className="support-context-row"><MessageSquare size={18} aria-hidden="true" /><div><span>THE CONVERSATION</span><p>“Can we pilot Okta with our admins first?”</p></div></div>
@@ -80,6 +86,15 @@ export default function CustomerSupportPage() {
         </div>
       </section>
 
+      <section id="support-operations" className="support-operations">
+        <div className="wrap">
+          <SectionHead eyebrow="Built for the whole support day" title="Bring it in. Route it. Keep it organized." lede="Connect your support email, give every conversation a destination, and build the views your team works from. The everyday inbox tools are here, alongside your agents." />
+          <SupportInboxFeatures />
+          <h3 className="support-tools-heading">The details that make teamwork work.</h3>
+          <div className="support-features support-operation-tools">{FEATURES.map(({ icon: Icon, title, copy }) => <article key={title}><Icon size={23} strokeWidth={1.5} aria-hidden="true" /><h3>{title}</h3><p>{copy}</p></article>)}</div>
+        </div>
+      </section>
+
       <section id="support-workflow" className="support-workflow-section">
         <div className="wrap">
           <SectionHead eyebrow="AI and your team, in the same conversation" title="AI answers. Your team steps in when needed." lede="Let agents handle the first reply. When a question needs a person or a product change, keep the context with the work." />
@@ -89,13 +104,6 @@ export default function CustomerSupportPage() {
             <article><div className="support-step-copy"><span className="support-step-number">03 / FOLLOW THROUGH</span><h3>Keep the request attached to the work.</h3><p>Turn the request into a task, keep the customer linked, and prepare a follow-up when the work is ready.</p></div><SupportScene variant="followup" /></article>
           </div>
           <p className="support-workflow-note">Illustrative workflows. Project connections are available in the full workspace.</p>
-        </div>
-      </section>
-
-      <section className="support-essentials">
-        <div className="wrap">
-          <SectionHead eyebrow="Made for the day-to-day" title="Everything a good reply needs." />
-          <div className="support-features">{FEATURES.map(({ icon: Icon, title, copy }) => <article key={title}><Icon size={23} strokeWidth={1.5} aria-hidden="true" /><h3>{title}</h3><p>{copy}</p></article>)}</div>
         </div>
       </section>
 
