@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ArrowRight, ChevronRight, Inbox, MessageSquare, Clock3, Languages, Paperclip, Search, Sparkles, Users, Zap } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
+import { ConnectedWorkspace } from '../../_components/ConnectedWorkspace';
 import { SectionHead, SIGNUP_URL, GITHUB_URL } from '../../_components/ui';
 import { SupportScene } from './support-scene';
 import { SupportControls } from './support-controls';
@@ -122,7 +123,7 @@ export default function CustomerSupportPage() {
         <div className="wrap support-faq-grid"><SectionHead eyebrow="A few useful answers" title="Before you open the inbox." /><div className="support-faqs">{FAQS.map(([question, answer]) => <details key={question}><summary>{question}</summary><p>{answer}</p></details>)}<a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Read the Community guide <ArrowRight size={16} aria-hidden="true" /></a></div></div>
       </section>
 
-      <section className="final-cta"><div className="wrap"><div className="final"><span className="eyebrow">Start with a conversation</span><h2>Give customers an answer.<br />Give your team a way forward.</h2><p className="lede">Bring AI answers, human support, and the work behind each request into one connected workspace.</p><div className="cta-row"><a className="btn btn-primary" href={SIGNUP_URL}>Start free trial <ArrowRight size={16} aria-hidden="true" /></a><a className="btn btn-secondary" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Self-host Helpin <ArrowRight size={16} aria-hidden="true" /></a></div><p className="support-reassurance">14-day cloud trial · No credit card required</p></div></div></section>
+      <section className="final-cta final-cta-connected" aria-labelledby="support-final-cta-title"><div className="wrap"><ConnectedWorkspace /><div className="final"><span className="eyebrow">Start with a conversation</span><h2 id="support-final-cta-title">Give customers an answer.<br />Give your team a way forward.</h2><p className="lede">Bring AI answers, human support, and the work behind each request into one connected workspace.</p><div className="cta-row"><a className="btn btn-primary" href={SIGNUP_URL}>Start free trial <ArrowRight size={16} aria-hidden="true" /></a><a className="btn btn-secondary" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Self-host Helpin <ArrowRight size={16} aria-hidden="true" /></a></div><p className="support-reassurance">14-day cloud trial · No credit card required</p></div></div></section>
     </div>
     <PreviewFooter />
   </>;
