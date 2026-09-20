@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, Check, ChevronRight, Inbox, Mail, MessageSquare, Clock3, Languages, Paperclip, PanelRight, Search, ShieldCheck, SlidersHorizontal, Sparkles, Users, Wrench, Zap } from 'lucide-react';
+import { ArrowRight, ChevronRight, Inbox, Mail, MessageSquare, Clock3, Languages, Paperclip, Search, ShieldCheck, SlidersHorizontal, Sparkles, Users, Wrench, Zap } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
 import { SectionHead, SIGNUP_URL, GITHUB_URL } from '../../_components/ui';
 import { SupportScene } from './support-scene';
 import { SupportInboxFeatures } from './support-inbox-features';
+import { SupportInboxShowcase } from './support-inbox-showcase';
 import { SupportHeroScene } from './support-hero-scene';
 import './support.css';
 
@@ -67,13 +68,7 @@ export default function CustomerSupportPage() {
       <section id="support-inbox" className="support-inbox-section">
         <div className="wrap">
           <SectionHead eyebrow="Start with the customer" title="Every conversation. The context to answer." lede="Bring live chat and forwarded email into one inbox. Route conversations to the right team, organize them with tags and saved views, and keep customer history beside every reply." />
-          <figure className="support-product-shot">
-            <div className="support-shot-heading"><span><span className="support-live-dot" /> One inbox. The whole customer story.</span><span className="support-demo-label">EXAMPLE WORKSPACE</span></div>
-            <a href="/new/support/inbox-1672-v2.webp" target="_blank" rel="noopener noreferrer" aria-label="View the full-size support inbox illustration (opens in a new tab)">
-              <img src="/new/support/inbox-1672-v2.webp" srcSet="/new/support/inbox-960-v2.webp 960w, /new/support/inbox-1672-v2.webp 1672w" sizes="(max-width: 1240px) calc(100vw - 48px), 1192px" width={1672} height={941} alt="Illustrative OrbitDesk inbox: Maya Chen at Northstar Labs asks about an Okta pilot. Sam’s internal note, an AI reply draft, customer details, and the linked SSO project appear together." loading="lazy" decoding="async" />
-            </a>
-            <figcaption><span><MessageSquare size={15} aria-hidden="true" /> The question</span><ChevronRight size={13} aria-hidden="true" /><span><PanelRight size={15} aria-hidden="true" /> The context</span><ChevronRight size={13} aria-hidden="true" /><span><Check size={15} aria-hidden="true" /> The next step</span></figcaption>
-          </figure>
+          <SupportInboxShowcase />
         </div>
       </section>
 
@@ -94,7 +89,6 @@ export default function CustomerSupportPage() {
             <article><div className="support-step-copy"><span className="support-step-number">02 / HAND OFF</span><h3>Bring in your team without starting over.</h3><p>Pass the conversation to a teammate with the question, previous replies, and internal notes together. Customers can pick up where they left off.</p></div><SupportScene variant="handoff" /></article>
             <article><div className="support-step-copy"><span className="support-step-number">03 / FOLLOW THROUGH</span><h3>Keep the request attached to the work.</h3><p>Turn the request into a task, keep the customer linked, and prepare a follow-up when the work is ready.</p></div><SupportScene variant="followup" /></article>
           </div>
-          <p className="support-workflow-note">Illustrative workflows. Project connections are available in the full workspace.</p>
         </div>
       </section>
 
