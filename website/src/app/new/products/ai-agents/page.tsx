@@ -97,7 +97,7 @@ export default function AIAgentsPage() {
           </div><AgentWorkflowArt variant="approval" /></div>
         </div>
       </section>
-      <section id="agent-faq"><div className="wrap agents-faq-grid"><SectionHead eyebrow="A few useful answers" title="Before you hand it over." /><div className="agents-faqs">{FAQS.map(([question, answer]) => <details key={question}><summary>{question}<ChevronRight size={17} aria-hidden="true" /></summary><p>{answer}</p></details>)}</div></div></section>
+      <section id="agent-faq"><div className="wrap agents-faq-grid"><SectionHead eyebrow="A few useful answers" title="Before you hand it over." /><div className="agents-faqs">{FAQS.map(([question, answer]) => <details key={question}><summary>{question}</summary><p>{answer}</p></details>)}</div></div></section>
       <section className="final-cta final-cta-connected" aria-labelledby="agents-final-title"><div className="wrap"><ConnectedWorkspace /><div className="final"><span className="eyebrow">Keep the work connected</span><h2 id="agents-final-title">Start with a question.<br />Leave with the work moving.</h2><p className="lede">Bring your customer context, tools, and agents into one workspace.</p><CtaRow /><div className="assure"><span>Open source</span><span>Self-hostable</span><span>Your tools. Your approvals.</span></div></div></div></section>
     </main>
     <PreviewFooter />

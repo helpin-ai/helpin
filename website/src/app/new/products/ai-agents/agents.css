@@ -53,8 +53,6 @@
 .hp3 .agents-faqs details:first-child { padding-top: 0; }
 .hp3 .agents-faqs summary { display: flex; align-items: center; justify-content: space-between; gap: 24px; list-style: none; cursor: pointer; font-size: 16px; font-weight: 500; }
 .hp3 .agents-faqs summary::-webkit-details-marker { display: none; }
-.hp3 .agents-faqs summary svg { flex: none; transition: transform .2s; }
-.hp3 .agents-faqs details[open] summary svg { transform: rotate(90deg); }
 .hp3 .agents-faqs details p { margin-top: 14px; font-size: 14px; line-height: 1.8; color: var(--t2); }
 .hp3 .agents-page .final-cta-connected .final { min-height: 688px; padding-top: 272px; }
 /* Native workflow illustrations share one timeline and a complete static state. */
@@ -189,7 +187,6 @@
 @media (prefers-reduced-motion: reduce) {
   .hp3 .awa-art[data-playing='true'] * { animation: none; }
   .hp3 .awa-toolbar button { visibility: hidden; }
-  .hp3 .agents-faqs summary svg { transition: none; }
 }
 /* The agent lineup leads the page; Ask Agent explains how their work connects. */
 .hp3 .agents-hero-roster { display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 12px; margin: 56px auto 4px; }
