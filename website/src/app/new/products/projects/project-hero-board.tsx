@@ -40,21 +40,21 @@ function Owner({ owner }: { owner: BoardTask['owner'] }) {
   return owner === 'Sam' ? <img src="/new/avatars/sam.webp" width={24} height={24} alt="" /> : <span className={`phb-owner phb-owner-${owner.toLowerCase()}`}>{owner === 'Alex' ? 'AM' : 'JP'}</span>;
 }
 
-function BoardCard({ task, phase }: { task: BoardTask; phase?: number }) {
+function BoardCard({ task, phase = 0 }: { task: BoardTask; phase?: number }) {
   const selected = task.key === 'ORB-491';
   const agent = selected && phase === 2 ? 'lens' : 'forge';
   const running = selected ? phase === 1 || phase === 2 : task.key === 'ORB-494';
   return <div className={`phb-card${selected ? ' phb-card-selected' : ''}`} data-task-key={task.key}>
     <div className="phb-card-title"><h4><span>{task.key}:</span> {task.title}</h4>{task.type === 'feature' ? <TaskFeatureIcon /> : <BugIcon />}</div>
     <div className="phb-sprint"><TaskSprintIcon />Sprint 24</div>
-    {(selected || running) && <div className="phb-agent-status">{running ? <><ProjectAgentBadge agent={agent} working />{agent === 'forge' ? 'Forge is coding' : 'Lens is reviewing'}<span className="phb-running-dot" /></> : <><TaskIcon name={'GitBranchIcon'} />{phase === 4 ? 'PR #728 merged' : phase === 3 ? 'Awaiting Sam’s approval' : 'Ready to run Forge'}</>}</div>}
+    {(selected || running) && <div className="phb-agent-status">{running ? <><ProjectAgentBadge agent={agent} working />{agent === 'forge' ? 'Forge is coding' : 'Lens is reviewing'}<span className="phb-running-dot" /></> : <><TaskIcon name={'GitBranchIcon'} />{phase >= 4 ? 'PR #728 merged' : phase === 3 ? 'Awaiting Sam’s approval' : 'Ready to run Forge'}</>}</div>}
     <div className="phb-card-footer"><span className="phb-priority"><BoardPriority taskKey={task.key} /></span><span className="phb-estimate">{task.points} pts</span><Owner owner={task.owner} /></div>
   </div>;
 }
 
 // Focused crop of KanbanBoard / TaskCard, including its octagonal running-agent badge.
 export function ProjectHeroBoard({ phase }: { phase: number }) {
-  const activeColumn = phase === 4 ? 3 : Math.min(phase, 2);
+  const activeColumn = phase >= 4 ? 3 : Math.min(phase, 2);
   const storyAgentRunning = phase === 1 || phase === 2;
   return <div className="project-hero-board" aria-hidden="true">
     <div className="phb-navigation"><div className="phb-workspace"><span className="ps-workspace">O</span><strong>OrbitDesk</strong><TaskIcon name="ArrowRight01Icon" /></div><div className="phb-nav-body"><span><TaskIcon name="CheckListIcon" />My Work</span><span><TaskIcon name="LayoutGridIcon" />Objectives</span><span><TaskIcon name="Layers01Icon" />Roadmap</span><span><TaskIcon name="ChartColumnIcon" />Reports</span><small>YOUR TEAMS</small><span className="phb-team"><TaskIcon name="ArrowRight01Icon" />Engineering</span><div className="phb-team-items"><span className="phb-nav-active"><TaskIcon name="CheckListIcon" />Tasks</span><span><TaskIcon name="Layers01Icon" />Epics</span><span><TaskSprintIcon />Sprints</span></div><span><TaskIcon name="ArrowRight01Icon" />Support</span></div><div className="phb-search"><TaskIcon name="Search01Icon" />Search OrbitDesk</div></div>
