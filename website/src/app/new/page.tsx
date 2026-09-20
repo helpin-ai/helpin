@@ -14,43 +14,43 @@ import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 const RECORD_FACTS = [
   {
     "title": "Conversations",
-    "description": "Every support interaction.",
+    "description": "Let Helpin AI answer first, tag conversations, and pass the full history to your team when needed.",
     "image": "conversations",
     "wide": true
   },
   {
     "title": "Meetings",
-    "description": "Decisions and next steps.",
+    "description": "Keep recordings, transcripts, decisions, and next steps attached to the customer.",
     "image": "meetings",
     "wide": false
   },
   {
     "title": "Projects",
-    "description": "The work behind customer requests.",
+    "description": "See the requests and conversations behind each project, alongside its tasks and progress.",
     "image": "projects",
     "wide": false
   },
   {
     "title": "Engineering",
-    "description": "Tasks, repositories, and shipped changes.",
+    "description": "Give coding agents the customer context behind each task. Work in a connected repository, prepare changes, and bring a pull request back for review.",
     "image": "coding",
     "wide": true
   },
   {
     "title": "Deals",
-    "description": "Pipeline, objections, and renewals.",
+    "description": "See the conversations, objections, and buyer signals behind each deal and renewal.",
     "image": "deals",
     "wide": false
   },
   {
     "title": "Knowledge",
-    "description": "The answers customers and agents rely on.",
+    "description": "See the guides customers read, the answers your team shared, and the questions still open.",
     "image": "docs",
     "wide": false
   },
   {
     "title": "Email & calendar",
-    "description": "Emails and upcoming conversations.",
+    "description": "Follow customer emails, calls, and meetings on one timeline.",
     "image": "email-calendar",
     "wide": true
   }
