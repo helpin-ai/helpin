@@ -149,3 +149,17 @@
 .hp3 .developers-page .mcp-workflow .mcp-result strong{color:#e0f6e7}
 .hp3 .developers-page .mcp-workflow .mcp-result span{color:#b4d8c0}
 .hp3 .developers-page .mcp-workflow .mcp-footnote{color:#a2c3ae}
+/* A dark event sequence anchors the light events section. */
+.hp3 .developers-page .event-workflow{background:#101311;border-color:#2c3830;color:#e0eae3;box-shadow:0 20px 50px #10201714}
+.hp3 .developers-page .event-workflow .platform-scene-toolbar{background:#0c0f0d;border-color:#28352c;color:#b1c5b7}
+.hp3 .developers-page .event-workflow .platform-divider{color:#819989}
+.hp3 .developers-page .event-workflow .platform-scene-toolbar button{background:#1a2820;border-color:#465e4d;color:#c1ddcb}
+.hp3 .developers-page .event-workflow .platform-scene-toolbar button:hover{background:#263e2e;color:#e3f4e8}
+.hp3 .developers-page .event-workflow .platform-scene-toolbar button:focus-visible{outline:2px solid #8ee1af;outline-offset:3px}
+.hp3 .developers-page .event-workflow .event-source{background:#18291e;border-color:#354d3c}
+.hp3 .developers-page .event-workflow .event-source>span:first-child{color:#95d4a7}
+.hp3 .developers-page .event-workflow .event-source small,.hp3 .developers-page .event-workflow .platform-micro{color:#adc5b5}
+.hp3 .developers-page .event-workflow .event-timeline:before{background:#3f624b}
+.hp3 .developers-page .event-workflow .event-timeline>.platform-step>span{background:#1c3023;border-color:#3c5c46;color:#a1dcb1}
+.hp3 .developers-page .event-workflow .event-timeline strong{color:#dcebe1}
+.hp3 .developers-page .event-workflow .event-timeline small{color:#afc3b6}
