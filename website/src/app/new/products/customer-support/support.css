@@ -44,7 +44,7 @@
 .hp3 .support-features svg { color: var(--em); margin-bottom: 17px; }
 .hp3 .support-features h3 { font-size: 18px; margin-bottom: 10px; line-height: 1.4; }
 .hp3 .support-features p { font-size: 14px; color: var(--t2); line-height: 1.8; }
-.hp3 .support-page section.support-connected-section { background: #f5f8f6; }
+.hp3 .support-page section.support-connected-section { background: #fff; }
 .hp3 .support-connected-grid { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.4fr); align-items: center; gap: 48px; }
 .hp3 .support-connected-grid .sec-head { margin-bottom: 25px; max-width: 400px; }
 .hp3 .support-connected-visual { margin: 0; min-width: 0; }
