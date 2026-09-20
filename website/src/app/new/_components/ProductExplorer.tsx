@@ -196,7 +196,7 @@ export function ProductExplorer() {
       </div>
     </div>
     {AREAS.map((area, index) => <div className="px-panel" role="tabpanel" id={`product-panel-${area.id}`} aria-labelledby={`product-tab-${area.id}`} hidden={active !== index} tabIndex={0} key={area.id}>
-      <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.id === 'crm' ? '/new/products/crm' : `/new/product#${area.id}`}>Explore {area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
+      <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.id === 'inbox' ? '/new/products/customer-support' : area.id === 'crm' ? '/new/products/crm' : `/new/product#${area.id}`}>Explore {area.id === 'inbox' ? 'customer support' : area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
       <div className="px-stage">
         <a className="px-product-image" href={area.image.src} target="_blank" rel="noopener noreferrer" aria-label={`View the ${area.label.toLowerCase()} demo image at full size (opens in a new tab)`}>
           <img

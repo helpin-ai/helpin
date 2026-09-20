@@ -52,6 +52,7 @@ export default function ProductPage() {
           <SectionHead eyebrow="More than a support inbox" title="Answer the customer. Keep the context." lede="Handle chat and email from one shared inbox without disconnecting support from the rest of the company." />
           <ul className="steps big"><li>Assign conversations.</li><li>Add notes and tags.</li><li>Use saved replies.</li><li>See customer history.</li><li>Create product work.</li><li>Ask an agent for help.</li></ul>
           <p className="section-close">When the conversation becomes something bigger, the context goes with it.</p>
+          <p className="section-close"><a className="btn-link" href="/new/products/customer-support">Explore Customer Support →</a></p>
         </div>
       </section>
 
