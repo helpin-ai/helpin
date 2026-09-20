@@ -17,9 +17,9 @@ export const metadata: Metadata = {
 
 const FEATURES = [
   { icon: MessagesSquare, title: 'Chat and email, together', copy: 'Keep customer conversations in a shared inbox, with the history ready when your team replies.' },
-  { icon: Users, title: 'A clear owner for every reply', copy: 'Assign conversations to teammates and organize work with team inboxes.' },
-  { icon: MessageSquare, title: 'The conversation behind the answer', copy: 'Leave internal notes so the next teammate knows what has already been tried.' },
-  { icon: Tag, title: 'A little order goes a long way', copy: 'Use tags and conversation states to keep requests organized and follow-ups visible.' },
+  { icon: Users, title: 'Clear ownership for every reply', copy: 'Assign conversations to teammates and organize work with team inboxes.' },
+  { icon: MessageSquare, title: 'Internal notes. Shared context.', copy: 'Leave internal notes so the next teammate knows what has already been tried.' },
+  { icon: Tag, title: 'Tags that keep work organized', copy: 'Use tags and conversation states to keep requests organized and follow-ups visible.' },
   { icon: BookOpen, title: 'Knowledge within reach', copy: 'Use help articles and saved replies to give useful answers without starting from scratch.' },
   { icon: PanelRight, title: 'Customer context beside the thread', copy: 'See who you are helping, their company, and linked work while you respond.' },
 ];
@@ -41,7 +41,7 @@ export default function CustomerSupportPage() {
     <div className="support-page">
       <section className="hero support-hero">
         <div className="wrap">
-          <Link className="support-breadcrumb" href="/new/product">Products <ChevronRight size={12} aria-hidden="true" /> Customer Support</Link>
+          <nav className="support-breadcrumb" aria-label="Breadcrumb"><Link href="/new/product">Products</Link><ChevronRight size={12} aria-hidden="true" /><span aria-current="page">Customer Support</span></nav>
           <div className="support-hero-grid">
             <div className="hero-inner">
               <span className="eyebrow"><Inbox size={15} aria-hidden="true" /> Customer support, connected</span>
@@ -72,7 +72,7 @@ export default function CustomerSupportPage() {
           <figure className="support-product-shot">
             <div className="support-shot-heading"><span><span className="support-live-dot" /> One inbox. The whole customer story.</span><span className="support-demo-label">EXAMPLE WORKSPACE</span></div>
             <a href="/new/support/inbox-1672-v2.webp" target="_blank" rel="noopener noreferrer" aria-label="View the full-size support inbox illustration (opens in a new tab)">
-              <img src="/new/support/inbox-1672-v2.webp" srcSet="/new/support/inbox-960-v2.webp 960w, /new/support/inbox-1672-v2.webp 1672w" sizes="(max-width: 1200px) calc(100vw - 48px), 1152px" width={1672} height={941} alt="Illustrative OrbitDesk inbox: Maya Chen at Northstar Labs asks about an Okta pilot. Sam’s internal note, an AI reply draft, customer details, and the linked SSO project appear together." loading="lazy" decoding="async" />
+              <img src="/new/support/inbox-1672-v2.webp" srcSet="/new/support/inbox-960-v2.webp 960w, /new/support/inbox-1672-v2.webp 1672w" sizes="(max-width: 1240px) calc(100vw - 48px), 1192px" width={1672} height={941} alt="Illustrative OrbitDesk inbox: Maya Chen at Northstar Labs asks about an Okta pilot. Sam’s internal note, an AI reply draft, customer details, and the linked SSO project appear together." loading="lazy" decoding="async" />
             </a>
             <figcaption><span><MessageSquare size={15} aria-hidden="true" /> The question</span><ChevronRight size={13} aria-hidden="true" /><span><PanelRight size={15} aria-hidden="true" /> The context</span><ChevronRight size={13} aria-hidden="true" /><span><Check size={15} aria-hidden="true" /> The next step</span></figcaption>
           </figure>
@@ -83,9 +83,9 @@ export default function CustomerSupportPage() {
         <div className="wrap">
           <SectionHead eyebrow="AI and your team, in the same conversation" title="Let agents help. Keep the human touch." lede="Get a useful draft, bring in the right teammate, and carry the context into the next step." />
           <div className="support-workflow-grid">
-            <article><div className="support-step-copy"><span className="support-step-number">01 / ANSWER</span><h3>A head start on a helpful reply.</h3><p>Draft answers from product knowledge and customer history. Your team can review, edit, and send.</p></div><SupportScene variant="answer" /></article>
-            <article><div className="support-step-copy"><span className="support-step-number">02 / HAND OFF</span><h3>A teammate joins with the context.</h3><p>Keep the conversation, internal notes, and customer details together when someone needs to step in.</p></div><SupportScene variant="handoff" /></article>
-            <article><div className="support-step-copy"><span className="support-step-number">03 / FOLLOW THROUGH</span><h3>The next step stays connected.</h3><p>Turn the request into a task, keep the customer linked, and prepare a follow-up when the work is ready.</p></div><SupportScene variant="followup" /></article>
+            <article><div className="support-step-copy"><span className="support-step-number">01 / ANSWER</span><h3>Draft a useful answer.</h3><p>Draft answers from product knowledge and customer history. Your team can review, edit, and send.</p></div><SupportScene variant="answer" /></article>
+            <article><div className="support-step-copy"><span className="support-step-number">02 / HAND OFF</span><h3>Bring in the right teammate.</h3><p>Keep the conversation, internal notes, and customer details together when someone needs to step in.</p></div><SupportScene variant="handoff" /></article>
+            <article><div className="support-step-copy"><span className="support-step-number">03 / FOLLOW THROUGH</span><h3>Keep the next step connected.</h3><p>Turn the request into a task, keep the customer linked, and prepare a follow-up when the work is ready.</p></div><SupportScene variant="followup" /></article>
           </div>
           <p className="support-workflow-note">Illustrative workflows. Project connections are available in the full workspace.</p>
         </div>
