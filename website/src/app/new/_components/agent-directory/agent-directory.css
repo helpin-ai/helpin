@@ -24,7 +24,7 @@
 }
 .hp3 .adp-frame {
   display: flex;
-  height: 660px;
+  height: 720px;
   overflow: hidden;
   border: 1px solid #dedee2;
   border-radius: 12px;
@@ -740,12 +740,12 @@
     display: none;
   }
   .hp3 .adp-frame {
-    height: 660px;
+    height: 720px;
   }
 }
 @media (max-width: 600px) {
   .hp3 .adp-frame {
-    height: 600px;
+    height: 640px;
   }
   .hp3 .adp-header {
     padding: 17px 14px;
