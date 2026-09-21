@@ -6,8 +6,9 @@
 }
 .hp3 .adp,
 .hp3 .adp-dialog {
+  --preview-font-step: 1px;
   font-family: HelpinAgentUI, Inter, sans-serif;
-  font-size: 13px;
+  font-size: calc(13px + var(--preview-font-step, 0px));
   line-height: 1.5;
   letter-spacing: normal;
   color: #27272a;
@@ -65,11 +66,11 @@
   background: #184b3a;
   color: white;
   border-radius: 7px;
-  font-size: 15px;
+  font-size: calc(15px + var(--preview-font-step, 0px));
   font-weight: 600;
 }
 .hp3 .adp-brand > strong {
-  font-size: 13px;
+  font-size: calc(13px + var(--preview-font-step, 0px));
   font-weight: 600;
   margin-right: auto;
 }
@@ -110,7 +111,7 @@
   border-radius: 6px;
 }
 .hp3 .adp-rail small {
-  font-size: 9px;
+  font-size: calc(9px + var(--preview-font-step, 0px));
   line-height: 13px;
 }
 .hp3 .adp-rail span[data-active="true"] {
@@ -162,7 +163,7 @@
   padding: 0 9px;
   color: #62626b;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
 }
 .hp3 .adp-nav-items > span[data-active="true"] {
   background: #e1e1e5;
@@ -172,12 +173,12 @@
 .hp3 .adp-nav-items > small {
   display: block;
   padding: 24px 9px 7px;
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   color: #8a8a94;
 }
 .hp3 .adp-nav-items i {
   font-style: normal;
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   margin-left: auto;
   background: #e2e2e6;
   border-radius: 4px;
@@ -188,11 +189,11 @@
   align-items: center;
   gap: 5px;
   color: #85858e;
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   white-space: nowrap;
 }
 .hp3 .adp-search small {
-  font-size: 9px;
+  font-size: calc(9px + var(--preview-font-step, 0px));
   margin-left: auto;
 }
 .hp3 .adp-main {
@@ -211,13 +212,13 @@
 }
 .hp3 .adp-header h3 {
   font:
-    600 20px/1.4 HelpinAgentUI,
+    600 calc(20px + var(--preview-font-step, 0px))/1.4 HelpinAgentUI,
     sans-serif;
   letter-spacing: -0.4px;
   margin: 0 0 5px;
 }
 .hp3 .adp-header p {
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
   color: #777780;
   line-height: 1.6;
   margin: 0;
@@ -269,7 +270,7 @@
   height: 46px;
   padding: 0 12px;
   color: #8a8a92;
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   min-width: 750px;
 }
 .hp3 .adp-agents {
@@ -306,13 +307,13 @@
   min-width: 0;
 }
 .hp3 .adp-identity strong {
-  font-size: 14px;
+  font-size: calc(14px + var(--preview-font-step, 0px));
   font-weight: 500;
   display: block;
   line-height: 20px;
 }
 .hp3 .adp-role {
-  font-size: 11px;
+  font-size: calc(11px + var(--preview-font-step, 0px));
   color: #85858d;
   display: flex;
   align-items: center;
@@ -320,7 +321,7 @@
   white-space: nowrap;
 }
 .hp3 .adp-role i {
-  font-size: 9px;
+  font-size: calc(9px + var(--preview-font-step, 0px));
   font-style: normal;
   border: 1px solid #e4e4e7;
   border-radius: 4px;
@@ -337,19 +338,19 @@
   gap: 3px;
 }
 .hp3 .adp-config strong {
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
   font-weight: 400;
 }
 .hp3 .adp-config > small,
 .hp3 .adp-last > small {
-  font-size: 11px;
+  font-size: calc(11px + var(--preview-font-step, 0px));
   color: #92929b;
 }
 .hp3 .adp-runs > span {
   display: flex;
   gap: 9px;
   align-items: center;
-  font-size: 11px;
+  font-size: calc(11px + var(--preview-font-step, 0px));
   color: #6d6d77;
 }
 .hp3 .adp-bars {
@@ -366,7 +367,7 @@
   background: #e3c887;
 }
 .hp3 .adp-status {
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   line-height: 18px;
   padding: 1px 6px;
   border: 1px solid #d7e9df;
@@ -386,7 +387,7 @@
   border-color: #ede2c9;
 }
 .hp3 .adp-flows {
-  font-size: 11px;
+  font-size: calc(11px + var(--preview-font-step, 0px));
   color: #787881;
 }
 .hp3 .adp-open {
@@ -424,14 +425,14 @@
   grid-column: 1/-1;
 }
 .hp3 .adp-purpose {
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
   line-height: 1.7;
   color: #777780;
   min-height: 60px;
 }
 .hp3 .adp-scroll[data-view="cards"] .adp-cell-label {
   display: block;
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   color: #92929b;
   margin-bottom: 5px;
 }
@@ -468,13 +469,13 @@
 .hp3 .adp-dialog-header h3 {
   margin: 0;
   font:
-    600 18px/1.5 HelpinAgentUI,
+    600 calc(18px + var(--preview-font-step, 0px))/1.5 HelpinAgentUI,
     sans-serif;
   letter-spacing: 0;
 }
 .hp3 .adp-dialog-header p {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
   color: #85858f;
 }
 .hp3 .adp-dialog-header button {
@@ -501,7 +502,7 @@
   border-bottom: 2px solid transparent;
   padding: 10px 0;
   color: #85858e;
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
 }
 .hp3 .adp-tabs button[aria-selected="true"] {
   color: #292930;
@@ -511,7 +512,7 @@
   padding: 26px 28px 30px;
 }
 .hp3 .adp-detail-body h4 {
-  font-size: 14px;
+  font-size: calc(14px + var(--preview-font-step, 0px));
   font-weight: 500;
   line-height: 1.5;
   letter-spacing: 0;
@@ -530,24 +531,24 @@
   flex-wrap: wrap;
 }
 .hp3 .adp-version strong {
-  font-size: 13px;
+  font-size: calc(13px + var(--preview-font-step, 0px));
   font-weight: 500;
 }
 .hp3 .adp-version > div > span {
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   color: #91919a;
 }
 .hp3 .adp-version b {
   background: #e6f4eb;
   color: #427a56;
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   font-weight: 500;
   padding: 2px 6px;
   border-radius: 4px;
   margin-left: auto;
 }
 .hp3 .adp-version p {
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
   line-height: 1.7;
   color: #7a7a85;
   margin: 10px 0 18px;
@@ -562,12 +563,12 @@
 }
 .hp3 .adp-version dt {
   color: #92929c;
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   margin-bottom: 4px;
 }
 .hp3 .adp-version dd {
   margin: 0;
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
 }
 .hp3 .adp-detail-label {
   display: flex;
@@ -576,7 +577,7 @@
   margin: 26px 0 12px;
 }
 .hp3 .adp-detail-label > span {
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   color: #91919b;
 }
 .hp3 .adp details.adp-disclosure {
@@ -593,7 +594,7 @@
   list-style: none;
   padding: 13px 15px;
   font:
-    500 12px/1.5 HelpinAgentUI,
+    500 calc(12px + var(--preview-font-step, 0px))/1.5 HelpinAgentUI,
     sans-serif;
   color: #3c3c44;
   cursor: pointer;
@@ -616,7 +617,7 @@
   transform: rotate(225deg);
 }
 .hp3 .adp .adp-disclosure p {
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
   color: #83838c;
   line-height: 1.8;
   margin: 0;
@@ -630,7 +631,7 @@
 }
 .hp3 .adp-tool-tags code {
   font-family: monospace;
-  font-size: 11px;
+  font-size: calc(11px + var(--preview-font-step, 0px));
   background: #f4f4f6;
   border: 1px solid #e6e6eb;
   color: #656571;
@@ -640,7 +641,7 @@
   max-width: 100%;
 }
 .hp3 .adp-description {
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
   color: #85858e;
   margin: 7px 0 24px;
   line-height: 1.7;
@@ -658,17 +659,17 @@
   padding: 17px;
 }
 .hp3 .adp-metrics small {
-  font-size: 11px;
+  font-size: calc(11px + var(--preview-font-step, 0px));
   color: #85858e;
 }
 .hp3 .adp-metrics strong {
-  font-size: 25px;
+  font-size: calc(25px + var(--preview-font-step, 0px));
   font-weight: 500;
   margin: 8px 0 3px;
   line-height: 1.3;
 }
 .hp3 .adp-metrics span {
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   color: #9999a1;
 }
 .hp3 .adp-run-summary {
@@ -689,12 +690,12 @@
 }
 .hp3 .adp-run-summary strong {
   display: block;
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
   font-weight: 500;
 }
 .hp3 .adp-run-summary small {
   display: block;
-  font-size: 10px;
+  font-size: calc(10px + var(--preview-font-step, 0px));
   color: #93939c;
   margin-top: 4px;
 }
@@ -706,7 +707,7 @@
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 14px;
-  font-size: 12px;
+  font-size: calc(12px + var(--preview-font-step, 0px));
 }
 .hp3 .adp-limit strong {
   font-weight: 500;
@@ -753,10 +754,10 @@
     gap: 8px;
   }
   .hp3 .adp-header h3 {
-    font-size: 17px;
+    font-size: calc(17px + var(--preview-font-step, 0px));
   }
   .hp3 .adp-header p {
-    font-size: 10px;
+    font-size: calc(10px + var(--preview-font-step, 0px));
   }
   .hp3 .adp-view {
     padding: 2px;
@@ -781,13 +782,13 @@
     grid-column: 1;
   }
   .hp3 .adp-role {
-    font-size: 10px;
+    font-size: calc(10px + var(--preview-font-step, 0px));
     white-space: normal;
     flex-wrap: wrap;
     gap: 4px;
   }
   .hp3 .adp-role i {
-    font-size: 8px;
+    font-size: calc(8px + var(--preview-font-step, 0px));
   }
   .hp3 .adp-agent .adp-config,
   .hp3 .adp-agent .adp-runs,
@@ -799,11 +800,11 @@
     align-items: flex-end;
   }
   .hp3 .adp-status {
-    font-size: 9px;
+    font-size: calc(9px + var(--preview-font-step, 0px));
     padding-inline: 4px;
   }
   .hp3 .adp-identity strong {
-    font-size: 13px;
+    font-size: calc(13px + var(--preview-font-step, 0px));
   }
   .hp3 .adp-scroll[data-view="cards"] {
     padding-top: 12px;
@@ -830,10 +831,10 @@
     padding: 18px 16px;
   }
   .hp3 .adp-dialog-header h3 {
-    font-size: 16px;
+    font-size: calc(16px + var(--preview-font-step, 0px));
   }
   .hp3 .adp-dialog-header p {
-    font-size: 10px;
+    font-size: calc(10px + var(--preview-font-step, 0px));
   }
   .hp3 .adp-tabs {
     padding-inline: 16px;
@@ -854,10 +855,10 @@
     padding: 11px 8px;
   }
   .hp3 .adp-metrics small {
-    font-size: 9px;
+    font-size: calc(9px + var(--preview-font-step, 0px));
   }
   .hp3 .adp-metrics strong {
-    font-size: 21px;
+    font-size: calc(21px + var(--preview-font-step, 0px));
   }
   .hp3 .adp-run-summary {
     padding: 13px;
@@ -866,10 +867,10 @@
     flex-wrap: wrap;
   }
   .hp3 .adp-run-summary strong {
-    font-size: 11px;
+    font-size: calc(11px + var(--preview-font-step, 0px));
   }
   .hp3 .adp-limit {
-    font-size: 11px;
+    font-size: calc(11px + var(--preview-font-step, 0px));
   }
 }
 @media (prefers-reduced-motion: reduce) {

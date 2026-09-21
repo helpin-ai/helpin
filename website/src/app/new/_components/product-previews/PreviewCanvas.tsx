@@ -23,6 +23,8 @@ export function PreviewCanvas({ label, children }: { label: string; children: Re
       frame.dataset.fitted = String(scale < 1);
       content.style.width = `${width / scale}px`;
       content.style.setProperty('--preview-height', `${height / scale}px`);
+      // Add one displayed pixel of text even when the canvas is scaled down.
+      content.style.setProperty('--preview-font-step', `${1 / scale}px`);
       content.style.transform = `scale(${scale})`;
     };
 
