@@ -96,7 +96,7 @@ export default function CustomerSupportPage() {
             <div className="hero-inner">
               <Availability category="AI support inbox" />
               <h1>Support that ends with a fix, <span>not a ticket number.</span></h1>
-              <p className="lede">Helpin AI answers from your docs and customer history. When a request needs a person or a product change, the conversation goes with it — to a teammate, a task or a coding agent — so your team can follow up when it ships.</p>
+              <p className="lede">Helpin AI answers from your docs, customer history and your own logs. When a request needs a fix, it goes to a teammate or a coding agent with the conversation attached — and the customer hears back when it ships.</p>
               <Actions />
               <CtaNote trial support />
             </div>
