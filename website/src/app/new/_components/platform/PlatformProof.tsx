@@ -7,12 +7,12 @@ import './platform-product-previews.css';
 import { ArrowRight, BookOpen, Bot, Braces, Building2, Check, FolderKanban, LockKeyhole, MessagesSquare, Video } from 'lucide-react';
 
 const PRODUCTS = [
-  { name: 'Support', preview: 'inbox', Icon: MessagesSquare, title: 'Answer with the customer history beside you.', body: 'Bring conversations, teammates, and AI assistance into one inbox.', href: '/new/products/customer-support' },
-  { name: 'Meetings', preview: 'meetings', Icon: Video, title: 'Turn customer calls into next steps.', body: 'Keep meeting notes, decisions and follow-up tasks attached to the customer.', href: '/new/products/meetings' },
-  { name: 'Projects', preview: 'projects', Icon: FolderKanban, title: 'Move customer requests through to release.', body: 'Plan the work, follow progress and keep the original request attached.', href: '/new/products/projects' },
-  { name: 'CRM', preview: 'crm', Icon: Building2, title: 'Know the history behind every relationship.', body: 'Manage contacts, companies and deals alongside their conversations and work.', href: '/new/products/crm' },
-  { name: 'Knowledge', preview: 'knowledge', Icon: BookOpen, title: 'Publish the answers your customers need.', body: 'Give guides, search, and product knowledge a home under your brand.', href: '/new/products/knowledge' },
-  { name: 'Agents', preview: 'agents', Icon: Bot, title: 'Choose the agents that work alongside your team.', body: 'Give each agent a purpose, selected tools, and a model profile.', href: '/new/products/ai-agents' },
+  { name: 'Support', preview: 'inbox', Icon: MessagesSquare, title: 'Answer with the earlier conversation in view.', body: 'Handle chat and email together. Give teammates and agents the history to investigate the question and hand it over without starting again.', href: '/new/products/customer-support' },
+  { name: 'Meetings', preview: 'meetings', Icon: Video, title: 'Keep the commitments after the call.', body: 'Capture the discussion, review decisions, and turn agreed next steps into linked work.', href: '/new/products/meetings' },
+  { name: 'Projects', preview: 'projects', Icon: FolderKanban, title: 'Manage the plan—not just the requests.', body: 'Organize roadmaps, sprints, dependencies, and objectives. Keep relevant customer needs attached while your team manages product development, maintenance, and internal work.', href: '/new/products/projects' },
+  { name: 'CRM', preview: 'crm', Icon: Building2, title: 'See the relationship behind the deal.', body: 'Manage contacts, companies, and pipelines alongside the conversations and work that explain the next move.', href: '/new/products/crm' },
+  { name: 'Knowledge', preview: 'knowledge', Icon: BookOpen, title: 'Give people and agents a useful place to look.', body: 'Publish customer guides, maintain internal docs, and select the knowledge your agents can use.', href: '/new/products/knowledge' },
+  { name: 'Agents', preview: 'agents', Icon: Bot, title: 'Put the history to work.', body: 'Use specialists to answer questions, plan tasks, prepare changes, and follow up. Choose their tools and the actions that need review.', href: '/new/products/ai-agents' },
 ] as const;
 
 export function CommunityShowcase() {
@@ -30,7 +30,7 @@ export function CommunityShowcase() {
     {PRODUCTS.map((product, index) => <div id={`${id}-${index}`} key={product.preview} hidden={active !== index}>
       {visited.has(index) && <>
         <div className="community-product-stage"><ProductPreview product={product.preview} theme="light" /></div>
-        <div className="community-product-caption"><div><h3>{product.title}</h3><p>{product.body}</p></div><Link className="platform-text-link" href={product.href}>Explore {product.name.toLowerCase()}<ArrowRight size={15}/></Link></div>
+        <div className="community-product-caption"><div><h3>{product.title}</h3><p>{product.body}</p></div><Link className="platform-text-link" href={product.href}>Explore {product.name === 'Agents' ? 'AI Agents' : product.name}<ArrowRight size={15}/></Link></div>
       </>}
     </div>)}
   </div>;
