@@ -17,8 +17,8 @@ export function AIUsage() {
       <div className="wrap">
         <SectionHead
           eyebrow="AI, on your terms"
-          title="Choose the model. Choose how you pay for it."
-          lede="Frontier models for demanding work, efficient models for everyday tasks. Use the AI included in your Cloud plan, connect the provider accounts your team already pays for, or both."
+          title="Choose your models and accounts."
+          lede="Choose frontier models for complex work or efficient models for everyday tasks. Use Cloud AI, your own provider accounts, or both."
         />
         <div
           className="pricing-ai-providers"
@@ -41,7 +41,7 @@ export function AIUsage() {
           ))}
           <span>
             <Server size={20} strokeWidth={1.5} aria-hidden="true" />
-            Compatible endpoints
+            Approved compatible endpoints
           </span>
         </div>
         <div className="pricing-ai-routes">
@@ -52,12 +52,11 @@ export function AIUsage() {
             <span className="pricing-ai-route-label">MANAGED BY HELPIN</span>
             <h3>Start with included AI.</h3>
             <p>
-              Cloud plans include a monthly AI allowance. Routine work uses a
-              little, advanced agent work uses more, and workspace settings
-              always show a simple percentage used.
+              A monthly allowance for your agents. Routine work uses less;
+              advanced work uses more. Track the percentage used in settings.
             </p>
             <span className="pricing-ai-route-footer">
-              Included with Starter and Growth
+              Included in Starter and Growth
             </span>
           </article>
           <article>
@@ -67,12 +66,11 @@ export function AIUsage() {
             <span className="pricing-ai-route-label">MANAGED BY YOUR TEAM</span>
             <h3>Bring your own API keys.</h3>
             <p>
-              Connect the OpenAI, Anthropic or OpenRouter accounts your team
-              manages, or an approved compatible endpoint. Shared connections
-              power team workflows and unattended agent runs.
+              Use your keys with the providers above. Shared connections power
+              team workflows and unattended agent runs.
             </p>
             <span className="pricing-ai-route-footer">
-              Enabled per workspace on Cloud
+              Requires workspace enablement on Cloud
             </span>
           </article>
           <article>
@@ -80,28 +78,23 @@ export function AIUsage() {
               <UserRound size={21} strokeWidth={1.5} aria-hidden="true" />
             </span>
             <span className="pricing-ai-route-label">PERSONAL TO YOU</span>
-            <h3>Use your own subscription.</h3>
+            <h3>Use your subscription.</h3>
             <p>
-              Where enabled, connect your ChatGPT subscription for runs you
-              start yourself. Personal connections never power shared workspace
-              automation.
+              Connect ChatGPT for runs you start yourself. Personal connections
+              cannot power shared workspace automation.
             </p>
             <span className="pricing-ai-route-footer">
-              Personal use · ChatGPT
+              Where enabled · Personal use
             </span>
           </article>
         </div>
         <div className="pricing-ai-models">
           <div className="pricing-ai-models-heading">
             <div>
-              <h3>Match the model to the work.</h3>
-              <p>
-                Four standard profiles, from routine answers to complex agent
-                work.
-              </p>
+              <h3>Four profiles for your work.</h3>
             </div>
             <a href={`${GITHUB_URL}/blob/develop/docs/ai-connections.md`}>
-              How model connections work
+              Connection guide
               <ArrowRight size={14} aria-hidden="true" />
             </a>
           </div>
@@ -126,23 +119,23 @@ export function AIUsage() {
           </div>
         </div>
         <div className="pricing-ai-billing">
-          <h3>Know what you’re paying for.</h3>
+          <h3>Usage and billing</h3>
           <div>
             {[
               {
                 Icon: RefreshCw,
-                title: "A fresh allowance every month.",
-                text: "Cloud allowances reset on your renewal date each month, on monthly and annual plans alike. Unused allowance does not roll over.",
+                title: "Monthly reset",
+                text: "Resets on your monthly renewal date—even on annual plans. No rollover.",
               },
               {
                 Icon: SlidersHorizontal,
-                title: "Extra usage is your call.",
-                text: "Turn on extra usage when you need it. Only the work beyond your allowance is metered, with no prepaid blocks.",
+                title: "Optional extra usage",
+                text: "Opt in to metered usage beyond your allowance. No prepaid blocks.",
               },
               {
                 Icon: ReceiptText,
-                title: "Your keys, your provider\u2019s bill.",
-                text: "With your own keys, the model provider bills you directly. On Helpin Cloud, a flat per-token platform fee and any paid tools are charged separately. Self-hosted Community has no Helpin token or tool fees.",
+                title: "Provider and platform fees",
+                text: "Your provider bills model usage. Cloud adds a flat per-token platform fee and paid-tool charges. Self-hosted Community has no Helpin token or tool fees.",
               },
             ].map(({ Icon, title, text }) => (
               <article key={title}>
