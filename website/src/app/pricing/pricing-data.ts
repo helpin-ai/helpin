@@ -142,7 +142,7 @@ export const FAQS = [
   },
   {
     "q": "Do we need a card for the trial?",
-    "a": "No. Try Cloud without adding a card."
+    "a": "No. Try Cloud without adding a card on a 14-day Growth trial. After the trial, choose Starter or Growth to continue. Until you choose a paid plan, workspace access is limited."
   },
   {
     "q": "Can we choose the models our agents use?",
