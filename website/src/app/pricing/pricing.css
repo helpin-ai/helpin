@@ -305,3 +305,28 @@
   .hp3 .pricing-shared h3 { font-size: 17px; }
   .hp3 .pricing-shared dl { grid-template-columns: 1fr; gap: 22px; }
 }
+
+/* Copy additions retain the existing pricing sections and responsive layout. */
+.hp3 .pricing-page .sec-head h2 { white-space: pre-line; }
+.hp3 .pricing-hero .pricing-note { color: var(--on-dark-muted); margin-top: 22px; }
+.hp3 .pricing-plan-heading .pricing-note { max-width: 560px; margin-top: 18px; }
+.hp3 .pricing-plan-details>.pricing-note { margin-top: 24px; }
+.hp3 .pricing-stack small { display: block; margin-top: 7px; font-size: 12px; line-height: 1.7; color: var(--t3); max-width: 430px; }
+.hp3 .pricing-enterprise-visual { grid-column: 1; grid-row: 1; min-width: 0; }
+.hp3 .pricing-deployment-grid>div { min-width: 0; }
+.hp3 .pricing-deployment-grid>div>.pricing-note { margin-top: 18px; }
+.hp3 .pricing-infra-heading { flex-wrap: wrap; }
+.hp3 .pricing-infra-footer { flex-wrap: wrap; }
+.hp3 .pricing-shared-description { font-size: 14px; line-height: 1.8; color: var(--t2); margin: -12px 0 28px; }
+.hp3 .pricing-ai-models+.pricing-note { margin-top: 22px; }
+.hp3 .pricing-ai-charges { margin-top: 28px; border-block: 1px solid var(--border-2); }
+.hp3 .pricing-ai-charges summary { padding-block: 20px; cursor: pointer; font-size: 14px; color: var(--em); }
+.hp3 .pricing-ai-charges>div { padding-bottom: 24px; }
+.hp3 .pricing-ai-charges h3 { font-size: 18px; margin: 24px 0 12px; }
+.hp3 .pricing-ai-charges p { font-size: 14px; line-height: 1.8; color: var(--t2); margin-block: 14px; }
+.hp3 .pricing-rate-scroll { overflow-x: auto; margin-block: 20px; }
+.hp3 .pricing-rate-scroll table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.hp3 .pricing-rate-scroll caption { text-align: left; margin-bottom: 12px; color: var(--t2); }
+.hp3 .pricing-rate-scroll th,.hp3 .pricing-rate-scroll td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.hp3 .pricing-ai-charges summary:focus-visible,.hp3 .pricing-rate-scroll:focus-visible { outline: 2px solid var(--em); outline-offset: 3px; }
+@media(max-width:850px) { .hp3 .pricing-enterprise-visual { grid-column: auto; grid-row: auto; } }

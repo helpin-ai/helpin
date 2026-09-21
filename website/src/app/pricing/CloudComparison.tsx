@@ -52,9 +52,9 @@ export function CloudComparison() {
     <section id="compare-plans" className="pricing-comparison">
       <div className="wrap">
         <SectionHead
-          eyebrow="Cloud plans, side by side"
-          title="What changes between Starter and Growth."
-          lede="Both plans include support, projects, CRM, meetings, knowledge and agents, with unlimited teammates. These are the limits and controls that differ as your team grows."
+          eyebrow="The details behind your choice"
+          title={"Compare the capacity.\nCheck the controls."}
+          lede="Choose the plan around the work you want to run—not just the features you might use someday."
         />
         <table className="pricing-table">
           <caption className="sr-only">
@@ -81,8 +81,8 @@ export function CloudComparison() {
                   <span className="pricing-table-plan">{plan.name}</span>
                   <span className="pricing-table-description">
                     {plan.popular
-                      ? "More capacity & control"
-                      : "The essentials, connected"}
+                      ? "Build repeatable workflows around it."
+                      : "Bring the work together."}
                   </span>
                   <a
                     className={`btn ${plan.popular ? "btn-primary" : "btn-secondary"}`}
@@ -114,7 +114,7 @@ export function CloudComparison() {
           ))}
         </table>
         <div className="pricing-shared">
-          <h3>Included in both plans</h3>
+          <h3>The starting point stays connected.</h3><p className="pricing-shared-description">Use the shared inbox, project tools, customer records, meetings, and knowledge together. Build your process around the parts you need first.</p>
           <dl>
             {SHARED.map((group) => (
               <div key={group.name}>
@@ -134,8 +134,8 @@ export function CloudComparison() {
           </dl>
         </div>
         <p className="pricing-note">
-          These limits apply to Helpin Cloud.{" "}
-          <a href="#self-hosted">Explore the self-hosted product →</a>
+          This comparison covers Cloud subscriptions; self-hosting is a separate deployment choice.{" "}
+          <a href="#self-hosted">Explore the self-hosted edition →</a>
         </p>
       </div>
     </section>
