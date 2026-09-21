@@ -1,3 +1,4 @@
+import { HeroVortex } from '../../_components/HeroVortex';
 import { Availability, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
@@ -97,7 +98,7 @@ export default function CustomerSupportPage() {
   return <>
     <PreviewNav />
     <div className="support-page">
-      <section className="hero support-hero">
+      <section className="hero support-hero motion-hero"><HeroVortex variant="flow" tone="dark" />
         <div className="wrap">
           <nav className="support-breadcrumb" aria-label="Breadcrumb"><Link href="/new/product">Products</Link><ChevronRight size={12} aria-hidden="true" /><span aria-current="page">Customer Support</span></nav>
           <div className="support-hero-grid">
@@ -122,7 +123,7 @@ export default function CustomerSupportPage() {
         </div>
       </section>
 
-      <section id="support-operations" className="support-operations">
+      <section id="support-operations" className="support-operations section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <SectionHead eyebrow="Everyday support" title="A shared inbox your team can work from." lede="Connect your support address, organize incoming requests, and give each conversation an owner." />
           <SupportInboxFeatures />
@@ -150,7 +151,7 @@ export default function CustomerSupportPage() {
       </section>
 
 
-      <section id="support-identity" className="support-identity-section">
+      <section id="support-identity" className="support-identity-section section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap support-identity-grid">
           <div className="support-identity-copy">
             <SectionHead eyebrow="Identity and access" title="Know who’s asking. Control what AI can access." lede="Verify signed-in customers and give agents selected tools to investigate their requests. Confirming identity and granting access remain separate controls." />

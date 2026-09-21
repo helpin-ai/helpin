@@ -2,7 +2,6 @@ import { Braces, Database, Plug, Server, SlidersHorizontal, Webhook } from 'luci
 import { CustomerLogos } from './_components/CustomerLogos';
 import { PreviewNav } from './_components/PreviewNav';
 import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
-import { GridFlow } from './_components/GridFlow';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { HeroVortex } from './_components/HeroVortex';
 import { LoopWire } from './_components/LoopWire';
@@ -87,8 +86,8 @@ export default function NewHomePage() {
       </section>
 
       {/* Shared customer history: the context behind the work. */}
-      <section id="record" className="dark">
-        <GridFlow />
+      <section id="record" className="dark record-motion">
+        <HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <div className="rs-copy record-intro">
             <span className="rs-eyebrow">One customer. One record.</span>
@@ -111,7 +110,7 @@ export default function NewHomePage() {
       </section>
 
       {/* Ask Agent: answers, execution, and connected tools. */}
-      <section id="ask-agent" className="ask-agent-section" aria-labelledby="ask-agent-title">
+      <section id="ask-agent" className="ask-agent-section section-motion" aria-labelledby="ask-agent-title"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <div className="ask-agent-intro">
             <span className="eyebrow">Ask Agent</span>
@@ -197,7 +196,7 @@ export default function NewHomePage() {
       </section>
 
       {/* Self-hosting */}
-      <section id="open-source" className="dark self-host-section">
+      <section id="open-source" className="dark self-host-section section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <div className="self-host-intro">
             <div>

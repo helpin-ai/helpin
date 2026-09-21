@@ -250,3 +250,14 @@
 .hp3 .agents-page .agents-supporting-note,.hp3 .agents-page .agents-demo-caption{color:#687d70}
 .hp3 .agents-hero .agents-supporting-note,.hp3 .agents-hero .agents-demo-caption{color:#b3cbbc}
 .hp3 .agents-coding .agents-demo-caption{color:#b3cbbc}
+
+/* Shared vortex, softened for the dark Agents hero. */
+.hp3 .agents-page section.agents-hero { position: relative; isolation: isolate; }
+.hp3 .agents-hero .agents-breadcrumb,
+.hp3 .agents-hero .agents-hero-copy,
+.hp3 .agents-hero .agents-hero-roster,
+.hp3 .agents-hero .agents-demo-caption { position: relative; z-index: 1; }
+.hp3 .agents-hero .hero-vortex-drift { opacity: .34; }
+.hp3 .agents-hero .hero-vortex-toggle { color: var(--on-dark-muted); background: var(--surface-dark); border-color: var(--art-dark-border); }
+.hp3 .agents-hero .hero-vortex-toggle:hover { color: var(--on-dark-accent); border-color: var(--on-dark-muted); }
+@media (max-width: 600px) { .hp3 .agents-hero .hero-vortex-drift { opacity: .25; } }

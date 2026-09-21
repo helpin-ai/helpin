@@ -1,3 +1,4 @@
+import { HeroVortex } from '../_components/HeroVortex';
 import { previewMetadata } from '../_components/preview-metadata';
 import { Download } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
@@ -13,7 +14,7 @@ export default function BrandingPage() {
     <PreviewNav />
     <div className="brand-page">
       <header className="brand-header wrap">
-        <div className="brand-banner">
+        <div className="brand-banner motion-hero"><HeroVortex variant="connections" tone="dark" />
           <div className="brand-banner-copy"><span className="eyebrow">Helpin / Brand resources</span><h1>The Helpin<br />essentials.</h1><p>Our logo, colors, and type. Ready for your next article, integration, or presentation.</p><div className="brand-download"><a className="btn btn-primary" href="/brand/kit/helpin-brand-kit.zip" download><Download size={16} aria-hidden="true" />Download brand kit</a><span>SVG + PNG symbols · Color palette</span></div></div>
           <div className="brand-banner-art" aria-hidden="true">
             <svg viewBox="0 0 360 260" fill="none"><path d="M0 50 H72 Q90 50 90 68 V112 Q90 130 108 130 H148 M0 210 H72 Q90 210 90 192 V148 Q90 130 108 130 H148 M360 50 H288 Q270 50 270 68 V112 Q270 130 252 130 H212 M360 210 H288 Q270 210 270 192 V148 Q270 130 252 130 H212" stroke="#7CAC8B" strokeOpacity=".45" /><circle cx="34" cy="50" r="4" fill="#B8DDBB" /><circle cx="326" cy="210" r="4" fill="#B8DDBB" /><rect x="100" y="50" width="160" height="160" rx="36" fill="#173D2A" stroke="#4B715A" /><image href="/brand/helpin-icon-white.svg" x="128" y="78" width="104" height="104" /></svg>
