@@ -967,6 +967,7 @@ type CreateConversationWithMessageResponse struct {
 
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
+	SendOriginal              bool     `json:"send_original,omitempty"`
 	AutoTranslate             bool     `json:"auto_translate,omitempty"`
 	TranslationTargetLanguage string   `json:"translation_target_language,omitempty"`
 	Content                   string   `json:"content"`

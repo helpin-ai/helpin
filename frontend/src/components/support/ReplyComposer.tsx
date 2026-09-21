@@ -1,3 +1,4 @@
+import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import { useOutgoingSupportTranslation } from '@/hooks/queries/useOutgoingSupportTranslation';
 import { useRef, useEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -777,6 +778,7 @@ function ShortcutFormPanel({
 export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnabled, onUpgradeRequired }: ReplyComposerProps) {
   const { replyMode, setReplyMode, setDraft, clearDraft, detailSidebarMode, setDetailSidebarMode } = useSupportInboxStore();
   const askChat = useDockStore((state) => state.chats.find((chat) => chat.support_conversation_id === conversationId) ?? null);
+  const [translationFailureConversation, setTranslationFailureConversation] = useState<string | null>(null);
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const updateEmailRecipients = useUpdateConversationEmailRecipients(workspaceId);
@@ -1483,7 +1485,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
 
   const translatedSendRef = useRef<{ fingerprint: string; id: string } | null>(null);
 
-  const sendReply = useCallback(async () => {
+  const sendReply = useCallback(async (sendOriginal = false) => {
     if (!editor || !editor.isEditable || attachmentsPending) return;
     const markdown = getEditorMarkdown(editor).trim();
     const doneAttachments = pendingAttachments.filter((a) => a.status === 'done' && a.attachmentId);
@@ -1495,10 +1497,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
 
     const attachmentIds = doneAttachments.map((a) => a.attachmentId!);
     const isInternal = useSupportInboxStore.getState().replyMode === 'note';
-    if (!isInternal && (outgoingTranslation.options.isPending || outgoingTranslation.options.isError)) {
-      toast.error('Translation settings are unavailable. Try again shortly.');
-      return;
-    }
 
     const primaryEmail = conversation?.customer_email?.trim() || '';
     const normalizedCC = normalizeRecipientEmails(conversation?.email_cc ?? [], [primaryEmail]);
@@ -1510,29 +1508,31 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     }
     const fingerprint = JSON.stringify([conversationId, markdown, outgoingTranslation.language, attachmentIds, deliveryMode, normalizedCC]);
     if (translatedSendRef.current?.fingerprint !== fingerprint) translatedSendRef.current = { fingerprint, id: crypto.randomUUID() };
-    const translating = !isInternal && outgoingTranslation.enabled && !!markdown;
+    const translating = !sendOriginal && !isInternal && outgoingTranslation.enabled && !!markdown;
     if (translating) editor.setEditable(false);
     try {
       await sendMutation.mutateAsync({
         content: markdown || ' ',
-        ...(!isInternal && outgoingTranslation.enabled && markdown ? {
+        ...(!sendOriginal && !isInternal && outgoingTranslation.enabled && markdown ? {
           auto_translate: true,
           translation_target_language: outgoingTranslation.language,
         } : {}),
-        ...(!isInternal ? { client_message_id: translatedSendRef.current!.id } : {}),
+        ...(!isInternal ? { client_message_id: translatedSendRef.current!.id, ...(sendOriginal ? { send_original: true } : {}) } : {}),
         is_internal: isInternal,
         ...(!isInternal && aiAssistedRef.current ? { ai_assisted: true } : {}),
         ...(!isInternal ? { delivery_mode: deliveryMode, channels: replyDeliveryChannels(deliveryMode) } : {}),
         ...(!isInternal && deliveryMode !== 'chat_only' && normalizedCC.length > 0 ? { cc_emails: normalizedCC } : {}),
         ...(attachmentIds.length > 0 ? { attachment_ids: attachmentIds } : {}),
       });
-    } catch {
-      // The mutation reports the failure. Keep the draft and retry identity.
+    } catch (error) {
+      if (error instanceof SupportTranslationSendError) setTranslationFailureConversation(conversationId);
+      // Keep the draft and retry identity; no automatic original send.
       return;
     } finally {
       if (translating && !editor.isDestroyed) editor.setEditable(true);
     }
 
+    setTranslationFailureConversation(null);
     // Clean up preview URLs
     pendingAttachments.forEach((a) => { if (a.previewUrl && a.previewObjectUrl) URL.revokeObjectURL(a.previewUrl); });
     setPendingAttachments([]);
@@ -1546,7 +1546,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     editor.commands.focus();
   }, [outgoingTranslation, attachmentsPending, clearDraft, conversation?.customer_email, conversation?.email_cc, conversationId, editor, deliveryMode, pendingAttachments, workspaceId, sendMutation, sendTyping]);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(async (sendOriginal = false) => {
     if (!editor || !editor.isEditable || attachmentsPending) return;
     const markdown = getEditorMarkdown(editor).trim();
     const hasUploadedAttachments = pendingAttachments.some((a) => a.status === 'done' && a.attachmentId);
@@ -1562,7 +1562,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
       return;
     }
 
-    await sendReply();
+    await sendReply(sendOriginal);
   }, [attachmentsPending, deliveryUnavailableReason, editor, isNote, pendingAttachments, primaryRecipientUnconfirmed, sendMutation.isPending, sendReply]);
 
   const handleRewrite = useCallback(async (operation: SupportAIRewriteOperation) => {
@@ -2231,8 +2231,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
             />}
             <Button
               size="sm"
-              disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && outgoingTranslation.options.isPending) || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
-              onClick={handleSend}
+              disabled={isRewriting || attachmentsPending || sendMutation.isPending || (!isNote && (primaryRecipientUnconfirmed || !!deliveryUnavailableReason)) || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
+              onClick={() => void handleSend()}
               className={cn(
                 'h-7 gap-1.5 rounded-full px-3 text-xs',
                 isNote ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'rounded-l-none'
@@ -2244,10 +2244,18 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
           </div>
         </div>
       </div>
-      {!isNote && outgoingTranslation.options.isError && (
-        <div role="alert" className="px-3 py-2 text-xs text-destructive">
-          Translation settings are unavailable.{' '}
-          <button type="button" onClick={() => void outgoingTranslation.options.refetch()}>Retry</button>
+      {!isNote && (translationFailureConversation === conversationId || outgoingTranslation.options.isError) && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-t border-border/40 px-3 py-2 text-xs">
+          <span className="text-muted-foreground">Translation is unavailable. Your reply hasn’t been sent.</span>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="ghost" size="xs" disabled={sendMutation.isPending} onClick={() => {
+              if (outgoingTranslation.options.isError) void outgoingTranslation.options.refetch();
+              else void handleSend();
+            }}>Retry translation</Button>
+            <Button type="button" variant="secondary" size="xs"
+              disabled={isRewriting || attachmentsPending || sendMutation.isPending || primaryRecipientUnconfirmed || !!deliveryUnavailableReason || (!content.trim() && !pendingAttachments.some((a) => a.status === 'done'))}
+              onClick={() => void handleSend(true)}>Send original</Button>
+          </div>
         </div>
       )}
       </div>

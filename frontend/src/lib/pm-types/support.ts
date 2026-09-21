@@ -1020,6 +1020,7 @@ export interface CreateConversationRequest {
 export type SupportReplyDeliveryMode = 'chat_only' | 'chat_and_email' | 'email_only';
 
 export interface CreateMessageRequest {
+  send_original?: boolean;
  auto_translate?: boolean;
  translation_target_language?: string;
   content: string;

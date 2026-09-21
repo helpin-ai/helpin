@@ -25,6 +25,7 @@ const (
 	JevAutomationCondition    = "automation_condition"
 	JevAnswerEvidence         = "answer_evidence"
 	JevTranslationReview      = "translation_review"
+	JevLanguageDetection      = "language_detection"
 )
 
 // JevDecisionStore provides admission and content-free settlement for decisions.
@@ -61,7 +62,7 @@ func NewJevDecisionService(provider decision.Provider, store JevDecisionStore, u
 	copied := make(map[string]decision.Policy, len(policies))
 	for feature, policy := range policies {
 		switch feature {
-		case JevMeetingRouting, JevCoverageClassification, JevCoverageTopicMatching, JevAutomationCondition, JevAnswerEvidence, JevTranslationReview:
+		case JevMeetingRouting, JevCoverageClassification, JevCoverageTopicMatching, JevAutomationCondition, JevAnswerEvidence, JevTranslationReview, JevLanguageDetection:
 		default:
 			return nil, errors.New("unsupported decision feature")
 		}

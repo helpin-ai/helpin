@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/decision"
@@ -41,7 +42,7 @@ func (p *translationTestProvider) ChatCompletion(_ context.Context, req llm.Chat
 	}
 	translated := strings.ReplaceAll(input["text"], "Hello", "Hallo")
 	language := "en"
-	if input["target_language"] == "en" {
+	if input["target_language"] == "en" || (input["target_language"] == "" && strings.Contains(input["text"], "Hallo")) {
 		translated = strings.ReplaceAll(input["text"], "Hallo", "Hello")
 		language = "de"
 	}
@@ -577,8 +578,8 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 		failure   error
 		errorCode string
 	}{
-		{"provider unavailable", errors.New("provider unavailable"), "generation_failed"},
-		{"provider timeout", context.DeadlineExceeded, "generation_timeout"},
+		{"provider unavailable", errors.New("provider unavailable"), "detection_unavailable"},
+		{"provider timeout", context.DeadlineExceeded, "detection_unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env, c, p := translationFixture(t)
@@ -601,7 +602,7 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 			var artifact model.SupportTranslation
 			for attempt := 1; attempt <= 3; attempt++ {
 				_, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
-				if err == nil || !strings.Contains(err.Error(), "temporarily unavailable") {
+				if err == nil || !errors.Is(err, ErrSupportTranslation) {
 					t.Fatalf("send error=%v", err)
 				}
 				if err := db.Where("source_message_id = ?", msg.ID).First(&artifact).Error; err != nil {
@@ -668,5 +669,170 @@ func TestTranslationSendWithoutCustomerEvidencePreservesDraft(t *testing.T) {
 				t.Fatalf("no-evidence send changed draft: %+v calls=%d", sent, provider.calls)
 			}
 		})
+	}
+}
+
+func TestTranslationSendOriginalBypassesProviderAndDeduplicates(t *testing.T) {
+	for _, mode := range []string{"chat_only", "email_only", "chat_and_email"} {
+		t.Run(mode, func(t *testing.T) {
+			env, c, provider := translationFixture(t)
+			provider.fail = true
+			req := explicitDeliveryRequest(t, mode)
+			req.Content = "Hello — keep my original reply."
+			req.ClientMessageID = uuid.NewString()
+			actor := "22222222-2222-2222-2222-222222222222"
+			s := env.service.supportInboxService
+			if _, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", &actor, nil, nil); err == nil {
+				t.Fatal("expected translation failure")
+			}
+			calls := provider.calls
+			req.SendOriginal = true
+			first, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", &actor, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", &actor, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first.Content != req.Content || first.ID != second.ID || provider.calls != calls {
+				t.Fatalf("original send changed or duplicated: %q %s/%s calls=%d", first.Content, first.ID, second.ID, provider.calls)
+			}
+			req.SendOriginal = false
+			again, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", &actor, nil, nil)
+			if err != nil || again.ID != first.ID || provider.calls != calls {
+				t.Fatalf("translated retry after original duplicated send: %v", err)
+			}
+		})
+	}
+}
+
+func TestTranslationLongEnglishEmailUsesJevWithoutTranslation(t *testing.T) {
+	env, c, provider := translationFixture(t)
+	setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) { settings.TranslationCustomerLanguage = "" })
+	jev, classifier, _, db := setupJevDecisionTest(t, "primary")
+	if err := db.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
+	jev.workspaces = map[string]bool{c.WorkspaceID: true}
+	jev.policies[JevLanguageDetection] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 100}
+	classifier.choices["language"] = "en"
+	s := env.service.supportInboxService
+	s.translations.jev = jev
+	provider.fail = true
+	msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: strings.Repeat("Our Instagram posts are failing. Please help.\n", 220)}
+	if err := env.messageRepo.Create(context.Background(), msg); err != nil {
+		t.Fatal(err)
+	}
+	req := explicitDeliveryRequest(t, "chat_only")
+	req.Content = strings.Repeat("Thanks, we are investigating this issue. ", 250) + "We will update you."
+	req.ClientMessageID = uuid.NewString()
+	actor := "22222222-2222-2222-2222-222222222222"
+	sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", &actor, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent.Content != req.Content || provider.calls != 0 {
+		t.Fatalf("same-language send translated: %q calls=%d", sent.Content, provider.calls)
+	}
+	options, err := s.TranslationOptions(context.Background(), c.WorkspaceID, c.ID, actor)
+	if err != nil || options.DetectedCustomerLanguage != "en" {
+		t.Fatalf("detection was not cached: %+v %v", options, err)
+	}
+}
+
+func TestTranslationLongMessagePreservesAllContent(t *testing.T) {
+	env, c, provider := translationFixture(t)
+	s := env.service.supportInboxService
+	original := strings.Repeat("Hello, please check my account.\n", 400)
+	artifact, err := s.TranslateSupport(context.Background(), c.WorkspaceID, c.ID, "22222222-2222-2222-2222-222222222222", model.SupportTranslateRequest{Content: original, DraftID: uuid.NewString(), TargetLanguage: "de"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifact.Status != "ready" || artifact.TranslatedText != strings.ReplaceAll(strings.TrimSpace(original), "Hello", "Hallo") {
+		t.Fatalf("long translation incomplete: status=%s bytes=%d", artifact.Status, len(artifact.TranslatedText))
+	}
+	if provider.calls < 2 {
+		t.Fatal("expected bounded chunks")
+	}
+}
+
+func TestTranslationLongReplyReviewsEveryChunk(t *testing.T) {
+	env, c, _ := translationFixture(t)
+	jev, reviewer, _, db := setupJevDecisionTest(t, "primary")
+	if err := db.Exec("INSERT INTO workspaces(id) VALUES (?)", c.WorkspaceID).Error; err != nil {
+		t.Fatal(err)
+	}
+	jev.workspaces = map[string]bool{c.WorkspaceID: true}
+	jev.policies[JevTranslationReview] = decision.Policy{Mode: "primary", Threshold: .95, DailyLimit: 100}
+	s := env.service.supportInboxService
+	s.translations.jev = jev
+	req := explicitDeliveryRequest(t, "email_only")
+	req.Content = strings.Repeat("Hello, please check the account details.\n", 300)
+	req.ClientMessageID = uuid.NewString()
+	sent, err := s.CreateConversationMessage(context.Background(), c.WorkspaceID, c.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent.Content != strings.TrimSpace(strings.ReplaceAll(req.Content, "Hello", "Hallo")) || reviewer.calls < 2 {
+		t.Fatalf("long reply/review incomplete: calls=%d", reviewer.calls)
+	}
+	for _, state := range reviewer.states {
+		if len(state) > 16000 {
+			t.Fatal("review exceeded Jev input limit")
+		}
+	}
+}
+
+func TestTranslationLanguageHintIgnoresOlderAndDeletedMessages(t *testing.T) {
+	env, c, _ := translationFixture(t)
+	ctx := context.Background()
+	repo := env.service.supportInboxService.translations.repo
+	db := env.messageRepo.DB()
+	old := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hello", CreatedAt: time.Now().Add(-time.Hour)}
+	if err := env.messageRepo.Create(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	artifact := &model.SupportTranslation{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, Purpose: "language_detection", SourceMessageID: &old.ID, SourceText: old.Content, SourceLanguage: "en", Status: "ready", CacheKey: uuid.NewString()}
+	if err := db.Create(artifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	newer := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo", CreatedAt: time.Now()}
+	if err := env.messageRepo.Create(ctx, newer); err != nil {
+		t.Fatal(err)
+	}
+	language, err := repo.DetectedLanguage(ctx, c.WorkspaceID, c.ID)
+	if err != nil || language != "" {
+		t.Fatalf("stale hint=%q %v", language, err)
+	}
+	if err := db.Model(newer).Update("deleted_at", time.Now()).Error; err != nil {
+		t.Fatal(err)
+	}
+	latest, err := repo.LatestCustomerMessageID(ctx, c.WorkspaceID, c.ID)
+	if err != nil || latest != old.ID {
+		t.Fatalf("deleted message used for detection: %s %v", latest, err)
+	}
+}
+
+func TestTranslationChunksPreserveUnicodeAndProtectedText(t *testing.T) {
+	original := strings.Repeat("你好 Привет Hello\n", 500) + "https://example.com/" + strings.Repeat("x", 5000) + "\nThanks"
+	chunks := translationChunks(original)
+	if strings.Join(chunks, "") != original {
+		t.Fatal("chunks changed original text")
+	}
+	for _, chunk := range chunks {
+		if !utf8.ValidString(chunk) {
+			t.Fatal("split UTF-8 sequence")
+		}
+	}
+	url := "https://example.com/" + strings.Repeat("x", 5000)
+	found := false
+	for _, chunk := range chunks {
+		if strings.Contains(chunk, url) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("split protected URL between chunks")
 	}
 }

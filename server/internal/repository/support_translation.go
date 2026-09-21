@@ -191,7 +191,7 @@ func (r *SupportMessageRepository) createTranslatedMessage(ctx context.Context, 
 // a replacement for an explicit conversation language override.
 func (r *SupportTranslationRepository) DetectedLanguage(ctx context.Context, workspaceID, conversationID string) (string, error) {
 	var result model.SupportTranslation
-	err := r.db.WithContext(ctx).Table("support_translations t").Select("t.*").Joins("JOIN support_messages m ON m.id=t.source_message_id AND m.workspace_id=t.workspace_id AND m.conversation_id=t.conversation_id").Where("t.workspace_id = ? AND t.conversation_id = ? AND t.purpose = 'message_display' AND t.status = 'ready' AND t.source_language NOT IN ('','und','mul') AND m.deleted_at IS NULL AND m.content=t.source_text", workspaceID, conversationID).Order("m.created_at DESC").First(&result).Error
+	err := r.db.WithContext(ctx).Table("support_translations t").Select("t.*").Joins("JOIN support_messages m ON m.id=t.source_message_id AND m.workspace_id=t.workspace_id AND m.conversation_id=t.conversation_id").Where("t.workspace_id = ? AND t.conversation_id = ? AND t.purpose IN ('message_display','language_detection') AND t.status = 'ready' AND t.source_language NOT IN ('','und','mul') AND m.deleted_at IS NULL AND m.content=t.source_text", workspaceID, conversationID).Where("m.id = (SELECT id FROM support_messages WHERE workspace_id = ? AND conversation_id = ? AND sender_type = 'customer' AND message_type = 'reply' AND is_internal = false AND deleted_at IS NULL AND content <> '' ORDER BY created_at DESC LIMIT 1)", workspaceID, conversationID).Order("m.created_at DESC").First(&result).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", nil
 	}
@@ -212,7 +212,7 @@ func (r *SupportTranslationRepository) ForSentMessage(ctx context.Context, works
 // sends before an incoming display translation has populated the language hint.
 func (r *SupportTranslationRepository) LatestCustomerMessageID(ctx context.Context, workspaceID, conversationID string) (string, error) {
 	var msg model.SupportMessage
-	err := r.db.WithContext(ctx).Select("id").Where("workspace_id = ? AND conversation_id = ? AND sender_type = 'customer' AND message_type = 'reply' AND is_internal = false AND content <> ''", workspaceID, conversationID).Order("created_at DESC").First(&msg).Error
+	err := r.db.WithContext(ctx).Select("id").Where("workspace_id = ? AND conversation_id = ? AND sender_type = 'customer' AND message_type = 'reply' AND is_internal = false AND deleted_at IS NULL AND content <> ''", workspaceID, conversationID).Order("created_at DESC").First(&msg).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", nil
 	}

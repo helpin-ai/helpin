@@ -1,3 +1,4 @@
+import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import type { CreateTaskFromConversationRequest } from '@/lib/pmTypes';
 import type { WidgetOriginSettings } from '@/lib/pmTypes';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
@@ -101,6 +102,7 @@ export type SupportConversationFilters = {
 export type SupportConversationGlobalSearchFilters = SupportConversationSearchParams;
 
 type SendMessagePayload = {
+  send_original?: boolean;
   auto_translate?: boolean;
   translation_target_language?: string;
   content: string;
@@ -949,7 +951,10 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: SendMessagePayload) =>
-      supportService.createConversationMessage(workspaceId, conversationId!, payload).then(unwrap),
+      supportService.createConversationMessage(workspaceId, conversationId!, payload).then((response) => {
+        if (response.status === 422) throw new SupportTranslationSendError();
+        return unwrap(response);
+      }),
     onMutate: async (payload) => {
       if (!conversationId) return { previousMessages: undefined as SupportMessagePages | undefined, optimisticId: '' };
       const key = queryKeys.support.messages(workspaceId, conversationId);
@@ -989,7 +994,7 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
       if (conversationId && context?.previousMessages) {
         queryClient.setQueryData(queryKeys.support.messages(workspaceId, conversationId), context.previousMessages);
       }
-      toast.error('Failed to send message', { description: error.message });
+      if (!(error instanceof SupportTranslationSendError)) toast.error('Failed to send message', { description: error.message });
     },
   });
 }

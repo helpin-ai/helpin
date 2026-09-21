@@ -2023,6 +2023,18 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		return nil, fmt.Errorf("this conversation has no chat session; choose email only")
 	}
 
+	replyID := ""
+	if senderType == "user" && senderUserID != nil && !req.IsInternal && messageType == "reply" && clientMessageID != "" {
+		previous, lookupErr := s.messageRepo.FindTeammateReplyByClientID(ctx, workspaceID, ticketID, *senderUserID, clientMessageID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if previous != nil {
+			return previous, nil
+		}
+		replyID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("support-reply:"+workspaceID+":"+ticketID+":"+*senderUserID+":"+clientMessageID)).String()
+	}
+
 	explicitEmail := req.DeliveryMode == model.SupportDeliveryEmailOnly || req.DeliveryMode == model.SupportDeliveryChatAndEmail
 	explicitDelay := 0
 	if explicitEmail {
@@ -2035,7 +2047,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	// Apply the workspace policy to every public teammate reply, including older
 	// clients that omit or send stale per-message translation flags.
 	req.AutoTranslate = false
-	if s.translations != nil && senderType == "user" && !req.IsInternal && messageType == "reply" && strings.TrimSpace(req.Content) != "" {
+	if !req.SendOriginal && s.translations != nil && senderType == "user" && !req.IsInternal && messageType == "reply" && strings.TrimSpace(req.Content) != "" {
 		options, err := s.TranslationOptions(ctx, workspaceID, ticketID, derefString(senderUserID))
 		if err != nil {
 			return nil, ErrSupportTranslation
@@ -2054,7 +2066,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		var err error
 		translation, err = s.prepareTranslatedReply(ctx, workspaceID, ticketID, derefString(senderUserID), req)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %v", ErrSupportTranslation, err)
 		}
 	}
 	if translation != nil {
@@ -2106,6 +2118,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	}
 
 	msg := &model.SupportMessage{
+		ID:                replyID,
 		WorkspaceID:       workspaceID,
 		ConversationID:    ticketID,
 		SenderType:        senderType,

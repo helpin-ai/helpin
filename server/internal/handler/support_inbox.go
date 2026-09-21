@@ -381,6 +381,10 @@ func (h *SupportInboxHandler) CreateConversationMessage(w http.ResponseWriter, r
 
 	msg, err := h.supportService.CreateConversationMessage(r.Context(), workspaceID, ticketID, req, "user", &actorID, nil, nil)
 	if err != nil {
+		if errors.Is(err, service.ErrSupportTranslation) {
+			writeError(w, http.StatusUnprocessableEntity, service.ErrSupportTranslation.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

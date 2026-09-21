@@ -2,6 +2,7 @@
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SupportTranslationSendError } from '@/lib/supportTranslationError';
 import { ReplyComposer } from '../ReplyComposer';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -71,6 +72,39 @@ describe('ReplyComposer AI loading state', () => {
     mocks.translation = false;
     saveReplySubject('ws-1', 'conv-1');
     clearReplyDeliveryDraft('ws-1', 'conv-1');
+  });
+
+  it('offers an explicit original send after translation fails and preserves delivery and retry identity', async () => {
+    mocks.translation = true;
+    setup(true);
+    mocks.send.mockRejectedValueOnce(new SupportTranslationSendError());
+    await act(async () => { button('Send').click(); });
+    const first = mocks.send.mock.calls[0][0];
+    expect(container.textContent).toContain('Your reply hasn’t been sent.');
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    await act(async () => { button('Send original').click(); });
+    expect(mocks.send.mock.calls[1][0]).toMatchObject({ content: first.content, client_message_id: first.client_message_id, send_original: true, delivery_mode: 'email_only' });
+    expect(mocks.send.mock.calls[1][0].auto_translate).toBeUndefined();
+    expect(container.textContent).not.toContain('Send original');
+  });
+
+  it('does not offer translation bypass for network or delivery failures', async () => {
+    mocks.translation = true;
+    setup(true);
+    mocks.send.mockRejectedValueOnce(new Error('Network unavailable'));
+    await act(async () => { button('Send').click(); });
+    expect(container.textContent).not.toContain('Send original');
+    expect(container.querySelector('.tiptap')?.textContent).toContain('Original');
+  });
+
+  it('does not carry a translation failure into another conversation', async () => {
+    mocks.translation = true;
+    setup(true);
+    mocks.send.mockRejectedValueOnce(new SupportTranslationSendError());
+    await act(async () => { button('Send').click(); });
+    expect(container.textContent).toContain('Send original');
+    await act(async () => { root.render(<TooltipProvider><ReplyComposer workspaceId="ws-1" conversationId="conv-2" emailDeliveryEnabled /></TooltipProvider>); });
+    expect(container.textContent).not.toContain('Send original');
   });
 
   it('translates on normal Send without a preview step', async () => {
