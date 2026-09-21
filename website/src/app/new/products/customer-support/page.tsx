@@ -115,7 +115,7 @@ export default function CustomerSupportPage() {
         </div>
       </section>
 
-      <section id="support-operations" className="support-operations">
+      <section id="support-operations" className="support-operations section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <SectionHead eyebrow="Inbox basics" title="Email forwarding, routing rules and saved views — the everyday tools, done." lede="Connect your support email, give every conversation a destination, and build the views your team works from. The everyday inbox tools are here, alongside your agents." />
           <SupportInboxFeatures />
@@ -143,7 +143,7 @@ export default function CustomerSupportPage() {
       </section>
 
 
-      <section id="support-identity" className="support-identity-section">
+      <section id="support-identity" className="support-identity-section section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap support-identity-grid">
           <div className="support-identity-copy">
             <SectionHead eyebrow="Customer identity and tool access" title="Verified customers, connected tools." lede="Verify signed-in customers and let agents check connected logs and account tools before they reply." />

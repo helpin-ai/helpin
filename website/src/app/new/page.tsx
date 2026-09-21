@@ -110,7 +110,7 @@ export default function NewHomePage() {
       </section>
 
       {/* Ask Agent: answers, execution, and connected tools. */}
-      <section id="ask-agent" className="ask-agent-section" aria-labelledby="ask-agent-title">
+      <section id="ask-agent" className="ask-agent-section section-motion" aria-labelledby="ask-agent-title"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <div className="ask-agent-intro">
             <span className="eyebrow">Ask Agent</span>
@@ -196,7 +196,7 @@ export default function NewHomePage() {
       </section>
 
       {/* Self-hosting */}
-      <section id="open-source" className="dark self-host-section">
+      <section id="open-source" className="dark self-host-section section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <div className="self-host-intro">
             <div>

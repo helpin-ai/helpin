@@ -37,15 +37,15 @@
   .hero-vortex[data-variant=orbit] .hero-vortex-drift { top: -150px; }
 }
 
-/* Customer history: faint incoming threads stay outside the reading area. */
-.hp3 .record-motion { position: relative; isolation: isolate; }
-.hp3 .record-motion > .wrap { position: relative; }
-.hp3 .record-motion .hero-vortex { height: 640px; }
-.hp3 .record-motion .hero-vortex-art { mask-image: linear-gradient(90deg, #000, transparent 32%, transparent 68%, #000); }
-.hp3 .record-motion .hero-vortex-drift { top: 0; width: 1500px; height: 700px; margin-left: -750px; opacity: .2; animation-duration: 28s; mask-image: linear-gradient(#000 0%, #000 45%, transparent 90%); }
-.hp3 .record-motion .hero-vortex-trail { animation-duration: 12s; }
+/* Dark sections: faint incoming threads stay outside the reading area. */
+.hp3 :is(.record-motion, .section-motion) { position: relative; isolation: isolate; }
+.hp3 :is(.record-motion, .section-motion) > .wrap { position: relative; }
+.hp3 :is(.record-motion, .section-motion) .hero-vortex { height: 640px; }
+.hp3 :is(.record-motion, .section-motion) .hero-vortex-art { mask-image: linear-gradient(90deg, #000, transparent 32%, transparent 68%, #000); }
+.hp3 :is(.record-motion, .section-motion) .hero-vortex-drift { top: 0; width: 1500px; height: 700px; margin-left: -750px; opacity: .2; animation-duration: 28s; mask-image: linear-gradient(#000 0%, #000 45%, transparent 90%); }
+.hp3 :is(.record-motion, .section-motion) .hero-vortex-trail { animation-duration: 12s; }
 @media (max-width: 600px) {
-  .hp3 .record-motion .hero-vortex { height: 520px; }
-  .hp3 .record-motion .hero-vortex-drift { width: 750px; height: 600px; margin-left: -375px; opacity: .14; }
-  .hp3 .record-motion .hero-vortex-art { mask-image: linear-gradient(90deg, #000, transparent 22%, transparent 78%, #000); }
+  .hp3 :is(.record-motion, .section-motion) .hero-vortex { height: 520px; }
+  .hp3 :is(.record-motion, .section-motion) .hero-vortex-drift { width: 750px; height: 600px; margin-left: -375px; opacity: .14; }
+  .hp3 :is(.record-motion, .section-motion) .hero-vortex-art { mask-image: linear-gradient(90deg, #000, transparent 22%, transparent 78%, #000); }
 }
