@@ -1,5 +1,5 @@
 /* Layout only: the conversation itself is rendered by @helpin-ai/widget-core. */
-.hp3 .support-hero .support-widget-art { width: 100%; max-width: 470px; justify-self: center; }
+.hp3 .support-hero .support-widget-art { width: 100%; max-width: 470px; justify-self: end; }
 .hp3 .support-widget-shell { border: 1px solid #d5e0d8; border-radius: 16px; background: #fff; box-shadow: 0 28px 70px rgba(0,10,4,.25), 0 0 0 7px rgba(183,215,187,.045); overflow: hidden; color: var(--ink); }
 .hp3 .support-widget-workspace { display: flex; gap: 9px; align-items: center; padding: 13px 18px; border-bottom: 1px solid #e4e9e6; font-size: 12px; background: #f6f8f7; }
 .hp3 .support-widget-workspace > span:last-child { margin-left: auto; color: #66716c; font-size: 11px; }
@@ -29,6 +29,9 @@
 .hp3 .support-widget-fallback-customer > p { color: #fff; background: #0f7a50; }
 .hp3 .support-widget-fallback-system { color: #66716c; font-size: 10px; }
 .hp3 .support-widget-fallback-system > span { display: none; }
+@media (max-width: 960px) {
+  .hp3 .support-hero .support-widget-art { justify-self: center; }
+}
 @media (max-width: 480px) {
   .hp3 .support-widget-viewport { height: 590px; }
   .hp3 .support-widget-workspace { padding-inline: 14px; }

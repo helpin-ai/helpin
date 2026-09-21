@@ -100,7 +100,7 @@ export default function CustomerSupportPage() {
               <Actions />
               <CtaNote trial support />
             </div>
-            <div><SupportHeroScene /></div>
+            <SupportHeroScene />
           </div>
         </div>
       </section>
