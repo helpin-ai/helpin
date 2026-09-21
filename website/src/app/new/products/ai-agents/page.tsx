@@ -6,6 +6,7 @@ import { PreviewFooter } from '../../_components/PreviewFooter';
 import { ConnectedWorkspace } from '../../_components/ConnectedWorkspace';
 import { CtaRow, GITHUB_URL, SectionHead } from '../../_components/ui';
 import { AgentWorkflowArt } from './agent-workflow-art';
+import { ProductPreview } from '../../_components/product-previews';
 import './agents.css';
 
 export const metadata: Metadata = {
@@ -66,13 +67,13 @@ export default function AIAgentsPage() {
           <p className="agents-directory-availability">Agent availability follows your enabled modules and edition. Community beta includes support, docs, and agents; project, CRM, and repository coding workflows require the full workspace.</p>
         </div>
       </section>
-      <section id="agent-ask" className="agents-ask-section">
+      <section id="agent-ask" className="agents-ask-section ask-agent-section">
         <div className="wrap">
           <SectionHead eyebrow="Ask Agent" title="Ask a question. Hand off the work." lede="Your starting point across the workspace. Ask Agent finds answers and handles work directly, bringing in specialists or sub-agents when the request calls for them." />
-          <figure className="agents-product-image">
-            <img src="/new/support/ask-agent-support-sep20-1920.webp" srcSet="/new/support/ask-agent-support-sep20-960.webp 960w, /new/support/ask-agent-support-sep20-1440.webp 1440w, /new/support/ask-agent-support-sep20-1920.webp 1920w, /new/support/ask-agent-support-sep20-3840.webp 3840w" sizes="(max-width: 1240px) calc(100vw - 48px), 1192px" width={3840} height={2160} loading="lazy" decoding="async" alt="Illustrative OrbitDesk workspace: Ask Agent investigates Maya’s incomplete CSV export, creates EXP-142, coordinates a coding agent, and assigns the proposed fix to Sam for review. The fix is not merged." />
+          <figure className="ask-agent-preview">
+            <ProductPreview product="ask-agent" theme="light" />
+            <figcaption>An example rollout review: four sub-agents, one work plan, and a follow-up ready for review.</figcaption>
           </figure>
-          <p className="agents-ask-caption">One customer issue. A linked task, a proposed fix, and a teammate ready to review.</p>
         </div>
       </section>
       <section id="agent-workflows" className="agents-workflows">

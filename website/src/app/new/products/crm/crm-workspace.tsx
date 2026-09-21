@@ -1,5 +1,7 @@
 "use client";
 
+import '../../_components/product-previews/preview-navigation.css';
+
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -62,7 +64,7 @@ export function CRMNavigation({
   view,
   onView,
 }: {
-  view: View | "deals";
+  view: View | "deals" | "playbooks";
   onView?: (view: View) => void;
 }) {
   const modules = [
@@ -81,7 +83,7 @@ export function CRMNavigation({
     ["BulbIcon", "Signals"],
   ] as const;
   return (
-    <aside className="cw-nav">
+    <aside className="cw-nav preview-sidebar">
       <div className="cw-brand">
         <b>O</b>
         <strong>OrbitDesk</strong>
@@ -144,7 +146,10 @@ export function CRMNavigation({
             {links.map(([name, label]) => (
               <span
                 key={label}
-                data-active={view === "deals" && label === "Deals"}
+                data-active={
+                  (view === "deals" && label === "Deals") ||
+                  (view === "playbooks" && label === "Playbooks")
+                }
                 className={
                   label === "Playbooks" ? "cw-nav-separator" : undefined
                 }

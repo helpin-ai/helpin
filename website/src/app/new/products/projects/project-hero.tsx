@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Check, CheckCheck, GitMerge, GitPullRequest, Mail, MessageSquare, Pause, Play, Rocket } from 'lucide-react';
 import { ProjectAgentBadge, ProjectHeroBoard } from './project-hero-board';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
 import './project-hero.css';
+import './project-hero-light.css';
 import { TaskCalendarIcon, TaskFeatureIcon, TaskIcon, TaskPriorityIcon, TaskSprintIcon, TaskTickIcon, type TaskIconName } from './task-demo-icons';
 
 function Property({ icon, label, children }: { icon: TaskIconName | ReactNode; label: string; children: ReactNode }) {
@@ -13,25 +14,42 @@ function Property({ icon, label, children }: { icon: TaskIconName | ReactNode; l
 
 // Presentational snapshot of TaskDetailPanel / QuietDetailHeader, using the same
 // Inter font, field order and icon geometry, with marketing surface colors. No app mutations.
-export function ProjectHero() {
-  const { container, playing, cycle } = useBentoPlayback(30000);
+export function ProjectHero({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
+  const { container, playing, cycle, reducedMotion } = useBentoPlayback(30000);
   const [paused, setPaused] = useState(false);
   const active = playing && !paused;
-  const [frame, setFrame] = useState(7);
+  const [frame, setFrame] = useState(0);
+  const elapsed = useRef(0);
+  const lastCycle = useRef(cycle);
   useEffect(() => {
+    if (lastCycle.current !== cycle) {
+      lastCycle.current = cycle;
+      elapsed.current = 0;
+      setFrame(0);
+    }
     if (!active) return;
-    setFrame(0);
-    const timers = [2500, 6500, 10500, 14000, 17500, 21000, 23000].map((time, index) => setTimeout(() => setFrame(index + 1), time));
-    return () => timers.forEach(clearTimeout);
+    const started = performance.now();
+    const timings = [2500, 6500, 10500, 14000, 17500, 21000, 23000];
+    const timers = timings.flatMap((time, index) => time > elapsed.current
+      ? [setTimeout(() => setFrame(index + 1), time - elapsed.current)] : []);
+    return () => {
+      elapsed.current += performance.now() - started;
+      timers.forEach(clearTimeout);
+    };
   }, [active, cycle]);
-  // Server, reduced-motion and paused views show the complete delivery history.
-  const phase = active ? frame : 7;
+  // Visibility pauses preserve the task's column. Explicit pause and reduced
+  // motion show the completed story; pressing play starts a fresh run.
+  const phase = paused || reducedMotion ? 7 : frame;
+  function togglePlayback() {
+    if (paused) { elapsed.current = 0; setFrame(0); }
+    setPaused(value => !value);
+  }
   const state = ['Ready', 'In Progress', 'In Review', 'In Review', 'Done'][Math.min(phase, 4)];
   const colors = ['#818cf8', '#d99552', '#af73c3', '#af73c3', '#83b397'];
   const captions = ['TASK CREATED · CUSTOMER CONTEXT ATTACHED', 'FORGE BUILDS · TASK MOVES TO IN PROGRESS', 'LENS REVIEWS · TASK MOVES TO IN REVIEW', 'SAM REVIEWS · MERGE AWAITS APPROVAL', 'PR MERGED · TASK COMPLETE', 'RELEASE PUBLISHED · FOLLOW-UP PREPARED', 'SAM APPROVES · CUSTOMER UPDATE READY', 'CUSTOMER NOTIFIED · LOOP CLOSED'];
   const delay = (seconds: number) => ({ '--task-delay': `${seconds}s` }) as CSSProperties;
-  return <div className="project-hero-art" ref={container} data-playing={active} data-phase={phase}>
-    <div className="project-hero-art-label"><span>{captions[phase]}</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} project delivery animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12} /> : <Pause size={12} />}</button></div>
+  return <div className="project-hero-art" data-theme={theme} ref={container} data-playing={active} data-phase={phase}>
+    <div className="project-hero-art-label"><span>{captions[phase]}</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} project delivery animation`} aria-pressed={paused} onClick={togglePlayback}>{paused ? <Play size={12} /> : <Pause size={12} />}</button></div>
     <div className="project-hero-stage" key={cycle} role="img" aria-label="Illustrative OrbitDesk delivery workflow. A customer request becomes task ORB-491, Add Slack alerts for failed syncs. Forge builds and tests the change as the task moves to In Progress. Lens reviews it in In Review. Sam approves the pull request before PR #728 merges and the task moves to Done. Another task shows Forge already running. The opened task retains the customer requirements and delivery history. After the release is published, a configured follow-up workflow asks Ask Agent to prepare Maya’s update. Sam approves the message, then it is sent to Maya in the original conversation.">
       <ProjectHeroBoard phase={phase} />
       <div className="project-hero-task" aria-hidden="true"><div>
@@ -79,7 +97,7 @@ export function ProjectHero() {
       </div>
     </div>
       <div className="pth-followup" data-visible={phase >= 5} data-approved={phase >= 6} data-sent={phase === 7} aria-hidden="true">
-        <div className="pth-followup-header"><img src="/brand/helpin-icon-white.svg" width={26} height={26} alt="" /><span><strong>Ask Agent</strong><small>Release follow-up</small></span><span className="pth-followup-status">{phase === 7 ? <><CheckCheck size={12} />Sent</> : phase === 6 ? <><Check size={12} />Approved</> : 'For review'}</span></div>
+        <div className="pth-followup-header"><img src={theme === 'light' ? '/brand/helpin-icon-ink.svg' : '/brand/helpin-icon-white.svg'} width={26} height={26} alt="" /><span><strong>Ask Agent</strong><small>Release follow-up</small></span><span className="pth-followup-status">{phase === 7 ? <><CheckCheck size={12} />Sent</> : phase === 6 ? <><Check size={12} />Approved</> : 'For review'}</span></div>
         <div className="pth-followup-body"><div className="pth-release"><Rocket size={13} /><span>Release published</span><small>ORB-491</small></div><p className="pth-followup-explainer">Your follow-up workflow found the customer waiting for this change.</p><div className="pth-followup-customer"><img src="/new/avatars/maya.webp" width={25} height={25} alt="" /><span><strong>Maya Chen</strong><small>Northstar Labs · Original conversation</small></span></div><div className="pth-followup-message"><div><Mail size={13} /><strong>{phase === 7 ? 'Customer update sent' : 'Customer update prepared'}</strong></div><p>Hi Maya — Slack alerts for failed syncs are ready. Each alert includes the affected account, the failure reason, and a link to investigate.</p></div><div className="pth-followup-approval"><img src="/new/avatars/sam.webp" width={21} height={21} alt="" /><span>{phase >= 6 ? 'Approved by Sam' : 'Waiting for Sam’s approval'}</span><Check size={13} /></div></div>
         <div className="pth-followup-footer">{phase === 7 ? <CheckCheck size={14} /> : <MessageSquare size={14} />}<span>{phase === 7 ? 'Sent to Maya · Customer loop closed' : 'Reply to Maya’s original conversation'}</span></div>
       </div>

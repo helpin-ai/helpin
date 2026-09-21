@@ -4,8 +4,10 @@ import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { GridFlow } from './_components/GridFlow';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
+import { ProductPreview } from './_components/product-previews';
 import { ProductExplorer } from './_components/ProductExplorer';
 import { HostingDiagram } from './_components/HostingDiagram';
+import { AgentDirectoryPreview } from './_components/agent-directory/AgentDirectoryPreview';
 import { AgentControlArt } from './_components/AgentControlArt';
 import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
@@ -114,10 +116,8 @@ export default function NewHomePage() {
             <h2 id="ask-agent-title">Ask a question.<br />Hand off the work.</h2>
             <p className="lede">Ask about a customer, investigate an issue, or describe the work you need done. Ask Agent finds the context, coordinates specialist agents, and brings the results back to one conversation.</p>
           </div>
-          <figure className="ask-agent-screenshot">
-            <a href="/new/product/workspace-ask-agent-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Ask Agent screenshot at full size (opens in a new tab)">
-              <img src="/new/product/workspace-ask-agent-4k-v1.webp" alt="Helpin Ask Agent demo reviewing OrbitDesk’s SSO rollout, with four specialist sub-agents, findings, a completed five-step work plan, and a customer follow-up draft." width={3840} height={2016} loading="lazy" decoding="async" />
-            </a>
+          <figure className="ask-agent-preview">
+            <ProductPreview product="ask-agent" theme="light" />
             <figcaption>An example rollout review: four sub-agents, one work plan, and a follow-up ready for review.</figcaption>
           </figure>
           <div className="ask-agent-capabilities">
@@ -161,9 +161,7 @@ export default function NewHomePage() {
           <SectionHead eyebrow="Agents, on your terms" title="Give agents work. Keep control."
             lede="Choose the tools each agent can use, when it needs approval, and what starts the work." />
           <figure className="control-screenshot">
-            <a href="/new/product/agents-directory-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Agents directory screenshot at full size (opens in a new tab)">
-              <img src="/new/product/agents-directory-1920-v1.webp" srcSet="/new/product/agents-directory-1920-v1.webp 1920w, /new/product/agents-directory-4k-v1.webp 3840w" sizes="(max-width: 1120px) calc(100vw - 48px), 1072px" alt="Helpin’s Agents directory in the OrbitDesk demo workspace, showing eight agents, their configurations, recent runs, approval requests, and connected flows." width={3840} height={2016} loading="lazy" decoding="async" />
-            </a>
+            <AgentDirectoryPreview />
             <figcaption>One place to manage your agents and see their latest runs.</figcaption>
           </figure>
           <div className="ctrl">
