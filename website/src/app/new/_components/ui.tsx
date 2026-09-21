@@ -65,7 +65,7 @@ export function Availability({ category }: { category: string }) {
 export function CtaNote({ trial = false, support = false, pill = false }: { trial?: boolean; support?: boolean; pill?: boolean }) {
   return <p className={`cta-note${pill ? ' cta-note-pill' : ''}`}>{trial ? `14-day cloud trial · No card${support ? ' · Or self-host free' : ''}` : pill ? <><strong>Open source</strong><span aria-hidden="true"> · </span><span>Run it yourself or use our cloud</span></> : 'Open source · Run it yourself or use our cloud'}</p>;
 }
-export type FAQItem = readonly [question: string, answer: string, href: string, label?: string];
+export type FAQItem = readonly [question: string, answer: string, href?: string, label?: string];
 export function FAQList({ items, className }: { items: readonly FAQItem[]; className: string }) {
-  return <div className={className}>{items.map(([question, answer, href, label]) => <details key={question}><summary>{question}</summary><p>{answer} <a className="faq-more" href={href}>{label ?? 'Learn more'} →</a></p></details>)}</div>;
+  return <div className={className}>{items.map(([question, answer, href, label]) => <details key={question}><summary>{question}</summary><p>{answer}{href && <> <a className="faq-more" href={href}>{label ?? 'Learn more'} →</a></>}</p></details>)}</div>;
 }

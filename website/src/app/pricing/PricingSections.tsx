@@ -1,7 +1,7 @@
 import { ArrowRight, Check, Code2, MessageCircle, Send, Server, ShieldCheck, Zap } from 'lucide-react';
 import { AI_PRICING } from '@/generated/aiPricing';
 import { HelpinBrand } from '@/components/HelpinBrand';
-import { DEMO_URL, GITHUB_URL, SectionHead } from '../new/_components/ui';
+import { DEMO_URL, FAQList, GITHUB_URL, SectionHead } from '../new/_components/ui';
 import { COMPARISON_FEATURES, WORKFLOW_COMPARISON, FAQS } from './pricing-data';
 
 export function HostingOptions() {
@@ -39,5 +39,5 @@ export function CloudComparison() {
 }
 
 export function PricingFAQ() {
-  return <section id="pricing-questions" className="pricing-soft"><div className="wrap pricing-faq"><SectionHead eyebrow="Questions" title="Before you choose." lede="Cloud billing, open source and AI usage." /><div>{FAQS.map(({q,a}) => <details key={q}><summary>{q}</summary><p>{a}</p></details>)}<a className="btn-link" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk through your options →</a></div></div></section>;
+  return <section id="pricing-questions"><div className="wrap pricing-faq"><SectionHead eyebrow="Questions" title="Before you choose." lede="Cloud billing, open source and AI usage." /><div><FAQList items={FAQS.map(({q,a}) => [q,a] as const)} className="pricing-faq-items" /><a className="btn-link" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk through your options →</a></div></div></section>;
 }
