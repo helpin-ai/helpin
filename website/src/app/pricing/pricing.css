@@ -221,35 +221,44 @@
 .hp3 .pricing-ai-billing h4 { font-size: 13px; font-weight: 500; line-height: 1.6; margin-bottom: 8px; }
 .hp3 .pricing-ai-billing p { font-size: 12px; line-height: 1.85; color: var(--t2); }
 
-/* Plan comparison: a plain table on the page. The header keeps name, price and action in view; the body carries only what changes. */
-.hp3 .pricing-comparison>.wrap { max-width: 1040px; }
-.hp3 .pricing-table { width: 100%; border: 0; border-radius: 0; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 15px; line-height: 1.5; overflow: visible; }
-.hp3 .pricing-feature-column { width: 46%; }
-.hp3 .pricing-table th,.hp3 .pricing-table td { padding: 15px 20px; text-align: center; border-bottom: 1px solid var(--border); vertical-align: middle; }
-.hp3 .pricing-table th { font-weight: 400; }
-.hp3 .pricing-table th:first-child { text-align: left; padding-left: 0; }
-.hp3 .pricing-table thead th { position: sticky; top: 72px; z-index: 3; background: var(--bg); padding: 0 20px 22px; vertical-align: bottom; border-bottom: 1px solid var(--ink); }
-.hp3 .pricing-table thead th:first-child { padding-left: 0; }
-.hp3 .pricing-table-plan { display: flex; justify-content: center; align-items: center; gap: 10px; font-size: 19px; font-weight: 600; letter-spacing: -.02em; line-height: 1.3; }
-.hp3 .pricing-table-plan em { font-style: normal; font-size: 11px; font-weight: 500; letter-spacing: .01em; line-height: 1; color: var(--em); background: var(--em-t); border-radius: 999px; padding: 5px 9px; }
-.hp3 .pricing-table-price { display: block; margin: 8px 0 18px; font-size: 13px; color: var(--t2); font-variant-numeric: tabular-nums; }
-.hp3 .pricing-table-price strong { font-size: 17px; font-weight: 500; color: var(--ink); letter-spacing: -.02em; }
-.hp3 .pricing-table thead .btn { height: 38px; padding: 0 14px; font-size: 13px; font-weight: 500; border-radius: 6px; gap: 8px; }
-.hp3 .pricing-table thead .btn-secondary { border-color: var(--border-2); }
+/* Plan comparison: aligned columns and explicit surfaces avoid generic table styles. */
+.hp3 .pricing-page .pricing-comparison>.wrap { max-width: 1120px; }
+.hp3 .pricing-comparison .sec-head { margin-bottom: 42px; }
+.hp3 .pricing-table { position: relative; width: 100%; border: 1px solid var(--border-2); border-radius: 10px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 13px; line-height: 1.5; overflow: visible; }
+.hp3 .pricing-feature-column { width: 44%; }
+.hp3 .pricing-table th,.hp3 .pricing-table td { padding: 15px 26px; text-align: center; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.hp3 .pricing-table th { font-weight: 400; background: white; }
+.hp3 .pricing-table th:first-child { text-align: left; }
+.hp3 .pricing-table thead th { position: sticky; top: 72px; z-index: 3; padding-block: 25px; background: white; box-shadow: 0 1px 0 var(--border-2); }
+.hp3 .pricing-table thead th:first-child { border-top-left-radius: 9px; }
+.hp3 .pricing-table thead th:last-child { border-top-right-radius: 9px; background: #f0f7f2; }
+.hp3 .pricing-table-label { display: block; font-size: 15px; font-weight: 500; color: var(--ink); }
+.hp3 .pricing-table-description { display: block; margin-top: 8px; font-size: 12px; font-weight: 400; line-height: 1.6; color: var(--t3); }
+.hp3 .pricing-table-plan { display: block; font-size: 23px; font-weight: 600; letter-spacing: -.025em; line-height: 1.3; color: var(--ink); }
+.hp3 .pricing-table thead .btn { display: inline-flex; justify-content: center; height: 36px; padding: 0 16px; margin-top: 18px; font-size: 12px; font-weight: 500; border-radius: 5px; gap: 8px; }
+.hp3 .pricing-table thead .btn-secondary { background: white; border-color: var(--border-2); }
 .hp3 .pricing-table thead .btn-secondary:hover { background: var(--bg2); border-color: #a9b7ae; }
-.hp3 .pricing-table thead .btn-primary { background: var(--em); border-color: var(--em); }
+.hp3 .pricing-table thead .btn-primary { background: var(--em); border-color: var(--em); color: white; }
 .hp3 .pricing-table thead .btn-primary:hover { background: var(--em-h); border-color: var(--em-h); }
-.hp3 .pricing-table-group th { padding: 36px 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
-.hp3 .pricing-table tbody th[scope=row] { color: var(--ink); }
-.hp3 .pricing-table tbody td { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+.hp3 .pricing-table-group th { padding-block: 12px; font-size: 12px; font-weight: 600; letter-spacing: .015em; color: var(--t2); background: var(--bg2); border-bottom: 1px solid var(--border); }
+.hp3 .pricing-table tbody th[scope=row] { color: var(--t2); font-size: 13px; background: white; }
+.hp3 .pricing-table tbody td { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; background: white; }
+.hp3 .pricing-table tbody td:last-child { background: #f7faf8; }
+.hp3 .pricing-table tbody tr:last-child td { border-bottom: 1px solid var(--border); }
+.hp3 .pricing-table tbody:last-child tr:last-child :is(th,td) { border-bottom: 0; }
+.hp3 .pricing-table tbody:last-child tr:last-child th { border-bottom-left-radius: 9px; }
+.hp3 .pricing-table tbody:last-child tr:last-child td:last-child { border-bottom-right-radius: 9px; }
 .hp3 .pricing-included { display: inline-flex; vertical-align: middle; color: var(--em); }
-.hp3 .pricing-not-included { color: #9aa79e; font-weight: 400; }
-.hp3 .pricing-shared { margin-top: 56px; padding-top: 32px; border-top: 1px solid var(--border-2); }
-.hp3 .pricing-shared h3 { font-size: 17px; font-weight: 600; letter-spacing: -.015em; line-height: 1.4; margin-bottom: 22px; }
-.hp3 .pricing-shared dl { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 24px 40px; margin: 0; }
-.hp3 .pricing-shared dt { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-.hp3 .pricing-shared dd { margin: 0; font-size: 14px; line-height: 1.7; color: var(--t2); }
-.hp3 .pricing-comparison .pricing-note { margin-top: 36px; }
+.hp3 .pricing-not-included { color: var(--t3); font-weight: 400; }
+.hp3 .pricing-shared { margin-top: 40px; padding: 30px 32px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2); }
+.hp3 .pricing-shared h3 { font-size: 18px; font-weight: 500; letter-spacing: -.015em; line-height: 1.4; margin-bottom: 28px; }
+.hp3 .pricing-shared dl { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 28px 36px; margin: 0; }
+.hp3 .pricing-shared dt { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+.hp3 .pricing-shared dd { margin: 0; font-size: 12px; line-height: 1.7; color: var(--t2); }
+.hp3 .pricing-shared ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.hp3 .pricing-shared li { display: flex; gap: 8px; align-items: flex-start; }
+.hp3 .pricing-shared li svg { flex: none; color: var(--em); margin-top: 3px; }
+.hp3 .pricing-comparison .pricing-note { margin-top: 24px; }
 @media(max-width:960px) {
   .hp3 .pricing-ai-routes>article { padding: 24px 18px 20px; }
   .hp3 .pricing-ai-route-label { min-height: 29px; }
@@ -271,23 +280,28 @@
   .hp3 .pricing-ai-tiers>article:nth-child(odd) { padding-left: 0; border-left: 0; }
   .hp3 .pricing-ai-billing>div { grid-template-columns: 1fr; }
 }
+@media(max-width:760px) {
+  .hp3 .pricing-table th,.hp3 .pricing-table td { padding-inline: 16px; }
+  .hp3 .pricing-table thead .btn { padding-inline: 10px; }
+  .hp3 .pricing-table-plan { font-size: 20px; }
+  .hp3 .pricing-table-description { font-size: 11px; }
+  .hp3 .pricing-shared dl { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 25px; }
+}
 @media(max-width:600px) {
-  /* Stack each row: feature name across the top, the two plan values beneath it. */
-  .hp3 .pricing-table thead th { top: 68px; }
-  .hp3 .pricing-table,.hp3 .pricing-table thead,.hp3 .pricing-table tbody,.hp3 .pricing-table tr { display: block; }
-  .hp3 .pricing-table colgroup { display: none; }
-  .hp3 .pricing-table tr { display: grid; grid-template-columns: 1fr 1fr; }
-  .hp3 .pricing-table th,.hp3 .pricing-table td { padding: 12px 8px; }
-  .hp3 .pricing-table thead tr { grid-template-columns: 1fr 1fr; gap: 12px; }
-  .hp3 .pricing-table thead th:first-child { display: none; }
-  .hp3 .pricing-table thead th { padding: 0 0 16px; }
-  .hp3 .pricing-table-plan { flex-direction: column; gap: 6px; font-size: 17px; }
-  .hp3 .pricing-table-price { margin: 6px 0 14px; }
-  .hp3 .pricing-table thead .btn { width: 100%; justify-content: center; padding: 0 8px; font-size: 12px; }
-  .hp3 .pricing-table-group th { grid-column: 1 / -1; padding-top: 28px; }
-  .hp3 .pricing-table tbody th[scope=row] { grid-column: 1 / -1; padding: 14px 0 4px; border-bottom: 0; font-size: 14px; }
-  .hp3 .pricing-table tbody td { padding: 0 0 14px; font-size: 14px; }
-  .hp3 .pricing-table tbody td::before { content: attr(data-plan); display: block; font-size: 11px; font-weight: 400; color: var(--t3); margin-bottom: 4px; }
-  .hp3 .pricing-shared { margin-top: 40px; }
-  .hp3 .pricing-shared dl { grid-template-columns: 1fr; gap: 18px; }
+  .hp3 .pricing-feature-column { width: 40%; }
+  .hp3 .pricing-table { font-size: 11px; }
+  .hp3 .pricing-table th,.hp3 .pricing-table td { padding: 13px 9px; }
+  .hp3 .pricing-table thead th { top: 64px; padding: 18px 7px; }
+  .hp3 .pricing-table-plan { font-size: 16px; }
+  .hp3 .pricing-table-description { display: none; }
+  .hp3 .pricing-table-label { font-size: 12px; }
+  .hp3 .pricing-table thead .btn { height: 30px; padding: 0 5px; margin-top: 12px; font-size: 10px; border: 0; background: transparent; color: var(--em); }
+  .hp3 .pricing-table thead .btn svg { display: none; }
+  .hp3 .pricing-table thead .btn:hover { background: var(--em-t); }
+  .hp3 .pricing-table tbody th[scope=row] { font-size: 11px; }
+  .hp3 .pricing-table-group th { font-size: 11px; padding-block: 11px; }
+  .hp3 .pricing-included svg { width: 15px; height: 15px; }
+  .hp3 .pricing-shared { padding: 24px 20px; margin-top: 28px; }
+  .hp3 .pricing-shared h3 { font-size: 17px; }
+  .hp3 .pricing-shared dl { grid-template-columns: 1fr; gap: 22px; }
 }
