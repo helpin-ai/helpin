@@ -153,10 +153,6 @@ export function PreviewNav() {
           <div className="nav-panel-main">
             <p className="nav-section-label">Build with Helpin</p>
             <div className="nav-resource-grid">{DEVELOPERS.map(item => <ResourceLink item={item} key={item.label} />)}</div>
-            <div className="nav-developer-footer">
-              <a href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer"><BookOpen size={15} />Read the docs<ArrowUpRight size={13} /></a>
-              <Link href="/new/self-hosting"><Server size={15} />Self-host Helpin<ArrowRight size={13} /></Link>
-            </div>
           </div>
         </div>
 
