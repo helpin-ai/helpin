@@ -245,58 +245,6 @@ func normalizeInboundContentID(contentID string) string {
 	return contentID
 }
 
-func (s *EmailFallbackService) storeInboundEmailAttachments(
-	ctx context.Context,
-	workspaceID string,
-	conversationID string,
-	messageID string,
-	payload model.PostmarkInboundPayload,
-) ([]model.SupportAttachmentPayload, map[string]string) {
-	if s == nil || s.inboundAttachmentStore == nil || len(payload.Attachments) == 0 {
-		return nil, nil
-	}
-	attachments := make([]model.SupportAttachmentPayload, 0, len(payload.Attachments))
-	cidURLs := make(map[string]string)
-	for _, attachment := range payload.Attachments {
-		content := strings.TrimSpace(attachment.Content)
-		if content == "" {
-			continue
-		}
-		stored, err := s.inboundAttachmentStore.StoreInboundEmailAttachment(ctx, supportInboundEmailAttachmentRequest{
-			WorkspaceID:    workspaceID,
-			ConversationID: conversationID,
-			MessageID:      messageID,
-			FileName:       attachment.Name,
-			ContentType:    attachment.ContentType,
-			Base64Content:  content,
-			ContentID:      attachment.ContentID,
-			ContentLength:  attachment.ContentLength,
-		})
-		if err != nil {
-			s.logger.WarnContext(ctx, "store inbound email attachment failed",
-				"workspace_id", workspaceID,
-				"conversation_id", conversationID,
-				"message_id", messageID,
-				"file_name", strings.TrimSpace(attachment.Name),
-				"content_id", strings.TrimSpace(attachment.ContentID),
-				"error", err,
-			)
-			continue
-		}
-		if stored == nil {
-			continue
-		}
-		attachments = append(attachments, *stored)
-		if cid := normalizeInboundContentID(attachment.ContentID); cid != "" && strings.TrimSpace(stored.URL) != "" {
-			cidURLs[cid] = strings.TrimSpace(stored.URL)
-		}
-	}
-	if len(cidURLs) == 0 {
-		cidURLs = nil
-	}
-	return attachments, cidURLs
-}
-
 func stripSupportEmailReplyDelimiter(content string) string {
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
@@ -407,13 +355,12 @@ func (signals postmarkInboundSpamSignals) messageMetadata() string {
 }
 
 const (
-	emailFallbackOutboxKey       = "email_fallback_outbox"
-	emailFallbackLockKey         = "email_fallback_lock"
-	emailFallbackReconcileKey    = "email_fallback_reconcile_lock"
-	emailFallbackMsgsKeyPrefix   = "email_fallback_msgs:"
-	emailFallbackOnlineRetry     = 30 * time.Second
-	emailFallbackReconcileTick   = time.Minute
-	supportInboundFallbackWindow = 30 * 24 * time.Hour
+	emailFallbackOutboxKey     = "email_fallback_outbox"
+	emailFallbackLockKey       = "email_fallback_lock"
+	emailFallbackReconcileKey  = "email_fallback_reconcile_lock"
+	emailFallbackMsgsKeyPrefix = "email_fallback_msgs:"
+	emailFallbackOnlineRetry   = 30 * time.Second
+	emailFallbackReconcileTick = time.Minute
 )
 
 const (
@@ -476,6 +423,7 @@ type supportEmailInboundAttachmentStore interface {
 }
 
 type supportInboundEmailAttachmentRequest struct {
+	AttachmentID   string
 	WorkspaceID    string
 	ConversationID string
 	MessageID      string
@@ -990,13 +938,13 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 			"message_id", strings.TrimSpace(payload.MessageID),
 			"conversation_id", conversationID,
 		)
-		return nil
+		return fmt.Errorf("inbound conversation not found")
 	}
 	return s.processInboundConversationReply(ctx, conv, nil, payload, rawPayload)
 }
 
 func (s *EmailFallbackService) processInboundConversationReply(ctx context.Context, conv *model.SupportConversation, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
-	if conv == nil {
+	if conv == nil || conv.AnonymizedAt != nil {
 		return nil
 	}
 	if isEmailFallbackInboundTerminalStatus(conv.Status) {
@@ -1011,7 +959,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	fromEmail := inboundEmailAddress(payload)
 	projection := inboundPayloadProjection(payload)
 	content, htmlBody := projection.VisibleText, projection.HTMLBody
-	if content == "" {
+	if content == "" && len(payload.Attachments) == 0 {
 		return nil
 	}
 	if len(content) > 50_000 {
@@ -1060,11 +1008,19 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		customerEmail = strings.TrimSpace(*conv.CustomerEmail)
 	}
 	isTeammateReply := false
+	unknownSender := false
+	knownParticipant := false
+	for _, address := range append(append([]string{}, conv.EmailCC...), conv.EmailThreadParticipants...) {
+		if strings.EqualFold(strings.TrimSpace(address), fromEmail) {
+			knownParticipant = true
+			break
+		}
+	}
 	var teammate *model.WorkspaceMember
 	if !strings.EqualFold(customerEmail, fromEmail) {
 		replyToMatchesCustomer := replyToEmail != "" && strings.EqualFold(customerEmail, replyToEmail)
 		forwardedMatchesCustomer := forwardedAttribution.Applied && strings.EqualFold(customerEmail, strings.TrimSpace(forwardedAttribution.OriginalEmail))
-		if !replyToMatchesCustomer && !forwardedMatchesCustomer {
+		if !replyToMatchesCustomer && !forwardedMatchesCustomer && !knownParticipant {
 			if s.workspaceRepo != nil && inboundPayloadIncludesRecipient(payload, customerEmail) {
 				teammate, err = s.workspaceRepo.GetActiveMembershipByEmail(ctx, conv.WorkspaceID, fromEmail)
 				if err != nil {
@@ -1072,26 +1028,20 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 				}
 			}
 			if teammate == nil || teammate.UserID == nil {
-				s.logger.InfoContext(ctx, "postmark inbound sender mismatch",
-					"message_id", strings.TrimSpace(payload.MessageID),
-					"conversation_id", conv.ID,
-				)
-				return nil
-			}
-			isTeammateReply = true
-			senderName = strings.TrimSpace(teammate.DisplayName)
-			if senderName == "" {
-				senderName = strings.TrimSpace(payload.FromFull.Name)
-			}
-			if senderName == "" {
-				senderName = fromEmail
+				unknownSender = true
+			} else {
+				isTeammateReply = true
+				senderName = strings.TrimSpace(teammate.DisplayName)
+				if senderName == "" {
+					senderName = fromEmail
+				}
 			}
 		}
 		if !isTeammateReply && forwardedMatchesCustomer && strings.TrimSpace(forwardedAttribution.OriginalName) != "" {
 			senderName = strings.TrimSpace(forwardedAttribution.OriginalName)
 		} else if !isTeammateReply && replyToMatchesCustomer && strings.TrimSpace(replyToName) != "" {
 			senderName = strings.TrimSpace(replyToName)
-		} else if !isTeammateReply && conv.CustomerName != nil && strings.TrimSpace(*conv.CustomerName) != "" {
+		} else if !isTeammateReply && !knownParticipant && !unknownSender && conv.CustomerName != nil && strings.TrimSpace(*conv.CustomerName) != "" {
 			senderName = strings.TrimSpace(*conv.CustomerName)
 		}
 	}
@@ -1116,6 +1066,25 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if forwardedAttribution.Applied {
 		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
 	}
+	if knownParticipant || unknownSender {
+		senderName = strings.TrimSpace(payload.FromFull.Name)
+		if senderName == "" {
+			senderName = fromEmail
+		}
+	}
+	var inboundMeta map[string]any
+	_ = json.Unmarshal([]byte(messageMetadata), &inboundMeta)
+	if inboundMeta == nil {
+		inboundMeta = map[string]any{}
+	}
+	inboundMeta["email_sender"] = fromEmail
+	inboundMeta["email_participant_sender"] = knownParticipant || unknownSender
+	if unknownSender {
+		inboundMeta["email_unknown_sender"] = true
+		inboundMeta["email_ai_request"] = false
+	}
+	encodedMeta, _ := json.Marshal(inboundMeta)
+	messageMetadata = string(encodedMeta)
 	isNotice := inboundEmailHasAbsenceNotice(messageMetadata)
 	if isTeammateReply && !isNotice {
 		messageMetadata = mergeExternalEmailReplyMetadata(messageMetadata)
@@ -1133,14 +1102,14 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		}
 	}
 	msg := &model.SupportMessage{
-		ID:                uuid.NewString(),
+		ID:                inboundStableID("message:" + payload.MessageID),
 		WorkspaceID:       conv.WorkspaceID,
 		ConversationID:    conv.ID,
 		SenderType:        senderType,
 		SenderUserID:      senderUserID,
 		SenderDisplayName: &senderName,
 		Content:           content,
-		IsInternal:        false,
+		IsInternal:        unknownSender,
 		MessageType:       "reply",
 		Metadata:          messageMetadata,
 		ViaChannel:        &viaEmail,
@@ -1170,19 +1139,28 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		if err := msgRepoTx.Create(ctx, msg); err != nil {
 			return err
 		}
-		attachments, cidURLs := s.storeInboundEmailAttachments(ctx, conv.WorkspaceID, conv.ID, msg.ID, payload)
-		if len(attachments) > 0 {
-			msg.Attachments = attachments
-		}
-		if len(cidURLs) > 0 {
-			projection = inboundPayloadProjectionWithHTML(payload, rewriteInboundCIDImageSources(payload.HtmlBody, cidURLs))
-			htmlBody = projection.HTMLBody
-			if forwardedAttribution.Applied {
-				applyForwardedEmailProjection(&projection, content)
-			} else {
-				projection.VisibleText = content
+		// Learn visible participants only from an accepted sender, without changing
+		// the primary customer or the team's selected outbound CC recipients.
+		if !unknownSender && !isNotice {
+			var current model.SupportConversation
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND workspace_id = ?", conv.ID, conv.WorkspaceID).First(&current).Error; err != nil {
+				return err
+			}
+			routeAddress := recipientAddress
+			if route != nil {
+				routeAddress = route.InboundAddress
+			}
+			participants := normalizedEmailAddressList(append([]string(current.EmailThreadParticipants), inboundVisibleThreadParticipants(payload, routeAddress, customerEmail)...))
+			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{"email_thread_participants": model.DocsStringArray(participants)}); err != nil {
+				return err
 			}
 		}
+		if err := s.enqueueInboundAttachments(ctx, tx, msg, payload); err != nil {
+			return err
+		}
+		msg.EmailFrom = fromEmail
+		msg.EmailTo = strings.TrimSpace(payload.To)
+		msg.EmailCC = model.DocsStringArray(ccEmails)
 		msg.HTMLBody = htmlBody
 		msg.StrippedText = content
 		msg.EmailVisibleText = projection.VisibleText
@@ -1227,6 +1205,16 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			return err
 		}
 
+		if unknownSender {
+			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
+				"human_takeover": true, "assigned_agent_id": nil, "ai_state": "escalated", "flow_state": supportEmailReopenFlowState(conv),
+			}); err != nil {
+				return err
+			}
+			conv.HumanTakeover = boolPtr(true)
+			conv.AssignedAgentID = nil
+			conv.AIState = strPtr("escalated")
+		}
 		// Email replies belong to the human inbox. Cancel AI ownership silently:
 		// sending a handoff email here can itself feed an autoresponder loop.
 		if !isTeammateReply && !isNotice && (!model.SupportAIReplyAllowed(settings, conv, msg) || !shouldAutomaticallyProcessSupportAI(settings)) && (derefString(conv.AssignedAgentID) != "" || derefString(conv.AIState) == "pending" || derefString(conv.AIActiveRunID) != "") {
@@ -1302,15 +1290,14 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	})
 	if txErr != nil {
 		if isLikelyUniqueConstraintError(txErr) {
-			s.logger.InfoContext(ctx, "postmark inbound duplicate ignored after transaction race",
-				"message_id", strings.TrimSpace(payload.MessageID),
-				"conversation_id", conv.ID,
-			)
 			existing, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, strings.TrimSpace(payload.MessageID))
 			if err != nil {
 				return err
 			}
-			return s.retryInboundCustomerAIRequest(ctx, existing)
+			// A constraint error alone does not prove this email was saved.
+			if existing != nil {
+				return s.retryInboundCustomerAIRequest(ctx, existing)
+			}
 		}
 		return txErr
 	}
@@ -1318,7 +1305,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if !isTeammateReply && !isNotice {
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, s.pushSenderService, conv, content, senderName)
 	}
-	if !isTeammateReply && !isNotice && s.supportInboxService != nil {
+	if !isTeammateReply && !isNotice && !unknownSender && s.supportInboxService != nil {
 		s.supportInboxService.recordSupportEvent(SupportEventInput{
 			WorkspaceID: conv.WorkspaceID, EventType: model.SupportEventCustomerMessageCreated,
 			ConversationID: &conv.ID, MessageID: &createdMsg.ID,
@@ -1339,7 +1326,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		actorID = *teammate.UserID
 	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, actorID))
-	if shouldReopenCustomerReply || (isTeammateReply && !isNotice) {
+	if shouldReopenCustomerReply || unknownSender || (isTeammateReply && !isNotice) {
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
 			Entity:      "support_conversation",
@@ -1347,7 +1334,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			WorkspaceID: conv.WorkspaceID,
 		})
 	}
-	if !isTeammateReply {
+	if !isTeammateReply && !unknownSender {
 		return s.publishInboundCustomerAIRequest(ctx, conv.WorkspaceID, conv.ID, createdMsg)
 	}
 	return nil
@@ -3348,7 +3335,7 @@ func (s *EmailFallbackService) processInboundRouteEmail(ctx context.Context, mai
 			"message_id", strings.TrimSpace(payload.MessageID),
 			"route_key", mailboxHash,
 		)
-		return nil
+		return fmt.Errorf("inbound route not found or inactive")
 	}
 
 	return s.processInboundRoute(ctx, route, payload, rawPayload)
@@ -3403,17 +3390,6 @@ func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *m
 	conversation, err := s.resolveInboundRouteConversation(ctx, route.WorkspaceID, payload)
 	if err != nil {
 		return err
-	}
-	projection := inboundPayloadProjection(payload)
-	metadata := inboundEmailAIMetadata("{}", payload, projection.VisibleText)
-	isNotice := inboundEmailHasAbsenceNotice(metadata)
-	// An autoresponder with no matching references must not attach to another
-	// active issue solely because the customer email happens to match.
-	if conversation == nil && !isNotice {
-		conversation, err = s.resolveInboundFallbackConversation(ctx, route, payload)
-		if err != nil {
-			return err
-		}
 	}
 	if conversation != nil {
 		if isConfirmation {
@@ -3512,30 +3488,6 @@ func (s *EmailFallbackService) resolveInboundRouteConversation(ctx context.Conte
 	return s.findConversationByID(ctx, threadLog.ConversationID)
 }
 
-func (s *EmailFallbackService) resolveInboundFallbackConversation(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload) (*model.SupportConversation, error) {
-	if s == nil || s.convRepo == nil || route == nil {
-		return nil, nil
-	}
-	senderEmail := strings.TrimSpace(inboundEffectiveCustomerEmail(payload))
-	if senderEmail == "" {
-		return nil, nil
-	}
-	matches, err := s.convRepo.ListActiveByCustomerEmail(ctx, route.WorkspaceID, senderEmail, route.MailboxID, s.now().Add(-supportInboundFallbackWindow), 2)
-	if err != nil {
-		return nil, err
-	}
-	if len(matches) != 1 {
-		if len(matches) > 1 {
-			s.logger.InfoContext(ctx, "inbound fallback ambiguous, creating new conversation",
-				"workspace_id", route.WorkspaceID,
-				"match_count", len(matches),
-			)
-		}
-		return nil, nil
-	}
-	return &matches[0], nil
-}
-
 func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
 	if route == nil {
 		return nil
@@ -3548,7 +3500,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 
 	projection := inboundPayloadProjection(payload)
 	content, htmlBody := projection.VisibleText, projection.HTMLBody
-	if content == "" {
+	if content == "" && len(payload.Attachments) == 0 {
 		return nil
 	}
 	if len(content) > 50_000 {
@@ -3670,6 +3622,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	conversation := &model.SupportConversation{
+		ID:                             inboundStableID("conversation:" + payload.MessageID),
 		WorkspaceID:                    route.WorkspaceID,
 		MailboxID:                      routeMailboxID,
 		Subject:                        subject,
@@ -3704,7 +3657,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	message := &model.SupportMessage{
-		ID:                uuid.NewString(),
+		ID:                inboundStableID("message:" + payload.MessageID),
 		WorkspaceID:       route.WorkspaceID,
 		SenderType:        "customer",
 		SenderDisplayName: &customerName,
@@ -3760,19 +3713,12 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		if err := msgRepoTx.Create(ctx, message); err != nil {
 			return err
 		}
-		attachments, cidURLs := s.storeInboundEmailAttachments(ctx, route.WorkspaceID, conversation.ID, message.ID, payload)
-		if len(attachments) > 0 {
-			message.Attachments = attachments
+		if err := s.enqueueInboundAttachments(ctx, tx, message, payload); err != nil {
+			return err
 		}
-		if len(cidURLs) > 0 {
-			projection = inboundPayloadProjectionWithHTML(payload, rewriteInboundCIDImageSources(payload.HtmlBody, cidURLs))
-			htmlBody = projection.HTMLBody
-			if forwardedAttribution.Applied {
-				applyForwardedEmailProjection(&projection, content)
-			} else {
-				projection.VisibleText = content
-			}
-		}
+		message.EmailFrom = fromEmail
+		message.EmailTo = strings.TrimSpace(payload.To)
+		message.EmailCC = model.DocsStringArray(ccEmails)
 		message.HTMLBody = htmlBody
 		message.StrippedText = content
 		message.EmailVisibleText = projection.VisibleText
@@ -3832,11 +3778,14 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	})
 	if txErr != nil {
 		if isLikelyUniqueConstraintError(txErr) {
-			s.logger.InfoContext(ctx, "postmark inbound route duplicate ignored after transaction race",
-				"message_id", strings.TrimSpace(payload.MessageID),
-				"route_key", route.RouteKey,
-			)
-			return nil
+			existing, err := s.emailLogRepo.GetByPostmarkMessageID(ctx, strings.TrimSpace(payload.MessageID))
+			if err != nil {
+				return err
+			}
+			// A constraint error alone does not prove this email was saved.
+			if existing != nil {
+				return s.retryInboundCustomerAIRequest(ctx, existing)
+			}
 		}
 		return txErr
 	}

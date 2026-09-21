@@ -21,7 +21,7 @@ func createSupportAttachmentTestTable(t *testing.T, db *gorm.DB) {
 		message_id TEXT,
 		file_name TEXT NOT NULL,
 		file_size INTEGER NOT NULL,
-		content_type TEXT NOT NULL,
+		content_type TEXT NOT NULL, content_id TEXT NOT NULL DEFAULT '', processing_status TEXT NOT NULL DEFAULT '', processing_error TEXT NOT NULL DEFAULT '',
 		storage_key TEXT NOT NULL DEFAULT '',
 		public_url TEXT NOT NULL DEFAULT '',
 		is_uploaded BOOLEAN NOT NULL DEFAULT 0,

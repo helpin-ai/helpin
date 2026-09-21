@@ -1955,7 +1955,19 @@ func hydrateEmailBodiesFromLogs(messages []model.SupportMessage, logs []model.Su
 				}
 			}
 
+			cidURLs := map[string]string{}
+			for _, attachment := range messages[i].Attachments {
+				if attachment.ContentID != "" && attachment.URL != "" {
+					cidURLs[normalizeInboundContentID(attachment.ContentID)] = attachment.URL
+				}
+			}
 			messages[i].HTMLBody = projection.HTML
+			if len(cidURLs) > 0 {
+				var original model.PostmarkInboundPayload
+				if json.Unmarshal([]byte(log.RawBody), &original) == nil && original.HtmlBody != "" {
+					messages[i].HTMLBody = inboundPayloadProjectionWithHTML(original, rewriteInboundCIDImageSources(original.HtmlBody, cidURLs)).HTMLBody
+				}
+			}
 			messages[i].StrippedText = log.StrippedText
 			messages[i].EmailVisibleText = projection.Markdown
 			messages[i].EmailQuotedText = projection.QuotedMarkdown

@@ -1003,6 +1003,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/message-pages", h.SupportInbox.ListConversationMessagePage)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/messages/{id}/email", h.SupportInbox.GetMessageEmailDetail)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/messages/{id}/attachments/{attachmentID}/retry", h.SupportInbox.RetryInboundAttachment)
 				if h.EmailImageProxy != nil {
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/email/image-proxy", h.EmailImageProxy.Proxy)
 				}

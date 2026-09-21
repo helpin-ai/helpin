@@ -1504,3 +1504,12 @@ func (h *SupportInboxHandler) PreviewTaskFromConversation(w http.ResponseWriter,
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+
+// RetryInboundAttachment requeues only a failed attachment the actor can access.
+func (h *SupportInboxHandler) RetryInboundAttachment(w http.ResponseWriter, r *http.Request) {
+	if err := h.supportService.RetryInboundAttachment(r.Context(), getWorkspaceID(r), chi.URLParam(r, "id"), chi.URLParam(r, "attachmentID")); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"queued": true})
+}

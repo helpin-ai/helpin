@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft01Icon, ArrowRight01Icon, AttachmentIcon, Cancel01Icon, Download04Icon } from '@/lib/icons';
+import { SupportPendingAttachment } from './SupportPendingAttachment';
 import type { SupportAttachmentPayload } from '@/lib/pmTypes';
 
 type SupportAttachmentGalleryTone = 'default' | 'note';
 type SupportAttachmentThumbnailSize = 'sm' | 'md';
 
 interface SupportAttachmentGalleryProps {
+  onRetry?: (id: string) => Promise<void>;
   attachments: SupportAttachmentPayload[];
   tone?: SupportAttachmentGalleryTone;
   thumbnailSize?: SupportAttachmentThumbnailSize;
@@ -64,6 +66,7 @@ export function SupportAttachmentGallery({
   tone = 'default',
   thumbnailSize = 'sm',
   className = '',
+  onRetry,
 }: SupportAttachmentGalleryProps) {
   const imageAttachments = useMemo(() => attachments.filter(isImageAttachment), [attachments]);
   const fileAttachments = useMemo(() => attachments.filter((attachment) => !isImageAttachment(attachment) && !(attachment.file_type.startsWith('video/') && attachment.url)), [attachments]);
@@ -296,7 +299,9 @@ export function SupportAttachmentGallery({
 
         {fileAttachments.length > 0 && (
           <div className="space-y-1.5">
-            {fileAttachments.map((attachment) => (
+            {fileAttachments.map((attachment) => attachment.processing_status ? (
+ <SupportPendingAttachment key={attachment.id} attachment={attachment} onRetry={onRetry} />
+ ) : (
               <a
                 key={attachment.id}
                 href={attachment.url}

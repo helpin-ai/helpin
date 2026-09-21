@@ -205,7 +205,10 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 	}
 
 	messageID := strings.TrimSpace(req.MessageID)
-	attachmentID := uuid.NewString()
+	attachmentID := strings.TrimSpace(req.AttachmentID)
+	if attachmentID == "" {
+		attachmentID = uuid.NewString()
+	}
 	storageKey := fmt.Sprintf("workspaces/%s/support/%s/%s-%s",
 		strings.TrimSpace(req.WorkspaceID), strings.TrimSpace(req.ConversationID), attachmentID, fileName)
 	publicURL := ""
@@ -227,8 +230,12 @@ func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Conte
 		IsUploaded:     true,
 	}
 
-	if err := s.attachmentRepo.Create(ctx, attachment); err != nil {
-		return nil, err
+	// Queued inbound files already have a placeholder. Its worker commits the
+	// uploaded metadata after storage succeeds; legacy callers create a row here.
+	if req.AttachmentID == "" {
+		if err := s.attachmentRepo.Create(ctx, attachment); err != nil {
+			return nil, err
+		}
 	}
 
 	return &model.SupportAttachmentPayload{
@@ -279,7 +286,7 @@ func (s *SupportAttachmentService) HydrateMessages(ctx context.Context, messages
 			continue
 		}
 		attachmentURL := a.PublicURL
-		if s.s3Client != nil && a.StorageKey != "" {
+		if s.s3Client != nil && a.IsUploaded && a.StorageKey != "" {
 			var err error
 			attachmentURL, err = s.s3Client.GeneratePresignedInlineGetURL(a.StorageKey)
 			if err != nil {
@@ -287,7 +294,8 @@ func (s *SupportAttachmentService) HydrateMessages(ctx context.Context, messages
 			}
 		}
 		byMsg[*a.MessageID] = append(byMsg[*a.MessageID], model.SupportAttachmentPayload{
-			ID:       a.ID,
+			ID:               a.ID,
+			ProcessingStatus: a.ProcessingStatus, ProcessingError: a.ProcessingError, ContentID: a.ContentID,
 			FileKey:  a.StorageKey,
 			FileName: a.FileName,
 			FileType: a.ContentType,

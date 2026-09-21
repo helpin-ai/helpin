@@ -2,6 +2,9 @@ import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, ty
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, LinkSquare01Icon, File01Icon, RotateLeft01Icon, StickyNote01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon, ZapIcon, BubbleChatIcon } from '@/lib/icons';
+import { useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import { SupportEmailRecipients } from './SupportEmailRecipients';
 import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
 import { MessageDeleteDialog } from './MessageDeleteDialog';
@@ -317,6 +320,15 @@ export const MessageBubble = memo(function MessageBubble({
   workspaceSlug,
   linkedTaskId,
 }: MessageBubbleProps) {
+  const queryClient = useQueryClient();
+  const inboundIdentity = useMemo(() => {
+    try { return JSON.parse(message.metadata || '{}') as { email_sender?: string; email_unknown_sender?: boolean; email_participant_sender?: boolean }; }
+    catch { return {}; }
+  }, [message.metadata]);
+  const retryAttachment = useCallback(async (id: string) => {
+    await api.post(`/support/inbox/messages/${message.id}/attachments/${id}/retry?workspace_id=${encodeURIComponent(message.workspace_id)}`, {});
+    await queryClient.invalidateQueries({ queryKey: ['support', message.workspace_id, 'conversations', message.conversation_id] });
+  }, [message.id, message.workspace_id, message.conversation_id, queryClient]);
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
   const linkPreviews = useMemo<SupportLinkPreview[]>(() => parseSupportLinkPreviews(message.metadata), [message.metadata]);
@@ -502,17 +514,17 @@ export const MessageBubble = memo(function MessageBubble({
   const renderFileAttachments = (tone: 'default' | 'note' = 'default', className = '') => {
     if (fileAttachments.length === 0) return null;
 
-    return <SupportAttachmentGallery attachments={fileAttachments} tone={tone} className={className} />;
+    return <SupportAttachmentGallery attachments={fileAttachments} onRetry={retryAttachment} tone={tone} className={className} />;
   };
 
   const renderImageAttachments = (className = '') => {
     if (imageAttachments.length === 0) return null;
 
-    return <SupportAttachmentGallery attachments={imageAttachments} className={className} />;
+    return <SupportAttachmentGallery attachments={imageAttachments} onRetry={retryAttachment} className={className} />;
   };
 
   const resolvedAvatarUrl = message.sender_avatar_url
-    ?? fallbackAvatarUrl
+    ?? (inboundIdentity.email_participant_sender || (inboundIdentity.email_sender && customerEmail && inboundIdentity.email_sender.toLowerCase() !== customerEmail.toLowerCase()) ? undefined : fallbackAvatarUrl)
     ?? ((message.sender_user_id && message.sender_user_id === currentUser?.id)
       ? resolveTeamMemberAvatarSrc({
           avatarUrl: currentUser.avatar_url,
@@ -523,7 +535,7 @@ export const MessageBubble = memo(function MessageBubble({
           fallbackSeed: currentUser.full_name ?? currentUser.email,
         })
       : undefined);
-  const avatarSeed = message.sender_user_id || message.sender_agent_id || resolvedSenderName;
+  const avatarSeed = message.sender_user_id || message.sender_agent_id || inboundIdentity.email_sender || resolvedSenderName;
   const fallbackAvatar = (
     <div
       className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10.5px] font-semibold leading-none shadow-sm ${getAvatarColor(avatarSeed)}`}
@@ -707,9 +719,10 @@ export const MessageBubble = memo(function MessageBubble({
                     <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
                     <span className="text-[11px] text-amber-600 dark:text-amber-400">
                       <span className="font-semibold">{resolvedSenderName}</span>
-                      <span className="font-normal"> left a private note</span>
+                      <span className="font-normal">{inboundIdentity.email_unknown_sender ? ' · Team only' : ' left a private note'}</span>
                     </span>
                   </div>
+                  <SupportEmailRecipients message={message} />
                   {hasDisplayContent && (
                     <div className="prose-chat inline text-sm leading-relaxed text-amber-900 [&>p:last-child]:inline dark:text-amber-200">
                       {mentionParts ? (
@@ -724,7 +737,7 @@ export const MessageBubble = memo(function MessageBubble({
                   {renderBubbleTime('float-right ml-2 mt-1 text-amber-700/70 dark:text-amber-300/70')}
                 </div>
               </TooltipTrigger>
-              <TooltipContent side="top">{tooltipContent}</TooltipContent>
+              <TooltipContent side="top">{inboundIdentity.email_unknown_sender ? "This sender is not a participant. Only your team can see this message; no automatic reply is sent." : tooltipContent}</TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -816,6 +829,8 @@ export const MessageBubble = memo(function MessageBubble({
           data-slot="support-message-bubble"
           className={`${bubbleWidthClass} group/message ${showBubble ? '' : 'relative'}`}
         >
+          {isCustomer && message.via_channel === 'email' && <div className="mb-1 text-xs font-medium text-foreground">{resolvedSenderName}</div>}
+          <SupportEmailRecipients message={message} />
           {showBubble ? (
             <div data-slot="support-message-bubble-frame" className="relative">
               {messageActionsMenu}

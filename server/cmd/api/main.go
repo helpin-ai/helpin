@@ -2083,6 +2083,12 @@ func main() {
 	editionCtx, editionCancel := context.WithCancel(context.Background())
 	editionDone := editionServices.StartWorkers(editionCtx)
 
+	// Durable inbound processing does not depend on outbound Postmark/Redis configuration.
+	inboundCtx, inboundCancel := context.WithCancel(context.Background())
+	defer inboundCancel()
+	go emailFallbackService.StartInboundWorker(inboundCtx, "email")
+	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
+	go emailFallbackService.StartInboundWorker(inboundCtx, "attachment")
 	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
 	if redisClient != nil && replyEmailClient != nil {
@@ -2227,6 +2233,7 @@ func main() {
 	case <-time.After(6 * time.Second):
 		slog.Warn("CRM usage-baseline synchronizer did not stop before shutdown timeout")
 	}
+	inboundCancel()
 	if emailFallbackCancel != nil {
 		emailFallbackCancel()
 	}

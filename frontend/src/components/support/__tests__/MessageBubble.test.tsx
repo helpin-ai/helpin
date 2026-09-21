@@ -1175,3 +1175,27 @@ Can I export my data?`,
     spam.cleanup()
   })
 })
+
+it.each([false, true])('attributes participant mail and preserves team-only privacy (%s)', (unknown) => {
+  const message: SupportMessage = {
+    id: 'participant-email', workspace_id: 'ws-1', conversation_id: 'conv-1',
+    sender_type: 'customer', sender_display_name: 'Colleague', content: 'My reply',
+    message_type: 'reply', is_internal: unknown, via_channel: 'email',
+    email_from: 'colleague@example.com', email_to: 'support@example.com', email_cc: ['customer@example.com'],
+    metadata: JSON.stringify({ email_sender: 'colleague@example.com', email_participant_sender: true, email_unknown_sender: unknown }),
+    created_at: '2026-09-21T09:00:00Z', updated_at: '2026-09-21T09:00:00Z',
+  }
+  const rendered = renderBubble(message, undefined, { customerEmail: 'customer@example.com', fallbackAvatarUrl: 'https://example.com/customer-avatar.png' })
+  try {
+    expect(rendered.container.textContent).toContain('Colleague')
+    expect(rendered.container.querySelector('img[src="https://example.com/customer-avatar.png"]')).toBeNull()
+    if (unknown) expect(rendered.container.textContent).toContain('Team only')
+    const details = rendered.container.querySelector('details')!
+    expect(details.open).toBe(false)
+    expect(details.querySelector('summary')?.textContent).toContain('To: support@example.com · CC (1)')
+    act(() => details.querySelector('summary')!.click())
+    expect(details.open).toBe(true)
+    expect(details.textContent).toContain('colleague@example.com')
+    expect(details.textContent).toContain('customer@example.com')
+  } finally { rendered.cleanup() }
+})

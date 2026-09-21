@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/google/uuid"
 	"html"
 	"io"
 	"net/http"
@@ -69,6 +70,12 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 	t.Helper()
 
 	db := newTestDB(t)
+	if err := db.AutoMigrate(&model.SupportInboundJob{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE support_attachments (id TEXT PRIMARY KEY, workspace_id TEXT, conversation_id TEXT, message_id TEXT, file_name TEXT, file_size INTEGER, content_type TEXT, storage_key TEXT DEFAULT '', public_url TEXT DEFAULT '', is_uploaded BOOLEAN DEFAULT false, uploaded_by_type TEXT, uploaded_by_id TEXT, session_id TEXT, created_at DATETIME, processing_status TEXT NOT NULL DEFAULT '', processing_error TEXT NOT NULL DEFAULT '', content_id TEXT NOT NULL DEFAULT '')`).Error; err != nil {
+		t.Fatal(err)
+	}
 	var redisServer *miniredis.Miniredis
 	var redisClient *redis.Client
 	if withRedis {
@@ -2697,10 +2704,16 @@ func TestEmailFallbackProcessInboundEmailRewritesInlineCIDImages(t *testing.T) {
 		},
 	}
 
-	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-in-inline-image"}`); err != nil {
+	if err := env.service.ProcessInboundEmail(ctx, payload, ""); err != nil {
 		t.Fatalf("process inbound email: %v", err)
 	}
 
+	if len(store.requests) != 0 {
+		t.Fatal("upload ran before message commit")
+	}
+	if err := env.service.processNextInboundJob(ctx, "attachment"); err != nil {
+		t.Fatal(err)
+	}
 	if len(store.requests) != 1 {
 		t.Fatalf("stored attachment requests = %d, want 1", len(store.requests))
 	}
@@ -2715,10 +2728,19 @@ func TestEmailFallbackProcessInboundEmailRewritesInlineCIDImages(t *testing.T) {
 	if len(logs) != 1 {
 		t.Fatalf("expected 1 inbound email log, got %d", len(logs))
 	}
-	if strings.Contains(logs[0].HTMLBody, "cid:image001") {
+	var messages []model.SupportMessage
+	if err := env.convRepo.DB().Where("conversation_id = ?", conversationID).Find(&messages).Error; err != nil {
+		t.Fatal(err)
+	}
+	attachmentService := NewSupportAttachmentService(repository.NewSupportAttachmentRepository(env.convRepo.DB()), nil)
+	if err := attachmentService.HydrateMessages(ctx, messages); err != nil {
+		t.Fatal(err)
+	}
+	hydrateEmailBodiesFromLogs(messages, logs)
+	if strings.Contains(messages[0].HTMLBody, "cid:image001") {
 		t.Fatalf("expected cid src to be rewritten, got %q", logs[0].HTMLBody)
 	}
-	if !strings.Contains(logs[0].HTMLBody, `src="https://assets.example.com/image001.png"`) {
+	if !strings.Contains(messages[0].HTMLBody, `src="https://assets.example.com/image001.png"`) {
 		t.Fatalf("expected stored asset URL in HTML body, got %q", logs[0].HTMLBody)
 	}
 	if strings.Contains(logs[0].StrippedText, "[cid:") {
@@ -3928,47 +3950,26 @@ func TestProcessInboundRouteThreadsActiveTeammatePersonalInboxReply(t *testing.T
 	}
 }
 
-func TestResolveInboundFallbackConversationIsConservative(t *testing.T) {
+func TestInboundUnrelatedEmailCreatesNewConversation(t *testing.T) {
 	ctx := context.Background()
-	env := setupEmailFallbackInboundTestEnv(t, model.SupportInboxSettings{})
-	workspaceID := "11111111-1111-1111-1111-111111111111"
-	customerEmail := "buyer@example.com"
-	route := &model.SupportEmailRoute{
-		WorkspaceID:    workspaceID,
-		InboundAddress: "inbox@acme.on.helpin.email",
+	env := setupEmailFallbackInboundTestEnv(t, model.DefaultSupportInboxSettings())
+	ws := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{ID: uuid.NewString(), WorkspaceID: ws, RouteKey: "route-unrelated", InboundAddress: "inbox@acme.on.helpin.email", ProviderType: "forwarding", Active: true, CreatedByID: "22222222-2222-2222-2222-222222222222"}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatal(err)
 	}
-	payload := model.PostmarkInboundPayload{
-		FromFull: model.PostmarkAddress{Email: customerEmail},
+	old := &model.SupportConversation{ID: uuid.NewString(), WorkspaceID: ws, Subject: "Old issue", Status: "open", CustomerEmail: strPtr("customer@example.com")}
+	if err := env.convRepo.Create(ctx, old); err != nil {
+		t.Fatal(err)
 	}
-
-	if conv, err := env.service.resolveInboundFallbackConversation(ctx, route, payload); err != nil || conv != nil {
-		t.Fatalf("no-match: got conv=%v err=%v, want nil/nil", conv, err)
+	payload := model.PostmarkInboundPayload{MessageID: "new-issue", FromFull: model.PostmarkAddress{Email: "customer@example.com"}, To: route.InboundAddress, Subject: "Different issue", TextBody: "A new question"}
+	if err := env.service.ProcessInboundEmail(ctx, payload, ""); err != nil {
+		t.Fatal(err)
 	}
-
-	conv1 := &model.SupportConversation{
-		ID:            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-		WorkspaceID:   workspaceID,
-		Status:        model.SupportConversationStatusOpen,
-		CustomerEmail: &customerEmail,
-	}
-	if err := env.convRepo.Create(ctx, conv1); err != nil {
-		t.Fatalf("create conv1: %v", err)
-	}
-	if conv, err := env.service.resolveInboundFallbackConversation(ctx, route, payload); err != nil || conv == nil || conv.ID != conv1.ID {
-		t.Fatalf("single-match: got conv=%v err=%v, want %s/nil", conv, err, conv1.ID)
-	}
-
-	conv2 := &model.SupportConversation{
-		ID:            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-		WorkspaceID:   workspaceID,
-		Status:        model.SupportConversationStatusWaitingOnCustomer,
-		CustomerEmail: &customerEmail,
-	}
-	if err := env.convRepo.Create(ctx, conv2); err != nil {
-		t.Fatalf("create conv2: %v", err)
-	}
-	if conv, err := env.service.resolveInboundFallbackConversation(ctx, route, payload); err != nil || conv != nil {
-		t.Fatalf("ambiguous: got conv=%v err=%v, want nil/nil", conv, err)
+	var n int64
+	env.convRepo.DB().Model(&model.SupportConversation{}).Where("workspace_id = ?", ws).Count(&n)
+	if n != 2 {
+		t.Fatalf("unrelated email grouped into old conversation: %d", n)
 	}
 }
 

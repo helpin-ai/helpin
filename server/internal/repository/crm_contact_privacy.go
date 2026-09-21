@@ -132,6 +132,15 @@ func (r *CRMContactRepository) DeleteAnonymizingSupport(ctx context.Context, wor
 		if err := tx.Model(&model.CRMActivity{}).Where("workspace_id = ? AND contact_id = ?", workspaceID, contactID).Updates(map[string]any{"contact_id": nil}).Error; err != nil {
 			return err
 		}
+		// Accepted but unfinished mail must not restore identity after deletion.
+		jobs := tx.Model(&model.SupportInboundJob{}).Where("workspace_id = ?", workspaceID)
+		scope := tx.Where("conversation_id IN ?", conversationIDs)
+		if contact.Email != nil && strings.TrimSpace(*contact.Email) != "" {
+			scope = scope.Or("kind = 'email' AND payload <> '' AND LOWER(NULLIF(payload, '')::jsonb->'FromFull'->>'Email') = ?", strings.ToLower(strings.TrimSpace(*contact.Email)))
+		}
+		if err := jobs.Where(scope).Updates(map[string]any{"status": "completed", "payload": "", "lease_token": "", "last_error": ""}).Error; err != nil {
+			return err
+		}
 		// Set the marker last: PostgreSQL guards reject future writes to this timeline.
 		if len(conversationIDs) > 0 {
 			if err := tx.Table("support_conversations").Where("workspace_id = ? AND id IN ?", workspaceID, conversationIDs).Updates(map[string]any{

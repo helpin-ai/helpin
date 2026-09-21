@@ -107,6 +107,7 @@ func AutoMigrationModels() []any {
 		&model.SupportTranslationConversation{},
 		&model.SupportEmailLog{},
 		&model.SupportEmailWebhookEvent{},
+		&model.SupportInboundJob{},
 		&model.SupportTag{},
 		&model.SupportConversationTag{},
 		&model.SupportTeammateStatusOverride{},
