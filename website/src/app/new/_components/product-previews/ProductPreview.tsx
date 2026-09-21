@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import { PreviewCanvas } from './PreviewCanvas';
 import './product-preview.css';
 
-export type ProductPreviewName = 'inbox' | 'meetings' | 'projects' | 'crm' | 'knowledge' | 'ask-agent';
+export type ProductPreviewName = 'inbox' | 'meetings' | 'projects' | 'crm' | 'knowledge' | 'ask-agent' | 'agents';
 
 function LoadingPreview() {
   return <div className="product-preview-loading" role="status">Loading preview…</div>;
@@ -15,6 +15,7 @@ function LoadingPreview() {
 // Load requested demos on the client; callers can preload nearby scenes. This
 // keeps accessibility IDs stable while the loading frame reserves its space.
 const PREVIEWS = {
+  agents: dynamic(() => import('../agent-directory/AgentDirectoryPreview').then(module => module.AgentDirectoryPreview), { loading: LoadingPreview, ssr: false }),
   'ask-agent': dynamic(() => import('../ask-agent/AskAgentWorkspace').then(module => module.AskAgentWorkspace), { loading: LoadingPreview, ssr: false }),
   inbox: dynamic(() => import('../../products/customer-support/support-workspace').then(module => module.SupportWorkspace), { loading: LoadingPreview, ssr: false }),
   meetings: dynamic(() => import('../../products/meetings/meeting-workspace').then(module => module.MeetingWorkspace), { loading: LoadingPreview, ssr: false }),
@@ -24,7 +25,7 @@ const PREVIEWS = {
 };
 
 const LABELS: Record<ProductPreviewName, string> = {
-  inbox: 'Inbox', meetings: 'Meetings', projects: 'Projects', crm: 'CRM', knowledge: 'Knowledge', 'ask-agent': 'Ask Agent',
+  agents: 'Agents', inbox: 'Inbox', meetings: 'Meetings', projects: 'Projects', crm: 'CRM', knowledge: 'Knowledge', 'ask-agent': 'Ask Agent',
 };
 
 /** A bounded, responsive demo for product tabs and other embedded surfaces. */

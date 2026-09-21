@@ -60,3 +60,6 @@
    delayed board-to-task entrance. Card movement and delivery steps still play. */
 .hp3 .product-preview[data-product="projects"] .project-hero-art .project-hero-board,
 .hp3 .product-preview[data-product="projects"] .project-hero-art .project-hero-task { animation: none; }
+
+.hp3 .product-preview[data-product="agents"] .adp { max-width: none; }
+.hp3 .product-preview[data-product="agents"] .adp-frame { height: calc(var(--preview-height) - 2px); border: 0; border-radius: 0; }

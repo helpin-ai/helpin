@@ -140,7 +140,7 @@ export const FAQS = [
   },
   {
     q: 'What AI models does Helpin support?',
-    a: 'Helpin supports models from multiple providers. Cloud includes managed AI access; self-hosted installations use the providers you configure.',
+    a: 'Choose from supported models through OpenAI, Anthropic, OpenRouter, and approved compatible endpoints. Cloud includes managed AI access; you can also connect your own provider accounts when BYOK is enabled for your workspace. Where enabled, ChatGPT subscription connections are personal and available for manually started runs. Provider charges and any configured Cloud platform or paid-tool fees are separate.',
   },
   {
     q: 'How does pricing compare to my current tools?',

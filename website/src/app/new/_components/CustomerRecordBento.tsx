@@ -25,7 +25,7 @@ function Panel({ id, x, y, width, height, stacked = false }: { id: string; x: nu
 function Reveal({ start, children }: { start: number; children: ReactNode }) {
   return <g className="cr-reveal" style={at(start)}>{children}</g>;
 }
-// Discrete character reveals preserve SVG shaping; punctuation gets a natural pause.
+// Soft character reveals preserve SVG shaping; punctuation gets a natural pause.
 function TypedText({ children, start, pace = .025, ...props }: SVGProps<SVGTextElement> & { children: string; start: number; pace?: number }) {
   let delay = start;
   return <text {...props} className={`${props.className ?? ''} cr-typed`}>

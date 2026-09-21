@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { StreamingText } from '../../_components/StreamingText';
+
+import { useState, type ReactNode } from 'react';
 import { ChevronDown, CircleHelp, Building2, Check, CircleCheck, Copy, Link2, ListChecks, Mail, Pause, Play, Quote, Video } from 'lucide-react';
 import { useMeetingPlayback } from './use-meeting-playback';
 import { FOLLOWUP_DRAFT, MEETING_EVIDENCE } from './meeting-demo-data';
@@ -24,16 +26,7 @@ function Task({phase}:{phase:number}) {
  </div>;
 }
 function Followup({active,phase}:{active:boolean;phase:number}) {
- const [typed,setTyped]=useState(FOLLOWUP_DRAFT);
- useEffect(()=>{
-  if(!active){setTyped(FOLLOWUP_DRAFT);return;}
-  if(phase===0){setTyped('');return;}
-  if(phase!==1){setTyped(FOLLOWUP_DRAFT);return;}
-  let position=0;
-  const timer=setInterval(()=>{position=Math.min(position+4,FOLLOWUP_DRAFT.length);setTyped(FOLLOWUP_DRAFT.slice(0,position));if(position===FOLLOWUP_DRAFT.length)clearInterval(timer);},24);
-  return ()=>clearInterval(timer);
- },[active,phase]);
- return <><div className="mt-mail-envelope"><div className="mt-mail-heading"><Mail size={18}/><strong>Customer follow-up</strong><span className="mt-pill">Draft</span></div><div className="mt-mail-meta"><span>To</span><span>Maya Chen <span className="mt-muted">· Northstar Labs</span></span><span>Subject</span><strong>Next steps for your SSO pilot</strong></div></div><div className="mt-draft-source"><span className="mt-ai-draft-mark"><img src="/brand/helpin-icon-white.svg" width={13} height={13} alt=""/></span><span>Helpin AI · {active&&phase<2?'Preparing the follow-up':'Draft from the meeting context'}</span></div><div className="mt-email-composition"><p className="mt-email-layout">{FOLLOWUP_DRAFT}</p><p className="mt-email-typed">{typed}<span className="mt-typing-caret" data-visible={active&&phase===1&&typed.length<FOLLOWUP_DRAFT.length}/></p></div><div className="mt-draft-review" data-ready={phase>=2}><Avatar person="sam"/><div><strong>{["Preparing the follow-up","Writing the follow-up","Check the wording and next steps","Ready for Sam’s review"][phase]}</strong><small>Customer draft · Not sent</small></div><Check size={15}/></div></>;
+ return <><div className="mt-mail-envelope"><div className="mt-mail-heading"><Mail size={18}/><strong>Customer follow-up</strong><span className="mt-pill">Draft</span></div><div className="mt-mail-meta"><span>To</span><span>Maya Chen <span className="mt-muted">· Northstar Labs</span></span><span>Subject</span><strong>Next steps for your SSO pilot</strong></div></div><div className="mt-draft-source"><span className="mt-ai-draft-mark"><img src="/brand/helpin-icon-white.svg" width={13} height={13} alt=""/></span><span>Helpin AI · {active&&phase<2?'Preparing the follow-up':'Draft from the meeting context'}</span></div><div className="mt-email-composition"><p className="mt-email-layout">{FOLLOWUP_DRAFT}</p><p className="mt-email-typed"><StreamingText text={FOLLOWUP_DRAFT} active={active && phase === 1} pending={active && phase === 0} duration={2200} /></p></div><div className="mt-draft-review" data-ready={phase>=2}><Avatar person="sam"/><div><strong>{["Preparing the follow-up","Writing the follow-up","Check the wording and next steps","Ready for Sam’s review"][phase]}</strong><small>Customer draft · Not sent</small></div><Check size={15}/></div></>;
 }
 function Context(){return <><div className="mt-customer"><span className="mt-company-mark"><Building2 size={24}/></span><div><span className="mt-mini">CUSTOMER RECORD</span><strong>Northstar Labs</strong><small>Enterprise rollout</small></div></div><div className="mt-context-list">{[
   {Icon:Video,label:'Meeting',title:'SSO rollout review',detail:'Summary, transcript & decisions'},

@@ -1,15 +1,15 @@
 'use client';
 
 import { useId, useState, type CSSProperties, type ReactNode } from 'react';
-import { BookOpen, FileText, GitBranch, Link2, Mail, Pause, Play, type LucideIcon } from 'lucide-react';
+import { BookOpen, FileText, GitBranch, Link2, Pause, Play, type LucideIcon } from 'lucide-react';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
 import './support-scene.css';
 
 type Variant = 'answer' | 'handoff' | 'followup';
 const CONTENT = {
   answer: ['An answer with a source', 'Maya asks how to export selected contacts. Helpin AI finds the export guide and replies with steps and a linked source.'],
-  handoff: ['A handoff with the history', 'Maya reports an incomplete CSV export. Helpin AI prepares an internal note and hands the conversation to Sam Rivera with the customer history attached.'],
-  followup: ['A request connected to the work', 'Maya’s incomplete export is connected to task EXP-142. The task is in review, and a follow-up draft is prepared for Maya. The draft has not been sent.'],
+  handoff: ['A handoff with the history', 'Maya reports an incomplete CSV export. Helpin AI finds the pagination error in connected logs and hands the conversation to Sam Rivera with its findings and customer history attached.'],
+  followup: ['A fix followed by a customer update', 'Maya’s export issue is linked to EXP-142. After the fix is reviewed, tested and released, Helpin AI sends Maya an update approved by Sam in the original conversation.'],
 } as const;
 const timing = (seconds: number) => ({ '--sw-delay': `${seconds}s` }) as CSSProperties;
 function Reveal({ at, children }: { at: number; children: ReactNode }) { return <g className="sw-reveal" style={timing(at)}>{children}</g>; }
@@ -36,7 +36,7 @@ function Handoff({ id }: { id: string }) {
   return <>
     <rect x={25} y={18} width={370} height={324} rx={14} className="sw-panel" />
     <Avatar id={id} x={43} y={35} person="maya" /><text x={84} y={48} className="sw-title">CSV export stops early</text><text x={84} y={65} className="sw-meta">Maya Chen · Northstar Labs</text><path d="M43 79 H377" className="sw-divider" />
-    <Reveal at={.3}><rect x={43} y={93} width={334} height={85} rx={9} fill="#fcf8ed" stroke="#eee4c9" /><g className="sw-amber"><Glyph icon={FileText} x={56} y={106} size={15} /></g><text x={78} y={118} className="sw-small sw-amber">INTERNAL HANDOFF NOTE</text><text x={56} y={141} className="sw-body">Export stops at 10,000 rows.</text><text x={56} y={162} className="sw-meta">Filters and customer history included.</text></Reveal>
+    <Reveal at={.3}><rect x={43} y={93} width={334} height={85} rx={9} fill="#fcf8ed" stroke="#eee4c9" /><g className="sw-amber"><Glyph icon={FileText} x={56} y={106} size={15} /></g><text x={78} y={118} className="sw-small sw-amber">INTERNAL HANDOFF NOTE</text><text x={56} y={141} className="sw-body">Logs: pagination stops at 10,000 rows.</text><text x={56} y={162} className="sw-meta">Findings and customer history attached.</text></Reveal>
     <path d="M93 221 H328" className="sw-wire" /><path d="M93 221 H328" className="sw-route" pathLength={1} style={timing(1.3)} />
     <Helpin x={51} y={205} /><text x={45} y={254} className="sw-meta">Helpin AI</text>
     <rect x={152} y={205} width={118} height={30} rx={15} fill="#fff" stroke="#e0e7e2" /><text x={211} y={224} textAnchor="middle" className="sw-small">Human handoff</text>
@@ -49,8 +49,8 @@ function Followup() {
   return <>
     <rect x={39} y={22} width={342} height={53} rx={10} className="sw-panel" /><g className="sw-green"><Glyph icon={Link2} x={53} y={39} /></g><text x={80} y={44} className="sw-title">CSV export stops early</text><text x={80} y={62} className="sw-meta">Maya Chen · Original request</text>
     <path d="M210 75 V104 M210 223 V253" className="sw-wire" /><path d="M210 75 V104" className="sw-route" pathLength={1} style={timing(.5)} /><path d="M210 223 V253" className="sw-route" pathLength={1} style={timing(2.6)} />
-    <Reveal at={1}><rect x={25} y={104} width={370} height={119} rx={12} className="sw-panel" /><g className="sw-green"><Glyph icon={GitBranch} x={43} y={121} size={17} /></g><text x={68} y={135} className="sw-meta">EXP-142</text><rect x={290} y={117} width={87} height={23} rx={11} fill="#f3eefb" /><text x={333} y={133} textAnchor="middle" className="sw-small sw-purple">In review</text><text x={43} y={165} className="sw-title">Fix incomplete CSV exports</text><text x={43} y={185} className="sw-meta">Reliable data exports · Sam Rivera</text><path d="M43 196 H377" className="sw-divider" /><g className="sw-green"><Glyph icon={Link2} x={43} y={203} size={12} /></g><text x={63} y={214} className="sw-small sw-green">Customer conversation attached</text></Reveal>
-    <Reveal at={3.3}><rect x={39} y={253} width={342} height={88} rx={10} fill="#edf7f0" stroke="#c6e0cf" /><g className="sw-green"><Glyph icon={Mail} x={53} y={269} size={16} /></g><text x={80} y={282} className="sw-title">Follow-up for Maya</text><rect x={302} y={265} width={65} height={22} rx={6} fill="#fff" stroke="#d4e5da" /><text x={334} y={280} textAnchor="middle" className="sw-small">Draft</text><text x={53} y={305} className="sw-body">The export fix is ready for review.</text><text x={53} y={325} className="sw-meta">Prepared for your team. Not sent.</text></Reveal>
+    <Reveal at={1}><rect x={25} y={104} width={370} height={119} rx={12} className="sw-panel" /><g className="sw-green"><Glyph icon={GitBranch} x={43} y={121} size={17} /></g><text x={68} y={135} className="sw-meta">EXP-142</text><rect x={290} y={117} width={87} height={23} rx={11} fill="#e9f6ee" /><text x={333} y={133} textAnchor="middle" className="sw-small sw-green">Released</text><text x={43} y={165} className="sw-title">Fix incomplete CSV exports</text><text x={43} y={185} className="sw-meta">Reviewed and tested · Sam Rivera</text><path d="M43 196 H377" className="sw-divider" /><g className="sw-green"><Glyph icon={Link2} x={43} y={203} size={12} /></g><text x={63} y={214} className="sw-small sw-green">Customer conversation attached</text></Reveal>
+    <Reveal at={3.3}><rect x={39} y={253} width={342} height={88} rx={10} fill="#edf7f0" stroke="#c6e0cf" /><Helpin x={51} y={266} /><text x={88} y={282} className="sw-title">Helpin AI → Maya</text><rect x={302} y={265} width={65} height={22} rx={6} fill="#fff" stroke="#d4e5da" /><text x={334} y={280} textAnchor="middle" className="sw-small">Sent</text><text x={53} y={305} className="sw-body">The export fix is live. Try your report again.</text><text x={53} y={325} className="sw-meta">Approved by Sam · Sent after release.</text></Reveal>
   </>;
 }
 

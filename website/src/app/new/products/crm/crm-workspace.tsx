@@ -1,5 +1,7 @@
 "use client";
 
+import { StreamingText } from '../../_components/StreamingText';
+
 import '../../_components/product-previews/preview-navigation.css';
 
 import { Fragment, useEffect, useId, useRef, useState } from "react";
@@ -567,24 +569,6 @@ function RecordDetail({
   );
 }
 function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
-  const [typed, setTyped] = useState(ACCOUNT_BRIEF);
-  useEffect(() => {
-    if (!active || phase === 3) {
-      setTyped(ACCOUNT_BRIEF);
-      return;
-    }
-    if (phase < 2) {
-      setTyped("");
-      return;
-    }
-    let at = 0;
-    const timer = setInterval(() => {
-      at = Math.min(at + 4, ACCOUNT_BRIEF.length);
-      setTyped(ACCOUNT_BRIEF.slice(0, at));
-      if (at === ACCOUNT_BRIEF.length) clearInterval(timer);
-    }, 24);
-    return () => clearInterval(timer);
-  }, [active, phase]);
   return (
     <div
       className="cw-agent"
@@ -623,7 +607,7 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
           </div>
           <div className="cw-agent-answer">
             <p className="cw-ghost">{ACCOUNT_BRIEF}</p>
-            <p>{typed}</p>
+            <p><StreamingText text={ACCOUNT_BRIEF} active={active && phase === 2} pending={active && phase < 2} duration={2400} /></p>
           </div>
           <div className="cw-agent-result" data-ready={phase === 3}>
             <CRMAvatar />

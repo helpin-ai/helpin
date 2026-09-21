@@ -74,7 +74,7 @@ export default function NewHomePage() {
             <h1>From customer question to shipped fix.</h1>
             <p className="lede">Helpin brings support, projects, CRM, meetings, and knowledge into one place. AI agents turn customer conversations into answers, tasks, and action — with your team in control.</p>
             <CtaRow />
-            <CtaNote pill />
+            <CtaNote />
 
           </div>
           <figure className="hero-workflow"><LoopWire /></figure>

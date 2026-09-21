@@ -95,12 +95,12 @@ export default function CustomerSupportPage() {
           <div className="support-hero-grid">
             <div className="hero-inner">
               <Availability category="AI support inbox" />
-              <h1>Support that ends with a fix, <span>not a ticket number.</span></h1>
+              <h1><span className="support-headline-opening">Support that ends</span> with a fix, <span>not a ticket number.</span></h1>
               <p className="lede">Helpin AI answers from your docs, customer history and your own logs. When a request needs a fix, it goes to a teammate or a coding agent with the conversation attached — and the customer hears back when it ships.</p>
               <Actions />
               <CtaNote trial support />
             </div>
-            <div><SupportHeroScene /></div>
+            <SupportHeroScene />
           </div>
         </div>
       </section>
@@ -109,7 +109,7 @@ export default function CustomerSupportPage() {
 
       <section id="support-inbox" className="support-inbox-section">
         <div className="wrap">
-          <SectionHead eyebrow="The inbox" title="One inbox for chat and email, with customer history beside every reply." lede="Bring live chat and forwarded email into one inbox. Route conversations to the right team, organize them with tags and saved views, and keep customer history beside every reply." />
+          <SectionHead eyebrow="The inbox" title="One inbox, from first question to follow-up." lede="Bring chat and email together. Helpin AI checks your docs and connected tools, then hands your team the findings, customer history and linked work when a person needs to step in." />
           <SupportInboxShowcase />
         </div>
       </section>
@@ -132,11 +132,11 @@ export default function CustomerSupportPage() {
 
       <section id="support-workflow" className="support-workflow-section">
         <div className="wrap">
-          <SectionHead eyebrow="AI and your team, in the same conversation" title="AI answers. Your team steps in when needed." lede="Let agents handle the first reply. When a question needs a person or a product change, keep the context with the work." />
+          <SectionHead eyebrow="AI and your team, in the same conversation" title="AI answers. Your team steps in when needed." lede="Answer from your docs, investigate with connected tools, and bring in the right teammate when needed. Keep the customer informed as the work moves forward." />
           <div className="support-workflow-grid">
-            <article><div className="support-step-copy"><span className="support-step-number">01 / ANSWER</span><h3>Let agents take the first reply.</h3><p>Answer customers using product knowledge and customer history. Choose direct AI replies or keep your team involved with internal assistance and draft review.</p></div><SupportScene variant="answer" /></article>
-            <article><div className="support-step-copy"><span className="support-step-number">02 / HAND OFF</span><h3>Bring in your team without starting over.</h3><p>Pass the conversation to a teammate with the question, previous replies, and internal notes together. Customers can pick up where they left off.</p></div><SupportScene variant="handoff" /></article>
-            <article><div className="support-step-copy"><span className="support-step-number">03 / FOLLOW THROUGH</span><h3>Keep the request attached to the work.</h3><p>Turn the request into a task, keep the customer linked, and prepare a follow-up when the work is ready.</p></div><SupportScene variant="followup" /></article>
+            <article><div className="support-step-copy"><span className="support-step-number">01 / ANSWER</span><h3>Let agents take the first reply.</h3><p>Helpin AI answers from your docs and customer history, and checks connected tools for deeper questions. Choose direct replies or drafts your team reviews.</p></div><SupportScene variant="answer" /></article>
+            <article><div className="support-step-copy"><span className="support-step-number">02 / HAND OFF</span><h3>Bring in your team without starting over.</h3><p>Give the right teammate the conversation, log findings and customer history together. The investigation is already there, so nobody starts from scratch.</p></div><SupportScene variant="handoff" /></article>
+            <article><div className="support-step-copy"><span className="support-step-number">03 / FOLLOW THROUGH</span><h3>Follow up when the fix is live.</h3><p>Link the request to a task. Once the fix is reviewed, tested and released, Helpin AI sends the customer an update with your team’s approval.</p></div><SupportScene variant="followup" /></article>
           </div>
         </div>
       </section>

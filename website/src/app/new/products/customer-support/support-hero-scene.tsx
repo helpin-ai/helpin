@@ -7,6 +7,7 @@ import { useBentoPlayback } from '../../_components/useBentoPlayback';
 import { DEMO_CONFIG, DEMO_DURATION, DEMO_MESSAGES, demoFrame } from './support-widget-script';
 import '@helpin-ai/widget-core/src/styles/widget.css';
 import './support-widget-demo.css';
+import { revealWidgetPreviewText } from './support-widget-stream';
 
 type WidgetRuntime = typeof import('@helpin-ai/widget-core');
 
@@ -28,7 +29,7 @@ export function SupportHeroScene() {
     connectionStatus: 'connected',
     messages: frame.messages,
     isAIThinking: frame.isAIThinking,
-    aiProgressLabel: elapsed < 6100 ? 'Checking the export guide…' : 'Gathering the context…',
+    aiProgressLabel: frame.aiProgressLabel,
     isTyping: frame.isTyping,
     typingAgentName: 'Sam',
     typingAgentAvatar: '/new/avatars/sam.webp',
@@ -85,17 +86,34 @@ export function SupportHeroScene() {
     if (!ready || !active) return;
     setElapsed(0);
     const started = performance.now();
-    const timer = window.setInterval(() => setElapsed((performance.now() - started) % DEMO_DURATION), 50);
-    return () => window.clearInterval(timer);
+    let frameId = 0;
+    let previousFrame = '';
+    const advance = (now: number) => {
+      const elapsed = (now - started) % DEMO_DURATION;
+      const next = demoFrame(elapsed, timestamp.current);
+      const last = next.messages.at(-1);
+      const signature = `${last?.id}:${last?.content.length}:${last?.isStreaming}:${next.isAIThinking}:${next.isTyping}:${next.stage}`;
+      // Update only at story boundaries. CSS streams the text between them.
+      if (signature !== previousFrame) {
+        previousFrame = signature;
+        setElapsed(elapsed);
+      }
+      frameId = requestAnimationFrame(advance);
+    };
+    frameId = requestAnimationFrame(advance);
+    return () => cancelAnimationFrame(frameId);
   }, [ready, active]);
 
   useEffect(() => {
-    if (ready && mount.current) runtime.current?.mountWidget(mount.current, options);
+    if (ready && mount.current) {
+      runtime.current?.mountWidget(mount.current, options);
+      revealWidgetPreviewText(mount.current, active ? frame.stream : null);
+    }
   });
 
   return <div className="support-hero-art support-widget-art" ref={container} data-playing={active} data-stage={frame.stage}>
     <div className="support-hero-art-label"><span>FROM THE CUSTOMER’S SIDE</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} support widget animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}</button></div>
-    <div className="support-widget-shell" role="img" aria-label="Illustrative OrbitDesk chat: Maya asks how to export selected contacts. Helpin AI answers from the export guide. Maya reports that the export stops at 10,000 rows. Helpin passes the context to Sam, who links the report to EXP-142 and will follow up after engineering investigates.">
+    <div className="support-widget-shell" role="img" aria-label="Illustrative OrbitDesk chat: Maya asks how to export selected contacts. Helpin AI answers from the export guide. Maya reports that the export stops at 10,000 rows. Helpin AI searches connected export logs, finds the pagination error, and hands Sam the findings. Sam links the report to EXP-142. Once the fix is reviewed, tested and released, Helpin AI sends Maya the approved follow-up.">
       <div className="support-widget-workspace" aria-hidden="true"><span className="support-workspace-logo">O</span><strong>OrbitDesk</strong><span>Customer support</span></div>
       <div className="support-widget-viewport" data-ready={ready}>
         <div className="support-widget-fallback" aria-hidden="true"><div className="support-widget-fallback-header"><img src="/brand/helpin-icon-ink.svg" width={24} height={24} alt="" /><strong>Helpin AI <small>OrbitDesk support</small></strong></div><div className="support-widget-transcript">{DEMO_MESSAGES.map(message => <div key={message.id} className={`support-widget-fallback-message support-widget-fallback-${message.role}`}><span>{message.role === 'customer' ? 'Maya Chen' : message.senderName || 'Helpin AI'}</span><p>{message.content}</p>{message.sources && <small>Source: {message.sources.map(source => source.title).join(', ')}</small>}</div>)}</div></div>
