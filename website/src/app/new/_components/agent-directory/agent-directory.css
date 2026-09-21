@@ -1,0 +1,879 @@
+@font-face {
+  font-family: HelpinAgentUI;
+  src: url("/fonts/inter/inter-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+.hp3 .adp,
+.hp3 .adp-dialog {
+  font-family: HelpinAgentUI, Inter, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: normal;
+  color: #27272a;
+  text-align: left;
+}
+.hp3 .adp *,
+.hp3 .adp-dialog * {
+  box-sizing: border-box;
+}
+.hp3 .adp-frame {
+  display: flex;
+  height: 738px;
+  overflow: hidden;
+  border: 1px solid #dedee2;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 20px 60px #1428200a;
+}
+.hp3 .adp button {
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.hp3 .adp button:focus-visible,
+.hp3 .adp summary:focus-visible {
+  outline: 2px solid #159567;
+  outline-offset: -3px;
+}
+.hp3 .adp-sidebar {
+  width: 244px;
+  flex-shrink: 0;
+  background: #f0f0f2;
+  border-right: 1px solid #e0e0e4;
+  display: flex;
+  flex-direction: column;
+}
+.hp3 .adp-brand {
+  height: 62px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 16px;
+  border-bottom: 1px solid #e2e2e6;
+}
+.hp3 .adp-brand > b {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  background: #184b3a;
+  color: white;
+  border-radius: 7px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.hp3 .adp-brand > strong {
+  font-size: 13px;
+  font-weight: 600;
+  margin-right: auto;
+}
+.hp3 .adp-brand > svg {
+  color: #71717a;
+  flex-shrink: 0;
+}
+.hp3 .adp-navigation {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.hp3 .adp-rail {
+  width: 64px;
+  border-right: 1px solid #e0e0e4;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px 5px 14px;
+  flex-shrink: 0;
+}
+.hp3 .adp-rail > div:first-child {
+  display: grid;
+  gap: 12px;
+}
+.hp3 .adp-rail span {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 3px;
+  color: #71717a;
+}
+.hp3 .adp-rail i {
+  width: 32px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+}
+.hp3 .adp-rail small {
+  font-size: 9px;
+  line-height: 13px;
+}
+.hp3 .adp-rail span[data-active="true"] {
+  color: #242427;
+}
+.hp3 .adp-rail span[data-active="true"] i {
+  background: #e1e1e5;
+}
+.hp3 .adp-account {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 19px;
+  color: #71717a;
+}
+.hp3 .control-screenshot .adp img {
+  display: block;
+  max-width: none;
+  width: auto;
+  height: auto;
+  flex-shrink: 0;
+}
+.hp3 .control-screenshot .adp .adp-avatar {
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+}
+.hp3 .control-screenshot .adp-account img:first-of-type {
+  width: 24px;
+  height: 24px;
+}
+.hp3 .control-screenshot .adp-account img:last-of-type {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+.hp3 .adp-module {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px 8px;
+}
+.hp3 .adp-nav-items > span {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 9px;
+  color: #62626b;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.hp3 .adp-nav-items > span[data-active="true"] {
+  background: #e1e1e5;
+  color: #242427;
+  font-weight: 500;
+}
+.hp3 .adp-nav-items > small {
+  display: block;
+  padding: 24px 9px 7px;
+  font-size: 10px;
+  color: #8a8a94;
+}
+.hp3 .adp-nav-items i {
+  font-style: normal;
+  font-size: 10px;
+  margin-left: auto;
+  background: #e2e2e6;
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.hp3 .adp-search {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #85858e;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.hp3 .adp-search small {
+  font-size: 9px;
+  margin-left: auto;
+}
+.hp3 .adp-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.hp3 .adp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 23px 26px 24px;
+  border-bottom: 1px solid #eeeef0;
+}
+.hp3 .adp-header h3 {
+  font:
+    600 20px/1.4 HelpinAgentUI,
+    sans-serif;
+  letter-spacing: -0.4px;
+  margin: 0 0 5px;
+}
+.hp3 .adp-header p {
+  font-size: 12px;
+  color: #777780;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 400px;
+}
+.hp3 .adp-view {
+  display: flex;
+  flex-shrink: 0;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid #e4e4e7;
+  border-radius: 7px;
+  background: #f8f8f9;
+}
+.hp3 .adp-view button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: #85858e;
+}
+.hp3 .adp-view button[aria-pressed="true"] {
+  color: #303036;
+  background: #fff;
+  box-shadow: 0 1px 3px #00000014;
+}
+.hp3 .adp-scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 0 24px 24px;
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+.hp3 .adp-columns,
+.hp3 .adp-agent {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.6fr) minmax(
+      130px,
+      1fr
+    ) 82px 105px 78px 16px;
+  gap: 13px;
+  align-items: center;
+}
+.hp3 .adp-columns {
+  height: 46px;
+  padding: 0 12px;
+  color: #8a8a92;
+  font-size: 10px;
+  min-width: 750px;
+}
+.hp3 .adp-agents {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.hp3 .adp-agents > li {
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid #eeeef0;
+}
+.hp3 .adp-agent {
+  width: 100%;
+  min-width: 750px;
+  padding: 15px 12px;
+  border: 0;
+  background: white;
+  text-align: left;
+  transition: background 0.15s;
+  color: #303036;
+  min-height: 73px;
+}
+.hp3 .adp-agent:hover {
+  background: #f8faf9;
+}
+.hp3 .adp-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.hp3 .adp-identity > span {
+  min-width: 0;
+}
+.hp3 .adp-identity strong {
+  font-size: 14px;
+  font-weight: 500;
+  display: block;
+  line-height: 20px;
+}
+.hp3 .adp-role {
+  font-size: 11px;
+  color: #85858d;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.hp3 .adp-role i {
+  font-size: 9px;
+  font-style: normal;
+  border: 1px solid #e4e4e7;
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 16px;
+  color: #71717a;
+  background: #fafafa;
+}
+.hp3 .adp-config,
+.hp3 .adp-last {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.hp3 .adp-config strong {
+  font-size: 12px;
+  font-weight: 400;
+}
+.hp3 .adp-config > small,
+.hp3 .adp-last > small {
+  font-size: 11px;
+  color: #92929b;
+}
+.hp3 .adp-runs > span {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 11px;
+  color: #6d6d77;
+}
+.hp3 .adp-bars {
+  display: flex;
+  gap: 2px;
+}
+.hp3 .adp-bars i {
+  width: 4px;
+  height: 17px;
+  background: #b3d8c8;
+  border-radius: 2px;
+}
+.hp3 .adp-bars i[data-pending="true"] {
+  background: #e3c887;
+}
+.hp3 .adp-status {
+  font-size: 10px;
+  line-height: 18px;
+  padding: 1px 6px;
+  border: 1px solid #d7e9df;
+  background: #f0f8f4;
+  color: #387355;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.hp3 .adp-status[data-status="Running"] {
+  background: #eff4fc;
+  color: #557cb5;
+  border-color: #dce5f4;
+}
+.hp3 .adp-status[data-status="Needs approval"] {
+  background: #fcf7eb;
+  color: #977133;
+  border-color: #ede2c9;
+}
+.hp3 .adp-flows {
+  font-size: 11px;
+  color: #787881;
+}
+.hp3 .adp-open {
+  color: #aaaab2;
+}
+.hp3 .adp .adp-cell-label {
+  display: none;
+}
+.hp3 .adp-scroll[data-view="cards"] {
+  padding-top: 24px;
+}
+.hp3 .adp-scroll[data-view="cards"] .adp-columns {
+  display: none;
+}
+.hp3 .adp-scroll[data-view="cards"] .adp-agents {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.hp3 .adp-scroll[data-view="cards"] .adp-agents > li {
+  border: 1px solid #e3e3e7;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.hp3 .adp-scroll[data-view="cards"] .adp-agent {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 20px;
+  gap: 17px;
+  height: 100%;
+}
+.hp3 .adp-scroll[data-view="cards"] .adp-identity,
+.hp3 .adp-purpose {
+  grid-column: 1/-1;
+}
+.hp3 .adp-purpose {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #777780;
+  min-height: 60px;
+}
+.hp3 .adp-scroll[data-view="cards"] .adp-cell-label {
+  display: block;
+  font-size: 10px;
+  color: #92929b;
+  margin-bottom: 5px;
+}
+.hp3 .adp-scroll[data-view="cards"] .adp-open {
+  display: none;
+}
+.hp3 .adp-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  padding: 0;
+  width: min(880px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  background: white;
+  border: 1px solid #dddde2;
+  border-radius: 13px;
+  box-shadow: 0 24px 100px #0003;
+  overflow: auto;
+}
+.hp3 .adp-dialog::backdrop {
+  background: #10181770;
+  backdrop-filter: blur(4px);
+}
+.hp3 .adp-dialog-inner {
+  min-width: 0;
+}
+.hp3 .adp-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 28px;
+}
+.hp3 .adp-dialog-header h3 {
+  margin: 0;
+  font:
+    600 18px/1.5 HelpinAgentUI,
+    sans-serif;
+  letter-spacing: 0;
+}
+.hp3 .adp-dialog-header p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #85858f;
+}
+.hp3 .adp-dialog-header button {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 5px;
+  background: #f5f5f7;
+  color: #777780;
+  flex-shrink: 0;
+}
+.hp3 .adp-tabs {
+  display: flex;
+  border-bottom: 1px solid #e7e7eb;
+  padding: 0 28px;
+  gap: 24px;
+}
+.hp3 .adp-tabs button {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px 0;
+  color: #85858e;
+  font-size: 12px;
+}
+.hp3 .adp-tabs button[aria-selected="true"] {
+  color: #292930;
+  border-bottom-color: #35353d;
+}
+.hp3 .adp-detail-body {
+  padding: 26px 28px 30px;
+}
+.hp3 .adp-detail-body h4 {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0;
+  margin: 0;
+}
+.hp3 .adp-version {
+  border: 1px solid #dcdce2;
+  background: #fcfcfd;
+  border-radius: 8px;
+  padding: 18px;
+}
+.hp3 .adp-version > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.hp3 .adp-version strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.hp3 .adp-version > div > span {
+  font-size: 10px;
+  color: #91919a;
+}
+.hp3 .adp-version b {
+  background: #e6f4eb;
+  color: #427a56;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+.hp3 .adp-version p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #7a7a85;
+  margin: 10px 0 18px;
+}
+.hp3 .adp-version dl {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin: 0;
+  padding-top: 15px;
+  border-top: 1px solid #eeeef1;
+}
+.hp3 .adp-version dt {
+  color: #92929c;
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+.hp3 .adp-version dd {
+  margin: 0;
+  font-size: 12px;
+}
+.hp3 .adp-detail-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 26px 0 12px;
+}
+.hp3 .adp-detail-label > span {
+  font-size: 10px;
+  color: #91919b;
+}
+.hp3 .adp details.adp-disclosure {
+  border: 1px solid #e5e5e9;
+  border-radius: 7px;
+  margin: 10px 0 0;
+  padding: 0;
+  background: white;
+}
+.hp3 .adp .adp-disclosure summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  padding: 13px 15px;
+  font:
+    500 12px/1.5 HelpinAgentUI,
+    sans-serif;
+  color: #3c3c44;
+  cursor: pointer;
+  margin: 0;
+}
+.hp3 .adp .adp-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+.hp3 .adp .adp-disclosure summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border: solid #92929c;
+  border-width: 0 1px 1px 0;
+  transform: rotate(45deg);
+  position: static;
+  flex: none;
+}
+.hp3 .adp .adp-disclosure[open] summary::after {
+  transform: rotate(225deg);
+}
+.hp3 .adp .adp-disclosure p {
+  font-size: 12px;
+  color: #83838c;
+  line-height: 1.8;
+  margin: 0;
+  padding: 0 15px 15px;
+}
+.hp3 .adp-tool-tags {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 0 15px 16px;
+}
+.hp3 .adp-tool-tags code {
+  font-family: monospace;
+  font-size: 11px;
+  background: #f4f4f6;
+  border: 1px solid #e6e6eb;
+  color: #656571;
+  padding: 5px 7px;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.hp3 .adp-description {
+  font-size: 12px;
+  color: #85858e;
+  margin: 7px 0 24px;
+  line-height: 1.7;
+}
+.hp3 .adp-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.hp3 .adp-metrics > div {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e6e6eb;
+  border-radius: 8px;
+  padding: 17px;
+}
+.hp3 .adp-metrics small {
+  font-size: 11px;
+  color: #85858e;
+}
+.hp3 .adp-metrics strong {
+  font-size: 25px;
+  font-weight: 500;
+  margin: 8px 0 3px;
+  line-height: 1.3;
+}
+.hp3 .adp-metrics span {
+  font-size: 10px;
+  color: #9999a1;
+}
+.hp3 .adp-run-summary {
+  margin-top: 24px;
+  border: 1px solid #e7e7eb;
+  border-radius: 8px;
+  padding: 18px;
+}
+.hp3 .adp-run-summary > div {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 17px;
+}
+.hp3 .adp-run-summary > div > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.hp3 .adp-run-summary strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+}
+.hp3 .adp-run-summary small {
+  display: block;
+  font-size: 10px;
+  color: #93939c;
+  margin-top: 4px;
+}
+.hp3 .adp-limit {
+  border: 1px solid #e7e7eb;
+  border-radius: 8px;
+  padding: 18px;
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  font-size: 12px;
+}
+.hp3 .adp-limit strong {
+  font-weight: 500;
+}
+.hp3 .adp-limit > div {
+  grid-column: 1/-1;
+  height: 5px;
+  background: #ededf0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.hp3 .adp-limit i {
+  display: block;
+  height: 100%;
+  background: #71af90;
+  border-radius: 4px;
+}
+@media (min-width: 1100px) {
+  .hp3 #control > .wrap {
+    max-width: 1440px;
+  }
+}
+@media (max-width: 1199px) {
+  .hp3 .adp-sidebar {
+    width: 220px;
+  }
+  .hp3 .adp-header {
+    padding: 20px;
+  }
+  .hp3 .adp-scroll {
+    padding-inline: 14px;
+  }
+}
+@media (max-width: 1000px) {
+  .hp3 .adp-sidebar {
+    display: none;
+  }
+  .hp3 .adp-frame {
+    height: 730px;
+  }
+}
+@media (max-width: 600px) {
+  .hp3 .adp-frame {
+    height: 640px;
+  }
+  .hp3 .adp-header {
+    padding: 17px 14px;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .hp3 .adp-header h3 {
+    font-size: 17px;
+  }
+  .hp3 .adp-header p {
+    font-size: 10px;
+  }
+  .hp3 .adp-view {
+    padding: 2px;
+  }
+  .hp3 .adp-view button {
+    width: 26px;
+    height: 26px;
+  }
+  .hp3 .adp-scroll {
+    padding: 0 10px 14px;
+  }
+  .hp3 .adp-columns {
+    display: none;
+  }
+  .hp3 .adp-agent {
+    min-width: 0;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    padding: 15px 8px;
+  }
+  .hp3 .adp-identity {
+    grid-column: 1;
+  }
+  .hp3 .adp-role {
+    font-size: 10px;
+    white-space: normal;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .hp3 .adp-role i {
+    font-size: 8px;
+  }
+  .hp3 .adp-agent .adp-config,
+  .hp3 .adp-agent .adp-runs,
+  .hp3 .adp-agent .adp-flows,
+  .hp3 .adp-agent .adp-open {
+    display: none;
+  }
+  .hp3 .adp-last {
+    align-items: flex-end;
+  }
+  .hp3 .adp-status {
+    font-size: 9px;
+    padding-inline: 4px;
+  }
+  .hp3 .adp-identity strong {
+    font-size: 13px;
+  }
+  .hp3 .adp-scroll[data-view="cards"] {
+    padding-top: 12px;
+  }
+  .hp3 .adp-scroll[data-view="cards"] .adp-agents {
+    grid-template-columns: 1fr;
+  }
+  .hp3 .adp-scroll[data-view="cards"] .adp-agent {
+    padding: 16px;
+  }
+  .hp3 .adp-scroll[data-view="cards"] .adp-config,
+  .hp3 .adp-scroll[data-view="cards"] .adp-runs,
+  .hp3 .adp-scroll[data-view="cards"] .adp-flows {
+    display: block;
+  }
+  .hp3 .adp-scroll[data-view="cards"] .adp-last {
+    align-items: flex-start;
+  }
+  .hp3 .adp-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 24px);
+  }
+  .hp3 .adp-dialog-header {
+    padding: 18px 16px;
+  }
+  .hp3 .adp-dialog-header h3 {
+    font-size: 16px;
+  }
+  .hp3 .adp-dialog-header p {
+    font-size: 10px;
+  }
+  .hp3 .adp-tabs {
+    padding-inline: 16px;
+  }
+  .hp3 .adp-detail-body {
+    padding: 18px 16px 24px;
+  }
+  .hp3 .adp-version {
+    padding: 14px;
+  }
+  .hp3 .adp-version dl {
+    grid-template-columns: 1fr 1fr;
+  }
+  .hp3 .adp-metrics {
+    gap: 6px;
+  }
+  .hp3 .adp-metrics > div {
+    padding: 11px 8px;
+  }
+  .hp3 .adp-metrics small {
+    font-size: 9px;
+  }
+  .hp3 .adp-metrics strong {
+    font-size: 21px;
+  }
+  .hp3 .adp-run-summary {
+    padding: 13px;
+  }
+  .hp3 .adp-run-summary > div {
+    flex-wrap: wrap;
+  }
+  .hp3 .adp-run-summary strong {
+    font-size: 11px;
+  }
+  .hp3 .adp-limit {
+    font-size: 11px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp3 .adp * {
+    transition: none !important;
+  }
+}

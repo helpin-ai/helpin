@@ -6,6 +6,7 @@ import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
 import { ProductExplorer } from './_components/ProductExplorer';
 import { HostingDiagram } from './_components/HostingDiagram';
+import { AgentDirectoryPreview } from './_components/agent-directory/AgentDirectoryPreview';
 import { AgentControlArt } from './_components/AgentControlArt';
 import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
@@ -161,9 +162,7 @@ export default function NewHomePage() {
           <SectionHead eyebrow="Agents, on your terms" title="Give agents work. Keep control."
             lede="Choose the tools each agent can use, when it needs approval, and what starts the work." />
           <figure className="control-screenshot">
-            <a href="/new/product/agents-directory-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Agents directory screenshot at full size (opens in a new tab)">
-              <img src="/new/product/agents-directory-1920-v1.webp" srcSet="/new/product/agents-directory-1920-v1.webp 1920w, /new/product/agents-directory-4k-v1.webp 3840w" sizes="(max-width: 1120px) calc(100vw - 48px), 1072px" alt="Helpin’s Agents directory in the OrbitDesk demo workspace, showing eight agents, their configurations, recent runs, approval requests, and connected flows." width={3840} height={2016} loading="lazy" decoding="async" />
-            </a>
+            <AgentDirectoryPreview />
             <figcaption>One place to manage your agents and see their latest runs.</figcaption>
           </figure>
           <div className="ctrl">
