@@ -1,4 +1,4 @@
-/* PlaybookDetail / PlaybookEditor: quiet app surfaces, setup rail and underline fields. */
+/* App-based playbook preview with refined purpose and milestone presentation. */
 .hp3 .cp-intro{max-width:820px;margin:0 auto 44px;text-align:center}
 .hp3 .crm-page .cp-intro .sec-head{max-width:none;margin-bottom:0}
 .hp3 .crm-page .cp-intro .sec-head h2{max-width:26ch}
@@ -22,19 +22,45 @@
 .hp3 .cp-panel:focus-visible{outline:2px solid var(--em);outline-offset:-2px}
 .hp3 .cp-setup{display:grid;grid-template-columns:220px minmax(0,1fr);gap:44px;padding:24px 0 32px}
 .hp3 .cp-steps ol{padding:0;margin:0;list-style:none}
-.hp3 .cp-steps li{position:relative;padding-bottom:24px}
-.hp3 .cp-steps li:not(:last-child)::before{content:"";position:absolute;left:13px;top:32px;bottom:0;width:1px;background:var(--cw-border)}
-.hp3 .cp-steps button{display:flex;align-items:flex-start;gap:12px;text-align:left;padding:4px;border:0;background:transparent;border-radius:6px;font-size:14px;line-height:20px;color:var(--cw-secondary);width:100%}
+.hp3 .cp-steps li{position:relative;padding-bottom:12px}
+.hp3 .cp-steps li:not(:last-child)::before{content:"";position:absolute;left:22px;top:42px;bottom:0;width:1px;background:var(--cw-border)}
+.hp3 .cp-steps button{display:flex;align-items:flex-start;gap:12px;text-align:left;padding:10px 12px;border:1px solid transparent;background:transparent;border-radius:8px;font-size:14px;line-height:20px;color:var(--cw-secondary);width:100%}
 .hp3 .cp-steps button>span{display:grid;place-items:center;width:20px;height:20px;flex:none;font-size:12px;border-radius:50%;color:#337452}
-.hp3 .cp-steps button[aria-current=step]{font-weight:600;color:var(--cw-text)}
-.hp3 .cp-steps button[aria-current=step]>span{background:var(--cw-text);color:white}
+.hp3 .cp-steps button[aria-current=step]{font-weight:600;color:var(--em);background:var(--em-t);border-color:#cce3d6}
+.hp3 .cp-steps button[aria-current=step]>span{background:var(--em);color:white}
 .hp3 .cp-editor{min-width:0;max-width:768px}
 .hp3 .cp-field{min-width:0}
 .hp3 .cp-field dt{font-size:14px;font-weight:500;line-height:20px;color:var(--cw-secondary);margin-bottom:6px}
 .hp3 .cp-field dd{font-size:14px;line-height:1.6;color:var(--cw-text);padding:5px 2px 8px;border-bottom:1px solid var(--cw-border);min-height:34px}
 .hp3 .cp-field dd[data-multiline=true]{min-height:64px}
-.hp3 .cp-milestones>dl{display:grid;gap:12px;padding:16px 0;border-bottom:1px solid var(--cw-border)}
-.hp3 .cp-milestones>dl:first-child{padding-top:0}
+.hp3 .cp-editor-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:20px}
+.hp3 .cp-editor-heading h4{font-size:17px;font-weight:600;line-height:1.4;letter-spacing:-.015em;color:var(--cw-text)}
+.hp3 .cp-editor-heading p{font-size:12px;line-height:1.7;color:var(--cw-muted);margin-top:5px}
+.hp3 .cp-count{flex:none;white-space:nowrap;border:1px solid var(--border);border-radius:5px;padding:4px 7px;font-size:10px;line-height:1.5;color:var(--t2);background:var(--bg2)}
+.hp3 .cp-milestones{display:grid;gap:14px}
+.hp3 .cp-milestone-card{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:white;box-shadow:0 2px 5px #13151403}
+.hp3 .cp-milestone-card header{display:flex;gap:12px;align-items:center;padding:16px 18px}
+.hp3 .cp-milestone-number{display:grid;place-items:center;flex:none;width:34px;height:34px;border:1px solid #cce3d6;border-radius:9px;background:var(--em-t);color:var(--em);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.hp3 .cp-card-eyebrow{display:block;font-size:10px;line-height:1.5;color:var(--cw-muted);margin-bottom:3px}
+.hp3 .cp-milestone-card h5,.hp3 .cp-purpose-card h5{font-size:14px;line-height:1.5;font-weight:600;color:var(--cw-text);letter-spacing:-.01em}
+.hp3 .cp-success-criteria{border-top:1px solid var(--border);background:var(--bg2);padding:12px 18px 14px}
+.hp3 .cp-card-label{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:500;line-height:1.5;color:var(--t2)}
+.hp3 .cp-card-label svg{color:var(--em);flex:none}
+.hp3 .cp-success-criteria p{font-size:12px;line-height:1.8;color:var(--t2);margin-top:6px}
+.hp3 .cp-purpose-card{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:white}
+.hp3 .cp-purpose-card header{display:flex;gap:12px;align-items:center;padding:20px}
+.hp3 .cp-purpose-icon{display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--border);border-radius:10px;color:var(--em);background:var(--bg2);flex:none}
+.hp3 .cp-purpose-card h5{font-size:16px}
+.hp3 .cp-outcome{padding:20px;border-block:1px solid #cce3d6;background:var(--em-t)}
+.hp3 .cp-outcome .cp-card-label{font-size:11px;color:var(--em)}
+.hp3 .cp-outcome p{font-size:15px;line-height:1.75;font-weight:500;color:var(--ink);margin-top:10px;max-width:52ch}
+.hp3 .cp-purpose-description{padding:18px 20px;font-size:12px;line-height:1.8;color:var(--t2)}
+.hp3 .cp-scope-card{padding:18px 20px;border:1px solid var(--border);border-radius:10px;background:var(--bg2);margin-top:16px}
+.hp3 .cp-scope-card>div{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.hp3 .cp-scope-card h5{font-size:12px;font-weight:600;color:var(--cw-text)}
+.hp3 .cp-scope-badge{display:flex;align-items:center;gap:6px;background:white;border:1px solid var(--border);padding:4px 8px;border-radius:5px;font-size:10px;line-height:1.5;color:var(--t2)}
+.hp3 .cp-scope-badge>span{width:5px;height:5px;border-radius:50%;background:var(--em)}
+.hp3 .cp-scope-card p{font-size:12px;line-height:1.8;color:var(--t2);margin-top:10px}
 .hp3 .cp-fields{display:grid;gap:20px}
 .hp3 .cp-properties{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px 24px}
 .hp3 .cp-person{display:flex;align-items:center;gap:7px}
@@ -45,7 +71,7 @@
 .hp3 .cp-section>p,.hp3 .cp-note{font-size:12px;line-height:1.8;color:var(--cw-muted);margin-top:14px}
 .hp3 .cp-motion{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--cw-secondary)}
 .hp3 .cp-motion svg{color:#337452}
-.hp3 .cp-step-actions{display:flex;justify-content:space-between;gap:16px;padding:16px 0;border-top:1px solid var(--cw-border)}
+.hp3 .cp-step-actions{display:flex;justify-content:space-between;gap:16px;padding:16px 0;margin-top:20px;border-top:1px solid var(--cw-border)}
 .hp3 .cp-step-actions button{display:flex;gap:8px;align-items:center;background:none;border:0;font-size:12px;color:var(--cw-secondary);padding:7px 0}
 .hp3 .cp-step-actions button:last-child:not(:first-child){padding:7px 12px;border:1px solid var(--cw-border);border-radius:6px;color:var(--cw-text)}
 .hp3 .cp-step-actions button:disabled{opacity:.4;cursor:default}
@@ -76,3 +102,5 @@
 @media(max-width:1200px){.hp3 .cp-setup{grid-template-columns:180px minmax(0,1fr);gap:24px}.hp3 .cp-properties{grid-template-columns:1fr}.hp3 .cp-header,.hp3 .cp-content{padding-inline:24px}}
 @media(max-width:1000px){.hp3 .cp-frame{grid-template-columns:minmax(0,1fr)}.hp3 .cp-frame>.cw-nav{display:none}}
 @media(max-width:700px){.hp3 .cp-frame{height:830px}.hp3 .cp-header{padding:12px 20px}.hp3 .cp-header>div{align-items:flex-start;flex-direction:column;gap:8px}.hp3 .cp-header h3{font-size:21px}.hp3 .cp-content{padding:0 20px}.hp3 .cp-tabs{gap:20px;overflow:auto}.hp3 .cp-tabs>button{font-size:12px}.hp3 .cp-setup{grid-template-columns:minmax(0,1fr);gap:20px;padding-top:20px}.hp3 .cp-steps ol{display:flex;overflow:auto;padding-bottom:8px}.hp3 .cp-steps li{padding:0;flex:0 0 auto;min-width:170px}.hp3 .cp-steps li:not(:last-child)::before{display:none}.hp3 .cp-steps button{font-size:12px;gap:8px}.hp3 .cp-automation .cp-properties{grid-template-columns:1fr}.hp3 .cp-intro{text-align:left}.hp3 .cp-field dd{font-size:13px}.hp3 .cp-field dt{font-size:13px}}
+
+@media(max-width:700px){.hp3 .cp-steps li{min-width:190px}.hp3 .cp-editor-heading{gap:10px}.hp3 .cp-editor-heading h4{font-size:16px}.hp3 .cp-count{font-size:9px}.hp3 .cp-milestone-card header{padding:14px;gap:10px;align-items:flex-start}.hp3 .cp-milestone-number{width:30px;height:30px;font-size:11px}.hp3 .cp-milestone-card h5{font-size:13px}.hp3 .cp-success-criteria{padding:12px 14px 14px}.hp3 .cp-purpose-card header,.hp3 .cp-outcome,.hp3 .cp-scope-card{padding:16px}.hp3 .cp-purpose-description{padding:16px}.hp3 .cp-outcome p{font-size:14px}}

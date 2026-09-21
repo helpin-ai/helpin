@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState, type ReactNode, type KeyboardEvent } from "react";
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check, Flag, Target } from "lucide-react";
 import { CRMAvatar, CRMNavigation } from "./crm-workspace";
 import { CRMIcon } from "./crm-icons";
 import "./crm-playbook.css";
@@ -175,48 +175,103 @@ export function CRMPlaybook() {
                       aria-label={STEPS[step]}
                     >
                       {step === 0 && (
-                        <>
-                          <dl className="cp-fields">
-                            <Field label="Playbook name">
-                              Renewal recovery
-                            </Field>
-                            <Field label="Desired outcome" multiline>
-                              Resolve the concern blocking a customer’s renewal
-                              and agree on a clear next step with the account
-                              owner.
-                            </Field>
-                            <Field label="Description (optional)" multiline>
+                        <div className="cp-purpose">
+                          <div className="cp-editor-heading">
+                            <div>
+                              <h4>Purpose & scope</h4>
+                              <p>
+                                Start with the outcome you want for the
+                                customer.
+                              </p>
+                            </div>
+                          </div>
+                          <article className="cp-purpose-card">
+                            <header>
+                              <span className="cp-purpose-icon">
+                                <Flag size={18} aria-hidden="true" />
+                              </span>
+                              <div>
+                                <span className="cp-card-eyebrow">
+                                  Playbook
+                                </span>
+                                <h5>Renewal recovery</h5>
+                              </div>
+                            </header>
+                            <div className="cp-outcome">
+                              <span className="cp-card-label">
+                                <Target size={15} aria-hidden="true" />
+                                Desired outcome
+                              </span>
+                              <p>
+                                Resolve the concern blocking a customer’s
+                                renewal and agree on a clear next step with the
+                                account owner.
+                              </p>
+                            </div>
+                            <p className="cp-purpose-description">
                               Bring customer evidence, the work needed to
                               resolve it, and the renewal follow-up into one
                               plan.
-                            </Field>
-                          </dl>
-                          <div className="cp-section">
-                            <h4>Matching signals</h4>
-                            <span className="cp-motion">
-                              <Check size={14} aria-hidden="true" />
-                              Renewal
-                            </span>
+                            </p>
+                          </article>
+                          <div className="cp-scope-card">
+                            <div>
+                              <h5>Matching signals</h5>
+                              <span className="cp-scope-badge">
+                                <span aria-hidden="true" />
+                                Renewal
+                              </span>
+                            </div>
                             <p>
                               Open renewal signals with a customer concern that
                               needs follow-up.
                             </p>
                           </div>
-                        </>
+                        </div>
                       )}
                       {step === 1 && (
-                        <div className="cp-milestones">
-                          {MILESTONES.map(([name, criteria], index) => (
-                            <dl key={name}>
-                              <Field label={`Milestone ${index + 1}`}>
-                                {name}
-                              </Field>
-                              <Field label="Success criteria" multiline>
-                                {criteria}
-                              </Field>
-                            </dl>
-                          ))}
-                        </div>
+                        <>
+                          <div className="cp-editor-heading">
+                            <div>
+                              <h4>Milestones</h4>
+                              <p>
+                                Define what progress looks like at each step.
+                              </p>
+                            </div>
+                            <span className="cp-count">3 milestones</span>
+                          </div>
+                          <div className="cp-milestones">
+                            {MILESTONES.map(([name, criteria], index) => (
+                              <article
+                                className="cp-milestone-card"
+                                key={name}
+                                aria-label={`Milestone ${index + 1}: ${name}`}
+                              >
+                                <header>
+                                  <span
+                                    className="cp-milestone-number"
+                                    aria-hidden="true"
+                                  >
+                                    {String(index + 1).padStart(2, "0")}
+                                  </span>
+                                  <div>
+                                    <span className="cp-card-eyebrow">
+                                      Milestone {index + 1}
+                                    </span>
+                                    <h5>{name}</h5>
+                                  </div>
+                                </header>
+                                <div className="cp-success-criteria">
+                                  <span className="cp-card-label">
+                                    <Target size={14} aria-hidden="true" />
+                                    Success criteria
+                                  </span>
+                                  <p>{criteria}</p>
+                                </div>
+                              </article>
+                            ))}
+                          </div>
+                        </>
                       )}
                       {step === 2 && (
                         <>
