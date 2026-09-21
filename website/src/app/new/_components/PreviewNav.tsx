@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { ArrowRight, ArrowUpRight, BookOpen, Braces, ChevronDown, Menu, Plug, Server, X } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { GITHUB_URL, SIGNUP_URL, GithubIcon } from './ui';
-import { PRODUCTS, ProductLink, ProductsMenu } from './ProductsMenu';
+import { AskAgentMenuCard, PRODUCTS, ProductLink, ProductsMenu } from './ProductsMenu';
 
 const DEVELOPERS = [
   { label: 'Docs', description: 'Setup guides and technical reference.', href: `${GITHUB_URL}/blob/develop/docs/README.md`, icon: BookOpen },
@@ -160,7 +160,7 @@ export function PreviewNav() {
 
           <p className="nav-section-label">Products</p>
           <div className="nav-mobile-products">{PRODUCTS.map(item => <ProductLink item={item} key={item.label} />)}</div>
-          <Link className="nav-mobile-overview" href="/new/product">Explore the platform<ArrowRight size={14} /></Link>
+          <AskAgentMenuCard/><Link className="nav-mobile-overview" href="/new/product">Explore the platform<ArrowRight size={14} /></Link>
           <div className="nav-mobile-resources"><Link href="/pricing">Pricing<ArrowRight size={13} /></Link>
             <Link href="/new/developers"><Braces size={17} />Developers<ArrowRight size={13} /></Link>
             <Link href="/new/self-hosting"><Server size={17} />Open source & self-hosting<ArrowRight size={13} /></Link>
