@@ -13,6 +13,7 @@
 .hp3 .support-hero h1 { font-size: clamp(2.7rem, 4.1vw, 3.5rem); line-height: 1.08; letter-spacing: -.045em; }
 .hp3 .support-hero h1 { text-wrap: balance; }
 .hp3 .support-hero h1 span { color: #b8ddbb; display: block; }
+.hp3 .support-hero h1 .support-headline-opening { color: inherit; }
 .hp3 .support-hero .lede { max-width: 440px; font-size: 16px; line-height: 1.8; color: #b7c9bd; }
 .hp3 .support-page .btn { height: 44px; padding-inline: 20px; }
 .hp3 .support-reassurance { font-size: 12px; color: var(--t3); }
@@ -147,7 +148,7 @@
 }
 @media (max-width: 760px) {
   .hp3 .support-hero .support-breadcrumb { margin-bottom: 34px; }
-  .hp3 .support-hero h1 { font-size: clamp(2.2rem, 8.8vw, 3.7rem); line-height: 1.1; }
+  .hp3 .support-hero h1 { font-size: clamp(1.9rem, 8.8vw, 3.7rem); line-height: 1.1; }
   .hp3 .support-hero .hero-inner { gap: 20px; }
   .hp3 .support-hero .lede { font-size: 15px; line-height: 1.8; }
   .hp3 .support-hero-art-label { font-size: 8px; }

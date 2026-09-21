@@ -4,17 +4,11 @@ import { useState, useId, useRef, type CSSProperties } from "react";
 import {
   ArrowRight,
   Building2,
-  Check,
-  Circle,
   CircleDot,
-  Mail,
-  Pause,
-  Play,
   ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
-import { useCRMPlayback } from "./use-crm-playback";
 import { CRMAvatar, CRMMark, CRMNavigation } from "./crm-workspace";
 import { CRMIcon } from "./crm-icons";
 import { CRMCompanyLogo } from "./crm-company-logo";
@@ -30,7 +24,7 @@ const DEALS = [
     "Annual renewal",
     42000,
     0,
-    "Nov 23",
+    "Next month",
     40,
     "Maya needs complete CSV exports before the wider rollout and renewal discussion. EXP-142 is in engineering review.",
     "Confirm EXP-142 with engineering, then prepare an update.",
@@ -41,7 +35,7 @@ const DEALS = [
     "Engineering workspace",
     24000,
     0,
-    "Nov 25",
+    "Next month",
     35,
     "The engineering team needs an API usage review before confirming next year’s plan.",
     "Share the API usage report with Leo.",
@@ -52,7 +46,7 @@ const DEALS = [
     "Developer workspace",
     16800,
     0,
-    "Dec 02",
+    "Next month",
     30,
     "Ada is reviewing adoption across the engineering teams before renewing.",
     "Schedule the adoption review with Ada.",
@@ -63,7 +57,7 @@ const DEALS = [
     "Workspace renewal",
     18000,
     1,
-    "Nov 15",
+    "Next month",
     55,
     "The account owner recorded updated seat requirements after the review call.",
     "Send the revised renewal proposal for review.",
@@ -74,7 +68,7 @@ const DEALS = [
     "Platform team renewal",
     28800,
     1,
-    "Nov 18",
+    "Next month",
     60,
     "The platform team wants to include two additional workspaces in its contract.",
     "Confirm workspace requirements and pricing.",
@@ -85,7 +79,7 @@ const DEALS = [
     "Security team renewal",
     36000,
     1,
-    "Nov 26",
+    "Next month",
     50,
     "Leila needs the updated security questionnaire before procurement can proceed.",
     "Return the reviewed security questionnaire.",
@@ -96,7 +90,7 @@ const DEALS = [
     "Support renewal",
     12000,
     2,
-    "Nov 21",
+    "Next month",
     65,
     "The customer has received the renewal terms and is completing its internal review.",
     "Confirm the customer’s decision date.",
@@ -107,7 +101,7 @@ const DEALS = [
     "Team plan renewal",
     9600,
     2,
-    "Nov 27",
+    "Next month",
     70,
     "The team approved the seat count and asked for annual billing terms.",
     "Send the annual billing proposal.",
@@ -118,7 +112,7 @@ const DEALS = [
     "Infrastructure renewal",
     21600,
     2,
-    "Dec 04",
+    "Next month",
     65,
     "Amara’s team has accepted the rollout scope and is reviewing the proposal.",
     "Check whether procurement needs any further details.",
@@ -129,7 +123,7 @@ const DEALS = [
     "Analytics workspace",
     19200,
     3,
-    "Nov 20",
+    "Next month",
     85,
     "The evaluation is complete. Legal is reviewing the updated agreement.",
     "Follow up on the legal review.",
@@ -140,7 +134,7 @@ const DEALS = [
     "Customer success renewal",
     32400,
     3,
-    "Nov 28",
+    "Next month",
     80,
     "Kai has confirmed the renewal. The finance team needs the final order form.",
     "Prepare the order form for finance.",
@@ -151,7 +145,7 @@ const DEALS = [
     "Automation workspace",
     26400,
     3,
-    "Dec 03",
+    "Next month",
     90,
     "The team approved the renewal scope and requested a countersigned agreement.",
     "Send the agreement for signature.",
@@ -162,7 +156,7 @@ const DEALS = [
     "Annual team plan",
     14400,
     4,
-    "Sep 18",
+    "Today",
     100,
     "The agreement is signed and the new annual plan is active.",
     "Schedule the next quarterly account review.",
@@ -173,7 +167,7 @@ const DEALS = [
     "Product workspace",
     24000,
     4,
-    "Sep 17",
+    "Yesterday",
     100,
     "The product team completed its renewal and confirmed its rollout schedule.",
     "Share the rollout checklist with the team.",
@@ -184,7 +178,7 @@ const DEALS = [
     "Engineering plan",
     18000,
     4,
-    "Sep 16",
+    "2 days ago",
     100,
     "The engineering plan renewed after the team completed its account review.",
     "Arrange the next engineering check-in.",
@@ -514,7 +508,7 @@ export function CRMPipeline() {
               <CRMMark />
               <div>
                 <strong>Ask Agent</strong>
-                <small>Using your customer context</small>
+                <small>Using your customer history</small>
               </div>
               <button
                 ref={agentClose}
@@ -545,7 +539,7 @@ export function CRMPipeline() {
               </div>
               <div className="crm-deal-agent-answer">
                 <span className="crm-deal-agent-label">
-                  <CRMMark /> Helpin AI
+                  <CRMMark /> Ask Agent
                 </span>
                 <p>{deal.evidence}</p>
                 <span className="crm-deal-agent-source">
@@ -674,94 +668,6 @@ export function CRMSignals() {
             <span className="crm-mini-label">PROPOSED NEXT STEP</span>
             <p>{item.action}</p>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function CRMPlaybook() {
-  const { container, active, phase, paused, setPaused } = useCRMPlayback();
-  return (
-    <div
-      className="crm-motion"
-      ref={container}
-      data-playing={active}
-      data-phase={phase}
-      role="group"
-      aria-label="A renewal playbook connects the customer requirement to engineering review and a proposed customer update. The message remains a draft awaiting approval."
-    >
-      <div className="crm-demo-toolbar">
-        <span>
-          <b className="crm-workspace-mark">O</b>OrbitDesk <i>/</i> Playbooks
-        </span>
-        <button
-          type="button"
-          onClick={() => setPaused(!paused)}
-          aria-pressed={paused}
-          aria-label={`${paused ? "Play" : "Pause"} playbook animation`}
-        >
-          {paused ? <Play size={12} /> : <Pause size={12} />}
-        </button>
-      </div>
-      <div className="crm-playbook-demo">
-        <div className="crm-playbook-heading">
-          <span className="crm-mini-label">NORTHSTAR LABS / RENEWAL</span>
-          <h3>Resolve the concern before the renewal.</h3>
-          <p>Outcome: give Maya a confirmed path to a complete export.</p>
-        </div>
-        <div className="crm-milestone" data-current={phase === 0}>
-          <span className="crm-milestone-icon">
-            <Check size={15} />
-          </span>
-          <div>
-            <strong>Understand the customer requirement</strong>
-            <small>Email and meeting evidence attached</small>
-          </div>
-          <span className="crm-status">Complete</span>
-        </div>
-        <div className="crm-milestone" data-current={phase === 1}>
-          <span className="crm-milestone-icon">
-            <CircleDot size={15} />
-          </span>
-          <div>
-            <strong>Confirm the export fix</strong>
-            <small>EXP-142 · Engineering review</small>
-          </div>
-          <span className="crm-status crm-status-review">In review</span>
-        </div>
-        <div className="crm-milestone" data-current={phase >= 2}>
-          <span className="crm-milestone-icon">
-            <Circle size={15} />
-          </span>
-          <div>
-            <strong>Prepare the customer update</strong>
-            <small>Sam Rivera · After engineering confirms</small>
-          </div>
-        </div>
-        <div className="crm-playbook-proposal" data-ready={phase >= 2}>
-          <div>
-            <CRMMark />
-            <span>Agent proposal</span>
-            <span className="crm-review-pill">Approval required</span>
-          </div>
-          <div className="crm-proposal-message">
-            <span>
-              TO <strong>Maya Chen</strong>
-            </span>
-            <p>
-              Hi Maya, engineering is reviewing the export fix. I’ll confirm the
-              result before we plan the wider rollout and discuss your renewal.
-            </p>
-          </div>
-          <span>
-            <Mail size={13} />
-            Customer message · Draft for review
-          </span>
-        </div>
-        <div className="crm-playbook-foot">
-          <ShieldCheck size={15} />
-          Sam reviews the message before it can be sent.
         </div>
       </div>
     </div>

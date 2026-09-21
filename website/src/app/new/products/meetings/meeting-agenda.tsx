@@ -39,13 +39,13 @@ export function MeetingAgenda() {
     <div className="ma-toolbar"><span><b className="mt-mark">O</b>OrbitDesk<span>/</span>Meetings</span><button type="button" className="ma-playback" aria-label={`${paused ? 'Play' : 'Pause'} meeting selection animation`} aria-pressed={paused} onClick={() => { setManual(null); setOverrides(null); setExpanded(true); setPaused(!paused); }}>{paused ? <Play size={12} /> : <Pause size={12} />}</button></div>
     <div className="ma-body">
       <header className="ma-heading"><div><h3>Meetings</h3><p>Choose the calls Helpin should join.</p></div><span className="ma-connected"><CalendarDays size={13} /><span>Calendar connected</span><Check size={12} /></span></header>
-      <div className="ma-section-title"><h4>Upcoming <span>4</span></h4><span>Sep 18–25</span></div>
+      <div className="ma-section-title"><h4>Upcoming <span>4</span></h4><span>Today–25</span></div>
       <div className="ma-row" data-selected={choices.customer}>
-        <div className="ma-row-copy"><div className="ma-meta"><img src="/new/meetings/google_meet.svg" width={13} height={13} alt="" />Google Meet<span>Fri, Sep 18 · 10:00 AM</span></div><strong>Northstar Labs · SSO rollout review</strong><p>2 external attendees · Ready for automatic joining</p></div>
+        <div className="ma-row-copy"><div className="ma-meta"><img src="/new/meetings/google_meet.svg" width={13} height={13} alt="" />Google Meet<span>Today · 10:00 AM</span></div><strong>Northstar Labs · SSO rollout review</strong><p>2 external attendees · Ready for automatic joining</p></div>
         <div className="ma-control"><span>Auto-join</span><CaptureSwitch label="Automatically join Northstar Labs SSO rollout review" checked={choices.customer} onChange={() => update('customer', 'Northstar Labs rollout review')} /></div>
       </div>
       <div className="ma-row" data-selected={choices.internal}>
-        <div className="ma-row-copy"><div className="ma-meta"><img src="/new/meetings/zoom.svg" width={13} height={13} alt="" />Zoom<span>Fri, Sep 18 · 11:30 AM</span></div><strong>Product team check-in</strong><p>No external attendees</p></div>
+        <div className="ma-row-copy"><div className="ma-meta"><img src="/new/meetings/zoom.svg" width={13} height={13} alt="" />Zoom<span>Today · 11:30 AM</span></div><strong>Product team check-in</strong><p>No external attendees</p></div>
         <div className="ma-control"><span>Auto-join</span><CaptureSwitch label="Automatically join Product team check-in" checked={choices.internal} onChange={() => update('internal', 'Product team check-in')} /></div>
       </div>
       <div className="ma-row ma-series" data-selected={choices.series}>
@@ -54,7 +54,7 @@ export function MeetingAgenda() {
       </div>
       <div id={datesId} className="ma-dates" hidden={!expanded}>
         <p>Series setting applies unless you change a date below.</p>
-        {(['first', 'second'] as const).map((key, index) => <div className="ma-occurrence" key={key} data-selected={choices[key]}><div><span>Fri, Sep {index === 0 ? '18' : '25'} · 2:00 PM</span><strong>Helpin will {choices[key] ? 'join' : 'skip'} this occurrence</strong></div><CaptureSwitch label={`Automatically join weekly rollout sync on September ${index === 0 ? '18' : '25'}`} checked={choices[key]} onChange={() => update(key, `September ${index === 0 ? '18' : '25'} occurrence`)} /></div>)}
+        {(['first', 'second'] as const).map((key, index) => <div className="ma-occurrence" key={key} data-selected={choices[key]}><div><span>{index === 0 ? 'This Friday' : 'Next Friday'} · 2:00 PM</span><strong>Helpin will {choices[key] ? 'join' : 'skip'} this occurrence</strong></div><CaptureSwitch label={`Automatically join weekly rollout sync ${index === 0 ? 'this Friday' : 'next Friday'}`} checked={choices[key]} onChange={() => update(key, `${index === 0 ? 'This Friday' : 'Next Friday'} occurrence`)} /></div>)}
       </div>
     </div>
     <div className="ma-summary"><span className="ma-helpin"><img src="/brand/helpin-icon-white.svg" width={13} height={13} alt="" /></span><span>Choose a call, a whole series, or a single date.<small>The notetaker may need to be admitted by the host.</small></span></div>

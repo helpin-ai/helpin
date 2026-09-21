@@ -49,7 +49,7 @@ export function RecordStory() {
       {/* Three versions of the same story, before Helpin. */}
       <div className="rs-frag rs-frag-a" aria-hidden="true">
         <span className="rs-frag-l">Support inbox</span>
-        <b>Acme · Does SSO work with Okta?</b>
+        <b>Northstar Labs · Does SSO work with Okta?</b>
         <span>Open · assigned to Sam</span>
       </div>
       <div className="rs-frag rs-frag-b" aria-hidden="true">
@@ -59,15 +59,15 @@ export function RecordStory() {
       </div>
       <div className="rs-frag rs-frag-c" aria-hidden="true">
         <span className="rs-frag-l">CRM</span>
-        <b>Acme Corp · $48k ARR</b>
+        <b>Northstar Labs · $48k ARR</b>
         <span>Renewal in 22 days · last touch 3 weeks ago</span>
       </div>
 
-      <div className="rs-panel" role="img" aria-label="Acme Inc. customer record overview: an AI summary of the SSO evaluation, two open conversations, the SSO Enterprise Readiness project at eight of twelve tasks, the security and renewal review meeting, the enterprise renewal deal, the published Okta article, and recent activity ending with Maya notified">
+      <div className="rs-panel" role="img" aria-label="Northstar Labs customer record overview: an AI summary of the SSO evaluation, two open conversations, the SSO Enterprise Readiness project at eight of twelve tasks, the security and renewal review meeting, the enterprise renewal deal, the published Okta article, and recent activity ending with Maya notified">
         <div className="rs-head">
-          <div className="rs-av">A</div>
+          <div className="rs-av">NL</div>
           <div>
-            <b>Acme Inc.</b>
+            <b>Northstar Labs</b>
             <span>Enterprise · $42k ARR · Renewal in 63 days</span>
           </div>
           <span className="rs-live">One record</span>
@@ -79,7 +79,7 @@ export function RecordStory() {
           <div className="rs-col">
             <div className={`rs-card summary ${n >= 1 ? 'on' : ''}`} data-card="summary">
               <span className="rs-card-l">AI summary</span>
-              <p>Acme needs SSO before its production rollout.</p>
+              <p>Northstar Labs needs SSO before its production rollout.</p>
               <p>Maya has asked about Okta twice, and the requirement came up again during the latest security review.</p>
               <p>The linked SSO project is in progress.</p>
             </div>
@@ -105,7 +105,7 @@ export function RecordStory() {
             <div className={`rs-card ${n >= 4 ? 'on' : ''}`} data-card="meetings">
               <span className="rs-card-l">Meetings</span>
               <b>Security &amp; renewal review</b>
-              <span>Sep 16 · 42 min · 3 decisions · 2 action items</span>
+              <span>2 days ago · 42 min · 3 decisions · 2 action items</span>
               <div className="rs-signal"><span className="rs-card-l">Key signal</span>SSO approval is required before production rollout.</div>
             </div>
             <div className={`rs-card ${n >= 5 ? 'on' : ''}`} data-card="deal">
@@ -117,12 +117,12 @@ export function RecordStory() {
             <div className={`rs-card ${n >= 6 ? 'on' : ''}`} data-card="docs">
               <span className="rs-card-l">Docs</span>
               <b>Set up SSO with Okta</b>
-              <span><em className="done">Published</em> · Updated after PR #728</span>
+              <span><em className="done">Published</em> · Updated after Change #728</span>
             </div>
             <div className={`rs-card ${n >= 7 ? 'on' : ''}`} data-card="activity">
               <span className="rs-card-l">Recent activity</span>
               <ul className="rs-act">
-                <li>PR #728 merged</li>
+                <li>Change #728 merged</li>
                 <li>SSO documentation updated</li>
                 <li>Maya notified</li>
               </ul>

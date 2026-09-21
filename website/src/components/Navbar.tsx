@@ -25,8 +25,8 @@ export function Navbar() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // The /new homepage preview renders its own navigation.
-  if (pathname?.startsWith('/new')) return null;
+  // The new-site pages and pricing use the shared marketing navigation.
+  if (pathname?.startsWith('/new') || pathname === '/pricing') return null;
 
   return (
     <header

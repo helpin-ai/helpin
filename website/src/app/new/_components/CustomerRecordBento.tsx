@@ -6,13 +6,13 @@ import { useBentoPlayback } from './useBentoPlayback';
 
 export type RecordVariant = 'conversations' | 'meetings' | 'projects' | 'deals' | 'docs' | 'email-calendar' | 'coding';
 const LABELS: Record<RecordVariant, [string, string]> = {
-  conversations: ['Customer conversations', 'Maya at OrbitDesk asks about setting up Okta SSO, testing with a pilot group, and who owns the rollout. Helpin AI answers each follow-up with linked guides and project context, applies relevant tags, and keeps the conversation connected to the same rollout project.'],
-  meetings: ['Customer meetings', 'OrbitDesk’s security review connects the recording, speaker notes, and two next steps: validate the Okta setup and share the guide.'],
+  conversations: ['Customer conversations', 'Maya at Northstar Labs asks about setting up Okta SSO, testing with a pilot group, and who owns the rollout. Helpin AI answers each follow-up with linked guides and project context, applies relevant tags, and keeps the conversation connected to the same rollout project.'],
+  meetings: ['Customer meetings', 'Northstar Labs’ security review connects the recording, speaker notes, and two next steps: validate the Okta setup and share the guide.'],
   projects: ['Customer projects', 'SSO Enterprise Readiness connects seven customer requests to tasks: Okta mapping in review, SCIM planned, and role mapping shipped. Eight of twelve tasks are complete.'],
-  coding: ['Coding agents with customer context', 'Forge works on the Okta SAML mapping task with Maya’s OrbitDesk rollout request attached, prepares a role-mapping code change, and returns pull request 728 for Sam to review.'],
-  deals: ['Customer deals', 'OrbitDesk’s $42,000 renewal is in negotiation. Its SSO approval requirement is connected to Maya’s security review.'],
-  docs: ['Customer documentation', 'A published Okta setup guide with three steps is connected to PR 728, shared with Maya at OrbitDesk, and used in a Helpin AI reply.'],
-  'email-calendar': ['Customer email and calendar', 'OrbitDesk’s timeline connects Maya’s rollout email, the security review meeting, and the Okta guide shared by Helpin AI.'],
+  coding: ['Coding agents with customer history', 'Coding agent works on the Okta SAML mapping task with Maya’s request for Northstar Labs’ rollout attached, prepares a role-mapping code change, and returns code change 728 for Sam to review.'],
+  deals: ['Customer deals', 'Northstar Labs’ $42,000 renewal is in negotiation. Its SSO approval requirement is connected to Maya’s security review.'],
+  docs: ['Customer documentation', 'A published Okta setup guide with three steps is connected to change 728, shared with Maya at Northstar Labs, and used in a Helpin AI reply.'],
+  'email-calendar': ['Customer email and calendar', 'Northstar Labs’ timeline connects Maya’s rollout email, the security review meeting, and the Okta guide shared by Helpin AI.'],
 };
 const at = (seconds: number) => ({ '--cr-delay': `${seconds}s` }) as CSSProperties;
 
@@ -25,7 +25,7 @@ function Panel({ id, x, y, width, height, stacked = false }: { id: string; x: nu
 function Reveal({ start, children }: { start: number; children: ReactNode }) {
   return <g className="cr-reveal" style={at(start)}>{children}</g>;
 }
-// Discrete character reveals preserve SVG shaping; punctuation gets a natural pause.
+// Soft character reveals preserve SVG shaping; punctuation gets a natural pause.
 function TypedText({ children, start, pace = .025, ...props }: SVGProps<SVGTextElement> & { children: string; start: number; pace?: number }) {
   let delay = start;
   return <text {...props} className={`${props.className ?? ''} cr-typed`}>
@@ -85,7 +85,7 @@ function ConversationTurn({ turn, index }: { turn: typeof CONVERSATION_TURNS[num
 function Conversations({ id }: { id: string }) {
   return <>
     <Panel id={id} x={32} y={24} width={536} height={352} stacked />
-    <Avatar x={69} y={61} /><text x={98} y={57} className="cr-title">Maya Chen</text><text x={98} y={79} className="cr-muted">OrbitDesk</text>
+    <Avatar x={69} y={61} /><text x={98} y={57} className="cr-title">Maya Chen</text><text x={98} y={79} className="cr-muted">Northstar Labs</text>
     <rect x={432} y={44} width={114} height={27} rx={13} fill="#173f2d" /><circle cx={445} cy={58} r={3} fill="#79e6af" /><text x={458} y={63} className="cr-accent">AI handling</text>
     <defs><clipPath id={`${id}-thread-window`}><rect x={44} y={94} width={512} height={229} /></clipPath></defs>
     <g clipPath={`url(#${id}-thread-window)`}>
@@ -102,7 +102,7 @@ function Meetings({ id }: { id: string }) {
   const bars = [9,16,24,13,31,40,25,16,32,45,27,18,36,23,13,28,41,29,16,34,24,11,18,9];
   return <>
     <Panel id={id} x={74} y={34} width={452} height={328} stacked />
-    <Glyph icon={Mic} x={98} y={56} /><text x={134} y={77} className="cr-title">Security &amp; rollout review</text><text x={98} y={102} className="cr-muted">OrbitDesk · 42 min</text><Glyph icon={Sparkles} x={354} y={89} size={16} /><text x={377} y={102} className="cr-caption">AI meeting notes</text>
+    <Glyph icon={Mic} x={98} y={56} /><text x={134} y={77} className="cr-title">Security &amp; rollout review</text><text x={98} y={102} className="cr-muted">Northstar Labs · 42 min</text><Glyph icon={Sparkles} x={354} y={89} size={16} /><text x={377} y={102} className="cr-caption">AI meeting notes</text>
     <rect x={96} y={119} width={408} height={58} rx={10} fill="#101e18" />
     {bars.map((height, i) => <rect key={i} className="cr-wave" x={116 + i * 15.8} y={148 - height / 2} width={4} height={height} rx={2} fill="#62ce98" style={at(i * .045)} />)}
     <rect className="cr-highlight" x={135} y={192} width={366} height={31} rx={6} style={at(.6)} /><rect className="cr-highlight" x={135} y={234} width={366} height={31} rx={6} style={at(1.8)} />
@@ -136,12 +136,12 @@ function Coding({ id }: { id: string }) {
     <Glyph icon={Code2} x={54} y={42} size={22} /><text x={86} y={59} className="cr-title">Okta SAML mapping</text>
     <text x={544} y={58} textAnchor="end" className="cr-caption">HLP-142</text>
     <rect x={54} y={77} width={492} height={48} rx={10} fill="#192d23" stroke="#2c4d3a" />
-    <Avatar x={78} y={101} /><text x={104} y={96} className="cr-caption">Maya · OrbitDesk</text>
+    <Avatar x={78} y={101} /><text x={104} y={96} className="cr-caption">Maya · Northstar Labs</text>
     <text x={104} y={115} className="cr-body">SSO is blocking our rollout.</text>
     <text x={530} y={105} textAnchor="end" className="cr-accent">7 requests</text>
     <Connection d="M300 125 V148" start={.3} />
     <rect x={54} y={148} width={492} height={137} rx={12} fill="#0c1812" stroke="#30503d" />
-    <HelpinMark x={68} y={160} /><text x={105} y={177} className="cr-ai-label">Forge · Coding agent</text>
+    <HelpinMark x={68} y={160} /><text x={105} y={177} className="cr-ai-label">Coding agent</text>
     <g className="cr-coding-working"><circle className="cr-coding-pulse" cx={457} cy={173} r={3} fill="#dfc47d" /><text x={469} y={177} className="cr-caption">Working</text></g>
     <g className="cr-coding-ready"><Checkmark x={435} y={172} /><text x={451} y={177} className="cr-accent">Changes ready</text></g>
     <path d="M68 197 H532" stroke="#253f30" />
@@ -151,7 +151,7 @@ function Coding({ id }: { id: string }) {
     <Connection d="M300 285 V310" start={2.65} />
     <Reveal start={3.3}>
       <rect x={54} y={310} width={492} height={48} rx={10} fill="#193226" stroke="#38654b" />
-      <Glyph icon={GitPullRequest} x={68} y={322} size={22} /><text x={104} y={330} className="cr-body">PR #728 · Okta role mapping</text>
+      <Glyph icon={GitPullRequest} x={68} y={322} size={22} /><text x={104} y={330} className="cr-body">Change #728 · Okta role mapping</text>
       <Glyph icon={GitBranch} x={104} y={338} size={12} /><text x={122} y={349} className="cr-caption">orbitdesk / platform</text>
       <Avatar x={414} y={334} initial="S" /><text x={438} y={331} className="cr-accent">Ready for review</text><text x={438} y={349} className="cr-caption">Assigned to Sam</text>
     </Reveal>
@@ -161,7 +161,7 @@ function Coding({ id }: { id: string }) {
 function Deals({ id }: { id: string }) {
   return <>
     <Panel id={id} x={84} y={42} width={432} height={287} stacked />
-    <text x={108} y={80} className="cr-title">OrbitDesk enterprise renewal</text>
+    <text x={108} y={80} className="cr-title">Northstar Labs · Renewal</text>
     <text x={108} y={133} className="cr-amount">$42,000</text><text x={491} y={128} textAnchor="end" className="cr-accent">Negotiation</text>
     <Connection d="M119 170 H481" start={.3} />
     {['Lead','Qualified','Proposal','Negotiation'].map((label,i)=><g key={label}><circle className="cr-stage-ring" cx={119+i*120.5} cy={170} r={10} fill="none" stroke="#72dfad" style={at(.3+i*.4)} /><circle cx={119+i*120.5} cy={170} r={5} fill={i===3?'#6bdfaa':'#365744'} /><text x={119+i*120.5} y={194} textAnchor="middle" className="cr-caption">{label}</text></g>)}
@@ -177,10 +177,10 @@ function Docs({ id }: { id: string }) {
     <Glyph icon={FileText} x={132} y={58} /><text x={168} y={79} className="cr-title">Set up SSO with Okta</text>
     <rect x={132} y={101} width={86} height={27} rx={13} fill="#193b2c" /><text x={175} y={120} textAnchor="middle" className="cr-accent">Published</text>
     {['Create a SAML application','Map roles and attributes','Test with your pilot team'].map((label,i)=><Reveal key={label} start={.3+i*.85}><circle cx={144} cy={159+i*45} r={12} fill="#173b2b" /><circle className="cr-draw-ring" cx={144} cy={159+i*45} r={12} fill="none" stroke="#62ce98" strokeWidth={1.2} pathLength={1} /><text x={144} y={165+i*45} textAnchor="middle" className="cr-accent">{i+1}</text><text x={168} y={165+i*45} className="cr-body">{label}</text></Reveal>)}
-    <path d="M132 281 H473" stroke="#294236" /><Glyph icon={GitPullRequest} x={132} y={296} size={18} /><text x={161} y={311} className="cr-muted">Updated after PR #728</text>
+    <path d="M132 281 H473" stroke="#294236" /><Glyph icon={GitPullRequest} x={132} y={296} size={18} /><text x={161} y={311} className="cr-muted">Updated after Change #728</text>
     <Connection d="M305 332 V358 H257" start={2.5} />
     <Reveal start={3.3}><Glyph icon={Sparkles} x={323} y={349} size={17} /><text x={347} y={363} className="cr-accent">Used in AI reply</text></Reveal>
-    <Reveal start={3}><Panel id={id} x={40} y={328} width={217} height={56} /><Avatar x={70} y={356} /><text x={97} y={351} className="cr-body">Shared with Maya</text><text x={97} y={372} className="cr-caption">OrbitDesk</text></Reveal>
+    <Reveal start={3}><Panel id={id} x={40} y={328} width={217} height={56} /><Avatar x={70} y={356} /><text x={97} y={351} className="cr-body">Shared with Maya</text><text x={97} y={372} className="cr-caption">Northstar Labs</text></Reveal>
   </>;
 }
 
@@ -192,7 +192,7 @@ function Timeline({ id }: { id: string }) {
   ];
   return <>
     <Panel id={id} x={46} y={35} width={508} height={334} stacked />
-    <text x={73} y={74} className="cr-title">OrbitDesk</text><text x={525} y={73} textAnchor="end" className="cr-muted">Email &amp; calendar</text>
+    <text x={73} y={74} className="cr-title">Northstar Labs</text><text x={525} y={73} textAnchor="end" className="cr-muted">Email &amp; calendar</text>
     <path d="M94 133 V313" className="cr-wire" fill="none" /><path d="M94 133 V313" className="cr-timeline-progress" pathLength={1} fill="none" stroke="#72dfad" strokeWidth={2} />
     {items.map(({icon,title,detail,time},i)=><Reveal key={title} start={.5+i*1.1}><circle cx={94} cy={133+i*90} r={7} fill="#173b2b" stroke="#64cf9b" /><rect x={117} y={102+i*90} width={412} height={69} rx={12} fill="#14251e" stroke="#2c4438" /><Glyph icon={icon} x={133} y={124+i*90} size={23} /><text x={170} y={129+i*90} className="cr-body">{title}</text><text x={170} y={153+i*90} className="cr-muted">{detail}</text><text x={514} y={129+i*90} textAnchor="end" className="cr-caption">{time}</text></Reveal>)}
   </>;

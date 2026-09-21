@@ -1,5 +1,9 @@
 "use client";
 
+import { StreamingText } from '../../_components/StreamingText';
+
+import '../../_components/product-previews/preview-navigation.css';
+
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -62,7 +66,7 @@ export function CRMNavigation({
   view,
   onView,
 }: {
-  view: View | "deals";
+  view: View | "deals" | "playbooks";
   onView?: (view: View) => void;
 }) {
   const modules = [
@@ -81,7 +85,7 @@ export function CRMNavigation({
     ["BulbIcon", "Signals"],
   ] as const;
   return (
-    <aside className="cw-nav">
+    <aside className="cw-nav preview-sidebar">
       <div className="cw-brand">
         <b>O</b>
         <strong>OrbitDesk</strong>
@@ -144,7 +148,10 @@ export function CRMNavigation({
             {links.map(([name, label]) => (
               <span
                 key={label}
-                data-active={view === "deals" && label === "Deals"}
+                data-active={
+                  (view === "deals" && label === "Deals") ||
+                  (view === "playbooks" && label === "Playbooks")
+                }
                 className={
                   label === "Playbooks" ? "cw-nav-separator" : undefined
                 }
@@ -370,7 +377,7 @@ function RecordDetail({
                           Complete exports are required for the wider team
                           rollout.
                         </p>
-                        <small>Meeting · Sep 18 · 32 minutes</small>
+                        <small>Meeting · Today · 32 minutes</small>
                       </span>
                     </div>
                     <div>
@@ -436,7 +443,7 @@ function RecordDetail({
                       the wider team. Sam will confirm the engineering review
                       and prepare a customer update.
                     </p>
-                    <div>Sep 18 · 32 minutes · 3 participants</div>
+                    <div>Today · 32 minutes · 3 participants</div>
                   </>
                 ) : tab === "Deals" ? (
                   <>
@@ -465,7 +472,7 @@ function RecordDetail({
                         ? "Maya confirmed that complete exports are needed before the wider rollout."
                         : "Confirm EXP-142 with engineering, then prepare the customer update. Sam owns the next step."}
                     </p>
-                    <div>Sam Rivera · Sep 18</div>
+                    <div>Sam Rivera · Today</div>
                   </>
                 ) : (
                   <>
@@ -562,24 +569,6 @@ function RecordDetail({
   );
 }
 function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
-  const [typed, setTyped] = useState(ACCOUNT_BRIEF);
-  useEffect(() => {
-    if (!active || phase === 3) {
-      setTyped(ACCOUNT_BRIEF);
-      return;
-    }
-    if (phase < 2) {
-      setTyped("");
-      return;
-    }
-    let at = 0;
-    const timer = setInterval(() => {
-      at = Math.min(at + 4, ACCOUNT_BRIEF.length);
-      setTyped(ACCOUNT_BRIEF.slice(0, at));
-      if (at === ACCOUNT_BRIEF.length) clearInterval(timer);
-    }, 24);
-    return () => clearInterval(timer);
-  }, [active, phase]);
   return (
     <div
       className="cw-agent"
@@ -618,7 +607,7 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
           </div>
           <div className="cw-agent-answer">
             <p className="cw-ghost">{ACCOUNT_BRIEF}</p>
-            <p>{typed}</p>
+            <p><StreamingText text={ACCOUNT_BRIEF} active={active && phase === 2} pending={active && phase < 2} duration={2400} /></p>
           </div>
           <div className="cw-agent-result" data-ready={phase === 3}>
             <CRMAvatar />
@@ -999,7 +988,7 @@ export function CRMWorkspace({
                           </td>
                           {showCreated && (
                             <td className="cw-cell-created">
-                              Sep {18 - item.index}, 2026
+                              {item.index === 0 ? 'Today' : item.index === 1 ? 'Yesterday' : `${item.index} days ago`}
                             </td>
                           )}
                           <td className="cw-actions-cell">
@@ -1062,7 +1051,7 @@ export function CRMWorkspace({
           <Check size={12} />
           {selected === null
             ? `${rows.length} ${view} · OrbitDesk`
-            : "Customer context stays attached"}
+            : "Customer history stays attached"}
         </span>
         <div>
           {mode === "directory" && (

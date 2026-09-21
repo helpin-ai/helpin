@@ -4,37 +4,25 @@ import { ArrowUpRight, Mail } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { GITHUB_URL, GithubIcon } from './ui';
 
+// Keep the footer focused on current pages; detailed capabilities live on each page.
 const COLUMNS = [
-  { title: 'Product', links: [
-    { label: 'Overview', href: '/new#product' },
-    { label: 'Customer records', href: '/new#record' },
-    { label: 'Customer Support', href: '/new/products/customer-support' },
+  { title: 'Products', links: [
+    { label: 'Support', href: '/new/products/customer-support' },
     { label: 'Meetings', href: '/new/products/meetings' },
     { label: 'Projects', href: '/new/products/projects' },
     { label: 'CRM', href: '/new/products/crm' },
     { label: 'Knowledge', href: '/new/products/knowledge' },
+    { label: 'AI Agents', href: '/new/products/ai-agents' },
   ] },
-  { title: 'Agents & workflows', links: [
-    { label: 'Ask Agent', href: '/new#ask-agent' },
-    { label: 'AI agents', href: '/new/product#agents' },
-    { label: 'Coding agents', href: '/new/product#agents' },
-    { label: 'Tools & approvals', href: '/new#control' },
-    { label: 'Automation', href: `${GITHUB_URL}/blob/develop/docs/agents-and-automation.md` },
-    { label: 'External MCP', href: `${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md` },
-  ] },
-  { title: 'Developers', links: [
-    { label: 'Documentation', href: `${GITHUB_URL}/blob/develop/docs/README.md` },
-    { label: 'APIs & SDKs', href: '/new/developers' },
-    { label: 'JavaScript SDK', href: `${GITHUB_URL}/tree/develop/packages/sdk-js` },
-    { label: 'MCP server', href: `${GITHUB_URL}/blob/develop/docs/public-mcp-server.md` },
-    { label: 'Helpin CLI', href: '/new/self-hosting#cli' },
+  { title: 'Resources', links: [
+    { label: 'Developers', href: '/new/developers' },
     { label: 'Self-hosting', href: '/new/self-hosting' },
+    { label: 'Documentation', href: `${GITHUB_URL}/blob/develop/docs/README.md` },
   ] },
-  { title: 'Open source', links: [
-    { label: 'Repository', href: GITHUB_URL },
+  { title: 'Community', links: [
     { label: 'Contributing', href: `${GITHUB_URL}/blob/develop/CONTRIBUTING.md` },
-    { label: 'Report an issue', href: `${GITHUB_URL}/issues` },
     { label: 'Releases', href: `${GITHUB_URL}/releases` },
+    { label: 'Report an issue', href: `${GITHUB_URL}/issues` },
     { label: 'Contact', href: 'mailto:hello@helpin.ai' },
   ] },
 ];
@@ -79,7 +67,6 @@ export function PreviewFooter() {
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon size={18} /></a>
             <a href="mailto:hello@helpin.ai" aria-label="Email Helpin"><Mail size={18} aria-hidden="true" /></a>
           </div>
-          <a className="footer-open" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">Open source. Yours to build.<ArrowUpRight size={14} aria-hidden="true" /></a>
         </div>
         <div className="footer-bottom">
           <nav className="footer-legal" aria-label="Legal and brand resources">
@@ -89,7 +76,6 @@ export function PreviewFooter() {
             <a href={`${GITHUB_URL}/blob/develop/SECURITY.md`} target="_blank" rel="noopener noreferrer">Security</a>
           </nav>
           <p>© {new Date().getFullYear()} Helpin AI.</p>
-          <p className="footer-license">AGPL-3.0 application · Apache-2.0 SDK</p>
         </div>
       </div>
     </footer>

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 // Start just before a scene enters view and keep it running until it fully leaves.
 // A single 50% cutoff repeatedly restarted scenes during small scroll movements.
-export function useBentoPlayback(duration = 6000) {
+export function useBentoPlayback(duration = 6000, enabled = true) {
   const container = useRef<HTMLDivElement>(null);
   const [reducedMotion, setReducedMotion] = useState(true);
   const [playing, setPlaying] = useState(false);
@@ -19,7 +19,7 @@ export function useBentoPlayback(duration = 6000) {
   }, []);
 
   useEffect(() => {
-    if (reducedMotion) {
+    if (reducedMotion || !enabled) {
       setPlaying(false);
       return;
     }
@@ -37,14 +37,14 @@ export function useBentoPlayback(duration = 6000) {
       observer.disconnect();
       document.removeEventListener('visibilitychange', update);
     };
-  }, [reducedMotion]);
+  }, [enabled, reducedMotion]);
 
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || !enabled) return;
     // Let the completed scene settle briefly before replaying the sequence.
     const timer = setInterval(() => setCycle(value => value + 1), duration);
     return () => clearInterval(timer);
-  }, [playing, duration]);
+  }, [playing, duration, enabled]);
 
-  return { container, playing: playing && !reducedMotion, cycle };
+  return { container, reducedMotion, playing: playing && !reducedMotion && enabled, cycle };
 }

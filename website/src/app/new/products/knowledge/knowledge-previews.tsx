@@ -1,5 +1,7 @@
 'use client';
 
+import '../../_components/product-previews/preview-navigation.css';
+
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowLeft, ArrowUpRight, BookOpen, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, FileText, KeyRound, LayoutGrid, LifeBuoy, Link2, ListChecks, MessageSquare, Pause, Play, Plus, Rocket, Search, Settings, Shield, Users, Wallet, Zap } from 'lucide-react';
@@ -9,8 +11,8 @@ import './knowledge-previews.css';
 // Isolated presentational versions of the platform's CollectionCard / DocumentsTable
 // and help-center TopBar / ArticleShell / APIRequestPanel. Demo actions are local;
 // these previews never use app authentication, customer data, or live API requests.
-function useKnowledgePlayback() {
-  const playback = useBentoPlayback(20000);
+function useKnowledgePlayback(autoplay = true) {
+  const playback = useBentoPlayback(20000, autoplay);
   const [paused, setPaused] = useState(false);
   const [frame, setFrame] = useState(4);
   const active = playback.playing && !paused;
@@ -50,8 +52,8 @@ const DOCUMENTS = [
   ['Resolve a failed sync', 'Troubleshooting', '5 days ago'],
 ];
 
-export function KnowledgeWorkspace({ apiHref = '#knowledge-api' }: { apiHref?: string }) {
-  const { container, active, phase, paused, setPaused } = useKnowledgePlayback();
+export function KnowledgeWorkspace({ apiHref = '#knowledge-api', autoplay = true }: { apiHref?: string; autoplay?: boolean }) {
+  const { container, active, phase, paused, setPaused } = useKnowledgePlayback(autoplay);
   const [collection, setCollection] = useState('');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('recent');
@@ -60,10 +62,10 @@ export function KnowledgeWorkspace({ apiHref = '#knowledge-api' }: { apiHref?: s
   if (sort === 'title') filtered.sort((a, b) => a[0].localeCompare(b[0]));
   const interact = () => setPaused(true);
   return <div ref={container} className="kp-preview kp-workspace" data-playing={active} data-phase={phase} role="region" aria-label="OrbitDesk Knowledge workspace preview">
-    <div className="kp-workspace-nav">
+    <div className="kp-workspace-nav preview-sidebar">
       <div className="kp-workspace-brand"><Mark /><strong>OrbitDesk</strong><ChevronDown size={12} /></div>
       <div className="kp-nav-columns"><div className="kp-app-rail" aria-hidden="true">{[[LayoutGrid, 'Projects'], [MessageSquare, 'Support'], [BookOpen, 'Docs'], [Users, 'CRM'], [Zap, 'Automate'], [Settings, 'Settings']].map(([Icon, label]) => { const I = Icon as typeof BookOpen; return <span key={String(label)} data-selected={label === 'Docs'}><I size={17} /><small>{String(label)}</small></span>; })}</div>
-        <div className="kp-space-nav"><div className="kp-space-title"><span>HC</span><strong>Help Center<small>48 docs · external</small></strong></div><span className="kp-dark-action"><Plus size={12} />New document<ChevronDown size={11} /></span><div className="kp-nav-muted"><FileText size={12} />Recent docs</div><div className="kp-nav-muted"><FileText size={12} />My documents</div><button type="button" className="kp-nav-all" onClick={() => { interact(); setCollection(''); setQuery(''); }}>All docs in space <span>48</span></button><p className="kp-caption">IN THIS SPACE</p>{COLLECTIONS.map(({ title, count, Icon }) => <button type="button" key={title} data-selected={collection === title} aria-pressed={collection === title} onClick={() => { interact(); setCollection(title); }}><Icon size={12} /><span>{title}</span><small>{count}</small></button>)}</div></div>
+        <div className="kp-space-nav"><div className="kp-space-title"><span>HC</span><strong>Help Center<small>48 docs · external</small></strong></div><span className="kp-dark-action"><Plus size={12} />New document<ChevronDown size={11} /></span><div className="kp-nav-muted"><FileText size={12} />Recent docs</div><div className="kp-nav-muted"><FileText size={12} />My documents</div><button type="button" className="kp-nav-all" data-selected={!collection} aria-pressed={!collection} onClick={() => { interact(); setCollection(''); setQuery(''); }}>All docs in space <span>48</span></button><p className="kp-caption">IN THIS SPACE</p>{COLLECTIONS.map(({ title, count, Icon }) => <button type="button" key={title} data-selected={collection === title} aria-pressed={collection === title} onClick={() => { interact(); setCollection(title); }}><Icon size={12} /><span>{title}</span><small>{count}</small></button>)}</div></div>
       <div className="kp-user"><img src="/new/avatars/sam.webp" width={25} height={25} alt="" /><span>Sam Rivera<small>sam@orbitdesk.example</small></span></div>
     </div>
     <div className="kp-library">

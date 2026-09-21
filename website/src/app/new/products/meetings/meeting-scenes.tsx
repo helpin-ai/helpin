@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
-import { ChevronDown, CircleHelp, Building2, Check, CircleCheck, Copy, FileText, Link2, ListChecks, Mail, Pause, Play, Quote, Video } from 'lucide-react';
+import { StreamingText } from '../../_components/StreamingText';
+
+import { useState, type ReactNode } from 'react';
+import { ChevronDown, CircleHelp, Building2, Check, CircleCheck, Copy, Link2, ListChecks, Mail, Pause, Play, Quote, Video } from 'lucide-react';
 import { useMeetingPlayback } from './use-meeting-playback';
 import { FOLLOWUP_DRAFT, MEETING_EVIDENCE } from './meeting-demo-data';
 import './meeting-evidence.css';
@@ -14,7 +16,7 @@ function Task({phase}:{phase:number}) {
  return <div className="mt-action-preview">
   <div className="mt-action-header"><div className="mt-action-top"><span><ListChecks size={15}/>Action item</span><span className="mt-action-status" data-complete={phase===3}>{phase===3?<><Check size={12}/>Accepted</>:'Pending review'}</span></div>
   <h4>Share the Okta setup guide and pilot checklist</h4>
-  <div className="mt-action-owner"><Avatar person="sam"/><span>Owner: Sam Rivera</span><span>Due Sep 21</span></div>
+  <div className="mt-action-owner"><Avatar person="sam"/><span>Owner: Sam Rivera</span><span>Due Today</span></div>
   <div className="mt-action-evidence"><span><Quote size={12}/>Transcript evidence · 28:14</span><blockquote>“I’ll send the reviewed setup guide and pilot checklist.”</blockquote></div></div>
   <div className="mt-destination-title"><strong>Task destination</strong><p>Choose where this follow-up enters project work.</p></div>
   <div className="mt-destination-fields" data-selected={phase>=1}><div><span>Team</span><strong>{phase>=1?'Customer Success':'Choose a team'}<ChevronDown size={13}/></strong></div><div><span>State</span><strong><i/>{phase>=1?'To do':'Choose a state'}<ChevronDown size={13}/></strong></div></div>
@@ -24,16 +26,7 @@ function Task({phase}:{phase:number}) {
  </div>;
 }
 function Followup({active,phase}:{active:boolean;phase:number}) {
- const [typed,setTyped]=useState(FOLLOWUP_DRAFT);
- useEffect(()=>{
-  if(!active){setTyped(FOLLOWUP_DRAFT);return;}
-  if(phase===0){setTyped('');return;}
-  if(phase!==1){setTyped(FOLLOWUP_DRAFT);return;}
-  let position=0;
-  const timer=setInterval(()=>{position=Math.min(position+4,FOLLOWUP_DRAFT.length);setTyped(FOLLOWUP_DRAFT.slice(0,position));if(position===FOLLOWUP_DRAFT.length)clearInterval(timer);},24);
-  return ()=>clearInterval(timer);
- },[active,phase]);
- return <><div className="mt-mail-envelope"><div className="mt-mail-heading"><Mail size={18}/><strong>Customer follow-up</strong><span className="mt-pill">Draft</span></div><div className="mt-mail-meta"><span>To</span><span>Maya Chen <span className="mt-muted">· Northstar Labs</span></span><span>Subject</span><strong>Next steps for your SSO pilot</strong></div></div><div className="mt-draft-source"><span className="mt-ai-draft-mark"><img src="/brand/helpin-icon-white.svg" width={13} height={13} alt=""/></span><span>Helpin AI · {active&&phase<2?'Preparing the follow-up':'Draft from the meeting context'}</span></div><div className="mt-email-composition"><p className="mt-email-layout">{FOLLOWUP_DRAFT}</p><p className="mt-email-typed">{typed}<span className="mt-typing-caret" data-visible={active&&phase===1&&typed.length<FOLLOWUP_DRAFT.length}/></p></div><div className="mt-draft-review" data-ready={phase>=2}><Avatar person="sam"/><div><strong>{["Preparing the follow-up","Writing the follow-up","Check the wording and next steps","Ready for Sam’s review"][phase]}</strong><small>Customer draft · Not sent</small></div><Check size={15}/></div></>;
+ return <><div className="mt-mail-envelope"><div className="mt-mail-heading"><Mail size={18}/><strong>Customer follow-up</strong><span className="mt-pill">Draft</span></div><div className="mt-mail-meta"><span>To</span><span>Maya Chen <span className="mt-muted">· Northstar Labs</span></span><span>Subject</span><strong>Next steps for your SSO pilot</strong></div></div><div className="mt-draft-source"><span className="mt-ai-draft-mark"><img src="/brand/helpin-icon-white.svg" width={13} height={13} alt=""/></span><span>Helpin AI · {active&&phase<2?'Preparing the follow-up':'Draft from the meeting context'}</span></div><div className="mt-email-composition"><p className="mt-email-layout">{FOLLOWUP_DRAFT}</p><p className="mt-email-typed"><StreamingText text={FOLLOWUP_DRAFT} active={active && phase === 1} pending={active && phase === 0} duration={2200} /></p></div><div className="mt-draft-review" data-ready={phase>=2}><Avatar person="sam"/><div><strong>{["Preparing the follow-up","Writing the follow-up","Check the wording and next steps","Ready for Sam’s review"][phase]}</strong><small>Customer draft · Not sent</small></div><Check size={15}/></div></>;
 }
 function Context(){return <><div className="mt-customer"><span className="mt-company-mark"><Building2 size={24}/></span><div><span className="mt-mini">CUSTOMER RECORD</span><strong>Northstar Labs</strong><small>Enterprise rollout</small></div></div><div className="mt-context-list">{[
   {Icon:Video,label:'Meeting',title:'SSO rollout review',detail:'Summary, transcript & decisions'},
@@ -41,7 +34,7 @@ function Context(){return <><div className="mt-customer"><span className="mt-com
   {Icon:Building2,label:'Deal',title:'Enterprise rollout',detail:'Security approval pending'},
   {Icon:ListChecks,label:'Task',title:'Share the setup guide',detail:'Sam Rivera · To do'},
 ].map(({Icon,label,title,detail},i)=><Step key={label} at={i*.8}><span className="mt-context-icon"><Icon size={16}/></span><div><span className="mt-mini">{label}</span><strong>{title}</strong><small>{detail}</small></div><Link2 size={13}/></Step>)}</div><Step at={3} className="mt-context-end"><Link2 size={14}/>One meeting. Connected to the customer and the work.</Step></>;}
-const TITLES:Record<Variant,string>={task:'Action items',followup:'Follow-up draft',context:'Customer context'};
+const TITLES:Record<Variant,string>={task:'Action items',followup:'Follow-up draft',context:'Customer history'};
 const DESCRIPTIONS:Record<Variant,string>={task:'Sam’s commitment to share an Okta setup guide is reviewed and created as a Customer Success task, assigned to Sam and linked to the source meeting.',followup:'A draft to Maya summarizes the admin-only pilot, setup guide, and security checklist. The email is ready for Sam’s review and has not been sent.',context:'The Northstar Labs customer record connects the SSO rollout meeting, Maya’s contact, the enterprise rollout deal, and Sam’s follow-up task.'};
 export function MeetingScene({variant}:{variant:Variant}){
  const {container,active,phase,paused,setPaused}=useMeetingPlayback();
