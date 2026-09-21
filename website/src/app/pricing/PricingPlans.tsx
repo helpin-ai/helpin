@@ -22,6 +22,6 @@ export function PricingPlans() {
         <ul>{plan.features.filter(feature => feature !== 'Everything in Starter, plus:').map(feature => <li key={feature}><Check size={14} strokeWidth={1.6} aria-hidden="true" /><span>{feature}</span></li>)}</ul><p className="pricing-note">{plan.popular ? 'Turn the work you repeat into a process your team can oversee.' : 'Start with the work you need today. Keep its history ready for what comes next.'}</p>
       </div>
     </article>)}</div>
-    <div className="pricing-plan-footnote"><p>14-day Growth trial · No card needed</p><a href="#compare-plans">Compare plans in detail ↓<ArrowRight size={14} aria-hidden="true" /></a></div>
+    <div className="pricing-plan-footnote"><a href="#compare-plans">Compare plans in detail ↓<ArrowRight size={14} aria-hidden="true" /></a></div>
   </div></section>;
 }
