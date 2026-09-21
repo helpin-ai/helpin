@@ -70,7 +70,7 @@ export default function NewHomePage() {
           <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
             <span className="eyebrow">Support, meetings, projects, CRM and docs — on one customer history</span>
-            <h1>From customer question to shipped fix, in one workspace.</h1>
+            <h1>From customer question to shipped fix.</h1>
             <p className="lede">Helpin brings support, project tracking, CRM, meeting notes and a help center together for SaaS teams. AI agents turn customer questions into answers, tasks and fixes, with approvals your team controls.</p>
             <CtaRow />
             <CtaNote />
