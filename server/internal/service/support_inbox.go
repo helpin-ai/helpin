@@ -1665,84 +1665,6 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 	return ticket, nil
 }
 
-// CreateConversationWithMessage creates a normal support conversation and
-// immediately sends the first public teammate message.
-func (s *SupportInboxService) CreateConversationWithMessage(ctx context.Context, req model.CreateConversationWithMessageRequest, actorID string) (*model.CreateConversationWithMessageResponse, error) {
-	if strings.TrimSpace(req.WorkspaceID) == "" || strings.TrimSpace(req.Subject) == "" {
-		return nil, fmt.Errorf("workspace_id and subject are required")
-	}
-	if strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0 {
-		return nil, fmt.Errorf("content is required")
-	}
-	channels := normalizeSupportDeliveryChannels(req.Channels)
-	if len(req.Channels) > 0 && len(channels) == 0 {
-		return nil, fmt.Errorf("at least one supported channel is required")
-	}
-	if supportChannelsIncludeEmail(channels) && (req.CustomerEmail == nil || strings.TrimSpace(*req.CustomerEmail) == "") {
-		return nil, fmt.Errorf("customer_email is required for email delivery")
-	}
-
-	conversation, err := s.CreateConversation(ctx, model.CreateConversationRequest{
-		WorkspaceID:   req.WorkspaceID,
-		MailboxID:     req.MailboxID,
-		Subject:       req.Subject,
-		Priority:      "medium",
-		CustomerName:  req.CustomerName,
-		CustomerEmail: req.CustomerEmail,
-		Source:        "internal",
-	}, actorID)
-	if err != nil {
-		return nil, err
-	}
-	if req.CRMContactID != nil && strings.TrimSpace(*req.CRMContactID) != "" {
-		conversation.CRMContactID = req.CRMContactID
-		if err := s.conversationRepo.Update(ctx, conversation); err != nil {
-			return nil, err
-		}
-	}
-	if supportChannelsIncludeEmail(channels) && len(req.CCEmails) > 0 {
-		ccEmails := normalizeSupportEmailListExcluding(req.CCEmails, derefString(conversation.CustomerEmail))
-		conversation.EmailCC = model.DocsStringArray(ccEmails)
-		if err := s.conversationRepo.UpdateFields(ctx, req.WorkspaceID, conversation.ID, map[string]any{
-			"email_cc": conversation.EmailCC,
-		}); err != nil {
-			return nil, err
-		}
-	}
-	if s.tagRepo != nil {
-		for _, tagID := range req.TagIDs {
-			tagID = strings.TrimSpace(tagID)
-			if tagID == "" {
-				continue
-			}
-			if err := s.tagRepo.AddConversationTag(ctx, req.WorkspaceID, conversation.ID, tagID); err != nil {
-				return nil, err
-			}
-		}
-		hydrated := []model.SupportConversation{*conversation}
-		s.hydrateConversationTags(ctx, req.WorkspaceID, hydrated)
-		conversation.Tags = hydrated[0].Tags
-		conversation.SystemTags = hydrated[0].SystemTags
-	}
-
-	message, err := s.CreateConversationMessage(ctx, req.WorkspaceID, conversation.ID, model.CreateMessageRequest{
-		Content:       req.Content,
-		IsInternal:    false,
-		MessageType:   "reply",
-		AttachmentIDs: req.AttachmentIDs,
-		Channels:      channels,
-		CCEmails:      req.CCEmails,
-		BCCEmails:     req.BCCEmails,
-	}, "user", &actorID, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &model.CreateConversationWithMessageResponse{
-		Conversation: conversation,
-		Message:      message,
-	}, nil
-}
-
 // validConversationStatuses defines allowed status transitions.
 var validConversationStatuses = map[string]bool{
 	model.SupportConversationStatusOpen:              true,
@@ -2134,6 +2056,8 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if err != nil {
 			return nil, err
 		}
+	}
+	if translation != nil {
 		if translation.SentMessageID != nil {
 			sent, err := s.messageRepo.GetByID(ctx, *translation.SentMessageID)
 			if err != nil {
