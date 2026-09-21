@@ -4,6 +4,8 @@ import { describe, it } from 'node:test';
 import { inflateSync } from 'node:zlib';
 
 const { createPageMetadata, PAGE_SEO } = await import('../src/lib/metadata.ts');
+const { previewMetadata } = await import('../src/app/new/_components/preview-metadata.ts');
+const previewRoutes = ['/new', '/new/product', '/new/products/customer-support', '/new/products/projects', '/new/products/crm', '/new/products/meetings', '/new/products/knowledge', '/new/products/ai-agents', '/new/developers', '/new/self-hosting', '/new/branding'];
 
 function decodeRgbaPng(png) {
   const idat = [];
@@ -107,12 +109,24 @@ describe('website SEO metadata', () => {
     }
   });
 
+  it('gives every new page its own branded OG and Twitter image', () => {
+    for (const path of previewRoutes) {
+      const metadata = previewMetadata('Helpin — ' + path, path);
+      const image = metadata.openGraph.images[0];
+      assert.match(image.url, /-green\.png$/);
+      assert.equal(metadata.twitter.images[0].url, image.url);
+      assert.equal(metadata.robots.index, false);
+      assert.ok(existsSync(new URL('../public' + image.url, import.meta.url)));
+    }
+  });
+
   it('ships social images as optimized 1200 by 630 PNG files', () => {
     const images = [
-      '../public/og/helpin-home.png',
-      '../public/og/helpin-pricing.png',
-      '../public/og/helpin-privacy.png',
-      '../public/og/helpin-terms.png',
+      '../public/og/helpin-home-green.png',
+      '../public/og/helpin-pricing-green.png',
+      '../public/og/helpin-privacy-green.png',
+      '../public/og/helpin-terms-green.png',
+      ...previewRoutes.filter(path => path !== '/new').map(path => '../public/og/helpin-' + path.split('/').at(-1) + '-green.png'),
       '../../frontend/public/og/helpin-app.png',
       '../../frontend/public/og/helpin-shared-document.png',
     ];
