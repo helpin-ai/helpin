@@ -71,8 +71,8 @@ export default function NewHomePage() {
           <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
             <span className="eyebrow">The open-source customer workspace for SaaS teams</span>
-            <h1>AI agents that know your customers.<br />And move the work forward.</h1>
-            <p className="lede">Helpin connects support, projects, CRM, meetings, and docs around a shared customer history. Your team and AI agents use it to answer questions, plan work, and follow up—with approvals where you need them.</p>
+            <h1>AI agents that do more than answer.</h1>
+            <p className="lede">Helpin gives AI agents the full customer context to resolve questions, take action, and follow through—across support, projects, CRM, meetings, and docs.</p>
             <CtaRow primaryLabel="Start free trial" />
             <p className="cta-note">Open source · Self-host or use Helpin Cloud</p>
 
