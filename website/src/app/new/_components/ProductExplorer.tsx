@@ -159,7 +159,7 @@ export function ProductExplorer() {
     {AREAS.map((area, index) => <div className="px-panel" role="tabpanel" id={`product-panel-${area.id}`} aria-labelledby={`product-tab-${area.id}`} hidden={active !== index} tabIndex={0} key={area.id}>
       <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.href}>Explore {area.id === 'inbox' ? 'customer support' : area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
       <div className="px-stage">
-        {active === index && <ProductPreview product={area.id} />}
+        {active === index && <ProductPreview product={area.id} theme="light" />}
       </div>
     </div>)}
     </div>

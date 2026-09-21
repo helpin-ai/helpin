@@ -26,13 +26,13 @@ const LABELS: Record<ProductPreviewName, string> = {
 };
 
 /** A bounded, responsive demo for product tabs and other embedded surfaces. */
-export function ProductPreview({ product }: { product: ProductPreviewName }) {
+export function ProductPreview({ product, theme = 'dark' }: { product: ProductPreviewName; theme?: 'light' | 'dark' }) {
   const Preview = PREVIEWS[product];
-  return <div className="product-preview" data-product={product}>
+  return <div className="product-preview" data-product={product} data-theme={theme}>
     <div className="product-preview-viewport" role="region" aria-label={`${LABELS[product]} interactive product preview`} tabIndex={0}>
       {product === 'knowledge'
         ? <PREVIEWS.knowledge apiHref="/new/products/knowledge#knowledge-api" />
-        : <Preview />}
+        : product === 'projects' ? <PREVIEWS.projects theme={theme} /> : <Preview />}
     </div>
   </div>;
 }

@@ -17,9 +17,14 @@
 .hp3 .adp-dialog * {
   box-sizing: border-box;
 }
+.hp3 .adp {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+}
 .hp3 .adp-frame {
   display: flex;
-  height: 738px;
+  height: 660px;
   overflow: hidden;
   border: 1px solid #dedee2;
   border-radius: 12px;
@@ -719,11 +724,6 @@
   background: #71af90;
   border-radius: 4px;
 }
-@media (min-width: 1100px) {
-  .hp3 #control > .wrap {
-    max-width: 1440px;
-  }
-}
 @media (max-width: 1199px) {
   .hp3 .adp-sidebar {
     width: 220px;
@@ -740,12 +740,12 @@
     display: none;
   }
   .hp3 .adp-frame {
-    height: 730px;
+    height: 660px;
   }
 }
 @media (max-width: 600px) {
   .hp3 .adp-frame {
-    height: 640px;
+    height: 600px;
   }
   .hp3 .adp-header {
     padding: 17px 14px;

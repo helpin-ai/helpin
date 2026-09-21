@@ -711,6 +711,8 @@
 }
 @media (prefers-reduced-motion: reduce) { .hp3 .hosting-art[data-playing="true"] .hosting-flow { animation: none; } }
 /* 06 control */
+.hp3 #control > .wrap > .sec-head { margin-inline: auto; text-align: center; }
+.hp3 #control > .wrap > .sec-head .lede { margin-inline: auto; }
 .hp3 .control-screenshot { margin: 0 0 48px; }
 .hp3 .control-screenshot a { display: block; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 48px rgba(19,21,20,.07); }
 .hp3 .control-screenshot a:focus-visible { outline: 2px solid var(--em); outline-offset: 5px; }

@@ -19,7 +19,7 @@
 .hp3 .product-preview .pth-header { flex: none; }
 .hp3 .product-preview .pth-layout { flex: 1; min-height: 0; overflow-y: auto; }
 .hp3 .product-preview .pth-main { min-height: 0; }
-.hp3 .product-preview .pth-followup { top: auto; bottom: 16px; left: 16px; width: min(360px, calc(100% - 32px)); }
+.hp3 .product-preview .pth-followup { top: auto; bottom: 16px; left: 16px; width: min(360px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow-y: auto; }
 .hp3 .product-preview .kp-workspace { height: calc(var(--preview-height) - 2px); min-height: 0; }
 .hp3 .product-preview .kp-library, .hp3 .product-preview .kp-workspace-nav { overflow-y: auto; }
 .hp3 .product-preview .kp-library > * { flex-shrink: 0; }
@@ -41,3 +41,6 @@
 @media (max-width: 760px) {
   .hp3 .product-preview { --preview-height: 620px; }
 }
+
+.hp3 .product-preview[data-product="projects"][data-theme="light"] .product-preview-viewport { background: #f6f6f7; border-color: #e4e4e7; }
+.hp3 .product-preview[data-product="projects"][data-theme="light"] .project-hero-art-label { background: #f6f6f7; }
