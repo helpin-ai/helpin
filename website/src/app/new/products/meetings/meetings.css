@@ -36,3 +36,13 @@
 @media(prefers-reduced-motion:reduce){.hp3 .meeting-scene *,.hp3 .mt-evidence *{animation:none!important;transition:none!important}.hp3 .mt-toolbar button,.hp3 .mt-evidence-pause{display:none}}
 
 .hp3 .mt-ai-draft-mark{display:grid;place-items:center;width:21px;height:21px;border-radius:5px;background:#246140;flex:none}.hp3 .mt-ai-draft-mark img{width:13px;height:13px}.hp3 .mt-complete.mt-step{opacity:1}.hp3 .mt-complete{min-height:42px}.hp3 .mt-context-end{min-height:36px}
+
+/* Supporting copy stays secondary to the existing product demonstrations. */
+.hp3 .meetings-page .meetings-supporting-note{font-size:12px;line-height:1.8;color:var(--t3);margin-top:18px}
+.hp3 .meetings-page .meetings-demo-caption{font-size:12px;line-height:1.8;color:var(--t3);text-align:center;margin:22px 0 0}
+.hp3 .meetings-dark .meetings-demo-caption{color:var(--on-dark-muted)}
+.hp3 .mt-task-source{padding:0 20px 18px;font-size:10px;line-height:1.7;color:var(--t3)}
+.hp3 .mt-task-source strong{display:block;color:var(--t2);font-weight:450;margin-top:5px}
+.hp3 .mc-platform .mw-panel{height:890px}
+.hp3 .mb-evidence-link{flex-wrap:wrap}
+@media(max-width:800px){.hp3 .mc-platform .mw-panel{height:705px}}
