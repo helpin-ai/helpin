@@ -73,7 +73,7 @@ const FAQS = [
   ],
   [
     "Can we self-host Support?",
-    "Yes. Support, docs and agents are in the free Community edition.",
+    "Yes. Support is part of the open-source product and can run on your own infrastructure.",
     "/new/self-hosting#whats-included",
     "See what’s included"
   ],
@@ -172,7 +172,7 @@ export default function CustomerSupportPage() {
       </section>
 
       <section id="support-faq" className="support-faq-section">
-        <div className="wrap support-faq-grid"><SectionHead eyebrow="Questions" title="Before you open the inbox." /><div className="support-faqs"><FAQList items={FAQS} className="faq-items" /><a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Read the Community guide <ArrowRight size={16} aria-hidden="true" /></a></div></div>
+        <div className="wrap support-faq-grid"><SectionHead eyebrow="Questions" title="Before you open the inbox." /><div className="support-faqs"><FAQList items={FAQS} className="faq-items" /><a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Read the self-hosting guide <ArrowRight size={16} aria-hidden="true" /></a></div></div>
       </section>
 
       <section className="final-cta final-cta-connected" aria-labelledby="support-final-cta-title"><div className="wrap"><ConnectedWorkspace /><div className="final"><span className="eyebrow">Start with a conversation</span><h2 id="support-final-cta-title">Every customer question ends with an answer or a fix.</h2><p className="lede">Bring AI answers, human support, and the work behind each request into one connected workspace.</p><Actions /><CtaNote trial support /></div></div></section>

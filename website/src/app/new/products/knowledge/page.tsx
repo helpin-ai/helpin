@@ -72,7 +72,7 @@ const FAQS = [
   ],
   [
     "Can we self-host Knowledge?",
-    "Yes. Docs is in the free Community edition.",
+    "Yes. Knowledge is part of the open-source product and can run on your own infrastructure.",
     "/new/self-hosting#whats-included",
     "See what’s included"
   ],

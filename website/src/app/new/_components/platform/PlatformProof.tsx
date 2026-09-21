@@ -14,7 +14,7 @@ export function CommunityShowcase() {
   const [active, setActive] = useState(0);
   const product = PRODUCTS[active];
   return <div className="community-showcase">
-    <div className="community-switcher" role="group" aria-label="Explore Community products">
+    <div className="community-switcher" role="group" aria-label="Explore self-hosted products">
       {PRODUCTS.map(({ name, Icon }, index) => <button type="button" key={name} aria-pressed={index === active} aria-controls="community-product-view" onClick={() => setActive(index)}><Icon size={18}/><span>{name}</span><ArrowRight size={14}/></button>)}
     </div>
     <div id="community-product-view">

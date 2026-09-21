@@ -45,7 +45,7 @@ const FAQS = [
   ],
   [
     "Can an agent write code?",
-    "Yes, in Cloud. Coding agents prepare changes and tests in your connected codebase, then hand the work to your team for review.",
+    "Yes. Coding agents prepare changes and tests in your connected codebase, then hand the work to your team for review.",
     "/new/products/ai-agents#agent-coding"
   ],
   [
@@ -65,7 +65,7 @@ const FAQS = [
   ],
   [
     "Can we self-host?",
-    "Yes. Community includes support, docs and agents.",
+    "Yes. Helpin’s product modules and agents are open source. Enterprise features are licensed separately.",
     "/new/self-hosting#whats-included",
     "See what’s included"
   ]

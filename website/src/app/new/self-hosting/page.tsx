@@ -15,8 +15,8 @@ import '../_components/platform/platform-polish.css';
 export const metadata = previewMetadata("Self-hosting \u2014 Helpin", "/new/self-hosting");
 const FAQS = [
   [
-    "What is included in Helpin Community?",
-    "Support, docs and agents. Projects, CRM, meetings, coding workflows and automation are outside the supported Community bundle.",
+    "What can we self-host?",
+    "Support, projects, CRM, meetings, knowledge, agents and automation are part of the open-source product. Enterprise features are licensed separately.",
     "#whats-included",
     "See the comparison"
   ],
@@ -37,7 +37,7 @@ const FAQS = [
   ],
   [
     "Does Helpin manage our backups or upgrades?",
-    "No — your team backs up the databases, files, configuration and keys. Tested cross-version upgrades are planned for a later Community release.",
+    "No — your team backs up the databases, files, configuration and keys. Tested cross-version upgrades are planned for a later release.",
     "https://github.com/helpin-ai/helpin/blob/develop/docs/community/backups.md"
   ],
   [
@@ -47,16 +47,16 @@ const FAQS = [
   ],
   [
     "What is the open-source license?",
-    "The application is AGPL-3.0 and the SDK is Apache-2.0. You can inspect and modify the source under their license terms.",
+    "The open-source application is AGPL-3.0 and the SDK is Apache-2.0. Code in ee/ directories uses a separate Enterprise license.",
     "https://github.com/helpin-ai/helpin/blob/develop/LICENSE"
   ],
   ["Can we use Kubernetes or run fully air-gapped?", "Docker Compose is the supported installation. Kubernetes and fully air-gapped setups are not validated yet.", "https://github.com/helpin-ai/helpin/blob/develop/docs/community/deployment.md"]
 ] as const;
 export default function SelfHostingPage(){return <><PreviewNav/><div className="platform-page self-hosting-page">
- <section className="platform-hero"><div className="wrap"><PlatformBreadcrumb label="Open source & self-hosting"/><div className="platform-hero-grid"><div className="platform-hero-copy"><span className="eyebrow">Open source · Community edition</span><h1>Run your customer workspace <span>on your infrastructure.</span></h1><p className="lede">Bring support, docs, and agents to the servers you control. Own the customer history, choose your model connections, and manage the installation with the Helpin CLI.</p><CtaRow /><CtaNote /><div className="platform-hero-points"><span><GitBranch size={14}/>AGPL-3.0</span><span><Server size={14}/>Docker Compose</span><span><Terminal size={14}/>Support, docs & agents</span></div></div><InfrastructureScene/></div></div></section>
+ <section className="platform-hero"><div className="wrap"><PlatformBreadcrumb label="Open source & self-hosting"/><div className="platform-hero-grid"><div className="platform-hero-copy"><span className="eyebrow">Open source · Self-hosted</span><h1>Run your customer workspace <span>on your infrastructure.</span></h1><p className="lede">Bring support, projects, CRM, meetings, knowledge and agents to the servers you control. Own the customer history, choose your model connections, and manage the installation with the Helpin CLI.</p><CtaRow /><CtaNote /><div className="platform-hero-points"><span><GitBranch size={14}/>AGPL-3.0</span><span><Server size={14}/>Docker Compose</span><span><Terminal size={14}/>All product modules</span></div></div><InfrastructureScene/></div></div></section>
  <nav className="platform-page-nav" aria-label="On this page"><div className="wrap"><strong>Self-hosting</strong><a href="#whats-included">What’s included</a><a href="#cli">Helpin CLI</a><a href="#deployment">Deployment</a><a href="#ownership">Data & connections</a><a href="#self-hosting-faq">Questions</a></div></nav>
  <IncludedTable />
- <section id="community"><div className="wrap"><div className="platform-centered"><SectionHead eyebrow="Start with the customer" title="What’s in Community: support, docs and agents." lede="Answer customers, publish the knowledge behind each reply, and put agents to work—all in the installation your team runs."/></div><CommunityShowcase/></div></section>
+ <section id="community"><div className="wrap"><div className="platform-centered"><SectionHead eyebrow="Start with the customer" title="The whole product, on your infrastructure." lede="Answer customers, manage projects and deals, capture meetings, publish knowledge, and put agents to work—all in the installation your team runs."/></div><CommunityShowcase/></div></section>
  <section id="cli" className="platform-soft"><div className="wrap"><div className="platform-split platform-cli-layout"><figure className="platform-cli-art"><img src="/new/product/helpin-cli-tilted-1920-v1.webp" srcSet="/new/product/helpin-cli-tilted-1920-v1.webp 1920w, /new/product/helpin-cli-tilted-4k-v1.webp 3840w" sizes="(max-width: 960px) calc(100vw - 48px), 680px" width={3840} height={2160} loading="lazy" alt="Tilted Helpin CLI terminal showing installation checks, diagnostics, status, and logs."/></figure><div><SectionHead eyebrow="Helpin CLI" title="Run your instance from one terminal." lede="Install the bundle, check the services, and follow the logs. Use the CLI to handle the routine work of running Helpin."/><DocLink href={`${REPO}/docs/community/cli.md`}>Read the CLI guide</DocLink></div></div><div className="platform-command-grid">{[
   ['helpin install','Get the installation ready.','Choose local or server mode. Verify the bundle, generate secrets, and check application readiness.'],
   ['helpin doctor','See what needs attention.','Check Docker, configuration, services, API readiness, HTTPS, and secret-file permissions.'],
@@ -69,5 +69,5 @@ export default function SelfHostingPage(){return <><PreviewNav/><div className="
   {Icon:Settings2,title:'Configure the customer-facing services.',body:'Set public URLs, widget origins, and application mail. Enable optional integrations when your team needs them.',href:`${REPO}/docs/community/deployment.md`,label:'Deployment reference'},
  ].map(({Icon,title,body,href,label})=><article key={title}><Icon size={24}/><h3>{title}</h3><p>{body}</p><DocLink href={href}>{label}</DocLink></article>)}</div></div></section>
  <section id="self-hosting-faq"><div className="wrap platform-faq-grid"><SectionHead eyebrow="Questions" title="Know what you’re running."/><PlatformFAQ items={FAQS}/></div></section>
- <PlatformClosing id="self-hosting-final-title" title="Make the workspace yours." description="Start with the Community installation guide. Keep the customer workflow close to your team and your infrastructure."/>
+ <PlatformClosing id="self-hosting-final-title" title="Make the workspace yours." description="Start with the self-hosting guide. Keep the customer workflow close to your team and your infrastructure."/>
  </div><PreviewFooter/></>;}

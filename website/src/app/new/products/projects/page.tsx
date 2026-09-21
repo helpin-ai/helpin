@@ -72,7 +72,7 @@ const FAQS = [
     "Completing a task alone does not send a message. Ask Agent can prepare the follow-up for your team to review and send.",
     "/new/products/projects#project-followup"
   ],
-  ["Is Projects included in Community?", "Projects is a Cloud feature and is outside the supported Community bundle.", "/new/self-hosting#whats-included"]
+  ["Can we self-host Projects?", "Yes. Projects is part of the open-source product. Run it on your own infrastructure or use Helpin Cloud.", "/new/self-hosting#whats-included"]
 ] as const;
 export default function ProjectsPage() {
   return <>
@@ -81,7 +81,7 @@ export default function ProjectsPage() {
       <section className="projects-hero" aria-labelledby="projects-title">
         <div className="wrap">
           <div className="projects-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>Projects</span></div>
-          <div className="projects-hero-grid"><div className="projects-hero-copy"><Availability category="Projects" cloud /><h1 id="projects-title">Ship the work <br /><span>your customers are waiting for.</span></h1><p className="lede">Turn customer requests into clear priorities. Plan the work, let agents help build and review it, and keep your team in control of what ships.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /><div className="projects-hero-points"><span><MessagesSquare size={14} />Customer-linked tasks</span><span><CheckSquare size={14} />Sprint planning</span><span><GitBranch size={14} />Coding agents</span></div></div>
+          <div className="projects-hero-grid"><div className="projects-hero-copy"><Availability category="Projects" /><h1 id="projects-title">Ship the work <br /><span>your customers are waiting for.</span></h1><p className="lede">Turn customer requests into clear priorities. Plan the work, let agents help build and review it, and keep your team in control of what ships.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /><div className="projects-hero-points"><span><MessagesSquare size={14} />Customer-linked tasks</span><span><CheckSquare size={14} />Sprint planning</span><span><GitBranch size={14} />Coding agents</span></div></div>
           <div><ProjectHero /></div></div>
         </div>
       </section>

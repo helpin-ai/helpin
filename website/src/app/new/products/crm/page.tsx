@@ -80,7 +80,7 @@ const FAQS = [
     "Import contacts, companies and deals from CSV. Connect Gmail and Google Calendar to add customer conversations and events.",
     "/new/developers"
   ],
-  ["Is CRM included in Community?", "CRM is a Cloud feature and is outside the supported Community bundle.", "/new/self-hosting#whats-included"]
+  ["Can we self-host CRM?", "Yes. CRM is part of the open-source product. Run it on your own infrastructure or use Helpin Cloud.", "/new/self-hosting#whats-included"]
 ] as const;
 
 export default function CRMPage() {
@@ -96,7 +96,7 @@ export default function CRMPage() {
               <span>CRM</span>
             </div>
             <div className="crm-hero-copy">
-              <Availability category="CRM" cloud />
+              <Availability category="CRM" />
               <h1 id="crm-title">
                 A CRM that knows what
                 <span> support and engineering are doing.</span>

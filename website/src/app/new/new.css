@@ -1253,7 +1253,6 @@
 .hp3 .ask-agent-links .ask-agent-technical-link { font-size: 13px; font-weight: 500; color: var(--t3); }
 
 /* Copy review: readable category, common actions and compact comparison surfaces. */
-.hp3 .availability-tag { display: inline-flex; align-items: center; flex-wrap: wrap; text-decoration: underline; text-underline-offset: 5px; }
 .hp3 .cta-note { color: inherit; opacity: .78; font-size: 13px; line-height: 1.7; margin-top: 16px; }
 .hp3 .hero-replaces { max-width: 680px; margin: 24px auto 0; color: var(--t2); font-size: 14px; line-height: 1.8; }
 .hp3 .hero-proof { margin: 28px auto 12px; color: var(--t2); font-size: 12px; }

@@ -59,8 +59,8 @@ export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on G
 }
 
 
-export function Availability({ category, cloud = false }: { category: string; cloud?: boolean }) {
-  return <a className="eyebrow availability-tag" href={INCLUDED_URL}>{category} · {cloud ? 'Cloud plan' : 'Community + Cloud'}</a>;
+export function Availability({ category }: { category: string }) {
+  return <span className="eyebrow">{category}</span>;
 }
 export function CtaNote({ trial = false, support = false }: { trial?: boolean; support?: boolean }) {
   return <p className="cta-note">{trial ? `14-day cloud trial · No card${support ? ' · Or self-host free' : ''}` : 'Open source · Run it yourself or use our cloud'}</p>;
