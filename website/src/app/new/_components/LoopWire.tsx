@@ -73,7 +73,7 @@ function WorkStep({ label, at, start, t, review = false }: { label: string; at: 
     <li className={`${state}${review ? ' wire-review' : ''}`}>
       <i className={`ck ${state}`}><CheckIcon size={9} strokeWidth={2} /></i>
       {review ? <Avatar name="sam" /> : null}
-      <span>{review && !done ? 'Waiting for review' : label}</span>
+      <span>{review && !done ? (state === 'active' ? 'Reviewing and testing' : 'Awaiting review and tests') : label}</span>
     </li>
   );
 }
@@ -135,7 +135,7 @@ export function LoopWire() {
         aria-label={paused ? 'Play workflow animation' : 'Pause workflow animation'} title={paused ? 'Play animation' : 'Pause animation'}>
         {paused ? <Play size={14} /> : <Pause size={14} />}
       </button>
-      <div role="img" aria-label="Illustrative OrbitDesk workflow: Maya Chen at Northstar Labs reports a CSV export timeout. Helpin AI searches connected logs, finds a CSV export timeout, and hands Sam the error and customer conversation. Task ORB-492 links her conversation to the fix. A coding agent prepares a code change, checks pass, Sam reviews it, and the team releases it. Sam approves the follow-up, then Helpin AI sends it to Maya in the original conversation.">
+      <div role="img" aria-label="Illustrative OrbitDesk workflow: Maya Chen at Northstar Labs reports a CSV export timeout. Helpin AI searches connected logs, finds a CSV export timeout, and hands Sam the error and customer conversation. Task ORB-492 links her conversation to the fix. A coding agent prepares a code change, Sam reviews it and tests pass, then the team releases it. Sam approves the follow-up, then Helpin AI sends it to Maya in the original conversation.">
         <svg className="wire-svg" width={size.vw || 0} height={132} aria-hidden="true" style={{ left: -Math.max(0, (size.vw - size.w) / 2) }}>
           <path ref={pathRef} className="track" d={d} fill="none" strokeWidth={1.5} />
           <path className="head" d={d} fill="none" strokeWidth={1.5} strokeLinecap="round" style={{ strokeDasharray: len, strokeDashoffset: len - target, opacity: len ? 1 : 0, transition: playing && t > 0 ? 'stroke-dashoffset .8s cubic-bezier(.45,0,.55,1)' : 'none' }} />
@@ -182,9 +182,8 @@ export function LoopWire() {
               <div className="lhead"><span>Coding agent</span><span>ORB-492</span></div>
               <p className="wire-code-title">CSV export fix</p>
               <ul className="wl">
-                <WorkStep label="code change prepared" at={98} start={93} t={t} />
-                <WorkStep label="Checks passed" at={106} start={98} t={t} />
-                <WorkStep label="Reviewed by Sam" at={S.reviewed} start={106} t={t} review />
+                <WorkStep label="Code change prepared" at={98} start={93} t={t} />
+                <WorkStep label="Reviewed and tested" at={S.reviewed} start={98} t={t} review />
                 <WorkStep label="Released by the team" at={S.released} start={S.reviewed} t={t} />
               </ul>
               <div className="wire-code-link"><Link2 size={12} />Customer conversation attached</div>
