@@ -23,16 +23,16 @@ const COLORS = {
 const variants = [
   {
     output: resolve(websiteRoot, 'public/og/helpin-home-green.png'),
-    eyebrow: 'CUSTOMER WORK, CONNECTED',
-    headline: ['From customer question', 'to shipped fix.'],
-    support: 'Support · Projects · CRM · Meetings · Knowledge',
+    eyebrow: 'ONE CUSTOMER HISTORY',
+    headline: ['AI agents that do', 'more than answer.'],
+    support: 'A shared workspace for your team and AI agents.',
     visual: 'connected',
   },
   {
     output: resolve(websiteRoot, 'public/og/helpin-pricing-green.png'),
     eyebrow: 'HELPIN PRICING',
-    headline: ['One product.', 'Choose how you run it.'],
-    support: 'Open source or Cloud. Unlimited teammates.',
+    headline: ['One platform.', 'Your whole team,', 'connected.'],
+    support: 'Choose Helpin Cloud or self-host on your infrastructure.',
     visual: 'pricing',
   },
   {
@@ -66,16 +66,16 @@ const variants = [
 ];
 
 const productCards = [
-  ['product', 'THE HELPIN PRODUCT', ['Every part of the work.', 'One customer history.'], 'Support, projects, CRM, meetings, knowledge and agents.'],
-  ['customer-support', 'CUSTOMER SUPPORT', ['Support that ends', 'with a fix.'], 'Docs, customer history and connected tools.'],
-  ['projects', 'PROJECTS', ['Ship the work', 'your customers', 'are waiting for.'], 'Customer requests, priorities and delivery—together.'],
-  ['crm', 'CRM', ['Every relationship.', 'The history behind it.'], 'Contacts, deals, meetings and customer history.'],
-  ['meetings', 'MEETINGS', ['Turn customer calls into', 'tasks and follow-ups.'], 'Meeting notes and next steps, attached to the customer.'],
-  ['knowledge', 'KNOWLEDGE', ['Docs your customers', 'and agents can rely on.'], 'Publish knowledge. Improve the next answer.'],
-  ['ai-agents', 'AI AGENTS', ['Agents that already', 'know your customers.'], 'Ask Agent coordinates the work. You stay in control.'],
-  ['developers', 'FOR DEVELOPERS', ['Add Helpin to your app.', 'Connect your tools.'], 'SDKs, APIs, MCP and events.'],
-  ['self-hosting', 'OPEN SOURCE', ['The whole product.', 'Your infrastructure.'], 'Run Helpin yourself. Enterprise features licensed separately.'],
-  ['branding', 'THE HELPIN BRAND', ['Customer work,', 'connected.'], 'The marks, colors and typography behind Helpin.'],
+  ['product', 'THE HELPIN PRODUCT', ['Everything in Helpin,', 'attached to', 'the customer.'], 'Support, projects, CRM, meetings, docs and AI agents.'],
+  ['customer-support', 'CUSTOMER SUPPORT', ['AI agents that', 'know the history.'], 'Support that follows through—with your team in control.'],
+  ['projects', 'PROJECTS', ['Plan the work.', 'Build with AI agents', 'that know why.'], 'Roadmaps, sprints and customer history in one workspace.'],
+  ['crm', 'CRM', ['Move deals forward.'], 'With AI agents that know your customers.'],
+  ['meetings', 'MEETINGS', ['AI agents that turn', 'meeting decisions', 'into next steps.'], 'Keep calls, tasks and follow-ups connected to the customer.'],
+  ['knowledge', 'KNOWLEDGE', ['Better docs for', 'your customers.'], 'Better answers from your AI agents.'],
+  ['ai-agents', 'AI AGENTS', ['AI agents that turn', 'customer history', 'into action.'], 'Your team sets the tools, permissions and approvals.'],
+  ['developers', 'FOR DEVELOPERS', ['Connect your product.'], 'Give AI agents the tools to act—with SDKs, APIs and MCP.'],
+  ['self-hosting', 'OPEN SOURCE', ['The whole product.', 'Your infrastructure.'], 'One connected platform. Your team controls the deployment.'],
+  ['branding', 'THE HELPIN BRAND', ['One customer history.'], 'A shared workspace for your team and AI agents.'],
 ];
 for (const [slug, eyebrow, headline, support] of productCards) {
   variants.push({ output: resolve(websiteRoot, `public/og/helpin-${slug}-green.png`), eyebrow, headline, support, visual: 'connected' });
