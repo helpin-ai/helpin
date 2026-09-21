@@ -20,9 +20,9 @@ export const PAGE_SEO = {
     imageAlt: 'Helpin — From customer question to shipped fix',
   },
   pricing: {
-    title: 'Pricing — Helpin',
+    title: 'Pricing — Open source and Helpin Cloud',
     description:
-      'Simple plans with unlimited teammates, every Helpin module, and AI agents included in one connected workspace.',
+      'Self-host the open-source product or choose Helpin Cloud with unlimited teammates and monthly AI usage. Compare plans, hosting and Enterprise licensing.',
     canonicalPath: '/pricing',
     imagePath: '/og/helpin-pricing-green.png',
     imageAlt: 'Helpin pricing focuses on growth, not seat count',
