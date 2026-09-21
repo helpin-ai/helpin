@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowRight, ChevronRight, Inbox, MessageSquare, Clock3, Languages, Paperclip, Search, Sparkles, Users, Zap } from 'lucide-react';
+import { ArrowRight, ChevronRight, Inbox, MessageSquare, Clock3, Languages, Paperclip, Search, ShieldCheck, Plug, Sparkles, Users, Zap } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
 import { ConnectedWorkspace } from '../../_components/ConnectedWorkspace';
@@ -12,6 +12,7 @@ import { SupportInboxFeatures } from './support-inbox-features';
 import { SupportInboxShowcase } from './support-inbox-showcase';
 import { SupportWorkspace } from './support-workspace';
 import { SupportHeroScene } from './support-hero-scene';
+import { SupportIdentity } from './support-identity';
 import './support.css';
 
 export const metadata: Metadata = {
@@ -41,6 +42,8 @@ const FAQS = [
   ['Can agents reply directly to customers?', 'Yes. Enable AI-first replies for your support inbox to let the configured agent respond to customers. You can also use internal AI assistance or turn automatic replies off. Your team can review and edit drafts before sending.'],
   ['What happens when a customer needs a person?', 'Helpin can hand the conversation over to your team. The customer’s messages, AI replies, and handoff notes stay in the thread so your team can continue with the context in view.'],
   ['How does support connect to product work?', 'In the full workspace, you can create tasks from a conversation and link customer requests to projects. That gives the team doing the work the original customer context, and helps support see who needs a follow-up.'],
+  ['How does HMAC identity verification work?', 'Your backend signs the logged-in customer’s identity with a secret that stays on your server. Helpin validates that proof and records whether the widget identity is verified. You can require server-signed identities; anonymous chat remains available.'],
+  ['Does a verified identity automatically grant access to connected tools?', 'No. HMAC verifies the widget identity. MCP connections, selected agent tools, and action approvals are configured separately. Your MCP server must enforce which customer records and operations a tool can access. Ask Agent helps your team investigate and prepare replies; your support response mode determines whether the configured support agent replies directly or assists your team internally.'],
   ['Can we self-host Customer Support?', 'Helpin Community includes support, docs, and agents, and runs with Docker Compose on your infrastructure. Projects and CRM are outside the default Community scope. Check the Community guide for current availability and setup requirements.'],
 ];
 
@@ -68,7 +71,7 @@ export default function CustomerSupportPage() {
         </div>
       </section>
 
-      <nav className="support-page-nav" aria-label="On this page"><div className="wrap"><span>Customer Support</span><a href="#support-inbox">Shared inbox</a><a href="#support-operations">Inbox tools</a><a href="#support-knowledge">Knowledge</a><a href="#support-workflow">AI & teamwork</a><a href="#support-connected">Connected work</a><a href="#support-controls">Controls</a><a href="#support-faq">FAQs</a></div></nav>
+      <nav className="support-page-nav" aria-label="On this page"><div className="wrap"><span>Customer Support</span><a href="#support-inbox">Shared inbox</a><a href="#support-operations">Inbox tools</a><a href="#support-knowledge">Knowledge</a><a href="#support-workflow">AI & teamwork</a><a href="#support-identity">Identity & tools</a><a href="#support-connected">Connected work</a><a href="#support-controls">Controls</a><a href="#support-faq">FAQs</a></div></nav>
 
       <section id="support-inbox" className="support-inbox-section">
         <div className="wrap">
@@ -101,6 +104,22 @@ export default function CustomerSupportPage() {
             <article><div className="support-step-copy"><span className="support-step-number">02 / HAND OFF</span><h3>Bring in your team without starting over.</h3><p>Pass the conversation to a teammate with the question, previous replies, and internal notes together. Customers can pick up where they left off.</p></div><SupportScene variant="handoff" /></article>
             <article><div className="support-step-copy"><span className="support-step-number">03 / FOLLOW THROUGH</span><h3>Keep the request attached to the work.</h3><p>Turn the request into a task, keep the customer linked, and prepare a follow-up when the work is ready.</p></div><SupportScene variant="followup" /></article>
           </div>
+        </div>
+      </section>
+
+
+      <section id="support-identity" className="support-identity-section">
+        <div className="wrap support-identity-grid">
+          <div className="support-identity-copy">
+            <SectionHead eyebrow="Verified identity. Connected tools." title="Know who’s asking. Find out what happened." lede="Verify signed-in customers and connect the tools behind the answer. Give your team and agents the context to investigate account-specific questions." />
+            <div className="support-identity-points">
+              <div><ShieldCheck size={21} strokeWidth={1.5} aria-hidden="true" /><div><h3>Verify the customer with HMAC.</h3><p>Sign widget identities on your server. Helpin checks the signature before marking that identity as verified.</p></div></div>
+              <div><Plug size={21} strokeWidth={1.5} aria-hidden="true" /><div><h3>Bring your logs into the conversation.</h3><p>Connect logs and account tools through your MCP server, then choose which tools each agent can use. Your tools enforce customer access.</p></div></div>
+              <div><Sparkles size={21} strokeWidth={1.5} aria-hidden="true" /><div><h3>Turn findings into a useful next step.</h3><p>Ask Agent helps investigate, prepare replies, and carry out permitted work. Set approvals for actions that need your team.</p></div></div>
+            </div>
+            <div className="support-identity-links"><a href={`${GITHUB_URL}/blob/develop/docs/community/widget-identity.md`} target="_blank" rel="noopener noreferrer">Set up identity verification <ArrowRight size={13} aria-hidden="true" /></a><a href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect MCP tools <ArrowRight size={13} aria-hidden="true" /></a></div>
+          </div>
+          <SupportIdentity />
         </div>
       </section>
 
