@@ -199,7 +199,8 @@ describe('DockRunView timeline parity', () => {
     expect(transcript?.getAttribute('data-completed-run')).toBe('false');
     expect(transcript?.getAttribute('data-actor')).toBe('Waqar Azeem');
     expect(container.querySelector('[data-testid="run-plan"]')?.getAttribute('data-status')).toBe('running');
-    expect(container.textContent).toContain('Work plan');
+    expect(container.textContent).toContain('Current work plan');
+    expect(container.querySelector('[data-current-work-plan]')).not.toBeNull();
     expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-disabled')).toBe('true');
     expect(container.querySelector('[data-testid="dock-input"]')?.getAttribute('data-can-stop')).toBe('true');
     expect(container.textContent).toContain('Agent is working…');

@@ -258,6 +258,7 @@ export interface CodingSessionStreamSnapshot {
   live_reasoning_message?: CodingSessionLiveReasoningMessage;
   live_turn_segments?: CodingSessionLiveTurnSegment[];
   current_plan?: RunPlanArtifact;
+  work_plans?: RunPlanArtifact[];
 }
 
 export interface CodingSessionTurnState {
@@ -274,6 +275,7 @@ export interface RunPlanStep {
 }
 
 export interface RunPlanArtifact {
+  origin?: { event_id: string; sequence_no?: number; turn_id?: string; created_at: string };
   note?: string;
   plan: RunPlanStep[];
 }
@@ -286,5 +288,6 @@ export interface CodingSessionStreamState {
   live_turn_segments: CodingSessionLiveTurnSegment[];
   activity_events: CodingSessionEvent[];
   current_plan: RunPlanArtifact | null;
+  work_plans?: RunPlanArtifact[];
   completed_tool_calls: CodingSessionLiveToolCall[];
 }

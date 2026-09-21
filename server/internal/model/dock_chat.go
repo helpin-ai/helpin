@@ -86,6 +86,7 @@ type GenerateDockChatTitleRequest struct {
 // DockChatDetail is the read model returned for a single chat: the chat row
 // plus a summary of its current backing run and the plans launched from it.
 type DockChatDetail struct {
+	WorkPlans       []CodingSessionRunPlan  `json:"work_plans,omitempty"`
 	Chat            DockChat                `json:"chat"`
 	Run             *AgentRun               `json:"run,omitempty"`
 	AcceptedMessage *AgentRunMessage        `json:"accepted_message,omitempty"`

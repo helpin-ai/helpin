@@ -1512,7 +1512,16 @@ func (s *AgentRuntimeProjectionService) persistRuntimeCodingSessionStreamSnapsho
 		return false
 	}
 
-	snapshot = model.ApplyCodingSessionStreamEvent(snapshot, eventType, event.Data, s.eventTime(event))
+	payload := event.Data
+	if eventType == "plan.updated" {
+		payload = make(map[string]any, len(event.Data)+2)
+		for key, value := range event.Data {
+			payload[key] = value
+		}
+		payload["_plan_event_id"] = runtimeEventIdentity(event)
+		payload["_plan_sequence"] = event.SequenceNo
+	}
+	snapshot = model.ApplyCodingSessionStreamEvent(snapshot, eventType, payload, s.eventTime(event))
 	if snapshot != nil && s.eventProtocol == "v2" && event.SequenceNo > snapshot.ThroughSequence {
 		snapshot.ThroughSequence = event.SequenceNo
 	}

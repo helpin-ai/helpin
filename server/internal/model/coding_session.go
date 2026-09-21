@@ -203,9 +203,17 @@ type CodingSessionRunPlanStep struct {
 	Status string `json:"status"`
 }
 
+type CodingSessionPlanOrigin struct {
+	EventID    string    `json:"event_id"`
+	SequenceNo int64     `json:"sequence_no,omitempty"`
+	TurnID     string    `json:"turn_id,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type CodingSessionRunPlan struct {
-	Note string                     `json:"note,omitempty"`
-	Plan []CodingSessionRunPlanStep `json:"plan"`
+	Origin *CodingSessionPlanOrigin   `json:"origin,omitempty"`
+	Note   string                     `json:"note,omitempty"`
+	Plan   []CodingSessionRunPlanStep `json:"plan"`
 }
 
 type CodingSessionStreamSnapshot struct {
@@ -214,6 +222,7 @@ type CodingSessionStreamSnapshot struct {
 	LiveAssistantMessage *CodingSessionLiveAssistantMessage `json:"live_assistant_message,omitempty"`
 	LiveReasoningMessage *CodingSessionLiveReasoningMessage `json:"live_reasoning_message,omitempty"`
 	LiveTurnSegments     []CodingSessionLiveTurnSegment     `json:"live_turn_segments,omitempty"`
+	WorkPlans            []CodingSessionRunPlan             `json:"work_plans,omitempty"`
 	CurrentPlan          *CodingSessionRunPlan              `json:"current_plan,omitempty"`
 }
 

@@ -1,3 +1,4 @@
+import { dockWorkPlans, hasWorkPlanOrigin } from './dockWorkPlans';
 import activityStyles from './DockActivityTimeline.module.css';
 import { useAskAgentDefaults } from "@/hooks/queries/useAskAgentDefaults";
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
@@ -922,6 +923,7 @@ export function ChatView({
             workspaceId={workspaceId}
             chatId={chatId}
             fallbackActor={streamController.session?.triggered_by_user}
+            savedWorkPlans={detail?.work_plans}
             subAgentRuns={subAgentTimelineItems}
             compactAssistantProgress
           />
@@ -944,9 +946,7 @@ export function ChatView({
             ))}
           </div>
         )}
-        {currentPlan && (
-          <CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Work plan" />
-        )}
+
         {visibleSendError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
             <p className="mb-1 line-clamp-2 text-foreground/80">{visibleSendError.content}</p>
@@ -1012,6 +1012,7 @@ export function ChatView({
       </div>
       {!atBottom && <ScrollToLatestButton onClick={scrollToLatest} />}
       </div>
+      {currentPlan && (!hasWorkPlanOrigin(currentPlan) || !mergedStream || !dockWorkPlans(mergedStream).some(plan => plan.origin?.event_id === currentPlan.origin?.event_id)) && <div className="max-h-48 shrink-0 overflow-y-auto px-5" data-current-work-plan><CodingPlanPanel plan={currentPlan} runStatus={run?.status} title="Current work plan" defaultOpen={false} /></div>}
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}

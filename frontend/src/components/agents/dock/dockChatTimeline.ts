@@ -249,6 +249,7 @@ export function mergePersistedChatMessages(
     live_turn_segments: liveTurnSegments,
     activity_events: stream?.activity_events ?? [],
     current_plan: stream?.current_plan ?? null,
+    ...(stream?.work_plans ? {work_plans: stream.work_plans} : {}),
     completed_tool_calls: stream?.completed_tool_calls ?? [],
   };
 }

@@ -96,3 +96,10 @@ func (r *CodingSessionStateSnapshotRepository) DeleteByRun(ctx context.Context, 
 	}
 	return nil
 }
+
+// ListByDockChat retains plan positions across the runs backing one chat.
+func (r *CodingSessionStateSnapshotRepository) ListByDockChat(ctx context.Context, workspaceID, chatID string) ([]model.CodingSessionStateSnapshot, error) {
+	var rows []model.CodingSessionStateSnapshot
+	err := r.db.WithContext(ctx).Table("coding_session_state_snapshots AS snapshot").Select("snapshot.*").Joins("JOIN agent_runs AS run ON run.id = snapshot.run_id AND run.workspace_id = snapshot.workspace_id").Where("snapshot.workspace_id = ? AND run.dock_chat_id = ?", workspaceID, chatID).Order("snapshot.created_at ASC").Scan(&rows).Error
+	return rows, err
+}

@@ -161,6 +161,17 @@ function assistantTurn(id: string, content: string): CodingSessionLiveTurnSegmen
 }
 
 describe('DockTranscript', () => {
+  it('keeps an anchored plan above a follow-up and collapses the earlier plan', () => {
+    const stream = streamWithMessages([userMessage('first', 'Initial request', 1), assistantMessage('answer', 'First response', 3), userMessage('followup', 'Next request', 4)]);
+    stream.current_plan = {origin:{event_id:'plan-event',turn_id:'turn-1',created_at:'2026-08-06T00:00:02Z'},plan:[{step:'Inspect code',status:'completed'}]};
+    act(() => root.render(<DockTranscript stream={stream} active={false} workspaceId="ws-1" />));
+    const plan = container.querySelector('[data-coding-session-plan]')!;
+    expect(plan).not.toBeNull();
+    expect(plan.hasAttribute('open')).toBe(false);
+    expect(container.textContent!.indexOf('Work plan')).toBeLessThan(container.textContent!.indexOf('Next request'));
+    expect(container.textContent!.indexOf('Initial request')).toBeLessThan(container.textContent!.indexOf('Work plan'));
+  });
+
   it('collapses already-loaded standalone run work and keeps the final response visible', () => {
     act(() => {
       root.render(

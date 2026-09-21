@@ -1,3 +1,6 @@
+import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
+import { dockWorkPlans, dockPlanBoundary } from './dockWorkPlans';
+import type { RunPlanArtifact, AgentRunStatus } from '@/lib/pmTypes';
 import { Fragment, useState, type ReactNode } from 'react';
 import { useDockStore } from '@/stores/dockStore';
 import { Tick01Icon } from '@/lib/icons';
@@ -199,6 +202,7 @@ export function DockTranscript({
   runStatus,
   pauseReason,
   subAgentRuns = [],
+  savedWorkPlans = [],
   latestSubmission,
   className,
 }: {
@@ -225,6 +229,7 @@ export function DockTranscript({
   pauseReason?: AgentRunPauseReason;
   /** Delegated work inserted between the messages surrounding its launch. */
   subAgentRuns?: DockSubAgentTimelineItem[];
+  savedWorkPlans?: RunPlanArtifact[];
   /** Segments already visible before the latest local send, including undated snapshots. */
   latestSubmission?: DockMessageSubmission | null;
   className?: string;
@@ -255,7 +260,8 @@ export function DockTranscript({
   }) : [];
   const animateAnswer = useDockAnswerAnimation(segments, active || !!latestSubmission);
   if (!stream) return null;
-  if (segments.length === 0 && subAgentRuns.length === 0) return null;
+  const plans = historyWorkOnly ? [] : dockWorkPlans(stream, savedWorkPlans);
+  if (segments.length === 0 && subAgentRuns.length === 0 && plans.length === 0) return null;
   const times = transcriptSegmentTimes(stream);
   // A submitted user turn now shares the transcript's stable row. Retained
   // live work from before that turn must stay above it while history catches up.
@@ -359,6 +365,14 @@ export function DockTranscript({
     runsByBoundary.set(boundary, existing);
   }
 
+  const plansByBoundary = new Map<number, {plan: RunPlanArtifact; collapsed: boolean}[]>();
+  const planEntries = entries.map(entry => ({timestamp: segmentTimestamp(entry.segment, times), user: entry.segment.kind === 'user', pending: entry.segment.kind === 'user' && entry.segment.message.delivery_status === 'pending'}));
+  for (const plan of plans) {
+    const placement = dockPlanBoundary(plan, planEntries);
+    plansByBoundary.set(placement.index, [...(plansByBoundary.get(placement.index) ?? []), {plan, collapsed: placement.collapsed}]);
+  }
+  const renderPlans = (index: number) => plansByBoundary.get(index)?.map(({plan, collapsed}) => <CodingPlanPanel key={`${plan.origin!.event_id}:${collapsed}`} plan={plan} title="Work plan" defaultOpen={!collapsed} runStatus={collapsed ? undefined : runStatus as AgentRunStatus} />);
+
   return (
     <div className={cn('space-y-1.5', className)}>
       {entries.map((entry, index) => {
@@ -379,16 +393,16 @@ export function DockTranscript({
           && chatId
         ) {
           return (
-            <DockWorkDisclosure
-              key={entry.key}
+            <Fragment key={entry.key}>{renderPlans(index)}<DockWorkDisclosure
               workspaceId={workspaceId}
               chatId={chatId}
               summary={entry.segment.message.dock_work_summary}
-            />
+            /></Fragment>
           );
         }
         return (
           <Fragment key={entry.segment.kind === 'assistant' ? entry.segment.messageId ?? entry.segment.id.replace(/^live:/, '') : entry.key}>
+            {renderPlans(index)}
             {runsByBoundary.has(index) ? <SubAgentTimelineGroup items={runsByBoundary.get(index)!} /> : null}
             <div
               className={cn(
@@ -465,6 +479,7 @@ export function DockTranscript({
           </Fragment>
         );
       })}
+      {renderPlans(entries.length)}
       {runsByBoundary.has(entries.length) ? <SubAgentTimelineGroup items={runsByBoundary.get(entries.length)!} /> : null}
     </div>
   );

@@ -634,6 +634,21 @@ func (s *DockChatService) chatDetail(ctx context.Context, chat *model.DockChat) 
 			}
 		}
 	}
+	if s.agentService != nil && s.agentService.sessionSnapshotRepo != nil {
+		snapshots, err := s.agentService.sessionSnapshotRepo.ListByDockChat(ctx, chat.WorkspaceID, chat.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range snapshots {
+			snapshot, err := model.DecodeCodingSessionStreamSnapshot(row.SnapshotPayload)
+			if err != nil {
+				return nil, err
+			}
+			if snapshot != nil {
+				detail.WorkPlans = append(detail.WorkPlans, snapshot.WorkPlans...)
+			}
+		}
+	}
 	if s.artifactRepo != nil {
 		artifacts, err := s.artifactRepo.ListObjectArtifactsByDockChat(ctx, chat.WorkspaceID, chat.ID)
 		if err != nil {

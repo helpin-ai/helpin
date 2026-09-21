@@ -30,6 +30,7 @@ export interface DockChat {
 }
 
 export interface DockChatDetail {
+  work_plans?: import('@/lib/pmTypes').RunPlanArtifact[]
   chat: DockChat
   run?: AgentRun | null
   accepted_message?: AgentRunMessage | null

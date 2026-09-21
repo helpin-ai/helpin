@@ -15,6 +15,7 @@ interface CodingPlanPanelProps {
   plan: RunPlanArtifact | null;
   runStatus?: AgentRunStatus;
   title?: string;
+  defaultOpen?: boolean;
 }
 
 const TERMINAL_STATUSES: readonly AgentRunStatus[] = ['completed', 'failed', 'cancelled'];
@@ -23,7 +24,7 @@ function isTerminalStatus(status?: AgentRunStatus): boolean {
   return !!status && (TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
-export function CodingPlanPanel({ plan, runStatus, title = 'Agent plan' }: CodingPlanPanelProps) {
+export function CodingPlanPanel({ plan, runStatus, title = 'Agent plan', defaultOpen = true }: CodingPlanPanelProps) {
   const steps = plan?.plan ?? [];
   const hasPlan = steps.length > 0;
   const completedCount = steps.filter((s) => s.status === 'completed').length;
@@ -46,7 +47,7 @@ export function CodingPlanPanel({ plan, runStatus, title = 'Agent plan' }: Codin
     <details
       className="border-y border-border/70 bg-transparent"
       data-coding-session-plan
-      open
+      open={defaultOpen}
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/25">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">

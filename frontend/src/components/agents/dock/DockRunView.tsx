@@ -1,3 +1,4 @@
+import { dockWorkPlans, hasWorkPlanOrigin } from './dockWorkPlans';
 import activityStyles from './DockActivityTimeline.module.css';
 import { AIExecutionDetails } from "../AIExecutionDetails";
 import { AIConnectionPicker } from '@/components/agents/AIConnectionPicker';
@@ -219,9 +220,7 @@ export function DockRunView({
           {!loading && !streamState ? (
             <p className="py-8 text-center text-[13px] text-[#8a8781]">No activity has been recorded for this run yet.</p>
           ) : null}
-          {currentPlan ? (
-            <CodingPlanPanel plan={currentPlan} runStatus={effectiveRun.status} title="Work plan" />
-          ) : null}
+
           {effectiveRun.error_message ? (
             <div className="mt-3 rounded-xl border border-[#f2c9c5] bg-[#fdf6f5] p-3 text-[12.5px] text-[#8e2525] dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200">
               <p className="font-semibold">Run failed</p>
@@ -261,6 +260,7 @@ export function DockRunView({
         </div>
         {!atBottom ? <ScrollToLatestButton onClick={scrollToLatest} /> : null}
       </div>
+      {currentPlan && (!hasWorkPlanOrigin(currentPlan) || !streamState || !dockWorkPlans(streamState).some(plan => plan.origin?.event_id === currentPlan.origin?.event_id)) && <div className="max-h-48 shrink-0 overflow-y-auto px-5" data-current-work-plan><CodingPlanPanel plan={currentPlan} runStatus={effectiveRun.status} title="Current work plan" defaultOpen={false} /></div>}
       {needsApproval && !atBottom ? (
         <ApprovalAttentionBanner onReview={scrollToLatest} />
       ) : null}

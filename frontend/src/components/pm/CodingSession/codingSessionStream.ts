@@ -203,6 +203,7 @@ function cloneStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null): Cod
     ...(snapshot.live_assistant_message ? { live_assistant_message: cloneAssistantMessage(snapshot.live_assistant_message)! } : {}),
     ...(snapshot.live_reasoning_message ? { live_reasoning_message: cloneReasoningMessage(snapshot.live_reasoning_message)! } : {}),
     ...(snapshot.live_turn_segments ? { live_turn_segments: cloneLiveTurnSegments(snapshot.live_turn_segments) } : {}),
+    ...(snapshot.work_plans ? { work_plans: snapshot.work_plans.map(plan => ({...plan, plan: plan.plan.map(step => ({...step}))})) } : {}),
     ...(snapshot.current_plan ? { current_plan: { ...snapshot.current_plan, plan: snapshot.current_plan.plan.map((step) => ({ ...step })) } } : {}),
   };
 }
@@ -212,6 +213,7 @@ function isEmptyStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null) {
     || (!snapshot.live_assistant_message
       && !snapshot.live_reasoning_message
       && (!snapshot.live_turn_segments || snapshot.live_turn_segments.length === 0)
+      && !snapshot.work_plans?.length
       && !snapshot.current_plan
       && !snapshot.turn_state);
 }
@@ -253,6 +255,7 @@ export function mergeCodingSessionStreamSnapshotSeed(
       plan: current.current_plan.plan.map((step) => ({ ...step })),
     };
   }
+  if (!next.work_plans && current?.work_plans) next.work_plans = current.work_plans;
   return next;
 }
 
@@ -939,6 +942,7 @@ export function buildCodingSessionStreamState(
   let liveReasoningMessage = cloneReasoningMessage(snapshot?.live_reasoning_message);
   const liveTurnSegments = cloneLiveTurnSegments(snapshot?.live_turn_segments);
   let currentPlanLive: RunPlanArtifact | null = parsePlanArtifactValue(snapshot?.current_plan);
+  const workPlans = [...(snapshot?.work_plans ?? [])];
   const snapshotAssistantDeltaCoverage = new Map<string, string>();
   // V2 uses an exact sequence watermark. The content-coverage fallback remains
   // only for legacy v1 snapshots, which have no ordering metadata.
@@ -1210,7 +1214,17 @@ export function buildCodingSessionStreamState(
         const planJson = asString(payload.content);
         if (planJson) {
           const parsed = parsePlanArtifact(planJson);
-          if (parsed) currentPlanLive = parsed;
+          if (parsed) {
+            const previous = currentPlanLive;
+            const sameSteps = previous?.plan.length === parsed.plan.length && previous.plan.every((step, i) => step.step === parsed.plan[i].step);
+            const retainOrigin = previous && (sameSteps || (previous.origin?.turn_id && previous.origin.turn_id === turnState?.turn_id));
+            const origin = retainOrigin ? previous.origin : { event_id: event.id, sequence_no: event.sequence_no, turn_id: turnState?.turn_id, created_at: event.timestamp };
+            currentPlanLive = {...parsed, ...(origin ? {origin} : {})};
+            if (origin) {
+              const index = workPlans.findIndex(plan => plan.origin?.event_id === origin.event_id);
+              if (index < 0) workPlans.push(currentPlanLive); else workPlans[index] = currentPlanLive;
+            }
+          }
         }
         break;
       }
@@ -1255,6 +1269,7 @@ export function buildCodingSessionStreamState(
     )),
     activity_events: activityEvents,
     current_plan: reconciledPlan,
+    ...(workPlans.length ? {work_plans: workPlans.map(plan => reconciledPlan && plan.origin?.event_id === reconciledPlan.origin?.event_id ? reconciledPlan : plan)} : {}),
     completed_tool_calls: completedToolCalls,
   };
 }
