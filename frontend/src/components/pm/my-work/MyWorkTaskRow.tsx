@@ -56,7 +56,7 @@ export function MyWorkTaskRow({ task, workspaceId, teamName, ownerNames, compact
   const propertyClass = 'inline-flex min-w-0 items-center gap-1.5 rounded-sm text-xs text-quiet-text-secondary focus-visible:outline-2 focus-visible:outline-ring';
   const date = days === null ? null : parseISO(task.deadline!.slice(0,10));
   const deadlineText = days === null ? '' : task.completed ? format(date!,'MMM d') : days < 0 ? `${Math.abs(days)} ${days === -1 ? 'day' : 'days'} overdue` : days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : format(date!,'MMM d');
-  return <div className={cn('group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 border-b border-quiet-divider-light px-2 py-3 hover:bg-quiet-row-hover @min-[820px]:grid-cols-[minmax(220px,1fr)_110px_130px_90px_115px_64px]', compact && 'py-2')}>
+  return <div className={cn('group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-2 py-3 hover:bg-quiet-row-hover @min-[820px]:grid-cols-[minmax(220px,1fr)_110px_130px_90px_115px_64px]', compact && 'py-2')}>
     <div className="col-span-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 @min-[820px]:col-span-1">
       <button type="button" onClick={onOpen} className="col-span-2 grid grid-cols-subgrid items-baseline rounded-sm text-left focus-visible:outline-2 focus-visible:outline-ring">
         <span className="shrink-0 whitespace-nowrap font-mono text-[10.5px] tabular-nums text-quiet-muted">{task.task_key}</span>
