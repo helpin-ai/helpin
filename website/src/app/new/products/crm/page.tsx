@@ -215,8 +215,7 @@ export default function CRMPage() {
               <SectionHead
                 eyebrow="From a signal to a customer outcome"
                 title="Give every follow‑up an owner and a plan."
-                lede="Use playbooks to define the outcome, milestones, and responsibilities behind a follow-up, sales handoff, or renewal recovery."
-                secondaryLede="Connect an agent to review updates and propose the work. Your team approves customer messages, CRM changes, and tasks before those playbook actions run."
+                lede="Turn renewals, sales handoffs, and customer follow-ups into clear plans. Define the outcome, milestones, and owners, then let agents review progress and propose next steps for your team to approve."
               />
               <Link className="crm-text-link" href="/new/products/ai-agents">
                 Meet the agents behind the work <ArrowRight size={16} />
