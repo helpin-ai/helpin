@@ -1,4 +1,4 @@
-import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
+import { Availability, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
 import { ArrowRight, ChevronRight, Inbox, MessageSquare, Clock3, Languages, Paperclip, Search, ShieldCheck, Plug, Sparkles, Users, Zap } from 'lucide-react';
@@ -20,65 +20,73 @@ export const metadata = previewMetadata("Support \u2014 Helpin", "/new/products/
 
 
 const FEATURES = [
-  { icon: MessageSquare, title: 'Internal notes & mentions', copy: 'Discuss the next step privately and mention a teammate inside the conversation.' },
-  { icon: Zap, title: 'Saved replies', copy: 'Reuse answers with shortcuts and customer variables, then edit them before sending.' },
-  { icon: Users, title: 'Team presence', copy: 'See who is viewing or typing in a conversation before you jump in with another reply.' },
-  { icon: Search, title: 'Conversation search', copy: 'Find past questions and replies without opening every thread in your inbox.' },
-  { icon: Languages, title: 'Message translation', copy: 'Read incoming messages in your language and translate outgoing replies for the customer.' },
-  { icon: Clock3, title: 'Office hours & reply times', copy: 'Set working hours and expected reply times so customers know when your team is available.' },
-  { icon: Paperclip, title: 'Files & attachments', copy: 'Share screenshots and files in the conversation so the details stay with the request.' },
-  { icon: Sparkles, title: 'AI follow-ups', copy: 'Configure follow-ups for quiet conversations and let your team cancel a pending follow-up when needed.' },
+  { icon: MessageSquare, title: 'Internal notes and mentions', copy: 'Discuss the next step privately and bring teammates into the conversation.' },
+  { icon: Zap, title: 'Saved replies', copy: 'Reuse common answers, then personalize them before sending.' },
+  { icon: Users, title: 'Team presence', copy: 'See who’s viewing or typing before you reply.' },
+  { icon: Search, title: 'Conversation search', copy: 'Find an earlier question without opening every thread.' },
+  { icon: Languages, title: 'Message translation', copy: 'Read incoming messages and prepare replies across languages.' },
+  { icon: Clock3, title: 'Office hours and reply times', copy: 'Let customers know when to expect your team.' },
+  { icon: Paperclip, title: 'Files and attachments', copy: 'Keep screenshots and supporting files with the request.' },
+  { icon: Sparkles, title: 'AI follow-ups', copy: 'Schedule conversation follow-ups and cancel pending messages when needed.' },
 ];
 
 const FAQS = [
   [
-    "Can we use Helpin for both live chat and email?",
-    "Yes. Add the chat widget and connect your support email to bring both channels into one inbox.",
+    "Can our team handle chat and email together?",
+    "Yes. Add the chat widget and forward support email into Helpin’s shared inbox.",
     "https://github.com/helpin-ai/helpin/blob/develop/docs/community/configuration.md"
   ],
   [
-    "Can we keep our existing support email address?",
-    "Yes. Forward incoming mail to Helpin and verify your sender address to reply from your own domain.",
+    "Do we need a new support email address?",
+    "No. Keep your existing address and verify it for replies through Helpin.",
     "https://github.com/helpin-ai/helpin/blob/develop/docs/community/configuration.md"
   ],
   [
-    "How do routing and assignment work?",
-    "Rules route conversations to the right team inbox. Your team can assign owners and choose how AI triage helps.",
-    "/new/products/customer-support#support-operations"
+    "How are conversations assigned?",
+    "Route requests to team inboxes and assign owners. Round-robin assignment and AI routing are available on eligible Cloud plans.",
+    "#support-operations"
   ],
   [
-    "Can we organize the inbox around our own workflow?",
-    "Yes. Combine tags, owners and statuses into saved views, then keep them personal or share them with your team.",
-    "/new/products/customer-support#support-inbox"
+    "Can we create views for our own support process?",
+    "Yes. Filter conversations using tags, owners, and statuses, then save a personal or shared view.",
+    "#support-inbox"
   ],
   [
-    "Where do AI answers come from?",
-    "Choose the docs, website pages and files agents can use. Coverage gaps show which questions need better documentation.",
+    "What information can agents use to answer?",
+    "Agents use the knowledge sources you select, including supported docs, website pages, and files. Relevant customer history and permitted connected tools can provide additional context.",
     "/new/products/knowledge"
   ],
   [
-    "Can agents reply directly to customers?",
-    "Yes. Choose AI-first replies, internal assistance, or turn automatic replies off.",
-    "/new/products/customer-support#support-controls"
+    "Do agents have to send replies automatically?",
+    "No. Your team can use AI for internal assistance instead, or disable automatic responses.",
+    "#support-controls"
   ],
   [
-    "What happens when a customer needs a person?",
-    "The conversation goes to your team with the customer’s messages, AI replies and handoff notes attached.",
-    "/new/products/customer-support#support-workflow"
+    "What does a teammate receive during a handoff?",
+    "The customer’s conversation, the agent’s responses, and the handoff notes—not just a new assignment.",
+    "#support-workflow"
   ],
   [
-    "How does support connect to product work?",
-    "Create a task from a conversation and keep the customer request attached, so the people doing the work know who needs a follow-up.",
+    "Can a support request become project work?",
+    "Yes. Create or link a task and retain the original request, so your team can plan the work without losing who needs it.",
     "/new/products/projects"
   ],
   [
-    "Can we self-host Support?",
-    "Yes. Support is part of the open-source product and can run on your own infrastructure.",
+    "Is self-hosting available for Support?",
+    "Yes. Support is included in Helpin’s open-source product. Your team operates the installation and covers hosting and provider costs; Enterprise features are licensed separately.",
     "/new/self-hosting#whats-included",
     "See what’s included"
   ],
-  ["How is customer identity verified?", "Your server signs the customer’s identity, and Helpin checks the signature before marking them as verified.", "/new/developers#identity"],
-  ["Does a verified identity automatically grant access to connected tools?", "No. Verification confirms who is asking; connected tools still enforce access to customer data, and agents use only the tools you allow.", "/new/developers#identity"]
+  [
+    "How does Helpin check a customer’s identity?",
+    "Your backend signs an identity proof. Helpin validates it before marking the customer as verified in the widget.",
+    "/new/developers#identity"
+  ],
+  [
+    "Does verification give an agent access to all customer data?",
+    "No. Identity verification does not grant tool permissions. You select the tools an agent may use, and your connected systems must enforce access to customer data.",
+    "/new/developers#identity"
+  ]
 ] as const;
 
 function Actions() {
@@ -94,11 +102,11 @@ export default function CustomerSupportPage() {
           <nav className="support-breadcrumb" aria-label="Breadcrumb"><Link href="/new/product">Products</Link><ChevronRight size={12} aria-hidden="true" /><span aria-current="page">Customer Support</span></nav>
           <div className="support-hero-grid">
             <div className="hero-inner">
-              <Availability category="AI support inbox" />
-              <h1><span className="support-headline-opening">Support that ends</span> with a fix, <span>not a ticket number.</span></h1>
-              <p className="lede">Helpin AI answers from your docs, customer history and your own logs. When a request needs a fix, it goes to a teammate or a coding agent with the conversation attached — and the customer hears back when it ships.</p>
+              <Availability category="Customer support for SaaS teams" />
+              <h1>AI agents that know the history.<br /><span>Support that follows through.</span></h1>
+              <p className="lede">Bring chat, email, and customer history into one inbox. AI agents use your product knowledge and connected tools to answer questions, investigate issues, and move requests forward—with your team in control.</p>
               <Actions />
-              <CtaNote trial support />
+              <p className="cta-note">14-day cloud trial · No credit card required · Self-hosting available.</p>
             </div>
             <SupportHeroScene />
           </div>
@@ -109,34 +117,34 @@ export default function CustomerSupportPage() {
 
       <section id="support-inbox" className="support-inbox-section">
         <div className="wrap">
-          <SectionHead eyebrow="The inbox" title="One inbox, from first question to follow-up." lede="Bring chat and email together. Helpin AI checks your docs and connected tools, then hands your team the findings, customer history and linked work when a person needs to step in." />
+          <SectionHead eyebrow="The shared inbox" title="One place to reply. The context to get it right." lede="Work through chat and email with the customer’s details, past conversations, and linked tasks in view. Your team and AI agents can pick up the request without piecing the story back together." />
           <SupportInboxShowcase />
         </div>
       </section>
 
       <section id="support-operations" className="support-operations">
         <div className="wrap">
-          <SectionHead eyebrow="Inbox basics" title="Email forwarding, routing rules and saved views — the everyday tools, done." lede="Connect your support email, give every conversation a destination, and build the views your team works from. The everyday inbox tools are here, alongside your agents." />
+          <SectionHead eyebrow="Everyday support" title="A shared inbox your team can work from." lede="Connect your support address, organize incoming requests, and give each conversation an owner." />
           <SupportInboxFeatures />
-          <h3 className="support-tools-heading">Everyday tools for your support team.</h3>
+          <h3 className="support-tools-heading">The details that keep support moving.</h3>
           <div className="support-features support-operation-tools">{FEATURES.map(({ icon: Icon, title, copy }) => <article key={title}><Icon size={23} strokeWidth={1.5} aria-hidden="true" /><h3>{title}</h3><p>{copy}</p></article>)}</div>
         </div>
       </section>
 
       <section id="support-knowledge" className="support-knowledge-section">
         <div className="wrap support-knowledge-grid">
-          <SectionHead eyebrow="Knowledge that gets better" title="Answers come from your docs. Gaps become new articles." lede="Connect your docs, website and files. Find questions your knowledge doesn’t cover, then review suggested articles and updates." />
+          <SectionHead eyebrow="Better knowledge. Better answers." title="Turn unanswered questions into useful docs." lede="Choose the docs, website pages, and files your agents can use. When questions reveal missing guidance, turn the conversation into a draft article or update your team can review." />
           <SupportKnowledge />
         </div>
       </section>
 
       <section id="support-workflow" className="support-workflow-section">
         <div className="wrap">
-          <SectionHead eyebrow="AI and your team, in the same conversation" title="AI answers. Your team steps in when needed." lede="Answer from your docs, investigate with connected tools, and bring in the right teammate when needed. Keep the customer informed as the work moves forward." />
+          <SectionHead eyebrow="AI and your team" title="A handoff, not a restart." lede="Let agents handle questions using the available history and knowledge. When a person needs to take over, keep the conversation and investigation together—then carry the outcome back to the customer." />
           <div className="support-workflow-grid">
-            <article><div className="support-step-copy"><span className="support-step-number">01 / ANSWER</span><h3>Let agents take the first reply.</h3><p>Helpin AI answers from your docs and customer history, and checks connected tools for deeper questions. Choose direct replies or drafts your team reviews.</p></div><SupportScene variant="answer" /></article>
-            <article><div className="support-step-copy"><span className="support-step-number">02 / HAND OFF</span><h3>Bring in your team without starting over.</h3><p>Give the right teammate the conversation, log findings and customer history together. The investigation is already there, so nobody starts from scratch.</p></div><SupportScene variant="handoff" /></article>
-            <article><div className="support-step-copy"><span className="support-step-number">03 / FOLLOW THROUGH</span><h3>Follow up when the fix is live.</h3><p>Link the request to a task. Once the fix is reviewed, tested and released, Helpin AI sends the customer an update with your team’s approval.</p></div><SupportScene variant="followup" /></article>
+            <article><div className="support-step-copy"><span className="support-step-number">01 / ANSWER</span><h3>Start with what you already know.</h3><p>Use product knowledge, customer history, and selected tools to investigate the request. Choose direct AI replies or assistance your team reviews.</p></div><SupportScene variant="answer" /></article>
+            <article><div className="support-step-copy"><span className="support-step-number">02 / HAND OFF</span><h3>Pass on the findings, not just the ticket.</h3><p>Give the next teammate the customer’s messages, what’s been tried, and what the agent found.</p></div><SupportScene variant="handoff" /></article>
+            <article><div className="support-step-copy"><span className="support-step-number">03 / FOLLOW THROUGH</span><h3>Bring the outcome back to the customer.</h3><p>Keep the request linked to the work. Configure a follow-up after release, with the approvals your team requires.</p></div><SupportScene variant="followup" /></article>
           </div>
         </div>
       </section>
@@ -145,13 +153,13 @@ export default function CustomerSupportPage() {
       <section id="support-identity" className="support-identity-section">
         <div className="wrap support-identity-grid">
           <div className="support-identity-copy">
-            <SectionHead eyebrow="Customer identity and tool access" title="Verified customers, connected tools." lede="Verify signed-in customers and let agents check connected logs and account tools before they reply." />
+            <SectionHead eyebrow="Identity and access" title="Know who’s asking. Control what AI can access." lede="Verify signed-in customers and give agents selected tools to investigate their requests. Confirming identity and granting access remain separate controls." />
             <div className="support-identity-points">
-              <div><ShieldCheck size={21} strokeWidth={1.5} aria-hidden="true" /><div><h3>Verify who’s asking.</h3><p>Your server signs the customer’s identity. Helpin checks that signature before showing the customer as verified.</p></div></div>
-              <div><Plug size={21} strokeWidth={1.5} aria-hidden="true" /><div><h3>Bring your logs into the conversation.</h3><p>Connect logs and account tools, then choose which ones each agent can use. Your connected tools control which customer data they return.</p></div></div>
-              <div><Sparkles size={21} strokeWidth={1.5} aria-hidden="true" /><div><h3>Turn findings into a useful next step.</h3><p>Ask Agent investigates the issue, prepares a reply, and carries out permitted work. Choose which actions need your team’s approval.</p></div></div>
+              <div><ShieldCheck size={21} strokeWidth={1.5} aria-hidden="true" /><div><h3>Verify the customer behind the message.</h3><p>Have your server sign the customer’s identity. Helpin checks that proof when the customer is identified in the widget.</p></div></div>
+              <div><Plug size={21} strokeWidth={1.5} aria-hidden="true" /><div><h3>Check the systems behind the issue.</h3><p>Connect selected logs and account tools. Your tool server determines which customer data each request may return.</p></div></div>
+              <div><Sparkles size={21} strokeWidth={1.5} aria-hidden="true" /><div><h3>Turn the findings into action.</h3><p>Let Ask Agent investigate and prepare the next step using permitted tools. Set which actions require approval.</p></div></div>
             </div>
-            <div className="support-identity-links"><a href={`${GITHUB_URL}/blob/develop/docs/community/widget-identity.md`} target="_blank" rel="noopener noreferrer">Set up identity verification <ArrowRight size={13} aria-hidden="true" /></a><a href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect your tools <ArrowRight size={13} aria-hidden="true" /></a></div>
+            <div className="support-identity-links"><a href={`${GITHUB_URL}/blob/develop/docs/community/widget-identity.md`} target="_blank" rel="noopener noreferrer">Configure customer identity <ArrowRight size={13} aria-hidden="true" /></a><a href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external tools <ArrowRight size={13} aria-hidden="true" /></a></div>
           </div>
           <SupportIdentity />
         </div>
@@ -159,24 +167,24 @@ export default function CustomerSupportPage() {
 
       <section id="support-connected" className="support-connected-section">
         <div className="wrap support-connected-grid">
-          <div><SectionHead eyebrow="Beyond the inbox" title="When the answer is a bug, hand it to a coding agent." lede="Discuss the issue with Ask Agent, create a linked task, and bring in a coding agent to prepare a fix. Assign it to your team for review, with the customer conversation attached." /><Link className="btn-link" href="/new#ask-agent">Explore Ask Agent <ArrowRight size={16} aria-hidden="true" /></Link></div>
-          <div className="support-connected-preview"><SupportWorkspace variant="agent" /></div>
+          <div><SectionHead eyebrow="Beyond the inbox" title="When a reply isn’t enough, move the work forward." lede="Create or link a task with the customer’s request attached. For a bug, bring in a coding agent to prepare a change for review. Keep support connected to the work—and to the person waiting for it." /><Link className="btn-link" href="/new#ask-agent">Explore Ask Agent <ArrowRight size={16} aria-hidden="true" /></Link></div>
+          <figure className="support-connected-preview"><h3 className="support-demo-heading">From reported issue to proposed change</h3><SupportWorkspace variant="agent" /><figcaption className="support-demo-caption">The work moves forward. The customer’s need stays attached.</figcaption></figure>
         </div>
       </section>
 
       <section id="support-controls" className="support-controls-section">
         <div className="wrap">
-          <SectionHead eyebrow="Approvals built in" title="Choose when agents act and when people step in." lede="Set how AI responds in your inbox, which tools an agent can use, and which actions need approval." />
+          <SectionHead eyebrow="Your team sets the rules" title="Choose what AI handles. Decide where people step in." lede="Set how agents respond, which tools they can use, and when they need approval." />
           <SupportControls />
         </div>
       </section>
 
       <section id="support-faq" className="support-faq-section">
-        <div className="wrap support-faq-grid"><SectionHead eyebrow="Questions" title="Before you open the inbox." /><div className="support-faqs"><FAQList items={FAQS} className="faq-items" /><a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Read the self-hosting guide <ArrowRight size={16} aria-hidden="true" /></a></div></div>
+        <div className="wrap support-faq-grid"><SectionHead eyebrow="Questions before you start" title="Get to know Helpin Support." /><div className="support-faqs"><FAQList items={FAQS} className="faq-items" /><a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Explore self-hosting <ArrowRight size={16} aria-hidden="true" /></a></div></div>
       </section>
 
-      <section className="final-cta final-cta-connected" aria-labelledby="support-final-cta-title"><div className="wrap"><ConnectedWorkspace /><div className="final"><span className="eyebrow">Start with a conversation</span><h2 id="support-final-cta-title">Every customer question ends with an answer or a fix.</h2><p className="lede">Bring AI answers, human support, and the work behind each request into one connected workspace.</p><Actions /><CtaNote trial support /></div></div></section>
+      <section className="final-cta final-cta-connected" aria-labelledby="support-final-cta-title"><div className="wrap"><ConnectedWorkspace /><div className="final"><span className="eyebrow">From question to next step</span><h2 id="support-final-cta-title">Help customers move forward.<br />Not start over.</h2><p className="lede">Bring your team, customer history, and AI agents into one workspace. Answer the question, connect the work, and keep the customer informed.</p><Actions /><p className="cta-note">14-day cloud trial · No credit card required · Self-hosting available.</p></div></div></section>
     </div>
-    <PreviewFooter />
+    <PreviewFooter homepage />
   </>;
 }
