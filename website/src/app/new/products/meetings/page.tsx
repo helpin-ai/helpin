@@ -1,7 +1,7 @@
-import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
+import {  DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
-import { ArrowRight, CalendarDays, CheckCheck, ChevronRight, FileText, Mic, Settings2 } from 'lucide-react';
+import { ArrowRight, CalendarDays, ChevronRight, Mic, Settings2 } from 'lucide-react';
 import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
 import { ConnectedWorkspace } from '../../_components/ConnectedWorkspace';
@@ -17,58 +17,58 @@ const PLATFORMS = [['google_meet', 'Google Meet'], ['zoom', 'Zoom'], ['teams', '
 const FAQS = [
   [
     "Which meeting platforms can Helpin join?",
-    "Helpin recognizes Google Meet, Zoom, Microsoft Teams and Webex links. Your capture provider and the meeting’s access settings determine whether the notetaker can join.",
+    "Google Meet, Zoom, Microsoft Teams, and Webex. Successful joining depends on the configured capture provider and meeting access.",
     "/new/products/meetings#meeting-capture"
   ],
   [
-    "Can I choose which calls are captured?",
-    "Yes. Capture a single meeting, choose recurring meetings, or set defaults for calls with external attendees.",
+    "Can I choose which meetings are captured?",
+    "Yes. Select individual calls, recurring series, or defaults for eligible meetings.",
     "/new/products/meetings#meeting-capture"
   ],
   [
     "What do I get after a meeting?",
-    "A transcript, summary, decisions and suggested action items, plus a follow-up draft. Recordings are available when recording is enabled.",
+    "A transcript, summary, decisions, suggested actions, and follow-up draft. Playback requires recording to be enabled.",
     "/new/products/meetings#meeting-decisions"
   ],
   [
     "Can action items become project tasks?",
-    "Yes. Review an action item, choose its team and owner, and create a task with the meeting attached.",
+    "Yes. Review an action item and create a linked task.",
     "/new/products/meetings#meeting-work"
   ],
   [
     "Are follow-up emails sent automatically?",
-    "No. Helpin prepares a draft for your team to review before sending.",
+    "No. Your team reviews the draft before sending.",
     "/new/products/meetings#meeting-work"
   ],
   [
-    "Does the meeting stay attached to the customer?",
-    "Yes. Attach meetings to contacts, companies, deals and tasks so the next teammate can find the discussion.",
+    "Does the meeting stay connected to the customer?",
+    "Yes. Link meetings with the relevant customer records and work, so the discussion remains available alongside the account’s other activity.",
     "/new/products/meetings#meeting-context"
   ],
   [
-    "Can we control recordings and the notetaker?",
-    "Yes. Choose the notetaker name, join preferences and whether recordings are saved.",
+    "Can we control the notetaker and recordings?",
+    "Yes. Configure its name, joining preferences, and recording settings.",
     "/new/products/meetings#meeting-capture"
   ],
-  ["Can we self-host Meetings?", "Yes. Meetings is part of the open-source product. Run it on your own infrastructure or use Helpin Cloud.", "/new/self-hosting#whats-included"]
+  ["Can we self-host Meetings?", "Yes. Meetings is included in Helpin’s open-source product. You operate the installation and configure the services it uses, including meeting capture and AI providers. Hosting and provider charges may apply.", "/new/self-hosting#whats-included"]
 ] as const;
 export default function MeetingsPage() {
   return <><PreviewNav /><main className="meetings-page">
     <section className="meetings-hero" aria-labelledby="meetings-title"><div className="wrap">
       <div className="meetings-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12}/><span>Meetings</span></div>
-      <div className="meetings-hero-copy"><Availability category="Meeting notes" /><h1 id="meetings-title">Turn customer calls into <span>tasks and follow-ups.</span></h1><p className="lede">Let Helpin capture the call, pull out the decisions, and prepare the next steps. Review the task or follow-up with the customer’s words still in view.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /><div className="meetings-platforms">{PLATFORMS.map(([id,label])=><span key={id}><img src={`/new/meetings/${id}.svg`} width={19} height={19} alt=""/>{label}</span>)}</div></div>
-      <div className="meetings-screenshot"><MeetingWorkspace /></div>
+      <div className="meetings-hero-copy"><span className="eyebrow">Meetings for SaaS teams</span><h1 id="meetings-title">AI agents that turn meeting decisions <span>into next steps.</span></h1><p className="lede">Capture customer calls, review what was agreed, and prepare tasks and follow-ups. Helpin keeps the conversation connected to the customer and the work—so your team and agents can pick up where the meeting left off.</p><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="meetings-supporting-note">14-day cloud trial · No credit card required.</p><div className="meetings-platforms">{PLATFORMS.map(([id,label])=><span key={id}><img src={`/new/meetings/${id}.svg`} width={19} height={19} alt=""/>{label}</span>)}</div><p className="meetings-supporting-note">Joining depends on your capture provider and the meeting’s access settings.</p></div>
+      <div className="meetings-screenshot"><MeetingWorkspace /><p className="meetings-demo-caption">The discussion, the decision, and the next step—together.</p></div>
     </div></section>
     <nav className="meetings-page-nav" aria-label="On this page"><div className="wrap"><strong>Meetings</strong><a href="#meeting-capture">Capture the call</a><a href="#meeting-decisions">Find the decisions</a><a href="#meeting-work">Move work forward</a><a href="#meeting-context">Keep the context</a></div></nav>
-    <section id="meeting-capture"><div className="wrap"><div className="meetings-split"><div><SectionHead eyebrow="Choose the calls that matter" title="Stay in the conversation. Helpin keeps the details." lede="See upcoming calls in one list and choose which ones Helpin joins. Turn on a recurring series, skip an individual date, or add a meeting link yourself." secondaryLede="Stay with the customer’s questions. Helpin captures the conversation so your team can revisit the decisions and next steps."/></div><MeetingAgenda/></div><div className="meetings-features">{[
-      {Icon:CalendarDays,title:'Choose the calls that matter.',body:'Capture one meeting, set a recurring-series preference, or use workspace defaults for eligible calendar events.'},
-      {Icon:Settings2,title:'Make the notetaker yours.',body:'Set its name and join behavior. Choose manual capture, external meetings, or all eligible meetings.'},
-      {Icon:Mic,title:'Keep recordings when you need them.',body:'Choose whether to save recordings for playback. Set a default or a preference for an individual meeting.'},
+    <section id="meeting-capture"><div className="wrap"><div className="meetings-split"><div><SectionHead eyebrow="Choose what gets captured" title="Be in the conversation. Keep the details for later." lede="Choose the calls Helpin joins from your upcoming meetings, or add a meeting link. Capture the discussion now so your team can return to it when it is time to act."/></div><MeetingAgenda/></div><div className="meetings-features">{[
+      {Icon:CalendarDays,title:'One call or the whole series.',body:'Choose an individual meeting, enable a recurring series, or skip a specific occurrence.'},
+      {Icon:Settings2,title:'Your notetaker. Your preferences.',body:'Set its name and join behavior. Capture meetings manually or use defaults for eligible calls.'},
+      {Icon:Mic,title:'Keep playback when you need it.',body:'Choose whether recordings are saved, with a default setting or a preference for an individual meeting.'},
     ].map(({Icon,title,body})=><article key={title}><Icon size={21}/><h3>{title}</h3><p>{body}</p></article>)}</div></div></section>
-    <section id="meeting-decisions" className="meetings-dark meetings-insights-dark"><div className="wrap"><div className="meetings-centered"><SectionHead eyebrow="More than a transcript" title="Find the decision, then see what was said." lede="Read the summary, review open questions, and check action items against the conversation. Speaker names and timestamps help you return to the moment that matters."/></div><MeetingEvidence/><div className="meetings-detail-row"><span><Mic size={16}/>Speaker-attributed transcripts</span><span><FileText size={16}/>Decisions, risks & open questions</span><span><CheckCheck size={16}/>Action items with evidence</span></div></div></section>
-    <section id="meeting-work" className="meetings-work-light"><div className="wrap"><div className="meetings-centered"><SectionHead eyebrow="From a promise to a next step" title="Turn what you agreed into work your team owns." lede="A promise in the transcript needs an owner and a destination. Review the action item, create the linked task, and check the follow-up before it reaches the customer."/></div><div className="meetings-work-grid"><article><div className="meetings-work-copy"><span className="meetings-number">01 / ASSIGN THE WORK</span><h3>Turn a commitment into a task.</h3><p>Choose the team, owner, and workflow state. The task stays linked to the meeting that started it.</p></div><MeetingScene variant="task"/></article><article><div className="meetings-work-copy"><span className="meetings-number">02 / PREPARE THE FOLLOW-UP</span><h3>Leave the customer with a clear next step.</h3><p>Start from a draft grounded in the discussion. Review the wording and commitments before following up.</p></div><MeetingScene variant="followup"/></article></div><Link className="meetings-inline-link" href="/new/products/projects">See how Projects keeps work moving<ArrowRight size={16}/></Link></div></section>
-    <section id="meeting-context" className="meetings-context-section"><div className="wrap"><div className="meetings-centered"><SectionHead eyebrow="Part of the customer’s history" title="Give the next teammate the whole conversation." lede="Keep the meeting connected to the customer and the work. Ask Agent can use that context to brief your teammate on what was agreed, what is still open, and who owns the next step."/><Link className="meetings-inline-link" href="/new/products/ai-agents">Explore your agents<ArrowRight size={16}/></Link></div><MeetingContext/></div></section>
-    <section id="meeting-faq" className="meetings-soft"><div className="wrap meetings-faq-grid"><SectionHead eyebrow="Questions" title="What to know before your next call."/><div className="meetings-faqs"><FAQList items={FAQS} className="faq-items" /></div></div></section>
-    <section className="final-cta final-cta-connected" aria-labelledby="meetings-final-title"><div className="wrap"><ConnectedWorkspace/><div className="final"><span className="eyebrow">Keep the conversation moving</span><h2 id="meetings-final-title">Make the next customer call count.</h2><p className="lede">Bring the conversation, the decisions, and the work that follows into one workspace.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /></div></div></section>
-  </main><PreviewFooter/></>;
+    <section id="meeting-decisions" className="meetings-dark meetings-insights-dark"><div className="wrap"><div className="meetings-centered"><SectionHead eyebrow="From transcript to understanding" title="Know what was agreed. See what still needs an answer." lede="Review the summary, decisions, and suggested actions. Check the speaker and timestamp before treating a suggestion as a commitment."/></div><MeetingEvidence/><p className="meetings-demo-caption">Understand the decision before you act on it.</p></div></section>
+    <section id="meeting-work" className="meetings-work-light"><div className="wrap"><div className="meetings-centered"><SectionHead eyebrow="Put the decisions to work" title="Give the next step an owner and a place to happen." lede="Bring meeting commitments into the projects your team already manages. Keep the original discussion close as the work is assigned, prioritized, and completed."/></div><div className="meetings-work-grid"><article><div className="meetings-work-copy"><span className="meetings-number">01 / ASSIGN THE WORK</span><h3>Move the commitment out of the notes.</h3><p>Review the suggested action, choose its team and owner, and create a task linked to the meeting.</p></div><MeetingScene variant="task"/><p className="meetings-demo-caption">A task your team can track, with the reason behind it attached.</p></article><article><div className="meetings-work-copy"><span className="meetings-number">02 / PREPARE THE FOLLOW-UP</span><h3>Send the next step, not just a recap.</h3><p>Prepare a follow-up from the discussion. Check the wording and commitments before sending it to the customer.</p></div><MeetingScene variant="followup"/><p className="meetings-demo-caption">The agreed next steps, ready for your review.</p></article></div><Link className="meetings-inline-link" href="/new/products/projects">Explore Projects<ArrowRight size={16}/></Link></div></section>
+    <section id="meeting-context" className="meetings-context-section"><div className="wrap"><div className="meetings-centered"><SectionHead eyebrow="Part of the customer’s history" title="Know what was promised. See where the work stands." lede="Connect the meeting to the customer, deal, and related work. Ask Agent can bring that history together before the next call—so your teammate sees the agreement and the progress behind it."/><Link className="meetings-inline-link" href="/new/products/ai-agents">Explore Ask Agent<ArrowRight size={16}/></Link></div><MeetingContext/><p className="meetings-demo-caption">The next conversation starts with what your team already knows.</p></div></section>
+    <section id="meeting-faq" className="meetings-soft"><div className="wrap meetings-faq-grid"><SectionHead eyebrow="Before your next meeting" title="A few things worth knowing."/><div className="meetings-faqs"><FAQList items={FAQS} className="faq-items" /><Link className="meetings-inline-link" href="/new/self-hosting">Explore self-hosting<ArrowRight size={16}/></Link></div></div></section>
+    <section className="final-cta final-cta-connected" aria-labelledby="meetings-final-title"><div className="wrap"><ConnectedWorkspace/><div className="final"><span className="eyebrow">From conversation to follow-through</span><h2 id="meetings-final-title">Make the next step<br/>part of the meeting.</h2><p className="lede">Bring customer calls, decisions, and follow-ups into one workspace. Give your team and AI agents the history to pick up the work—and keep it moving.</p><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="meetings-supporting-note">14-day cloud trial · No credit card required.</p></div></div></section>
+  </main><PreviewFooter homepage/></>;
 }

@@ -24,11 +24,11 @@ const DEALS = [
     "Annual renewal",
     42000,
     0,
-    "Next month",
+    "Oct 30, 2026",
     40,
-    "Maya needs complete CSV exports before the wider rollout and renewal discussion. EXP-142 is in engineering review.",
-    "Confirm EXP-142 with engineering, then prepare an update.",
-    "Renewal discussion · Email",
+    "Maya has asked for an export update first. EXP-142 is still marked In review.\n\nConfirm the release status and address that concern before preparing the renewal proposal.",
+    "Confirm the status, then prepare the customer update.",
+    "Maya’s email · Linked engineering task",
   ],
   [
     3,
@@ -508,7 +508,7 @@ export function CRMPipeline() {
               <CRMMark />
               <div>
                 <strong>Ask Agent</strong>
-                <small>Using your customer history</small>
+                <small>Understand the next move</small>
               </div>
               <button
                 ref={agentClose}
@@ -532,7 +532,9 @@ export function CRMPipeline() {
               <div className="cw-agent-question">
                 <CRMAvatar />
                 <p>
-                  {deal.stage === 4
+                  {pipeline === 1 && deal.companyIndex === 0
+                    ? "Should I send Maya the renewal proposal now?"
+                    : deal.stage === 4
                     ? "What’s the next step for this account?"
                     : "What’s holding up this deal?"}
                 </p>
@@ -561,7 +563,7 @@ export function CRMPipeline() {
             </div>
             <footer>
               <ShieldCheck size={13} />
-              For your review. No customer message sent.
+              Recommendation only · No message sent · Deal unchanged
             </footer>
           </aside>
         </div>
@@ -572,43 +574,34 @@ export function CRMPipeline() {
 
 const SIGNALS = [
   {
-    label: "Buying intent",
-    Icon: Sparkles,
-    title: "An opportunity inside a support reply.",
-    quote:
-      "We’d like to bring the operations team in. Can you walk us through the rollout requirements?",
-    source: "Maya Chen · Support conversation",
-    context:
-      "Northstar Labs is considering a wider rollout. The account owner can clarify requirements before proposing a plan.",
-    action: "Confirm the rollout requirements with Maya.",
-    tag: "Conversion",
-    status: "Needs review",
+    label: "Buying intent", Icon: Sparkles,
+    title: "A pricing request with a buying window.",
+    quote: "Can you send pricing for 30 users? We’d like to decide this month.",
+    source: "Daniel Park · Harbor Metrics · Customer email", initials: "DP", avatar: null,
+    context: "Daniel has asked for pricing and named a decision window. Requirements and purchasing approval still need confirmation.",
+    action: "Aisha confirms the scope and prepares a proposal.",
+    owner: "Aisha Patel", ownerAvatar: "aisha",
+    evidence: "Customer message attached", tag: "Buying intent", status: "Needs review",
   },
   {
-    label: "Renewal risk",
-    Icon: ShieldCheck,
-    title: "A concern to resolve before renewal.",
-    quote:
-      "Can you confirm the export fix before we discuss next year? We need complete exports for the wider team rollout.",
-    source: "Maya Chen · Renewal email",
-    context:
-      "The $42,000 renewal is in review. EXP-142 is with engineering, and Sam needs a confirmed status before responding.",
-    action: "Check the linked work and prepare an update for Maya.",
-    tag: "Renewal",
-    status: "Follow-up needed",
+    label: "Renewal risk", Icon: ShieldCheck,
+    title: "An issue to address before the renewal conversation.",
+    quote: "Before we discuss renewing, can you confirm when full exports will work?",
+    source: "Maya Chen · Northstar Labs · Customer email", initials: "MC", avatar: "maya",
+    context: "Maya wants an update before discussing the next term. The linked export task is still in review.",
+    action: "Sam checks the release status and prepares an update.",
+    owner: "Sam Rivera", ownerAvatar: "sam",
+    evidence: "Customer message and linked work attached", tag: "Renewal concern", status: "Follow-up needed",
   },
   {
-    label: "Expansion",
-    Icon: Building2,
-    title: "Another team is ready to join.",
-    quote:
-      "Once the exports are ready, we’d like to bring our customer success team into the workspace too.",
-    source: "Maya Chen · Rollout meeting",
-    context:
-      "The customer is asking about a broader rollout, with the export fix still in review.",
-    action: "Confirm the team size and rollout requirements.",
-    tag: "Expansion",
-    status: "Needs review",
+    label: "Expansion", Icon: Building2,
+    title: "Another team wants to join.",
+    quote: "Our customer success team would like to use this too. Can we discuss adding them?",
+    source: "Nina Brooks · Forma · Customer conversation", initials: "NB", avatar: null,
+    context: "There is interest from another team. The number of users, timing, and requirements still need to be discussed.",
+    action: "Sam arranges a call to understand the team’s needs.",
+    owner: "Sam Rivera", ownerAvatar: "sam",
+    evidence: "Customer conversation attached", tag: "Expansion interest", status: "Needs review",
   },
 ];
 
@@ -655,7 +648,7 @@ export function CRMSignals() {
         <h3>{item.title}</h3>
         <blockquote>“{item.quote}”</blockquote>
         <div className="crm-signal-source">
-          <CRMAvatar person="maya" />
+          {item.avatar ? <CRMAvatar person={item.avatar} /> : <span className="crm-signal-initials" aria-hidden="true">{item.initials}</span>}
           <span>{item.source}</span>
         </div>
         <div className="crm-signal-reason">
@@ -666,9 +659,10 @@ export function CRMSignals() {
           <Sparkles size={19} />
           <div>
             <span className="crm-mini-label">PROPOSED NEXT STEP</span>
-            <p>{item.action}</p>
+            <p>{item.action}</p><div className="crm-signal-owner"><CRMAvatar person={item.ownerAvatar} size={20} /><span>{item.owner}</span></div>
           </div>
         </div>
+        <p className="crm-signal-evidence-note">{item.evidence}</p>
       </div>
     </div>
   );

@@ -3,21 +3,21 @@ import type { CSSProperties } from 'react';
 import { TaskFeatureIcon, TaskIcon, TaskPriorityIcon, TaskSprintIcon } from './task-demo-icons';
 
 type BoardTask = { key: string; title: string; points: number; owner: 'Sam' | 'Alex' | 'Jules'; type: 'feature' | 'bug' };
-const selectedTask: BoardTask = { key: 'ORB-491', title: 'Add Slack alerts for failed syncs', points: 3, owner: 'Sam', type: 'feature' };
+const selectedTask: BoardTask = { key: 'PRJ-214', title: 'Add an admin-only SSO pilot', points: 3, owner: 'Sam', type: 'feature' };
 const columns: { name: string; color: string; state: 'unstarted' | 'started' | 'completed'; tasks: BoardTask[] }[] = [
   { name: 'Ready', color: '#818cf8', state: 'unstarted', tasks: [
-    { key: 'ORB-493', title: 'Add recurring task templates', points: 2, owner: 'Jules', type: 'feature' },
-    { key: 'ORB-501', title: 'Add a workspace activity digest', points: 2, owner: 'Sam', type: 'feature' },
+    { key: 'PRJ-220', title: 'Add recurring task templates', points: 2, owner: 'Jules', type: 'feature' },
+    { key: 'PRJ-221', title: 'Add a workspace activity digest', points: 2, owner: 'Sam', type: 'feature' },
   ] },
   { name: 'In Progress', color: '#d99552', state: 'started', tasks: [
-    { key: 'ORB-494', title: 'Fix duplicate webhook delivery', points: 3, owner: 'Alex', type: 'bug' },
-    { key: 'ORB-498', title: 'Add API retry limits', points: 2, owner: 'Alex', type: 'feature' },
+    { key: 'PRJ-212', title: 'Validate group-to-role mappings', points: 3, owner: 'Alex', type: 'bug' },
+    { key: 'PRJ-217', title: 'Prepare the SSO pilot guide', points: 2, owner: 'Jules', type: 'feature' },
   ] },
   { name: 'In Review', color: '#af73c3', state: 'started', tasks: [
-    { key: 'ORB-492', title: 'Fix missing rows in CSV exports', points: 2, owner: 'Sam', type: 'bug' },
+    { key: 'PRJ-219', title: 'Improve password-reset errors', points: 2, owner: 'Sam', type: 'bug' },
   ] },
   { name: 'Done', color: '#83b397', state: 'completed', tasks: [
-    { key: 'ORB-495', title: 'Keep saved filters after refresh', points: 1, owner: 'Jules', type: 'bug' },
+    { key: 'PRJ-208', title: 'Update the backup verification checklist', points: 1, owner: 'Jules', type: 'bug' },
   ] },
 ];
 
@@ -33,8 +33,8 @@ function BugIcon() {
   return <svg width={18} height={18} viewBox="0 0 24 24" fill="none" className="phb-bug" aria-hidden="true"><g transform="translate(12 12.5) scale(1.18) translate(-12 -12.5)"><ellipse cx="12" cy="14.5" rx="4.25" ry="4.5" fill="currentColor" /><path d="M10.75 10.5Q9.25 8.5 8 6.5M13.25 10.5Q14.75 8.5 16 6.5M8 12.25L5.5 11.25M7.75 14.5H5M8 16.75L5.5 17.75M16 12.25L18.5 11.25M16.25 14.5H19M16 16.75L18.5 17.75" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" /><circle cx="8" cy="6.5" r=".9" fill="currentColor" /><circle cx="16" cy="6.5" r=".9" fill="currentColor" /></g></svg>;
 }
 function BoardPriority({ taskKey }: { taskKey: string }) {
-  if (['ORB-491', 'ORB-494', 'ORB-492'].includes(taskKey)) return <TaskPriorityIcon />;
-  const low = taskKey === 'ORB-502';
+  if (['PRJ-214', 'PRJ-212', 'PRJ-219'].includes(taskKey)) return <TaskPriorityIcon />;
+  const low = taskKey === 'PRJ-221';
   return <svg width={14} height={14} viewBox="0 0 24 24" fill="currentColor" style={{ color: low ? '#7ab4d4' : '#d9ae63' }} aria-hidden="true">{low ? <rect x="10" y="9" width="4" height="10" rx="1" /> : <><rect x="6.5" y="11" width="4" height="8" rx="1" /><rect x="13.5" y="8" width="4" height="11" rx="1" /></>}</svg>;
 }
 function Owner({ owner }: { owner: BoardTask['owner'] }) {
@@ -42,9 +42,9 @@ function Owner({ owner }: { owner: BoardTask['owner'] }) {
 }
 
 function BoardCard({ task, phase = 0 }: { task: BoardTask; phase?: number }) {
-  const selected = task.key === 'ORB-491';
+  const selected = task.key === 'PRJ-214';
   const agent = selected && phase === 2 ? 'lens' : 'forge';
-  const running = selected ? phase === 1 || phase === 2 : task.key === 'ORB-494';
+  const running = selected ? phase === 1 || phase === 2 : task.key === 'PRJ-212';
   return <div className={`phb-card${selected ? ' phb-card-selected' : ''}`} data-task-key={task.key}>
     <div className="phb-card-title"><h4><span>{task.key}:</span> {task.title}</h4>{task.type === 'feature' ? <TaskFeatureIcon /> : <BugIcon />}</div>
     <div className="phb-sprint"><TaskSprintIcon />Sprint 24</div>

@@ -34,7 +34,7 @@ export function Chip({ tone, children }: { tone?: 'em' | 'am'; children: React.R
   );
 }
 
-export function SectionHead({ eyebrow, title, lede, secondaryLede, tight }: { eyebrow: string; title: string; lede?: string; secondaryLede?: string; tight?: boolean }) {
+export function SectionHead({ eyebrow, title, lede, secondaryLede, tight }: { eyebrow: string; title: React.ReactNode; lede?: string; secondaryLede?: string; tight?: boolean }) {
   return (
     <div className="sec-head" style={tight ? { marginBottom: 28 } : undefined}>
       <span className="eyebrow">{eyebrow}</span>
@@ -45,11 +45,11 @@ export function SectionHead({ eyebrow, title, lede, secondaryLede, tight }: { ey
   );
 }
 
-export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on GitHub', primaryLabel = 'Start free' }: { secondaryHref?: string; secondaryLabel?: string; primaryLabel?: string }) {
+export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on GitHub', primaryLabel = 'Start free', primaryHref = SIGNUP_URL }: { primaryHref?: string; secondaryHref?: string; secondaryLabel?: string; primaryLabel?: string }) {
   const external = secondaryHref.startsWith('http');
   return (
     <div className="cta-row">
-      <Link className="btn btn-primary" href={SIGNUP_URL}>{primaryLabel} →</Link>
+      <Link className="btn btn-primary" href={primaryHref}>{primaryLabel} →</Link>
       <a className="btn btn-secondary" href={secondaryHref} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}>
         {secondaryLabel === 'View on GitHub' ? <GithubIcon /> : null}
         {secondaryLabel} →

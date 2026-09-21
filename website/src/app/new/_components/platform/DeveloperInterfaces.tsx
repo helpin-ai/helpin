@@ -1,10 +1,10 @@
 import { ArrowRight, Braces, Code2, Plug, Terminal } from 'lucide-react';
 
 const INTERFACES = [
-  { Icon: Code2, label: 'SDK', code: 'openNewMessage()', outcome: 'Start a conversation' },
-  { Icon: Braces, label: 'API', code: 'GET /api/workspaces', outcome: 'Read workspace records' },
-  { Icon: Plug, label: 'MCP', code: 'search_documents', outcome: 'Find product knowledge' },
-  { Icon: Terminal, label: 'CLI', code: 'helpin doctor', outcome: 'Check your deployment' },
+  { Icon: Code2, label: 'SDK', code: 'openNewMessage()', outcome: 'Open the conversation.' },
+  { Icon: Braces, label: 'API', code: 'GET /api/workspaces', outcome: 'Read authorized workspace information.' },
+  { Icon: Plug, label: 'MCP', code: 'Documentation search', outcome: 'Find the guidance from an AI client.' },
+  { Icon: Terminal, label: 'CLI', code: 'helpin doctor', outcome: 'Check your installation.' },
 ];
 
 export function DeveloperInterfaces() {
@@ -17,7 +17,7 @@ export function DeveloperInterfaces() {
         <div className="developer-interface-connector"><i/><ArrowRight size={15}/></div>
         <div className="developer-interface-outcome">{outcome}</div>
       </div>)}</div>
-      <div className="developer-interfaces-footer"><span/>Customer history, wherever you build.</div>
+      <div className="developer-interfaces-footer"><span/>Different entry points. Connected work.</div>
     </div>
   </div>;
 }

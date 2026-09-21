@@ -6,7 +6,7 @@
 .hp3 .crm-breadcrumb{display:flex;align-items:center;gap:8px;color:var(--on-dark-muted);font-size:11px;margin-bottom:49px}
 .hp3 .crm-hero-copy{max-width:920px;margin:0 auto 62px;text-align:center}
 .hp3 .crm-hero-copy .eyebrow{color:var(--on-dark-accent)}
-.hp3 .crm-hero-copy h1{font-size:clamp(2.8rem,4.8vw,4.3rem);line-height:1.08;letter-spacing:-.046em;font-weight:500;margin:23px 0}
+.hp3 .crm-hero-copy h1{font-size:clamp(2.8rem,4.8vw,4.3rem);line-height:1.08;letter-spacing:-.046em;margin:23px 0}
 .hp3 .crm-hero-copy h1>span{color:var(--on-dark-accent)}
 .hp3 .crm-hero-copy .lede{font-size:17px;line-height:1.8;max-width:670px;margin-inline:auto;color:var(--on-dark-muted)}
 .hp3 .crm-hero-copy .cta-row{margin-top:28px;justify-content:center}
@@ -21,7 +21,7 @@
 .hp3 .crm-section-intro{display:flex;align-items:flex-end;justify-content:space-between;gap:50px;margin-bottom:40px}
 .hp3 .crm-section-intro .sec-head{max-width:760px;margin:0}
 .hp3 .crm-record-benefits{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:48px;margin-top:42px}
-.hp3 .crm-record-benefits h3{font-size:18px;font-weight:500;margin-bottom:12px}.hp3 .crm-record-benefits p{font-size:14px;line-height:1.85;color:var(--t2)}
+.hp3 .crm-record-benefits h3{font-size:18px;margin-bottom:12px}.hp3 .crm-record-benefits p{font-size:14px;line-height:1.85;color:var(--t2)}
 .hp3 .crm-soft{background:var(--bg2);border-block:1px solid var(--border)}
 .hp3 .crm-dark{background:var(--surface-dark);color:var(--on-dark)}
 .hp3 .crm-dark .eyebrow{color:var(--on-dark-accent)}.hp3 .crm-dark .lede{color:var(--on-dark-muted)}
@@ -35,7 +35,7 @@
 .hp3 .crm-essentials .sec-head{max-width:750px}
 .hp3 .crm-feature-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:46px 54px}
 .hp3 .crm-feature-grid article{border-top:1px solid var(--border-2);padding-top:24px}.hp3 .crm-feature-grid svg{color:var(--em);margin-bottom:20px}
-.hp3 .crm-feature-grid h3{font-size:18px;line-height:1.45;letter-spacing:-.015em;font-weight:500;margin-bottom:11px}.hp3 .crm-feature-grid p{font-size:14px;line-height:1.85;color:var(--t2)}
+.hp3 .crm-feature-grid h3{font-size:18px;line-height:1.45;letter-spacing:-.015em;margin-bottom:11px}.hp3 .crm-feature-grid p{font-size:14px;line-height:1.85;color:var(--t2)}
 .hp3 .crm-faq-grid{display:grid;grid-template-columns:.8fr 1.2fr;gap:90px}.hp3 .crm-faqs details{border-bottom:1px solid var(--border);padding-block:21px}.hp3 .crm-faqs details:first-child{padding-top:0}.hp3 .crm-faqs summary{font-size:16px;font-weight:500;align-items:center;gap:24px}.hp3 .crm-faqs summary::after{flex:none}.hp3 .crm-faqs p{font-size:14px;line-height:1.85;color:var(--t2);margin-top:15px}
 .hp3 .crm-page .final-cta-connected .final{min-height:688px;padding-top:272px}
 /* Deal, signal, and playbook previews share the same application typography. */
@@ -145,3 +145,17 @@
 @media(prefers-reduced-motion:reduce){.hp3 .crm-deal-agent{animation:none}}
 .hp3 .crm-deal-agent.cw-agent{max-height:calc(100% - 160px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#365b47 var(--art-dark)}
 @media(max-width:700px){.hp3 .crm-deal-agent.cw-agent{max-height:calc(100% - 177px)}}
+
+/* Supporting copy and evidence retain the established CRM surfaces. */
+.hp3 .crm-page .crm-supporting-note{margin-top:18px;font-size:12px;line-height:1.8;color:var(--t3)}
+.hp3 .crm-page .crm-demo-caption{margin:22px 0 0;text-align:center;font-size:12px;line-height:1.8;color:var(--t3)}
+.hp3 .crm-page .crm-hero :is(.crm-supporting-note,.crm-demo-caption){color:var(--on-dark-muted)}
+.hp3 .crm-deal-agent-answer>p{white-space:pre-line}
+.hp3 .crm-signal-initials{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--art-dark-raised);color:var(--on-dark-accent);font-size:10px}
+.hp3 .crm-signal-owner{display:flex;align-items:center;gap:7px;margin-top:14px;font-size:11px;color:var(--on-dark-muted)}
+.hp3 .crm-signal-evidence-note{font-size:11px;line-height:1.8;color:var(--on-dark-muted);margin-top:20px}
+.hp3 .cp-northstar-example{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.hp3 .cw-account .cw-frame{height:865px}
+@media(max-width:600px){.hp3 .cw-account .cw-frame{height:945px}}
+
+.hp3 .crm-page .cp-frame{height:auto;min-height:800px}

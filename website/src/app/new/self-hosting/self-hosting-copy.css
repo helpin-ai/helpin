@@ -1,0 +1,17 @@
+.hp3 .self-hosting-page .self-hosting-supporting-note,.hp3 .self-hosting-page .self-hosting-caption,.hp3 .self-hosting-page .developer-supporting-note{font-size:12px;line-height:1.75;color:var(--t3);margin-top:18px}
+.hp3 .self-hosting-page .self-hosting-supporting-note a,.hp3 .self-hosting-page .developer-supporting-note a{color:var(--em)}
+.hp3 .self-hosting-page .self-hosting-art-heading{font-size:15px;font-weight:500;line-height:1.5;margin-bottom:20px}
+.hp3 .self-hosting-page .platform-cli-art .self-hosting-art-heading,.hp3 .self-hosting-page .platform-cli-art figcaption{text-align:center}
+.hp3 .self-hosting-page .self-hosting-terminal-labels{display:flex;justify-content:center;gap:22px;font-family:var(--mono);font-size:10px;color:var(--t3)}
+.hp3 .self-hosting-page .infra-nodes small{line-height:1.6;max-width:120px}
+.hp3 .self-hosting-page .infra-app div>span{line-height:1.7}
+.hp3 .self-hosting-page .infra-external>div{flex-wrap:wrap;gap:12px}
+.hp3 .self-hosting-page .deployment-copy li strong{display:block;font-weight:500;margin-bottom:5px}
+.hp3 .self-hosting-page .deployment-copy li div>span{display:block;line-height:1.7}
+.hp3 .self-hosting-page .deployment-hosts .deployment-detail{padding-top:16px;margin-top:20px;border-top:1px solid var(--art-dark-border);line-height:1.8}
+.hp3 .self-hosting-page .deployment-hosts .deployment-reminder{font-size:11px;line-height:1.7}
+.hp3 .self-hosting-page .self-hosting-clarification{font-size:12px;border-left:2px solid var(--em);padding-left:13px;line-height:1.7}
+.hp3 .self-hosting-page .platform-feature-grid .platform-text-link{line-height:1.6}
+@media(max-width:600px){.hp3 .self-hosting-page .infra-app{flex-wrap:wrap}.hp3 .self-hosting-page .infra-app>div{flex:1;min-width:0}.hp3 .self-hosting-page .infra-app .infra-beta{margin-left:42px}.hp3 .self-hosting-page .infra-nodes small{font-size:9px}.hp3 .self-hosting-page .community-product-caption{align-items:flex-start}}
+.hp3 .self-hosting-page .platform-hero .self-hosting-supporting-note,.hp3 .self-hosting-page .platform-hero .self-hosting-caption{color:var(--on-dark-muted)}
+.hp3 .self-hosting-page .platform-hero .self-hosting-supporting-note a{color:var(--on-dark-accent)}
