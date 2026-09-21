@@ -145,3 +145,17 @@
 @media(prefers-reduced-motion:reduce){.hp3 .crm-deal-agent{animation:none}}
 .hp3 .crm-deal-agent.cw-agent{max-height:calc(100% - 160px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#365b47 var(--art-dark)}
 @media(max-width:700px){.hp3 .crm-deal-agent.cw-agent{max-height:calc(100% - 177px)}}
+
+/* Supporting copy and evidence retain the established CRM surfaces. */
+.hp3 .crm-page .crm-supporting-note{margin-top:18px;font-size:12px;line-height:1.8;color:var(--t3)}
+.hp3 .crm-page .crm-demo-caption{margin:22px 0 0;text-align:center;font-size:12px;line-height:1.8;color:var(--t3)}
+.hp3 .crm-page .crm-hero :is(.crm-supporting-note,.crm-demo-caption){color:var(--on-dark-muted)}
+.hp3 .crm-deal-agent-answer>p{white-space:pre-line}
+.hp3 .crm-signal-initials{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:var(--art-dark-raised);color:var(--on-dark-accent);font-size:10px}
+.hp3 .crm-signal-owner{display:flex;align-items:center;gap:7px;margin-top:14px;font-size:11px;color:var(--on-dark-muted)}
+.hp3 .crm-signal-evidence-note{font-size:11px;line-height:1.8;color:var(--on-dark-muted);margin-top:20px}
+.hp3 .cp-northstar-example{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.hp3 .cw-account .cw-frame{height:865px}
+@media(max-width:600px){.hp3 .cw-account .cw-frame{height:945px}}
+
+.hp3 .crm-page .cp-frame{height:auto;min-height:800px}
