@@ -3,27 +3,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowRight, ArrowUpRight, BookOpen, Bot, Braces, Building2, ChevronDown, Kanban, Menu, MessagesSquare, Server, Users, Video, X } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, BookOpen, Bot, Braces, ChevronDown, Menu, Server, X } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { GITHUB_URL, SIGNUP_URL, GithubIcon } from './ui';
+import { PRODUCTS, ProductLink, ProductsMenu } from './ProductsMenu';
 
-const PRODUCTS = [
-  { label: 'Customer support', description: 'Answers, handoffs, and a shared inbox.', href: '/new/products/customer-support', icon: MessagesSquare },
-  { label: 'Meetings', description: 'Conversations become next steps.', href: '/new/products/meetings', icon: Video },
-  { label: 'Projects', description: 'Customer requests connected to work.', href: '/new/products/projects', icon: Kanban },
-  { label: 'CRM', description: 'The history behind every account.', href: '/new/products/crm', icon: Building2 },
-  { label: 'Knowledge', description: 'Answers for customers and agents.', href: '/new/products/knowledge', icon: BookOpen },
-  { label: 'Customer records', description: 'One customer. The full picture.', href: '/new#record', icon: Users },
-];
 type MenuName = 'product';
-
-function ResourceLink({ item }: { item: typeof PRODUCTS[number] }) {
-  const Icon = item.icon;
-  const contents = <><span className="nav-resource-icon"><Icon size={19} strokeWidth={1.6} /></span><span><b>{item.label}</b><small>{item.description}</small></span>{item.href.startsWith('https:') ? <ArrowUpRight className="nav-external" size={13} /> : null}</>;
-  return item.href.startsWith('https:')
-    ? <a className="nav-resource" href={item.href} target="_blank" rel="noopener noreferrer">{contents}</a>
-    : <Link className="nav-resource" href={item.href}>{contents}</Link>;
-}
 
 export function PreviewNav() {
   const pathname = usePathname();
@@ -132,10 +117,10 @@ export function PreviewNav() {
         <div className="wrap nav-bar">
           <Link href="/new" className="logo" aria-label="Helpin homepage" onClick={close}><HelpinBrand /></Link>
           <div className="navlinks">
-            <button ref={productToggle} className="nav-trigger" aria-expanded={open === 'product'} aria-controls="preview-product-menu" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} onClick={event => { cancelHoverClose(); setOpen(openedByHover.current && event.detail > 0 ? 'product' : open === 'product' ? null : 'product'); openedByHover.current = false; }} onKeyDown={event => openWithKeyboard(event, 'product')}>Product<ChevronDown size={13} /></button>
+            <button ref={productToggle} className="nav-trigger" aria-expanded={open === 'product'} aria-controls="preview-product-menu" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} onClick={event => { cancelHoverClose(); setOpen(openedByHover.current && event.detail > 0 ? 'product' : open === 'product' ? null : 'product'); openedByHover.current = false; }} onKeyDown={event => openWithKeyboard(event, 'product')}>Products<ChevronDown size={13} /></button>
             <Link className="nav-direct" href="/new/products/ai-agents" onClick={close}>AI Agents</Link>
-            <Link className="nav-direct" href="/new#developers" onClick={close}>Developers</Link>
-            <Link className="nav-direct" href="/new#open-source" onClick={close}>Open source</Link>
+            <Link className="nav-direct" href="/new/developers" onClick={close}>Developers</Link>
+            <Link className="nav-direct" href="/new/self-hosting" onClick={close}>Open source</Link>
           </div>
           <div className="navright">
             <a className="gh" href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon /><span>GitHub</span></a>
@@ -146,28 +131,17 @@ export function PreviewNav() {
         </div>
 
         <div id="preview-product-menu" className="nav-panel nav-product-panel" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} hidden={open !== 'product'} onClick={event => { if ((event.target as HTMLElement).closest('a')) close(); }}>
-          <div className="nav-panel-main">
-            <p className="nav-section-label">Your customer workspace</p>
-            <div className="nav-resource-grid">{PRODUCTS.map(item => <ResourceLink item={item} key={item.label} />)}</div>
-            <Link className="nav-panel-footer" href="/new/product">Explore the platform<ArrowRight size={14} /></Link>
-          </div>
-          <Link href="/new/products/ai-agents#agent-ask" className="nav-agent-feature">
-            <span className="nav-feature-mark"><Bot size={25} strokeWidth={1.5} /></span>
-            <span className="nav-section-label">Meet Ask Agent</span>
-            <strong>Ask a question.<br />Hand off the work.</strong>
-            <p>Find the context. Coordinate agents. Get the work moving.</p>
-            <span className="nav-feature-cta">Explore Ask Agent<ArrowRight size={14} /></span>
-          </Link>
+          <ProductsMenu />
         </div>
 
         <div id="preview-mobile-menu" className="nav-mobile-panel" hidden={!mobileOpen} onClick={event => { if ((event.target as HTMLElement).closest('a')) close(); }}>
           <Link className="nav-mobile-agent" href="/new/products/ai-agents"><Bot size={21} /><span><b>AI Agents</b><small>Meet the agents behind the work.</small></span><ArrowRight size={17} /></Link>
-          <p className="nav-section-label">Product</p>
-          <div className="nav-mobile-products">{PRODUCTS.map(item => <ResourceLink item={item} key={item.label} />)}</div>
+          <p className="nav-section-label">Products</p>
+          <div className="nav-mobile-products">{PRODUCTS.map(item => <ProductLink item={item} key={item.label} />)}</div>
           <Link className="nav-mobile-overview" href="/new/product">Explore the platform<ArrowRight size={14} /></Link>
           <div className="nav-mobile-resources">
-            <Link href="/new#developers"><Braces size={17} />Developers<ArrowRight size={13} /></Link>
-            <Link href="/new#open-source"><Server size={17} />Open source & self-hosting<ArrowRight size={13} /></Link>
+            <Link href="/new/developers"><Braces size={17} />Developers<ArrowRight size={13} /></Link>
+            <Link href="/new/self-hosting"><Server size={17} />Open source & self-hosting<ArrowRight size={13} /></Link>
             <a href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer"><BookOpen size={17} />Documentation<ArrowUpRight size={13} /></a>
           </div>
           <div className="nav-mobile-bottom"><a href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon size={17} />View on GitHub</a><a href="https://app.helpin.ai">Sign in<ArrowRight size={14} /></a></div>

@@ -1,0 +1,207 @@
+/* Second pass: more product evidence, clearer code, and fewer repeated cards. */
+.hp3 .platform-page .platform-hero-grid{gap:76px;grid-template-columns:1.02fr 1fr}
+.hp3 .platform-page .platform-hero-copy h1{font-size:clamp(2.7rem,4.2vw,3.8rem);max-width:540px;text-wrap:balance}
+.hp3 .platform-page .platform-hero-copy .lede{font-size:16px;line-height:1.85;max-width:490px}
+.hp3 .platform-page .platform-hero-copy .cta-row{margin-top:30px}
+.hp3 .platform-page .platform-hero-points{margin-top:28px}
+.hp3 .platform-page .platform-centered{max-width:740px}
+.hp3 .platform-page .platform-centered .sec-head{margin-bottom:44px}
+.hp3 .platform-page .sec-head h2{letter-spacing:-.04em}
+.hp3 .platform-page .platform-scene-toolbar{font-size:11px}
+.hp3 .platform-page .infra-nodes strong{font-size:11px}
+.hp3 .platform-page .infra-nodes small{font-size:9px;line-height:1.7}
+.hp3 .platform-page .infra-owned{font-size:10px}
+.hp3 .platform-page .dev-capabilities>div{font-size:10px}
+.hp3 .platform-page .dev-source div>span,.hp3 .platform-page .dev-hub span{font-size:11px;line-height:1.65}
+.hp3 .platform-page .platform-feature-grid h3{font-size:19px}
+.hp3 .platform-page .platform-faqs details{padding-block:19px}
+.hp3 .platform-page .platform-faqs details:first-child{padding-top:0}
+/* The actual product gets the largest visual on the self-hosting page. */
+.hp3 .community-showcase{margin-top:38px}
+.hp3 .community-switcher{display:flex;justify-content:center;gap:8px;margin:0 auto 25px}
+.hp3 .community-switcher button{display:flex;align-items:center;gap:11px;min-width:174px;padding:13px 17px;border:1px solid #e1e8e3;border-radius:7px;background:white;color:#7a8e80;font-size:13px;font-weight:500;cursor:pointer;transition:border-color .2s,background .2s,color .2s}
+.hp3 .community-switcher button>svg:last-child{margin-left:auto;opacity:0;transform:translateX(-4px);transition:opacity .2s,transform .2s}
+.hp3 .community-switcher button[aria-pressed=true]{border-color:#a7c5b1;background:#edf5ef;color:#2e6340}
+.hp3 .community-switcher button[aria-pressed=true]>svg:last-child{opacity:1;transform:translateX(0)}
+.hp3 .community-switcher button:hover{border-color:#a7c5b1;color:#2e6340}
+.hp3 .community-product-stage{padding:15px;border:1px solid #dce7df;border-radius:16px;background:radial-gradient(ellipse at 80% 0%,#dcebdc,transparent 70%),#edf3ed;box-shadow:0 22px 65px #17432b0b;overflow:hidden}
+.hp3 .community-product-stage>img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;background:white;border:1px solid #dae4dc;border-radius:9px}
+.hp3 .community-product-caption{display:flex;align-items:center;justify-content:space-between;gap:40px;padding:25px 3px 0}
+.hp3 .community-product-caption h3{font-size:20px;font-weight:500;line-height:1.4;letter-spacing:-.015em}
+.hp3 .community-product-caption p{font-size:14px;color:#6c8073;line-height:1.8;margin-top:7px}
+.hp3 .community-product-caption .platform-text-link{margin:0;flex:none}
+.hp3 .self-hosting-page .platform-scope-note{font-size:11px;padding-top:22px;margin-top:25px;border-top:1px solid #e4ece6;color:#74877b}
+.hp3 .community-agents-art{display:grid;place-items:center;aspect-ratio:16/9;background:radial-gradient(ellipse at 50% 30%,#fff,#f4f8f4);border:1px solid #dce7df;border-radius:9px;padding:35px;color:#294f36;font-family:'Helpin Platform UI',sans-serif}
+.hp3 .community-agents-art>div{max-width:740px;width:100%}
+.hp3 .community-agents-art .platform-micro{justify-content:center;font-size:10px;color:#759780}
+.hp3 .community-agent-source{display:flex;align-items:center;gap:12px;max-width:410px;justify-content:center;margin:26px auto 0;border:1px solid #cbded0;border-radius:8px;padding:18px;background:white;font-size:13px;box-shadow:0 7px 17px #18432906}
+.hp3 .community-agent-source small{font-size:9px;color:#8a9e8f;margin-left:auto}
+.hp3 .community-agent-branches{height:42px;display:flex;position:relative;margin-inline:24%}
+.hp3 .community-agent-branches:before{content:'';position:absolute;left:50%;top:0;height:22px;width:1px;background:#b0cbb7}
+.hp3 .community-agent-branches:after{content:'';position:absolute;left:0;right:0;top:21px;height:1px;background:#b0cbb7}
+.hp3 .community-agent-branches i{position:absolute;top:21px;bottom:0;left:0;width:1px;background:#b0cbb7}.hp3 .community-agent-branches i+i{left:auto;right:0}
+.hp3 .community-agent-pair{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.hp3 .community-agent-pair>div{padding:24px;background:white;border:1px solid #d4e3d8;border-radius:11px;box-shadow:0 10px 25px #284a3105}
+.hp3 .community-agent-pair img{display:block;margin-bottom:18px}
+.hp3 .community-agent-pair strong{display:block;font-size:21px;font-weight:500}
+.hp3 .community-agent-pair>div>span{display:block;font-size:12px;margin-top:7px;color:#53715d}
+.hp3 .community-agent-pair p{font-size:11px;line-height:1.8;margin-top:14px;color:#7c9081;max-width:250px}
+.hp3 .community-agent-pair>div>div{display:flex;gap:7px;align-items:center;font-size:10px;color:#618e6e;border-top:1px solid #e3ede6;margin-top:19px;padding-top:15px}
+.hp3 .community-agent-pair svg{flex:none}
+.hp3 .community-agent-settings{display:flex;justify-content:center;gap:23px;margin-top:25px;font-size:10px;color:#6d8c77}
+.hp3 .community-agent-settings span{display:flex;gap:8px;align-items:center}.hp3 .community-agent-settings span:before{content:'';width:4px;height:4px;background:#91b29c;border-radius:50%}
+/* Give the CLI image space; keep the operational commands easy to scan. */
+.hp3 .platform-page .platform-cli-layout{grid-template-columns:1.24fr .85fr;gap:62px}
+.hp3 .platform-page .platform-cli-art{margin-left:-24px;margin-right:-12px}
+.hp3 .platform-page .platform-command-grid{gap:0;margin-top:48px;border-top:1px solid #d8e3db;border-bottom:1px solid #d8e3db}
+.hp3 .platform-page .platform-command-grid article{border-top:0;padding:28px 30px;border-left:1px solid #d8e3db}
+.hp3 .platform-page .platform-command-grid article:first-child{border-left:0;padding-left:0}
+.hp3 .platform-page .platform-command-grid article:last-child{padding-right:0}
+.hp3 .platform-page .platform-command-grid code{font-size:13px;margin-bottom:17px}
+.hp3 .platform-page .platform-command-grid h3{font-size:18px;margin-bottom:9px}
+.hp3 .platform-page .platform-command-grid p{font-size:13px}
+.hp3 .platform-page .deployment-copy h3{max-width:380px}
+.hp3 .platform-page .deployment-hosts{background:#1a261d;border-color:#3e5746}
+.hp3 .platform-page .deployment-copy p{font-size:13px}
+.hp3 .platform-page .deployment-copy li{font-size:12px;line-height:1.8}
+.hp3 .platform-page .deployment-hosts>div>span{font-size:11px;color:#a2b9a8}
+.hp3 .platform-page .deployment-hosts>p{font-size:11px}
+/* Exact, selectable code, with line numbers and restrained syntax colors. */
+.hp3 .sdk-install{display:flex;align-items:center;gap:10px;padding:15px 25px;background:#edf3ee;border-bottom:1px solid #dfe8e1;color:#5d8068;overflow:auto;font-size:11px}
+.hp3 .sdk-install>svg{flex:none}.hp3 .sdk-install code{font-family:var(--mono);white-space:pre}
+.hp3 .platform-page .sdk-body{grid-template-columns:1.15fr 1fr}
+.hp3 .platform-page .sdk-code{background:#101712}
+.hp3 .platform-page .sdk-code>div{margin:22px 26px 19px;font-size:11px;color:#8da797}
+.hp3 .platform-page .sdk-code pre{font-size:12px;line-height:1.9;min-height:413px;padding:0 22px 25px 14px;tab-size:2;color:#d8e6dc}
+.hp3 .platform-code-line{display:grid;grid-template-columns:29px 1fr;min-height:1.9em}
+.hp3 .platform-code-line>span:last-child{white-space:pre}
+.hp3 .platform-line-number{color:#576b5e;font-size:10px;text-align:right;padding-right:14px;user-select:none}
+.hp3 .code-string{color:#b9d8a7}.hp3 .code-keyword{color:#9bcfc8}.hp3 .code-comment{color:#7b9585}
+.hp3 .platform-page .sdk-result{padding:30px;background:radial-gradient(ellipse at 100% 0%,#f2f7f2,transparent 65%),#fff}
+.hp3 .platform-page .sdk-product{margin:28px 0 24px}
+.hp3 .platform-page .sdk-product strong{font-size:14px}.hp3 .platform-page .sdk-product>span{font-size:10px}
+
+
+
+
+
+.hp3 .platform-page .sdk-context{font-size:11px;gap:12px;margin-top:26px}
+.hp3 .platform-page .sdk-result>p{font-size:11px;line-height:1.8;color:#768b7d}
+.hp3 .platform-page .sdk-topbar .platform-selector button{font-size:12px;padding:9px 15px}
+.hp3 .platform-page .platform-copy{font-size:11px;padding:8px}
+/* Show what crosses the connection, as well as the permissions around it. */
+.hp3 .platform-page .platform-mcp-copy{min-height:179px;margin-bottom:28px}
+.hp3 .platform-page .platform-mcp-copy h3{font-size:25px;max-width:410px}
+.hp3 .platform-page .mcp-endpoints{margin-bottom:23px}
+.hp3 .platform-page .mcp-endpoints>div{height:99px;background:#f6f9f6}
+.hp3 .platform-page .mcp-endpoints strong{font-size:12px}
+.hp3 .mcp-request{border-left:2px solid #94b9a0;padding:2px 0 2px 13px;margin-bottom:22px}
+.hp3 .mcp-request p{font-size:13px;line-height:1.7;color:#486953;margin-top:8px}
+.hp3 .mcp-execution{display:grid;gap:0}
+.hp3 .mcp-execution>.platform-step{display:flex;align-items:center;gap:11px;padding:15px 0;border-top:1px solid #e4ede6;color:#7d9e88}
+.hp3 .mcp-execution>.platform-step>svg{flex:none}.hp3 .mcp-execution>.platform-step>svg:last-child{margin-left:auto}
+.hp3 .mcp-execution strong{display:block;font-size:11px;color:#5c7a67;font-weight:500}.hp3 .mcp-execution span{display:block;font-size:10px;color:#8a9e91;margin-top:5px}
+.hp3 .mcp-result{display:flex;gap:12px;align-items:center;padding:17px;border:1px solid #cfe3d4;border-radius:8px;background:#edf6ef;color:#6a9376;margin-top:8px}
+.hp3 .mcp-result>svg{flex:none}.hp3 .mcp-result>svg:last-child{margin-left:auto}.hp3 .mcp-result strong{display:block;font-size:12px;font-weight:500;color:#41694e}.hp3 .mcp-result span{display:block;font-size:10px;line-height:1.7;color:#7c9785;margin-top:5px}
+.hp3 .platform-page .mcp-footnote{padding:0;background:none;font-size:10px;margin-top:19px;color:#8a9e91;line-height:1.7}.hp3 .mcp-footnote svg{flex:none}
+.hp3 .mcp-wire i{position:relative;overflow:visible}
+.hp3 .platform-scene[data-playing=true] .mcp-wire i:after{content:'';position:absolute;left:0;top:-2px;width:5px;height:5px;background:#78a888;border-radius:50%;animation:platform-packet 2s ease-in-out 2 .6s both}
+@keyframes platform-packet{0%{left:0;opacity:0}15%{opacity:1}85%{opacity:1}100%{left:100%;opacity:0}}
+/* A real route and response shape make the API section concrete. */
+.hp3 .workspace-api-example{font-family:'Helpin Platform UI',sans-serif;border:1px solid #d8e5dc;border-radius:12px;overflow:hidden;box-shadow:0 18px 50px #19412808}
+.hp3 .workspace-api-heading{display:flex;align-items:center;gap:9px;padding:19px 23px;border-bottom:1px solid #e3ebe5;background:#f7faf7;color:#688772;font-size:12px}
+.hp3 .workspace-api-heading strong{font-weight:500}.hp3 .workspace-api-heading>span{display:flex;align-items:center;gap:5px;margin-left:auto;font-size:9px;color:#8ba092}
+.hp3 .workspace-api-endpoint{display:flex;align-items:center;gap:11px;padding:23px 23px 17px}.hp3 .workspace-api-endpoint>span{color:#338352;font-size:10px;background:#e9f5ed;padding:5px 8px;border-radius:5px}.hp3 .workspace-api-endpoint>code{font-family:var(--mono);font-size:14px;color:#33543e}
+.hp3 .workspace-api-auth{display:flex;gap:12px;flex-wrap:wrap;padding:0 23px 23px;font-size:10px;color:#87a18f}.hp3 .workspace-api-auth code{font-family:var(--mono);font-size:10px;color:#617e6a;overflow-wrap:anywhere}
+.hp3 .workspace-api-response{background:#101712;padding:23px}.hp3 .workspace-api-response>.platform-micro{color:#8fa899;letter-spacing:.06em;font-size:9px}
+.hp3 .workspace-api-response pre{margin-top:19px;border:0;background:none;padding:0;font-size:12px;line-height:1.8;color:#d6e5db;border-radius:0}.hp3 .workspace-api-response code{font-family:var(--mono)}
+.hp3 .workspace-api-note{display:flex;align-items:flex-start;gap:10px;padding:18px 23px;background:#f8faf8;color:#8a9f91}.hp3 .workspace-api-note svg{flex:none;margin-top:2px}.hp3 .workspace-api-note p{font-size:10px;line-height:1.8;color:#718b7b}
+.hp3 .platform-page .platform-resource-grid{gap:0;border-top:1px solid #dfe8e2;border-bottom:1px solid #dfe8e2}
+.hp3 .platform-page .platform-resource-grid>a{border:0;border-right:1px solid #dfe8e2;border-radius:0;padding:29px}
+.hp3 .platform-page .platform-resource-grid>a:nth-child(3n){border-right:0}.hp3 .platform-page .platform-resource-grid>a:nth-child(n+4){border-top:1px solid #dfe8e2}
+.hp3 .platform-page .platform-resource-grid>a>svg:first-child{margin-bottom:18px}.hp3 .platform-page .platform-resource-grid>a>svg:last-child{top:30px;right:25px}
+@media(max-width:1100px){.hp3 .platform-page .platform-hero-grid{gap:37px}.hp3 .platform-page .platform-hero-copy h1{font-size:clamp(2.7rem,4.4vw,3.8rem)}.hp3 .platform-page .infra-nodes strong{font-size:10px}.hp3 .platform-page .infra-nodes small{font-size:8px}.hp3 .platform-page .infra-owned{font-size:9px}.hp3 .platform-page .platform-cli-layout{gap:40px}.hp3 .platform-page .sdk-code pre{font-size:11px;min-height:396px;padding-left:8px}.hp3 .platform-page .sdk-result{padding:25px}.hp3 .platform-page .sdk-context{font-size:10px}.hp3 .platform-page .sdk-result>p{font-size:10px}.hp3 .platform-page .platform-mcp-copy{min-height:210px}.hp3 .community-agents-art{padding:30px}.hp3 .community-agent-pair>div{padding:22px}.hp3 .community-agent-pair img{width:45px;height:45px}}
+@media(max-width:960px){.hp3 .platform-page .platform-hero-grid,.hp3 .platform-page .platform-cli-layout{grid-template-columns:1fr}.hp3 .platform-page .platform-hero-copy h1{font-size:clamp(2.7rem,6vw,3.8rem);max-width:650px}.hp3 .platform-page .platform-hero-copy .lede{max-width:600px}.hp3 .platform-page .platform-cli-art{margin-inline:0}.hp3 .platform-page .sdk-body{grid-template-columns:1fr 1fr}.hp3 .platform-page .sdk-code pre{font-size:10px;min-height:400px;padding-right:12px}.hp3 .platform-page .sdk-result{padding:22px}.hp3 .community-agents-art{aspect-ratio:auto;padding:35px}.hp3 .community-product-caption{gap:25px}.hp3 .community-product-caption h3{font-size:19px}.hp3 .community-product-caption p{font-size:13px}.hp3 .platform-page .platform-resource-grid>a:nth-child(3n){border-right:1px solid #dfe8e2}.hp3 .platform-page .platform-resource-grid>a:nth-child(2n){border-right:0}.hp3 .platform-page .platform-resource-grid>a:nth-child(n+3){border-top:1px solid #dfe8e2}.hp3 .platform-page .platform-command-grid article{padding:25px 21px}}
+@media(max-width:700px){.hp3 .platform-page .sdk-body{grid-template-columns:1fr}.hp3 .platform-page .sdk-code pre{font-size:12px;min-height:414px}.hp3 .platform-page .sdk-result{padding:26px}.hp3 .platform-page .sdk-result>p{font-size:11px}.hp3 .platform-page .sdk-context{font-size:11px}.hp3 .platform-page .platform-mcp-copy{min-height:0}.hp3 .platform-page .platform-command-grid{gap:0}.hp3 .platform-page .platform-command-grid article{border-left:0;border-top:1px solid #d8e3db;padding:24px 0}.hp3 .platform-page .platform-command-grid article:first-child{border-top:0}.hp3 .community-switcher button{min-width:0;flex:1;justify-content:center;font-size:12px;padding:13px 10px;gap:8px}.hp3 .community-switcher button>svg:last-child{display:none}.hp3 .community-product-caption{display:block;padding-top:20px}.hp3 .community-product-caption .platform-text-link{margin-top:13px}.hp3 .community-product-stage{padding:8px;border-radius:11px}.hp3 .community-product-stage>img{border-radius:6px}.hp3 .community-agents-art{padding:28px 18px}.hp3 .community-agent-pair{gap:13px}.hp3 .community-agent-pair>div{padding:19px 15px}.hp3 .community-agent-pair strong{font-size:19px}.hp3 .community-agent-pair>div>span{font-size:11px;line-height:1.6}.hp3 .community-agent-pair p{font-size:10px}.hp3 .community-agent-pair>div>div{font-size:9px;line-height:1.7}.hp3 .community-agent-settings{font-size:9px;gap:13px;flex-wrap:wrap}.hp3 .community-agent-source{font-size:12px;padding:15px}.hp3 .community-agent-source small{font-size:8px}}
+@media(max-width:600px){.hp3 .platform-page .platform-hero-copy h1{font-size:clamp(2.4rem,9.5vw,3.5rem)}.hp3 .platform-page .platform-hero-copy .lede{font-size:15px}.hp3 .platform-page .platform-scene-toolbar{font-size:10px}.hp3 .platform-page .infra-nodes strong{font-size:9px}.hp3 .platform-page .infra-nodes small{font-size:8px}.hp3 .platform-page .infra-owned{font-size:8px}.hp3 .platform-page .dev-capabilities>div{font-size:9px}.hp3 .platform-page .dev-source div>span,.hp3 .platform-page .dev-hub span{font-size:9px}.hp3 .platform-page .platform-centered .sec-head{margin-bottom:32px}.hp3 .community-showcase{margin-top:25px}.hp3 .community-switcher{gap:6px;margin-bottom:17px}.hp3 .community-switcher button{font-size:11px;padding:11px 8px;gap:7px}.hp3 .community-switcher button>svg{width:15px;height:15px}.hp3 .community-product-caption h3{font-size:18px}.hp3 .community-product-caption p{font-size:13px}.hp3 .community-agent-source{gap:8px;font-size:10px}.hp3 .community-agent-source small{display:none}.hp3 .community-agents-art .platform-micro{font-size:8px;text-align:center;line-height:1.8}.hp3 .community-agents-art{padding:23px 12px}.hp3 .community-agent-pair{gap:9px}.hp3 .community-agent-pair>div{padding:16px 11px}.hp3 .community-agent-pair img{width:35px;height:35px}.hp3 .community-agent-pair strong{font-size:17px}.hp3 .community-agent-pair>div>span{font-size:10px}.hp3 .community-agent-pair p{font-size:9px}.hp3 .community-agent-pair>div>div{display:block;font-size:9px}.hp3 .community-agent-pair>div>div>svg{display:block;margin-bottom:6px}.hp3 .community-agent-settings{font-size:8px;gap:9px}.hp3 .platform-page .deployment-copy p{font-size:12px}.hp3 .platform-page .deployment-copy li{font-size:11px}.hp3 .platform-page .deployment-hosts>p{font-size:10px}.hp3 .sdk-install{font-size:10px;padding:13px 17px}.hp3 .platform-page .sdk-code pre{font-size:10px;min-height:350px;padding-left:7px;padding-right:12px}.hp3 .platform-code-line{grid-template-columns:23px 1fr}.hp3 .platform-line-number{font-size:8px;padding-right:10px}.hp3 .platform-page .sdk-code>div{margin-left:20px;font-size:10px}.hp3 .platform-page .sdk-result{padding:24px 19px}.hp3 .platform-page .sdk-topbar .platform-selector button{font-size:11px;padding:9px 12px}.hp3 .platform-page .platform-copy{font-size:10px}.hp3 .platform-page .mcp-endpoints strong{font-size:11px}.hp3 .mcp-request p{font-size:12px}.hp3 .mcp-execution strong{font-size:11px}.hp3 .mcp-result strong{font-size:11px}.hp3 .mcp-result span{font-size:9px}.hp3 .platform-page .mcp-footnote{font-size:9px}.hp3 .workspace-api-heading{padding:17px 18px;font-size:11px}.hp3 .workspace-api-heading>span{font-size:8px}.hp3 .workspace-api-endpoint{padding:22px 18px 16px}.hp3 .workspace-api-endpoint>code{font-size:13px}.hp3 .workspace-api-auth{padding-inline:18px;gap:8px}.hp3 .workspace-api-auth code{font-size:9px}.hp3 .workspace-api-response{padding:22px 17px}.hp3 .workspace-api-response pre{font-size:11px}.hp3 .workspace-api-note{padding:17px 18px}.hp3 .platform-page .platform-resource-grid>a{border-right:0!important;padding:24px 21px}.hp3 .platform-page .platform-resource-grid>a:nth-child(n+2){border-top:1px solid #dfe8e2}}
+@media(prefers-reduced-motion:reduce){.hp3 .community-switcher button,.hp3 .community-switcher button>svg:last-child{transition:none}.hp3 .platform-scene .mcp-wire i:after{animation:none!important;display:none}}
+/* Green workflow surfaces belong to the Developers page's black MCP section. */
+.hp3 .developers-page .mcp-workflow{background:#101311;border-color:#2c3830;box-shadow:0 20px 50px #00000024;color:#d9efe1}
+.hp3 .developers-page .mcp-workflow .platform-scene-toolbar{background:#0c0f0d;border-color:#28352c;color:#b2d0be}
+.hp3 .developers-page .mcp-workflow .platform-orbit-mark{background:#236342;color:#e1f7e9}
+.hp3 .developers-page .mcp-workflow .platform-divider{color:#719b80}
+.hp3 .developers-page .mcp-workflow .platform-scene-toolbar button{background:#163c29;border-color:#39674b;color:#bce8cc}
+.hp3 .developers-page .mcp-workflow .platform-scene-toolbar button:hover{background:#235338;color:#e1f7e9}
+.hp3 .developers-page .mcp-workflow .platform-scene-toolbar button:focus-visible{outline:2px solid #8ee1af;outline-offset:3px}
+.hp3 .developers-page .mcp-workflow .platform-micro{color:#9fc4ac}
+.hp3 .developers-page .mcp-workflow .mcp-endpoints>div{background:#153c2a;border-color:#355f45;color:#9cdeaf}
+.hp3 .developers-page .mcp-workflow .mcp-endpoints strong{color:#d4eddc}
+.hp3 .developers-page .mcp-workflow .mcp-wire{color:#74c991}
+.hp3 .developers-page .mcp-workflow .mcp-wire i{background:#427d54}
+.hp3 .developers-page .mcp-workflow[data-playing=true] .mcp-wire i:after{background:#a9efba;box-shadow:0 0 8px #8ee1af66}
+.hp3 .developers-page .mcp-workflow .mcp-request{border-color:#65bd84}
+.hp3 .developers-page .mcp-workflow .mcp-request p{color:#d3eadb}
+.hp3 .developers-page .mcp-workflow .mcp-execution>.platform-step{border-color:#294c38;color:#a5d6b5}
+.hp3 .developers-page .mcp-workflow .mcp-execution>.platform-step>svg:last-child{color:#83d69c}
+.hp3 .developers-page .mcp-workflow .mcp-execution strong{color:#cbe6d4}
+.hp3 .developers-page .mcp-workflow .mcp-execution span{color:#a3c4af}
+.hp3 .developers-page .mcp-workflow .mcp-result{background:#1b4931;border-color:#407b53;color:#a2e4b5}
+.hp3 .developers-page .mcp-workflow .mcp-result strong{color:#e0f6e7}
+.hp3 .developers-page .mcp-workflow .mcp-result span{color:#b4d8c0}
+.hp3 .developers-page .mcp-workflow .mcp-footnote{color:#a2c3ae}
+/* A dark event sequence anchors the light events section. */
+.hp3 .developers-page .event-workflow{background:#101311;border-color:#2c3830;color:#e0eae3;box-shadow:0 20px 50px #10201714}
+.hp3 .developers-page .event-workflow .platform-scene-toolbar{background:#0c0f0d;border-color:#28352c;color:#b1c5b7}
+.hp3 .developers-page .event-workflow .platform-divider{color:#819989}
+.hp3 .developers-page .event-workflow .platform-scene-toolbar button{background:#1a2820;border-color:#465e4d;color:#c1ddcb}
+.hp3 .developers-page .event-workflow .platform-scene-toolbar button:hover{background:#263e2e;color:#e3f4e8}
+.hp3 .developers-page .event-workflow .platform-scene-toolbar button:focus-visible{outline:2px solid #8ee1af;outline-offset:3px}
+.hp3 .developers-page .event-workflow .event-source{background:#18291e;border-color:#354d3c}
+.hp3 .developers-page .event-workflow .event-source>span:first-child{color:#95d4a7}
+.hp3 .developers-page .event-workflow .event-source small,.hp3 .developers-page .event-workflow .platform-micro{color:#adc5b5}
+.hp3 .developers-page .event-workflow .event-timeline:before{background:#3f624b}
+.hp3 .developers-page .event-workflow .event-timeline>.platform-step>span{background:#1c3023;border-color:#3c5c46;color:#a1dcb1}
+.hp3 .developers-page .event-workflow .event-timeline strong{color:#dcebe1}
+.hp3 .developers-page .event-workflow .event-timeline small{color:#afc3b6}
+/* A green resource section pairs each developer interface with its outcome. */
+.hp3 .platform-page section.developer-resources-green{background:#e4efe3;border-block:1px solid #d4e3d3}
+.hp3 .developer-resources-intro{display:grid;grid-template-columns:.88fr 1.12fr;align-items:center;gap:65px;margin-bottom:55px}
+.hp3 .developer-resources-intro .sec-head{margin-bottom:0}
+.hp3 .developer-resources-intro .sec-head h2{max-width:440px}
+.hp3 .developer-resources-intro .sec-head .lede{color:#526e58;max-width:440px}
+.hp3 .developer-interfaces{position:relative;isolation:isolate;padding:16px 0 20px 16px;font-family:'Helpin Platform UI',sans-serif}
+.hp3 .developer-interfaces-glow{position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse at 55% 60%,#b2d0ab88,transparent 70%)}
+.hp3 .developer-interfaces-sheet{position:relative;background:#f8fcf6;border:1px solid #b6cfb5;border-radius:14px;box-shadow:0 20px 45px #244e2910,8px 8px 0 #d7e6d2,9px 9px 0 #b9d0b5;overflow:hidden}
+.hp3 .developer-interfaces-heading{display:flex;align-items:center;gap:10px;padding:22px;border-bottom:1px solid #dce8d7;color:#23482c}
+.hp3 .developer-interfaces-heading strong{font-size:13px;font-weight:500}
+.hp3 .developer-interfaces-heading>span{font-size:8px;letter-spacing:.09em;margin-left:auto;color:#55795c}
+.hp3 .developer-interface-rows{padding:7px 22px}
+.hp3 .developer-interface-row{display:grid;grid-template-columns:1.12fr 35px 1fr;align-items:center;padding:17px 0;border-bottom:1px solid #e2ebde}
+.hp3 .developer-interface-row:last-child{border:0}
+.hp3 .developer-interface-code>span{display:flex;align-items:center;gap:7px;font-size:9px;font-weight:500;letter-spacing:.04em;color:#547c5c;margin-bottom:8px}
+.hp3 .developer-interface-code code{display:block;font-family:var(--mono);font-size:10px;line-height:1.7;color:#244b2e;white-space:nowrap}
+.hp3 .developer-interface-connector{display:flex;align-items:center;color:#67946d;margin-inline:3px 9px}
+.hp3 .developer-interface-connector i{height:1px;background:#b7cdb4;flex:1}
+.hp3 .developer-interface-connector svg{flex:none;margin-left:-4px}
+.hp3 .developer-interface-outcome{background:#e8f2e3;border:1px solid #d7e7ce;border-radius:6px;padding:11px 9px;font-size:10px;line-height:1.6;color:#3b6343;text-align:center}
+.hp3 .developer-interfaces-footer{display:flex;gap:8px;align-items:center;padding:15px 22px;border-top:1px solid #dce8d7;font-size:9px;color:#5c7e60;background:#eef5e9}
+.hp3 .developer-interfaces-footer>span{width:5px;height:5px;border-radius:50%;background:#609368}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid{border-color:#bdd1ba}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid>a{background:transparent;border-color:#bdd1ba;transition:background .2s}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid>a:hover{background:#f4faf080}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid>a:focus-visible{outline:2px solid #376642;outline-offset:-3px;background:#f4faf0}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid h3{color:#23452b}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid p{color:#526f58}
+.hp3 .developers-page .developer-resources-green .platform-resource-grid svg{color:#477952}
+.hp3 .developers-page .developer-resources-green .platform-self-host-link{background:#d9e8d4;border-color:#bdd1ba}
+.hp3 .developers-page .developer-resources-green .platform-self-host-link p{color:#526f58}
+@media(max-width:1100px){.hp3 .developer-resources-intro{gap:35px;grid-template-columns:.85fr 1.15fr}.hp3 .developer-interfaces-heading>span{font-size:7px}.hp3 .developer-interface-code code{font-size:9px}.hp3 .developer-interface-outcome{font-size:9px;padding-inline:6px}.hp3 .developer-interface-rows{padding-inline:18px}}
+@media(max-width:960px){.hp3 .developer-resources-intro{grid-template-columns:1fr;gap:25px}.hp3 .developer-resources-intro .sec-head h2,.hp3 .developer-resources-intro .sec-head .lede{max-width:600px}.hp3 .developer-interfaces{max-width:590px;width:100%;justify-self:center;padding-left:0}.hp3 .developer-interface-code code{font-size:11px}.hp3 .developer-interface-outcome{font-size:11px}.hp3 .developer-interfaces-heading>span{font-size:8px}.hp3 .developer-interface-row{padding-block:19px}}
+@media(max-width:600px){.hp3 .developer-resources-intro{gap:16px;margin-bottom:35px}.hp3 .developer-interfaces{padding-right:8px}.hp3 .developer-interfaces-heading{padding:18px 15px;gap:8px}.hp3 .developer-interfaces-heading strong{font-size:12px}.hp3 .developer-interfaces-heading>span{display:none}.hp3 .developer-interface-rows{padding-inline:14px}.hp3 .developer-interface-row{grid-template-columns:1.15fr 22px 1fr;padding-block:15px}.hp3 .developer-interface-code code{font-size:8px}.hp3 .developer-interface-code>span{font-size:8px}.hp3 .developer-interface-outcome{font-size:9px;padding:9px 6px}.hp3 .developer-interface-connector{margin-inline:2px}.hp3 .developer-interfaces-footer{padding:14px;font-size:8px}}
+@media(prefers-reduced-motion:reduce){.hp3 .developers-page .developer-resources-green .platform-resource-grid>a{transition:none}}
+
+/* Keep large surfaces consistent; green carries meaning inside the diagrams. */
+.hp3 .developers-page #sdk,.hp3 .developers-page #api,.hp3 .developers-page #webhooks,.hp3 .developers-page #developer-faq{background:#fff}
+.hp3 .developers-page #webhooks{border-top:1px solid #e4e9e6}
+.hp3 .developers-page .sdk-code,.hp3 .developers-page .workspace-api-response{background:#101311}
+.hp3 .developers-page .sdk-result,.hp3 .developers-page .sdk-topbar,.hp3 .developers-page .sdk-install,.hp3 .developers-page .workspace-api-heading,.hp3 .developers-page .workspace-api-note{background:#fff}

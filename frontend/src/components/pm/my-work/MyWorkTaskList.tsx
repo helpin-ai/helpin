@@ -43,7 +43,7 @@ export function MyWorkTaskList(props: Props) {
   ];
   const active = new Set(definitions.filter(def=>prefs[def.key]).map(def=>def.key));
   const groupOptions = [{value:'focus',label:'Focus'}, {value:'stage',label:'Stage'}, {value:'team',label:'Team'}];
-  return <TooltipProvider><div>
+  return <TooltipProvider><div className="@container">
     <div className="flex flex-wrap items-center gap-x-3 gap-y-3 border-b border-quiet-divider-strong py-4">
       <div className="flex flex-wrap items-center gap-1" aria-label="Task filters">
         {myWorkFilters.map(filter=> <QuickTooltip key={filter} label={filter==='Due soon'?'Due today or within the next three days':filter==='All'?'All active tasks; recent completions appear separately':filter==='Blocked'?'Waiting on another dependency':filter==='Overdue'?'Past their due date':'Tasks currently underway'}>
@@ -78,7 +78,7 @@ function TaskGroup({group,prefs,now,ownerNames,...props}:Props & {group:ReturnTy
       </button>
       {group.label==='Focus now' && <QuickTooltip label="Focus order is based on due dates, blockers, priority, active state, and recent updates."><button type="button" aria-label="How focus order works" className="rounded-sm p-1 text-quiet-muted focus-visible:outline-2 focus-visible:outline-ring"><InformationCircleIcon className="size-3.5"/></button></QuickTooltip>}
     </div>
-    {open && <div className="pb-3">{visible.map(task=><MyWorkTaskRow key={task.id} task={task} workspaceId={props.workspaceId} teamName={props.teams.length>1 ? props.findTeamName(task.team_id) || task.team_name : undefined} ownerNames={props.assigned?undefined:ownerNames(task)} compact={prefs.compact} canEdit={props.canEdit} needsInput={!task.completed && task.latest_run_status==='paused' && (props.assigned || Boolean(task.owner_member_ids?.includes(props.memberId)))} now={now} onOpen={()=>props.onOpen(task)} onChanged={props.onChanged}/>)}
+    {open && <div className="pb-3"><div className="divide-y divide-quiet-divider-light">{visible.map(task=><MyWorkTaskRow key={task.id} task={task} workspaceId={props.workspaceId} teamName={props.findTeamName(task.team_id) || task.team_name} ownerNames={props.assigned?undefined:ownerNames(task)} compact={prefs.compact} canEdit={props.canEdit} needsInput={!task.completed && task.latest_run_status==='paused' && (props.assigned || Boolean(task.owner_member_ids?.includes(props.memberId)))} now={now} onOpen={()=>props.onOpen(task)} onChanged={props.onChanged}/>)}</div>
       {!searching && group.tasks.length>10 && <QuietTextAction onClick={()=>setShowAll(value=>!value)} className="mt-3">{showAll?'Show less':`Show ${group.tasks.length-10} more`}</QuietTextAction>}
     </div>}
   </section>;

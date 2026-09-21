@@ -1,0 +1,24 @@
+Use case: precise-object-edit / color treatment only.
+Asset: Helpin Projects website, native 3840x2160.
+Input image is the approved fictional OrbitDesk task board with the taller Ask Agent window floating in the lower-right corner.
+
+Change ONLY the color palette and contrast to match the newly approved HTML task hero. Preserve the exact composition, all dimensions, sidebar widths, eight task positions, board columns, floating Ask Agent size and placement, text, task IDs, avatars, controls, icons and typography. Do not redraw the layout, shorten or rewrite any text, or change any task status. In particular, keep the floating Ask Agent window tall at the existing position and width. Its overlap over the board is intentional.
+
+Target palette from the approved hero:
+- Main dark surface: #171b18, near-black charcoal with a very slight green undertone, not saturated forest green.
+- Header and task cards: #1e2420, subtly elevated charcoal.
+- Navigation sidebar and secondary panels: #1b211d.
+- Thin dividers and borders: #303a33, quiet and consistent.
+- Primary text: #e6ece8, crisp warm off-white.
+- Secondary labels and metadata: #a4afa7.
+- Body text: #c8d2cb.
+- Muted sage accent: #9cbea3, used sparingly for active UI accents.
+- Subtle green badge background: #304536 with text #dbebdf.
+
+Apply these colors coherently to the board and floating Ask Agent. The Ask Agent window should now share these charcoal tones with the board instead of its current brownish warm-gray tint. Make its header #1e2420 and body #1b211d, with the black composer #111612 and a restrained #303a33 outline. Preserve a soft natural black shadow so it still clearly floats above the board. Keep the header, description/content and navigation as subtly distinct layers. Preserve bright readable text and quiet metadata.
+
+Maintain the existing semantic colors for state lines and icons: Ready indigo, In Progress orange, In Review purple, Backlog gray; bug/feature and priority indicators may retain their semantic hues but use restrained dark chip backgrounds. Preserve avatar colors and the OrbitDesk green O logo. Do not recolor every accent green. The Add task button remains off-white with dark text. Existing task links in the agent answer may use the muted sage accent while staying legible. Avoid neon, glowing borders, bloom, gradients, added transparency, faded text, and generic AI-dashboard styling.
+
+All existing task titles, IDs and metadata must remain unchanged, including ORB-501, ORB-502, ORB-491, ORB-493, ORB-494, ORB-498, ORB-492 and ORB-495. Keep the exact Ask Agent question and answer, Helpin AI label, Summary only / No tasks changed note, and Message agent composer. Do not show additional messages or completed actions. No exterior marketing copy, browser frame or watermark.
+
+Return the same detailed 3840x2160 screenshot illustration with only this subtle charcoal/sage color refinement.
