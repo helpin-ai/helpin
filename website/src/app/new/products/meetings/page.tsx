@@ -1,3 +1,4 @@
+import { HeroVortex } from '../../_components/HeroVortex';
 import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
@@ -54,7 +55,7 @@ const FAQS = [
 ] as const;
 export default function MeetingsPage() {
   return <><PreviewNav /><main className="meetings-page">
-    <section className="meetings-hero" aria-labelledby="meetings-title"><div className="wrap">
+    <section className="meetings-hero motion-hero" aria-labelledby="meetings-title"><HeroVortex variant="flow" tone="dark" /><div className="wrap">
       <div className="meetings-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12}/><span>Meetings</span></div>
       <div className="meetings-hero-copy"><Availability category="Meeting notes" /><h1 id="meetings-title">Turn customer calls into <span>tasks and follow-ups.</span></h1><p className="lede">Let Helpin capture the call, pull out the decisions, and prepare the next steps. Review the task or follow-up with the customer’s words still in view.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /><div className="meetings-platforms">{PLATFORMS.map(([id,label])=><span key={id}><img src={`/new/meetings/${id}.svg`} width={19} height={19} alt=""/>{label}</span>)}</div></div>
       <div className="meetings-screenshot"><MeetingWorkspace /></div>

@@ -1,3 +1,4 @@
+import { HeroVortex } from '../../_components/HeroVortex';
 import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
@@ -89,7 +90,7 @@ export default function CustomerSupportPage() {
   return <>
     <PreviewNav />
     <div className="support-page">
-      <section className="hero support-hero">
+      <section className="hero support-hero motion-hero"><HeroVortex variant="flow" tone="dark" />
         <div className="wrap">
           <nav className="support-breadcrumb" aria-label="Breadcrumb"><Link href="/new/product">Products</Link><ChevronRight size={12} aria-hidden="true" /><span aria-current="page">Customer Support</span></nav>
           <div className="support-hero-grid">

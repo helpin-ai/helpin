@@ -1,3 +1,4 @@
+import { HeroVortex } from '../../_components/HeroVortex';
 import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from "next/link";
@@ -88,7 +89,7 @@ export default function CRMPage() {
     <>
       <PreviewNav />
       <div className="crm-page">
-        <section className="crm-hero" aria-labelledby="crm-title">
+        <section className="crm-hero motion-hero" aria-labelledby="crm-title"><HeroVortex variant="orbit" tone="dark" />
           <div className="wrap">
             <div className="crm-breadcrumb">
               <Link href="/new">Helpin</Link>

@@ -1,3 +1,4 @@
+import { HeroVortex } from '../../_components/HeroVortex';
 import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
@@ -78,7 +79,7 @@ export default function ProjectsPage() {
   return <>
     <PreviewNav />
     <div className="projects-page">
-      <section className="projects-hero" aria-labelledby="projects-title">
+      <section className="projects-hero motion-hero" aria-labelledby="projects-title"><HeroVortex variant="connections" tone="dark" />
         <div className="wrap">
           <div className="projects-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>Projects</span></div>
           <div className="projects-hero-grid"><div className="projects-hero-copy"><Availability category="Projects" /><h1 id="projects-title">Ship the work <br /><span>your customers are waiting for.</span></h1><p className="lede">Turn customer requests into clear priorities. Plan the work, let agents help build and review it, and keep your team in control of what ships.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /><div className="projects-hero-points"><span><MessagesSquare size={14} />Customer-linked tasks</span><span><CheckSquare size={14} />Sprint planning</span><span><GitBranch size={14} />Coding agents</span></div></div>

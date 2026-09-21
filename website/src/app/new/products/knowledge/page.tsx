@@ -1,3 +1,4 @@
+import { HeroVortex } from '../../_components/HeroVortex';
 import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
@@ -80,7 +81,7 @@ const FAQS = [
 ] as const;
 export default function KnowledgePage() {
   return <><PreviewNav /><main className="knowledge-page">
-    <section className="knowledge-hero" aria-labelledby="knowledge-title"><div className="wrap">
+    <section className="knowledge-hero motion-hero" aria-labelledby="knowledge-title"><HeroVortex variant="flow" tone="dark" /><div className="wrap">
       <div className="knowledge-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>Knowledge</span></div>
       <div className="knowledge-hero-copy"><Availability category="Help center & docs" /><h1 id="knowledge-title">Give customers and agents <span>docs they can rely on.</span></h1><p className="lede">Publish guides and API references on your own domain. Help customers find answers, give agents knowledge to work from, and let the docs agent prepare updates as your product changes.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /><div className="knowledge-hero-points"><span><Server size={14} />On your own domain</span><span><Network size={14} />Fast to load</span><span><Code2 size={14} />Developer docs included</span><span><Link2 size={14} />AI answers with sources</span></div></div>
       <div className="knowledge-screenshot"><KnowledgeWorkspace /></div>
