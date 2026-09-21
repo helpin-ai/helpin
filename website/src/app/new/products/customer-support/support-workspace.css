@@ -41,3 +41,8 @@
 .hp3 .swi-shell{grid-template-rows:minmax(0,1fr)}.hp3 .swi-thread{min-height:0}
 @container support-workspace (max-width:520px){.hp3 .support-workspace[data-variant=inbox] .swi-shell{height:825px}}
 @container support-workspace (max-width:290px){.hp3 .support-workspace[data-variant=inbox] .swi-shell{height:925px}}
+
+/* A compact Ask Agent surface reuses the workflow without a duplicate inbox. */
+.hp3 .support-workspace[data-panel-only=true] .swi-canvas { height: 630px; }
+.hp3 .support-workspace[data-panel-only=true] .swi-agent { inset: 12px; width: auto; min-width: 0; }
+@container support-workspace (max-width: 360px) { .hp3 .support-workspace[data-panel-only=true] .swi-canvas { height: 700px; } }

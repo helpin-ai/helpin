@@ -7,7 +7,7 @@ import './support-inbox-showcase.css';
 
 const DETAILS = [
   { title: 'A place for every conversation', copy: 'Shared and team inboxes, with dedicated queues for AI handling and resolved conversations.', icon: Inbox },
-  { title: 'Customer context, always beside you', copy: 'Contact details, conversation routing, tags, and linked tasks stay alongside the thread.', icon: PanelRight },
+  { title: 'Customer history, always beside you', copy: 'Contact details, conversation routing, tags, and linked tasks stay alongside the thread.', icon: PanelRight },
   { title: 'The tools to move it forward', copy: 'Reply, leave a note, or try a Helpin AI draft grounded in the conversation and linked work.', icon: Sparkles },
 ];
 

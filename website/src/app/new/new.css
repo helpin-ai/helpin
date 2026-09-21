@@ -418,8 +418,11 @@
 .hp3 .hero h1 { font-size: clamp(2.4rem, 4.4vw, 3.5rem); }
 .hp3 .hero h1 > span { display: block; text-wrap: balance; }
 .hp3 .hero .lede { font-size: 18px; max-width: 54ch; }
-.hp3 .hero-wrap > .wire { margin-top: 88px; }
-@media (max-width: 600px) { .hp3 .hero-wrap > .wire { margin-top: 64px; } }
+.hp3 .hero-workflow { margin: 72px 0 0; position: relative; z-index: 1; }
+.hp3 .hero-workflow .wire { margin-top: 0; }
+.hp3 .hero-workflow figcaption { margin-top: 28px; text-align: center; color: var(--t3); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.hp3 .hero-evaluation { position: relative; z-index: 1; margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--border); text-align: center; }
+@media (max-width: 600px) { .hp3 .hero-workflow { margin-top: 48px; } }
 /* Phone: the record must never widen the page. A late rule had reset it to two columns. */
 @media (max-width: 960px) {
   .hp3 .record { grid-template-columns: minmax(0, 1fr); }
@@ -1249,3 +1252,27 @@
 
 /* Keep protocol detail secondary to the connected-tools outcome. */
 .hp3 .ask-agent-links .ask-agent-technical-link { font-size: 13px; font-weight: 500; color: var(--t3); }
+
+/* Copy review: readable category, common actions and compact comparison surfaces. */
+.hp3 .availability-tag { display: inline-flex; align-items: center; flex-wrap: wrap; text-decoration: underline; text-underline-offset: 5px; }
+.hp3 .cta-note { color: inherit; opacity: .78; font-size: 13px; line-height: 1.7; margin-top: 16px; }
+.hp3 .example-workspace-label { font: 11px/1.5 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: inherit; opacity: .65; margin: 0 0 12px; }
+.hp3 .hero-replaces { max-width: 680px; margin: 24px auto 0; color: var(--t2); font-size: 14px; line-height: 1.8; }
+.hp3 .hero-proof { margin: 28px auto 12px; color: var(--t2); font-size: 12px; }
+.hp3 .hero-proof ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 24px; list-style: none; padding: 0; margin: 12px 0 0; }
+.hp3 .hero-proof li { color: var(--ink); font-size: 16px; font-weight: 600; }
+.hp3 .faq-more { color: var(--em); text-decoration: underline; text-underline-offset: 3px; white-space: normal; }
+.hp3 .delivery-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 24px; padding: 0; margin: 36px 0; list-style: none; }
+.hp3 .delivery-summary li { display: grid; justify-items: start; gap: 12px; padding: 24px; border: 1px solid currentColor; border-radius: 12px; }
+.hp3 .delivery-summary strong { font-size: 20px; }
+.hp3 .delivery-summary span { font-size: 14px; line-height: 1.7; }
+.hp3 .included-table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+.hp3 .included-table { width: 100%; border-collapse: collapse; text-align: left; min-width: 620px; font-size: 14px; }
+.hp3 .included-table caption { text-align: left; padding: 16px 24px; color: var(--t2); }
+.hp3 .included-table th, .hp3 .included-table td { padding: 18px 24px; border-top: 1px solid var(--border); line-height: 1.6; vertical-align: top; }
+.hp3 .included-table thead { background: var(--bg2); }
+.hp3 .included-table th { font-weight: 600; }
+.hp3 .included-table th span { display: block; font-size: 12px; font-weight: 400; color: var(--t2); margin-top: 4px; }
+.hp3 .included-note { color: var(--t2); font-size: 13px; line-height: 1.8; margin-top: 20px; }
+.hp3 .included-note a { color: var(--em); text-decoration: underline; }
+@media (max-width: 700px) { .hp3 .delivery-summary { grid-template-columns: 1fr; } .hp3 .hero-proof ul { gap: 10px 18px; } }

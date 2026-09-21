@@ -34,7 +34,7 @@ export function ProjectDelivery() {
 
   return (
     <div className="projects-delivery-art" ref={container} data-playing={active} data-phase={phase}>
-      <div className="pdl-flow" role="img" aria-label="Illustrative workflow: Maya requests Slack alerts. Forge builds the feature and Quill updates the guide from the same request. The story moves through work and review to Shipped. Sam approves the release, documentation, and customer update before Maya receives the news in her original conversation.">
+      <div className="pdl-flow" role="img" aria-label="Illustrative workflow: Maya requests Slack alerts. Coding agent builds the feature and Docs agent updates the guide from the same request. The story moves through work and review to Shipped. Sam approves the release, documentation, and customer update before Maya receives the news in her original conversation.">
         <div className="pdl-card pdl-request" aria-hidden="true">
           <span className="pdl-label">01 / THE REQUEST</span>
           <div className="pdl-person"><img src="/new/avatars/maya.webp" width={34} height={34} alt="" /><div><strong>Maya Chen</strong><span>Northstar Labs</span></div></div>
@@ -47,8 +47,8 @@ export function ProjectDelivery() {
         <div className="pdl-card pdl-work" data-active={phase === 1 || phase === 2} aria-hidden="true">
           <span className="pdl-label">02 / THE WORK</span>
           <h3>Build it. Document it.</h3>
-          <div className="pdl-agent"><img src="/new/agents/forge.svg" width={28} height={28} alt="" /><div><strong>Slack sync alerts</strong><span>Forge · {released ? 'Feature released' : phase === 2 ? 'Ready for review' : 'Building the feature'}</span></div>{released && <Check size={14} />}</div>
-          <div className="pdl-agent"><img src="/new/agents/quill.svg" width={28} height={28} alt="" /><div><strong>Setup guide</strong><span>Quill · {released ? 'Guide published' : phase === 2 ? 'Ready for review' : 'Updating the docs'}</span></div>{released && <Check size={14} />}</div>
+          <div className="pdl-agent"><img src="/new/agents/forge.svg" width={28} height={28} alt="" /><div><strong>Slack sync alerts</strong><span>Coding agent · {released ? 'Feature released' : phase === 2 ? 'Ready for review' : 'Building the feature'}</span></div>{released && <Check size={14} />}</div>
+          <div className="pdl-agent"><img src="/new/agents/quill.svg" width={28} height={28} alt="" /><div><strong>Setup guide</strong><span>Docs agent · {released ? 'Guide published' : phase === 2 ? 'Ready for review' : 'Updating the docs'}</span></div>{released && <Check size={14} />}</div>
           <div className="pdl-card-foot pdl-story"><span>ORB-491</span><span data-done={released}><i />{STORY[phase]}</span></div>
         </div>
 

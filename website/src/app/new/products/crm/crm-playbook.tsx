@@ -426,7 +426,7 @@ export function CRMPlaybook() {
                       Automation <span>Off</span>
                     </h4>
                     <dl className="cp-properties">
-                      <Field label="Agent">Beacon</Field>
+                      <Field label="Agent">CRM agent</Field>
                       <Field label="Flow">
                         Renewal recovery · Review updates
                       </Field>
@@ -444,7 +444,7 @@ export function CRMPlaybook() {
                       </dl>
                     </div>
                     <p className="cp-note">
-                      Beacon reviews updates and proposes next actions for your
+                      CRM agent reviews updates and proposes next actions for your
                       team to approve. This connection is prepared; automation
                       is off.
                     </p>
@@ -456,17 +456,17 @@ export function CRMPlaybook() {
                   {[
                     [
                       "Playbook published",
-                      "Sam Rivera · Sep 18, 2026, 10:42",
+                      "Sam Rivera · Today, 10:42",
                       "Version 3 includes the renewal milestones and approval settings.",
                     ],
                     [
                       "Draft updated",
-                      "Sam Rivera · Sep 18, 2026, 10:36",
+                      "Sam Rivera · Today, 10:36",
                       "Added success criteria and assigned the escalation owner.",
                     ],
                     [
                       "Draft created",
-                      "Aisha Patel · Sep 17, 2026, 14:20",
+                      "Aisha Patel · Yesterday, 14:20",
                       "Defined the renewal recovery outcome and matching signals.",
                     ],
                   ].map(([title, date, body]) => (

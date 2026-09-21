@@ -9,9 +9,9 @@ const LABELS: Record<RecordVariant, [string, string]> = {
   conversations: ['Customer conversations', 'Maya at Northstar Labs asks about setting up Okta SSO, testing with a pilot group, and who owns the rollout. Helpin AI answers each follow-up with linked guides and project context, applies relevant tags, and keeps the conversation connected to the same rollout project.'],
   meetings: ['Customer meetings', 'Northstar Labs’ security review connects the recording, speaker notes, and two next steps: validate the Okta setup and share the guide.'],
   projects: ['Customer projects', 'SSO Enterprise Readiness connects seven customer requests to tasks: Okta mapping in review, SCIM planned, and role mapping shipped. Eight of twelve tasks are complete.'],
-  coding: ['Coding agents with customer context', 'Forge works on the Okta SAML mapping task with Maya’s request for Northstar Labs’ rollout attached, prepares a role-mapping code change, and returns pull request 728 for Sam to review.'],
+  coding: ['Coding agents with customer history', 'Coding agent works on the Okta SAML mapping task with Maya’s request for Northstar Labs’ rollout attached, prepares a role-mapping code change, and returns code change 728 for Sam to review.'],
   deals: ['Customer deals', 'Northstar Labs’ $42,000 renewal is in negotiation. Its SSO approval requirement is connected to Maya’s security review.'],
-  docs: ['Customer documentation', 'A published Okta setup guide with three steps is connected to PR 728, shared with Maya at Northstar Labs, and used in a Helpin AI reply.'],
+  docs: ['Customer documentation', 'A published Okta setup guide with three steps is connected to change 728, shared with Maya at Northstar Labs, and used in a Helpin AI reply.'],
   'email-calendar': ['Customer email and calendar', 'Northstar Labs’ timeline connects Maya’s rollout email, the security review meeting, and the Okta guide shared by Helpin AI.'],
 };
 const at = (seconds: number) => ({ '--cr-delay': `${seconds}s` }) as CSSProperties;
@@ -141,7 +141,7 @@ function Coding({ id }: { id: string }) {
     <text x={530} y={105} textAnchor="end" className="cr-accent">7 requests</text>
     <Connection d="M300 125 V148" start={.3} />
     <rect x={54} y={148} width={492} height={137} rx={12} fill="#0c1812" stroke="#30503d" />
-    <HelpinMark x={68} y={160} /><text x={105} y={177} className="cr-ai-label">Forge · Coding agent</text>
+    <HelpinMark x={68} y={160} /><text x={105} y={177} className="cr-ai-label">Coding agent</text>
     <g className="cr-coding-working"><circle className="cr-coding-pulse" cx={457} cy={173} r={3} fill="#dfc47d" /><text x={469} y={177} className="cr-caption">Working</text></g>
     <g className="cr-coding-ready"><Checkmark x={435} y={172} /><text x={451} y={177} className="cr-accent">Changes ready</text></g>
     <path d="M68 197 H532" stroke="#253f30" />
@@ -151,7 +151,7 @@ function Coding({ id }: { id: string }) {
     <Connection d="M300 285 V310" start={2.65} />
     <Reveal start={3.3}>
       <rect x={54} y={310} width={492} height={48} rx={10} fill="#193226" stroke="#38654b" />
-      <Glyph icon={GitPullRequest} x={68} y={322} size={22} /><text x={104} y={330} className="cr-body">PR #728 · Okta role mapping</text>
+      <Glyph icon={GitPullRequest} x={68} y={322} size={22} /><text x={104} y={330} className="cr-body">Change #728 · Okta role mapping</text>
       <Glyph icon={GitBranch} x={104} y={338} size={12} /><text x={122} y={349} className="cr-caption">orbitdesk / platform</text>
       <Avatar x={414} y={334} initial="S" /><text x={438} y={331} className="cr-accent">Ready for review</text><text x={438} y={349} className="cr-caption">Assigned to Sam</text>
     </Reveal>
@@ -177,7 +177,7 @@ function Docs({ id }: { id: string }) {
     <Glyph icon={FileText} x={132} y={58} /><text x={168} y={79} className="cr-title">Set up SSO with Okta</text>
     <rect x={132} y={101} width={86} height={27} rx={13} fill="#193b2c" /><text x={175} y={120} textAnchor="middle" className="cr-accent">Published</text>
     {['Create a SAML application','Map roles and attributes','Test with your pilot team'].map((label,i)=><Reveal key={label} start={.3+i*.85}><circle cx={144} cy={159+i*45} r={12} fill="#173b2b" /><circle className="cr-draw-ring" cx={144} cy={159+i*45} r={12} fill="none" stroke="#62ce98" strokeWidth={1.2} pathLength={1} /><text x={144} y={165+i*45} textAnchor="middle" className="cr-accent">{i+1}</text><text x={168} y={165+i*45} className="cr-body">{label}</text></Reveal>)}
-    <path d="M132 281 H473" stroke="#294236" /><Glyph icon={GitPullRequest} x={132} y={296} size={18} /><text x={161} y={311} className="cr-muted">Updated after PR #728</text>
+    <path d="M132 281 H473" stroke="#294236" /><Glyph icon={GitPullRequest} x={132} y={296} size={18} /><text x={161} y={311} className="cr-muted">Updated after Change #728</text>
     <Connection d="M305 332 V358 H257" start={2.5} />
     <Reveal start={3.3}><Glyph icon={Sparkles} x={323} y={349} size={17} /><text x={347} y={363} className="cr-accent">Used in AI reply</text></Reveal>
     <Reveal start={3}><Panel id={id} x={40} y={328} width={217} height={56} /><Avatar x={70} y={356} /><text x={97} y={351} className="cr-body">Shared with Maya</text><text x={97} y={372} className="cr-caption">Northstar Labs</text></Reveal>

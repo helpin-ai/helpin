@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import { previewMetadata } from '../_components/preview-metadata';
 import { Download } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { PreviewNav } from '../_components/PreviewNav';
@@ -6,12 +6,7 @@ import { PreviewFooter } from '../_components/PreviewFooter';
 import { ColorPalette } from './brand-tools';
 import './branding.css';
 
-export const metadata: Metadata = {
-  title: 'Branding — Helpin',
-  description: 'Helpin logos, colors, and typography. Download the brand kit for your next article, integration, or presentation.',
-  alternates: { canonical: '/new/branding' },
-  openGraph: { title: 'The Helpin brand', description: 'Logos, colors, and typography. The Helpin brand essentials.', url: '/new/branding' },
-};
+export const metadata = previewMetadata("Branding \u2014 Helpin", "/new/branding");
 
 export default function BrandingPage() {
   return <>

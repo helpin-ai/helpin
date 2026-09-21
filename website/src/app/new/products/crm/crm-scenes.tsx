@@ -24,7 +24,7 @@ const DEALS = [
     "Annual renewal",
     42000,
     0,
-    "Nov 23",
+    "Next month",
     40,
     "Maya needs complete CSV exports before the wider rollout and renewal discussion. EXP-142 is in engineering review.",
     "Confirm EXP-142 with engineering, then prepare an update.",
@@ -35,7 +35,7 @@ const DEALS = [
     "Engineering workspace",
     24000,
     0,
-    "Nov 25",
+    "Next month",
     35,
     "The engineering team needs an API usage review before confirming next year’s plan.",
     "Share the API usage report with Leo.",
@@ -46,7 +46,7 @@ const DEALS = [
     "Developer workspace",
     16800,
     0,
-    "Dec 02",
+    "Next month",
     30,
     "Ada is reviewing adoption across the engineering teams before renewing.",
     "Schedule the adoption review with Ada.",
@@ -57,7 +57,7 @@ const DEALS = [
     "Workspace renewal",
     18000,
     1,
-    "Nov 15",
+    "Next month",
     55,
     "The account owner recorded updated seat requirements after the review call.",
     "Send the revised renewal proposal for review.",
@@ -68,7 +68,7 @@ const DEALS = [
     "Platform team renewal",
     28800,
     1,
-    "Nov 18",
+    "Next month",
     60,
     "The platform team wants to include two additional workspaces in its contract.",
     "Confirm workspace requirements and pricing.",
@@ -79,7 +79,7 @@ const DEALS = [
     "Security team renewal",
     36000,
     1,
-    "Nov 26",
+    "Next month",
     50,
     "Leila needs the updated security questionnaire before procurement can proceed.",
     "Return the reviewed security questionnaire.",
@@ -90,7 +90,7 @@ const DEALS = [
     "Support renewal",
     12000,
     2,
-    "Nov 21",
+    "Next month",
     65,
     "The customer has received the renewal terms and is completing its internal review.",
     "Confirm the customer’s decision date.",
@@ -101,7 +101,7 @@ const DEALS = [
     "Team plan renewal",
     9600,
     2,
-    "Nov 27",
+    "Next month",
     70,
     "The team approved the seat count and asked for annual billing terms.",
     "Send the annual billing proposal.",
@@ -112,7 +112,7 @@ const DEALS = [
     "Infrastructure renewal",
     21600,
     2,
-    "Dec 04",
+    "Next month",
     65,
     "Amara’s team has accepted the rollout scope and is reviewing the proposal.",
     "Check whether procurement needs any further details.",
@@ -123,7 +123,7 @@ const DEALS = [
     "Analytics workspace",
     19200,
     3,
-    "Nov 20",
+    "Next month",
     85,
     "The evaluation is complete. Legal is reviewing the updated agreement.",
     "Follow up on the legal review.",
@@ -134,7 +134,7 @@ const DEALS = [
     "Customer success renewal",
     32400,
     3,
-    "Nov 28",
+    "Next month",
     80,
     "Kai has confirmed the renewal. The finance team needs the final order form.",
     "Prepare the order form for finance.",
@@ -145,7 +145,7 @@ const DEALS = [
     "Automation workspace",
     26400,
     3,
-    "Dec 03",
+    "Next month",
     90,
     "The team approved the renewal scope and requested a countersigned agreement.",
     "Send the agreement for signature.",
@@ -156,7 +156,7 @@ const DEALS = [
     "Annual team plan",
     14400,
     4,
-    "Sep 18",
+    "Today",
     100,
     "The agreement is signed and the new annual plan is active.",
     "Schedule the next quarterly account review.",
@@ -167,7 +167,7 @@ const DEALS = [
     "Product workspace",
     24000,
     4,
-    "Sep 17",
+    "Yesterday",
     100,
     "The product team completed its renewal and confirmed its rollout schedule.",
     "Share the rollout checklist with the team.",
@@ -178,7 +178,7 @@ const DEALS = [
     "Engineering plan",
     18000,
     4,
-    "Sep 16",
+    "2 days ago",
     100,
     "The engineering plan renewed after the team completed its account review.",
     "Arrange the next engineering check-in.",
@@ -200,7 +200,8 @@ const PIPELINES = [
   },
 ].map((pipeline, pipelineIndex) => ({
   ...pipeline,
-  deals: DEALS.map(
+  stages: pipeline.stages.slice(0, 2),
+  deals: DEALS.filter((_, index) => [0, 1, 3, 4].includes(index)).map(
     (
       [
         companyIndex,
@@ -508,7 +509,7 @@ export function CRMPipeline() {
               <CRMMark />
               <div>
                 <strong>Ask Agent</strong>
-                <small>Using your customer context</small>
+                <small>Using your customer history</small>
               </div>
               <button
                 ref={agentClose}
@@ -539,7 +540,7 @@ export function CRMPipeline() {
               </div>
               <div className="crm-deal-agent-answer">
                 <span className="crm-deal-agent-label">
-                  <CRMMark /> Helpin AI
+                  <CRMMark /> Ask Agent
                 </span>
                 <p>{deal.evidence}</p>
                 <span className="crm-deal-agent-source">

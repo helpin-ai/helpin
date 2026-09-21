@@ -7,7 +7,7 @@ import { GITHUB_URL, GithubIcon } from './ui';
 // Keep the footer focused on current pages; detailed capabilities live on each page.
 const COLUMNS = [
   { title: 'Products', links: [
-    { label: 'Customer Support', href: '/new/products/customer-support' },
+    { label: 'Support', href: '/new/products/customer-support' },
     { label: 'Meetings', href: '/new/products/meetings' },
     { label: 'Projects', href: '/new/products/projects' },
     { label: 'CRM', href: '/new/products/crm' },
@@ -77,7 +77,7 @@ export function PreviewFooter() {
             <a href={`${GITHUB_URL}/blob/develop/SECURITY.md`} target="_blank" rel="noopener noreferrer">Security</a>
           </nav>
           <p>© {new Date().getFullYear()} Helpin AI.</p>
-          <p className="footer-license">AGPL-3.0 application · Apache-2.0 SDK</p>
+          <p className="footer-license">Open-source application and SDK</p>
         </div>
       </div>
     </footer>

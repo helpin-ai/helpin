@@ -25,7 +25,7 @@ export function AskAgentWorkspace() {
   }, [active, cycle, replay]);
 
   return <div className="aaw-scene" ref={container} data-playing={active} data-phase={phase} data-open={open}>
-    <div className="aaw-background" aria-hidden="true" inert><KnowledgeWorkspace autoplay={false} /></div>
+    <div className="aaw-background" aria-hidden="true" inert><KnowledgeWorkspace autoplay={false} apiHref="/new/products/knowledge#knowledge-api" /></div>
     {open && <AskAgentWindow phase={phase} paused={paused} onInteract={() => setPaused(true)} onTogglePlayback={() => setPaused(value => !value)} onMinimize={() => { setPaused(true); setOpen(false); }} onRestart={() => { setPaused(false); setReplay(value => value + 1); }} />}
     <button className="aaw-launcher" type="button" aria-label={open ? 'Minimize Ask Agent preview' : 'Open Ask Agent preview'} aria-expanded={open} onClick={() => { setPaused(true); setOpen(value => !value); }}><img src="/brand/helpin-icon-ink.svg" width={24} height={24} alt="" /><span>Ask Agent</span><ChevronDown size={13} /></button>
   </div>;

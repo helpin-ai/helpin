@@ -375,7 +375,7 @@ function RecordDetail({
                           Complete exports are required for the wider team
                           rollout.
                         </p>
-                        <small>Meeting · Sep 18 · 32 minutes</small>
+                        <small>Meeting · Today · 32 minutes</small>
                       </span>
                     </div>
                     <div>
@@ -441,7 +441,7 @@ function RecordDetail({
                       the wider team. Sam will confirm the engineering review
                       and prepare a customer update.
                     </p>
-                    <div>Sep 18 · 32 minutes · 3 participants</div>
+                    <div>Today · 32 minutes · 3 participants</div>
                   </>
                 ) : tab === "Deals" ? (
                   <>
@@ -470,7 +470,7 @@ function RecordDetail({
                         ? "Maya confirmed that complete exports are needed before the wider rollout."
                         : "Confirm EXP-142 with engineering, then prepare the customer update. Sam owns the next step."}
                     </p>
-                    <div>Sam Rivera · Sep 18</div>
+                    <div>Sam Rivera · Today</div>
                   </>
                 ) : (
                   <>
@@ -694,8 +694,8 @@ export function CRMWorkspace({
   };
   const rows = (
     view === "contacts"
-      ? CONTACTS.map((contact, index) => ({ ...contact, index }))
-      : COMPANIES.map((company, index) => ({ ...company, index }))
+      ? CONTACTS.slice(0, 5).map((contact, index) => ({ ...contact, index }))
+      : COMPANIES.slice(0, 5).map((company, index) => ({ ...company, index }))
   ).filter(
     (item) =>
       (owner === "all" || item.owner === owner) &&
@@ -1004,7 +1004,7 @@ export function CRMWorkspace({
                           </td>
                           {showCreated && (
                             <td className="cw-cell-created">
-                              Sep {18 - item.index}, 2026
+                              {item.index === 0 ? 'Today' : item.index === 1 ? 'Yesterday' : `${item.index} days ago`}
                             </td>
                           )}
                           <td className="cw-actions-cell">
@@ -1067,7 +1067,7 @@ export function CRMWorkspace({
           <Check size={12} />
           {selected === null
             ? `${rows.length} ${view} · OrbitDesk`
-            : "Customer context stays attached"}
+            : "Customer history stays attached"}
         </span>
         <div>
           {mode === "directory" && (

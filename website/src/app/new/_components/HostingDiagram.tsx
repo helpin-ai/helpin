@@ -28,7 +28,7 @@ export function HostingDiagram() {
         <text x={x+14} y={281} className="hosting-node-title">{title}</text><text x={x+14} y={298} className="hosting-node-detail">{detail}</text>
       </g>)}
       <g color="#80d2a3"><LockKeyhole x={185} y={338} width={15} height={15} strokeWidth={1.6} /></g>
-      <text x={210} y={351} className="hosting-detail">Your servers. Your data.</text>
+      <text x={210} y={351} className="hosting-detail">Your data, on your servers.</text>
     </svg>
   </div>;
 }

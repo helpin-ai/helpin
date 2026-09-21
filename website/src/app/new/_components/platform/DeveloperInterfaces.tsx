@@ -17,7 +17,7 @@ export function DeveloperInterfaces() {
         <div className="developer-interface-connector"><i/><ArrowRight size={15}/></div>
         <div className="developer-interface-outcome">{outcome}</div>
       </div>)}</div>
-      <div className="developer-interfaces-footer"><span/>Customer context, wherever you build.</div>
+      <div className="developer-interfaces-footer"><span/>Customer history, wherever you build.</div>
     </div>
   </div>;
 }

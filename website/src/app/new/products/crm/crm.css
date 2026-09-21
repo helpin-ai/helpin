@@ -143,5 +143,8 @@
 @keyframes crm-deal-agent-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:700px){.hp3 .crm-deal-agent{top:165px;right:12px;max-width:calc(100% - 24px)}.hp3 .crm-deal-agent-body{padding:15px}.hp3 .crm-deal-agent footer{padding:12px 15px}.hp3 .crm-deal-agent .cw-agent-question p{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.hp3 .crm-deal-agent{animation:none}}
-.hp3 .crm-deal-agent{max-height:calc(100% - 160px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#365b47 var(--art-dark)}
-@media(max-width:700px){.hp3 .crm-deal-agent{max-height:calc(100% - 177px)}}
+.hp3 .crm-deal-agent.cw-agent{max-height:calc(100% - 160px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#365b47 var(--art-dark)}
+@media(max-width:700px){.hp3 .crm-deal-agent.cw-agent{max-height:calc(100% - 177px)}}
+
+.hp3 .crm-pipeline-demo .crm-board { height: 390px; }
+.hp3 .crm-pipeline-demo .crm-board-column { flex: 1 0 280px; max-width: none; min-width: 280px; }

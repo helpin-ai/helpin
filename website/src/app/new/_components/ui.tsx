@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+export const DEMO_URL = 'https://cal.com/helpin-ai/30min';
+export const INCLUDED_URL = '/new/self-hosting#whats-included';
 export const SIGNUP_URL = 'https://app.helpin.ai/register';
 export const GITHUB_URL = 'https://github.com/helpin-ai/helpin';
 
@@ -43,15 +45,28 @@ export function SectionHead({ eyebrow, title, lede, secondaryLede, tight }: { ey
   );
 }
 
-export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on GitHub' }: { secondaryHref?: string; secondaryLabel?: string }) {
+export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on GitHub', primaryLabel = 'Start free' }: { secondaryHref?: string; secondaryLabel?: string; primaryLabel?: string }) {
   const external = secondaryHref.startsWith('http');
   return (
     <div className="cta-row">
-      <Link className="btn btn-primary" href={SIGNUP_URL}>Start free →</Link>
+      <Link className="btn btn-primary" href={SIGNUP_URL}>{primaryLabel} →</Link>
       <a className="btn btn-secondary" href={secondaryHref} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}>
         {secondaryLabel === 'View on GitHub' ? <GithubIcon /> : null}
         {secondaryLabel} →
       </a>
     </div>
   );
+}
+
+
+export function Availability({ category, cloud = false }: { category: string; cloud?: boolean }) {
+  return <a className="eyebrow availability-tag" href={INCLUDED_URL}>{category} · {cloud ? 'Cloud plan' : 'Community + Cloud'}</a>;
+}
+export function CtaNote({ trial = false, support = false }: { trial?: boolean; support?: boolean }) {
+  return <p className="cta-note">{trial ? `14-day cloud trial · No card${support ? ' · Or self-host free' : ''}` : 'Open source · Run it yourself or use our cloud'}</p>;
+}
+export function ExampleLabel() { return <p className="example-workspace-label">Example workspace</p>; }
+export type FAQItem = readonly [question: string, answer: string, href: string, label?: string];
+export function FAQList({ items, className }: { items: readonly FAQItem[]; className: string }) {
+  return <div className={className}>{items.map(([question, answer, href, label]) => <details key={question}><summary>{question}</summary><p>{answer} <a className="faq-more" href={href}>{label ?? 'Learn more'} →</a></p></details>)}</div>;
 }

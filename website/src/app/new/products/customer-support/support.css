@@ -169,3 +169,7 @@
 /* Agent settings section and long hero eyebrow. */
 .hp3 .support-controls-section .sec-head { max-width: 720px; }
 .hp3 .support-hero .eyebrow svg { flex: none; }
+
+.hp3 .support-also-included { margin-top: 36px; font-size: 15px; line-height: 1.9; color: inherit; }
+.hp3 .support-identity-summary h3 { font-size: clamp(1.5rem,3vw,2rem); margin-bottom: 16px; }
+.hp3 .support-identity-summary p { max-width: 650px; font-size: 16px; line-height: 1.8; color: var(--t2); margin-bottom: 20px; }
