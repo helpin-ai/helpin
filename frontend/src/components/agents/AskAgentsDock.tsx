@@ -20,7 +20,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useDockStore } from '@/stores/dockStore';
 import { dockChatService } from '@/lib/services/dockChatService';
-import { dockChatModuleForContext, type DockChat, type DockChatVisibility, type DockRunSummary } from '@/lib/dockTypes';
+import { dockChatModuleForContext, type DockChat, type DockChatVisibility, type DockEntityReference, type DockRunSummary } from '@/lib/dockTypes';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
 import { DockTranscriptViewPicker } from './dock/DockTranscriptViewPicker';
 import { DockRoster } from './dock/DockRoster';
