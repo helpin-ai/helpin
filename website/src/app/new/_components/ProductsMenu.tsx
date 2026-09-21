@@ -35,7 +35,7 @@ export function ProductsMenu() {
       </div>
       <Link href="/new/products/ai-agents#agent-ask" className="nav-products-agent-link">
         <span className="nav-products-agent-icon"><Bot size={29} strokeWidth={1.5} aria-hidden="true" /></span>
-        <span className="nav-products-agent-copy"><b>Ask Agent</b><span>Find answers and move work forward.</span></span>
+        <span className="nav-products-agent-copy"><b>Ask Agent</b><span>Your workspace assistant. Find answers, take action, and coordinate specialist agents with the full customer context.</span></span>
         <span className="nav-products-agent-cta">Explore Ask Agent<ArrowRight size={14} aria-hidden="true" /></span>
       </Link>
     </>
