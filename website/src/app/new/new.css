@@ -178,6 +178,8 @@
 .hp3 .faq { max-width: 760px; display: grid; }
 .hp3 details { border-top: 1px solid var(--border); padding: 18px 0; }
 .hp3 details:last-child { border-bottom: 1px solid var(--border); }
+/* FAQ rows own their bottom divider; do not double it with the next row. */
+.hp3 :is(.faq, .platform-faqs, .support-faqs, .agents-faqs, .projects-faqs, .knowledge-faqs, .meetings-faqs, .crm-faqs) > details { border-top: 0; }
 .hp3 summary { cursor: pointer; font-weight: 600; font-size: 17px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
 .hp3 summary::-webkit-details-marker { display: none; }
 .hp3 summary::after { content: "+"; color: var(--t3); font-weight: 400; }

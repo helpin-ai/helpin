@@ -14,8 +14,22 @@
 .hp3 .platform-page .dev-capabilities>div{font-size:10px}
 .hp3 .platform-page .dev-source div>span,.hp3 .platform-page .dev-hub span{font-size:11px;line-height:1.65}
 .hp3 .platform-page .platform-feature-grid h3{font-size:19px}
-.hp3 .platform-page .platform-faqs details{padding-block:19px}
-.hp3 .platform-page .platform-faqs details:first-child{padding-top:0}
+/* One divider per row, with a full-width keyboard-accessible disclosure. */
+.hp3 .platform-page .platform-faq-grid{align-items:start}
+.hp3 .platform-page .platform-faq-grid>.sec-head{margin-bottom:0}
+.hp3 .platform-page .platform-faqs{min-width:0}
+.hp3 .platform-page .platform-faqs details{padding:0;border-top:0;border-bottom:1px solid var(--border)}
+.hp3 .platform-page .platform-faqs summary{padding:22px 0;min-height:60px;gap:20px;font-size:16px;font-weight:500;line-height:1.5;color:var(--ink);align-items:center;list-style:none;transition:color .18s}
+.hp3 .platform-page .platform-faqs details:first-child summary{padding-top:0;min-height:44px}
+.hp3 .platform-page .platform-faqs summary::-webkit-details-marker{display:none}
+.hp3 .platform-page .platform-faqs summary::marker{content:""}
+.hp3 .platform-page .platform-faqs summary::after{content:"+";display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:50%;background:var(--bg2);color:var(--t2);font-size:22px;font-weight:400;line-height:1;transition:background .18s,color .18s}
+.hp3 .platform-page .platform-faqs summary:hover,.hp3 .platform-page .platform-faqs details[open] summary{color:var(--em)}
+.hp3 .platform-page .platform-faqs details[open] summary::after{content:"−";background:var(--em-t);color:var(--em)}
+.hp3 .platform-page .platform-faqs summary:focus-visible{outline:2px solid var(--em);outline-offset:5px;border-radius:4px}
+.hp3 .platform-page .platform-faqs details p{max-width:64ch;margin:0;padding:0 48px 24px 0;color:var(--t2);font-size:14px;line-height:1.85}
+@media(max-width:600px){.hp3 .platform-page .platform-faqs summary{gap:16px;padding-block:19px}.hp3 .platform-page .platform-faqs details p{padding-right:0;padding-bottom:20px}}
+@media(prefers-reduced-motion:reduce){.hp3 .platform-page .platform-faqs summary,.hp3 .platform-page .platform-faqs summary::after{transition:none}}
 /* The actual product gets the largest visual on the self-hosting page. */
 .hp3 .community-showcase{margin-top:38px}
 .hp3 .community-switcher{display:flex;justify-content:center;gap:8px;margin:0 auto 25px}
