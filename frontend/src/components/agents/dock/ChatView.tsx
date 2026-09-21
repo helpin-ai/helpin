@@ -65,6 +65,9 @@ interface ChatViewProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   initialDraft?: string;
   onDraftConsumed?: () => void;
+  /** References attached when the chat opens, e.g. from a list selection. */
+  initialReferences?: DockEntityReference[];
+  onReferencesConsumed?: () => void;
   draftValue?: string;
   onDraftChange?: (value: string) => void;
   onChatChanged?: () => void;
@@ -102,6 +105,8 @@ export function ChatView({
   textareaRef,
   initialDraft,
   onDraftConsumed,
+  initialReferences,
+  onReferencesConsumed,
   draftValue,
   onDraftChange,
   onChatChanged,
@@ -172,6 +177,25 @@ export function ChatView({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [initialDraft, onDraftConsumed, setValue]);
+
+  useEffect(() => {
+    if (!initialReferences || initialReferences.length === 0) return;
+    const timer = window.setTimeout(() => {
+      setReferences((current) => {
+        const next = current.slice();
+        for (const reference of initialReferences) {
+          if (next.length >= 10) break;
+          const exists = next.some(
+            (item) => item.entity_type === reference.entity_type && item.entity_id === reference.entity_id,
+          );
+          if (!exists) next.push(reference);
+        }
+        return next;
+      });
+      onReferencesConsumed?.();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialReferences, onReferencesConsumed]);
 
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.id === workspaceId ? state.currentWorkspace.slug : undefined);
   const run = detail?.run ?? null;

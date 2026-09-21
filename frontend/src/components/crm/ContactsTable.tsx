@@ -36,9 +36,11 @@ import {
   TABLE_SURFACE,
   TABLE_HEADER,
   TABLE_HEADER_CELL,
+  TABLE_HEADER_CELL_SELECT,
   TABLE_HEADER_CELL_SORTABLE,
   TABLE_ROW,
   TABLE_CELL,
+  TABLE_CELL_SELECT,
   TABLE_GROUP_ROW,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
@@ -561,15 +563,28 @@ export function ContactsTable({
     [],
   );
 
-  const tableToolbar = (
-    <>
+  const selectedContacts = useMemo(() => {
+    if (selectedIds.length === 0) return [];
+    const byId = new Map(contacts.map((contact) => [contact.id, contact]));
+    return selectedIds
+      .map((id) => byId.get(id))
+      .filter((contact): contact is CRMContact => !!contact);
+  }, [contacts, selectedIds]);
+
+  const selectionBar = selectedContacts.length > 0 ? (
+    <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
       <BulkActionsBar
-        selectedIds={selectedIds}
+        selectedContacts={selectedContacts}
         workspaceId={workspaceId}
         assignableMembers={assignableMembers}
         onComplete={() => onContactUpdated?.()}
         onClearSelection={() => setRowSelection({})}
       />
+    </div>
+  ) : null;
+
+  const tableToolbar = (
+    <>
       <Button
         type="button"
         size="sm"
@@ -648,7 +663,7 @@ export function ContactsTable({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
+    <div className="relative flex h-full min-h-0 flex-col gap-2">
       {toolbarPortal ?? (
         <div className="flex items-center justify-end gap-2 px-1">{tableToolbar}</div>
       )}
@@ -740,6 +755,7 @@ export function ContactsTable({
         )}
       </div>
 
+      {selectionBar}
     </div>
   );
 }
@@ -787,7 +803,7 @@ function renderHeaderCell(
     return (
       <div
         key={header.id}
-        className={`${TABLE_HEADER_CELL} ${pinnedClass}`}
+        className={`${TABLE_HEADER_CELL_SELECT} ${pinnedClass}`}
         style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
       >
         <div className="flex items-center" onClick={(event) => event.stopPropagation()}>
@@ -806,7 +822,7 @@ function renderHeaderCell(
   return (
     <div
       key={header.id}
-      className={`group/header ${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+      className={`group/header ${colId === 'select' ? TABLE_HEADER_CELL_SELECT : TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
       style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
     >
@@ -1002,7 +1018,7 @@ const MemoDataRow = memo(function DataRow({
         return (
           <div
             key={cell.id}
-            className={`${TABLE_CELL} ${pinnedClass}`}
+            className={`${colId === 'select' ? TABLE_CELL_SELECT : TABLE_CELL} ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
           >
             {colId === 'select' ? (

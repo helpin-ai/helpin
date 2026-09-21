@@ -37,6 +37,8 @@ import { useSharedChatLink } from './dock/useSharedChatLink';
 
 type AskAgentsEventDetail = {
   query?: string;
+  /** Entity references to attach to the composer, e.g. a CRM selection. */
+  references?: DockEntityReference[];
   mode?: 'compose' | 'runs';
   intent?: 'new_chat' | 'resume';
   runId?: string;
@@ -122,6 +124,7 @@ export function AskAgentsDock({
   const [maximized, setMaximized] = useState(false);
   const [chatScrollRequest, setChatScrollRequest] = useState(0);
   const [pendingDraft, setPendingDraft] = useState<string | undefined>();
+  const [pendingReferences, setPendingReferences] = useState<DockEntityReference[] | undefined>();
   const [attentionNudge, setAttentionNudge] = useState(false);
   const [chatPresenceOverride, setChatPresenceOverride] = useState<{
     chatId: string;
@@ -496,9 +499,11 @@ export function AskAgentsDock({
     const onAsk = (event: Event) => {
       const detail = (event as CustomEvent<AskAgentsEventDetail>).detail ?? {};
       const query = detail.query?.trim();
+      const references = detail.references?.length ? detail.references : undefined;
       if (detail.intent === 'new_chat') {
         newChat();
         if (query) setPendingDraft(query);
+        if (references) setPendingReferences(references);
         return;
       }
       if (detail.runId) {
@@ -513,6 +518,7 @@ export function AskAgentsDock({
         openDock(detail.mode === 'runs' ? 'agents' : 'chats', detail.mode === 'runs' ? 'selection' : 'composer');
       }
       if (query) setPendingDraft(query);
+      if (references) setPendingReferences(references);
     };
     window.addEventListener('helpin:ask-agents', onAsk);
     return () => window.removeEventListener('helpin:ask-agents', onAsk);
@@ -733,6 +739,8 @@ export function AskAgentsDock({
                   textareaRef={textareaRef}
                   initialDraft={pendingDraft}
                   onDraftConsumed={() => setPendingDraft(undefined)}
+                  initialReferences={pendingReferences}
+                  onReferencesConsumed={() => setPendingReferences(undefined)}
                   draftValue={drafts[draftStoreKey] ?? ''}
                   onDraftChange={(value) => setDraft(draftStoreKey, value)}
                   onChatChanged={() => {
