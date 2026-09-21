@@ -98,7 +98,7 @@ export default function CRMPage() {
             <div className="crm-hero-copy">
               <span className="eyebrow">CRM for SaaS teams</span>
               <h1 id="crm-title">
-                Move deals forward.
+                Move deals forward.{" "}
                 <span>With AI agents that know your customers.</span>
               </h1>
               <p className="lede">
