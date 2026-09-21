@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { PreviewCanvas } from './PreviewCanvas';
 import './product-preview.css';
 
 export type ProductPreviewName = 'inbox' | 'meetings' | 'projects' | 'crm' | 'knowledge';
@@ -29,10 +30,10 @@ const LABELS: Record<ProductPreviewName, string> = {
 export function ProductPreview({ product, theme = 'dark' }: { product: ProductPreviewName; theme?: 'light' | 'dark' }) {
   const Preview = PREVIEWS[product];
   return <div className="product-preview" data-product={product} data-theme={theme}>
-    <div className="product-preview-viewport" role="region" aria-label={`${LABELS[product]} interactive product preview`} tabIndex={0}>
+    <PreviewCanvas label={`${LABELS[product]} interactive product preview`}>
       {product === 'knowledge'
         ? <PREVIEWS.knowledge apiHref="/new/products/knowledge#knowledge-api" />
         : product === 'projects' ? <PREVIEWS.projects theme={theme} /> : <Preview />}
-    </div>
+    </PreviewCanvas>
   </div>;
 }

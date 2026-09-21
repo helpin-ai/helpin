@@ -1,9 +1,12 @@
 /* Embedded sizing belongs here; the demos retain their own UI and playback. */
-.hp3 .product-preview { --preview-height: var(--px-preview-height, 580px); container: product-preview / inline-size; min-width: 0; }
+.hp3 .product-preview { --preview-height: var(--px-preview-height, 580px); min-width: 0; }
 .hp3 .product-preview-viewport { height: var(--preview-height); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #b7c8bf transparent; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.hp3 .product-preview-canvas { container: product-preview / inline-size; width: 100%; height: var(--preview-height); transform-origin: top left; }
+.hp3 .product-preview-viewport[data-fitted="true"] { overflow: clip; overscroll-behavior-y: auto; }
 .hp3 .product-preview-viewport:focus-visible { outline: 2px solid var(--em); outline-offset: 3px; }
 .hp3 .product-preview-loading { display: grid; place-items: center; min-height: var(--preview-height); color: var(--t3); font-size: 13px; }
-.hp3 .product-preview[data-product="inbox"] .product-preview-viewport { padding: 12px; background: #f0f5f2; }
+.hp3 .product-preview[data-product="inbox"] .product-preview-viewport { background: #f0f5f2; }
+.hp3 .product-preview[data-product="inbox"] .product-preview-canvas { padding: 12px; }
 .hp3 .product-preview[data-product="inbox"] .support-workspace .swi-shell { height: calc(var(--preview-height) - 74px); }
 .hp3 .product-preview .swi-messages, .hp3 .product-preview .swi-queues, .hp3 .product-preview .swi-list { overflow-y: auto; }
 .hp3 .product-preview .mw-preview { height: calc(var(--preview-height) - 2px); }
@@ -13,7 +16,8 @@
 .hp3 .product-preview .cw-nav { display: flex; min-height: 0; }
 .hp3 .product-preview .cw-crm, .hp3 .product-preview .cw-apps { overflow-y: auto; }
 .hp3 .product-preview .crm-workspace { border: 0; border-radius: 0; box-shadow: none; }
-.hp3 .product-preview[data-product="projects"] .product-preview-viewport { padding: 14px; background: #171b18; border-color: #303a33; }
+.hp3 .product-preview[data-product="projects"] .product-preview-viewport { background: #171b18; border-color: #303a33; }
+.hp3 .product-preview[data-product="projects"] .product-preview-canvas { padding: 14px; }
 .hp3 .product-preview .project-hero-art-label { position: sticky; top: -14px; z-index: 5; padding-block: 8px; margin-top: -8px; background: #171b18; }
 .hp3 .product-preview .project-hero-stage { height: calc(var(--preview-height) - 70px); display: flex; flex-direction: column; padding: 130px 12px 12px 12%; }
 .hp3 .product-preview .project-hero-stage > .project-hero-task { flex: 1; min-height: 0; width: 100%; }
