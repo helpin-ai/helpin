@@ -62,8 +62,8 @@ export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on G
 export function Availability({ category }: { category: string }) {
   return <span className="eyebrow">{category}</span>;
 }
-export function CtaNote({ trial = false, support = false }: { trial?: boolean; support?: boolean }) {
-  return <p className="cta-note">{trial ? `14-day cloud trial · No card${support ? ' · Or self-host free' : ''}` : 'Open source · Run it yourself or use our cloud'}</p>;
+export function CtaNote({ trial = false, support = false, pill = false }: { trial?: boolean; support?: boolean; pill?: boolean }) {
+  return <p className={`cta-note${pill ? ' cta-note-pill' : ''}`}>{trial ? `14-day cloud trial · No card${support ? ' · Or self-host free' : ''}` : pill ? <><strong>Open source</strong><span aria-hidden="true"> · </span><span>Run it yourself or use our cloud</span></> : 'Open source · Run it yourself or use our cloud'}</p>;
 }
 export type FAQItem = readonly [question: string, answer: string, href: string, label?: string];
 export function FAQList({ items, className }: { items: readonly FAQItem[]; className: string }) {

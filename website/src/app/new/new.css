@@ -1254,6 +1254,10 @@
 
 /* Copy review: readable category, common actions and compact comparison surfaces. */
 .hp3 .cta-note { color: inherit; opacity: .78; font-size: 13px; line-height: 1.7; margin-top: 16px; }
+.hp3 .cta-note.cta-note-pill { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0 7px; width: fit-content; max-width: 100%; padding: 8px 16px; border: 1px solid var(--border-2); border-radius: 999px; background: var(--em-t); color: var(--em); opacity: 1; font-size: 12px; line-height: 1.65; text-align: center; }
+.hp3 .cta-note-pill strong { font-weight: 600; }
+.hp3 .cta-note-pill > span:last-child { color: var(--t2); }
+@media (max-width: 420px) { .hp3 .cta-note.cta-note-pill { column-gap: 5px; padding: 8px 12px; font-size: 11px; } }
 .hp3 .hero-replaces { max-width: 680px; margin: 24px auto 0; color: var(--t2); font-size: 14px; line-height: 1.8; }
 .hp3 .hero-proof { margin: 28px auto 12px; color: var(--t2); font-size: 12px; }
 .hp3 .hero-proof ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 24px; list-style: none; padding: 0; margin: 12px 0 0; }
