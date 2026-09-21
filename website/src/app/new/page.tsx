@@ -4,6 +4,7 @@ import { PreviewNav } from './_components/PreviewNav';
 import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { GridFlow } from './_components/GridFlow';
 import { PreviewFooter } from './_components/PreviewFooter';
+import { HeroVortex } from './_components/HeroVortex';
 import { LoopWire } from './_components/LoopWire';
 import { ProductPreview } from './_components/product-previews';
 import { ProductExplorer } from './_components/ProductExplorer';
@@ -66,9 +67,9 @@ export default function NewHomePage() {
       <PreviewNav />
 
       {/* 01 Hero */}
-      <section className="hero">
+      <section className="hero homepage-hero">
+        <HeroVortex />
         <div className="wrap hero-wrap">
-          <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
             <span className="eyebrow">Support, meetings, projects, CRM and docs — on one customer history</span>
             <h1>From customer question to shipped fix.</h1>
