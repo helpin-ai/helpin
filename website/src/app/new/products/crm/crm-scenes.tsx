@@ -18,12 +18,13 @@ function Step({ index, children, className = '' }: { index: number; children: Re
 
 export function CRMAccountScene() {
   return <div className="crm-hero-art"><div className="crm-art-orbit" aria-hidden="true" /><MotionFrame name="Customer context"><div className="crm-account-demo">
-    <div className="crm-account-heading"><span className="crm-company-mark"><Building2 size={25} /></span><div><small>CUSTOMER RECORD</small><h2>Northstar Labs</h2><p>Maya Chen <span>·</span> Sam Rivera, owner</p></div><span className="crm-status">Customer</span></div>
+    <div className="crm-account-heading"><span className="crm-company-mark"><Building2 size={25} /></span><div><small>CUSTOMER RECORD</small><h2>Northstar Labs</h2><p>Maya Chen<span aria-hidden="true">·</span>Sam Rivera, owner</p></div><span className="crm-status">Customer</span></div>
     <div className="crm-account-facts"><div><small>Opportunity</small><strong>Enterprise rollout</strong></div><div><small>Next milestone</small><strong>Security approval</strong></div></div>
-    <Step index={0} className="crm-source-note"><span className="crm-mini-label"><MessageSquare size={13} /> THE CUSTOMER SAYS</span><blockquote>“We can roll this out to the rest of the team once security approves SSO.”</blockquote><p><span className="crm-avatar">MC</span> Maya Chen <span>· Support conversation</span></p></Step>
+    <Step index={0} className="crm-source-note"><span className="crm-mini-label"><MessageSquare size={13} /> THE CUSTOMER SAYS</span><blockquote>“We can roll this out to the rest of the team once security approves SSO.”</blockquote><p className="crm-meta"><span className="crm-avatar">MC</span><b>Maya Chen</b><i aria-hidden="true">·</i><span>Support conversation</span></p></Step>
     <div className="crm-account-connector" aria-hidden="true"><ArrowDown size={17} /></div>
-    <Step index={1} className="crm-linked-task"><div><GitBranch size={16} /><span>SSO Enterprise Readiness</span><span className="crm-status crm-status-amber">In progress</span></div><strong>Validate group-to-role mapping</strong><p><CircleDot size={12} /> Linked task <span>· Sam Rivera</span></p></Step>
-    <Step index={2} className="crm-next-step"><Sparkles size={17} /><div><small>PROPOSED NEXT STEP</small><p>Share the reviewed setup guide.</p></div><span className="crm-review-pill">For review</span></Step>
+    <Step index={1} className="crm-linked-task"><div><GitBranch size={14} /><span>SSO Enterprise Readiness</span><span className="crm-status crm-status-amber">In progress</span></div><strong>Validate group-to-role mapping</strong><p className="crm-meta"><CircleDot size={12} /><b>Linked task</b><i aria-hidden="true">·</i><span>Sam Rivera</span></p></Step>
+    <div className="crm-account-connector" aria-hidden="true"><ArrowDown size={17} /></div>
+    <Step index={2} className="crm-next-step"><span className="crm-next-step-icon"><Sparkles size={17} /></span><div><small>PROPOSED NEXT STEP</small><p>Share the reviewed setup guide.</p></div><span className="crm-review-pill">For review</span></Step>
     <p className="crm-demo-caption">Illustrative customer workflow</p>
   </div></MotionFrame></div>;
 }
