@@ -6,9 +6,9 @@ import { SupportWorkspace } from './support-workspace';
 import './support-inbox-showcase.css';
 
 const DETAILS = [
-  { title: 'A place for every conversation', copy: 'Shared and team inboxes, with dedicated queues for AI handling and resolved conversations.', icon: Inbox },
-  { title: 'Customer history, always beside you', copy: 'Contact details, conversation routing, tags, and linked tasks stay alongside the thread.', icon: PanelRight },
-  { title: 'The tools to move it forward', copy: 'Reply, leave a note, or try a Helpin AI draft grounded in the conversation and linked work.', icon: Sparkles },
+  { title: 'Route to the right team', copy: 'Keep chat and email in shared inboxes. Use tags and saved views to focus on what needs attention.', icon: Inbox },
+  { title: 'Pick up with the full history', copy: 'See the customer, company, owner and linked task beside the conversation.', icon: PanelRight },
+  { title: 'Reply with the findings', copy: 'Review an AI draft based on the investigation, add a note, and keep the customer informed.', icon: Sparkles },
 ];
 
 export function SupportInboxShowcase() {
