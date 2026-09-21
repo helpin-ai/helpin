@@ -694,8 +694,8 @@ export function CRMWorkspace({
   };
   const rows = (
     view === "contacts"
-      ? CONTACTS.slice(0, 5).map((contact, index) => ({ ...contact, index }))
-      : COMPANIES.slice(0, 5).map((company, index) => ({ ...company, index }))
+      ? CONTACTS.map((contact, index) => ({ ...contact, index }))
+      : COMPANIES.map((company, index) => ({ ...company, index }))
   ).filter(
     (item) =>
       (owner === "all" || item.owner === owner) &&

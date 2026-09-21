@@ -200,8 +200,7 @@ const PIPELINES = [
   },
 ].map((pipeline, pipelineIndex) => ({
   ...pipeline,
-  stages: pipeline.stages.slice(0, 2),
-  deals: DEALS.filter((_, index) => [0, 1, 3, 4].includes(index)).map(
+  deals: DEALS.map(
     (
       [
         companyIndex,

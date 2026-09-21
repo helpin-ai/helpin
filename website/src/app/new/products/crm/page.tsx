@@ -79,7 +79,8 @@ const FAQS = [
     "Can we bring our existing data and email?",
     "Import contacts, companies and deals from CSV. Connect Gmail and Google Calendar to add customer conversations and events.",
     "/new/developers"
-  ]
+  ],
+  ["Is CRM included in Community?", "CRM is a Cloud feature and is outside the supported Community bundle.", "/new/self-hosting#whats-included"]
 ] as const;
 
 export default function CRMPage() {
@@ -161,6 +162,24 @@ export default function CRMPage() {
           </div>
         </section>
 
+        <section id="crm-pipeline" className="crm-soft">
+          <div className="wrap">
+            <div className="crm-centered">
+              <SectionHead
+                eyebrow="A pipeline you can act on"
+                title="See what’s holding up the deal."
+                lede="Track stages, owners, and close dates. Then look beyond the amount: the customer’s concern, the work in progress, and the next step that could move the relationship forward."
+              />
+            </div>
+            <CRMPipeline />
+            <div className="crm-under-demo">
+              <span>Configurable pipelines & stages</span>
+              <span>Board & list views</span>
+              <span>Owners, amounts & close dates</span>
+            </div>
+          </div>
+        </section>
+
         <section id="crm-signals" className="crm-dark">
           <div className="wrap">
             <div className="crm-section-intro">
@@ -177,24 +196,6 @@ export default function CRMPage() {
             <p className="crm-dark-note">
               Your customer’s words stay attached to the recommendation.
             </p>
-          </div>
-        </section>
-
-        <section id="crm-pipeline" className="crm-soft">
-          <div className="wrap">
-            <div className="crm-centered">
-              <SectionHead
-                eyebrow="A pipeline you can act on"
-                title="See what’s holding up the deal."
-                lede="Track stages, owners, and close dates. Then look beyond the amount: the customer’s concern, the work in progress, and the next step that could move the relationship forward."
-              />
-            </div>
-            <CRMPipeline />
-            <div className="crm-under-demo">
-              <span>Configurable pipelines & stages</span>
-              <span>Board & list views</span>
-              <span>Owners, amounts & close dates</span>
-            </div>
           </div>
         </section>
 

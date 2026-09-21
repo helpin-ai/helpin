@@ -49,7 +49,8 @@ const FAQS = [
     "What is the open-source license?",
     "The application is AGPL-3.0 and the SDK is Apache-2.0. You can inspect and modify the source under their license terms.",
     "https://github.com/helpin-ai/helpin/blob/develop/LICENSE"
-  ]
+  ],
+  ["Can we use Kubernetes or run fully air-gapped?", "Docker Compose is the supported installation. Kubernetes and fully air-gapped setups are not validated yet.", "https://github.com/helpin-ai/helpin/blob/develop/docs/community/deployment.md"]
 ] as const;
 export default function SelfHostingPage(){return <><PreviewNav/><div className="platform-page self-hosting-page">
  <section className="platform-hero"><div className="wrap"><PlatformBreadcrumb label="Open source & self-hosting"/><div className="platform-hero-grid"><div className="platform-hero-copy"><span className="eyebrow">Open source · Community edition</span><h1>Run your customer workspace <span>on your infrastructure.</span></h1><p className="lede">Bring support, docs, and agents to the servers you control. Own the customer history, choose your model connections, and manage the installation with the Helpin CLI.</p><CtaRow /><CtaNote /><div className="platform-hero-points"><span><GitBranch size={14}/>AGPL-3.0</span><span><Server size={14}/>Docker Compose</span><span><Terminal size={14}/>Support, docs & agents</span></div></div><InfrastructureScene/></div></div></section>

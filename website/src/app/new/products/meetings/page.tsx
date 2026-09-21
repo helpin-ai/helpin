@@ -49,7 +49,8 @@ const FAQS = [
     "Can we control recordings and the notetaker?",
     "Yes. Choose the notetaker name, join preferences and whether recordings are saved.",
     "/new/products/meetings#meeting-capture"
-  ]
+  ],
+  ["Is Meetings included in Community?", "Meetings is a Cloud feature and is outside the supported Community bundle.", "/new/self-hosting#whats-included"]
 ] as const;
 export default function MeetingsPage() {
   return <><PreviewNav /><main className="meetings-page">

@@ -1,4 +1,4 @@
-import { Database, Server, SlidersHorizontal } from 'lucide-react';
+import { Braces, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
 import { PreviewNav } from './_components/PreviewNav';
 import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { GridFlow } from './_components/GridFlow';
@@ -216,8 +216,40 @@ export default function NewHomePage() {
 
       <section id="developers" className="developer-section">
         <div className="wrap">
-          <SectionHead eyebrow="For developers" title="Plugs into your product and your tools." lede="Add support chat to your app, connect the AI tools your team already uses, and run Helpin yourself with one command." />
-          <a className="btn-link" href="/new/developers">For developers →</a>
+          <SectionHead eyebrow="For developers" title="Plugs into your product and your tools."
+            lede="Add support chat to your app, connect the AI tools your team already uses, and run Helpin on your servers." />
+          <article className="developer-cli-feature">
+            <figure className="developer-visual">
+              <a href="/new/product/helpin-cli-tilted-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin CLI illustration at full size (opens in a new tab)">
+                <img src="/new/product/helpin-cli-tilted-1920-v1.webp" srcSet="/new/product/helpin-cli-tilted-1920-v1.webp 1920w, /new/product/helpin-cli-tilted-4k-v1.webp 3840w" sizes="(max-width: 700px) calc(100vw - 78px), (max-width: 1120px) 55vw, 590px" width={3840} height={2160} alt="An angled Helpin CLI terminal showing installation checks, diagnostics, status, and logs, with a softly blurred right edge." loading="lazy" decoding="async" />
+              </a>
+            </figure>
+            <div className="developer-cli-copy">
+              <span className="eyebrow">Helpin CLI</span>
+              <h3>Manage your instance from one terminal.</h3>
+              <p>Install, configure, and manage your Helpin instance from the terminal.</p>
+              <a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Explore the Helpin CLI →</a>
+            </div>
+          </article>
+          <div className="developer-features">
+            <article>
+              <span className="developer-feature-icon"><Braces size={22} aria-hidden="true" /></span>
+              <h3>APIs &amp; SDKs</h3><p>Connect customer data and bring support into your product.</p>
+              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer">Developer docs →</a>
+              <a className="inline-link" href={`${GITHUB_URL}/tree/develop/packages/sdk-js`} target="_blank" rel="noopener noreferrer">Explore the SDK →</a>
+            </article>
+            <article>
+              <span className="developer-feature-icon"><Plug size={22} aria-hidden="true" /></span>
+              <h3>Connect your AI tools</h3><p>Let your AI tools use Helpin, and give Helpin agents access to your connected systems.</p>
+              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/public-mcp-server.md`} target="_blank" rel="noopener noreferrer">Connect AI tools →</a>
+              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external tools →</a>
+            </article>
+            <article>
+              <span className="developer-feature-icon"><Webhook size={22} aria-hidden="true" /></span>
+              <h3>Start work from an event</h3><p>Start agent work when an event matches the rules you choose.</p>
+              <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/agents-and-automation.md`} target="_blank" rel="noopener noreferrer">Explore automation →</a>
+            </article>
+          </div>
         </div>
       </section>
 

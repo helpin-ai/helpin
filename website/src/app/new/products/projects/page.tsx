@@ -10,6 +10,7 @@ import { ProjectScene } from './project-scenes';
 import { ProjectHero } from './project-hero';
 import { ProjectFocus } from './project-focus';
 import { ProjectHealth } from './project-health';
+import { ProjectDelivery } from './project-delivery';
 
 import './projects.css';
 import './project-outcomes.css';
@@ -70,7 +71,8 @@ const FAQS = [
     "Will customers be notified automatically when a task is done?",
     "Completing a task alone does not send a message. Ask Agent can prepare the follow-up for your team to review and send.",
     "/new/products/projects#project-followup"
-  ]
+  ],
+  ["Is Projects included in Community?", "Projects is a Cloud feature and is outside the supported Community bundle.", "/new/self-hosting#whats-included"]
 ] as const;
 export default function ProjectsPage() {
   return <>
@@ -90,7 +92,7 @@ export default function ProjectsPage() {
       <section id="project-planning" className="projects-planning"><div className="wrap"><SectionHead eyebrow="Make a plan your team can follow" title="Roadmap and sprints, connected to the same tasks." lede="Schedule the epics that support your objective, then choose the tasks your team will take on next. Keep the roadmap and sprint plan connected to the work behind them." /><div className="projects-planning-grid"><article><div className="projects-planning-copy"><span className="projects-planning-step">01 / ROADMAP</span><h3>Show how the bigger pieces fit.</h3><p>Schedule epics and group them by objective or team. Keep ownership, timing, and health visible as the plan takes shape.</p></div><ProjectScene variant="roadmap" /></article><article><div className="projects-planning-copy"><span className="projects-planning-step">02 / SPRINTS</span><h3>Decide what your team takes on next.</h3><p>Choose tasks from the backlog, make a sprint commitment, and track what ships. Carry unfinished work forward with its closeout recorded.</p></div><ProjectScene variant="sprint" /></article></div></div></section>
 
       <section id="project-agents" className="projects-agents"><div className="wrap projects-split"><div><SectionHead eyebrow="From a task to a reviewed change" title="Agents write the code. Your team reviews it before it ships." lede="The planning agent scopes it, the coding agent writes the change and tests, and the code reviewer checks it. Your team approves the merge." /><p className="projects-agent-copy">Follow every step from the task, down to the code change.</p><Link className="projects-inline-link" href="/new/products/ai-agents">Meet the agents<ArrowRight size={15} /></Link></div><ProjectScene variant="agents" /></div></section>
-      <section id="project-followup" className="projects-loop"><div className="wrap projects-delivery-stage"><div className="projects-delivery-heading"><SectionHead eyebrow="Close the loop" title="Connect shipped work to the customer who asked." lede="Keep the released change, the updated guide, and the customer’s follow-up attached to the original request." /><p className="projects-agent-copy">Your team reviews the release, documentation, and customer update. Approval and sending follow the tools and workflow you configure.</p></div><ol className="delivery-summary"><li><CheckSquare size={22} /><strong>Shipped</strong><span>Your team approves the release.</span></li><li><CheckSquare size={22} /><strong>Docs updated</strong><span>Review and publish the revised guide.</span></li><li><CheckSquare size={22} /><strong>Customer notified</strong><span>Approve and send the follow-up.</span></li></ol><Link className="projects-inline-link" href="/new/products/customer-support">See how support connects<ArrowRight size={15} /></Link></div></section>
+      <section id="project-followup" className="projects-loop"><div className="wrap projects-delivery-stage"><div className="projects-delivery-heading"><SectionHead eyebrow="Close the loop" title="Connect shipped work to the customer who asked." lede="Keep the released change, the updated guide, and the customer’s follow-up attached to the original request." /><p className="projects-agent-copy">Your team reviews the release, documentation, and customer update. Approval and sending follow the tools and workflow you configure.</p></div><ProjectDelivery /><Link className="projects-inline-link" href="/new/products/customer-support">See how support connects<ArrowRight size={15} /></Link></div></section>
       <section id="project-faq"><div className="wrap projects-faq-grid"><SectionHead eyebrow="Questions" title="Get to know Helpin Projects." /><div className="projects-faqs"><FAQList items={FAQS} className="faq-items" /></div></div></section>
       <section className="final-cta final-cta-connected" aria-labelledby="projects-final-title"><div className="wrap"><ConnectedWorkspace /><div className="final"><span className="eyebrow">Build what your customers need</span><h2 id="projects-final-title">From request to release, without losing who asked.</h2><p className="lede">Bring the request, the plan, and the people and agents delivering it into one workspace.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /></div></div></section>
     </div>

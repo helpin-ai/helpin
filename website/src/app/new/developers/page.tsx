@@ -34,7 +34,11 @@ const FAQS = [
     "Can a webhook start agent work?",
     "Yes, where Automation is on. Events are checked against your rules; matching ones start the agent you chose.",
     "https://github.com/helpin-ai/helpin/blob/develop/docs/agents-and-automation.md"
-  ]
+  ],
+  ["Which SDKs are available in the codebase?", "JavaScript, React, Next.js and Vue packages are available. Check each package’s README for setup and published versions.", "https://github.com/helpin-ai/helpin/tree/develop/packages"],
+  ["Is the widget key also a workspace API credential?", "No. The public widget key identifies your widget; workspace APIs and MCP connections use separate authentication and permissions.", "https://github.com/helpin-ai/helpin/blob/develop/docs/community/widget-identity.md"],
+  ["How is customer identity verified?", "After login, your server signs a short-lived identity proof for the SDK. Helpin checks it separately from the public widget key.", "https://github.com/helpin-ai/helpin/blob/develop/docs/community/widget-identity.md"],
+  ["Is public MCP enabled everywhere?", "Public MCP is in controlled beta and must be enabled for the environment and workspace. Tools are limited by granted scopes, user permissions and enabled modules.", "https://github.com/helpin-ai/helpin/blob/develop/docs/public-mcp-server.md"]
 ] as const;
 export default function DevelopersPage(){return <><PreviewNav/><div className="platform-page developers-page">
  <section className="platform-hero"><div className="wrap"><PlatformBreadcrumb label="Developers"/><div className="platform-hero-grid"><div className="platform-hero-copy"><span className="eyebrow">Support SDKs, workspace APIs and AI tools</span><h1>Add Helpin to your app. <span>Connect it to your AI tools.</span></h1><p className="lede">Drop support chat into your product with the SDK. Use Helpin from Claude or Cursor over MCP. Give Helpin agents tools from your own systems. Build on the workspace API.</p><CtaRow /><CtaNote /><div className="platform-hero-points"><span><Braces size={14}/>APIs & SDKs</span><span><Plug size={14}/>MCP</span><span><Webhook size={14}/>Events & workflows</span></div></div><div><DeveloperHeroScene/></div></div></div></section>

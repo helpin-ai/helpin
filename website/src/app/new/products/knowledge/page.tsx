@@ -75,7 +75,8 @@ const FAQS = [
     "Yes. Docs is in the free Community edition.",
     "/new/self-hosting#whats-included",
     "See what’s included"
-  ]
+  ],
+  ["Can we review an AI-written article before it goes live?", "Yes. Review drafts and proposed changes before publishing, and choose which actions require approval.", "/new/products/knowledge#knowledge-quill"]
 ] as const;
 export default function KnowledgePage() {
   return <><PreviewNav /><main className="knowledge-page">

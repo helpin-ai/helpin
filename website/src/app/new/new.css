@@ -1260,10 +1260,6 @@
 .hp3 .hero-proof ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 24px; list-style: none; padding: 0; margin: 12px 0 0; }
 .hp3 .hero-proof li { color: var(--ink); font-size: 16px; font-weight: 600; }
 .hp3 .faq-more { color: var(--em); text-decoration: underline; text-underline-offset: 3px; white-space: normal; }
-.hp3 .delivery-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 24px; padding: 0; margin: 36px 0; list-style: none; }
-.hp3 .delivery-summary li { display: grid; justify-items: start; gap: 12px; padding: 24px; border: 1px solid currentColor; border-radius: 12px; }
-.hp3 .delivery-summary strong { font-size: 20px; }
-.hp3 .delivery-summary span { font-size: 14px; line-height: 1.7; }
 .hp3 .included-table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
 .hp3 .included-table { width: 100%; border-collapse: collapse; text-align: left; min-width: 620px; font-size: 14px; }
 .hp3 .included-table caption { text-align: left; padding: 16px 24px; color: var(--t2); }
@@ -1273,4 +1269,4 @@
 .hp3 .included-table th span { display: block; font-size: 12px; font-weight: 400; color: var(--t2); margin-top: 4px; }
 .hp3 .included-note { color: var(--t2); font-size: 13px; line-height: 1.8; margin-top: 20px; }
 .hp3 .included-note a { color: var(--em); text-decoration: underline; }
-@media (max-width: 700px) { .hp3 .delivery-summary { grid-template-columns: 1fr; } .hp3 .hero-proof ul { gap: 10px 18px; } }
+@media (max-width: 700px) { .hp3 .hero-proof ul { gap: 10px 18px; } }
