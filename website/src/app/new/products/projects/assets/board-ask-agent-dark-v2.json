@@ -1,0 +1,32 @@
+{
+  "type": "Generated fictional Projects and Ask Agent demonstration",
+  "model": "gpt-image-2.5-sunburst",
+  "tool": "OpenAI images.edit API, previously authorized direct runner",
+  "nativeDimensions": [
+    3840,
+    2160
+  ],
+  "master": "output/imagegen/projects/board-ask-agent-dark-v2.webp",
+  "prompt": "board-ask-agent-dark-v2-prompt.txt",
+  "references": [
+    {
+      "role": "Edit target: approved public fictional board and Ask Agent composition",
+      "path": "website/public/new/projects/board-ask-agent-3840-v1.webp"
+    },
+    {
+      "role": "Dark palette values",
+      "path": "frontend/src/index.css (.dark tokens)"
+    }
+  ],
+  "publishedWidths": [
+    960,
+    1440,
+    1920,
+    3840
+  ],
+  "publishedPath": "website/public/new/projects/board-ask-agent-dark-{width}-v2.webp",
+  "processing": "Sharp 0.34.5, proportional resizing without enlargement, WebP quality 94 effort 6",
+  "scene": "Six tasks in Planned, In Progress and In Review with a read-only Ask Agent summary using matching task IDs, owners and statuses.",
+  "placement": "/new/products/projects#project-tasks",
+  "edit": "Dark theme; task content, ownership and statuses preserved."
+}

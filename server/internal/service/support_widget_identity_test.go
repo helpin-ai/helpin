@@ -120,12 +120,12 @@ func TestListWidgetTokensCarriesCanonicalWorkspaceAndOrigins(t *testing.T) {
 
 func TestNormalizeAllowedOrigins(t *testing.T) {
 	origins, err := normalizeAllowedOrigins([]string{
-		"HTTPS://APP.EXAMPLE.COM", "https://app.example.com", "http://localhost:3000",
+		"HTTPS://APP.EXAMPLE.COM", "https://app.example.com", "http://localhost:3000", "TAURI://LOCALHOST", "tauri://localhost",
 	})
 	if err != nil {
 		t.Fatalf("normalize origins: %v", err)
 	}
-	if got := strings.Join(origins, ","); got != "http://localhost:3000,https://app.example.com" {
+	if got := strings.Join(origins, ","); got != "http://localhost:3000,https://app.example.com,tauri://localhost" {
 		t.Fatalf("origins = %q", got)
 	}
 	for _, invalid := range []string{"*", "https://*.example.com", "https://example.com/path"} {

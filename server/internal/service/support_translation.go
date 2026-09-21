@@ -202,9 +202,12 @@ func (s *SupportInboxService) TranslateSupport(ctx context.Context, workspaceID,
 		artifact.Model = response.Model
 	}
 	if callErr != nil {
-		slog.WarnContext(ctx, "support translation generation failed", "workspace_id", workspaceID, "translation_id", artifact.ID)
 		artifact.Status = "failed"
 		artifact.ErrorCode = "generation_failed"
+		if errors.Is(callErr, context.DeadlineExceeded) || errors.Is(bounded.Err(), context.DeadlineExceeded) {
+			artifact.ErrorCode = "generation_timeout"
+		}
+		slog.WarnContext(ctx, "support translation generation failed", "workspace_id", workspaceID, "translation_id", artifact.ID, "error_code", artifact.ErrorCode)
 	} else {
 		artifact.Status = "ready"
 		if artifact.SourceLanguage == artifact.TargetLanguage && artifact.TranslatedText == artifact.SourceText {
@@ -285,6 +288,10 @@ func (s *SupportInboxService) reviewSupportTranslation(ctx context.Context, t *m
 	}
 
 }
+
+// prepareTranslatedReply returns no translation and no error when the customer
+// language is unknown and there is no customer-authored text to detect it from.
+// The caller then sends the original draft; real detection failures still block.
 func (s *SupportInboxService) prepareTranslatedReply(ctx context.Context, workspaceID, conversationID, userID string, req model.CreateMessageRequest) (*model.SupportTranslation, error) {
 	options, err := s.TranslationOptions(ctx, workspaceID, conversationID, userID)
 	if err != nil {
@@ -302,12 +309,14 @@ func (s *SupportInboxService) prepareTranslatedReply(ctx context.Context, worksp
 		if lookupErr != nil {
 			return nil, ErrSupportTranslation
 		}
-		if messageID != "" {
-			detected, detectErr := s.TranslateSupport(ctx, workspaceID, conversationID, userID, model.SupportTranslateRequest{MessageID: messageID, TargetLanguage: options.Preference.ReadingLanguage, DetectLanguageOnly: true})
-			if detectErr == nil && detected.Status == "ready" {
-				target = detected.SourceLanguage
-			}
+		if messageID == "" {
+			return nil, nil
 		}
+		detected, detectErr := s.TranslateSupport(ctx, workspaceID, conversationID, userID, model.SupportTranslateRequest{MessageID: messageID, TargetLanguage: options.Preference.ReadingLanguage, DetectLanguageOnly: true})
+		if detectErr != nil || detected == nil || detected.Status != "ready" {
+			return nil, fmt.Errorf("customer language detection is temporarily unavailable; your reply was not sent. Please try again later")
+		}
+		target = detected.SourceLanguage
 	}
 	if supportTranslationLanguages[target] == "" {
 		return nil, fmt.Errorf("could not detect the customer's language; check the customer language in workspace translation settings")

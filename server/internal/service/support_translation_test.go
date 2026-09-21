@@ -18,6 +18,7 @@ import (
 type translationTestProvider struct {
 	calls            int
 	fail             bool
+	failure          error
 	onCall           func()
 	responseLanguage string
 	responseText     string
@@ -27,6 +28,9 @@ func (p *translationTestProvider) ChatCompletion(_ context.Context, req llm.Chat
 	p.calls++
 	if p.onCall != nil {
 		p.onCall()
+	}
+	if p.failure != nil {
+		return nil, p.failure
 	}
 	if p.fail {
 		return nil, errors.New("provider unavailable")
@@ -564,5 +568,105 @@ func TestTranslationRetryAfterPipelineUpgrade(t *testing.T) {
 	}
 	if again.ID != sent.ID || p.calls != 2 {
 		t.Fatalf("upgrade duplicated send: %s/%s calls=%d", sent.ID, again.ID, p.calls)
+	}
+}
+
+func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		failure   error
+		errorCode string
+	}{
+		{"provider unavailable", errors.New("provider unavailable"), "generation_failed"},
+		{"provider timeout", context.DeadlineExceeded, "generation_timeout"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, c, p := translationFixture(t)
+			setTranslationWorkspaceSettings(t, env, c.WorkspaceID, func(settings *model.SupportInboxSettings) {
+				settings.TranslationCustomerLanguage = ""
+				settings.TranslationIncomingEnabled = false
+			})
+			s := env.service.supportInboxService
+			ctx := context.Background()
+			db := env.messageRepo.DB()
+			msg := &model.SupportMessage{ID: uuid.NewString(), WorkspaceID: c.WorkspaceID, ConversationID: c.ID, SenderType: "customer", MessageType: "reply", Content: "Hallo"}
+			if err := env.messageRepo.Create(ctx, msg); err != nil {
+				t.Fatal(err)
+			}
+			req := explicitDeliveryRequest(t, "chat_only")
+			req.Content = "Hello"
+			req.ClientMessageID = uuid.NewString()
+			actor := strPtr("22222222-2222-2222-2222-222222222222")
+			p.failure = tc.failure
+			var artifact model.SupportTranslation
+			for attempt := 1; attempt <= 3; attempt++ {
+				_, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+				if err == nil || !strings.Contains(err.Error(), "temporarily unavailable") {
+					t.Fatalf("send error=%v", err)
+				}
+				if err := db.Where("source_message_id = ?", msg.ID).First(&artifact).Error; err != nil {
+					t.Fatal(err)
+				}
+				if artifact.Attempts != attempt || artifact.ErrorCode != tc.errorCode {
+					t.Fatalf("attempt=%d code=%s", artifact.Attempts, artifact.ErrorCode)
+				}
+				if err := db.Model(&artifact).Update("updated_at", time.Now().Add(-2*time.Minute)).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			p.failure = nil
+			if _, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil); err == nil {
+				t.Fatal("cooldown allowed send")
+			}
+			if p.calls != 3 {
+				t.Fatalf("cooldown called provider: %d", p.calls)
+			}
+			rows, err := env.messageRepo.ListByConversation(ctx, c.WorkspaceID, c.ID, true)
+			if err != nil || len(rows) != 1 {
+				t.Fatalf("failed sends created messages: count=%d err=%v", len(rows), err)
+			}
+			if err := db.Model(&artifact).Update("updated_at", time.Now().Add(-16*time.Minute)).Error; err != nil {
+				t.Fatal(err)
+			}
+			sent, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sent.Content != "Hallo" || p.calls != 5 {
+				t.Fatalf("recovery content=%q calls=%d", sent.Content, p.calls)
+			}
+			if err := db.First(&artifact, "id = ?", artifact.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if artifact.Attempts != 4 || artifact.Status != "ready" || artifact.ErrorCode != "" {
+				t.Fatalf("recovered artifact: attempts=%d status=%s code=%s", artifact.Attempts, artifact.Status, artifact.ErrorCode)
+			}
+			again, err := s.CreateConversationMessage(ctx, c.WorkspaceID, c.ID, req, "user", actor, nil, nil)
+			if err != nil || again.ID != sent.ID || p.calls != 5 {
+				t.Fatalf("recovered send not deduplicated: err=%v calls=%d", err, p.calls)
+			}
+		})
+	}
+}
+
+func TestTranslationSendWithoutCustomerEvidencePreservesDraft(t *testing.T) {
+	for _, mode := range []string{"chat_only", "email_only", "chat_and_email"} {
+		t.Run(mode, func(t *testing.T) {
+			env, conv, provider := translationFixture(t)
+			setTranslationWorkspaceSettings(t, env, conv.WorkspaceID, func(settings *model.SupportInboxSettings) {
+				settings.TranslationCustomerLanguage = ""
+				settings.TranslationOutgoingEnabled = true
+			})
+			provider.fail = true
+			req := explicitDeliveryRequest(t, mode)
+			req.Content = "Bonjour, voici votre mise à jour."
+			sent, err := env.service.supportInboxService.CreateConversationMessage(context.Background(), conv.WorkspaceID, conv.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sent.Content != req.Content || sent.TranslationID != "" || provider.calls != 0 {
+				t.Fatalf("no-evidence send changed draft: %+v calls=%d", sent, provider.calls)
+			}
+		})
 	}
 }

@@ -1,0 +1,14 @@
+.hp3 .support-inbox-showcase { margin: 56px 0 0; }
+.hp3 .support-inbox-stage { padding: 30px 32px 52px; border: 1px solid #dbe8df; border-radius: 22px; background-image: url('/new/support/inbox-stage-pattern.svg'), radial-gradient(ellipse at 50% 15%, #f8fbf4, transparent 75%), linear-gradient(130deg, #edf4ed, #dcece2); background-size: cover; background-position: center; }
+.hp3 .support-inbox-callouts { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 26px; padding-top: 26px; }
+.hp3 .support-inbox-callouts button { display: flex; align-items: flex-start; gap: 13px; min-width: 0; padding: 18px 10px; border: 0; border-top: 1px solid #dfe9e2; border-radius: 0 0 8px 8px; background: transparent; text-align: left; font: inherit; cursor: pointer; transition: background .2s ease, border-color .2s ease; }
+.hp3 .support-inbox-callouts button[data-active='true'] { background: #f2f7f3; border-color: #4a8d62; }
+.hp3 .support-inbox-callouts button:focus-visible { outline: 2px solid #0f7a50; outline-offset: 4px; }
+.hp3 .support-inbox-callout-number { display: grid; place-items: center; flex: none; width: 23px; height: 23px; border: 1px solid #c9ddd0; border-radius: 50%; background: #edf5ef; color: #2a6140; font-family: var(--mono); font-size: 10px; }
+.hp3 .support-inbox-callout-copy { display: grid; gap: 9px; }
+.hp3 .support-inbox-callout-title { display: flex; align-items: center; gap: 7px; font-size: 14px; line-height: 1.5; font-weight: 600; color: var(--ink); }
+.hp3 .support-inbox-callout-title svg { flex: none; color: #518365; }
+.hp3 .support-inbox-callout-copy > span:last-child { font-size: 12px; line-height: 1.8; color: var(--t2); }
+.hp3 .support-inbox-stage button:focus-visible { outline: 2px solid #0f7a50; outline-offset: 3px; }
+@media (max-width:760px){.hp3 .support-inbox-showcase{margin-top:38px}.hp3 .support-inbox-stage{padding:15px 12px 22px;border-radius:14px}.hp3 .support-inbox-callouts{grid-template-columns:1fr;gap:0;padding-top:20px}.hp3 .support-inbox-callouts button{padding:18px 8px}}
+@media(prefers-reduced-motion:reduce){.hp3 .support-inbox-callouts button{transition:none}}

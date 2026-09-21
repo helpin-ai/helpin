@@ -1,0 +1,46 @@
+Use case: ui-mockup / compositing.
+Asset: Helpin Projects marketing section, native 3840x2160 landscape, high fidelity product screenshot illustration.
+Input 1: actual Helpin dark task board. This is the authority for the application structure, neutral charcoal surfaces, compact typography, thin borders, semantic state colors, sidebar navigation and task card styling.
+Input 2: actual Helpin Ask Agent open over the board. This is the authority for the Ask Agent warm charcoal surfaces, two-pane chat-history/conversation window, Helpin robot icon, controls and black message composer. Do not reproduce its real workspace or conversation content.
+
+Create one polished, cohesive marketing composition showing OrbitDesk's real-looking task board on the LEFT and an open Ask Agent conversation on the RIGHT. Keep both useful and readable at website display size. It should look like these actual application screenshots, not a redesigned AI dashboard. Straight-on, no perspective, no decorative background, no exterior browser chrome. The complete app fills the 16:9 frame, with safe inset space for all text and controls. Preserve small UI typography similar to the references, medium weight and sharp edges; don't use oversized website headings inside the app.
+
+Composition: Full-width Helpin application. Compact global icon rail and project navigation take roughly 13% of total width. Header: OrbitDesk workspace with a forest-green square and white O monogram; title Tasks (Engineering). Main board has tabs Views, Everything, Owned by me, Requested by me; Filters and compact teammate avatars; white Add task button. Three task columns are fully visible in the LEFT 58% of the composition, with two cards per column. On the RIGHT 42%, a floating Ask Agent window is aligned near the top of the board and extends toward the bottom. It can overlap unused board space but must not cover any of the six task cards. Retain a narrow chat-history pane occupying roughly one-fifth of the Ask Agent window, and a larger conversation pane. Very subtle shadow and 12px-equivalent corners. All important content stays crisp; no blur on tasks or agent text. Use the reference UI density with enough spacing for legibility. No giant empty region beneath cards; vertically proportion the task cards and composition naturally.
+
+Dark palette from the references: app #161616; sidebar #191919; task cards #232323; borders #353535. Ask Agent shell warm charcoal #24231f, history #201f1b, composer #111110. Text warm off-white #e8e7e3, secondary #a4a4a0. Task state line accents muted indigo, orange, purple. Green only for the OrbitDesk icon and restrained success indicators. No green-tinted cards, no neon, no glows.
+
+Workspace sidebar: Projects selected in global rail, Support, Docs, CRM, Automation, Settings. Project navigation: My Work, Objectives, Roadmap, Reports; YOUR TEAMS; Engineering expanded with Tasks selected, Epics, Sprints; collapsed Support. Bottom Search OrbitDesk.
+
+Board content, exactly six fictional tasks, two per column; truthful status counts:
+Ready 2 (indigo line)
+ORB-491 Add Slack alerts for failed syncs
+Feature; High; Sam Rivera; Sprint 24; 3 pts
+ORB-493 Add recurring task templates
+Feature; Medium; Jules Park; Sprint 24; 2 pts
+In Progress 2 (orange line)
+ORB-494 Fix duplicate webhook delivery
+Bug; High; Alex Morgan; Sprint 24; 3 pts
+ORB-498 Add API retry limits
+Feature; Medium; Alex Morgan; Sprint 24; 2 pts
+In Review 2 (purple line)
+ORB-492 Fix missing rows in CSV exports
+Bug; High; Sam Rivera; Sprint 24; 2 pts
+ORB-495 Keep saved filters after refresh
+Bug; Medium; Jules Park; Sprint 24; 1 pt
+Match the actual task card conventions: task key above or beside readable short title, small priority glyph, points chip, small tasteful person avatar in the corner. Titles may wrap to two lines. Do not truncate critical words. Use consistent avatars per person. Fictional demo names only. No original CONT identifiers or real customer data.
+
+Ask Agent history pane: New chat or task; Agent Runs / Chats tabs; TODAY; active chat Sprint 24 review; two short inactive chats Slack alerts and Export fix. No invented metric badges. These are demo chat titles.
+Ask Agent main pane top: Helpin robot mark, 'Sprint 24 review', subdued 'Only you can see this', and the actual minimal toolbar layout.
+User message with small Sam avatar: 'Summarize Sprint 24. What needs our attention?'
+Agent response with Helpin icon, natural left-aligned text, not a wall of colored cards:
+'Alex is working on webhook delivery and API retries. Sam’s export fix and Jules’s filter fix are ready for review.'
+Small heading 'Next up'
+'ORB-491 — Sam’s Slack alert task is ready to start. Maya at Northstar Labs asked to be notified when a sync fails.'
+'ORB-493 — Jules’s recurring task templates are also ready.'
+Small heading 'Suggested focus'
+'Review ORB-492 and ORB-495, then confirm when Sam can pick up the Slack alerts.'
+Subdued footer line: 'Summary only. No tasks changed.'
+Use inline task-key chips / links sparingly and match the actual app. Never indicate tasks created, changes shipped or messages sent. Compose only a short coherent summary with the owners and statuses above; don't invent blockers or completed work.
+Bottom: Add context, then real black rounded composer 'Message agent…', paperclip, small Code / Small selectors, arrow send button. Keep composer fully in-frame. Maintain Helpin identity; do not invent a star-shaped assistant logo. Keep all real source message content out of the output.
+
+Final quality: Real product fidelity, precise compact sans-serif text matching references, calm hierarchy, recognizable original navigation and panels, clear customer-to-task connection. This is a generated fictional demonstration, not a real customer screenshot. No captions or marketing headlines baked outside the UI, no watermark, no chart, no browser frame, no arbitrary extra buttons.

@@ -1,0 +1,17 @@
+<!-- Native Helpin persona artwork, copied from frontend/src/components/agents/AgentAvatar.tsx. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80" fill="none">
+          <rect x="10" y="16" width="60" height="50" rx="10" fill="#534AB7" opacity=".12" />
+          <rect x="14" y="20" width="52" height="42" rx="8" fill="#534AB7" />
+          <rect x="20" y="28" width="16" height="12" rx="4" fill="#EEEDFE" />
+          <rect x="44" y="28" width="16" height="12" rx="4" fill="#EEEDFE" />
+          <rect x="24" y="32" width="4" height="4" rx="1" fill="#26215C" />
+          <rect x="28" y="32" width="4" height="4" rx="1" fill="#7F77DD" />
+          <rect x="48" y="32" width="4" height="4" rx="1" fill="#26215C" />
+          <rect x="52" y="32" width="4" height="4" rx="1" fill="#7F77DD" />
+          <rect x="28" y="48" width="24" height="6" rx="3" fill="#AFA9EC" />
+          <rect x="30" y="49.5" width="4" height="3" rx="1" fill="#26215C" />
+          <rect x="36" y="49.5" width="4" height="3" rx="1" fill="#26215C" />
+          <rect x="42" y="49.5" width="4" height="3" rx="1" fill="#26215C" />
+          <polygon points="40,4 48,16 32,16" fill="#534AB7" />
+          <rect x="37" y="10" width="6" height="3" rx="1" fill="#EEEDFE" />
+        </svg>
