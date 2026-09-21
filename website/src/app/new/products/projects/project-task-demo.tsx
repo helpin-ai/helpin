@@ -4,12 +4,12 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Bug, CalendarDays, Check, Circle, Columns3, List, ListFilter, SignalHigh, MessageSquare, Link2, X } from 'lucide-react';
 
 const TASKS = [
-  { id: 'ORB-491', title: 'Add Slack alerts for failed syncs', type: 'Feature', state: 'Planned', label: 'Integrations', owner: 'Sam Rivera', initials: 'SR', date: 'Sep 25', priority: 'High' },
-  { id: 'ORB-492', title: 'Fix CSV export timeout on large projects', type: 'Bug', state: 'Planned', label: 'Reporting', owner: 'Alex Liu', initials: 'AL', date: 'Sep 26', priority: 'High' },
-  { id: 'ORB-494', title: 'Fix duplicate webhook deliveries', type: 'Bug', state: 'In progress', label: 'Integrations', owner: 'Sam Rivera', initials: 'SR', date: 'Sep 21', priority: 'High' },
-  { id: 'ORB-498', title: 'Draft the Slack alert setup guide', type: 'Chore', state: 'In progress', label: 'Docs', owner: 'Jordan Shah', initials: 'JS', date: 'Sep 24', priority: 'Medium' },
-  { id: 'ORB-495', title: 'Preserve filters after page refresh', type: 'Bug', state: 'In review', label: 'Projects', owner: 'Alex Liu', initials: 'AL', date: 'Sep 23', priority: 'Medium' },
-  { id: 'ORB-496', title: 'Add workspace audit log export', type: 'Feature', state: 'In review', label: 'Security', owner: 'Sam Rivera', initials: 'SR', date: 'Sep 23', priority: 'Medium' },
+  { id: 'ORB-491', title: 'Add Slack alerts for failed syncs', type: 'Feature', state: 'Planned', label: 'Integrations', owner: 'Sam Rivera', initials: 'SR', date: 'Next week', priority: 'High' },
+  { id: 'ORB-492', title: 'Fix CSV export timeout on large projects', type: 'Bug', state: 'Planned', label: 'Reporting', owner: 'Alex Liu', initials: 'AL', date: 'Next week', priority: 'High' },
+  { id: 'ORB-494', title: 'Fix duplicate webhook deliveries', type: 'Bug', state: 'In progress', label: 'Integrations', owner: 'Sam Rivera', initials: 'SR', date: 'Today', priority: 'High' },
+  { id: 'ORB-498', title: 'Draft the Slack alert setup guide', type: 'Chore', state: 'In progress', label: 'Docs', owner: 'Jordan Shah', initials: 'JS', date: 'In 3 days', priority: 'Medium' },
+  { id: 'ORB-495', title: 'Preserve filters after page refresh', type: 'Bug', state: 'In review', label: 'Projects', owner: 'Alex Liu', initials: 'AL', date: 'In 2 days', priority: 'Medium' },
+  { id: 'ORB-496', title: 'Add workspace audit log export', type: 'Feature', state: 'In review', label: 'Security', owner: 'Sam Rivera', initials: 'SR', date: 'In 2 days', priority: 'Medium' },
 ];
 const TASK_CONTEXT: Record<string, { source: string; request: string; checklist: string[]; related: string }> = {
   'ORB-491': { source: 'Maya Chen · Northstar Labs', request: 'Can you alert our team in Slack when a sync fails? We only notice when a customer reports it.', checklist: ['Include the affected account and failed sync.', 'Link the alert to the investigation.', 'Document how to connect the Slack channel.'], related: 'Blocks ORB-498 · Slack alert setup guide' },

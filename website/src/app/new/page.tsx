@@ -1,4 +1,5 @@
-import { Braces, BrainCircuit, Cloud, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
+import { Braces, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
+import { CustomerLogos } from './_components/CustomerLogos';
 import { PreviewNav } from './_components/PreviewNav';
 import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { GridFlow } from './_components/GridFlow';
@@ -11,7 +12,7 @@ import { AgentDirectoryPreview } from './_components/agent-directory/AgentDirect
 import { AgentControlArt } from './_components/AgentControlArt';
 import { AskAgentBento } from './_components/AskAgentBento';
 import { CustomerRecordBento } from './_components/CustomerRecordBento';
-import { CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
+import { CtaNote, CtaRow, GithubIcon, SectionHead, GITHUB_URL } from './_components/ui';
 
 const RECORD_FACTS = [
   {
@@ -34,7 +35,7 @@ const RECORD_FACTS = [
   },
   {
     "title": "Engineering",
-    "description": "Give coding agents the customer context behind each task. Work in a connected repository, prepare changes, and bring a pull request back for review.",
+    "description": "Coding agents get the customer request with the task, write the fix, and hand it to your team to review.",
     "image": "coding",
     "wide": true
   },
@@ -69,18 +70,18 @@ export default function NewHomePage() {
         <div className="wrap hero-wrap">
           <div className="wgrid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
           <div className="hero-inner">
-            <span className="eyebrow">The customer workspace for teams and AI agents</span>
-            <h1>Turn customer conversations into work that gets done.</h1>
-            <p className="lede">AI agents answer customers, turn requests into work, and follow through—with your conversations, tasks, deals, docs, and customer history connected.</p>
+            <span className="eyebrow">Support, meetings, projects, CRM and docs — on one customer history</span>
+            <h1>From customer question to shipped fix.</h1>
+            <p className="lede">Helpin brings support, projects, CRM, meetings, and knowledge into one place. AI agents turn customer conversations into answers, tasks, and action — with your team in control.</p>
             <CtaRow />
-            <div className="assure hero-assure">
-              <span><Braces size={15} aria-hidden="true" />Open source</span>
-              <span><Server size={15} aria-hidden="true" />Self-hostable</span>
-              <span><BrainCircuit size={15} aria-hidden="true" />Bring your own models</span>
-              <span><Cloud size={15} aria-hidden="true" />Cloud available</span>
-            </div>
+            <CtaNote pill />
+
           </div>
-          <LoopWire />
+          <figure className="hero-workflow"><LoopWire /></figure>
+          <div className="hero-evaluation">
+            <p className="hero-replaces">Bring the work you track in Intercom, Linear, HubSpot and Notion into one system. Connect the tools you keep through our APIs and selected integrations.</p>
+            <CustomerLogos />
+          </div>
         </div>
       </section>
 
@@ -91,7 +92,7 @@ export default function NewHomePage() {
           <div className="rs-copy record-intro">
             <span className="rs-eyebrow">One customer. One record.</span>
             <h2>Your team and agents work from the same customer history.</h2>
-            <p>Conversations, meetings, projects, deals, knowledge, and engineering activity—connected around each customer.</p>
+            <p>Conversations, meetings, projects, deals, knowledge, and engineering activity—attached to each customer.</p>
           </div>
           <div className="record-bento">
             {RECORD_FACTS.map(({ title, description, image, wide }) => (
@@ -104,7 +105,7 @@ export default function NewHomePage() {
               </article>
             ))}
           </div>
-          <p className="rs-close"><span className="rs-keep">One customer.</span> Every interaction. Full context.</p>
+          <p className="rs-close"><span className="rs-keep">One customer.</span> Every interaction. One history.</p>
         </div>
       </section>
 
@@ -114,11 +115,11 @@ export default function NewHomePage() {
           <div className="ask-agent-intro">
             <span className="eyebrow">Ask Agent</span>
             <h2 id="ask-agent-title">Ask a question.<br />Hand off the work.</h2>
-            <p className="lede">Ask about a customer, investigate an issue, or describe the work you need done. Ask Agent finds the context, coordinates specialist agents, and brings the results back to one conversation.</p>
+            <p className="lede">Ask about a customer, investigate an issue, or describe the work you need done. Ask Agent finds the customer history, coordinates specialist agents, and brings the results back to one conversation.</p>
           </div>
           <figure className="ask-agent-preview">
             <ProductPreview product="ask-agent" theme="light" />
-            <figcaption>An example rollout review: four sub-agents, one work plan, and a follow-up ready for review.</figcaption>
+            <figcaption>An example rollout review: four specialist agents, one work plan, and a follow-up ready for review.</figcaption>
           </figure>
           <div className="ask-agent-capabilities">
             <article>
@@ -131,7 +132,7 @@ export default function NewHomePage() {
             <article>
               <span className="ask-agent-label">Your agents</span>
               <h3>Coordinate agents from start to finish.</h3>
-              <p>Break complex requests into a plan. Run sub-agents in parallel, sequence dependent steps, and bring their results back to the conversation.</p>
+              <p>Split big requests across several agents, run independent steps at once, and get one plan back.</p>
               <AskAgentBento variant="coordination" />
               <div className="ask-agent-example"><span>Try asking</span><blockquote>Review the rollout blockers, then create a plan from the findings.</blockquote></div>
             </article>
@@ -143,14 +144,14 @@ export default function NewHomePage() {
               <div className="ask-agent-example"><span>With a connected agent</span><blockquote>Check the issue status in our connected tracker.</blockquote></div>
             </article>
           </div>
-          <div className="ask-agent-links"><a className="btn-link" href="/new/product#agents">Explore agents →</a><a className="btn-link ask-agent-technical-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Powered by MCP →</a></div>
+          <div className="ask-agent-links"><a className="btn-link" href="/new/products/ai-agents">Explore agents →</a></div>
         </div>
       </section>
 
       {/* Explore each product area with the shared interactive previews. */}
       <section id="product">
         <div className="wrap">
-          <SectionHead eyebrow="What’s inside" title="Everything your team needs to close the loop." lede="Explore the products that turn customer context into answers, actions, and follow-ups." />
+          <SectionHead eyebrow="What’s inside" title="Everything your team needs to close the loop." lede="Explore the products that turn customer history into answers, actions, and follow-ups." />
           <ProductExplorer />
         </div>
       </section>
@@ -158,7 +159,7 @@ export default function NewHomePage() {
       {/* Agent controls */}
       <section id="control">
         <div className="wrap">
-          <SectionHead eyebrow="Agents, on your terms" title="Give agents work. Keep control."
+          <SectionHead eyebrow="Approvals built in" title="Agents do the work. Your team approves it."
             lede="Choose the tools each agent can use, when it needs approval, and what starts the work." />
           <figure className="control-screenshot">
             <AgentDirectoryPreview />
@@ -169,7 +170,7 @@ export default function NewHomePage() {
               <AgentControlArt variant="tools" />
               <div className="ctrl-copy">
                 <span className="k">Tool access</span>
-                <h3>Give each agent the right tools.</h3>
+                <h3>Choose which tools each agent can use.</h3>
                 <p className="ctrl-description">Choose the workspace tools and connected services each agent can use to do its job.</p>
               </div>
             </article>
@@ -177,7 +178,7 @@ export default function NewHomePage() {
               <AgentControlArt variant="approvals" />
               <div className="ctrl-copy">
                 <span className="k">Approvals</span>
-                <h3>Set when agents ask first.</h3>
+                <h3>Decide which actions need a human first.</h3>
                 <p className="ctrl-description">Set an approval mode for each agent. Review actions that need permission before they go ahead.</p>
               </div>
             </article>
@@ -185,12 +186,12 @@ export default function NewHomePage() {
               <AgentControlArt variant="triggers" />
               <div className="ctrl-copy">
                 <span className="k">Triggers</span>
-                <h3>Put repeat work on a schedule.</h3>
+                <h3>Run agents on a schedule or from an event.</h3>
                 <p className="ctrl-description">Start agents from an event or a schedule, using the tools and approval settings you’ve chosen.</p>
               </div>
             </article>
           </div>
-          <p className="section-close"><a className="inline-link" href="/new/product#agents">Explore agents and automation →</a></p>
+          <p className="section-close"><a className="inline-link" href="/new/products/ai-agents">Explore agents and automation →</a></p>
         </div>
       </section>
 
@@ -202,23 +203,22 @@ export default function NewHomePage() {
               <SectionHead eyebrow="Open source" title="Your customer history stays yours."
                 lede="Run Helpin on your infrastructure and control your data and models. Choose Helpin Cloud when you’d rather leave the hosting to us." />
               <div className="links"><a className="btn btn-primary" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Self-host Helpin →</a><a className="btn-link" href={GITHUB_URL} target="_blank" rel="noopener noreferrer"><GithubIcon />View the code →</a></div>
-              <p className="self-host-license">Open source · AGPL-3.0</p>
+              <p className="self-host-license">Open source · Run it yourself</p>
             </div>
             <HostingDiagram />
           </div>
           <div className="self-host-features">
-            <article><Server size={23} aria-hidden="true" /><h3>Deploy with Docker.</h3><p>Self-host Community’s support, docs, and agents with Docker Compose.</p></article>
-            <article><Database size={23} aria-hidden="true" /><h3>Keep your data with you.</h3><p>Own your customer history, files, and backups.</p></article>
-            <article><SlidersHorizontal size={23} aria-hidden="true" /><h3>Choose your connections.</h3><p>Choose supported models and configure your connections.</p></article>
+            <article><Server size={23} aria-hidden="true" /><h3>Deploy with Docker Compose.</h3><p>Install and run Helpin on your servers with a repeatable setup.</p></article>
+            <article><Database size={23} aria-hidden="true" /><h3>Own your data and backups.</h3><p>Own your customer history, files, and backups.</p></article>
+            <article><SlidersHorizontal size={23} aria-hidden="true" /><h3>Use the AI provider you choose.</h3><p>Choose supported models and configure your connections.</p></article>
           </div>
         </div>
       </section>
 
-      {/* Developer tools and installation CLI */}
       <section id="developers" className="developer-section">
         <div className="wrap">
-          <SectionHead eyebrow="Built to be extended" title="Connect your stack. Build your own workflows."
-            lede="Connect your product and tools with APIs, SDKs, MCP, and webhooks." />
+          <SectionHead eyebrow="For developers" title="Plugs into your product and your tools."
+            lede="Add support chat to your app, connect the AI tools your team already uses, and run Helpin on your servers." />
           <article className="developer-cli-feature">
             <figure className="developer-visual">
               <a href="/new/product/helpin-cli-tilted-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Helpin CLI illustration at full size (opens in a new tab)">
@@ -227,7 +227,7 @@ export default function NewHomePage() {
             </figure>
             <div className="developer-cli-copy">
               <span className="eyebrow">Helpin CLI</span>
-              <h3>Your instance.<br />One terminal.</h3>
+              <h3>Manage your instance from one terminal.</h3>
               <p>Install, configure, and manage your Helpin instance from the terminal.</p>
               <a className="btn-link" href={`${GITHUB_URL}/blob/develop/community/README.md`} target="_blank" rel="noopener noreferrer">Explore the Helpin CLI →</a>
             </div>
@@ -241,13 +241,13 @@ export default function NewHomePage() {
             </article>
             <article>
               <span className="developer-feature-icon"><Plug size={22} aria-hidden="true" /></span>
-              <h3>MCP, both ways</h3><p>Bring Helpin context to AI tools, and external tools to agents.</p>
+              <h3>Connect your AI tools</h3><p>Let your AI tools use Helpin, and give Helpin agents access to your connected systems.</p>
               <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/public-mcp-server.md`} target="_blank" rel="noopener noreferrer">Connect AI tools →</a>
               <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/external-mcp-servers.md`} target="_blank" rel="noopener noreferrer">Connect external tools →</a>
             </article>
             <article>
               <span className="developer-feature-icon"><Webhook size={22} aria-hidden="true" /></span>
-              <h3>Webhooks &amp; triggers</h3><p>Start agent runs from GitHub, GitLab, and workflow events.</p>
+              <h3>Start work from an event</h3><p>Start agent work when an event matches the rules you choose.</p>
               <a className="inline-link" href={`${GITHUB_URL}/blob/develop/docs/agents-and-automation.md`} target="_blank" rel="noopener noreferrer">Explore automation →</a>
             </article>
           </div>
@@ -260,10 +260,10 @@ export default function NewHomePage() {
           <ConnectedWorkspace />
           <div className="final">
             <span className="eyebrow">Close the loop</span>
-            <h2 id="final-cta-title">Every conversation has a next step.<br />Turn it into action.</h2>
+            <h2 id="final-cta-title">Start with a customer. End with something shipped.</h2>
             <p className="lede">Bring your customer history, team, and AI agents together to answer, decide, and get the work done.</p>
             <CtaRow />
-            <div className="assure"><span>Open source</span><span>Self-hostable</span><span>Built for SaaS teams</span></div>
+            <div className="assure"><span>Open source</span><span>Run it yourself or use our cloud</span><span>Built for SaaS teams</span></div>
           </div>
         </div>
       </section>

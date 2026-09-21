@@ -3,10 +3,11 @@ import { ArrowRight, BookOpen, Bot, Building2, Kanban, MessagesSquare, Video } f
 import './products-menu.css';
 
 export const PRODUCTS = [
-  { label: 'Customer support', description: 'Resolve questions with context.', href: '/new/products/customer-support', icon: MessagesSquare },
+  { label: 'Support', description: 'Resolve questions with context.', href: '/new/products/customer-support', icon: MessagesSquare },
   { label: 'Meetings', description: 'Turn conversations into next steps.', href: '/new/products/meetings', icon: Video },
   { label: 'Projects', description: 'Ship what your customers need.', href: '/new/products/projects', icon: Kanban },
   { label: 'CRM', description: 'Move customer relationships forward.', href: '/new/products/crm', icon: Building2 },
+  { label: 'AI Agents', description: 'Give your team a specialist for the work.', href: '/new/products/ai-agents', icon: Bot },
   { label: 'Knowledge', description: 'Trusted answers, in one place.', href: '/new/products/knowledge', icon: BookOpen },
 ];
 
@@ -34,7 +35,7 @@ export function ProductsMenu() {
       </div>
       <Link href="/new/products/ai-agents#agent-ask" className="nav-products-agent-link">
         <span className="nav-products-agent-icon"><Bot size={29} strokeWidth={1.5} aria-hidden="true" /></span>
-        <span className="nav-products-agent-copy"><b>Ask Agent</b><span>Your workspace assistant. Find answers, take action, and coordinate specialist agents with the full customer context.</span></span>
+        <span className="nav-products-agent-copy"><b>Ask Agent</b><span>Your workspace assistant. Find answers, take action, and coordinate specialist agents with customer history.</span></span>
         <span className="nav-products-agent-cta">Explore Ask Agent<ArrowRight size={14} aria-hidden="true" /></span>
       </Link>
     </>

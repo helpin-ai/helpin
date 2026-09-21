@@ -61,7 +61,7 @@ export function AskAgentWindow({ phase, paused, onInteract, onTogglePlayback, on
     <div className="aaw-main">
       <header className="aaw-header">
         <img src={tab === 'runs' ? run.icon : '/brand/helpin-icon-ink.svg'} width={27} height={27} alt="" />
-        <div className="aaw-title"><h3>{composing ? 'New chat or task' : tab === 'chats' ? 'Rollout follow-up' : run.title}</h3><span>{tab === 'runs' && selected !== 'review' ? `${run.agent} · Sub-agent` : 'Workspace'}</span></div>
+        <div className="aaw-title"><h3>{composing ? 'New chat or task' : tab === 'chats' ? 'Rollout follow-up' : run.title}</h3><span>{tab === 'runs' && selected !== 'review' ? `${run.agent} · Specialist` : 'Workspace'}</span></div>
         <span className="aaw-status">{composing ? 'Example' : tab === 'chats' ? 'Draft' : done ? 'Done' : 'Working'}</span>
         <button className="aaw-view" type="button" aria-pressed={view === 'timeline'} onClick={() => { onInteract(); setView(value => value === 'summary' ? 'timeline' : 'summary'); }}>{view === 'timeline' ? 'Summary' : 'Timeline'}<ChevronDown size={12} /></button>
         <button className="aaw-icon-button" type="button" aria-label={`${paused ? 'Play' : 'Pause'} Ask Agent review animation`} aria-pressed={paused} onClick={onTogglePlayback}>{paused ? <Play size={15} /> : <Pause size={15} />}</button>
@@ -70,7 +70,7 @@ export function AskAgentWindow({ phase, paused, onInteract, onTogglePlayback, on
       <div className="aaw-content" id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-${tab}`} tabIndex={0}>
         {composing ? <div className="aaw-compose"><p className="aaw-label">Example request</p><h4>Start with the work you need done.</h4><p>{REVIEW_REQUEST}</p><button type="button" onClick={() => { setComposing(false); setTab('runs'); setSelected('review'); setView('summary'); onRestart(); }}><Play size={14} />Run example review</button><small>This demo uses prepared workspace context.</small></div>
           : tab === 'chats' ? <><p className="aaw-label">Sam Rivera</p><p>What should I send Maya before the security review?</p><div className="aaw-chat-answer"><img src="/brand/helpin-icon-ink.svg" width={23} height={23} alt="" /><div><h4>Ask Agent</h4><p>Share the Okta setup guide and the rollout checklist. Make the remaining group-mapping and SCIM work clear.</p><div className="aaw-draft"><span>Customer follow-up · Draft, not sent</span><p>{REVIEW_RUNS[4].detail}</p></div></div></div></>
-          : view === 'timeline' ? <><p className="aaw-label">Execution timeline</p><h4>One request. Four focused checks.</h4><p>Customer context first. Engineering and docs checks run in parallel. The follow-up uses their findings.</p><WorkPlan phase={phase} /></>
+          : view === 'timeline' ? <><p className="aaw-label">Execution timeline</p><h4>One request. Four focused checks.</h4><p>Customer history first. Engineering and docs checks run in parallel. The follow-up uses their findings.</p><WorkPlan phase={phase} /></>
           : selected === 'review' ? <>
             <p className="aaw-label">Request</p><p className="aaw-request">{REVIEW_REQUEST}</p>
             <p className="aaw-summary">{phase < 2 ? 'I’m reviewing the customer history and coordinating the engineering and docs checks in parallel.' : <>Northstar is waiting on Okta SSO.<br />I reviewed the customer history and coordinated the engineering and docs checks in parallel.</>}</p>

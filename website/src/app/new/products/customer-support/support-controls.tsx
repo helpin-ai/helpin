@@ -6,9 +6,9 @@ import { useBentoPlayback } from '../../_components/useBentoPlayback';
 import './support-controls.css';
 
 const CONTROLS = [
-  { id: 'responses', title: 'Choose how AI responds.', copy: 'Let agents answer customers, keep their help internal, or turn automatic replies off. Choose the mode that fits your team.', description: 'The support inbox has AI-first, Internal, and Off response modes. The selection moves from AI-first to Internal, keeping suggestions with the team.' },
-  { id: 'tools', title: 'Give agents the right tools.', copy: 'Select the tools each agent can use, from workspace knowledge to selected tools on your connected MCP servers.', description: 'A support agent receives three selected tools: search knowledge, read conversations, and look up an issue through an external MCP connection.' },
-  { id: 'approvals', title: 'Review actions that need you.', copy: 'Configure agent approval settings so your team can review a requested action before it runs.', description: 'An agent proposes creating a task for Maya’s CSV export issue. Sam reviews the action and approves it; a green confirmation shows Approved by Sam.' },
+  { id: 'responses', title: 'Choose how AI responds.', caption: 'AI-first, internal-only or off', copy: 'Let agents answer customers, keep their help internal, or turn automatic replies off. Choose the mode that fits your team.', description: 'The support inbox has AI-first, Internal, and Off response modes. The selection moves from AI-first to Internal, keeping suggestions with the team.' },
+  { id: 'tools', title: 'Give support agents access to the tools they need.', caption: 'Selected knowledge and account tools', copy: 'Select the tools each agent can use, from workspace knowledge to selected tools in your connected services.', description: 'A support agent receives three selected tools: search knowledge, read conversations, and look up an issue through an external MCP connection.' },
+  { id: 'approvals', title: 'Review support actions before they run.', caption: 'A task awaiting your approval', copy: 'Configure agent approval settings so your team can review a requested action before it runs.', description: 'An agent proposes creating a task for Maya’s CSV export issue. Sam reviews the action and approves it; a green confirmation shows Approved by Sam.' },
 ] as const;
 const delay = (seconds: number) => ({ '--sc-delay': `${seconds}s` }) as CSSProperties;
 function Icon({ glyph: Glyph, x, y, size = 18 }: { glyph: LucideIcon; x: number; y: number; size?: number }) { return <g transform={`translate(${x} ${y})`}><Glyph width={size} height={size} strokeWidth={1.6} /></g>; }
@@ -38,7 +38,7 @@ function Tools() {
     {[
       { icon: BookOpen, name: 'Search knowledge', detail: 'Workspace docs', start: .4 },
       { icon: MessageSquare, name: 'Read conversations', detail: 'Customer history', start: 1.15 },
-      { icon: Plug, name: 'Look up an issue', detail: 'External MCP · Connected tracker', start: 1.9 },
+      { icon: Plug, name: 'Look up an issue', detail: 'Connected issue tracker', start: 1.9 },
     ].map(({ icon, name, detail, start }, i) => <g key={name}>
       <rect x={42} y={103 + i * 59} width={336} height={53} rx={9} className="sc-tool-highlight" style={delay(start)} />
       <rect x={52} y={114 + i * 59} width={30} height={30} rx={7} fill="#f0f5f2" /><g className="sc-green"><Icon glyph={icon} x={58} y={120 + i * 59} /></g>
@@ -69,7 +69,7 @@ function ControlCard({ control }: { control: typeof CONTROLS[number] }) {
   return <article className="support-control-card">
     <div className="support-control-art" ref={container} data-playing={playing && !paused}>
       <div className="support-control-toolbar"><span>OrbitDesk</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} ${control.id} settings animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}</button></div>
-      <svg key={cycle} viewBox="0 0 420 354" width={420} height={354} className="support-control-svg" role="img" aria-labelledby={`${id}-title ${id}-desc`}><title id={`${id}-title`}>{control.title}</title><desc id={`${id}-desc`}>{control.description}</desc><g aria-hidden="true">{control.id === 'responses' ? <Responses /> : control.id === 'tools' ? <Tools /> : <Approvals id={id} />}</g></svg>
+      <svg key={cycle} viewBox="0 0 420 354" width={420} height={354} className="support-control-svg" role="img" aria-labelledby={`${id}-title ${id}-desc`}><title id={`${id}-title`}>{control.caption}</title><desc id={`${id}-desc`}>{control.description}</desc><g aria-hidden="true">{control.id === 'responses' ? <Responses /> : control.id === 'tools' ? <Tools /> : <Approvals id={id} />}</g></svg>
     </div>
     <div className="support-control-copy"><h3>{control.title}</h3><p>{control.copy}</p></div>
   </article>;

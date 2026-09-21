@@ -14,7 +14,7 @@ export function CommunityShowcase() {
   const [active, setActive] = useState(0);
   const product = PRODUCTS[active];
   return <div className="community-showcase">
-    <div className="community-switcher" role="group" aria-label="Explore Community products">
+    <div className="community-switcher" role="group" aria-label="Explore self-hosted products">
       {PRODUCTS.map(({ name, Icon }, index) => <button type="button" key={name} aria-pressed={index === active} aria-controls="community-product-view" onClick={() => setActive(index)}><Icon size={18}/><span>{name}</span><ArrowRight size={14}/></button>)}
     </div>
     <div id="community-product-view">
@@ -25,7 +25,7 @@ export function CommunityShowcase() {
 }
 
 function CommunityAgents() {
- return <div className="community-agents-art" role="img" aria-label="Echo uses selected knowledge to help answer customers. Quill prepares documentation updates for review. Each agent works with the tools and model profile selected for it."><div aria-hidden="true"><span className="platform-micro">YOUR KNOWLEDGE, IN THE HANDS OF YOUR AGENTS</span><div className="community-agent-source"><BookOpen size={20}/><span>OrbitDesk Help Center</span><small>Selected knowledge</small></div><div className="community-agent-branches"><i/><i/></div><div className="community-agent-pair">{[{name:'Echo',id:'echo',job:'Help answer the customer',detail:'Work from customer history and selected knowledge.',outcome:'An answer grounded in your docs'},{name:'Quill',id:'quill',job:'Keep the knowledge useful',detail:'Prepare focused documentation changes for review.',outcome:'A draft ready for your team'}].map(agent=><div key={agent.name}><img src={`/new/agents/${agent.id}.svg`} width={55} height={55} alt=""/><strong>{agent.name}</strong><span>{agent.job}</span><p>{agent.detail}</p><div><Check size={14}/>{agent.outcome}</div></div>)}</div><div className="community-agent-settings"><span>Selected tools</span><span>Model profiles</span><span>Approval controls</span></div></div></div>;
+ return <div className="community-agents-art" role="img" aria-label="Support agent uses selected knowledge to help answer customers. Docs agent prepares documentation updates for review. Each agent works with the tools and model profile selected for it."><div aria-hidden="true"><span className="platform-micro">YOUR KNOWLEDGE, IN THE HANDS OF YOUR AGENTS</span><div className="community-agent-source"><BookOpen size={20}/><span>OrbitDesk Help Center</span><small>Selected knowledge</small></div><div className="community-agent-branches"><i/><i/></div><div className="community-agent-pair">{[{name:'Support agent',id:'echo',job:'Help answer the customer',detail:'Work from customer history and selected knowledge.',outcome:'An answer grounded in your docs'},{name:'Docs agent',id:'quill',job:'Keep the knowledge useful',detail:'Prepare focused documentation changes for review.',outcome:'A draft ready for your team'}].map(agent=><div key={agent.name}><img src={`/new/agents/${agent.id}.svg`} width={55} height={55} alt=""/><strong>{agent.name}</strong><span>{agent.job}</span><p>{agent.detail}</p><div><Check size={14}/>{agent.outcome}</div></div>)}</div><div className="community-agent-settings"><span>Selected tools</span><span>Model profiles</span><span>Approval controls</span></div></div></div>;
 }
 
 export function CodeContent({code}:{code:string}) {

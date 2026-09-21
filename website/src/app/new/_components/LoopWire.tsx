@@ -136,14 +136,14 @@ export function LoopWire() {
         aria-label={paused ? 'Play workflow animation' : 'Pause workflow animation'} title={paused ? 'Play animation' : 'Pause animation'}>
         {paused ? <Play size={14} /> : <Pause size={14} />}
       </button>
-      <div role="img" aria-label="Illustrative OrbitDesk workflow: Maya Chen at Northstar Labs reports a CSV export timeout. Helpin AI acknowledges and tags the issue. Task ORB-492 links her conversation to the fix. A coding agent prepares a pull request, checks pass, Sam reviews it, and the team releases it. Sam approves a follow-up and Maya is notified in the original conversation.">
+      <div role="img" aria-label="Illustrative OrbitDesk workflow: Maya Chen at Northstar Labs reports a CSV export timeout. Helpin AI acknowledges and tags the issue. Task ORB-492 links her conversation to the fix. A coding agent prepares a code change, checks pass, Sam reviews it, and the team releases it. Sam approves a follow-up and Maya is notified in the original conversation.">
         <svg className="wire-svg" width={size.vw || 0} height={132} aria-hidden="true" style={{ left: -Math.max(0, (size.vw - size.w) / 2) }}>
           <path ref={pathRef} className="track" d={d} fill="none" strokeWidth={1.5} />
           <path className="head" d={d} fill="none" strokeWidth={1.5} strokeLinecap="round" style={{ strokeDasharray: len, strokeDashoffset: len - target, opacity: len ? 1 : 0, transition: playing && t > 0 ? 'stroke-dashoffset .8s cubic-bezier(.45,0,.55,1)' : 'none' }} />
         </svg>
         <div className="wire-nodes" aria-hidden="true">
           <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(0)] }}>
-            <div className={badge(0)}><i /><span>01 Hear</span></div>
+            <div className={badge(0)}><i /><span>01 Answer</span></div>
             <div className="wart hear">
               <div className="bub on wire-reveal" data-revealed={t >= 5}>
                 <Avatar name="maya" />
@@ -175,10 +175,10 @@ export function LoopWire() {
           <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(2)] }}>
             <div className={badge(2)}><i /><span>03 Ship</span></div>
             <div className="wart log on wire-reveal" data-revealed={t >= 63}>
-              <div className="lhead"><span>Code Builder</span><span>ORB-492</span></div>
+              <div className="lhead"><span>Coding agent</span><span>ORB-492</span></div>
               <p className="wire-code-title">CSV export fix</p>
               <ul className="wl">
-                <WorkStep label="Pull request prepared" at={68} start={63} t={t} />
+                <WorkStep label="code change prepared" at={68} start={63} t={t} />
                 <WorkStep label="Checks passed" at={76} start={68} t={t} />
                 <WorkStep label="Reviewed by Sam" at={S.reviewed} start={76} t={t} review />
                 <WorkStep label="Released by the team" at={S.released} start={S.reviewed} t={t} />
@@ -188,7 +188,7 @@ export function LoopWire() {
           </div>
 
           <div className="wnode" style={{ paddingTop: LEVEL_TOP[levelOf(3)] }}>
-            <div className={badge(3)}><i /><span>04 Tell</span></div>
+            <div className={badge(3)}><i /><span>04 Follow up</span></div>
             <div className={`wart tell${t >= S.sent ? ' delivered' : ''}`}>
               <div className="wire-followup wire-reveal" data-revealed={t >= 103}><span>Original conversation</span><span className="wire-delivery">{t >= S.sent ? 'Sent' : 'Draft'}</span></div>
               <div className="bub reply on wire-reveal" data-revealed={t >= 105}>

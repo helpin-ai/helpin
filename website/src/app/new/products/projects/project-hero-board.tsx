@@ -48,7 +48,7 @@ function BoardCard({ task, phase = 0 }: { task: BoardTask; phase?: number }) {
   return <div className={`phb-card${selected ? ' phb-card-selected' : ''}`} data-task-key={task.key}>
     <div className="phb-card-title"><h4><span>{task.key}:</span> {task.title}</h4>{task.type === 'feature' ? <TaskFeatureIcon /> : <BugIcon />}</div>
     <div className="phb-sprint"><TaskSprintIcon />Sprint 24</div>
-    {(selected || running) && <div className="phb-agent-status">{running ? <><ProjectAgentBadge agent={agent} working />{agent === 'forge' ? 'Forge is coding' : 'Lens is reviewing'}<span className="phb-running-dot" /></> : <><TaskIcon name={'GitBranchIcon'} />{phase >= 4 ? 'PR #728 merged' : phase === 3 ? 'Awaiting Sam’s approval' : 'Ready to run Forge'}</>}</div>}
+    {(selected || running) && <div className="phb-agent-status">{running ? <><ProjectAgentBadge agent={agent} working />{agent === 'forge' ? 'Coding agent is coding' : 'Code reviewer is reviewing'}<span className="phb-running-dot" /></> : <><TaskIcon name={'GitBranchIcon'} />{phase >= 4 ? 'Change #728 merged' : phase === 3 ? 'Awaiting Sam’s approval' : 'Ready to run Coding agent'}</>}</div>}
     <div className="phb-card-footer"><span className="phb-priority"><BoardPriority taskKey={task.key} /></span><span className="phb-estimate">{task.points} pts</span><Owner owner={task.owner} /></div>
   </div>;
 }

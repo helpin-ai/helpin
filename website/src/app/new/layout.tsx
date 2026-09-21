@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import { previewMetadata } from './_components/preview-metadata';
 import { Instrument_Sans, JetBrains_Mono } from 'next/font/google';
 import { ScrollReveal } from './_components/ScrollReveal';
 import './new.css';
@@ -18,12 +18,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 // Preview route. Not indexed until the direction is approved and it replaces /.
-export const metadata: Metadata = {
-  title: 'Helpin — homepage preview',
-  description: 'Open-source customer support, product work, and CRM for teams and agents. Answer customers, plan tasks, and prepare follow-ups in one workspace.',
-  robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
-  alternates: { canonical: '/new' },
-};
+export const metadata = previewMetadata("Helpin \u2014 Support, projects, CRM and docs on one customer history, with AI agents.", "/new");
 
 export default function NewHomeLayout({ children }: { children: React.ReactNode }) {
   return (

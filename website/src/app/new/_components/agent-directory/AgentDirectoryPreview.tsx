@@ -38,7 +38,7 @@ import "./agent-directory.css";
 const AGENTS = [
   {
     name: "Atlas",
-    role: "Epic planner",
+    role: "Planning agent",
     purpose:
       "Turn customer requirements into scoped epics, milestones, and a delivery plan.",
     mode: "Interactive",
@@ -77,7 +77,7 @@ const AGENTS = [
   },
   {
     name: "Echo",
-    role: "Help chat agent",
+    role: "Support agent",
     purpose:
       "Answer customers with relevant knowledge and the history behind their question.",
     mode: "Interactive",
@@ -94,7 +94,7 @@ const AGENTS = [
   },
   {
     name: "Lens",
-    role: "QA & code reviewer",
+    role: "Code reviewer",
     purpose:
       "Check the proposed fix against the original requirements and flag what needs attention.",
     mode: "Interactive",
@@ -107,7 +107,7 @@ const AGENTS = [
   },
   {
     name: "Beacon",
-    role: "CRM operator",
+    role: "CRM agent",
     purpose:
       "Review customer signals and prepare the next step with the account context attached.",
     mode: "Interactive",
@@ -126,7 +126,7 @@ const AGENTS = [
   },
   {
     name: "Quill",
-    role: "Documentation agent",
+    role: "Docs agent",
     purpose:
       "Keep customer-facing answers aligned with product changes and what the team learns.",
     mode: "Interactive",
@@ -144,7 +144,7 @@ const AGENTS = [
   },
   {
     name: "Mira",
-    role: "Marketer",
+    role: "Marketing agent",
     purpose:
       "Bring customer insights and product knowledge into useful launch and campaign content.",
     mode: "Interactive",
@@ -339,14 +339,14 @@ export function AgentDirectoryPreview() {
                     className="adp-agent"
                     type="button"
                     onClick={() => openAgent(index)}
-                    aria-label={`Open ${item.name}`}
+                    aria-label={`Open ${item.role}`}
                   >
                     <span className="adp-identity">
                       <Avatar name={item.name} />
                       <span>
-                        <strong>{item.name}</strong>
+                        <strong>{item.role}</strong>
                         <span className="adp-role">
-                          {item.role}
+                          Specialist agent
                           <i>System</i>
                         </span>
                       </span>
@@ -403,7 +403,7 @@ export function AgentDirectoryPreview() {
             <header className="adp-dialog-header">
               <Avatar name={agent.name} size={44} />
               <div>
-                <h3 id={`${id}-title`}>{agent.name}</h3>
+                <h3 id={`${id}-title`}>{agent.role}</h3>
                 <p>{agent.role} · OrbitDesk</p>
               </div>
               <button
@@ -443,7 +443,7 @@ export function AgentDirectoryPreview() {
                 <>
                   <div className="adp-version">
                     <div>
-                      <strong>Customer context</strong>
+                      <strong>Customer history</strong>
                       <span>Workspace version</span>
                       <b>Current</b>
                     </div>
@@ -459,7 +459,7 @@ export function AgentDirectoryPreview() {
                       </div>
                       <div>
                         <dt>Created</dt>
-                        <dd>Sep 18, 2026</dd>
+                        <dd>Today</dd>
                       </div>
                       <div>
                         <dt>Last run</dt>

@@ -6,7 +6,7 @@ import { ProductPreview, type ProductPreviewName } from './product-previews';
 
 const AREAS = [
   {
-    id: 'inbox', label: 'Inbox', href: '/new/products/customer-support',
+    id: 'inbox', label: 'Support', href: '/new/products/customer-support',
     title: 'Answer customers with agents that know their history.',
     description: 'Draft replies from past conversations and product knowledge. Review the answer, add a note, or turn the request into a task.',
   },

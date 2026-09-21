@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { ChevronDown, CircleHelp, Building2, Check, CircleCheck, Copy, FileText, Link2, ListChecks, Mail, Pause, Play, Quote, Video } from 'lucide-react';
+import { ChevronDown, CircleHelp, Building2, Check, CircleCheck, Copy, Link2, ListChecks, Mail, Pause, Play, Quote, Video } from 'lucide-react';
 import { useMeetingPlayback } from './use-meeting-playback';
 import { FOLLOWUP_DRAFT, MEETING_EVIDENCE } from './meeting-demo-data';
 import './meeting-evidence.css';
@@ -14,7 +14,7 @@ function Task({phase}:{phase:number}) {
  return <div className="mt-action-preview">
   <div className="mt-action-header"><div className="mt-action-top"><span><ListChecks size={15}/>Action item</span><span className="mt-action-status" data-complete={phase===3}>{phase===3?<><Check size={12}/>Accepted</>:'Pending review'}</span></div>
   <h4>Share the Okta setup guide and pilot checklist</h4>
-  <div className="mt-action-owner"><Avatar person="sam"/><span>Owner: Sam Rivera</span><span>Due Sep 21</span></div>
+  <div className="mt-action-owner"><Avatar person="sam"/><span>Owner: Sam Rivera</span><span>Due Today</span></div>
   <div className="mt-action-evidence"><span><Quote size={12}/>Transcript evidence · 28:14</span><blockquote>“I’ll send the reviewed setup guide and pilot checklist.”</blockquote></div></div>
   <div className="mt-destination-title"><strong>Task destination</strong><p>Choose where this follow-up enters project work.</p></div>
   <div className="mt-destination-fields" data-selected={phase>=1}><div><span>Team</span><strong>{phase>=1?'Customer Success':'Choose a team'}<ChevronDown size={13}/></strong></div><div><span>State</span><strong><i/>{phase>=1?'To do':'Choose a state'}<ChevronDown size={13}/></strong></div></div>
@@ -41,7 +41,7 @@ function Context(){return <><div className="mt-customer"><span className="mt-com
   {Icon:Building2,label:'Deal',title:'Enterprise rollout',detail:'Security approval pending'},
   {Icon:ListChecks,label:'Task',title:'Share the setup guide',detail:'Sam Rivera · To do'},
 ].map(({Icon,label,title,detail},i)=><Step key={label} at={i*.8}><span className="mt-context-icon"><Icon size={16}/></span><div><span className="mt-mini">{label}</span><strong>{title}</strong><small>{detail}</small></div><Link2 size={13}/></Step>)}</div><Step at={3} className="mt-context-end"><Link2 size={14}/>One meeting. Connected to the customer and the work.</Step></>;}
-const TITLES:Record<Variant,string>={task:'Action items',followup:'Follow-up draft',context:'Customer context'};
+const TITLES:Record<Variant,string>={task:'Action items',followup:'Follow-up draft',context:'Customer history'};
 const DESCRIPTIONS:Record<Variant,string>={task:'Sam’s commitment to share an Okta setup guide is reviewed and created as a Customer Success task, assigned to Sam and linked to the source meeting.',followup:'A draft to Maya summarizes the admin-only pilot, setup guide, and security checklist. The email is ready for Sam’s review and has not been sent.',context:'The Northstar Labs customer record connects the SSO rollout meeting, Maya’s contact, the enterprise rollout deal, and Sam’s follow-up task.'};
 export function MeetingScene({variant}:{variant:Variant}){
  const {container,active,phase,paused,setPaused}=useMeetingPlayback();
