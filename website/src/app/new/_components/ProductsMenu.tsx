@@ -27,15 +27,17 @@ export function ProductLink({ item }: { item: typeof PRODUCTS[number] }) {
 export function ProductsMenu() {
   return (
     <>
-      <div className="nav-products-grid">{PRODUCTS.map(item => <ProductLink item={item} key={item.label} />)}</div>
-      <div className="nav-products-footer">
-        <Link href="/new/products/ai-agents#agent-ask" className="nav-products-agent-link">
-          <span className="nav-products-agent-icon"><Bot size={21} strokeWidth={1.5} aria-hidden="true" /></span>
-          <span><b>Ask Agent</b><small>AI across your workspace.</small></span>
-          <ArrowRight size={14} aria-hidden="true" />
-        </Link>
-        <Link className="nav-products-explore" href="/new/product">Explore the platform<ArrowRight size={14} aria-hidden="true" /></Link>
+      <div className="nav-products-main">
+        <div className="nav-products-grid">{PRODUCTS.map(item => <ProductLink item={item} key={item.label} />)}</div>
+        <div className="nav-products-footer">
+          <Link className="nav-products-explore" href="/new/product">Explore the platform<ArrowRight size={14} aria-hidden="true" /></Link>
+        </div>
       </div>
+      <Link href="/new/products/ai-agents#agent-ask" className="nav-products-agent-link">
+        <span className="nav-products-agent-icon"><Bot size={29} strokeWidth={1.5} aria-hidden="true" /></span>
+        <span className="nav-products-agent-copy"><b>Ask Agent</b><span>Find answers and move work forward.</span></span>
+        <span className="nav-products-agent-cta">Explore Ask Agent<ArrowRight size={14} aria-hidden="true" /></span>
+      </Link>
     </>
   );
 }
