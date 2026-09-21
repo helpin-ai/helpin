@@ -1258,7 +1258,8 @@
 .hp3 .hero-replaces { max-width: 680px; margin: 24px auto 0; color: var(--t2); font-size: 14px; line-height: 1.8; }
 .hp3 .hero-proof { margin: 28px auto 12px; color: var(--t2); font-size: 12px; }
 .hp3 .hero-proof ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 24px; list-style: none; padding: 0; margin: 12px 0 0; }
-.hp3 .hero-proof li { color: var(--ink); font-size: 16px; font-weight: 600; }
+.hp3 .hero-proof li { display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--ink); font-size: 16px; font-weight: 600; white-space: nowrap; }
+.hp3 .hero-proof img { width: 24px; height: 24px; object-fit: contain; flex: none; }
 .hp3 .faq-more { color: var(--em); text-decoration: underline; text-underline-offset: 3px; white-space: normal; }
 .hp3 .included-table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
 .hp3 .included-table { width: 100%; border-collapse: collapse; text-align: left; min-width: 620px; font-size: 14px; }
@@ -1269,4 +1270,8 @@
 .hp3 .included-table th span { display: block; font-size: 12px; font-weight: 400; color: var(--t2); margin-top: 4px; }
 .hp3 .included-note { color: var(--t2); font-size: 13px; line-height: 1.8; margin-top: 20px; }
 .hp3 .included-note a { color: var(--em); text-decoration: underline; }
-@media (max-width: 700px) { .hp3 .hero-proof ul { gap: 10px 18px; } }
+@media (max-width: 700px) {
+  .hp3 .hero-proof ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 16px; max-width: 360px; margin: 20px auto 0; }
+  .hp3 .hero-proof li { justify-content: flex-start; gap: 8px; font-size: 13px; }
+  .hp3 .hero-proof img { width: 20px; height: 20px; }
+}

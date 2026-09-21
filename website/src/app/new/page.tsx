@@ -1,4 +1,5 @@
 import { Braces, Database, Plug, Server, SlidersHorizontal, Webhook } from 'lucide-react';
+import { CustomerLogos } from './_components/CustomerLogos';
 import { PreviewNav } from './_components/PreviewNav';
 import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { GridFlow } from './_components/GridFlow';
@@ -79,7 +80,7 @@ export default function NewHomePage() {
           <figure className="hero-workflow"><LoopWire /></figure>
           <div className="hero-evaluation">
             <p className="hero-replaces">Bring the work you track in Intercom, Linear, HubSpot and Notion into one system. Connect the tools you keep through our APIs and selected integrations.</p>
-            <div className="hero-proof"><span>Used by teams at</span><ul>{['ContentStudio', 'Replug', 'Usermaven', 'ContentPen'].map(name => <li key={name}>{name}</li>)}</ul></div>
+            <CustomerLogos />
           </div>
         </div>
       </section>
