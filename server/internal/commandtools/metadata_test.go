@@ -127,3 +127,17 @@ func TestInternalLinksAreRoutine(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentPaginationSchemasExposeOnlyCanonicalFields(t *testing.T) {
+	for _, tool := range AllRuntimeToolMetadata() {
+		properties, _ := tool.InputSchema["properties"].(map[string]any)
+		if _, paginated := properties["limit"]; !paginated {
+			continue
+		}
+		for _, legacy := range []string{"page", "per_page"} {
+			if _, present := properties[legacy]; present {
+				t.Errorf("%s exposes conflicting legacy pagination %s", tool.Alias, legacy)
+			}
+		}
+	}
+}

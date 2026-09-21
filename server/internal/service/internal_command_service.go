@@ -2019,6 +2019,7 @@ func (s *InternalCommandService) registerDefaults() {
 	s.registerPMOperationalCommands()
 	s.registerPMDeliveryCommands()
 	s.registerWorkspaceSearchCommands()
+	s.registerChatHistoryCommand()
 }
 
 // requireCommandDocumentInWorkspace makes an explicit document_id the

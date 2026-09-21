@@ -104,7 +104,7 @@ func TestPMToolCatalogContracts(t *testing.T) {
 	listTasks := requireCatalogSchema(t, toolsByName, "list_tasks")
 	assertSchemaFields(t, "list_tasks", listTasks, []string{
 		"query", "epic_id", "sprint_id", "workflow_id", "state_id", "task_type", "priority", "severity",
-		"completed", "archived", "updated_after", "page", "per_page",
+		"completed", "archived", "updated_after", "limit", "offset",
 	})
 	assertClosedObjectSchemas(t, listTasks, "list_tasks")
 	assertBoundedArraySchemas(t, listTasks, "list_tasks")
@@ -738,5 +738,27 @@ func TestSymbolNavigationToolCatalogContracts(t *testing.T) {
 		if !found {
 			t.Fatalf("%s missing from tool catalog", name)
 		}
+	}
+}
+
+func TestChatRecoveryCatalogSchemas(t *testing.T) {
+	foundHistory := false
+	for _, tool := range ListToolCatalog().Tools {
+		if tool.Name == "read_chat_history" {
+			foundHistory = true
+		}
+		schema, _ := tool.InputSchema.(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		if _, ok := props["limit"]; !ok {
+			continue
+		}
+		for _, legacy := range []string{"page", "per_page"} {
+			if _, ok := props[legacy]; ok {
+				t.Errorf("%s still advertises %s", tool.Name, legacy)
+			}
+		}
+	}
+	if !foundHistory {
+		t.Fatal("history tool missing from runtime catalog")
 	}
 }

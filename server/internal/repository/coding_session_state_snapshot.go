@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -102,4 +103,26 @@ func (r *CodingSessionStateSnapshotRepository) ListByDockChat(ctx context.Contex
 	var rows []model.CodingSessionStateSnapshot
 	err := r.db.WithContext(ctx).Table("coding_session_state_snapshots AS snapshot").Select("snapshot.*").Joins("JOIN agent_runs AS run ON run.id = snapshot.run_id AND run.workspace_id = snapshot.workspace_id").Where("snapshot.workspace_id = ? AND run.dock_chat_id = ?", workspaceID, chatID).Order("snapshot.created_at ASC").Scan(&rows).Error
 	return rows, err
+}
+
+// LatestPlanByDockChat finds the newest persisted plan across backing runs.
+// The JSON filter avoids loading progress-only stream snapshots into a handoff.
+func (r *CodingSessionStateSnapshotRepository) LatestPlanByDockChat(ctx context.Context, workspaceID, chatID string) (*model.CodingSessionRunPlan, error) {
+	var row struct{ PlanJSON string }
+	err := r.db.WithContext(ctx).Table("coding_session_state_snapshots AS snapshot").Select("snapshot.snapshot_payload ->> 'current_plan' AS plan_json").
+		Joins("JOIN agent_runs AS run ON run.id = snapshot.run_id AND run.workspace_id = snapshot.workspace_id").
+		Where("snapshot.workspace_id = ? AND run.dock_chat_id = ?", workspaceID, chatID).
+		Where("snapshot.snapshot_payload ->> 'current_plan' IS NOT NULL").
+		Order("snapshot.created_at DESC, snapshot.id DESC").Take(&row).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read latest chat plan: %w", err)
+	}
+	var plan model.CodingSessionRunPlan
+	if err := json.Unmarshal([]byte(row.PlanJSON), &plan); err != nil {
+		return nil, fmt.Errorf("decode latest chat plan: %w", err)
+	}
+	return &plan, nil
 }
