@@ -6,6 +6,7 @@ import { PreviewNav } from '../../_components/PreviewNav';
 import { PreviewFooter } from '../../_components/PreviewFooter';
 import { ConnectedWorkspace } from '../../_components/ConnectedWorkspace';
 import { CtaRow, GITHUB_URL, SectionHead } from '../../_components/ui';
+import { HeroVortex } from '../../_components/HeroVortex';
 import { AgentWorkflowArt } from './agent-workflow-art';
 import { ProductPreview } from '../../_components/product-previews';
 import './agents.css';
@@ -75,6 +76,7 @@ export default function AIAgentsPage() {
     <PreviewNav />
     <main className="agents-page">
       <section className="agents-hero" aria-labelledby="agents-title">
+        <HeroVortex />
         <div className="wrap">
           <div className="agents-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>AI agents</span></div>
           <div className="agents-hero-copy">
