@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   ArrowUp,
   BookOpen,
-  Building2,
   Check,
   ChevronDown,
   Flag,
@@ -30,6 +29,7 @@ import {
 } from "./crm-demo-data";
 import { useCRMPlayback } from "./use-crm-playback";
 import { CRMIcon } from "./crm-icons";
+import { CRMCompanyLogo } from "./crm-company-logo";
 import "./crm-workspace.css";
 
 type View = "contacts" | "companies";
@@ -58,12 +58,12 @@ export function CRMMark() {
   );
 }
 // Layout and navigation order mirror Sidebar.tsx, SidebarRail, and CrmRailNav.
-function Navigation({
+export function CRMNavigation({
   view,
   onView,
 }: {
-  view: View;
-  onView: (view: View) => void;
+  view: View | "deals";
+  onView?: (view: View) => void;
 }) {
   const modules = [
     ["FolderKanbanIcon", "Projects"],
@@ -102,49 +102,75 @@ function Navigation({
             ))}
           </div>
           <div className="cw-app-account" aria-hidden="true">
-            <CRMIcon name="Sun01Icon" size={14} />
-            <CRMIcon name="PlayIcon" size={15} />
-            <CRMAvatar size={28} />
-          </div>
-        </div>
-        <div className="cw-crm">
-          <span>
-            <CRMIcon name="ChartColumnIcon" />
-            Overview
-          </span>
-          {(["contacts", "companies"] as const).map((item) => (
-            <button
-              type="button"
-              key={item}
-              aria-pressed={view === item}
-              onClick={() => onView(item)}
-            >
-              <CRMIcon
-                name={item === "contacts" ? "UserGroupIcon" : "Building03Icon"}
-              />
-              <span>{item === "contacts" ? "Contacts" : "Companies"}</span>
-            </button>
-          ))}
-          {links.map(([name, label]) => (
-            <span
-              key={label}
-              className={label === "Playbooks" ? "cw-nav-separator" : undefined}
-            >
-              <CRMIcon name={name} />
-              {label}
+            <span className="cw-rail-control" title="Switch to dark mode">
+              <CRMIcon name="Sun01Icon" size={14} />
             </span>
-          ))}
-          <div className="cw-module-footer" aria-hidden="true">
-            <CRMIcon name="WorkflowSquare01Icon" />
-            <CRMIcon name="Mail01Icon" />
-            <CRMIcon name="SparklesIcon" />
+            <span className="cw-rail-control" title="Ask Agents">
+              <img
+                src="/new/crm/ask-agent-mark.svg"
+                width={24}
+                height={24}
+                alt=""
+              />
+            </span>
+            <span className="cw-account-control" title="Sam Rivera">
+              <CRMAvatar size={32} />
+              <i />
+            </span>
           </div>
         </div>
-      </div>
-      <div className="cw-sidebar-search" aria-hidden="true">
-        <CRMIcon name="Search01Icon" size={15} />
-        <span>Search OrbitDesk</span>
-        <small>⌘K</small>
+        <div className="cw-module">
+          <div className="cw-crm">
+            <span>
+              <CRMIcon name="ChartColumnIcon" />
+              Overview
+            </span>
+            {(["contacts", "companies"] as const).map((item) => (
+              <button
+                type="button"
+                key={item}
+                aria-pressed={view === item}
+                onClick={() => onView?.(item)}
+                disabled={!onView}
+              >
+                <CRMIcon
+                  name={
+                    item === "contacts" ? "UserGroupIcon" : "Building03Icon"
+                  }
+                />
+                <span>{item === "contacts" ? "Contacts" : "Companies"}</span>
+              </button>
+            ))}
+            {links.map(([name, label]) => (
+              <span
+                key={label}
+                data-active={view === "deals" && label === "Deals"}
+                className={
+                  label === "Playbooks" ? "cw-nav-separator" : undefined
+                }
+              >
+                <CRMIcon name={name} />
+                {label}
+              </span>
+            ))}
+            <div className="cw-module-footer" aria-hidden="true">
+              <span title="Pipelines">
+                <CRMIcon name="WorkflowSquare01Icon" />
+              </span>
+              <span title="Email Accounts">
+                <CRMIcon name="Mail01Icon" />
+              </span>
+              <span title="Autonomy">
+                <CRMIcon name="SparklesIcon" />
+              </span>
+            </div>
+          </div>
+          <div className="cw-sidebar-search" aria-hidden="true">
+            <CRMIcon name="Search01Icon" size={15} />
+            <span>Search OrbitDesk</span>
+            <small>⌘K</small>
+          </div>
+        </div>
       </div>
     </aside>
   );
@@ -190,7 +216,7 @@ function RecordDetail({
         </button>
         <div>
           {entity === "companies" ? (
-            <span className="cw-company-initials">{company.initials}</span>
+            <CRMCompanyLogo companyIndex={contact.company} size={32} />
           ) : (
             <span className="cw-initials">{contact.initials}</span>
           )}
@@ -498,7 +524,13 @@ function RecordDetail({
           </dl>
           <h4>{entity === "contacts" ? "Companies" : "Contacts"}</h4>
           <div className="cw-association">
-            <Building2 size={14} />
+            {entity === "contacts" ? (
+              <CRMCompanyLogo companyIndex={contact.company} />
+            ) : (
+              <span className="cw-initials" data-tone={contactIndex % 3}>
+                {contact.initials}
+              </span>
+            )}
             <span>
               {entity === "contacts" ? company.name : contact.name}
               <small>
@@ -684,7 +716,7 @@ export function CRMWorkspace({
         inert={showAgent ? true : undefined}
         aria-hidden={showAgent ? true : undefined}
       >
-        <Navigation view={view} onView={changeView} />
+        <CRMNavigation view={view} onView={changeView} />
         <div className="cw-main">
           {selected === null ? (
             <>
@@ -796,7 +828,7 @@ export function CRMWorkspace({
                   </button>
                 </div>
               )}
-              <div className="cw-table-scroll">
+              <div className="cw-table-scroll" data-entity={view}>
                 <table
                   aria-label={
                     view === "contacts"
@@ -806,23 +838,27 @@ export function CRMWorkspace({
                 >
                   <thead>
                     <tr>
-                      <th className="cw-check-cell">
-                        <input
-                          type="checkbox"
-                          aria-label="Select all visible records"
-                          checked={
-                            rows.length > 0 &&
-                            rows.every((item) => selection.includes(item.index))
-                          }
-                          onChange={(e) =>
-                            setSelection(
-                              e.target.checked
-                                ? rows.map((item) => item.index)
-                                : [],
-                            )
-                          }
-                        />
-                      </th>
+                      {view === "contacts" && (
+                        <th className="cw-check-cell">
+                          <input
+                            type="checkbox"
+                            aria-label="Select all visible records"
+                            checked={
+                              rows.length > 0 &&
+                              rows.every((item) =>
+                                selection.includes(item.index),
+                              )
+                            }
+                            onChange={(e) =>
+                              setSelection(
+                                e.target.checked
+                                  ? rows.map((item) => item.index)
+                                  : [],
+                              )
+                            }
+                          />
+                        </th>
+                      )}
                       {view === "contacts" && showEmail && (
                         <th className="cw-cell-email">Email</th>
                       )}
@@ -874,22 +910,24 @@ export function CRMWorkspace({
                             </tr>
                           )}
                         <tr data-selected={selection.includes(item.index)}>
-                          <td className="cw-check-cell">
-                            <input
-                              type="checkbox"
-                              checked={selection.includes(item.index)}
-                              aria-label={`Select ${item.name}`}
-                              onChange={(e) =>
-                                setSelection((current) =>
-                                  e.target.checked
-                                    ? [...current, item.index]
-                                    : current.filter(
-                                        (index) => index !== item.index,
-                                      ),
-                                )
-                              }
-                            />
-                          </td>
+                          {view === "contacts" && (
+                            <td className="cw-check-cell">
+                              <input
+                                type="checkbox"
+                                checked={selection.includes(item.index)}
+                                aria-label={`Select ${item.name}`}
+                                onChange={(e) =>
+                                  setSelection((current) =>
+                                    e.target.checked
+                                      ? [...current, item.index]
+                                      : current.filter(
+                                          (index) => index !== item.index,
+                                        ),
+                                  )
+                                }
+                              />
+                            </td>
+                          )}
                           {view === "contacts" && showEmail && (
                             <td className="cw-cell-email">
                               <button
@@ -913,12 +951,7 @@ export function CRMWorkspace({
                                   {CONTACTS[item.index].initials}
                                 </span>
                               ) : (
-                                <span
-                                  className="cw-company-initials"
-                                  data-tone={item.index % 3}
-                                >
-                                  {COMPANIES[item.index].initials}
-                                </span>
+                                <CRMCompanyLogo companyIndex={item.index} />
                               )}
                               <span>{item.name}</span>
                             </button>
@@ -959,7 +992,7 @@ export function CRMWorkspace({
                                 person={
                                   item.owner === "Sam Rivera" ? "sam" : "aisha"
                                 }
-                                size={24}
+                                size={20}
                               />
                               <span>{item.owner}</span>
                             </span>

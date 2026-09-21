@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useId, type CSSProperties } from "react";
+import { useState, useId, useRef, type CSSProperties } from "react";
 import {
   ArrowRight,
   Building2,
@@ -12,144 +12,276 @@ import {
   Play,
   ShieldCheck,
   Sparkles,
+  X,
 } from "lucide-react";
 import { useCRMPlayback } from "./use-crm-playback";
-import { CRMAvatar, CRMMark } from "./crm-workspace";
+import { CRMAvatar, CRMMark, CRMNavigation } from "./crm-workspace";
 import { CRMIcon } from "./crm-icons";
+import { CRMCompanyLogo } from "./crm-company-logo";
+import { COMPANIES } from "./crm-demo-data";
 
+// Customer records and pipeline cards share identities; amounts remain numeric so
+// filtered counts and stage totals always reflect the deals actually on screen.
+const money = (amount: number) => "$" + amount.toLocaleString("en-US");
+const STAGE_COLORS = ["#94a3b8", "#60a5fa", "#f59e0b", "#8b5cf6", "#22c55e"];
+const DEALS = [
+  [
+    0,
+    "Annual renewal",
+    42000,
+    0,
+    "Nov 23",
+    40,
+    "Maya needs complete CSV exports before the wider rollout and renewal discussion. EXP-142 is in engineering review.",
+    "Confirm EXP-142 with engineering, then prepare an update.",
+    "Renewal discussion · Email",
+  ],
+  [
+    3,
+    "Engineering workspace",
+    24000,
+    0,
+    "Nov 25",
+    35,
+    "The engineering team needs an API usage review before confirming next year’s plan.",
+    "Share the API usage report with Leo.",
+    "Account review · Meeting",
+  ],
+  [
+    10,
+    "Developer workspace",
+    16800,
+    0,
+    "Dec 02",
+    30,
+    "Ada is reviewing adoption across the engineering teams before renewing.",
+    "Schedule the adoption review with Ada.",
+    "Renewal planning · Email",
+  ],
+  [
+    2,
+    "Workspace renewal",
+    18000,
+    1,
+    "Nov 15",
+    55,
+    "The account owner recorded updated seat requirements after the review call.",
+    "Send the revised renewal proposal for review.",
+    "Account review · Meeting",
+  ],
+  [
+    5,
+    "Platform team renewal",
+    28800,
+    1,
+    "Nov 18",
+    60,
+    "The platform team wants to include two additional workspaces in its contract.",
+    "Confirm workspace requirements and pricing.",
+    "Workspace planning · Meeting",
+  ],
+  [
+    14,
+    "Security team renewal",
+    36000,
+    1,
+    "Nov 26",
+    50,
+    "Leila needs the updated security questionnaire before procurement can proceed.",
+    "Return the reviewed security questionnaire.",
+    "Security review · Email",
+  ],
+  [
+    1,
+    "Support renewal",
+    12000,
+    2,
+    "Nov 21",
+    65,
+    "The customer has received the renewal terms and is completing its internal review.",
+    "Confirm the customer’s decision date.",
+    "Renewal terms · Email",
+  ],
+  [
+    7,
+    "Team plan renewal",
+    9600,
+    2,
+    "Nov 27",
+    70,
+    "The team approved the seat count and asked for annual billing terms.",
+    "Send the annual billing proposal.",
+    "Billing discussion · Email",
+  ],
+  [
+    12,
+    "Infrastructure renewal",
+    21600,
+    2,
+    "Dec 04",
+    65,
+    "Amara’s team has accepted the rollout scope and is reviewing the proposal.",
+    "Check whether procurement needs any further details.",
+    "Proposal review · Meeting",
+  ],
+  [
+    6,
+    "Analytics workspace",
+    19200,
+    3,
+    "Nov 20",
+    85,
+    "The evaluation is complete. Legal is reviewing the updated agreement.",
+    "Follow up on the legal review.",
+    "Contract review · Email",
+  ],
+  [
+    11,
+    "Customer success renewal",
+    32400,
+    3,
+    "Nov 28",
+    80,
+    "Kai has confirmed the renewal. The finance team needs the final order form.",
+    "Prepare the order form for finance.",
+    "Renewal confirmation · Meeting",
+  ],
+  [
+    17,
+    "Automation workspace",
+    26400,
+    3,
+    "Dec 03",
+    90,
+    "The team approved the renewal scope and requested a countersigned agreement.",
+    "Send the agreement for signature.",
+    "Procurement · Email",
+  ],
+  [
+    4,
+    "Annual team plan",
+    14400,
+    4,
+    "Sep 18",
+    100,
+    "The agreement is signed and the new annual plan is active.",
+    "Schedule the next quarterly account review.",
+    "Signed agreement · Email",
+  ],
+  [
+    8,
+    "Product workspace",
+    24000,
+    4,
+    "Sep 17",
+    100,
+    "The product team completed its renewal and confirmed its rollout schedule.",
+    "Share the rollout checklist with the team.",
+    "Renewal completed · Email",
+  ],
+  [
+    9,
+    "Engineering plan",
+    18000,
+    4,
+    "Sep 16",
+    100,
+    "The engineering plan renewed after the team completed its account review.",
+    "Arrange the next engineering check-in.",
+    "Account review · Meeting",
+  ],
+] as const;
 const PIPELINES = [
   {
     label: "New business",
-    stages: ["Discovery", "Evaluation", "Decision"],
-    deals: [
-      {
-        company: "Harbor Metrics",
-        name: "Support workspace",
-        amount: "$12,000",
-        initials: "HM",
-        date: "Oct 12",
-        note: "Confirm the support team’s requirements.",
-        evidence:
-          "The discovery call identified shared inbox routing as the first priority.",
-        source: "Discovery meeting",
-        stage: 0,
-      },
-      {
-        company: "Latticepoint",
-        name: "Team workspace",
-        amount: "$24,000",
-        initials: "LP",
-        date: "Oct 16",
-        note: "Review the team’s evaluation checklist.",
-        evidence:
-          "Leo’s team is testing the workspace with engineering. The API requirements need a final review.",
-        source: "Rollout review · Meeting",
-        stage: 1,
-      },
-      {
-        company: "Forma",
-        name: "Customer workspace",
-        amount: "$18,000",
-        initials: "F",
-        date: "Oct 23",
-        note: "Confirm the procurement next step.",
-        evidence:
-          "The team has reviewed the proposal and asked for a final procurement discussion.",
-        source: "Proposal follow-up · Email",
-        stage: 2,
-      },
-    ],
+    stages: ["Discovery", "Evaluation", "Proposal", "Negotiation", "Won"],
   },
   {
     label: "Renewals",
-    stages: ["Review", "Follow-up", "Decision"],
-    deals: [
-      {
-        company: "Northstar Labs",
-        name: "Annual renewal",
-        amount: "$42,000",
-        initials: "NL",
-        date: "Nov 23",
-        note: "Confirm EXP-142 with engineering, then prepare an update.",
-        evidence:
-          "Maya needs complete CSV exports before the wider rollout and renewal discussion. EXP-142 is in engineering review.",
-        source: "Renewal discussion · Email",
-        stage: 0,
-      },
-      {
-        company: "Forma",
-        name: "Workspace renewal",
-        amount: "$18,000",
-        initials: "F",
-        date: "Nov 15",
-        note: "Send the revised renewal proposal for review.",
-        evidence:
-          "The account owner recorded the team’s updated seat requirements after the review call.",
-        source: "Account review · Meeting",
-        stage: 1,
-      },
-      {
-        company: "Harbor Metrics",
-        name: "Support renewal",
-        amount: "$12,000",
-        initials: "HM",
-        date: "Nov 21",
-        note: "Confirm the customer’s decision date.",
-        evidence:
-          "The customer has received the renewal terms and is completing its internal review.",
-        source: "Renewal terms · Email",
-        stage: 2,
-      },
-    ],
+    stages: ["Review", "Follow-up", "Proposal", "Negotiation", "Renewed"],
   },
   {
     label: "Expansion",
-    stages: ["Interest", "Scoping", "Decision"],
-    deals: [
-      {
-        company: "Forma",
-        name: "Second team rollout",
-        amount: "$9,000",
-        initials: "F",
-        date: "Oct 28",
-        note: "Clarify the second team’s workflow.",
-        evidence:
-          "A customer reply asked whether another department could use the same workspace.",
-        source: "Team rollout · Support",
-        stage: 0,
-      },
-      {
-        company: "Northstar Labs",
-        name: "Additional team seats",
-        amount: "$12,000",
-        initials: "NL",
-        date: "Nov 06",
-        note: "Confirm the team size once the export fix is verified.",
-        evidence:
-          "Maya asked about adding the wider team once complete CSV exports are available.",
-        source: "Rollout review · Meeting",
-        stage: 1,
-      },
-      {
-        company: "Harbor Metrics",
-        name: "Product team workspace",
-        amount: "$6,000",
-        initials: "HM",
-        date: "Nov 12",
-        note: "Review the proposed rollout schedule.",
-        evidence:
-          "The product lead has reviewed the workspace and requested a phased rollout.",
-        source: "Expansion planning · Email",
-        stage: 2,
-      },
-    ],
+    stages: ["Interest", "Scoping", "Proposal", "Negotiation", "Won"],
   },
-];
+].map((pipeline, pipelineIndex) => ({
+  ...pipeline,
+  deals: DEALS.map(
+    (
+      [
+        companyIndex,
+        name,
+        amount,
+        stage,
+        date,
+        probability,
+        evidence,
+        note,
+        source,
+      ],
+      index,
+    ) => ({
+      company: COMPANIES[companyIndex].name,
+      companyIndex,
+      name:
+        pipelineIndex === 1
+          ? name
+          : pipelineIndex === 0
+            ? ["Support workspace", "Engineering workspace", "Team workspace"][
+                index % 3
+              ]
+            : [
+                "Additional team seats",
+                "Second team rollout",
+                "Product team workspace",
+              ][index % 3],
+      amount:
+        pipelineIndex === 1
+          ? amount
+          : pipelineIndex === 0
+            ? amount
+            : amount / 2,
+      stage,
+      date,
+      probability,
+      owner: COMPANIES[companyIndex].owner,
+      evidence:
+        pipelineIndex === 1
+          ? evidence
+          : pipelineIndex === 0
+            ? "The team is evaluating a shared workspace for support and product. Their latest conversation captures the requirements behind this opportunity."
+            : "The customer wants to extend the workspace to another team. The account review records the rollout scope and requested seats.",
+      note:
+        pipelineIndex === 1
+          ? note
+          : stage === 4
+            ? "Schedule an onboarding check-in with the team."
+            : "Review the requirements with the customer and confirm the next step.",
+      source: pipelineIndex === 1 ? source : "Workspace planning · Meeting",
+      id: 104 + pipelineIndex * DEALS.length + index,
+    }),
+  ),
+}));
 
 // Matches Deals.tsx / DealBoard / DealCard: stage totals, ID, amount pill,
 // probability, close date, and owner. Data and controls stay local to this preview.
 export function CRMPipeline() {
   const [pipeline, setPipeline] = useState(1);
+  const [agentOpen, setAgentOpen] = useState(true);
+  const agentClose = useRef<HTMLButtonElement>(null);
+  const agentTrigger = useRef<HTMLButtonElement | null>(null);
+  function openDeal(index: number, trigger: HTMLButtonElement) {
+    setSelected(index);
+    agentTrigger.current = trigger;
+    setAgentOpen(true);
+    requestAnimationFrame(() =>
+      agentClose.current?.focus({ preventScroll: true }),
+    );
+  }
+  function closeAgent() {
+    setAgentOpen(false);
+    agentTrigger.current?.focus({ preventScroll: true });
+  }
   const [selected, setSelected] = useState(0);
   const [view, setView] = useState<"board" | "list">("board");
   const [search, setSearch] = useState("");
@@ -164,193 +296,280 @@ export function CRMPipeline() {
         .includes(search.toLowerCase()),
     );
   return (
-    <div className="crm-pipeline-demo">
-      <div className="crm-pipeline-top">
-        <strong>Deals</strong>
-        <span className="cw-add-record" aria-hidden="true">
-          <CRMIcon name="PlusSignIcon" />
-          Add deal
-        </span>
-      </div>
-      <div className="crm-board-toolbar">
-        <label className="crm-pipeline-select">
-          Pipeline:
-          <select
-            aria-label="Choose a pipeline"
-            value={pipeline}
-            onChange={(e) => {
-              setPipeline(Number(e.target.value));
-              setSelected(0);
-              setSearch("");
+    <div className="crm-pipeline-demo crm-workspace">
+      <div className="crm-pipeline-frame">
+        <CRMNavigation view="deals" />
+        <div className="crm-pipeline-main">
+          <div className="crm-pipeline-top">
+            <div>
+              <strong>Deals</strong>
+              <span className="crm-pipeline-total">
+                {visible.length} deals <i />{" "}
+                {money(visible.reduce((total, item) => total + item.amount, 0))}
+              </span>
+            </div>
+            <span className="cw-add-record" aria-hidden="true">
+              <CRMIcon name="PlusSignIcon" />
+              Add deal
+            </span>
+          </div>
+          <div className="crm-board-toolbar">
+            <label className="crm-pipeline-select">
+              Pipeline:
+              <select
+                aria-label="Choose a pipeline"
+                value={pipeline}
+                onChange={(e) => {
+                  setPipeline(Number(e.target.value));
+                  setSelected(0);
+                  setSearch("");
+                }}
+              >
+                {PIPELINES.map((item, index) => (
+                  <option key={item.label} value={index}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="crm-deal-search">
+              <CRMIcon name="Search01Icon" size={15} />
+              <input
+                aria-label="Search deals"
+                placeholder="Search deals..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
+            <div role="group" aria-label="Deal view">
+              {(["board", "list"] as const).map((value) => (
+                <button
+                  type="button"
+                  key={value}
+                  aria-pressed={view === value}
+                  onClick={() => {
+                    setView(value);
+                    setAgentOpen(false);
+                  }}
+                >
+                  <CRMIcon
+                    name={value === "board" ? "LayoutGridIcon" : "Menu01Icon"}
+                    size={14}
+                  />
+                  {value === "board" ? "Board" : "List"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {view === "board" ? (
+            <div className="crm-board">
+              {current.stages.map((stage, i) => {
+                const items = visible.filter((row) => row.stage === i);
+                return (
+                  <div
+                    className="crm-board-column"
+                    key={stage}
+                    style={
+                      {
+                        "--crm-stage-color": STAGE_COLORS[i],
+                      } as CSSProperties
+                    }
+                  >
+                    <div className="crm-stage-heading">
+                      <div>
+                        <strong>{stage}</strong>
+                        <small>
+                          {items.length} {items.length === 1 ? "deal" : "deals"}
+                          <span>
+                            {money(
+                              items.reduce(
+                                (total, item) => total + item.amount,
+                                0,
+                              ),
+                            )}
+                          </span>
+                        </small>
+                      </div>
+                      <CRMIcon name="PlusSignIcon" size={16} />
+                    </div>
+                    {items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="crm-deal-card"
+                        aria-pressed={agentOpen && selected === item.index}
+                        aria-controls={id}
+                        onClick={(event) =>
+                          openDeal(item.index, event.currentTarget)
+                        }
+                      >
+                        <span className="crm-deal-id">
+                          <i />
+                          DEAL-{item.id}
+                        </span>
+                        <strong>
+                          {item.company} · {item.name}
+                        </strong>
+                        <span className="crm-card-metrics">
+                          <span className="crm-deal-amount">
+                            USD {money(item.amount).slice(1)}/yr
+                          </span>
+                          <span className="crm-deal-probability">
+                            <i>
+                              <b style={{ width: `${item.probability}%` }} />
+                            </i>
+                            {item.probability}%
+                          </span>
+                        </span>
+                        <span className="crm-deal-bottom">
+                          <span>
+                            <CRMIcon name="Calendar03Icon" size={12} />
+                            {item.date}
+                          </span>
+                          <CRMAvatar
+                            size={28}
+                            person={
+                              item.owner === "Sam Rivera" ? "sam" : "aisha"
+                            }
+                          />
+                        </span>
+                      </button>
+                    ))}
+                    <span className="crm-board-add" aria-hidden="true">
+                      <CRMIcon name="PlusSignIcon" size={14} />
+                      Add deal
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="crm-deal-table-scroll">
+              <table className="crm-deal-table">
+                <thead>
+                  <tr>
+                    {[
+                      "Name",
+                      "Amount",
+                      "Stage",
+                      "Probability",
+                      "Owner",
+                      "Close date",
+                    ].map((label) => (
+                      <th key={label}>{label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((item) => (
+                    <tr
+                      key={item.index}
+                      data-selected={selected === item.index}
+                    >
+                      <td>
+                        <button
+                          type="button"
+                          onClick={(event) =>
+                            openDeal(item.index, event.currentTarget)
+                          }
+                          aria-controls={id}
+                        >
+                          {item.company} · {item.name}
+                        </button>
+                      </td>
+                      <td>USD {money(item.amount).slice(1)}</td>
+                      <td>{current.stages[item.stage]}</td>
+                      <td>{item.probability}%</td>
+                      <td>
+                        <span title={item.owner}>
+                          <CRMAvatar
+                            size={20}
+                            person={
+                              item.owner === "Sam Rivera" ? "sam" : "aisha"
+                            }
+                          />
+                        </span>
+                      </td>
+                      <td>{item.date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!visible.length && <p>No deals match your search.</p>}
+            </div>
+          )}
+          <aside
+            id={id}
+            className="crm-deal-agent cw-agent"
+            hidden={!agentOpen}
+            aria-label={`Ask Agent about ${deal.company}`}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                closeAgent();
+              }
             }}
           >
-            {PIPELINES.map((item, index) => (
-              <option key={item.label} value={index}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="crm-deal-search">
-          <CRMIcon name="Search01Icon" size={15} />
-          <input
-            aria-label="Search deals"
-            placeholder="Search deals..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </label>
-        <div role="group" aria-label="Deal view">
-          {(["board", "list"] as const).map((value) => (
-            <button
-              type="button"
-              key={value}
-              aria-pressed={view === value}
-              onClick={() => setView(value)}
-            >
-              <CRMIcon
-                name={value === "board" ? "LayoutGridIcon" : "Menu01Icon"}
-                size={14}
-              />
-              {value === "board" ? "Board" : "List"}
-            </button>
-          ))}
-        </div>
-      </div>
-      {view === "board" ? (
-        <div className="crm-board">
-          {current.stages.map((stage, i) => {
-            const item = visible.find((row) => row.index === i);
-            return (
-              <div
-                className="crm-board-column"
-                key={stage}
-                style={
-                  {
-                    "--crm-stage-color": ["#94a3b8", "#f59e0b", "#8b5cf6"][i],
-                  } as CSSProperties
-                }
+            <header>
+              <CRMMark />
+              <div>
+                <strong>Ask Agent</strong>
+                <small>Using your customer context</small>
+              </div>
+              <button
+                ref={agentClose}
+                type="button"
+                onClick={closeAgent}
+                aria-label="Close deal Ask Agent"
               >
-                <div className="crm-stage-heading">
-                  <div>
-                    <strong>{stage}</strong>
-                    <small>
-                      {item ? "1 deal" : "0 deals"}
-                      {item && <span>{item.amount}</span>}
-                    </small>
-                  </div>
-                  <CRMIcon name="PlusSignIcon" size={16} />
-                </div>
-                {item && (
-                  <button
-                    type="button"
-                    className="crm-deal-card"
-                    aria-pressed={selected === i}
-                    aria-controls={id}
-                    onClick={() => setSelected(i)}
-                  >
-                    <span className="crm-deal-id">
-                      <i />
-                      DEAL-{104 + pipeline * 3 + i}
-                    </span>
-                    <strong>
-                      {item.company} · {item.name}
-                    </strong>
-                    <span className="crm-card-metrics">
-                      <span className="crm-deal-amount">
-                        USD {item.amount.slice(1)}/yr
-                      </span>
-                      <span className="crm-deal-probability">
-                        <i>
-                          <b style={{ width: `${40 + i * 20}%` }} />
-                        </i>
-                        {40 + i * 20}%
-                      </span>
-                    </span>
-                    <span className="crm-deal-bottom">
-                      <span>
-                        <CRMIcon name="Calendar03Icon" size={12} />
-                        {item.date}
-                      </span>
-                      <CRMAvatar size={28} />
-                    </span>
-                  </button>
-                )}
-                <span className="crm-board-add" aria-hidden="true">
-                  <CRMIcon name="PlusSignIcon" size={14} />
-                  Add deal
+                <X size={16} />
+              </button>
+            </header>
+            <div className="crm-deal-agent-body">
+              <div className="crm-deal-agent-record">
+                <CRMCompanyLogo companyIndex={deal.companyIndex} size={20} />
+                <span>
+                  {deal.company}
+                  <small>
+                    {deal.name} · {money(deal.amount)}/yr
+                  </small>
                 </span>
               </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="crm-deal-table-scroll">
-          <table className="crm-deal-table">
-            <thead>
-              <tr>
-                {[
-                  "Name",
-                  "Amount",
-                  "Stage",
-                  "Probability",
-                  "Owner",
-                  "Close date",
-                ].map((label) => (
-                  <th key={label}>{label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((item) => (
-                <tr key={item.index} data-selected={selected === item.index}>
-                  <td>
-                    <button
-                      type="button"
-                      onClick={() => setSelected(item.index)}
-                      aria-controls={id}
-                    >
-                      {item.company} · {item.name}
-                    </button>
-                  </td>
-                  <td>USD {item.amount.slice(1)}</td>
-                  <td>{current.stages[item.index]}</td>
-                  <td>{40 + item.index * 20}%</td>
-                  <td>
-                    <CRMAvatar size={24} />
-                  </td>
-                  <td>{item.date}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!visible.length && <p>No deals match your search.</p>}
-        </div>
-      )}
-      <div
-        id={id}
-        className="crm-deal-context"
-        role="region"
-        aria-label={`Context for ${deal.name}`}
-      >
-        <div>
-          <span className="crm-mini-label">
-            <CRMIcon name="File01Icon" size={13} />
-            THE CONTEXT BEHIND THE DEAL
-          </span>
-          <h3>
-            {deal.company} · {deal.name}
-          </h3>
-          <p>{deal.evidence}</p>
-          <small>{deal.source}</small>
-        </div>
-        <div className="crm-deal-action">
-          <span className="crm-mini-label">NEXT STEP</span>
-          <p>{deal.note}</p>
-          <span>
-            <CRMAvatar />
-            Sam Rivera <span>· Owner</span>
-          </span>
+              <div className="cw-agent-question">
+                <CRMAvatar />
+                <p>
+                  {deal.stage === 4
+                    ? "What’s the next step for this account?"
+                    : "What’s holding up this deal?"}
+                </p>
+              </div>
+              <div className="crm-deal-agent-answer">
+                <span className="crm-deal-agent-label">
+                  <CRMMark /> Helpin AI
+                </span>
+                <p>{deal.evidence}</p>
+                <span className="crm-deal-agent-source">
+                  <CRMIcon name="File01Icon" size={13} />
+                  {deal.source}
+                </span>
+                <div className="crm-deal-agent-next">
+                  <strong>Recommended next step</strong>
+                  <p>{deal.note}</p>
+                  <span>
+                    <CRMAvatar
+                      size={20}
+                      person={deal.owner === "Sam Rivera" ? "sam" : "aisha"}
+                    />
+                    {deal.owner} · Deal owner
+                  </span>
+                </div>
+              </div>
+            </div>
+            <footer>
+              <ShieldCheck size={13} />
+              For your review. No customer message sent.
+            </footer>
+          </aside>
         </div>
       </div>
     </div>
