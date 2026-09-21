@@ -9,7 +9,7 @@ import { useBentoPlayback } from './useBentoPlayback';
 // playback restores progressive reveals as the wire reaches each stage.
 const TICK_MS = 100;
 const LAST = 150;
-const QUESTION = 'Our CSV export times out on larger reports.';
+const QUESTION = 'Exports still time out, even with the smaller report.';
 const S = { decide: 60, ship: 85, reviewed: 113, released: 121, tell: 125, sent: 140 };
 
 function Avatar({ name }: { name: 'maya' | 'sam' }) {
@@ -135,7 +135,7 @@ export function LoopWire() {
         aria-label={paused ? 'Play workflow animation' : 'Pause workflow animation'} title={paused ? 'Play animation' : 'Pause animation'}>
         {paused ? <Play size={14} /> : <Pause size={14} />}
       </button>
-      <div role="img" aria-label="Illustrative OrbitDesk workflow: Maya Chen at Northstar Labs reports a CSV export timeout. Helpin AI searches connected logs, finds a CSV export timeout, and hands Sam the error and customer conversation. Task ORB-492 links her conversation to the fix. A coding agent prepares a code change, Sam reviews it and tests pass, then the team releases it. Sam approves the follow-up, then Helpin AI sends it to Maya in the original conversation.">
+      <div role="img" aria-label="Illustrative OrbitDesk workflow: Maya Chen at Northstar Labs reports that CSV exports still time out after trying a smaller report. Helpin AI checks the earlier conversation and connected logs, then hands Sam the findings and customer report. Task ORB-492 links her conversation to the fix. A coding agent prepares a code change, Sam reviews it and tests pass, then the team releases it. Sam approves the follow-up, then Helpin AI sends it to Maya in the original conversation.">
         <svg className="wire-svg" width={size.vw || 0} height={132} aria-hidden="true" style={{ left: -Math.max(0, (size.vw - size.w) / 2) }}>
           <path ref={pathRef} className="track" d={d} fill="none" strokeWidth={1.5} />
           <path className="head" d={d} fill="none" strokeWidth={1.5} strokeLinecap="round" style={{ strokeDasharray: len, strokeDashoffset: len - target, opacity: len ? 1 : 0, transition: playing && t > 0 ? 'stroke-dashoffset .8s cubic-bezier(.45,0,.55,1)' : 'none' }} />
@@ -152,15 +152,15 @@ export function LoopWire() {
                 </div>
               </div>
               <div className="wire-log-checks wire-reveal" data-revealed={t >= 20}>
-                <div><Search size={12} /><span>{t >= 32 ? 'Connected logs checked' : 'Searching connected logs…'}</span></div>
+                <div><Search size={12} /><span>{t >= 32 ? 'History and logs checked' : 'Checking history and logs…'}</span></div>
                 <div className="wire-reveal" data-revealed={t >= 32}><FileWarning size={12} /><span>CSV export · Request timed out</span></div>
               </div>
               <div className="wire-ai-note wire-reveal" data-revealed={t >= 42}>
                 <img src="/brand/helpin-icon-ink.svg" width={16} height={16} alt="" />
-                <div><b>Helpin AI</b><p><StreamingText key={cycle} text="I found the export error. I’m handing Sam the logs and your report." active={playing} delay={4200} duration={1300} /></p></div>
+                <div><b>Helpin AI</b><p><StreamingText key={cycle} text="I checked our earlier conversation and the logs. I’m sending Sam the findings." active={playing} delay={4200} duration={1300} /></p></div>
               </div>
               <div className="wire-tags wire-reveal" data-revealed={t >= 56}><span className="wchip">Bug</span><span className="wchip">CSV export</span></div>
-              <div className="wire-handoff wire-reveal" data-revealed={t >= 56}><Avatar name="sam" /><span>Handed to Sam · Logs attached</span></div>
+              <div className="wire-handoff wire-reveal" data-revealed={t >= 56}><Avatar name="sam" /><span>Handed to Sam · Findings attached</span></div>
             </div>
           </div>
 
@@ -169,7 +169,7 @@ export function LoopWire() {
             <div className={`wart decide on wire-task wire-reveal${t >= 78 ? ' connected' : ''}`} data-revealed={t >= 68}>
               <div className="wire-task-meta"><span className="tkey">ORB-492</span><span className="wchip am">Bug</span></div>
               <h3>Fix large CSV exports</h3>
-              <p>Keep larger reports from timing out.</p>
+              <p>Previous workaround failed. Customer report and logs attached.</p>
               <div className="wire-source wire-reveal" data-revealed={t >= 72}><Link2 size={13} /><span>Maya’s conversation</span><CheckIcon className="wire-source-check" size={13} /></div>
               <div className="wire-source wire-reveal" data-revealed={t >= 76}><Link2 size={13} /><span>Northstar Labs</span><CheckIcon className="wire-source-check" size={13} /></div>
               <div className="wire-task-owner"><Avatar name="sam" /><span>Sam Rivera · Engineering</span></div>
@@ -182,11 +182,11 @@ export function LoopWire() {
               <div className="lhead"><span>Coding agent</span><span>ORB-492</span></div>
               <p className="wire-code-title">CSV export fix</p>
               <ul className="wl">
-                <WorkStep label="Code change prepared" at={98} start={93} t={t} />
-                <WorkStep label="Reviewed and tested" at={S.reviewed} start={98} t={t} review />
+                <WorkStep label="Change prepared by agent" at={98} start={93} t={t} />
+                <WorkStep label="Reviewed and tested by Sam" at={S.reviewed} start={98} t={t} review />
                 <WorkStep label="Released by the team" at={S.released} start={S.reviewed} t={t} />
               </ul>
-              <div className="wire-code-link"><Link2 size={12} />Customer conversation attached</div>
+              <div className="wire-code-link"><Link2 size={12} />Original request stays attached</div>
             </div>
           </div>
 
@@ -195,7 +195,7 @@ export function LoopWire() {
             <div className={`wart tell${t >= S.sent ? ' delivered' : ''}`}>
               <div className="wire-followup wire-reveal" data-revealed={t >= 133}><span>Original conversation</span><span className="wire-delivery">{t >= S.sent ? 'Sent' : 'Draft'}</span></div>
               <div className="bub reply on wire-reveal" data-revealed={t >= 135}>
-                <div><p>The export fix is live. Please try your report again.</p><small>Helpin AI · To Maya</small></div>
+                <div><p>The fix is live, Maya. Please try your export again.</p><small>Helpin AI · To Maya</small></div>
                 <span className="bav"><img src="/brand/helpin-icon-white.svg" width={15} height={15} alt="" /></span>
               </div>
               <div className="wire-followup-note wire-reveal" data-revealed={t >= 138}><CheckIcon size={13} /><span>{t >= S.sent ? 'Approved by Sam · Sent by Helpin AI' : 'Helpin AI draft · Awaiting approval'}</span></div>
