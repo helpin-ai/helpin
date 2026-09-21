@@ -805,15 +805,15 @@
 .hp3 .img-ph-m { font-family: var(--mono); font-size: 12px; color: var(--t3); background: var(--bg2); padding: 0 8px; }
 
 /* Customer record: centered introduction and six illustrated feature cards. */
-/* Static grid stays behind the copy and opaque product cards. */
+/* Keep the grid visible behind the introduction, independent of section height. */
 .hp3 #record { --grid-step: 88px; --d-bg: #000; position: relative; isolation: isolate; }
 .hp3 #record > .wrap { position: relative; z-index: 1; }
 .hp3 #record::before { content: ""; position: absolute; inset: 0; pointer-events: none; }
 .hp3 #record::before {
-  background-image: linear-gradient(rgba(63, 191, 131, .09) 1px, transparent 1px), linear-gradient(90deg, rgba(63, 191, 131, .09) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(63, 191, 131, .12) 1px, transparent 1px), linear-gradient(90deg, rgba(63, 191, 131, .12) 1px, transparent 1px);
   background-size: var(--grid-step) var(--grid-step);
   background-position: center top;
-  mask-image: radial-gradient(ellipse 75% 60% at 50% 50%, #000 50%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent, #000 90px, #000 calc(100% - 90px), transparent);
 }
 .hp3 .record-intro { max-width: 820px; margin: 0 auto 56px; text-align: center; }
 .hp3 .record-intro h2 { max-width: 24ch; margin-inline: auto; text-wrap: balance; }
