@@ -8,8 +8,8 @@ import './meeting-workspace.css';
 
 // Mirrors MeetingDetail, QuietDetailLayout, ActionItemRow, and the associations
 // rail. This is a local demo: no media capture, live task writes, or email sends.
-export function MeetingWorkspace() {
-  const { container, active, phase, paused, setPaused } = useMeetingPlayback();
+export function MeetingWorkspace({ autoplay = true }: { autoplay?: boolean }) {
+  const { container, active, phase, paused, setPaused } = useMeetingPlayback(autoplay);
   const [tab, setTab] = useState<'overview' | 'transcript'>('overview');
   const [selected, setSelected] = useState(0);
   const [manualTask, setManualTask] = useState(false);

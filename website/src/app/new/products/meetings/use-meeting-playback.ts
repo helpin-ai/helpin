@@ -2,11 +2,11 @@
 import { useEffect, useState } from 'react';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
 
-export function useMeetingPlayback() {
+export function useMeetingPlayback(enabled = true) {
   const { container, playing, cycle } = useBentoPlayback(18000);
   const [paused, setPaused] = useState(false);
   const [frame, setFrame] = useState(3);
-  const active = playing && !paused;
+  const active = enabled && playing && !paused;
   useEffect(() => {
     if (!active) return;
     setFrame(0);

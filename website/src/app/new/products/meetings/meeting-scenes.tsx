@@ -1,15 +1,28 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowDown, CircleHelp, Building2, Check, CircleCheck, Copy, FileText, Link2, ListChecks, Mail, Pause, Play, Quote, Video } from 'lucide-react';
+import { ChevronDown, CircleHelp, Building2, Check, CircleCheck, Copy, FileText, Link2, ListChecks, Mail, Pause, Play, Quote, Video } from 'lucide-react';
 import { useMeetingPlayback } from './use-meeting-playback';
 import { FOLLOWUP_DRAFT, MEETING_EVIDENCE } from './meeting-demo-data';
 import './meeting-evidence.css';
+import './meeting-work.css';
 
 type Variant = 'task' | 'followup' | 'context';
 function Step({children,at=0,className=''}:{children:ReactNode;at?:number;className?:string}){return <div className={`mt-step ${className}`} data-stage={Math.min(3,Math.ceil(at))}>{children}</div>;}
 function Avatar({person}:{person:'maya'|'sam'}){return <img className="mt-avatar" src={`/new/avatars/${person}.webp`} width={28} height={28} alt=""/>;}
-function Task({phase}:{phase:number}){return <><span className="mt-mini">ACTION ITEM · FROM THE TRANSCRIPT</span><div className="mt-source"><Quote size={16}/><p>“I’ll send the reviewed setup guide and pilot checklist.”</p><div><Avatar person="sam"/><span>Sam Rivera</span><span>28:14</span></div></div><div className="mt-connector"><ArrowDown size={18}/></div><Step at={1} className="mt-task-card"><div className="mt-task-id"><ListChecks size={16}/><span>SSO Enterprise Readiness</span><span className="mt-task-review">Reviewed by Sam</span></div><strong>Share the Okta setup guide and pilot checklist</strong><div className="mt-task-meta"><span><Avatar person="sam"/>Sam Rivera</span><span><i/>To do</span><span>Customer Success</span></div><Step at={2.3} className="mt-linked"><Link2 size={13}/>Northstar Labs · SSO rollout review</Step></Step><Step at={3} className="mt-complete"><CircleCheck size={15}/><span><strong>{['Action item found in the transcript','Task destination selected','Reviewed by Sam Rivera','CS-128 created · Assigned to Sam'][phase]}</strong><small>{phase===3?'Reviewed action item · Meeting linked':'Customer Success · To do · Sam Rivera'}</small></span></Step></>;}
+function Task({phase}:{phase:number}) {
+ return <div className="mt-action-preview">
+  <div className="mt-action-header"><div className="mt-action-top"><span><ListChecks size={15}/>Action item</span><span className="mt-action-status" data-complete={phase===3}>{phase===3?<><Check size={12}/>Accepted</>:'Pending review'}</span></div>
+  <h4>Share the Okta setup guide and pilot checklist</h4>
+  <div className="mt-action-owner"><Avatar person="sam"/><span>Owner: Sam Rivera</span><span>Due Sep 21</span></div>
+  <div className="mt-action-evidence"><span><Quote size={12}/>Transcript evidence · 28:14</span><blockquote>“I’ll send the reviewed setup guide and pilot checklist.”</blockquote></div></div>
+  <div className="mt-destination-title"><strong>Task destination</strong><p>Choose where this follow-up enters project work.</p></div>
+  <div className="mt-destination-fields" data-selected={phase>=1}><div><span>Team</span><strong>{phase>=1?'Customer Success':'Choose a team'}<ChevronDown size={13}/></strong></div><div><span>State</span><strong><i/>{phase>=1?'To do':'Choose a state'}<ChevronDown size={13}/></strong></div></div>
+  <div className="mt-action-review" data-reviewed={phase>=2}><Avatar person="sam"/><span>{phase>=2?'Reviewed by Sam':'Review the task destination'}</span><Check size={14}/></div>
+  <div className="mt-action-footer" data-complete={phase===3}><span>{phase===3?<><Link2 size={13}/>CS-128 · Meeting linked</>:<>Customer Success · Follow-up work</>}</span><span className="mt-create-action">{phase===3?<><Check size={13}/>Task created</>:'Create task'}</span></div>
+  <div className="mt-task-outcome"><CircleCheck size={15}/><span>{['Keep the commitment and its source together.','Destination selected. Ready for review.','Sam has reviewed the task and its destination.','Assigned to Sam, with the meeting attached.'][phase]}</span></div>
+ </div>;
+}
 function Followup({active,phase}:{active:boolean;phase:number}) {
  const [typed,setTyped]=useState(FOLLOWUP_DRAFT);
  useEffect(()=>{
@@ -20,7 +33,7 @@ function Followup({active,phase}:{active:boolean;phase:number}) {
   const timer=setInterval(()=>{position=Math.min(position+4,FOLLOWUP_DRAFT.length);setTyped(FOLLOWUP_DRAFT.slice(0,position));if(position===FOLLOWUP_DRAFT.length)clearInterval(timer);},24);
   return ()=>clearInterval(timer);
  },[active,phase]);
- return <><div className="mt-mail-heading"><Mail size={18}/><strong>Customer follow-up</strong><span className="mt-pill">Draft</span></div><div className="mt-mail-meta"><span>To</span><span>Maya Chen <span className="mt-muted">· Northstar Labs</span></span><span>Subject</span><strong>Next steps for your SSO pilot</strong></div><div className="mt-draft-source"><span className="mt-ai-draft-mark"><img src="/brand/helpin-icon-white.svg" width={13} height={13} alt=""/></span><span>Helpin AI · {active&&phase<2?'Preparing the follow-up':'Draft from the meeting context'}</span></div><div className="mt-email-composition"><p className="mt-email-layout">{FOLLOWUP_DRAFT}</p><p className="mt-email-typed">{typed}<span className="mt-typing-caret" data-visible={active&&phase===1&&typed.length<FOLLOWUP_DRAFT.length}/></p></div><Step at={3} className="mt-draft-review"><Avatar person="sam"/><div><strong>Ready for Sam’s review</strong><small>Draft prepared · Not sent</small></div><Check size={15}/></Step></>;
+ return <><div className="mt-mail-envelope"><div className="mt-mail-heading"><Mail size={18}/><strong>Customer follow-up</strong><span className="mt-pill">Draft</span></div><div className="mt-mail-meta"><span>To</span><span>Maya Chen <span className="mt-muted">· Northstar Labs</span></span><span>Subject</span><strong>Next steps for your SSO pilot</strong></div></div><div className="mt-draft-source"><span className="mt-ai-draft-mark"><img src="/brand/helpin-icon-white.svg" width={13} height={13} alt=""/></span><span>Helpin AI · {active&&phase<2?'Preparing the follow-up':'Draft from the meeting context'}</span></div><div className="mt-email-composition"><p className="mt-email-layout">{FOLLOWUP_DRAFT}</p><p className="mt-email-typed">{typed}<span className="mt-typing-caret" data-visible={active&&phase===1&&typed.length<FOLLOWUP_DRAFT.length}/></p></div><div className="mt-draft-review" data-ready={phase>=2}><Avatar person="sam"/><div><strong>{["Preparing the follow-up","Writing the follow-up","Check the wording and next steps","Ready for Sam’s review"][phase]}</strong><small>Customer draft · Not sent</small></div><Check size={15}/></div></>;
 }
 function Context(){return <><div className="mt-customer"><span className="mt-company-mark"><Building2 size={24}/></span><div><span className="mt-mini">CUSTOMER RECORD</span><strong>Northstar Labs</strong><small>Enterprise rollout</small></div></div><div className="mt-context-list">{[
   {Icon:Video,label:'Meeting',title:'SSO rollout review',detail:'Summary, transcript & decisions'},
@@ -52,11 +65,12 @@ export function MeetingEvidence() {
       return <article className="mb-card" key={entry.kind} data-kind={index} data-reading={reading}>
         <div className="mb-copy"><span className="mb-category"><Icon size={14} />{entry.kind}</span><h3>{title}</h3><p>{detail}</p></div>
         <div className="mb-art">
+          <div className="mb-source"><span className="mb-source-label"><Quote size={12} />From the conversation</span><blockquote>“{entry.quote}”</blockquote><div className="mb-speaker"><Avatar person={entry.person} /><strong>{entry.name}</strong><span><Link2 size={11} />{entry.time}</span></div></div>
           <div className="mb-finding">
             <div className="mb-finding-state"><Icon size={15} /><span>{state}</span>{index === 0 && <Check className="mb-decision-check" size={14} />}</div>
             <strong>{entry.title}</strong><p>{entry.note}</p>
             {index === 0 ? <div className="mb-pilot"><span>Admin pilot</span><i /><span>Wider rollout</span></div> : index === 1 ? <div className="mb-open"><span />Group-to-role mapping · Unresolved</div> : <div className="mb-assignment"><Avatar person="sam" /><span>Sam Rivera</span><span>Review before creating</span></div>}
-            <div className="mb-source"><span className="mb-source-label"><Quote size={12} />From the conversation</span><blockquote>“{entry.quote}”</blockquote><div className="mb-speaker"><Avatar person={entry.person} /><strong>{entry.name}</strong><span><Link2 size={11} />{entry.time}</span></div></div>
+            <div className="mb-evidence-link"><Link2 size={12} /><span>Source attached</span><span>{entry.time} · Transcript</span></div>
           </div>
         </div>
       </article>;
