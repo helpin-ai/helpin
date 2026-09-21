@@ -1,3 +1,4 @@
+import { HeroVortex } from '../../_components/HeroVortex';
 import {  DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
@@ -54,7 +55,7 @@ const FAQS = [
 ] as const;
 export default function MeetingsPage() {
   return <><PreviewNav /><main className="meetings-page">
-    <section className="meetings-hero" aria-labelledby="meetings-title"><div className="wrap">
+    <section className="meetings-hero motion-hero" aria-labelledby="meetings-title"><HeroVortex variant="flow" tone="dark" /><div className="wrap">
       <div className="meetings-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12}/><span>Meetings</span></div>
       <div className="meetings-hero-copy"><span className="eyebrow">Meetings for SaaS teams</span><h1 id="meetings-title">AI agents that turn meeting decisions <span>into next steps.</span></h1><p className="lede">Capture customer calls, review what was agreed, and prepare tasks and follow-ups. Helpin keeps the conversation connected to the customer and the work—so your team and agents can pick up where the meeting left off.</p><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="meetings-supporting-note">14-day cloud trial · No credit card required.</p><div className="meetings-platforms">{PLATFORMS.map(([id,label])=><span key={id}><img src={`/new/meetings/${id}.svg`} width={19} height={19} alt=""/>{label}</span>)}</div><p className="meetings-supporting-note">Joining depends on your capture provider and the meeting’s access settings.</p></div>
       <div className="meetings-screenshot"><MeetingWorkspace /><p className="meetings-demo-caption">The discussion, the decision, and the next step—together.</p></div>

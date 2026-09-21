@@ -1,3 +1,4 @@
+import { HeroVortex } from '../../_components/HeroVortex';
 import { DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
@@ -80,7 +81,7 @@ const FAQS = [
 ] as const;
 export default function KnowledgePage() {
   return <><PreviewNav /><main className="knowledge-page">
-    <section className="knowledge-hero" aria-labelledby="knowledge-title"><div className="wrap">
+    <section className="knowledge-hero motion-hero" aria-labelledby="knowledge-title"><HeroVortex variant="flow" tone="dark" /><div className="wrap">
       <div className="knowledge-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>Knowledge</span></div>
       <div className="knowledge-hero-copy"><span className="eyebrow">Help center, product docs, and team knowledge</span><h1 id="knowledge-title">Better docs for your customers.<br /><span>Better answers from your AI agents.</span></h1><p className="lede">Publish help articles, product guides, and API docs in one place. AI agents turn customer questions and product changes into draft updates for your team to review.</p><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="knowledge-supporting-note">14-day cloud trial · No credit card required.</p><div className="knowledge-hero-points"><span><Server size={14} />Your own domain</span><span><Search size={14} />Search and AI answers</span><span><Code2 size={14} />Interactive API docs</span><span><ShieldCheck size={14} />Reviewed updates</span></div></div>
       <div className="knowledge-screenshot"><KnowledgeWorkspace /><p className="knowledge-demo-caption">A place for the answers your customers need.</p></div>

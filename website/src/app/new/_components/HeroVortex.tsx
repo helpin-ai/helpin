@@ -28,13 +28,39 @@ const BUNDLES = [
   }),
 }));
 
-export function HeroVortex() {
+type MotionVariant = 'vortex' | 'flow' | 'connections' | 'orbit';
+
+// Related line families share the same playback and accessibility contract.
+const FLOW = [0, 1].map(group => ({
+  transform: `rotate(${group ? -7 : 7} ${CX} ${CY})`,
+  lines: Array.from({ length: 12 }, (_, i) => ({
+    d: `M -120 ${130 + group * 250 + i * 13} C 330 ${-80 + group * 370 + i * 17}, 810 ${530 - group * 220 + i * 9}, 1520 ${150 + group * 260 + i * 12}`,
+    opacity: 0.22 + (1 - Math.abs(i - 5.5) / 6) * 0.3,
+  })),
+}));
+const CONNECTIONS = [-1, 1].map(side => ({
+  transform: side < 0 ? 'translate(1400 0) scale(-1 1)' : '',
+  lines: Array.from({ length: 12 }, (_, i) => ({
+    d: `M -100 ${70 + i * 23} H ${230 + i * 20} Q ${270 + i * 20} ${70 + i * 23} ${270 + i * 20} ${110 + i * 23} V ${440 + i * 11} Q ${270 + i * 20} ${480 + i * 11} ${310 + i * 20} ${480 + i * 11} H 1500`,
+    opacity: 0.24 + (i % 4) * 0.06,
+  })),
+}));
+const ORBITS = [{
+  transform: `rotate(-14 ${CX} ${CY})`,
+  lines: Array.from({ length: 18 }, (_, i) => ({
+    d: `M ${CX - 340 - i * 18} ${CY} a ${340 + i * 18} ${150 + i * 11} 0 1 0 ${2 * (340 + i * 18)} 0 a ${340 + i * 18} ${150 + i * 11} 0 1 0 ${-2 * (340 + i * 18)} 0`,
+    opacity: 0.18 + (1 - Math.abs(i - 8.5) / 9) * 0.3,
+  })),
+}];
+const ART = { vortex: BUNDLES, flow: FLOW, connections: CONNECTIONS, orbit: ORBITS };
+
+export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: MotionVariant; tone?: 'light' | 'dark' }) {
   const id = useId().replace(/:/g, '');
   const [paused, setPaused] = useState(false);
   const { container, playing, reducedMotion } = useBentoPlayback(16_000, !paused);
 
   return (
-    <div ref={container} className="hero-vortex" data-playing={playing}>
+    <div ref={container} className="hero-vortex" data-playing={playing} data-variant={variant} data-tone={tone}>
       <div className="hero-vortex-art" aria-hidden="true">
         <div className="hero-vortex-drift">
           <svg viewBox="0 0 1400 700" preserveAspectRatio="xMidYMid slice" focusable="false">
@@ -47,7 +73,7 @@ export function HeroVortex() {
                 <stop offset="50%" stopColor="#74FFC4" /><stop offset="58%" stopColor="#2AE79A" stopOpacity="0" /><stop offset="100%" stopColor="#2AE79A" stopOpacity="0" />
               </linearGradient>
             </defs>
-            {BUNDLES.map((bundle, bi) => (
+            {ART[variant].map((bundle, bi) => (
               <g key={bi} transform={bundle.transform} fill="none" strokeLinecap="round">
                 <g stroke={`url(#${id}-base)`} strokeWidth="4" opacity="0.22">
                   {bundle.lines.map((line, j) => <path key={j} d={line.d} opacity={line.opacity} />)}

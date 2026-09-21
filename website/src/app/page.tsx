@@ -1,5 +1,7 @@
 'use client';
 
+import { HeroVortex } from './new/_components/HeroVortex';
+
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, User, Layers, BookOpen, MessageCircle, Users, Zap, FileText, Search, AlertCircle, RefreshCw, UserPlus, Code2, CheckCircle, Rocket, Globe, Clock, Send, Target, TrendingUp, BarChart3, PenTool, Calendar, Shield, Share2 } from 'lucide-react';
@@ -876,7 +878,7 @@ export default function HomePage() {
       {/* ══════════════════════════════════
           HERO
           ══════════════════════════════════ */}
-      <section className="relative">
+      <section className="relative motion-hero"><HeroVortex variant="flow" />
         {/* Temple geometric pattern — extends behind navbar */}
         <div className="absolute -top-20 left-0 right-0 -bottom-16 pointer-events-none" aria-hidden="true">
           <div className="absolute inset-0" style={{

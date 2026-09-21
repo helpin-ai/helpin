@@ -1,3 +1,4 @@
+import { HeroVortex } from '../../_components/HeroVortex';
 import { DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
@@ -78,7 +79,7 @@ export default function ProjectsPage() {
   return <>
     <PreviewNav />
     <div className="projects-page">
-      <section className="projects-hero" aria-labelledby="projects-title">
+      <section className="projects-hero motion-hero" aria-labelledby="projects-title"><HeroVortex variant="connections" tone="dark" />
         <div className="wrap">
           <div className="projects-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>Projects</span></div>
           <div className="projects-hero-grid"><div className="projects-hero-copy"><span className="eyebrow">Project management for SaaS teams</span><h1 id="projects-title">Plan the work.<br /><span>Build with AI agents that know <em>why</em>.</span></h1><p className="lede">Bring roadmaps, sprints, and objectives into one workspace. AI agents use your requirements, tasks, and linked customer history to help scope work and prepare changes—with your team setting priorities and approvals.</p><CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="projects-supporting-note">14-day cloud trial · No credit card required.</p><div className="projects-hero-points"><span><CheckSquare size={14} />Roadmaps and sprints</span><span><MessagesSquare size={14} />Customer context</span><span><GitBranch size={14} />AI-assisted delivery</span></div></div>

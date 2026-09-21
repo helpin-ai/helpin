@@ -1,3 +1,4 @@
+import { HeroVortex } from '../_components/HeroVortex';
 import { previewMetadata } from '../_components/preview-metadata';
 import { PreviewNav } from '../_components/PreviewNav';
 import { PreviewFooter } from '../_components/PreviewFooter';
@@ -31,7 +32,7 @@ export default function ProductPage() {
     <>
       <PreviewNav />
 
-      <section className="hero page-hero">
+      <section className="hero page-hero motion-hero"><HeroVortex variant="orbit" tone="light" />
         <div className="wrap">
           <div className="hero-inner">
             <span className="eyebrow">Product</span>
