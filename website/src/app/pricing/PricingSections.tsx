@@ -12,7 +12,7 @@ export function HostingOptions() {
       <SelfHostingArt />
     </div></section>
     <section id="enterprise" className="pricing-deployment pricing-enterprise" aria-labelledby="pricing-enterprise-title"><div className="wrap pricing-deployment-grid">
-      <div className="pricing-deployment-copy"><span className="eyebrow">Enterprise</span><h2 id="pricing-enterprise-title">Discuss your deployment needs.</h2><p className="pricing-deployment-lede">Need Enterprise features or help planning your rollout? Talk to us about your requirements and licensing.</p><p className="pricing-note">Enterprise code includes subscription billing, managed AI routes and commercial policies under a separate license.</p><div className="pricing-links"><a className="btn btn-primary" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us<ArrowRight size={16} /></a><a className="btn-link" href={`${GITHUB_URL}/blob/develop/ee/LICENSE`}>Enterprise license →</a></div></div>
+      <div className="pricing-deployment-copy"><span className="eyebrow">Enterprise</span><h2 id="pricing-enterprise-title">Discuss your deployment needs.</h2><p className="pricing-deployment-lede">Need Enterprise features or help planning your rollout? Talk to us about your requirements and licensing.</p><p className="pricing-note">Enterprise code includes subscription billing, managed AI routes and commercial policies under a separate license.</p><div className="pricing-links"><a className="btn btn-primary" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us<ArrowRight size={16} /></a></div></div>
       <EnterprisePlanningArt />
     </div></section>
   </>;
