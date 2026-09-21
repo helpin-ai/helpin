@@ -50,7 +50,7 @@ const DOCUMENTS = [
   ['Resolve a failed sync', 'Troubleshooting', '5 days ago'],
 ];
 
-export function KnowledgeWorkspace() {
+export function KnowledgeWorkspace({ apiHref = '#knowledge-api' }: { apiHref?: string }) {
   const { container, active, phase, paused, setPaused } = useKnowledgePlayback();
   const [collection, setCollection] = useState('');
   const [query, setQuery] = useState('');
@@ -69,7 +69,7 @@ export function KnowledgeWorkspace() {
     <div className="kp-library">
       <div className="kp-library-top"><span><ArrowLeft size={13} />All Docs</span><Playback name="library" paused={paused} onClick={() => { if (paused) { setCollection(''); setQuery(''); } setPaused(!paused); }} /></div>
       <div className="kp-library-title"><h3>OrbitDesk Help Center</h3><div aria-hidden="true"><span><Plus size={12} />Collection</span><span className="kp-dark-action"><Plus size={12} />Document</span></div></div>
-      <div className="kp-reference-strip"><div><strong>API reference</strong><p>Interactive OpenAPI documentation in this public space.</p></div><a href="#knowledge-api"><Code2 size={12} />Explore reference</a><small>Import an OpenAPI URL or file to add an interactive API reference beneath your help-center header.</small></div>
+      <div className="kp-reference-strip"><div><strong>API reference</strong><p>Interactive OpenAPI documentation in this public space.</p></div><a href={apiHref}><Code2 size={12} />Explore reference</a><small>Import an OpenAPI URL or file to add an interactive API reference beneath your help-center header.</small></div>
       <div className="kp-collections">{COLLECTIONS.map(({ title, count, Icon }, i) => <button type="button" key={title} className="kp-collection" aria-pressed={collection === title} data-selected={collection === title} data-highlight={!collection && !query && phase === 1 && i === 2} onClick={() => { interact(); setCollection(collection === title ? '' : title); }}><Icon size={18} /><span><strong>{title}</strong><small>{count} docs</small></span></button>)}</div>
       <div className="kp-doc-toolbar"><label htmlFor={searchId}><Search size={14} /><input id={searchId} aria-label="Search documents" value={query} placeholder="Search documents…" onChange={e => { interact(); setQuery(e.target.value); }} /></label><span>{collection || '48 documents'}</span><select aria-label="Sort documents" value={sort} onChange={e => { interact(); setSort(e.target.value); }}><option value="recent">Last updated</option><option value="title">Title A–Z</option></select></div>
       <div className="kp-document-list">{filtered.slice(0, 7).map(([title, group, updated], i) => <div className="kp-document" key={title} data-highlight={!query && !collection && phase >= 2 && phase <= 3 && i === 0}><FileText size={17} /><div><strong>{title}</strong><small>{group}</small></div><span>Updated {updated}</span><Check className="kp-doc-check" size={13} aria-label="Published" /></div>)}{filtered.length === 0 && <p className="kp-empty">No documents match your search.</p>}</div>

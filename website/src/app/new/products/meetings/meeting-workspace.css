@@ -1,3 +1,4 @@
+@font-face{font-family:'Helpin Meetings UI';src:url('/fonts/inter/inter-latin-wght-normal.woff2') format('woff2');font-style:normal;font-weight:100 900;font-display:swap}
 /* Presentational counterpart of the platform's light QuietDetailLayout. */
 .hp3 .mw-preview{display:flex;container-type:inline-size;background:#fff;color:var(--ink);font-family:'Helpin Meetings UI',sans-serif;font-size:12px;line-height:1.6;border-radius:10px;overflow:hidden;isolation:isolate;--mw-line:#e7ebe8;--mw-muted:#718078}
 .hp3 .mw-preview :is(h3,h4,p){margin:0;text-wrap:initial;letter-spacing:normal}.hp3 .mw-preview :is(h3,h4,button){font-family:inherit}.hp3 .mw-preview button{cursor:pointer}.hp3 .mw-preview button:focus-visible{outline:2px solid var(--em);outline-offset:3px}.hp3 .mw-preview svg{flex:none}.hp3 .mw-preview strong{font-weight:550}.hp3 .mw-preview img{display:block;flex:none;object-fit:cover}

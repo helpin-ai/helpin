@@ -1,3 +1,4 @@
+@font-face { font-family: 'Helpin Knowledge UI'; src: url('/fonts/inter/inter-latin-wght-normal.woff2') format('woff2'); font-style: normal; font-weight: 100 900; font-display: swap; }
 /* Light platform UI; independent of the surrounding marketing section. */
 .hp3 .kp-preview { --kp-line:#e5e9e7; --kp-muted:#67716c; font-family:'Helpin Knowledge UI',sans-serif; font-size:12px; line-height:1.55; color:#202622; background:#fff; border-radius:10px; overflow:hidden; isolation:isolate; container-type:inline-size; text-align:left; }
 .hp3 .kp-preview * { box-sizing:border-box; }

@@ -147,7 +147,7 @@ export default function NewHomePage() {
         </div>
       </section>
 
-      {/* Explore each product area alongside the workspace image. */}
+      {/* Explore each product area with the shared interactive previews. */}
       <section id="product">
         <div className="wrap">
           <SectionHead eyebrow="What’s inside" title="Everything your team needs to close the loop." lede="Explore the products that turn customer context into answers, actions, and follow-ups." />
