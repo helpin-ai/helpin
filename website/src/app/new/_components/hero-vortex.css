@@ -7,9 +7,6 @@
 .hero-vortex-trail { animation: hero-vortex-trail var(--vortex-duration) linear infinite; animation-delay: var(--vortex-delay); animation-play-state: paused; }
 .hero-vortex[data-playing=true] .hero-vortex-drift,
 .hero-vortex[data-playing=true] .hero-vortex-trail { animation-play-state: running; }
-.hero-vortex-toggle { position: absolute; top: 16px; right: max(24px, calc((100% - 1240px) / 2 + 24px)); z-index: 3; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; color: var(--t3, #66716c); background: var(--bg, #fff); border: 1px solid var(--border, #e4e9e6); border-radius: 50%; cursor: pointer; pointer-events: auto; }
-.hero-vortex-toggle[hidden] { display: none; }
-.hero-vortex-toggle:hover { color: var(--em, #0f7a50); border-color: var(--border-2, #cfd6d2); }
 @keyframes hero-vortex-trail { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -760; } }
 @keyframes hero-vortex-drift { 0%, 100% { transform: translateX(-48px) rotate(-4deg) scale(1.02); } 50% { transform: translateX(48px) rotate(4deg) scale(1.06); } }
 @media (max-width: 600px) {
@@ -17,19 +14,16 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-vortex .hero-vortex-drift,.hero-vortex .hero-vortex-trail { animation: none; }
-  .hero-vortex-sheen,.hero-vortex-toggle { display: none; }
+  .hero-vortex-sheen { display: none; }
 }
 
 /* Placement is opt-in; product demos and reading surfaces keep their own motion. */
 .motion-hero { position: relative; isolation: isolate; }
 .motion-hero > .wrap { position: relative; }
 .hero-vortex[data-tone=dark] .hero-vortex-drift { opacity: .32; }
-.hero-vortex[data-tone=dark] .hero-vortex-toggle { color: var(--on-dark-muted, #b2c6ba); background: var(--surface-dark, #090909); border-color: var(--art-dark-border, #bce2cb26); }
-.hero-vortex[data-tone=dark] .hero-vortex-toggle:hover { color: var(--on-dark-accent, #9cdbb3); border-color: var(--on-dark-muted, #b2c6ba); }
 .hero-vortex[data-variant=flow] .hero-vortex-drift { top: -230px; animation-duration: 20s; }
 .hero-vortex[data-variant=connections] .hero-vortex-drift { top: -220px; animation-duration: 24s; }
 .hero-vortex[data-variant=orbit] .hero-vortex-drift { top: -230px; animation-duration: 22s; }
-.hero-vortex-toggle:focus-visible { outline: 2px solid #0f7a50; outline-offset: 3px; }
 @media (max-width: 600px) {
   .hero-vortex[data-tone=dark] .hero-vortex-drift { opacity: .24; }
   .hero-vortex[data-variant=flow] .hero-vortex-drift,
