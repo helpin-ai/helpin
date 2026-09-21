@@ -135,7 +135,7 @@ export function LoopWire() {
         aria-label={paused ? 'Play workflow animation' : 'Pause workflow animation'} title={paused ? 'Play animation' : 'Pause animation'}>
         {paused ? <Play size={14} /> : <Pause size={14} />}
       </button>
-      <div role="img" aria-label="Illustrative OrbitDesk workflow: Maya Chen at Northstar Labs reports a CSV export timeout. Helpin AI searches connected logs, finds a CSV export timeout, and hands Sam the error and customer conversation. Task ORB-492 links her conversation to the fix. A coding agent prepares a code change, checks pass, Sam reviews it, and the team releases it. Sam approves a follow-up and Maya is notified in the original conversation.">
+      <div role="img" aria-label="Illustrative OrbitDesk workflow: Maya Chen at Northstar Labs reports a CSV export timeout. Helpin AI searches connected logs, finds a CSV export timeout, and hands Sam the error and customer conversation. Task ORB-492 links her conversation to the fix. A coding agent prepares a code change, checks pass, Sam reviews it, and the team releases it. Sam approves the follow-up, then Helpin AI sends it to Maya in the original conversation.">
         <svg className="wire-svg" width={size.vw || 0} height={132} aria-hidden="true" style={{ left: -Math.max(0, (size.vw - size.w) / 2) }}>
           <path ref={pathRef} className="track" d={d} fill="none" strokeWidth={1.5} />
           <path className="head" d={d} fill="none" strokeWidth={1.5} strokeLinecap="round" style={{ strokeDasharray: len, strokeDashoffset: len - target, opacity: len ? 1 : 0, transition: playing && t > 0 ? 'stroke-dashoffset .8s cubic-bezier(.45,0,.55,1)' : 'none' }} />
@@ -196,10 +196,10 @@ export function LoopWire() {
             <div className={`wart tell${t >= S.sent ? ' delivered' : ''}`}>
               <div className="wire-followup wire-reveal" data-revealed={t >= 133}><span>Original conversation</span><span className="wire-delivery">{t >= S.sent ? 'Sent' : 'Draft'}</span></div>
               <div className="bub reply on wire-reveal" data-revealed={t >= 135}>
-                <div><p>The export fix is live. Please try your report again.</p><small>To Maya · Northstar Labs</small></div>
-                <Avatar name="sam" />
+                <div><p>The export fix is live. Please try your report again.</p><small>Helpin AI · To Maya</small></div>
+                <span className="bav"><img src="/brand/helpin-icon-white.svg" width={15} height={15} alt="" /></span>
               </div>
-              <div className="wire-followup-note wire-reveal" data-revealed={t >= 138}><CheckIcon size={13} /><span>{t >= S.sent ? 'Approved by Sam · Sent after release' : 'Sam reviews before sending'}</span></div>
+              <div className="wire-followup-note wire-reveal" data-revealed={t >= 138}><CheckIcon size={13} /><span>{t >= S.sent ? 'Approved by Sam · Sent by Helpin AI' : 'Helpin AI draft · Awaiting approval'}</span></div>
               <div className="wire-resolution wire-reveal" data-revealed={t >= 145}><CheckIcon size={15} /><span>Customer notified. Loop closed.</span></div>
             </div>
           </div>
