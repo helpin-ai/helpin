@@ -177,7 +177,7 @@ export default function CRMPage() {
           </div>
         </section>
 
-        <section id="crm-signals" className="crm-dark">
+        <section id="crm-signals" className="crm-dark section-motion"><HeroVortex variant="converge" tone="dark" />
           <div className="wrap">
             <div className="crm-section-intro">
               <SectionHead

@@ -56,7 +56,7 @@ export default function AIAgentsPage() {
 
         </div>
       </section>
-      <section id="agent-ask" className="agents-ask-section ask-agent-section">
+      <section id="agent-ask" className="agents-ask-section ask-agent-section section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <SectionHead eyebrow="Your starting point" title="Ask a question. Hand off the work." lede="Ask about a customer or give Helpin a task. Ask Agent finds the relevant history, uses the tools you’ve allowed, and brings in specialist agents when the work needs them." />
           <h3 className="agents-demo-heading">One request. The right specialists on it.</h3><figure className="ask-agent-preview">
@@ -71,7 +71,7 @@ export default function AIAgentsPage() {
           <div className="agents-capability-grid">{CAPABILITIES.map(item => <article key={item.id}><div className="agents-capability-copy"><span className="eyebrow">{item.label}</span><h3>{item.title}</h3><p>{item.description}</p></div><AgentWorkflowArt variant={item.id} /><div className="agents-prompt"><span>Try asking</span><p>“{item.prompt}”</p></div><p className="agents-demo-caption">{item.id === 'context' ? 'Don’t recommend a workaround the customer has already outgrown.' : item.id === 'coordination' ? 'Separate investigations. A joined-up plan.' : 'Access to the answer does not have to mean access to change it.'}</p>{item.id === 'tools' && <Link className="agents-text-link" href="/new/developers#mcp">Connect external tools<ArrowRight size={15} /></Link>}</article>)}</div>
         </div>
       </section>
-      <section id="agent-coding" className="agents-coding">
+      <section id="agent-coding" className="agents-coding section-motion"><HeroVortex variant="converge" tone="dark" />
         <div className="wrap agents-split">
           <div><SectionHead eyebrow="From request to proposed change" title="Give coding agents the reason behind the issue." lede="Carry the customer request into planning, implementation, and review. Coding agents work from the task and connected repository, so the proposed change stays tied to the problem your team agreed to solve." /><ul className="agents-benefits"><li><MessageSquare size={18} />Keep the original request attached.</li><li><Code2 size={18} />Prepare the code and tests.</li><li><ShieldCheck size={18} />Review the change before release.</li></ul><a className="agents-text-link" href="/new/products/projects#project-agents">Explore coding agents<ArrowRight size={15} /></a></div>
           <div><AgentWorkflowArt variant="coding" /><p className="agents-demo-caption">Review the implementation—and whether it solves the original problem.</p></div>
