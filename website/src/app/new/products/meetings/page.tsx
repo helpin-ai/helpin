@@ -8,6 +8,7 @@ import { CtaRow, SectionHead } from '../../_components/ui';
 import { MeetingScene, MeetingEvidence } from './meeting-scenes';
 import './meetings.css';
 import { MeetingWorkspace } from './meeting-workspace';
+import { MeetingAgenda } from './meeting-agenda';
 
 export const metadata: Metadata = {
   title: 'Meetings — Helpin',
@@ -34,7 +35,7 @@ export default function MeetingsPage() {
       <div className="meetings-screenshot"><MeetingWorkspace /></div>
     </div></section>
     <nav className="meetings-page-nav" aria-label="On this page"><div className="wrap"><strong>Meetings</strong><a href="#meeting-capture">Capture the call</a><a href="#meeting-decisions">Find the decisions</a><a href="#meeting-work">Move work forward</a><a href="#meeting-context">Keep the context</a></div></nav>
-    <section id="meeting-capture"><div className="wrap"><div className="meetings-split"><div><SectionHead eyebrow="Be in the conversation" title="Stay in the conversation. Helpin keeps the details." lede="Let Helpin join the call and capture what was said. Start with a meeting link, or choose which connected calendar meetings your notetaker should attend." secondaryLede="A customer objection, a rollout decision, a promise to follow up—keep the details your team will need after everyone leaves."/></div><MeetingScene variant="capture"/></div><div className="meetings-features">{[
+    <section id="meeting-capture"><div className="wrap"><div className="meetings-split"><div><SectionHead eyebrow="Choose the calls that matter" title="Stay in the conversation. Helpin keeps the details." lede="See upcoming calls in one list and choose which ones Helpin joins. Turn on a recurring series, skip an individual date, or add a meeting link yourself." secondaryLede="Stay with the customer’s questions. Helpin captures the conversation so your team can revisit the decisions and next steps."/></div><MeetingAgenda/></div><div className="meetings-features">{[
       {Icon:CalendarDays,title:'Choose the calls that matter.',body:'Capture one meeting, set a recurring-series preference, or use workspace defaults for eligible calendar events.'},
       {Icon:Settings2,title:'Make the notetaker yours.',body:'Set its name and join behavior. Choose manual capture, external meetings, or all eligible meetings.'},
       {Icon:Mic,title:'Keep recordings when you need them.',body:'Choose whether to save recordings for playback. Set a default or a preference for an individual meeting.'},
