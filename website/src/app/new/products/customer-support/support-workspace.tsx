@@ -1,5 +1,7 @@
 'use client';
 
+import { StreamingText } from '../../_components/StreamingText';
+
 import '../../_components/product-previews/preview-navigation.css';
 
 import { useEffect, useId, useRef, useState } from 'react';
@@ -53,7 +55,6 @@ export function SupportWorkspace({ variant = 'inbox', highlight = null, panelOnl
   const [paused, setPaused] = useState(false);
   const [frame, setFrame] = useState(4);
   const [draftMode, setDraftMode] = useState<'auto' | 'open' | 'used' | 'closed'>('auto');
-  const [typed, setTyped] = useState(DRAFT);
   const [announcement, setAnnouncement] = useState('');
   const draftId = useId();
   const draftTrigger = useRef<HTMLButtonElement>(null);
@@ -67,19 +68,12 @@ export function SupportWorkspace({ variant = 'inbox', highlight = null, panelOnl
     const timers = timings.map((time, i) => setTimeout(() => setFrame(i + 1), time));
     return () => timers.forEach(clearTimeout);
   }, [active, cycle, variant]);
-  useEffect(() => {
-    if (!active || phase !== 3 || variant !== 'inbox') { setTyped(DRAFT); return; }
-    let count = 0;
-    setTyped('');
-    const timer = setInterval(() => { count += 3; setTyped(DRAFT.slice(0, count)); if (count >= DRAFT.length) clearInterval(timer); }, 35);
-    return () => clearInterval(timer);
-  }, [active, phase, variant]);
   function showDraft() { setPaused(true); setDraftMode('open'); setAnnouncement('AI draft ready to review.'); }
   function togglePlayback() { setPaused(value => !value); setDraftMode('auto'); setAnnouncement(''); }
   return <div className="support-workspace" data-variant={variant} data-panel-only={panelOnly} data-phase={phase} data-playing={active} data-highlight={highlight ?? undefined} ref={container}>
     <div className="swi-playback"><span>{LABELS[variant][phase]}</span><button type="button" onClick={togglePlayback} aria-label={`${paused ? 'Play' : 'Pause'} ${variant === 'agent' ? 'Ask Agent workflow' : 'inbox workflow'} animation`} aria-pressed={paused}>{paused ? <Play size={12} /> : <Pause size={12} />}</button></div>
     <div className="swi-canvas">
-      {!panelOnly && (<div className="swi-shell"><InboxNavigation /><ConversationList phase={phase} /><div className="swi-thread"><div className="swi-panel-head" aria-hidden="true"><strong><span>#142</span> — CSV export stops early</strong><ClipboardList size={14} /><span className="swi-resolve"><Check size={11} />Resolve</span><MoreHorizontal size={14} /></div><div className="swi-mobile-context" aria-hidden="true"><span><Headphones size={11} />{phase >= 1 ? 'Technical Support' : 'Shared inbox'}</span><Tags /></div><Conversation phase={phase} /><div className="swi-composer"><div className="swi-composer-tabs"><span aria-hidden="true">Reply</span><span aria-hidden="true">Note</span><span className="swi-shortcuts" aria-hidden="true">Shortcuts</span>{variant === 'inbox' ? <button ref={draftTrigger} type="button" onClick={showDraft} aria-expanded={draftVisible} aria-controls={draftId}><Sparkles size={12} />AI Tools<ChevronDown size={10} /></button> : <span className="swi-ai-tools-label" aria-hidden="true"><Sparkles size={12} />AI Tools<ChevronDown size={10} /></span>}<span className="swi-ask-label" aria-hidden="true"><Sparkles size={12} />Ask Agent</span></div><div className="swi-draft" id={draftId}><div className="swi-draft-content" hidden={!draftVisible}><div className="swi-draft-title"><span><Mark />{draftMode === 'used' ? 'Reply draft' : 'Helpin AI draft'}</span>{variant === 'inbox' && <button type="button" aria-label="Close AI draft" onClick={() => { setPaused(true); setDraftMode('closed'); setAnnouncement('Draft closed.'); draftTrigger.current?.focus({ preventScroll: true }); }}><X size={12} /></button>}</div><p aria-hidden="true">{typed}{active && phase === 3 && typed.length < DRAFT.length && <span className="swi-caret" />}</p><span className="swi-sr-only">{DRAFT}</span></div><span className="swi-draft-placeholder" hidden={draftVisible}>Write a reply…</span></div><div className="swi-composer-bottom"><span aria-hidden="true"><Smile size={13} /><Paperclip size={13} /><Bold size={13} /><Link2 size={13} /></span>{draftVisible && variant === 'inbox' ? <button type="button" disabled={draftMode === 'used'} onClick={() => { setPaused(true); setDraftMode('used'); setAnnouncement('Draft added to the demo reply. Not sent.'); }}>{draftMode === 'used' ? <><Check size={11} />Draft added</> : 'Use this draft'}</button> : <span className="swi-send" aria-hidden="true">Send <ChevronDown size={10} /></span>}</div></div></div><CustomerDetails phase={phase} /></div>)}
+      {!panelOnly && (<div className="swi-shell"><InboxNavigation /><ConversationList phase={phase} /><div className="swi-thread"><div className="swi-panel-head" aria-hidden="true"><strong><span>#142</span> — CSV export stops early</strong><ClipboardList size={14} /><span className="swi-resolve"><Check size={11} />Resolve</span><MoreHorizontal size={14} /></div><div className="swi-mobile-context" aria-hidden="true"><span><Headphones size={11} />{phase >= 1 ? 'Technical Support' : 'Shared inbox'}</span><Tags /></div><Conversation phase={phase} /><div className="swi-composer"><div className="swi-composer-tabs"><span aria-hidden="true">Reply</span><span aria-hidden="true">Note</span><span className="swi-shortcuts" aria-hidden="true">Shortcuts</span>{variant === 'inbox' ? <button ref={draftTrigger} type="button" onClick={showDraft} aria-expanded={draftVisible} aria-controls={draftId}><Sparkles size={12} />AI Tools<ChevronDown size={10} /></button> : <span className="swi-ai-tools-label" aria-hidden="true"><Sparkles size={12} />AI Tools<ChevronDown size={10} /></span>}<span className="swi-ask-label" aria-hidden="true"><Sparkles size={12} />Ask Agent</span></div><div className="swi-draft" id={draftId}><div className="swi-draft-content" hidden={!draftVisible}><div className="swi-draft-title"><span><Mark />{draftMode === 'used' ? 'Reply draft' : 'Helpin AI draft'}</span>{variant === 'inbox' && <button type="button" aria-label="Close AI draft" onClick={() => { setPaused(true); setDraftMode('closed'); setAnnouncement('Draft closed.'); draftTrigger.current?.focus({ preventScroll: true }); }}><X size={12} /></button>}</div><p aria-hidden="true"><StreamingText text={DRAFT} active={active && phase === 3 && variant === 'inbox'} duration={2400} /></p><span className="swi-sr-only">{DRAFT}</span></div><span className="swi-draft-placeholder" hidden={draftVisible}>Write a reply…</span></div><div className="swi-composer-bottom"><span aria-hidden="true"><Smile size={13} /><Paperclip size={13} /><Bold size={13} /><Link2 size={13} /></span>{draftVisible && variant === 'inbox' ? <button type="button" disabled={draftMode === 'used'} onClick={() => { setPaused(true); setDraftMode('used'); setAnnouncement('Draft added to the demo reply. Not sent.'); }}>{draftMode === 'used' ? <><Check size={11} />Draft added</> : 'Use this draft'}</button> : <span className="swi-send" aria-hidden="true">Send <ChevronDown size={10} /></span>}</div></div></div><CustomerDetails phase={phase} /></div>)}
       {variant === 'agent' && <AskAgent phase={panelOnly ? Math.max(1, phase) : phase} />}
     </div><span className="swi-sr-only" role="status">{announcement}</span>
   </div>;

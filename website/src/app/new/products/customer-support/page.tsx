@@ -95,7 +95,7 @@ export default function CustomerSupportPage() {
           <div className="support-hero-grid">
             <div className="hero-inner">
               <Availability category="AI support inbox" />
-              <h1>Support that ends with a fix, <span>not a ticket number.</span></h1>
+              <h1><span className="support-headline-opening">Support that ends</span> with a fix, <span>not a ticket number.</span></h1>
               <p className="lede">Helpin AI answers from your docs, customer history and your own logs. When a request needs a fix, it goes to a teammate or a coding agent with the conversation attached — and the customer hears back when it ships.</p>
               <Actions />
               <CtaNote trial support />

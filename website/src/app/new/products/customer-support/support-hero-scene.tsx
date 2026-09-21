@@ -85,8 +85,22 @@ export function SupportHeroScene() {
     if (!ready || !active) return;
     setElapsed(0);
     const started = performance.now();
-    const timer = window.setInterval(() => setElapsed((performance.now() - started) % DEMO_DURATION), 50);
-    return () => window.clearInterval(timer);
+    let frameId = 0;
+    let previousFrame = '';
+    const advance = (now: number) => {
+      const elapsed = (now - started) % DEMO_DURATION;
+      const next = demoFrame(elapsed, timestamp.current);
+      const last = next.messages.at(-1);
+      const signature = `${last?.id}:${last?.content.length}:${last?.isStreaming}:${next.isAIThinking}:${next.isTyping}:${next.stage}`;
+      // Paint at display cadence, but only update the widget when content changes.
+      if (signature !== previousFrame) {
+        previousFrame = signature;
+        setElapsed(elapsed);
+      }
+      frameId = requestAnimationFrame(advance);
+    };
+    frameId = requestAnimationFrame(advance);
+    return () => cancelAnimationFrame(frameId);
   }, [ready, active]);
 
   useEffect(() => {
