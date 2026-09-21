@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 const files = {
   home: readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8'),
   globals: readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8'),
-  pricing: readFileSync(new URL('../src/app/pricing/page.tsx', import.meta.url), 'utf8'),
+  pricing: ['page.tsx', 'pricing-data.ts', 'PricingPlans.tsx', 'PricingSections.tsx'].map(file => readFileSync(new URL('../src/app/pricing/' + file, import.meta.url), 'utf8')).join('\n'),
   navbar: readFileSync(new URL('../src/components/Navbar.tsx', import.meta.url), 'utf8'),
   footer: readFileSync(new URL('../src/components/Footer.tsx', import.meta.url), 'utf8'),
 };
@@ -50,8 +50,10 @@ describe('marketing signup journey', () => {
   });
 
   it('keeps conversion buttons out of the pricing hero', () => {
-    assert.doesNotMatch(files.pricing, /Start free trial/);
-    assert.doesNotMatch(files.pricing, /Book a demo/);
+    const hero = files.pricing.slice(files.pricing.indexOf('<section className="pricing-hero">'), files.pricing.indexOf('<PricingPlans />'));
+    assert.doesNotMatch(hero, /Start free trial|Book a demo/);
+    assert.match(hero, /#cloud-plans/);
+    assert.match(hero, /#self-hosted/);
   });
 
   it('frames the original workflow animation with the ambient hero canvas', () => {

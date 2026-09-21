@@ -31,8 +31,8 @@ const variants = [
   {
     output: resolve(websiteRoot, 'public/og/helpin-pricing-green.png'),
     eyebrow: 'HELPIN PRICING',
-    headline: ['Focus on growth,', 'not the seat count.'],
-    support: 'Every module. AI agents included.',
+    headline: ['One product.', 'Choose how you run it.'],
+    support: 'Open source or Cloud. Unlimited teammates.',
     visual: 'pricing',
   },
   {
