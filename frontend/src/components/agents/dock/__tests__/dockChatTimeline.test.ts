@@ -55,6 +55,24 @@ function stream(
 }
 
 describe('mergePersistedChatMessages', () => {
+  it('does not append an uncorrelated runtime user echo beside the accepted message', () => {
+    const saved = { ...persisted(1, 'Continue', '2026-09-21T09:00:00Z'), client_message_id: 'submission-1' };
+    const echo = transcript(3, 'Continue', '2026-09-21T09:00:00.100Z');
+    expect(mergePersistedChatMessages(stream([echo]), [saved])?.transcript_messages.map(m => m.content)).toEqual(['Continue']);
+  });
+
+  it('keeps distinct identical submissions and accepts a durable websocket row before its page', () => {
+    const saved = { ...persisted(1, 'Continue', '2026-09-21T09:00:00Z'), client_message_id: 'submission-1' };
+    const incoming = { ...transcript(3, 'Continue', '2026-09-21T09:00:01Z'), event_id: 'msg:saved-2', client_message_id: 'submission-2' };
+    expect(mergePersistedChatMessages(stream([incoming]), [saved])?.transcript_messages).toHaveLength(2);
+  });
+
+  it('reconciles message pages by submission identity even when row IDs differ', () => {
+    const saved = { ...persisted(1, 'Continue', '2026-09-21T09:00:00Z'), client_message_id: 'submission-1' };
+    const confirmed = { ...saved, id: 'canonical-row', delivery_status: 'sent' as const };
+    expect(mergeMessagePages([saved], [confirmed])).toEqual([confirmed]);
+  });
+
   it('restores a locally failed message when delivery is authoritatively confirmed', () => {
     const confirmed = { ...persisted(2, 'Delivered', '2026-08-15T10:00:00Z'),
       role: 'user' as const, client_message_id: 'lost-ack', delivery_status: 'sent' as const };
@@ -136,7 +154,7 @@ describe('mergePersistedChatMessages', () => {
     const merged = mergePersistedChatMessages(
       stream([
         transcript(1, 'older snapshot history', '2026-08-13T20:50:21Z'),
-        transcript(3, 'new live tail', '2026-08-14T12:08:07Z'),
+        { ...transcript(3, 'new live tail', '2026-08-14T12:08:07Z'), event_id: 'msg:new-live-tail' },
       ]),
       [persisted(2, 'durable tail', '2026-08-14T12:08:04Z')],
     );

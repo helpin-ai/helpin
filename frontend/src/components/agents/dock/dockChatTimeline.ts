@@ -143,7 +143,7 @@ export function mergePersistedChatMessages(
       || !(message.client_message_id && options.failedClientMessageIds?.has(message.client_message_id)))
   );
 
-  const orderedMessages = reconcileWorkSummaries(messages.filter(isVisible));
+  const orderedMessages = mergeMessagePages([], messages.filter(isVisible));
   const persisted = orderedMessages
     .filter((message) => message.role === 'user' || message.role === 'assistant' || message.message_type === 'status')
     .map((message) => ({
@@ -189,6 +189,12 @@ export function mergePersistedChatMessages(
   // be proven to be newer than the durable tail.
   const extras = (stream?.transcript_messages ?? [])
     .filter(isVisible)
+    // User turns come from the durable message API (including its websocket
+    // events) or the local pending submission. A runtime echo without a client
+    // identity cannot establish a new turn: its independent ID/timestamp can
+    // otherwise paint the accepted submission twice until history reloads.
+    .filter((message) => message.role !== 'user'
+      || !!message.client_message_id || message.event_id.startsWith('msg:'))
     .filter((message) => !transcriptIdentityKeys(message).some((key) => persistedMessageKeys.has(key)))
     .filter((message) => {
       if (persisted.length === 0) return true;
@@ -248,8 +254,16 @@ export function mergePersistedChatMessages(
 }
 
 export function mergeMessagePages(current: AgentRunMessage[], incoming: AgentRunMessage[]) {
-  const messages = new Map(current.map((message) => [message.id, message]));
-  for (const message of incoming) messages.set(message.id, message);
+  const messages = new Map<string, AgentRunMessage>();
+  const submissions = new Map<string, string>();
+  for (const message of [...current, ...incoming]) {
+    if (message.role === 'user' && message.client_message_id) {
+      const previousID = submissions.get(message.client_message_id);
+      if (previousID && previousID !== message.id) messages.delete(previousID);
+      submissions.set(message.client_message_id, message.id);
+    }
+    messages.set(message.id, message);
+  }
   return reconcileWorkSummaries([...messages.values()]);
 }
 
