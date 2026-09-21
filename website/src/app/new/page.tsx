@@ -71,7 +71,7 @@ export default function NewHomePage() {
           <div className="hero-inner">
             <span className="eyebrow">Support, meetings, projects, CRM and docs — on one customer history</span>
             <h1>From customer question to shipped fix.</h1>
-            <p className="lede">Helpin brings support, project tracking, CRM, meeting notes and a help center together for SaaS teams. AI agents turn customer questions into answers, tasks and fixes, with approvals your team controls.</p>
+            <p className="lede">Helpin brings support, projects, CRM, meetings, and knowledge into one place. AI agents turn customer conversations into answers, tasks, and action — with your team in control.</p>
             <CtaRow />
             <CtaNote />
 
