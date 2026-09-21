@@ -170,3 +170,24 @@ describe('task update agent presentation', () => {
     expect(filterRedundantAgentLifecycleEntries([cancellation, lifecycle])).toEqual([cancellation, lifecycle]);
   });
 });
+
+describe('readable task activity values', () => {
+  function change(field: string, action: string, oldValue?: string, newValue?: string, metadata = {}) {
+    const entry = runActivityEntry();
+    entry.activity = { ...entry.activity!, field_name: field, action, old_value: oldValue, new_value: newValue, metadata };
+    return entry;
+  }
+  it('uses label names for additions and removals', () => {
+    expect(taskUpdateEventLabel(change('label', 'label_added', undefined, 'label-id', {new_label:'Bug'}))).toBe('Added label Bug');
+    expect(taskUpdateEventLabel(change('label', 'label_removed', 'label-id', undefined, {old_label:'Bug'}))).toBe('Removed label Bug');
+  });
+  it('uses member names and hides unavailable reference IDs', () => {
+    expect(taskUpdateEventLabel(change('owner', 'owner_added', undefined, 'member-id', {new_label:'Alex'}))).toBe('Added owner Alex');
+    expect(taskUpdateEventLabel(change('label', 'label_added', undefined, 'label-id'))).toBe('Added label (unavailable)');
+    expect(taskUpdateEventLabel(change('assigned_agent_id', 'updated', undefined, 'agent-id'))).toBe('Assigned agent changed');
+  });
+  it('preserves readable actions and ordinary values', () => {
+    expect(taskUpdateEventLabel(change('workflow_state_id', 'moved this task to In progress', 'state-1', 'state-2'))).toBe('Moved this task to In progress');
+    expect(taskUpdateEventLabel(change('priority', 'updated', 'low', 'high'))).toBe('Priority changed · low → high');
+  });
+});

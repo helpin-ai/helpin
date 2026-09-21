@@ -112,3 +112,18 @@ func TestSafeOperationalListSchemasAreBounded(t *testing.T) {
 		})
 	}
 }
+
+func TestInternalLinksAreRoutine(t *testing.T) {
+	for _, alias := range []string{"link_crm_objects", "link_document_to_object", "link_support_conversation_task", "link_support_conversation_contact"} {
+		meta, ok := ToolMetadataForAlias(alias)
+		if !ok || meta.RiskLevel != RiskLevelRoutine {
+			t.Errorf("%s should be routine: %#v", alias, meta)
+		}
+	}
+	for _, alias := range []string{"unlink_crm_association", "send_support_reply"} {
+		meta, _ := ToolMetadataForAlias(alias)
+		if meta != nil && meta.RiskLevel == RiskLevelRoutine {
+			t.Errorf("%s must not become routine", alias)
+		}
+	}
+}

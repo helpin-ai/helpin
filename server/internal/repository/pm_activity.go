@@ -99,6 +99,9 @@ func (r *PMActivityRepository) ListByWorkspace(ctx context.Context, workspaceID 
 
 // Create inserts an activity log entry.
 func (r *PMActivityRepository) Create(ctx context.Context, entry *model.PMActivityLog) error {
+	rows := []model.PMActivityLog{*entry}
+	r.enrichTaskValueLabels(ctx, rows)
+	entry.Metadata = rows[0].Metadata
 	db := r.db.WithContext(ctx)
 	r.eventTypeColumnOnce.Do(func() {
 		r.hasEventTypeColumn = r.db.Migrator().HasColumn(&model.PMActivityLog{}, "event_type")
@@ -123,6 +126,7 @@ func (r *PMActivityRepository) Create(ctx context.Context, entry *model.PMActivi
 }
 
 func (r *PMActivityRepository) enrichActors(ctx context.Context, rows []model.PMActivityLog) ([]model.ActivityLogEntry, error) {
+	r.enrichTaskValueLabels(ctx, rows)
 	entries := make([]model.ActivityLogEntry, 0, len(rows))
 	for _, row := range rows {
 		var actor *model.User

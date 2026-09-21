@@ -220,6 +220,22 @@ export function taskUpdateEventLabel(entry: TaskUpdateEntry, linkedRun?: AgentRu
     const target = deliveryTargetLabel(activity.new_value);
     return target ? `Delivery target changed · ${target}` : 'Delivery target changed';
   }
+  const field = activity.field_name ?? '';
+  const oldLabel = metadataString(entry, 'old_label');
+  const newLabel = metadataString(entry, 'new_label');
+  if (['label', 'owner', 'follower'].includes(field)) {
+    const removed = activity.action.endsWith('_removed');
+    const value = (removed ? oldLabel : newLabel) || '(unavailable)';
+    if (activity.action.endsWith('_added') || removed) return `${removed ? 'Removed' : 'Added'} ${field} ${value}`;
+    return sentenceCase(`${field} changed${oldLabel && newLabel ? ` · ${oldLabel} → ${newLabel}` : newLabel ? ` to ${newLabel}` : ''}`);
+  }
+  if (field.endsWith('_id') || field.endsWith('_ids')) {
+    // Legacy events often already contain a readable action. Never replace
+    // it with the raw foreign keys retained in the audit record.
+    if (activity.action.includes(' ') && !/[0-9a-f]{8}-[0-9a-f-]{27,}/i.test(activity.action)) return sentenceCase(activity.action);
+    const name = field.replace(/_ids?$/, '').replace(/_/g, ' ');
+    return sentenceCase(`${name} changed${oldLabel && newLabel ? ` · ${oldLabel} → ${newLabel}` : newLabel ? ` to ${newLabel}` : ''}`);
+  }
   if (activity.field_name && activity.new_value) {
     return sentenceCase(`${activity.field_name.replace(/_/g, ' ')} changed${activity.old_value ? ` · ${activity.old_value} → ${activity.new_value}` : ` to ${activity.new_value}`}`);
   }
