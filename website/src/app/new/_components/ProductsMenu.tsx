@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Bot, Building2, CircleUserRound, Kanban, MessagesSquare, Video } from 'lucide-react';
+import { ArrowRight, BookOpen, Bot, Building2, Kanban, MessagesSquare, Video } from 'lucide-react';
 import './products-menu.css';
 
 export const PRODUCTS = [
@@ -8,7 +8,6 @@ export const PRODUCTS = [
   { label: 'Projects', description: 'Ship what your customers need.', href: '/new/products/projects', icon: Kanban },
   { label: 'CRM', description: 'Move customer relationships forward.', href: '/new/products/crm', icon: Building2 },
   { label: 'Knowledge', description: 'Trusted answers, in one place.', href: '/new/products/knowledge', icon: BookOpen },
-  { label: 'Customer records', description: 'See the full customer story.', href: '/new#record', icon: CircleUserRound },
 ];
 
 export function ProductLink({ item }: { item: typeof PRODUCTS[number] }) {
