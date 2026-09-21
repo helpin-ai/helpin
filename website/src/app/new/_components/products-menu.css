@@ -1,5 +1,6 @@
-/* Short product benefits with a deep green Ask Agent panel. */
-.hp3 .nav-product-panel {
+/* Keep centering and entry motion ahead of the generic .nav-panel rules,
+   regardless of stylesheet order after loading another marketing route. */
+.hp3 .nav-panel.nav-product-panel {
   left: 50%;
   transform: translateX(-50%);
   width: min(1020px, calc(100vw - 48px));
@@ -46,6 +47,6 @@
   .hp3 .nav-mobile-products .nav-product + .nav-product { border-top: 1px solid var(--border); border-radius: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hp3 .nav-product-panel { animation: none; }
+  .hp3 .nav-panel.nav-product-panel { animation: none; }
   .hp3 .nav-product, .hp3 .nav-product-art, .hp3 .nav-product-title > svg, .hp3 .nav-products-agent-link, .hp3 .nav-products-agent-cta svg { transition: none; }
 }
