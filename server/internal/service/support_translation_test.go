@@ -648,3 +648,25 @@ func TestTranslationDetectionRecoversAfterRepeatedProviderFailures(t *testing.T)
 		})
 	}
 }
+
+func TestTranslationSendWithoutCustomerEvidencePreservesDraft(t *testing.T) {
+	for _, mode := range []string{"chat_only", "email_only", "chat_and_email"} {
+		t.Run(mode, func(t *testing.T) {
+			env, conv, provider := translationFixture(t)
+			setTranslationWorkspaceSettings(t, env, conv.WorkspaceID, func(settings *model.SupportInboxSettings) {
+				settings.TranslationCustomerLanguage = ""
+				settings.TranslationOutgoingEnabled = true
+			})
+			provider.fail = true
+			req := explicitDeliveryRequest(t, mode)
+			req.Content = "Bonjour, voici votre mise à jour."
+			sent, err := env.service.supportInboxService.CreateConversationMessage(context.Background(), conv.WorkspaceID, conv.ID, req, "user", strPtr("22222222-2222-2222-2222-222222222222"), nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sent.Content != req.Content || sent.TranslationID != "" || provider.calls != 0 {
+				t.Fatalf("no-evidence send changed draft: %+v calls=%d", sent, provider.calls)
+			}
+		})
+	}
+}
