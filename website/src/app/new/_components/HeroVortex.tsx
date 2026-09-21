@@ -28,7 +28,7 @@ const BUNDLES = [
   }),
 }));
 
-type MotionVariant = 'vortex' | 'flow' | 'connections' | 'orbit';
+type MotionVariant = 'vortex' | 'flow' | 'connections' | 'orbit' | 'converge';
 
 // Related line families share the same playback and accessibility contract.
 const FLOW = [0, 1].map(group => ({
@@ -52,7 +52,14 @@ const ORBITS = [{
     opacity: 0.18 + (1 - Math.abs(i - 8.5) / 9) * 0.3,
   })),
 }];
-const ART = { vortex: BUNDLES, flow: FLOW, connections: CONNECTIONS, orbit: ORBITS };
+const CONVERGING = [0, 1].map(side => ({
+  transform: side ? 'translate(1400 0) scale(-1 1)' : '',
+  lines: Array.from({ length: 10 }, (_, i) => ({
+    d: `M -120 ${40 + i * 44} C 200 ${40 + i * 44}, 350 ${470 + i * 5}, 700 560`,
+    opacity: 0.28 + (i % 3) * 0.07,
+  })),
+}));
+const ART = { vortex: BUNDLES, flow: FLOW, connections: CONNECTIONS, orbit: ORBITS, converge: CONVERGING };
 
 export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: MotionVariant; tone?: 'light' | 'dark' }) {
   const id = useId().replace(/:/g, '');

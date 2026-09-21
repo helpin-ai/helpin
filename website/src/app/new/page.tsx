@@ -2,7 +2,6 @@ import { Braces, Database, Plug, Server, SlidersHorizontal, Webhook } from 'luci
 import { CustomerLogos } from './_components/CustomerLogos';
 import { PreviewNav } from './_components/PreviewNav';
 import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
-import { GridFlow } from './_components/GridFlow';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { HeroVortex } from './_components/HeroVortex';
 import { LoopWire } from './_components/LoopWire';
@@ -87,8 +86,8 @@ export default function NewHomePage() {
       </section>
 
       {/* Shared customer history: the context behind the work. */}
-      <section id="record" className="dark">
-        <GridFlow />
+      <section id="record" className="dark record-motion">
+        <HeroVortex variant="converge" tone="dark" />
         <div className="wrap">
           <div className="rs-copy record-intro">
             <span className="rs-eyebrow">One customer. One record.</span>
