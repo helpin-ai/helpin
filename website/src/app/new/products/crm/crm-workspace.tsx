@@ -62,7 +62,7 @@ export function CRMNavigation({
   view,
   onView,
 }: {
-  view: View | "deals";
+  view: View | "deals" | "playbooks";
   onView?: (view: View) => void;
 }) {
   const modules = [
@@ -144,7 +144,10 @@ export function CRMNavigation({
             {links.map(([name, label]) => (
               <span
                 key={label}
-                data-active={view === "deals" && label === "Deals"}
+                data-active={
+                  (view === "deals" && label === "Deals") ||
+                  (view === "playbooks" && label === "Playbooks")
+                }
                 className={
                   label === "Playbooks" ? "cw-nav-separator" : undefined
                 }

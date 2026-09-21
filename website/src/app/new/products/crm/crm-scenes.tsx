@@ -4,17 +4,11 @@ import { useState, useId, useRef, type CSSProperties } from "react";
 import {
   ArrowRight,
   Building2,
-  Check,
-  Circle,
   CircleDot,
-  Mail,
-  Pause,
-  Play,
   ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
-import { useCRMPlayback } from "./use-crm-playback";
 import { CRMAvatar, CRMMark, CRMNavigation } from "./crm-workspace";
 import { CRMIcon } from "./crm-icons";
 import { CRMCompanyLogo } from "./crm-company-logo";
@@ -674,94 +668,6 @@ export function CRMSignals() {
             <span className="crm-mini-label">PROPOSED NEXT STEP</span>
             <p>{item.action}</p>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function CRMPlaybook() {
-  const { container, active, phase, paused, setPaused } = useCRMPlayback();
-  return (
-    <div
-      className="crm-motion"
-      ref={container}
-      data-playing={active}
-      data-phase={phase}
-      role="group"
-      aria-label="A renewal playbook connects the customer requirement to engineering review and a proposed customer update. The message remains a draft awaiting approval."
-    >
-      <div className="crm-demo-toolbar">
-        <span>
-          <b className="crm-workspace-mark">O</b>OrbitDesk <i>/</i> Playbooks
-        </span>
-        <button
-          type="button"
-          onClick={() => setPaused(!paused)}
-          aria-pressed={paused}
-          aria-label={`${paused ? "Play" : "Pause"} playbook animation`}
-        >
-          {paused ? <Play size={12} /> : <Pause size={12} />}
-        </button>
-      </div>
-      <div className="crm-playbook-demo">
-        <div className="crm-playbook-heading">
-          <span className="crm-mini-label">NORTHSTAR LABS / RENEWAL</span>
-          <h3>Resolve the concern before the renewal.</h3>
-          <p>Outcome: give Maya a confirmed path to a complete export.</p>
-        </div>
-        <div className="crm-milestone" data-current={phase === 0}>
-          <span className="crm-milestone-icon">
-            <Check size={15} />
-          </span>
-          <div>
-            <strong>Understand the customer requirement</strong>
-            <small>Email and meeting evidence attached</small>
-          </div>
-          <span className="crm-status">Complete</span>
-        </div>
-        <div className="crm-milestone" data-current={phase === 1}>
-          <span className="crm-milestone-icon">
-            <CircleDot size={15} />
-          </span>
-          <div>
-            <strong>Confirm the export fix</strong>
-            <small>EXP-142 · Engineering review</small>
-          </div>
-          <span className="crm-status crm-status-review">In review</span>
-        </div>
-        <div className="crm-milestone" data-current={phase >= 2}>
-          <span className="crm-milestone-icon">
-            <Circle size={15} />
-          </span>
-          <div>
-            <strong>Prepare the customer update</strong>
-            <small>Sam Rivera · After engineering confirms</small>
-          </div>
-        </div>
-        <div className="crm-playbook-proposal" data-ready={phase >= 2}>
-          <div>
-            <CRMMark />
-            <span>Agent proposal</span>
-            <span className="crm-review-pill">Approval required</span>
-          </div>
-          <div className="crm-proposal-message">
-            <span>
-              TO <strong>Maya Chen</strong>
-            </span>
-            <p>
-              Hi Maya, engineering is reviewing the export fix. I’ll confirm the
-              result before we plan the wider rollout and discuss your renewal.
-            </p>
-          </div>
-          <span>
-            <Mail size={13} />
-            Customer message · Draft for review
-          </span>
-        </div>
-        <div className="crm-playbook-foot">
-          <ShieldCheck size={15} />
-          Sam reviews the message before it can be sent.
         </div>
       </div>
     </div>

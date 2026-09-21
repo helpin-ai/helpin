@@ -14,7 +14,8 @@ import { PreviewNav } from "../../_components/PreviewNav";
 import { PreviewFooter } from "../../_components/PreviewFooter";
 import { ConnectedWorkspace } from "../../_components/ConnectedWorkspace";
 import { CtaRow, SectionHead } from "../../_components/ui";
-import { CRMPipeline, CRMSignals, CRMPlaybook } from "./crm-scenes";
+import { CRMPipeline, CRMSignals } from "./crm-scenes";
+import { CRMPlaybook } from "./crm-playbook";
 import { CRMWorkspace } from "./crm-workspace";
 import "./crm.css";
 
@@ -209,11 +210,11 @@ export default function CRMPage() {
         </section>
 
         <section id="crm-follow-through">
-          <div className="wrap crm-split">
-            <div>
+          <div className="wrap">
+            <div className="crm-centered cp-intro">
               <SectionHead
                 eyebrow="From a signal to a customer outcome"
-                title="Give every follow-up an owner and a plan."
+                title="Give every follow‑up an owner and a plan."
                 lede="Use playbooks to define the outcome, milestones, and responsibilities behind a follow-up, sales handoff, or renewal recovery."
                 secondaryLede="Connect an agent to review updates and propose the work. Your team approves customer messages, CRM changes, and tasks before those playbook actions run."
               />
