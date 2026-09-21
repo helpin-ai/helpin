@@ -76,7 +76,7 @@ export default function NewHomePage() {
             <CtaNote />
 
           </div>
-          <figure className="hero-workflow"><LoopWire /><figcaption>Example workspace</figcaption></figure>
+          <figure className="hero-workflow"><LoopWire /></figure>
           <div className="hero-evaluation">
             <p className="hero-replaces">Bring the work you track in Intercom, Linear, HubSpot and Notion into one system. Connect the tools you keep through our APIs and selected integrations.</p>
             <div className="hero-proof"><span>Used by teams at</span><ul>{['ContentStudio', 'Replug', 'Usermaven', 'ContentPen'].map(name => <li key={name}>{name}</li>)}</ul></div>
