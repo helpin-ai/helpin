@@ -174,3 +174,25 @@ func (r *CRMAssociationRepository) UpdateLabel(ctx context.Context, id string, l
 	}
 	return nil
 }
+
+// SingleCompanyForContact returns a company only when exactly one distinct,
+// existing company in this workspace is associated with the contact. A primary
+// label does not disambiguate multiple companies for a support conversation.
+func (r *CRMAssociationRepository) SingleCompanyForContact(ctx context.Context, workspaceID, contactID string) (*string, error) {
+	var companyIDs []string
+	err := r.db.WithContext(ctx).Model(&model.CRMCompany{}).
+		Distinct("crm_companies.id").
+		Joins(`JOIN crm_associations AS association ON association.workspace_id = crm_companies.workspace_id AND (
+   (association.from_object_type = ? AND association.from_object_id = ? AND association.to_object_type = ? AND association.to_object_id = crm_companies.id)
+   OR (association.to_object_type = ? AND association.to_object_id = ? AND association.from_object_type = ? AND association.from_object_id = crm_companies.id)
+  )`, model.CRMObjectContact, contactID, model.CRMObjectCompany, model.CRMObjectContact, contactID, model.CRMObjectCompany).
+		Where("crm_companies.workspace_id = ?", workspaceID).
+		Limit(2).Pluck("crm_companies.id", &companyIDs).Error
+	if err != nil {
+		return nil, fmt.Errorf("resolve single contact company: %w", err)
+	}
+	if len(companyIDs) != 1 {
+		return nil, nil
+	}
+	return &companyIDs[0], nil
+}

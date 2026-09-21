@@ -3741,6 +3741,15 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		if s.supportInboxService != nil && s.supportInboxService.contactRepo != nil {
 			if contactID := s.supportInboxService.matchOrCreateCRMContactTx(ctx, s.supportInboxService.contactRepo.WithTx(tx), conversation.WorkspaceID, conversation.CustomerEmail, conversation.CustomerName, "email_forward"); contactID != nil {
 				conversation.CRMContactID = contactID
+				// Snapshot an unambiguous CRM membership for this new email
+				// conversation. Replies preserve any later selection or clear.
+				if conversation.CRMCompanyID == nil {
+					companyID, err := repository.NewCRMAssociationRepository(tx).SingleCompanyForContact(ctx, conversation.WorkspaceID, *contactID)
+					if err != nil {
+						return err
+					}
+					conversation.CRMCompanyID = companyID
+				}
 				if err := convRepoTx.Update(ctx, conversation); err != nil {
 					return err
 				}
