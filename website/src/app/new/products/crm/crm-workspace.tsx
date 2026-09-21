@@ -1,5 +1,7 @@
 "use client";
 
+import '../../_components/product-previews/preview-navigation.css';
+
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -81,7 +83,7 @@ export function CRMNavigation({
     ["BulbIcon", "Signals"],
   ] as const;
   return (
-    <aside className="cw-nav">
+    <aside className="cw-nav preview-sidebar">
       <div className="cw-brand">
         <b>O</b>
         <strong>OrbitDesk</strong>

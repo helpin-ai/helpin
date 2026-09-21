@@ -1,5 +1,7 @@
 "use client";
 
+import '../product-previews/preview-navigation.css';
+
 import {
   useEffect,
   useId,
@@ -217,7 +219,7 @@ export function AgentDirectoryPreview() {
   return (
     <div className="adp" aria-label="OrbitDesk agents workspace preview">
       <div className="adp-frame">
-        <aside className="adp-sidebar" aria-label="Workspace navigation">
+        <aside className="adp-sidebar preview-sidebar" aria-label="Workspace navigation">
           <div className="adp-brand">
             <b>O</b>
             <strong>OrbitDesk</strong>
