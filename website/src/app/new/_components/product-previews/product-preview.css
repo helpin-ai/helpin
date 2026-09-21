@@ -13,7 +13,7 @@
 .hp3 .product-preview .mw-work { display: flex; flex-direction: column; min-height: 0; }
 .hp3 .product-preview .mw-panel { height: auto; min-height: 0; flex: 1; }
 .hp3 .product-preview .cw-frame { height: calc(var(--preview-height) - 50px); grid-template-columns: 230px minmax(0, 1fr); }
-.hp3 .product-preview .cw-nav { display: flex; min-height: 0; }
+.hp3 .product-preview .cw-nav { --preview-font-step: 0px; display: flex; min-height: 0; }
 .hp3 .product-preview .cw-crm, .hp3 .product-preview .cw-apps { overflow-y: auto; }
 .hp3 .product-preview .crm-workspace { border: 0; border-radius: 0; box-shadow: none; }
 .hp3 .product-preview[data-product="projects"] .product-preview-viewport { background: #171b18; border-color: #303a33; }
