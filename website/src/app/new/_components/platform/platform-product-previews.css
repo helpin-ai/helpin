@@ -1,0 +1,13 @@
+.hp3 .community-showcase .community-switcher {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.hp3 .community-showcase .community-switcher button { min-width: 0; justify-content: center; }
+.hp3 .community-showcase .community-switcher button > svg:last-child { display: none; }
+.hp3 .community-showcase .community-product-stage { --px-preview-height: 680px; }
+@media (max-width: 960px) {
+  .hp3 .community-showcase .community-switcher { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .hp3 .community-showcase .community-switcher { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
