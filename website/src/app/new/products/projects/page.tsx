@@ -13,7 +13,6 @@ import { ProjectDelivery } from './project-delivery';
 import './projects.css';
 import './project-outcomes.css';
 import './projects-polish.css';
-import './project-hero.css';
 import './project-focus.css';
 import './planning-scenes.css';
 import './project-intake.css';
