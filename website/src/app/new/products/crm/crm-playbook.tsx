@@ -17,16 +17,19 @@ const STEPS = [
 ] as const;
 const MILESTONES = [
   [
-    "Understand the customer requirement",
-    "The customer’s concern is documented, with the original conversation and affected work attached.",
+    "Understand the concern.",
+    "The account owner has documented what the customer needs and linked the relevant conversation and work.",
+    "Maya needs complete exports and a confirmed update before discussing renewal.",
   ],
   [
-    "Confirm the resolution",
-    "Engineering confirms the fix and the customer can complete the workflow that was blocked.",
+    "Confirm the customer is unblocked.",
+    "The team has confirmed the release, and the customer has verified that the affected workflow works.",
+    "Maya confirms that the full contact list exports successfully.",
   ],
   [
-    "Agree on the renewal next step",
-    "The customer has reviewed the update and agreed on a renewal decision date with the account owner.",
+    "Agree on the renewal next step.",
+    "The customer and account owner have agreed on the next commercial step and its timing.",
+    "Sam and Maya agree when to review the renewal proposal.",
   ],
 ];
 const SIGNALS = [
@@ -35,7 +38,7 @@ const SIGNALS = [
     "Complete exports needed before renewal",
     "Sam Rivera",
     "1 / 3 achieved",
-    "Confirm EXP-142 with engineering",
+    "Confirm the release status with engineering",
     "Waiting",
   ],
   [
@@ -103,7 +106,7 @@ export function CRMPlaybook() {
   return (
     <div
       className="crm-workspace cp-workspace"
-      aria-label="OrbitDesk renewal recovery playbook"
+      aria-label="OrbitDesk renewal follow-through playbook"
     >
       <div className="cp-frame">
         <CRMNavigation view="playbooks" />
@@ -111,10 +114,10 @@ export function CRMPlaybook() {
           <header className="cp-header">
             <span className="cp-breadcrumb">Playbooks</span>
             <div>
-              <h3>Renewal recovery</h3>
+              <h3>Renewal follow-through</h3>
             </div>
             <p>
-              Published version 3{" "}
+              Published · Version 3{" "}
               <span className="cp-published">Accepting signals</span>
             </p>
           </header>
@@ -194,7 +197,7 @@ export function CRMPlaybook() {
                                 <span className="cp-card-eyebrow">
                                   Playbook
                                 </span>
-                                <h5>Renewal recovery</h5>
+                                <h5>Renewal follow-through</h5>
                               </div>
                             </header>
                             <div className="cp-outcome">
@@ -233,15 +236,15 @@ export function CRMPlaybook() {
                         <>
                           <div className="cp-editor-heading">
                             <div>
-                              <h4>Milestones</h4>
+                              <h4>Define what progress looks like.</h4>
                               <p>
-                                Define what progress looks like at each step.
+                                Give each milestone a result your team can confirm.
                               </p>
                             </div>
                             <span className="cp-count">3 milestones</span>
                           </div>
                           <div className="cp-milestones">
-                            {MILESTONES.map(([name, criteria], index) => (
+                            {MILESTONES.map(([name, criteria, example], index) => (
                               <article
                                 className="cp-milestone-card"
                                 key={name}
@@ -266,7 +269,7 @@ export function CRMPlaybook() {
                                     <Target size={14} aria-hidden="true" />
                                     Success criteria
                                   </span>
-                                  <p>{criteria}</p>
+                                  <p>{criteria}</p><div className="cp-northstar-example"><span className="cp-card-label">Northstar example</span><p>{example}</p></div>
                                 </div>
                               </article>
                             ))}
@@ -355,7 +358,7 @@ export function CRMPlaybook() {
                   <div className="cp-table-scroll">
                     <table>
                       <caption>
-                        Signals in the renewal recovery playbook
+                        Signals in the renewal follow-through playbook
                       </caption>
                       <thead>
                         <tr>
@@ -428,7 +431,7 @@ export function CRMPlaybook() {
                     <dl className="cp-properties">
                       <Field label="Agent">CRM agent</Field>
                       <Field label="Flow">
-                        Renewal recovery · Review updates
+                        Renewal follow-through · Review updates
                       </Field>
                     </dl>
                     <dl className="cp-fields">
@@ -467,7 +470,7 @@ export function CRMPlaybook() {
                     [
                       "Draft created",
                       "Aisha Patel · Yesterday, 14:20",
-                      "Defined the renewal recovery outcome and matching signals.",
+                      "Defined the renewal follow-through outcome and matching signals.",
                     ],
                   ].map(([title, date, body]) => (
                     <li key={title}>

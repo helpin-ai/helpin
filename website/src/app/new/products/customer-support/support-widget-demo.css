@@ -47,3 +47,9 @@
 
 /* Soft text reveals show the stream edge without a cursor at the reserved end. */
 .hp3 .support-widget-mount .helpin-streaming-cursor { display: none; }
+
+/* The release checkpoint is a scene status, not a reply from the workspace. */
+.hp3 .support-widget-mount [aria-label="Release status message"] .helpin-message-agent-header { display: none; }
+.hp3 .support-widget-mount [aria-label="Release status message"] .helpin-message-agent-bubble-wrap { margin-left: 0; display: flex; justify-content: center; width: 100%; }
+.hp3 .support-widget-mount [aria-label="Release status message"] .helpin-message { background: transparent; border: 0; box-shadow: none; padding: 8px 0; }
+.hp3 .support-widget-mount [aria-label="Release status message"] .helpin-message-content { color: #66716c; font-size: 10px; text-align: center; }

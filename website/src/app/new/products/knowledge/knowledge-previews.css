@@ -258,3 +258,5 @@
   .hp3 .kp-preview *, .hp3 .kp-preview *::before, .hp3 .kp-preview *::after { animation:none !important; transition:none !important; }
   .hp3 .kp-playback { display:none; }
 }
+
+.hp3 .kp-library-description{font-size:12px;line-height:1.8;color:var(--kp-muted);margin:-8px 0 20px}

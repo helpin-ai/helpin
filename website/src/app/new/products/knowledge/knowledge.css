@@ -131,3 +131,30 @@
 .hp3 #knowledge-api > .wrap > .sec-head { text-align: center; margin-inline: auto; max-width: 770px; }
 .hp3 #knowledge-api .knowledge-api-points { display: flex; justify-content: center; flex-wrap: wrap; gap: 15px 32px; margin-top: 28px; }
 @media (max-width: 600px) { .hp3 #knowledge-api .knowledge-api-points { justify-content: flex-start; gap: 16px; } }
+
+/* Evidence and publication states remain distinct within the existing previews. */
+.hp3 .knowledge-page .knowledge-supporting-note{font-size:12px;line-height:1.8;color:var(--t3);margin-top:18px}
+.hp3 .knowledge-page .knowledge-demo-caption{font-size:12px;line-height:1.8;text-align:center;color:var(--t3);margin:20px 0 10px}
+.hp3 .knowledge-hero :is(.knowledge-supporting-note,.knowledge-demo-caption){color:var(--on-dark-muted)}
+.hp3 .kp2-panel-heading{font-size:14px;font-weight:500;line-height:1.7;margin-bottom:18px;color:var(--t2)}
+.hp3 .knowledge-source-choice{margin-top:28px;max-width:460px}
+.hp3 .knowledge-source-choice h3{font-size:17px;font-weight:500;line-height:1.5}
+.hp3 .knowledge-source-choice p{font-size:14px;line-height:1.85;color:var(--t2);margin-top:12px}
+.hp3 .ks-source-heading{font-size:16px;font-weight:550;line-height:1.5}
+.hp3 .ks-source-description{font-size:12px;line-height:1.8;color:var(--t2);margin:8px 0 20px}
+.hp3 .ks-update-lifecycle{margin-top:24px;padding-top:20px;border-top:1px solid var(--border)}
+.hp3 .ks-update-lifecycle>.ks-step{display:flex;gap:12px;padding:11px 0;align-items:flex-start}
+.hp3 .ks-update-lifecycle>.ks-step>span{font:10px var(--mono);color:var(--em);padding-top:3px}
+.hp3 .ks-update-lifecycle strong{font-size:12px;font-weight:500;line-height:1.6}
+.hp3 .ks-update-lifecycle p,.hp3 .ks-source-maintenance{font-size:11px;line-height:1.8;color:var(--t2);margin-top:5px}
+.hp3 .ks-source-maintenance{margin-top:18px}
+.hp3 .ks-agent-request{font-size:12px;line-height:1.8;color:var(--t2);padding:14px;background:var(--bg2);border:1px solid var(--border);border-radius:7px;margin:18px 0}
+.hp3 .ks-review-steps>div{align-items:flex-start}
+.hp3 .ks-review-steps strong{font-size:11px;font-weight:500;line-height:1.7}
+.hp3 .ks-review-steps p{font-size:10px;line-height:1.8;color:var(--t2);margin-top:4px}
+.hp3 .ks-review-steps svg{margin-top:3px}
+.hp3 .knowledge-context-labels{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px;color:var(--on-dark-muted);font-size:10px;line-height:1.7}
+.hp3 .knowledge-context-labels>span{display:flex;align-items:center;gap:5px}
+.hp3 #knowledge-gaps .knowledge-gap{align-items:flex-start;flex-wrap:wrap}
+.hp3 #knowledge-gaps .knowledge-gap>div{flex:1;min-width:150px}
+.hp3 #knowledge-gaps .knowledge-gap-badge{display:none}

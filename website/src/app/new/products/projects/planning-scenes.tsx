@@ -12,24 +12,24 @@ export function SprintPlanning({ phase }: { phase: number }) {
     <div className="pp-progress">{Array.from({ length: 8 }, (_, index) => <span key={index} data-done={index < 6 || phase === 1} style={{ '--pp-delay': `${index * .14}s` } as CSSProperties}>{!planning && index < 6 && <Check size={11} />}</span>)}</div>
     <div className="pp-progress-legend"><span><i />{planning ? 'Sprint commitment' : '6 completed'}</span><span><i />{planning ? 'Owners stay attached' : '2 unfinished'}</span></div>
     <div className="pp-transfer" data-carried={moved}>
-      <div className="pp-source"><div className="pp-source-summary"><CheckCheck size={20} /><span><strong>{planning ? '8 tasks committed to Sprint 24' : 'Completed work stays in Sprint 24'}</strong><small>{planning ? 'Selected work is ready for the team' : 'Two unfinished tasks carried forward'}</small></span></div></div>
+      <div className="pp-source"><div className="pp-source-summary"><CheckCheck size={20} /><span><strong>{planning ? '8 tasks committed to Sprint 24' : 'Completed work stays recorded in Sprint 24.'}</strong><small>{planning ? 'Selected work is ready for the team' : 'Two unfinished tasks carried forward'}</small></span></div></div>
       <div className="pp-transfer-path"><span /><ArrowDown size={14} /><span className="pp-transfer-caption">{planning ? 'Backlog → Sprint 24' : 'Sprint 24 → Sprint 25'}</span><span /></div>
       <div className="pp-destination"><div><h4>{planning ? 'Sprint 24' : 'Sprint 25'}</h4><span className="pp-status" data-tone={moved ? 'sage' : 'neutral'}>{moved ? (planning ? '2 tasks added' : '2 carried over') : 'Planned'}</span></div><span className="pp-date"><CalendarDays size={11} />{planning ? 'Today–Oct 2' : 'Oct 5–16'}</span></div>
-      <div className="pp-carry-tasks">{[{ key: 'ORB-491', title: 'Slack alerts for failed syncs', owner: 'Sam' }, { key: 'ORB-497', title: 'Write the Slack alerts setup guide', owner: 'Jules' }].map(task => <div key={task.key}><span className="pp-task-state" /><div><small>{task.key}</small><strong>{task.title}</strong></div>{task.owner === 'Sam' ? <img src="/new/avatars/sam.webp" width={22} height={22} alt="" /> : <span className="pp-owner pp-owner-jules">JP</span>}</div>)}</div>
+      <div className="pp-carry-tasks">{[{ key: 'PRJ-214', title: 'Add an admin-only SSO pilot', owner: 'Sam' }, { key: 'PRJ-217', title: 'Prepare the SSO pilot guide', owner: 'Jules' }].map(task => <div key={task.key}><span className="pp-task-state" /><div><small>{task.key}</small><strong>{task.title}</strong></div>{task.owner === 'Sam' ? <img src="/new/avatars/sam.webp" width={22} height={22} alt="" /> : <span className="pp-owner pp-owner-jules">JP</span>}</div>)}</div>
     </div>
     <div className="pp-closeout" data-recorded={phase === 4}><CheckCheck size={14} /><span>{['Choose the next tasks from the backlog', 'Sprint commitment recorded', 'At closeout · Review the unfinished work', 'Carryover keeps the original sprint linked', 'Sprint 24 closeout recorded'][phase]}</span></div>
   </div>;
 }
 
 const epics = [
-  { name: 'Sync alerts', date: 'Today – Oct 9', health: 'On track', tone: 'sage', start: 20 / 91 * 100, width: 19 / 91 * 100, owner: 'Sam', next: 'Finish alert handling and the setup guide.' },
-  { name: 'Webhook reliability', date: 'Oct 1 – Oct 23', health: 'At risk', tone: 'amber', start: 30 / 91 * 100, width: 23 / 91 * 100, owner: 'Alex', next: 'Resolve duplicate deliveries before retry work.' },
+  { name: 'Identity mapping', date: 'Sep 21 – Oct 2', health: 'On track', tone: 'sage', start: 20 / 91 * 100, width: 12 / 91 * 100, owner: 'Alex', next: 'Validate the mapping before pilot enrollment.' },
+  { name: 'SSO pilot', date: 'Oct 5 – Oct 16', health: 'On track', tone: 'sage', start: 34 / 91 * 100, width: 12 / 91 * 100, owner: 'Sam', next: 'Prepare the pilot controls and reviewed setup guide.' },
   { name: 'Rollout readiness', date: 'Oct 19 – Nov 13', health: 'On track', tone: 'sage', start: 48 / 91 * 100, width: 26 / 91 * 100, owner: 'Jules', next: 'Schedule and verify the remaining pilot rollouts.' },
 ];
 export function RoadmapPlanning({ phase }: { phase: number }) {
   const focus = epics[Math.min(phase, 2)];
   return <div className="pp-roadmap">
-    <div className="pp-objective"><span><Target size={19} /></span><div><small>OBJECTIVE</small><strong>Make integration failures easier to act on.</strong></div><span className="pp-epic-count">3 epics</span></div>
+    <div className="pp-objective"><span><Target size={19} /></span><div><small>OBJECTIVE</small><strong>Make enterprise SSO easier to roll out.</strong></div><span className="pp-epic-count">3 epics</span></div>
     <div className="pp-months"><span>SEP</span><span>OCT</span><span>NOV</span></div>
     <div className="pp-roadmap-rows">{epics.map((epic, index) => <div className="pp-epic" data-focused={phase === index} data-drawn={phase >= index} key={epic.name} style={{ '--pp-start': `${epic.start}%`, '--pp-width': `${epic.width}%` } as CSSProperties}>
       <div className="pp-epic-heading"><strong>{epic.name}</strong><span className="pp-status" data-tone={epic.tone}><i />{epic.health}</span></div>
