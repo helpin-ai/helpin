@@ -1,0 +1,61 @@
+/* Shared app-style navigation for every product demo. Statuses and workflow
+   highlights remain owned by their scenes; these tokens only style navigation. */
+.hp3 .preview-sidebar {
+  --preview-nav-surface: #f0f0f2;
+  --preview-nav-border: #e4e4e7;
+  --preview-nav-muted: #71717a;
+  --preview-nav-ink: #18181b;
+  --preview-nav-selected: #e4e4e7;
+  --preview-nav-icon: #18181b;
+  --preview-nav-on-icon: #fff;
+}
+.hp3 .project-hero-art[data-theme="dark"] .preview-sidebar {
+  --preview-nav-surface: #1b211d;
+  --preview-nav-border: #303a33;
+  --preview-nav-muted: #a4afa7;
+  --preview-nav-ink: #e6ece8;
+  --preview-nav-selected: #2a342d;
+}
+.hp3 :is(.support-workspace, .mw-preview, .crm-workspace, .kp-workspace, .project-hero-art, .adp) .preview-sidebar {
+  background: var(--preview-nav-surface);
+  border-right-color: var(--preview-nav-border);
+}
+.hp3 .preview-sidebar :is(.swi-app-rail, .mw-rail, .kp-app-rail, .cw-apps, .adp-rail) :is([data-current="true"], [data-selected="true"], [data-active="true"]) {
+  background: transparent;
+  color: var(--preview-nav-ink);
+}
+.hp3 .preview-sidebar :is(.swi-app-rail, .mw-rail, .kp-app-rail) :is([data-current="true"], [data-selected="true"]) > svg {
+  box-sizing: content-box;
+  padding: 5px;
+  margin: -5px;
+  border-radius: 6px;
+  background: var(--preview-nav-icon);
+  color: var(--preview-nav-on-icon);
+}
+.hp3 .preview-sidebar :is(.cw-apps, .adp-rail) :is([data-selected="true"], [data-active="true"]) > i {
+  border-radius: 6px;
+  background: var(--preview-nav-icon);
+  color: var(--preview-nav-on-icon);
+}
+.hp3 .preview-sidebar .cw-apps [data-selected="true"] > i::before { content: none; }
+.hp3 .preview-sidebar :is(
+  .swi-queues [data-current="true"],
+  .mw-crm-nav > [data-selected="true"],
+  .cw-crm > button[aria-pressed="true"],
+  .kp-space-nav > button[data-selected="true"],
+  .phb-team-items .phb-nav-active,
+  .adp-nav-items > [data-active="true"]
+) {
+  background: var(--preview-nav-selected);
+  color: var(--preview-nav-ink);
+  border-radius: 6px;
+  font-weight: 600;
+}
+.hp3 .preview-sidebar .phb-nav-active > svg { color: inherit; }
+.hp3 .preview-sidebar .kp-space-nav > button:hover {
+  background: var(--preview-nav-selected);
+  color: var(--preview-nav-ink);
+}
+.hp3 .preview-sidebar :is(.swi-app-rail, .mw-rail, .kp-app-rail, .cw-apps, .adp-rail) > span:not([data-current="true"]):not([data-selected="true"]):not([data-active="true"]) {
+  color: var(--preview-nav-muted);
+}

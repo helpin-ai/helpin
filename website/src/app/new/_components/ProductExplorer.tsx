@@ -34,6 +34,7 @@ const AREAS = [
 
 export function ProductExplorer() {
   const [active, setActive] = useState(0);
+  const [preloadPreviews, setPreloadPreviews] = useState(false);
   const [horizontal, setHorizontal] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(true);
   const [scrollDriven, setScrollDriven] = useState(false);
@@ -42,6 +43,20 @@ export function ProductExplorer() {
   const tabList = useRef<HTMLDivElement>(null);
   const tabs = useRef<Array<HTMLButtonElement | null>>([]);
   const geometry = useRef({ start: 0, step: 1 });
+
+  useEffect(() => {
+    const element = track.current;
+    if (!element) return;
+    // Prepare all five scenes before the walkthrough enters view. Hidden demos
+    // pause through useBentoPlayback and retain their state between selections.
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      setPreloadPreviews(true);
+      observer.disconnect();
+    }, { rootMargin: '800px 0px' });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const narrow = window.matchMedia('(max-width: 760px)');
@@ -85,8 +100,18 @@ export function ProductExplorer() {
     const schedule = () => { if (!frame) frame = window.requestAnimationFrame(update); };
     const measure = () => {
       const top = parseFloat(getComputedStyle(scene).top) || 80;
+      const preview = scene.querySelector<HTMLElement>('.px-panel:not([hidden]) .product-preview');
+      // Fit the embedded demo beneath the copy before deciding whether the scene
+      // can pin. Fixed-height demos otherwise disable the walkthrough on laptops.
+      if (!reducedMotion && !horizontal && preview) {
+        const chromeHeight = scene.offsetHeight - preview.offsetHeight;
+        const available = window.innerHeight - top - 16 - chromeHeight;
+        rail.style.setProperty('--px-preview-height', `${Math.max(320, Math.min(640, available))}px`);
+      } else {
+        rail.style.removeProperty('--px-preview-height');
+      }
       const sceneHeight = scene.offsetHeight;
-      // Short viewports use manual tabs so content never becomes trapped offscreen.
+      // Keep manual tabs where a readable demo cannot fit, and for reduced motion.
       enabled = !reducedMotion && sceneHeight <= window.innerHeight - top - 12;
       setScrollDriven(enabled);
       if (enabled) {
@@ -106,16 +131,23 @@ export function ProductExplorer() {
     resize.observe(scene);
     // Earlier lazy-loaded content can change this section's document offset.
     resize.observe(document.body);
+    // The navigation hides while scrolling down. Reclaim its reserved space,
+    // then restore the clearance when scrolling back up brings it into view.
+    const navigation = document.querySelector('.hp3 .pnav');
+    const navigationObserver = new MutationObserver(measure);
+    if (navigation) navigationObserver.observe(navigation, { attributes: true, attributeFilter: ['data-hidden'] });
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', measure);
     return () => {
       resize.disconnect();
+      navigationObserver.disconnect();
       window.removeEventListener('scroll', schedule);
       window.removeEventListener('resize', measure);
       window.cancelAnimationFrame(frame);
       rail.style.removeProperty('height');
+      rail.style.removeProperty('--px-preview-height');
     };
-  }, [reducedMotion]);
+  }, [horizontal, reducedMotion]);
 
   useEffect(() => {
     if (!horizontal) return;
@@ -159,7 +191,7 @@ export function ProductExplorer() {
     {AREAS.map((area, index) => <div className="px-panel" role="tabpanel" id={`product-panel-${area.id}`} aria-labelledby={`product-tab-${area.id}`} hidden={active !== index} tabIndex={0} key={area.id}>
       <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.href}>Explore {area.id === 'inbox' ? 'customer support' : area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
       <div className="px-stage">
-        {active === index && <ProductPreview product={area.id} />}
+        {(active === index || preloadPreviews) && <ProductPreview product={area.id} theme="light" />}
       </div>
     </div>)}
     </div>

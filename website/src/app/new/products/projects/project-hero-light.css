@@ -1,0 +1,27 @@
+/* App light-mode surface roles from frontend/src/index.css. Dark mode keeps
+   the original fallbacks in project-hero.css; both variants share one scene. */
+.hp3 .project-hero-art[data-theme="light"] {
+  --project-surface: #fff;
+  --project-raised: #fff;
+  --project-subtle: oklch(0.985 0 0);
+  --project-recessed: oklch(0.97 0 0);
+  --project-selected: oklch(0.96 0 0);
+  --project-ink: oklch(0.24 0 0);
+  --project-body: #52525b;
+  --project-muted: #71717a;
+  --project-border: oklch(0.922 0 0);
+  --project-accent-border: #b5d4c1;
+  --project-accent: #0f7a50;
+  --project-accent-ink: #16603e;
+  --project-accent-surface: #eaf5ee;
+  --project-success: #15803d;
+  --project-success-ink: #fff;
+  --project-warning: #92400e;
+  --project-warning-border: #e7c78c;
+  --project-hover: #f4f4f5;
+  --project-glow: #15803d15;
+  --project-shadow-small: #18181b08;
+  --project-shadow-medium: #18181b0f;
+  --project-shadow-large: #18181b1a;
+  color-scheme: light;
+}
