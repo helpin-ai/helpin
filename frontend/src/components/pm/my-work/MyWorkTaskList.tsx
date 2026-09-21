@@ -62,10 +62,10 @@ export function MyWorkTaskList(props: Props) {
       </div>
       {active.size>0 && <div className="flex basis-full flex-wrap gap-2">{definitions.filter(def=>active.has(def.key)).map(def=><PMFilterPill key={def.key} definition={def} selected={[prefs[def.key]]} onToggle={value=>update({[def.key]:value})} onRemove={()=>update({[def.key]:''})}/>)}</div>}
     </div>
-    {!groups.length ? <QuietEmptyState title="No matching tasks" description={null} action={<QuietTextAction onClick={()=>setPrefs({...defaultMyWorkPreferences})}>Clear filters</QuietTextAction>}/> : groups.map(group=> <TaskGroup key={`${prefs.group}:${group.id}:${prefs.search}`} {...props} group={group} prefs={prefs} now={now} ownerNames={ownerNames} />)}
+    {!groups.length ? <QuietEmptyState title="No matching tasks" description={null} action={<QuietTextAction onClick={()=>setPrefs({...defaultMyWorkPreferences})}>Clear filters</QuietTextAction>}/> : groups.map(group=> <TaskGroup key={`${prefs.group}:${group.id}:${prefs.search}`} {...props} group={group} prefs={prefs} now={now} />)}
   </div></TooltipProvider>;
 }
-function TaskGroup({group,prefs,now,ownerNames,...props}:Props & {group:ReturnType<typeof groupMyWork>[number];prefs:MyWorkPreferences;now:Date;ownerNames:(task:Task)=>string}) {
+function TaskGroup({group,prefs,now,...props}:Props & {group:ReturnType<typeof groupMyWork>[number];prefs:MyWorkPreferences;now:Date}) {
   const [collapsed,setCollapsed] = useState(Boolean(group.completed) && !prefs.search.trim());
   const [showAll,setShowAll] = useState(false);
   const searching = Boolean(prefs.search.trim());
@@ -78,7 +78,7 @@ function TaskGroup({group,prefs,now,ownerNames,...props}:Props & {group:ReturnTy
       </button>
       {group.label==='Focus now' && <QuickTooltip label="Focus order is based on due dates, blockers, priority, active state, and recent updates."><button type="button" aria-label="How focus order works" className="rounded-sm p-1 text-quiet-muted focus-visible:outline-2 focus-visible:outline-ring"><InformationCircleIcon className="size-3.5"/></button></QuickTooltip>}
     </div>
-    {open && <div className="pb-3"><div className="divide-y divide-quiet-divider-light">{visible.map(task=><MyWorkTaskRow key={task.id} task={task} workspaceId={props.workspaceId} teamName={props.findTeamName(task.team_id) || task.team_name} ownerNames={props.assigned?undefined:ownerNames(task)} compact={prefs.compact} canEdit={props.canEdit} needsInput={!task.completed && task.latest_run_status==='paused' && (props.assigned || Boolean(task.owner_member_ids?.includes(props.memberId)))} now={now} onOpen={()=>props.onOpen(task)} onChanged={props.onChanged}/>)}</div>
+    {open && <div className="pb-3"><div className="divide-y divide-quiet-divider-light">{visible.map(task=><MyWorkTaskRow key={task.id} task={task} workspaceId={props.workspaceId} teamName={props.findTeamName(task.team_id) || task.team_name} owners={(task.owner_member_ids || []).map(id => { const member = props.members.find(member => member.id === id); return { ...member, id, full_name: member?.full_name || member?.email || 'Workspace member' }; })} compact={prefs.compact} canEdit={props.canEdit} needsInput={!task.completed && task.latest_run_status==='paused' && (props.assigned || Boolean(task.owner_member_ids?.includes(props.memberId)))} now={now} onOpen={()=>props.onOpen(task)} onChanged={props.onChanged}/>)}</div>
       {!searching && group.tasks.length>10 && <QuietTextAction onClick={()=>setShowAll(value=>!value)} className="mt-3">{showAll?'Show less':`Show ${group.tasks.length-10} more`}</QuietTextAction>}
     </div>}
   </section>;

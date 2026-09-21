@@ -50,7 +50,7 @@ export function MyWorkPage() {
   const { teams, hasTeams, isAdmin, findTeamName, loading: teamsLoading } = useAccessibleTeams(workspaceId);
 
   const [mode, setMode] = useState<Mode>('assigned');
-  const membersQuery = useWorkspaceMembers(mode === 'requested' ? workspaceId : '');
+  const membersQuery = useWorkspaceMembers(mode === 'suggestions' ? '' : workspaceId);
   const [tasks, setTasks] = useState<Task[]>([]);
   const loadScope = `${workspaceId}:${memberId}:${mode}`;
   const [loadedMode, setLoadedMode] = useState<string | null>(null);

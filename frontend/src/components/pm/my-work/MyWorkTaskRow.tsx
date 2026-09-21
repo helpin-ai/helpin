@@ -7,9 +7,12 @@ import { StateTypeIcon } from '@/lib/pmIcons';
 import type { Task, WorkflowState, UpdateTaskRequest } from '@/lib/pmTypes';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
-import { QuietDropdown, QuietStatusText, QuietTextAction } from '@/components/design-system/quiet';
+import { QuietDropdown, QuietStatusText } from '@/components/design-system/quiet';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { UserAvatar } from '@/components/pm/UserAvatar';
+import { Button } from '@/components/ui/button';
+import type { MemberWithUser } from '@/lib/types';
 import { DatePicker } from '@/components/ui/date-picker';
 import { cn } from '@/lib/utils';
 import { deadlineDays } from './myWorkModel';
@@ -20,8 +23,8 @@ function agentLabel(task: Task) {
   if (task.latest_run_status !== 'paused') return runLabels[task.latest_run_status] || `Agent ${task.latest_run_status}`;
   return ({human_approval:'Agent needs approval', authentication:'Agent needs auth', awaiting_user_message:'Agent awaiting reply'} as Record<string,string>)[task.latest_run_pause_reason || ''] || 'Agent needs input';
 }
-export function MyWorkTaskRow({ task, workspaceId, teamName, ownerNames, compact, canEdit, needsInput, now, onOpen, onChanged }: {
-  task: Task; workspaceId: string; teamName?: string; ownerNames?: string; compact: boolean; canEdit: boolean; needsInput: boolean; now: Date; onOpen: () => void; onChanged: () => void;
+export function MyWorkTaskRow({ task, workspaceId, teamName, owners, compact, canEdit, needsInput, now, onOpen, onChanged }: {
+  task: Task; workspaceId: string; teamName?: string; owners: Pick<MemberWithUser, 'id' | 'full_name' | 'avatar_url' | 'avatar_style' | 'avatar_seed' | 'avatar_background_mode' | 'avatar_background_color'>[]; compact: boolean; canEdit: boolean; needsInput: boolean; now: Date; onOpen: () => void; onChanged: () => void;
 }) {
   const [saving,setSaving] = useState(false);
   const [states,setStates] = useState<WorkflowState[]>([]);
@@ -57,16 +60,22 @@ export function MyWorkTaskRow({ task, workspaceId, teamName, ownerNames, compact
   const date = days === null ? null : parseISO(task.deadline!.slice(0,10));
   const deadlineText = days === null ? '' : task.completed ? format(date!,'MMM d') : days < 0 ? `${Math.abs(days)} ${days === -1 ? 'day' : 'days'} overdue` : days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : format(date!,'MMM d');
   return <div className={cn('group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-2 py-3 hover:bg-quiet-row-hover @min-[820px]:grid-cols-[minmax(220px,1fr)_110px_130px_90px_115px_64px]', compact && 'py-2')}>
-    <div className="col-span-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 @min-[820px]:col-span-1">
+    <div className="col-span-2 grid min-w-0 grid-cols-[6rem_minmax(0,1fr)] gap-x-3 @min-[820px]:col-span-1">
       <button type="button" onClick={onOpen} className="col-span-2 grid grid-cols-subgrid items-baseline rounded-sm text-left focus-visible:outline-2 focus-visible:outline-ring">
-        <span className="shrink-0 whitespace-nowrap font-mono text-[10.5px] tabular-nums text-quiet-muted">{task.task_key}</span>
-        <span className={cn('min-w-0 text-[13.5px] font-medium leading-5',task.completed && 'text-quiet-text-tertiary line-through')}>{task.name}</span>
+        <QuickTooltip label={task.task_key}><span className="min-w-0 truncate font-mono text-[10.5px] tabular-nums text-quiet-muted">{task.task_key}</span></QuickTooltip>
+        <QuickTooltip label={task.name}><span className={cn('min-w-0 truncate text-[13.5px] font-medium leading-5',task.completed && 'text-quiet-text-tertiary line-through')}>{task.name}</span></QuickTooltip>
       </button>
-      {(teamName || ownerNames || task.blocked || label) && <div className={cn('col-start-2 mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-quiet-text-tertiary', !ownerNames && !task.blocked && !label && '@min-[820px]:hidden')}>
-        {teamName && <span className="@min-[820px]:hidden">{teamName}</span>}{ownerNames && <span>{ownerNames}</span>}
+      <div className="col-start-2 mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-quiet-text-tertiary">
+        {teamName && <span className="@min-[820px]:hidden">{teamName}</span>}{owners.length ? <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
+          <span>Assigned to</span>
+          {owners.map(owner => <span key={owner.id} className="inline-flex min-w-0 items-center gap-1">
+            <UserAvatar name={owner.full_name} avatarUrl={owner.avatar_url} avatarStyle={owner.avatar_style} avatarSeed={owner.avatar_seed} avatarBackgroundMode={owner.avatar_background_mode} avatarBackgroundColor={owner.avatar_background_color} className="size-4" fallbackClassName="text-[8px]" />
+            <span className="min-w-0 break-words">{owner.full_name}</span>
+          </span>)}
+        </span> : <span>Unassigned</span>}
         {task.blocked && <QuickTooltip label={task.blocker || 'Waiting on another dependency'}><span tabIndex={0} className="rounded-sm font-medium text-quiet-accent">Blocked</span></QuickTooltip>}
         {label && <QuietStatusText tone={tone} pulse={runStatus==='running'}><RunIcon className={cn('size-3',runStatus==='running' && 'motion-safe:animate-spin')} />{label}</QuietStatusText>}
-      </div>}
+      </div>
     </div>
     <span className="hidden min-w-0 truncate text-xs text-quiet-text-tertiary @min-[820px]:block" title={teamName}>{teamName || '—'}</span>
     {canEdit ? <QuietDropdown label={`Stage for ${task.task_key}`} trigger={<button type="button" aria-label={`Change stage for ${task.task_key}`} className={propertyClass} disabled={saving}>{stage}</button>} selected={[task.workflow_state_id]} loading={stateLoading} error={stateError || undefined} onOpenChange={open=>void loadStates(open)} options={states.map(state=>({value:state.id,label:state.name,leading:<StateTypeIcon stateType={state.state_type} className="size-3.5" style={state.color?{color:state.color}:undefined}/>}))} onSelect={id=>void save({},id)} /> : <span className={propertyClass}>{stage}</span>}
@@ -77,6 +86,6 @@ export function MyWorkTaskRow({ task, workspaceId, teamName, ownerNames, compact
         : <TooltipTrigger asChild><span tabIndex={0} className={cn('rounded-sm text-xs',!task.completed && days !== null && days < 0 ? 'text-quiet-accent':'text-quiet-text-tertiary')}>{deadlineText || 'No due date'}</span></TooltipTrigger>}
       <TooltipContent>{date ? `Due ${format(date,'MMMM d, yyyy')}` : 'Set a due date'}</TooltipContent>
     </Tooltip>
-    <QuietTextAction onClick={onOpen} className={cn('justify-self-end text-xs', !needsInput && 'opacity-100 @min-[820px]:opacity-0 @min-[820px]:group-hover:opacity-100 @min-[820px]:group-focus-within:opacity-100')}>{needsInput?'Review':'Open'}</QuietTextAction>
+    <Button type="button" variant="secondary" size="xs" onClick={onOpen} className="justify-self-center">{needsInput?'Review':'Open'}</Button>
   </div>;
 }

@@ -127,7 +127,7 @@ describe('MyWorkPage', () => {
     )
 
     expect(taskKey).toBeTruthy()
-    expect(taskKey?.className).toContain('whitespace-nowrap')
+    expect(taskKey?.className).toContain('truncate')
     expect(taskKey?.className).toContain('font-mono')
     expect(container.textContent).toContain('Testing one more')
 
