@@ -67,7 +67,6 @@ export function PreviewFooter() {
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" aria-label="Helpin on GitHub"><GithubIcon size={18} /></a>
             <a href="mailto:hello@helpin.ai" aria-label="Email Helpin"><Mail size={18} aria-hidden="true" /></a>
           </div>
-          <a className="footer-open" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">Open source. Yours to build.<ArrowUpRight size={14} aria-hidden="true" /></a>
         </div>
         <div className="footer-bottom">
           <nav className="footer-legal" aria-label="Legal and brand resources">
@@ -77,7 +76,6 @@ export function PreviewFooter() {
             <a href={`${GITHUB_URL}/blob/develop/SECURITY.md`} target="_blank" rel="noopener noreferrer">Security</a>
           </nav>
           <p>© {new Date().getFullYear()} Helpin AI.</p>
-          <p className="footer-license">Open-source application and SDK</p>
         </div>
       </div>
     </footer>
