@@ -55,7 +55,7 @@ const ROWS = [
 
 export function IncludedTable() {
   return <section id="whats-included" className="included-section"><div className="wrap">
-    <SectionHead eyebrow="Choose how you run Helpin" title="One connected product. Two ways to run it." lede="Operate Helpin on your infrastructure or choose managed hosting. Either way, bring the customer relationship and the work behind it into the same workspace." />
+    <SectionHead eyebrow="Choose how you run Helpin" title="One connected product. Two ways to run it." lede="Operate Helpin on your infrastructure or choose managed hosting. Either way, bring the customer relationship and the work behind it together in Helpin." />
     <div className="included-table-scroll" role="region" aria-label="Self-hosted and Cloud comparison" tabIndex={0}><table className="included-table"><caption>Product modules and hosting options</caption><thead><tr><th scope="col">Capability</th><th scope="col">Open-source self-hosting<span>AGPL-3.0</span></th><th scope="col">Helpin Cloud<span>Hosted by Helpin</span></th></tr></thead><tbody>{ROWS.map(([feature,selfHosted,cloud])=><tr key={feature}><th scope="row">{feature}</th><td>{selfHosted}</td><td>{cloud}</td></tr>)}</tbody></table></div>
     <p className="included-note">Cloud capacity, AI usage, and advanced controls depend on your plan. Product inclusion does not mean every integration is configured or every provider service is included.</p>
     <p className="included-note">The open-source product has no software license fee. Your team covers hosting, operation, and external provider usage. Enterprise capabilities are licensed separately.</p>
