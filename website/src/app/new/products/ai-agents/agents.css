@@ -15,8 +15,6 @@
 .hp3 .agents-hero .btn-secondary { background: #ffffff08; border-color: #567b63; color: #edf5ef; }
 .hp3 .agents-hero-assure { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 22px; color: #aac4b3; font-size: 12px; }
 .hp3 .agents-hero-assure span { display: inline-flex; gap: 7px; align-items: center; }
-.hp3 .agents-product-image { margin: 60px 0 0; padding: 8px; border: 1px solid #ffffff20; border-radius: 18px; background: #ffffff08; box-shadow: 0 25px 80px #0002; }
-.hp3 .agents-product-image img { display: block; width: 100%; height: auto; border-radius: 11px; }
 .hp3 .agents-page-nav { border-bottom: 1px solid var(--border); }
 .hp3 .agents-page-nav .wrap { display: flex; align-items: center; gap: 32px; min-height: 66px; font-size: 13px; }
 .hp3 .agents-page-nav strong { margin-right: auto; font-weight: 600; }
@@ -165,8 +163,6 @@
   .hp3 .agents-hero-copy { gap: 22px; }
   .hp3 .agents-hero .lede { font-size: 16px; }
   .hp3 .agents-hero-assure { gap: 10px 16px; font-size: 10px; }
-  .hp3 .agents-product-image { padding: 4px; border-radius: 10px; margin-top: 40px; }
-  .hp3 .agents-product-image img { border-radius: 6px; }
   .hp3 .agents-faq-grid { grid-template-columns: 1fr; gap: 8px; }
   .hp3 .awa-art { padding: 18px; }
   .hp3 .awa-approval-request { padding: 20px; }
@@ -211,9 +207,11 @@
 .hp3 .agents-custom-strip p { font-size: 13px; color: #667b6c; margin-top: 5px; }
 .hp3 .agents-custom-strip a { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: auto; font-size: 13px; color: #216b43; font-weight: 500; }
 .hp3 .agents-directory-availability { font-size: 12px; line-height: 1.8; color: #6a7c70; max-width: 740px; text-align: center; margin: 24px auto 0; }
-.hp3 .agents-ask-section { background: #f6f8f7; }
-.hp3 .agents-ask-section .agents-product-image { margin-top: 0; border-color: #d9e5dd; background: #e9f0eb; box-shadow: 0 20px 60px #1c392510; }
-.hp3 .agents-ask-caption { font-size: 12px; text-align: center; margin: 20px auto 0; color: #5c7364; }
+/* Share the homepage's deep-green Ask Agent stage and native preview frame. */
+.hp3 .agents-ask-section .sec-head { margin-inline: auto; text-align: center; }
+.hp3 .agents-ask-section .eyebrow { color: #81deb0; }
+.hp3 .agents-ask-section .lede { color: #b5c9bd; }
+.hp3 .agents-ask-section .ask-agent-preview { margin-bottom: 0; }
 .hp3 .agents-workflows { background: #fff; }
 .hp3 .awa-parallel img { border-radius: 7px; }
 @media (max-width: 1100px) {
