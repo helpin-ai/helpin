@@ -126,7 +126,7 @@ export default function NewHomePage() {
               <h3>Find answers across your workspace.</h3>
               <p>Find the customer question, the meeting decision, and the task behind it. Ask Agent brings them together in one answer.</p>
               <AskAgentBento variant="answers" />
-              <div className="ask-agent-example"><span>Try asking</span><blockquote>What’s blocking OrbitDesk’s rollout?</blockquote></div>
+              <div className="ask-agent-example"><span>Try asking</span><blockquote>What’s blocking Northstar Labs’ rollout?</blockquote></div>
             </article>
             <article>
               <span className="ask-agent-label">Your agents</span>
