@@ -6,7 +6,7 @@ import '@helpin-ai/widget-core/src/styles/widget.css';
 import './sdk-widget.css';
 
 type WidgetRuntime = typeof import('@helpin-ai/widget-core');
-const OPENING_MESSAGE = 'Can you help with our rollout?';
+const OPENING_MESSAGE = 'My export is missing contacts. Can you help?';
 const CONFIG: WidgetConfig = {
   workspaceId: 'website-sdk-example',
   workspaceName: 'OrbitDesk',
@@ -33,7 +33,7 @@ export function SDKWidget() {
   const options: MountWidgetOptions = {
     config: CONFIG, isOpen: true, messages, showLauncher: false, initialView: 'conversation',
     connectionStatus: 'connected', contactCaptureCompleted: true,
-    activeConversation: { id: 'website-sdk-example', subject: 'Rollout support', status: 'open', flowState: 'ai_handling' },
+    activeConversation: { id: 'website-sdk-example', subject: 'Export support', status: 'open', flowState: 'ai_handling' },
     onSendMessage: send,
   };
   const latestOptions = useRef(options);
@@ -61,11 +61,25 @@ export function SDKWidget() {
     runtime.current?.mountWidget(target.current, options);
   });
 
+  useEffect(() => {
+    if (!ready || !target.current) return;
+    const container = target.current;
+    const updatePlaceholder = () => {
+      const composer = container.querySelector<HTMLTextAreaElement>('textarea.helpin-compose-input');
+      if (composer) composer.placeholder = 'Tell us what you expected to see…';
+    };
+    updatePlaceholder();
+    const observer = new MutationObserver(updatePlaceholder);
+    observer.observe(container, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [ready]);
+
   return <div className="sdk-widget-example">
+    <button type="button" className="sdk-demo-launcher" onClick={() => target.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus()}>Get help with this export</button>
     <div className="sdk-widget-viewport" id="sdk-widget-window" data-ready={ready}>
       {!ready && <div className="sdk-widget-fallback"><img src="/brand/helpin-icon-ink.svg" width={28} height={28} alt="" /><strong>Talk to your team</strong><p>Open a conversation from your application, then keep talking in the Helpin widget.</p><noscript>Enable JavaScript to try the widget.</noscript></div>}
       <div className="sdk-widget-mount" ref={target} />
     </div>
-    <p className="sdk-widget-note">Try the composer. Messages stay on this page.</p>
+    <p className="sdk-widget-note">Interactive preview · Messages are not sent.</p>
   </div>;
 }

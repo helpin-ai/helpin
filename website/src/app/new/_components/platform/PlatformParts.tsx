@@ -13,6 +13,6 @@ export function PlatformBreadcrumb({label}:{label:string}) {
 export function PlatformFAQ({items}:{items:readonly FAQItem[]}) {
   return <FAQList items={items} className="platform-faqs" />;
 }
-export function PlatformClosing({id,title,description}:{id:string;title:string;description:string}) {
-  return <section className="final-cta final-cta-connected" aria-labelledby={id}><div className="wrap"><ConnectedWorkspace/><div className="final"><span className="eyebrow">Build on your terms</span><h2 id={id}>{title}</h2><p className="lede">{description}</p><CtaRow /><CtaNote /></div></div></section>;
+export function PlatformClosing({id,title,description,eyebrow="Build on your terms",primaryLabel="Start free",supportingLine}:{id:string;title:string;description:string;eyebrow?:string;primaryLabel?:string;supportingLine?:string}) {
+  return <section className="final-cta final-cta-connected" aria-labelledby={id}><div className="wrap"><ConnectedWorkspace/><div className="final"><span className="eyebrow">{eyebrow}</span><h2 id={id}>{title}</h2><p className="lede">{description}</p><CtaRow primaryLabel={primaryLabel}/>{supportingLine ? <p className="developer-supporting-note">{supportingLine}</p> : <CtaNote />}</div></div></section>;
 }

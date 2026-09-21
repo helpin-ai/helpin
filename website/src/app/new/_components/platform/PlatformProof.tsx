@@ -44,10 +44,11 @@ export function CodeContent({code}:{code:string}) {
 
 export function WorkspaceAPIExample() {
   return <div className="workspace-api-example">
-    <div className="workspace-api-heading"><Braces size={17}/><strong>Workspace API</strong><span><LockKeyhole size={12}/>Authenticated</span></div>
+    <div className="workspace-api-heading"><Braces size={17}/><strong>Work with authorized workspace data.</strong><span><LockKeyhole size={12}/>Authenticated</span></div>
     <div className="workspace-api-endpoint"><span>GET</span><code>/api/workspaces</code></div>
     <div className="workspace-api-auth"><span>Authorization</span><code>Bearer &lt;session_access_token&gt;</code></div>
-    <div className="workspace-api-response"><span className="platform-micro"><Check size={12}/>RESPONSE SHAPE · SELECTED FIELDS</span><pre tabIndex={0} aria-label="Example workspace response"><code><CodeContent code={'[\n  {\n    "name": "OrbitDesk",\n    "slug": "orbitdesk",\n    "role": "member"\n  }\n]'}/></code></pre></div>
-    <div className="workspace-api-note"><LockKeyhole size={14}/><p>Only workspaces the signed-in user can access. Product operations also check resource permissions and enabled modules.</p></div>
+    <div className="workspace-api-response"><span className="platform-micro"><Check size={12}/>EXAMPLE RESPONSE · SELECTED FIELDS</span><pre tabIndex={0} aria-label="Example workspace response"><code><CodeContent code={'[\n  {\n    "name": "OrbitDesk",\n    "slug": "orbitdesk",\n    "role": "member"\n  }\n]'}/></code></pre></div>
+    <div className="workspace-api-note"><LockKeyhole size={14}/><p>Results depend on the authenticated user’s access.</p></div>
+    <p className="developer-supporting-note">The public widget key is not a workspace API credential.</p>
   </div>;
 }
