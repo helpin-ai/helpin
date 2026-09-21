@@ -1,14 +1,21 @@
-import { ArrowRight, Check, Code2, MessageCircle, Send, Server, ShieldCheck, Zap } from 'lucide-react';
+import { ArrowRight, Check, Code2, MessageCircle, Send, Zap } from 'lucide-react';
+import { SelfHostingArt, EnterprisePlanningArt } from './PricingDeploymentArt';
 import { AI_PRICING } from '@/generated/aiPricing';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { DEMO_URL, FAQList, GITHUB_URL, SectionHead } from '../new/_components/ui';
 import { COMPARISON_FEATURES, WORKFLOW_COMPARISON, FAQS } from './pricing-data';
 
 export function HostingOptions() {
-  return <section id="self-hosted" className="pricing-options"><div className="wrap pricing-option-grid">
-    <article><Server size={24} aria-hidden="true" /><span className="eyebrow">Open source</span><h2>Run the whole product yourself.</h2><p>Support, projects, CRM, meetings, knowledge and agents—on your infrastructure.</p><strong className="pricing-open-price">$0 <span>software license for the open-source product</span></strong><p className="pricing-note">You operate the installation and pay hosting and provider costs. Enterprise features are licensed separately.</p><div className="pricing-links"><a className="btn btn-secondary" href="/new/self-hosting">Explore self-hosting<ArrowRight size={16} /></a><a className="btn-link" href={GITHUB_URL}>View on GitHub →</a></div></article>
-    <article><ShieldCheck size={24} aria-hidden="true" /><span className="eyebrow">Enterprise</span><h2>Discuss your deployment needs.</h2><p>Need Enterprise features or help planning your rollout? Talk to us about your requirements and licensing.</p><p className="pricing-note">Enterprise code includes subscription billing, managed AI routes and commercial policies under a separate license.</p><div className="pricing-links"><a className="btn btn-secondary" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us<ArrowRight size={16} /></a><a className="btn-link" href={`${GITHUB_URL}/blob/develop/ee/LICENSE`}>Enterprise license →</a></div></article>
-  </div></section>;
+  return <>
+    <section id="self-hosted" className="pricing-deployment pricing-self-hosted" aria-labelledby="pricing-self-hosted-title"><div className="wrap pricing-deployment-grid">
+      <div className="pricing-deployment-copy"><span className="eyebrow">Open source</span><h2 id="pricing-self-hosted-title">Run the whole product yourself.</h2><p className="pricing-deployment-lede">Support, projects, CRM, meetings, knowledge and agents—on your infrastructure.</p><div className="pricing-open-price"><strong>$0</strong><span>Software license<br />for the open-source product</span></div><p className="pricing-note">You operate the installation and pay hosting and provider costs. Enterprise features are licensed separately.</p><div className="pricing-links"><a className="btn btn-primary" href="/new/self-hosting">Explore self-hosting<ArrowRight size={16} /></a><a className="btn-link" href={GITHUB_URL}>View on GitHub →</a></div></div>
+      <SelfHostingArt />
+    </div></section>
+    <section id="enterprise" className="pricing-deployment pricing-enterprise" aria-labelledby="pricing-enterprise-title"><div className="wrap pricing-deployment-grid">
+      <div className="pricing-deployment-copy"><span className="eyebrow">Enterprise</span><h2 id="pricing-enterprise-title">Discuss your deployment needs.</h2><p className="pricing-deployment-lede">Need Enterprise features or help planning your rollout? Talk to us about your requirements and licensing.</p><p className="pricing-note">Enterprise code includes subscription billing, managed AI routes and commercial policies under a separate license.</p><div className="pricing-links"><a className="btn btn-primary" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us<ArrowRight size={16} /></a><a className="btn-link" href={`${GITHUB_URL}/blob/develop/ee/LICENSE`}>Enterprise license →</a></div></div>
+      <EnterprisePlanningArt />
+    </div></section>
+  </>;
 }
 
 export function WorkflowComparison() {
