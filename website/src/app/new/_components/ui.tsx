@@ -65,7 +65,6 @@ export function Availability({ category, cloud = false }: { category: string; cl
 export function CtaNote({ trial = false, support = false }: { trial?: boolean; support?: boolean }) {
   return <p className="cta-note">{trial ? `14-day cloud trial · No card${support ? ' · Or self-host free' : ''}` : 'Open source · Run it yourself or use our cloud'}</p>;
 }
-export function ExampleLabel() { return <p className="example-workspace-label">Example workspace</p>; }
 export type FAQItem = readonly [question: string, answer: string, href: string, label?: string];
 export function FAQList({ items, className }: { items: readonly FAQItem[]; className: string }) {
   return <div className={className}>{items.map(([question, answer, href, label]) => <details key={question}><summary>{question}</summary><p>{answer} <a className="faq-more" href={href}>{label ?? 'Learn more'} →</a></p></details>)}</div>;

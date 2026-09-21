@@ -1,4 +1,4 @@
-import { Availability, CtaNote, DEMO_URL, ExampleLabel, FAQList } from '../../_components/ui';
+import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
 import { ArrowRight, CalendarDays, CheckCheck, ChevronRight, FileText, Mic, Settings2 } from 'lucide-react';
@@ -56,7 +56,7 @@ export default function MeetingsPage() {
     <section className="meetings-hero" aria-labelledby="meetings-title"><div className="wrap">
       <div className="meetings-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12}/><span>Meetings</span></div>
       <div className="meetings-hero-copy"><Availability category="Meeting notes" cloud /><h1 id="meetings-title">Turn customer calls into <span>tasks and follow-ups.</span></h1><p className="lede">Let Helpin capture the call, pull out the decisions, and prepare the next steps. Review the task or follow-up with the customer’s words still in view.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /><div className="meetings-platforms">{PLATFORMS.map(([id,label])=><span key={id}><img src={`/new/meetings/${id}.svg`} width={19} height={19} alt=""/>{label}</span>)}</div></div>
-      <ExampleLabel /><div className="meetings-screenshot"><MeetingWorkspace /></div>
+      <div className="meetings-screenshot"><MeetingWorkspace /></div>
     </div></section>
     <nav className="meetings-page-nav" aria-label="On this page"><div className="wrap"><strong>Meetings</strong><a href="#meeting-capture">Capture the call</a><a href="#meeting-decisions">Find the decisions</a><a href="#meeting-work">Move work forward</a><a href="#meeting-context">Keep the context</a></div></nav>
     <section id="meeting-capture"><div className="wrap"><div className="meetings-split"><div><SectionHead eyebrow="Choose the calls that matter" title="Stay in the conversation. Helpin keeps the details." lede="See upcoming calls in one list and choose which ones Helpin joins. Turn on a recurring series, skip an individual date, or add a meeting link yourself." secondaryLede="Stay with the customer’s questions. Helpin captures the conversation so your team can revisit the decisions and next steps."/></div><MeetingAgenda/></div><div className="meetings-features">{[

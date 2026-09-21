@@ -1,4 +1,4 @@
-import { Availability, CtaNote, ExampleLabel, FAQList } from '../../_components/ui';
+import { Availability, CtaNote, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
 import { ArrowRight, ChevronRight, Clock3, Code2, GitBranch, LockKeyhole, MessageSquare, Plug, Settings2, ShieldCheck } from 'lucide-react';
@@ -99,7 +99,7 @@ export default function AIAgentsPage() {
       <section id="agent-ask" className="agents-ask-section ask-agent-section">
         <div className="wrap">
           <SectionHead eyebrow="Ask Agent" title="Ask Agent: one question, the right agents on it." lede="Your starting point across the workspace. Ask Agent finds answers and handles work directly, bringing in specialists when the request calls for them." />
-          <ExampleLabel /><figure className="ask-agent-preview">
+          <figure className="ask-agent-preview">
             <ProductPreview product="ask-agent" theme="light" />
             <figcaption>An example rollout review: four specialist agents, one work plan, and a follow-up ready for review.</figcaption>
           </figure>

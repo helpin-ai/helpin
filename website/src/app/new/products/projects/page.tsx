@@ -1,4 +1,4 @@
-import { Availability, CtaNote, DEMO_URL, ExampleLabel, FAQList } from '../../_components/ui';
+import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
 import { ArrowRight, CheckSquare, ChevronRight, GitBranch, ListFilter, MessagesSquare, Repeat2, Tags, Users } from 'lucide-react';
@@ -80,7 +80,7 @@ export default function ProjectsPage() {
         <div className="wrap">
           <div className="projects-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>Projects</span></div>
           <div className="projects-hero-grid"><div className="projects-hero-copy"><Availability category="Projects" cloud /><h1 id="projects-title">Ship the work <br /><span>your customers are waiting for.</span></h1><p className="lede">Turn customer requests into clear priorities. Plan the work, let agents help build and review it, and keep your team in control of what ships.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /><div className="projects-hero-points"><span><MessagesSquare size={14} />Customer-linked tasks</span><span><CheckSquare size={14} />Sprint planning</span><span><GitBranch size={14} />Coding agents</span></div></div>
-          <div><ExampleLabel /><ProjectHero /></div></div>
+          <div><ProjectHero /></div></div>
         </div>
       </section>
       <nav className="projects-page-nav" aria-label="On this page"><div className="wrap"><strong>Projects</strong><a href="#project-context">Prioritize</a><a href="#project-tasks">Organize</a><a href="#project-progress">Objectives</a><a href="#project-planning">Plan</a><a href="#project-agents">Deliver</a><a href="#project-faq">FAQs</a></div></nav>

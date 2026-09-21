@@ -1,4 +1,4 @@
-import { Availability, CtaNote, DEMO_URL, ExampleLabel, FAQList } from '../../_components/ui';
+import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, ChevronRight, Code2, FolderOpen, History, Languages, Link2, ShieldCheck, Search, Server, Network, Braces } from 'lucide-react';
@@ -82,7 +82,7 @@ export default function KnowledgePage() {
     <section className="knowledge-hero" aria-labelledby="knowledge-title"><div className="wrap">
       <div className="knowledge-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} /><span>Knowledge</span></div>
       <div className="knowledge-hero-copy"><Availability category="Help center & docs" /><h1 id="knowledge-title">Give customers and agents <span>docs they can rely on.</span></h1><p className="lede">Publish guides and API references on your own domain. Help customers find answers, give agents knowledge to work from, and let the docs agent prepare updates as your product changes.</p><CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial /><div className="knowledge-hero-points"><span><Server size={14} />On your own domain</span><span><Network size={14} />Fast to load</span><span><Code2 size={14} />Developer docs included</span><span><Link2 size={14} />AI answers with sources</span></div></div>
-      <ExampleLabel /><div className="knowledge-screenshot"><KnowledgeWorkspace /></div>
+      <div className="knowledge-screenshot"><KnowledgeWorkspace /></div>
     </div></section>
     <nav className="knowledge-page-nav" aria-label="On this page"><div className="wrap"><strong>Knowledge</strong><a href="#knowledge-library">Reader experience</a><a href="#knowledge-publishing">Publishing & performance</a><a href="#knowledge-api">Developer docs</a><a href="#knowledge-sources">Agent knowledge</a><a href="#knowledge-quill">Keep docs current</a></div></nav>
     <section id="knowledge-library"><div className="wrap"><SectionHead eyebrow="The experience your customers see" title="Make your docs feel like part of your product." lede="Give readers a clear path from their first question to the next step. Put searchable guides, source-backed AI answers, and your brand into one help center." /><div className="knowledge-reader-image"><KnowledgeReader /></div><div className="knowledge-features">{FEATURES.map(({Icon,title,body})=><article key={title}><Icon size={20} aria-hidden="true" /><h3>{title}</h3><p>{body}</p></article>)}</div></div></section>

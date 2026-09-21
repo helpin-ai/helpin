@@ -1,4 +1,4 @@
-import { CtaRow, CtaNote, ExampleLabel } from '../_components/ui';
+import { CtaRow, CtaNote } from '../_components/ui';
 import { previewMetadata } from '../_components/preview-metadata';
 import Link from 'next/link';
 import { ArrowRight, BookOpen, Bot, Braces, Code2, KeyRound, MessagesSquare, Plug, Terminal, Webhook } from 'lucide-react';
@@ -37,7 +37,7 @@ const FAQS = [
   ]
 ] as const;
 export default function DevelopersPage(){return <><PreviewNav/><div className="platform-page developers-page">
- <section className="platform-hero"><div className="wrap"><PlatformBreadcrumb label="Developers"/><div className="platform-hero-grid"><div className="platform-hero-copy"><span className="eyebrow">Support SDKs, workspace APIs and AI tools</span><h1>Add Helpin to your app. <span>Connect it to your AI tools.</span></h1><p className="lede">Drop support chat into your product with the SDK. Use Helpin from Claude or Cursor over MCP. Give Helpin agents tools from your own systems. Build on the workspace API.</p><CtaRow /><CtaNote /><div className="platform-hero-points"><span><Braces size={14}/>APIs & SDKs</span><span><Plug size={14}/>MCP</span><span><Webhook size={14}/>Events & workflows</span></div></div><div><ExampleLabel /><DeveloperHeroScene/></div></div></div></section>
+ <section className="platform-hero"><div className="wrap"><PlatformBreadcrumb label="Developers"/><div className="platform-hero-grid"><div className="platform-hero-copy"><span className="eyebrow">Support SDKs, workspace APIs and AI tools</span><h1>Add Helpin to your app. <span>Connect it to your AI tools.</span></h1><p className="lede">Drop support chat into your product with the SDK. Use Helpin from Claude or Cursor over MCP. Give Helpin agents tools from your own systems. Build on the workspace API.</p><CtaRow /><CtaNote /><div className="platform-hero-points"><span><Braces size={14}/>APIs & SDKs</span><span><Plug size={14}/>MCP</span><span><Webhook size={14}/>Events & workflows</span></div></div><div><DeveloperHeroScene/></div></div></div></section>
  <nav className="platform-page-nav" aria-label="On this page"><div className="wrap"><strong>Developers</strong><a href="#sdk">SDKs</a><a href="#mcp">MCP</a><a href="#api">Workspace API</a><a href="#webhooks">Events & workflows</a><a href="#developer-resources">Resources</a></div></nav>
 
  <section id="developer-interfaces"><div className="wrap"><SectionHead eyebrow="Build with Helpin" title="Four ways to connect the work." /><div className="platform-resource-grid">{[

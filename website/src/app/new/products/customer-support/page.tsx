@@ -1,4 +1,4 @@
-import { Availability, CtaNote, DEMO_URL, ExampleLabel, FAQList } from '../../_components/ui';
+import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from 'next/link';
 import { ArrowRight, ChevronRight, Inbox } from 'lucide-react';
@@ -85,7 +85,7 @@ export default function CustomerSupportPage() {
               <Actions />
               <CtaNote trial support />
             </div>
-            <div><ExampleLabel /><SupportHeroScene /></div>
+            <div><SupportHeroScene /></div>
           </div>
         </div>
       </section>

@@ -420,7 +420,6 @@
 .hp3 .hero .lede { font-size: 18px; max-width: 54ch; }
 .hp3 .hero-workflow { margin: 72px 0 0; position: relative; z-index: 1; }
 .hp3 .hero-workflow .wire { margin-top: 0; }
-.hp3 .hero-workflow figcaption { margin-top: 28px; text-align: center; color: var(--t3); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .hp3 .hero-evaluation { position: relative; z-index: 1; margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--border); text-align: center; }
 @media (max-width: 600px) { .hp3 .hero-workflow { margin-top: 48px; } }
 /* Phone: the record must never widen the page. A late rule had reset it to two columns. */
@@ -1256,7 +1255,6 @@
 /* Copy review: readable category, common actions and compact comparison surfaces. */
 .hp3 .availability-tag { display: inline-flex; align-items: center; flex-wrap: wrap; text-decoration: underline; text-underline-offset: 5px; }
 .hp3 .cta-note { color: inherit; opacity: .78; font-size: 13px; line-height: 1.7; margin-top: 16px; }
-.hp3 .example-workspace-label { font: 11px/1.5 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: inherit; opacity: .65; margin: 0 0 12px; }
 .hp3 .hero-replaces { max-width: 680px; margin: 24px auto 0; color: var(--t2); font-size: 14px; line-height: 1.8; }
 .hp3 .hero-proof { margin: 28px auto 12px; color: var(--t2); font-size: 12px; }
 .hp3 .hero-proof ul { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 24px; list-style: none; padding: 0; margin: 12px 0 0; }

@@ -1,4 +1,4 @@
-import { Availability, CtaNote, DEMO_URL, ExampleLabel, FAQList } from '../../_components/ui';
+import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from "next/link";
 import {
@@ -105,7 +105,7 @@ export default function CRMPage() {
               </p>
               <CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial />
             </div>
-            <ExampleLabel /><CRMWorkspace />
+            <CRMWorkspace />
             <div className="crm-outcomes">
               {[
                 ["01", "Know the account", "One history across teams."],
