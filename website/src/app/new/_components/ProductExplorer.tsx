@@ -2,74 +2,35 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { ArrowUpRight } from 'lucide-react';
-
-const PROJECTS_IMAGE = {
-  src: '/new/product/workspace-projects-4k-v3.webp',
-  alt: 'OrbitDesk engineering board with customer-reported bugs, feature requests, documentation, and follow-ups across Planned, In Progress, In Review, and Shipped.',
-  width: 3840,
-  height: 2160,
-};
-
-const INBOX_IMAGE = {
-  src: '/new/product/workspace-inbox-4k-v4.webp',
-  alt: 'OrbitDesk workspace inbox with Northstar Labs’ Maya Chen asking about Okta SSO, an internal note, a Helpin AI reply draft, and the linked SSO project.',
-  width: 3840,
-  height: 2160,
-};
-
-const MEETINGS_IMAGE = {
-  src: '/new/meetings/recording-preview-1672-v4.webp',
-  alt: 'OrbitDesk workspace meeting review for Northstar Labs, showing an Okta SSO rollout summary, a three-person call preview, decisions, assigned action items, and linked customer records.',
-  width: 1672,
-  height: 941,
-};
-
-const CRM_IMAGE = {
-  src: '/new/product/workspace-crm-4k-v3.webp',
-  alt: 'OrbitDesk CRM with Northstar Labs contact Maya Chen, an SSO rollout summary, a reviewed buying signal, customer activity, and linked company, deal, and project records.',
-  width: 3840,
-  height: 2160,
-};
-
-const KNOWLEDGE_IMAGE = {
-  src: '/new/product/workspace-knowledge-4k-v3.webp',
-  alt: 'OrbitDesk workspace and Help Center, showing eight documentation collections and guides for Okta SSO, role mapping, SCIM provisioning, agent approvals, and workspace permissions.',
-  width: 3840,
-  height: 2160,
-};
+import { ProductPreview, type ProductPreviewName } from './product-previews';
 
 const AREAS = [
   {
-    id: 'inbox', label: 'Inbox',
-    image: INBOX_IMAGE,
+    id: 'inbox', label: 'Inbox', href: '/new/products/customer-support',
     title: 'Answer customers with agents that know their history.',
     description: 'Draft replies from past conversations and product knowledge. Review the answer, add a note, or turn the request into a task.',
   },
   {
-    id: 'meetings', label: 'Meetings',
-    image: MEETINGS_IMAGE,
+    id: 'meetings', label: 'Meetings', href: '/new/products/meetings',
     title: 'Turn meeting decisions into next steps.',
     description: 'Record and transcribe customer calls. Work with agents to summarize decisions and turn action items into tasks.',
   },
   {
-    id: 'projects', label: 'Projects',
-    image: PROJECTS_IMAGE,
+    id: 'projects', label: 'Projects', href: '/new/products/projects',
     title: 'Turn customer requests into planned work.',
     description: 'Use agents to break requests into tasks and plan the next steps. Set priorities and owners, then connect the work to engineering.',
   },
   {
-    id: 'crm', label: 'CRM',
-    image: CRM_IMAGE,
-    title: 'See what’s holding up the deal.',
-    description: 'See the support issue, feature request, or meeting objection behind a deal. Ask agents to review the account and prepare your follow-up.',
+    id: 'crm', label: 'CRM', href: '/new/products/crm',
+    title: 'See the whole customer relationship.',
+    description: 'Explore contacts and companies, review their history, and connect the conversations and work behind each account.',
   },
   {
-    id: 'knowledge', label: 'Knowledge',
-    image: KNOWLEDGE_IMAGE,
+    id: 'knowledge', label: 'Knowledge', href: '/new/products/knowledge',
     title: 'Give customers and agents answers they can use.',
     description: 'Create help articles and internal docs alongside the work. Use agents to draft answers from repeated questions and update docs as the product changes.',
   },
-] as const;
+] as const satisfies ReadonlyArray<{ id: ProductPreviewName; label: string; href: string; title: string; description: string }>;
 
 export function ProductExplorer() {
   const [active, setActive] = useState(0);
@@ -196,16 +157,9 @@ export function ProductExplorer() {
       </div>
     </div>
     {AREAS.map((area, index) => <div className="px-panel" role="tabpanel" id={`product-panel-${area.id}`} aria-labelledby={`product-tab-${area.id}`} hidden={active !== index} tabIndex={0} key={area.id}>
-      <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.id === 'inbox' ? '/new/products/customer-support' : area.id === 'crm' ? '/new/products/crm' : `/new/product#${area.id}`}>Explore {area.id === 'inbox' ? 'customer support' : area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
+      <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.href}>Explore {area.id === 'inbox' ? 'customer support' : area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
       <div className="px-stage">
-        <a className="px-product-image" href={area.image.src} target="_blank" rel="noopener noreferrer" aria-label={`View the ${area.label.toLowerCase()} demo image at full size (opens in a new tab)`}>
-          <img
-            src={area.image.src.replace('-4k-', '-1920-')}
-            srcSet={area.id === 'meetings' ? '/new/meetings/recording-preview-960-v4.webp 960w, /new/meetings/recording-preview-1672-v4.webp 1672w' : `${area.image.src.replace('-4k-', '-960-')} 960w, ${area.image.src.replace('-4k-', '-1920-')} 1920w, ${area.image.src} 3840w`}
-            sizes="(max-width: 760px) calc(100vw - 80px), (max-width: 960px) calc(100vw - 256px), (max-width: 1280px) calc(100vw - 316px), 964px"
-            alt={area.image.alt} width={area.image.width} height={area.image.height} loading="lazy" decoding="async"
-          />
-        </a>
+        {active === index && <ProductPreview product={area.id} />}
       </div>
     </div>)}
     </div>

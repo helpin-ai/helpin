@@ -1,3 +1,4 @@
+@font-face{font-family:'Helpin CRM UI';src:url('/fonts/inter/inter-latin-wght-normal.woff2') format('woff2');font-style:normal;font-weight:100 900;font-display:swap}
 /* Faithful, isolated rendering of Sidebar, QuietPageHeader, tableStyles, and ContactDetail.
    App UI tokens stay local; marketing sections keep the Helpin website palette. */
 .hp3 .crm-workspace{--cw-text:#1c1a17;--cw-muted:#78716c;--cw-border:#ecebe8;--cw-secondary:#57534e;position:relative;font-family:'Helpin CRM UI',sans-serif;color:var(--cw-text);text-align:left;isolation:isolate;border:1px solid #d9d9dc;border-radius:12px;background:#fff;box-shadow:0 24px 80px #13151412;overflow:hidden}
