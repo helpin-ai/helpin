@@ -14,8 +14,22 @@
 .hp3 .platform-page .dev-capabilities>div{font-size:10px}
 .hp3 .platform-page .dev-source div>span,.hp3 .platform-page .dev-hub span{font-size:11px;line-height:1.65}
 .hp3 .platform-page .platform-feature-grid h3{font-size:19px}
-.hp3 .platform-page .platform-faqs details{padding-block:19px}
-.hp3 .platform-page .platform-faqs details:first-child{padding-top:0}
+/* One divider per row, with a full-width keyboard-accessible disclosure. */
+.hp3 .platform-page .platform-faq-grid{align-items:start}
+.hp3 .platform-page .platform-faq-grid>.sec-head{margin-bottom:0}
+.hp3 .platform-page .platform-faqs{min-width:0}
+.hp3 .platform-page .platform-faqs details{padding:0;border-top:0;border-bottom:1px solid var(--border)}
+.hp3 .platform-page .platform-faqs summary{padding:22px 0;min-height:60px;gap:20px;font-size:16px;font-weight:500;line-height:1.5;color:var(--ink);align-items:center;list-style:none;transition:color .18s}
+.hp3 .platform-page .platform-faqs details:first-child summary{padding-top:0;min-height:44px}
+.hp3 .platform-page .platform-faqs summary::-webkit-details-marker{display:none}
+.hp3 .platform-page .platform-faqs summary::marker{content:""}
+.hp3 .platform-page .platform-faqs summary::after{content:"+";display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:50%;background:var(--bg2);color:var(--t2);font-size:22px;font-weight:400;line-height:1;transition:background .18s,color .18s}
+.hp3 .platform-page .platform-faqs summary:hover,.hp3 .platform-page .platform-faqs details[open] summary{color:var(--em)}
+.hp3 .platform-page .platform-faqs details[open] summary::after{content:"−";background:var(--em-t);color:var(--em)}
+.hp3 .platform-page .platform-faqs summary:focus-visible{outline:2px solid var(--em);outline-offset:5px;border-radius:4px}
+.hp3 .platform-page .platform-faqs details p{max-width:64ch;margin:0;padding:0 48px 24px 0;color:var(--t2);font-size:14px;line-height:1.85}
+@media(max-width:600px){.hp3 .platform-page .platform-faqs summary{gap:16px;padding-block:19px}.hp3 .platform-page .platform-faqs details p{padding-right:0;padding-bottom:20px}}
+@media(prefers-reduced-motion:reduce){.hp3 .platform-page .platform-faqs summary,.hp3 .platform-page .platform-faqs summary::after{transition:none}}
 /* The actual product gets the largest visual on the self-hosting page. */
 .hp3 .community-showcase{margin-top:38px}
 .hp3 .community-switcher{display:flex;justify-content:center;gap:8px;margin:0 auto 25px}
@@ -193,8 +207,17 @@
 .hp3 .developers-page .developer-resources-green .platform-resource-grid h3{color:#23452b}
 .hp3 .developers-page .developer-resources-green .platform-resource-grid p{color:#526f58}
 .hp3 .developers-page .developer-resources-green .platform-resource-grid svg{color:#477952}
-.hp3 .developers-page .developer-resources-green .platform-self-host-link{background:#d9e8d4;border-color:#bdd1ba}
-.hp3 .developers-page .developer-resources-green .platform-self-host-link p{color:#526f58}
+/* Give self-hosting a distinct, accessible callout below the developer guides. */
+.hp3 .developers-page .platform-self-host-link{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:24px;margin-top:32px;padding:40px;border:1px solid var(--art-dark-border);border-radius:14px;background:var(--surface-dark);color:var(--on-dark)}
+.hp3 .developers-page .platform-self-host-link>svg{display:block;width:48px;height:48px;padding:12px;border:1px solid var(--art-dark-border);border-radius:10px;background:var(--art-dark-soft);color:var(--on-dark-accent)}
+.hp3 .developers-page .platform-self-host-link h3{font-size:clamp(22px,2.1vw,28px);font-weight:600;line-height:1.25;letter-spacing:-.025em;color:var(--on-dark);margin:0;text-wrap:balance}
+.hp3 .developers-page .platform-self-host-link p{font-size:14px;line-height:1.7;color:var(--on-dark-muted);margin:10px 0 0;max-width:56ch}
+.hp3 .developers-page .platform-self-host-link .platform-text-link{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:46px;padding:12px 18px;margin:0;border:1px solid transparent;border-radius:6px;background:var(--on-dark-accent);color:var(--art-dark);font-size:14px;font-weight:600;line-height:1.5;white-space:nowrap;transition:background .2s}
+.hp3 .developers-page .platform-self-host-link .platform-text-link:hover{background:#bce8ca;color:var(--art-dark)}
+.hp3 .developers-page .platform-self-host-link .platform-text-link:focus-visible{outline:2px solid var(--on-dark-accent);outline-offset:4px}
+@media(max-width:960px){.hp3 .developers-page .platform-self-host-link{grid-template-columns:48px minmax(0,1fr);gap:20px;padding:32px}.hp3 .developers-page .platform-self-host-link .platform-text-link{grid-column:2;justify-self:start}}
+@media(max-width:600px){.hp3 .developers-page .platform-self-host-link{grid-template-columns:minmax(0,1fr);gap:20px;padding:24px;margin-top:24px}.hp3 .developers-page .platform-self-host-link .platform-text-link{grid-column:1;justify-self:stretch}}
+@media(prefers-reduced-motion:reduce){.hp3 .developers-page .platform-self-host-link .platform-text-link{transition:none}}
 @media(max-width:1100px){.hp3 .developer-resources-intro{gap:35px;grid-template-columns:.85fr 1.15fr}.hp3 .developer-interfaces-heading>span{font-size:7px}.hp3 .developer-interface-code code{font-size:9px}.hp3 .developer-interface-outcome{font-size:9px;padding-inline:6px}.hp3 .developer-interface-rows{padding-inline:18px}}
 @media(max-width:960px){.hp3 .developer-resources-intro{grid-template-columns:1fr;gap:25px}.hp3 .developer-resources-intro .sec-head h2,.hp3 .developer-resources-intro .sec-head .lede{max-width:600px}.hp3 .developer-interfaces{max-width:590px;width:100%;justify-self:center;padding-left:0}.hp3 .developer-interface-code code{font-size:11px}.hp3 .developer-interface-outcome{font-size:11px}.hp3 .developer-interfaces-heading>span{font-size:8px}.hp3 .developer-interface-row{padding-block:19px}}
 @media(max-width:600px){.hp3 .developer-resources-intro{gap:16px;margin-bottom:35px}.hp3 .developer-interfaces{padding-right:8px}.hp3 .developer-interfaces-heading{padding:18px 15px;gap:8px}.hp3 .developer-interfaces-heading strong{font-size:12px}.hp3 .developer-interfaces-heading>span{display:none}.hp3 .developer-interface-rows{padding-inline:14px}.hp3 .developer-interface-row{grid-template-columns:1.15fr 22px 1fr;padding-block:15px}.hp3 .developer-interface-code code{font-size:8px}.hp3 .developer-interface-code>span{font-size:8px}.hp3 .developer-interface-outcome{font-size:9px;padding:9px 6px}.hp3 .developer-interface-connector{margin-inline:2px}.hp3 .developer-interfaces-footer{padding:14px;font-size:8px}}

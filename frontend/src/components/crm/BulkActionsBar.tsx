@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
+import { useCallback, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -9,10 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
-import { ArrowDown01Icon, Delete01Icon, PencilEdit01Icon, UserAdd01Icon } from '@/lib/icons';
+import { AiMagicIcon, Cancel01Icon, Delete01Icon, Loading01Icon, UserAdd01Icon } from '@/lib/icons';
 import { crmContactService } from '@/lib/services/crmService';
-import type { LifecycleStage, LeadStatus } from '@/lib/crmTypes';
+import type { CRMContact, LifecycleStage, LeadStatus } from '@/lib/crmTypes';
+import type { DockEntityReference } from '@/lib/dockTypes';
 import type { AssignableMember } from '@/lib/types';
 
 const LIFECYCLE_STAGES: { value: LifecycleStage; label: string }[] = [
@@ -32,174 +35,211 @@ const LEAD_STATUSES: { value: LeadStatus; label: string }[] = [
   { value: 'unqualified', label: 'Unqualified' },
 ];
 
+/** The Ask Agent dock attaches at most this many references to a message. */
+const ASK_AGENT_REFERENCE_LIMIT = 10;
+
+type ContactPatch = Parameters<typeof crmContactService.update>[2];
+
+function contactDisplayTitle(contact: Pick<CRMContact, 'first_name' | 'last_name' | 'email'>): string {
+  return [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email || 'CRM contact';
+}
+
+/** Dock references for a selection, capped at the dock's per-message limit. */
+function buildContactReferences(contacts: CRMContact[]): DockEntityReference[] {
+  return contacts.slice(0, ASK_AGENT_REFERENCE_LIMIT).map((contact) => ({
+    entity_type: 'crm_contact',
+    entity_id: contact.id,
+    display_id: contact.display_id,
+    display_title: contactDisplayTitle(contact),
+  }));
+}
+
 interface BulkActionsBarProps {
-  selectedIds: string[];
+  selectedContacts: CRMContact[];
   workspaceId: string;
   assignableMembers: AssignableMember[];
   onComplete: () => void;
   onClearSelection: () => void;
 }
 
+/**
+ * Floating action bar shown while contacts are selected. It sits over the
+ * table so the available actions are visible right where the selection was made.
+ */
 export function BulkActionsBar({
-  selectedIds,
+  selectedContacts,
   workspaceId,
   assignableMembers,
   onComplete,
   onClearSelection,
 }: BulkActionsBarProps) {
   const [loading, setLoading] = useState(false);
-  const count = selectedIds.length;
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const count = selectedContacts.length;
+  const noun = count === 1 ? 'contact' : 'contacts';
+  const selectedIds = useMemo(() => selectedContacts.map((contact) => contact.id), [selectedContacts]);
 
-  const bulkUpdate = useCallback(
-    async (patch: Record<string, unknown>) => {
+  const runBulk = useCallback(
+    async (verb: string, operation: (id: string) => Promise<{ error?: string | null } | null | undefined | void>) => {
+      if (loading || count === 0) return;
       setLoading(true);
       try {
-        await Promise.all(
-          selectedIds.map((id) => crmContactService.update(workspaceId, id, patch)),
-        );
+        const results = await Promise.allSettled(selectedIds.map((id) => operation(id)));
+        const failureCount = results.filter((result) => (
+          result.status === 'rejected' || !!result.value?.error
+        )).length;
+        const successCount = results.length - failureCount;
+        if (failureCount === 0) {
+          toast.success(`${verb} ${successCount} ${successCount === 1 ? 'contact' : 'contacts'}`);
+        } else if (successCount > 0) {
+          toast.warning(`${verb} ${successCount} of ${results.length} contacts`, {
+            description: `${failureCount} ${failureCount === 1 ? 'contact failed' : 'contacts failed'}.`,
+          });
+        } else {
+          toast.error('Bulk operation failed', {
+            description: `${failureCount} ${failureCount === 1 ? 'request failed' : 'requests failed'}.`,
+          });
+        }
         onComplete();
-        onClearSelection();
+        if (successCount > 0) onClearSelection();
       } finally {
         setLoading(false);
       }
     },
-    [selectedIds, workspaceId, onComplete, onClearSelection],
+    [count, loading, onClearSelection, onComplete, selectedIds],
   );
 
-  const bulkDelete = useCallback(async () => {
-    setLoading(true);
-    try {
-      await Promise.all(
-        selectedIds.map((id) => crmContactService.remove(workspaceId, id)),
-      );
-      onComplete();
-      onClearSelection();
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedIds, workspaceId, onComplete, onClearSelection]);
+  const bulkUpdate = useCallback(
+    (patch: ContactPatch) => runBulk('Updated', (id) => crmContactService.update(workspaceId, id, patch)),
+    [runBulk, workspaceId],
+  );
 
-  const [open, setOpen] = useState(false);
+  const bulkDelete = useCallback(
+    () => runBulk('Deleted', (id) => crmContactService.remove(workspaceId, id)),
+    [runBulk, workspaceId],
+  );
+
+  const askAgent = useCallback(() => {
+    const references = buildContactReferences(selectedContacts);
+    if (count > ASK_AGENT_REFERENCE_LIMIT) {
+      toast.info(`Attached the first ${ASK_AGENT_REFERENCE_LIMIT} of ${count} contacts to Ask Agent.`);
+    }
+    window.dispatchEvent(new CustomEvent('helpin:ask-agents', {
+      detail: { intent: 'new_chat', references },
+    }));
+  }, [count, selectedContacts]);
 
   if (count === 0) return null;
 
-  const fieldRow = 'flex items-center gap-2';
-  const fieldLabel = 'w-20 shrink-0 text-xs text-muted-foreground';
+  const divider = <span aria-hidden="true" className="mx-0.5 h-4 w-px shrink-0 bg-border" />;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="default"
-          size="sm"
-          className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-        >
-          <PencilEdit01Icon className="h-3.5 w-3.5" />
-          Edit {count} {count === 1 ? 'contact' : 'contacts'}
-          <ArrowDown01Icon className="h-3 w-3 opacity-70" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        className="w-[340px] p-3"
-        onClick={(event) => event.stopPropagation()}
+    <>
+      <div
+        role="toolbar"
+        aria-label={`Actions for ${count} selected ${noun}`}
+        className="pointer-events-auto flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-lg"
       >
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <Badge variant="secondary" className="shrink-0 text-xs">
-            {count} selected
-          </Badge>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs text-muted-foreground"
-            disabled={loading}
-            onClick={() => {
-              onClearSelection();
-              setOpen(false);
-            }}
-          >
-            Cancel
-          </Button>
-        </div>
+        <Badge variant="secondary" className="mr-1 shrink-0 gap-1 text-xs">
+          {loading ? <Loading01Icon className="h-3 w-3 animate-spin" /> : null}
+          {count} selected
+        </Badge>
+        {divider}
 
-        <div className="flex flex-col gap-2">
-          <div className={fieldRow}>
-            <span className={fieldLabel}>Stage</span>
-            <Select
-              size="sm"
-              disabled={loading}
-              onValueChange={(v) => bulkUpdate({ lifecycle_stage: v })}
-            >
-              <SelectTrigger className="h-7 flex-1 text-xs">
-                <SelectValue placeholder="No change" />
-              </SelectTrigger>
-              <SelectContent>
-                {LIFECYCLE_STAGES.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <Select value="" disabled={loading} onValueChange={(value) => void bulkUpdate({ lifecycle_stage: value as LifecycleStage })}>
+          <SelectTrigger size="sm" className="h-7 min-w-[96px] gap-1 border-0 bg-transparent px-2 text-xs shadow-none hover:bg-accent" aria-label="Set lifecycle stage">
+            <SelectValue placeholder="Stage" />
+          </SelectTrigger>
+          <SelectContent>
+            {LIFECYCLE_STAGES.map((stage) => (
+              <SelectItem key={stage.value} value={stage.value}>{stage.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-          <div className={fieldRow}>
-            <span className={fieldLabel}>Status</span>
-            <Select
-              size="sm"
-              disabled={loading}
-              onValueChange={(v) => bulkUpdate({ lead_status: v })}
-            >
-              <SelectTrigger className="h-7 flex-1 text-xs">
-                <SelectValue placeholder="No change" />
-              </SelectTrigger>
-              <SelectContent>
-                {LEAD_STATUSES.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <Select value="" disabled={loading} onValueChange={(value) => void bulkUpdate({ lead_status: value as LeadStatus })}>
+          <SelectTrigger size="sm" className="h-7 min-w-[96px] gap-1 border-0 bg-transparent px-2 text-xs shadow-none hover:bg-accent" aria-label="Set lead status">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            {LEAD_STATUSES.map((status) => (
+              <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-          <div className={fieldRow}>
-            <span className={fieldLabel}>Owner</span>
-            <MemberPickerPopover
-              value="__none__"
-              members={assignableMembers}
-              noneLabel="Unassigned"
-              onChange={(value) => {
-                bulkUpdate({ owner_member_id: value === '__none__' ? '' : value });
-              }}
-              triggerClassName="flex h-7 flex-1 items-center gap-1 rounded-md border border-input bg-transparent px-2 text-xs"
-              contentClassName="w-[260px]"
-              renderTrigger={() => (
-                <span className="flex items-center gap-1 text-muted-foreground">
-                  <UserAdd01Icon className="h-3 w-3" /> Assign owner
-                </span>
-              )}
-            />
-          </div>
+        <MemberPickerPopover
+          value="__none__"
+          members={assignableMembers}
+          noneLabel="Unassigned"
+          onChange={(value) => {
+            void bulkUpdate({ owner_member_id: value === '__none__' ? '' : value });
+          }}
+          triggerClassName="flex h-7 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-accent"
+          contentClassName="w-[260px]"
+          renderTrigger={() => (
+            <span className="flex items-center gap-1.5">
+              <UserAdd01Icon className="h-3.5 w-3.5 text-muted-foreground" /> Assign owner
+            </span>
+          )}
+        />
+        {divider}
 
-          <div className="mt-2 flex items-center gap-2 border-t border-border/60 pt-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               type="button"
-              variant="destructive"
+              variant="ghost"
               size="sm"
-              className="h-7 flex-1 px-2 text-xs"
+              className="h-7 gap-1.5 px-2 text-xs text-primary hover:bg-primary/10 hover:text-primary"
               disabled={loading}
-              onClick={bulkDelete}
+              onClick={askAgent}
             >
-              <Delete01Icon className="mr-1 h-3 w-3" />
-              Delete
+              <AiMagicIcon className="h-3.5 w-3.5" />
+              Ask Agent
             </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+          </TooltipTrigger>
+          <TooltipContent side="top">Start an Ask Agent chat with these {noun} attached</TooltipContent>
+        </Tooltip>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+          disabled={loading}
+          onClick={() => setDeleteConfirmOpen(true)}
+        >
+          <Delete01Icon className="h-3.5 w-3.5" />
+          Delete
+        </Button>
+        {divider}
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground"
+          aria-label="Clear selection"
+          disabled={loading}
+          onClick={onClearSelection}
+        >
+          <Cancel01Icon className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title={`Delete ${count} ${noun}?`}
+        description="Deleted contacts are removed from the workspace along with their activity history. This cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => {
+          setDeleteConfirmOpen(false);
+          void bulkDelete();
+        }}
+      />
+    </>
   );
 }

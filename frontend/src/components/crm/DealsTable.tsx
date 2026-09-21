@@ -36,8 +36,10 @@ import {
   TABLE_CONTAINER,
   TABLE_HEADER,
   TABLE_HEADER_CELL,
+  TABLE_HEADER_CELL_SELECT,
   TABLE_ROW,
   TABLE_CELL,
+  TABLE_CELL_SELECT,
   TABLE_GROUP_ROW,
   TABLE_GROUP_ROW_INNER,
   TABLE_HEADER_CELL_SORTABLE,
@@ -422,7 +424,7 @@ export function DealsTable({
                   return (
                     <div
                       key={header.id}
-                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+                      className={`${colId === 'select' ? TABLE_HEADER_CELL_SELECT : TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
                       style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
                       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                     >
@@ -578,7 +580,7 @@ const MemoDataRow = memo(function DataRow({
         return (
           <div
             key={cell.id}
-            className={`${TABLE_CELL} ${pinnedClass}`}
+            className={`${colId === 'select' ? TABLE_CELL_SELECT : TABLE_CELL} ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}

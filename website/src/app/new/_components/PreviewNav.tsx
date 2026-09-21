@@ -3,26 +3,12 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowRight, ArrowUpRight, BookOpen, Bot, Braces, ChevronDown, Menu, Plug, Server, Terminal, Webhook, X } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, BookOpen, Bot, Braces, ChevronDown, Menu, Server, X } from 'lucide-react';
 import { HelpinBrand } from '@/components/HelpinBrand';
 import { GITHUB_URL, SIGNUP_URL, GithubIcon } from './ui';
 import { PRODUCTS, ProductLink, ProductsMenu } from './ProductsMenu';
 
-const DEVELOPERS = [
-  { label: 'APIs & SDKs', description: 'Connect Helpin to your product.', href: '/new/developers#sdk', icon: Braces },
-  { label: 'MCP', description: 'Give AI tools workspace context.', href: '/new/developers#mcp', icon: Plug },
-  { label: 'Webhooks', description: 'Build around workspace events.', href: '/new/developers#webhooks', icon: Webhook },
-  { label: 'Helpin CLI', description: 'Set up and manage your instance.', href: '/new/self-hosting#cli', icon: Terminal },
-];
-type MenuName = 'product' | 'developers';
-
-function ResourceLink({ item }: { item: typeof DEVELOPERS[number] }) {
-  const Icon = item.icon;
-  const contents = <><span className="nav-resource-icon"><Icon size={19} strokeWidth={1.6} /></span><span><b>{item.label}</b><small>{item.description}</small></span>{item.href.startsWith('https:') ? <ArrowUpRight className="nav-external" size={13} /> : null}</>;
-  return item.href.startsWith('https:')
-    ? <a className="nav-resource" href={item.href} target="_blank" rel="noopener noreferrer">{contents}</a>
-    : <Link className="nav-resource" href={item.href}>{contents}</Link>;
-}
+type MenuName = 'product';
 
 export function PreviewNav() {
   const pathname = usePathname();
@@ -33,7 +19,6 @@ export function PreviewNav() {
   const nav = useRef<HTMLElement>(null);
   const mobileToggle = useRef<HTMLButtonElement>(null);
   const productToggle = useRef<HTMLButtonElement>(null);
-  const developerToggle = useRef<HTMLButtonElement>(null);
   const hoverClose = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openedByHover = useRef(false);
   const cancelHoverClose = () => { if (hoverClose.current) clearTimeout(hoverClose.current); };
@@ -106,7 +91,7 @@ export function PreviewNav() {
   const keyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape' && expanded) {
       event.preventDefault();
-      const trigger = mobileOpen ? mobileToggle : open === 'product' ? productToggle : developerToggle;
+      const trigger = mobileOpen ? mobileToggle : productToggle;
       close(); trigger.current?.focus();
     }
     if (event.key === 'Tab' && mobileOpen && nav.current) {
@@ -134,7 +119,7 @@ export function PreviewNav() {
           <div className="navlinks">
             <button ref={productToggle} className="nav-trigger" aria-expanded={open === 'product'} aria-controls="preview-product-menu" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} onClick={event => { cancelHoverClose(); setOpen(openedByHover.current && event.detail > 0 ? 'product' : open === 'product' ? null : 'product'); openedByHover.current = false; }} onKeyDown={event => openWithKeyboard(event, 'product')}>Products<ChevronDown size={13} /></button>
             <Link className="nav-direct" href="/new/products/ai-agents" onClick={close}>AI Agents</Link>
-            <button ref={developerToggle} className="nav-trigger" aria-expanded={open === 'developers'} aria-controls="preview-developers-menu" onClick={() => setOpen(open === 'developers' ? null : 'developers')} onKeyDown={event => openWithKeyboard(event, 'developers')}>Developers<ChevronDown size={13} /></button>
+            <Link className="nav-direct" href="/new/developers" onClick={close}>Developers</Link>
             <Link className="nav-direct" href="/new/self-hosting" onClick={close}>Open source</Link>
           </div>
           <div className="navright">
@@ -147,17 +132,6 @@ export function PreviewNav() {
 
         <div id="preview-product-menu" className="nav-panel nav-product-panel" onPointerEnter={enterProduct} onPointerLeave={leaveProduct} hidden={open !== 'product'} onClick={event => { if ((event.target as HTMLElement).closest('a')) close(); }}>
           <ProductsMenu />
-        </div>
-
-        <div id="preview-developers-menu" className="nav-panel nav-developer-panel" hidden={open !== 'developers'} onClick={event => { if ((event.target as HTMLElement).closest('a')) close(); }}>
-          <div className="nav-panel-main">
-            <p className="nav-section-label">Build with Helpin</p>
-            <div className="nav-resource-grid">{DEVELOPERS.map(item => <ResourceLink item={item} key={item.label} />)}</div>
-            <div className="nav-developer-footer">
-              <a href={`${GITHUB_URL}/blob/develop/docs/README.md`} target="_blank" rel="noopener noreferrer"><BookOpen size={15} />Read the docs<ArrowUpRight size={13} /></a>
-              <Link href="/new/self-hosting"><Server size={15} />Self-host Helpin<ArrowRight size={13} /></Link>
-            </div>
-          </div>
         </div>
 
         <div id="preview-mobile-menu" className="nav-mobile-panel" hidden={!mobileOpen} onClick={event => { if ((event.target as HTMLElement).closest('a')) close(); }}>
