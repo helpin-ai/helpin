@@ -55,3 +55,8 @@
 /* The pinned frame must not consume page scrolling for a few pixels of outer
    overflow. Each demo keeps its own scrollable message, table, or document pane. */
 .hp3 .is-scroll-driven .product-preview-viewport { overflow: clip; overscroll-behavior-y: auto; }
+
+/* A tab revisit resumes the delivery state instead of replaying the hero's
+   delayed board-to-task entrance. Card movement and delivery steps still play. */
+.hp3 .product-preview[data-product="projects"] .project-hero-art .project-hero-board,
+.hp3 .product-preview[data-product="projects"] .project-hero-art .project-hero-task { animation: none; }

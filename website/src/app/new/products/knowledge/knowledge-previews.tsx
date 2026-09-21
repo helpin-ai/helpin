@@ -11,8 +11,8 @@ import './knowledge-previews.css';
 // Isolated presentational versions of the platform's CollectionCard / DocumentsTable
 // and help-center TopBar / ArticleShell / APIRequestPanel. Demo actions are local;
 // these previews never use app authentication, customer data, or live API requests.
-function useKnowledgePlayback() {
-  const playback = useBentoPlayback(20000);
+function useKnowledgePlayback(autoplay = true) {
+  const playback = useBentoPlayback(20000, autoplay);
   const [paused, setPaused] = useState(false);
   const [frame, setFrame] = useState(4);
   const active = playback.playing && !paused;
@@ -52,8 +52,8 @@ const DOCUMENTS = [
   ['Resolve a failed sync', 'Troubleshooting', '5 days ago'],
 ];
 
-export function KnowledgeWorkspace({ apiHref = '#knowledge-api' }: { apiHref?: string }) {
-  const { container, active, phase, paused, setPaused } = useKnowledgePlayback();
+export function KnowledgeWorkspace({ apiHref = '#knowledge-api', autoplay = true }: { apiHref?: string; autoplay?: boolean }) {
+  const { container, active, phase, paused, setPaused } = useKnowledgePlayback(autoplay);
   const [collection, setCollection] = useState('');
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('recent');

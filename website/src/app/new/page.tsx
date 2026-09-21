@@ -4,6 +4,7 @@ import { ConnectedWorkspace } from './_components/ConnectedWorkspace';
 import { GridFlow } from './_components/GridFlow';
 import { PreviewFooter } from './_components/PreviewFooter';
 import { LoopWire } from './_components/LoopWire';
+import { ProductPreview } from './_components/product-previews';
 import { ProductExplorer } from './_components/ProductExplorer';
 import { HostingDiagram } from './_components/HostingDiagram';
 import { AgentDirectoryPreview } from './_components/agent-directory/AgentDirectoryPreview';
@@ -115,10 +116,8 @@ export default function NewHomePage() {
             <h2 id="ask-agent-title">Ask a question.<br />Hand off the work.</h2>
             <p className="lede">Ask about a customer, investigate an issue, or describe the work you need done. Ask Agent finds the context, coordinates specialist agents, and brings the results back to one conversation.</p>
           </div>
-          <figure className="ask-agent-screenshot">
-            <a href="/new/product/workspace-ask-agent-4k-v1.webp" target="_blank" rel="noopener noreferrer" aria-label="View the Ask Agent screenshot at full size (opens in a new tab)">
-              <img src="/new/product/workspace-ask-agent-4k-v1.webp" alt="Helpin Ask Agent demo reviewing OrbitDesk’s SSO rollout, with four specialist sub-agents, findings, a completed five-step work plan, and a customer follow-up draft." width={3840} height={2016} loading="lazy" decoding="async" />
-            </a>
+          <figure className="ask-agent-preview">
+            <ProductPreview product="ask-agent" theme="light" />
             <figcaption>An example rollout review: four sub-agents, one work plan, and a follow-up ready for review.</figcaption>
           </figure>
           <div className="ask-agent-capabilities">

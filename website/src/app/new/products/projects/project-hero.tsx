@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Check, CheckCheck, GitMerge, GitPullRequest, Mail, MessageSquare, Pause, Play, Rocket } from 'lucide-react';
 import { ProjectAgentBadge, ProjectHeroBoard } from './project-hero-board';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
@@ -15,24 +15,41 @@ function Property({ icon, label, children }: { icon: TaskIconName | ReactNode; l
 // Presentational snapshot of TaskDetailPanel / QuietDetailHeader, using the same
 // Inter font, field order and icon geometry, with marketing surface colors. No app mutations.
 export function ProjectHero({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
-  const { container, playing, cycle } = useBentoPlayback(30000);
+  const { container, playing, cycle, reducedMotion } = useBentoPlayback(30000);
   const [paused, setPaused] = useState(false);
   const active = playing && !paused;
-  const [frame, setFrame] = useState(7);
+  const [frame, setFrame] = useState(0);
+  const elapsed = useRef(0);
+  const lastCycle = useRef(cycle);
   useEffect(() => {
+    if (lastCycle.current !== cycle) {
+      lastCycle.current = cycle;
+      elapsed.current = 0;
+      setFrame(0);
+    }
     if (!active) return;
-    setFrame(0);
-    const timers = [2500, 6500, 10500, 14000, 17500, 21000, 23000].map((time, index) => setTimeout(() => setFrame(index + 1), time));
-    return () => timers.forEach(clearTimeout);
+    const started = performance.now();
+    const timings = [2500, 6500, 10500, 14000, 17500, 21000, 23000];
+    const timers = timings.flatMap((time, index) => time > elapsed.current
+      ? [setTimeout(() => setFrame(index + 1), time - elapsed.current)] : []);
+    return () => {
+      elapsed.current += performance.now() - started;
+      timers.forEach(clearTimeout);
+    };
   }, [active, cycle]);
-  // Server, reduced-motion and paused views show the complete delivery history.
-  const phase = active ? frame : 7;
+  // Visibility pauses preserve the task's column. Explicit pause and reduced
+  // motion show the completed story; pressing play starts a fresh run.
+  const phase = paused || reducedMotion ? 7 : frame;
+  function togglePlayback() {
+    if (paused) { elapsed.current = 0; setFrame(0); }
+    setPaused(value => !value);
+  }
   const state = ['Ready', 'In Progress', 'In Review', 'In Review', 'Done'][Math.min(phase, 4)];
   const colors = ['#818cf8', '#d99552', '#af73c3', '#af73c3', '#83b397'];
   const captions = ['TASK CREATED · CUSTOMER CONTEXT ATTACHED', 'FORGE BUILDS · TASK MOVES TO IN PROGRESS', 'LENS REVIEWS · TASK MOVES TO IN REVIEW', 'SAM REVIEWS · MERGE AWAITS APPROVAL', 'PR MERGED · TASK COMPLETE', 'RELEASE PUBLISHED · FOLLOW-UP PREPARED', 'SAM APPROVES · CUSTOMER UPDATE READY', 'CUSTOMER NOTIFIED · LOOP CLOSED'];
   const delay = (seconds: number) => ({ '--task-delay': `${seconds}s` }) as CSSProperties;
   return <div className="project-hero-art" data-theme={theme} ref={container} data-playing={active} data-phase={phase}>
-    <div className="project-hero-art-label"><span>{captions[phase]}</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} project delivery animation`} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12} /> : <Pause size={12} />}</button></div>
+    <div className="project-hero-art-label"><span>{captions[phase]}</span><button type="button" aria-label={`${paused ? 'Play' : 'Pause'} project delivery animation`} aria-pressed={paused} onClick={togglePlayback}>{paused ? <Play size={12} /> : <Pause size={12} />}</button></div>
     <div className="project-hero-stage" key={cycle} role="img" aria-label="Illustrative OrbitDesk delivery workflow. A customer request becomes task ORB-491, Add Slack alerts for failed syncs. Forge builds and tests the change as the task moves to In Progress. Lens reviews it in In Review. Sam approves the pull request before PR #728 merges and the task moves to Done. Another task shows Forge already running. The opened task retains the customer requirements and delivery history. After the release is published, a configured follow-up workflow asks Ask Agent to prepare Maya’s update. Sam approves the message, then it is sent to Maya in the original conversation.">
       <ProjectHeroBoard phase={phase} />
       <div className="project-hero-task" aria-hidden="true"><div>

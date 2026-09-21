@@ -15,6 +15,8 @@ export function PreviewCanvas({ label, children }: { label: string; children: Re
     const fit = () => {
       const width = frame.clientWidth;
       const height = frame.clientHeight;
+      // Hidden tab panels retain their last fitted canvas until shown again.
+      if (!width || !height) return;
       // Keep narrow previews at their native text size. Wide previews get a
       // desktop-sized canvas, with a floor so short screens stay readable.
       const scale = width >= 760

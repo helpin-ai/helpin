@@ -949,10 +949,9 @@
 .hp3 .ask-agent-intro .eyebrow { color: #81deb0; }
 .hp3 .ask-agent-intro h2 { font-size: clamp(2.25rem, 4.4vw, 3.5rem); line-height: 1.08; letter-spacing: -.035em; }
 .hp3 .ask-agent-intro .lede { margin-inline: auto; max-width: 64ch; color: #b5c9bd; font-size: 18px; }
-.hp3 .ask-agent-screenshot { margin: 0 0 48px; }
-.hp3 .ask-agent-screenshot a { display: block; overflow: hidden; border: 1px solid #456958; border-radius: 16px; box-shadow: 0 24px 72px rgba(0,0,0,.25); }
-.hp3 .ask-agent-screenshot img { display: block; width: 100%; height: auto; }
-.hp3 .ask-agent-screenshot figcaption { margin-top: 16px; color: #b5c9bd; text-align: center; font-size: 14px; }
+.hp3 .ask-agent-preview { margin: 0 0 48px; }
+.hp3 .ask-agent-preview .product-preview-viewport { border-color: #456958; border-radius: 16px; box-shadow: 0 24px 72px rgba(0,0,0,.25); }
+.hp3 .ask-agent-preview figcaption { margin-top: 16px; color: #b5c9bd; text-align: center; font-size: 14px; }
 .hp3 .ask-agent-capabilities { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
 .hp3 .ask-agent-capabilities article { position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; padding: 28px; min-width: 0; border: 1px solid #2c483a; border-radius: 16px; background: rgba(255,255,255,.025); transition: border-color .6s ease; }
 .hp3 .ask-agent-capabilities article::before { content: ''; position: absolute; inset: -40%; z-index: 0; pointer-events: none; background: radial-gradient(ellipse at 32% 68%, rgba(63,191,131,.16), transparent 45%), radial-gradient(ellipse at 76% 28%, rgba(36,128,111,.1), transparent 42%); opacity: .65; transform: translate(-8%,8%); transition: transform .9s cubic-bezier(.22,1,.36,1), opacity .7s ease; }
@@ -1007,8 +1006,8 @@
 @media (max-width: 760px) {
   .hp3 .ask-agent-section { padding-block: 64px; }
   .hp3 .ask-agent-intro { margin-bottom: 36px; }
-  .hp3 .ask-agent-screenshot { margin-bottom: 36px; }
-  .hp3 .ask-agent-screenshot a { border-radius: 10px; }
+  .hp3 .ask-agent-preview { margin-bottom: 36px; }
+  .hp3 .ask-agent-preview .product-preview-viewport { border-radius: 10px; }
   .hp3 .ask-agent-intro .lede { font-size: 17px; }
   .hp3 .ask-agent-capabilities { grid-template-columns: minmax(0, 1fr); }
 }

@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import { PreviewCanvas } from './PreviewCanvas';
 import './product-preview.css';
 
-export type ProductPreviewName = 'inbox' | 'meetings' | 'projects' | 'crm' | 'knowledge';
+export type ProductPreviewName = 'inbox' | 'meetings' | 'projects' | 'crm' | 'knowledge' | 'ask-agent';
 
 function LoadingPreview() {
   return <div className="product-preview-loading" role="status">Loading preview…</div>;
@@ -12,9 +12,10 @@ function LoadingPreview() {
 
 // Shared entry point for embedded product demos. These are the same components
 // used on the product pages; keep their interactions and stories in those files.
-// Load only the selected demo on the client. This keeps generated accessibility
-// IDs stable across the dynamic boundary; the loading frame reserves its space.
+// Load requested demos on the client; callers can preload nearby scenes. This
+// keeps accessibility IDs stable while the loading frame reserves its space.
 const PREVIEWS = {
+  'ask-agent': dynamic(() => import('../ask-agent/AskAgentWorkspace').then(module => module.AskAgentWorkspace), { loading: LoadingPreview, ssr: false }),
   inbox: dynamic(() => import('../../products/customer-support/support-workspace').then(module => module.SupportWorkspace), { loading: LoadingPreview, ssr: false }),
   meetings: dynamic(() => import('../../products/meetings/meeting-workspace').then(module => module.MeetingWorkspace), { loading: LoadingPreview, ssr: false }),
   projects: dynamic(() => import('../../products/projects/project-hero').then(module => module.ProjectHero), { loading: LoadingPreview, ssr: false }),
@@ -23,7 +24,7 @@ const PREVIEWS = {
 };
 
 const LABELS: Record<ProductPreviewName, string> = {
-  inbox: 'Inbox', meetings: 'Meetings', projects: 'Projects', crm: 'CRM', knowledge: 'Knowledge',
+  inbox: 'Inbox', meetings: 'Meetings', projects: 'Projects', crm: 'CRM', knowledge: 'Knowledge', 'ask-agent': 'Ask Agent',
 };
 
 /** A bounded, responsive demo for product tabs and other embedded surfaces. */
