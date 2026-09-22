@@ -117,6 +117,10 @@ func (r *SupportMessageRepository) Create(ctx context.Context, message *model.Su
 }
 
 func (r *SupportMessageRepository) create(ctx context.Context, message *model.SupportMessage) error {
+	if message != nil && message.PendingGuard != nil {
+		return r.createPendingMessage(ctx, message)
+	}
+
 	if message != nil && message.MessageType == "system" {
 		if message.SystemEventType == nil || !model.IsValidSupportSystemEventType(*message.SystemEventType) {
 			return fmt.Errorf("create message: system message requires a valid system_event_type")

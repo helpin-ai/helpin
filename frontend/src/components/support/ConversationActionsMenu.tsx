@@ -1,3 +1,9 @@
+import { LiveTranslateBar } from './LiveTranslateBar';
+import { useWorkspaceAccess } from '@/hooks/queries/useSession';
+function TranslationDialogControls({workspaceId, conversationId}: {workspaceId: string; conversationId: string}) {
+ const {data: access} = useWorkspaceAccess(workspaceId);
+ return <LiveTranslateBar workspaceId={workspaceId} conversationId={conversationId} editable={!!access?.permissions?.includes('support.edit')} forceVisible />;
+}
 import { useSupportAIControl } from './SupportAIControl';
 import { type ReactNode, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -85,6 +91,7 @@ export function ConversationActionsMenu({
   onSubjectDialogOpenChange,
 }: ConversationActionsMenuProps) {
   const confirm = useConfirm();
+  const [translationOpen, setTranslationOpen] = useState(false);
   const aiControl = useSupportAIControl(conversation);
   const markConversationRead = useMarkConversationRead(workspaceId);
   const markConversationUnread = useMarkConversationUnread(workspaceId);
@@ -202,6 +209,7 @@ export function ConversationActionsMenu({
           {trigger}
         </DropdownMenuTrigger>
         <DropdownMenuContent align={align} className="w-64">
+          <DropdownMenuItem onClick={() => setTranslationOpen(true)} className={itemClassName}>Live Translate</DropdownMenuItem>
           {aiControl.item && <>{aiControl.item}<DropdownMenuSeparator /></>}
           <DropdownMenuItem onClick={handleToggleReadState} className={itemClassName}>
             <MailOpenIcon className={iconClassName} />
@@ -284,6 +292,12 @@ export function ConversationActionsMenu({
         </DropdownMenuContent>
       </DropdownMenu>
       {aiControl.confirmation}
+      <Dialog open={translationOpen} onOpenChange={setTranslationOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Live Translate</DialogTitle></DialogHeader>
+          {translationOpen && <TranslationDialogControls workspaceId={workspaceId} conversationId={conversation.id} />}
+        </DialogContent>
+      </Dialog>
 
       {subjectDialogOpen && (
         <Dialog open={subjectDialogOpen} onOpenChange={setSubjectDialogOpen}>

@@ -181,3 +181,6 @@
 @container support-workspace (max-width:520px) { .hp3 #support-inbox .swi-shell { height: 865px; } }
 @container support-workspace (max-width:290px) { .hp3 #support-inbox .swi-shell { height: 965px; } }
 @media(max-width:600px) { .hp3 #support-connected .swi-agent-step { margin-top: 13px; } }
+
+/* Identity now lives in the controls section; details link to Developers. */
+.hp3 .support-controls-link { margin-top: 32px; text-align: center; }

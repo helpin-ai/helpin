@@ -1,3 +1,4 @@
+import { languageFlag } from '@/components/support/liveTranslateLanguages';
 import { QuietDropdown } from '@/components/design-system/quiet-dropdown';
 import { QuietTextAction } from '@/components/design-system/quiet';
 
@@ -17,7 +18,7 @@ export function TranslationLanguagePicker({
   onChange: (value: string) => void;
 }) {
   const options = Object.entries(languages)
-    .map(([value, label]) => ({ value, label }))
+    .map(([value, label]) => ({ value, label: `${languageFlag(value)} ${label}` }))
     .sort((a, b) => a.label.localeCompare(b.label));
   if (allowAuto) options.unshift({ value: '', label: 'Detect automatically' });
   return (
@@ -29,7 +30,7 @@ export function TranslationLanguagePicker({
           aria-label={`${label}: ${languages[value] || 'Detect automatically'}`}
           disabled={disabled}
         >
-          {label}: {languages[value] || 'Detect automatically'}
+          {label}: {languageFlag(value)} {languages[value] || 'Detect automatically'}
         </QuietTextAction>
       }
       selected={[value]}

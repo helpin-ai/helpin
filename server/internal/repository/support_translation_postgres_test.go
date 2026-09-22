@@ -106,7 +106,7 @@ func TestTranslationPostgresMigrationPrivacyAndConcurrentSend(t *testing.T) {
 	privacyCheck(t, db, "SELECT count(*) = 0 FROM support_translations WHERE conversation_id=?", conv.ID)
 }
 
-func TestTranslationPostgresWorkspacePolicyGuard(t *testing.T) {
+func TestTranslationPostgresConversationPolicyGuard(t *testing.T) {
 	db := contactPrivacyDB(t)
 	workspace := uuid.NewString()
 	seedContactPrivacyWorkspace(t, db, workspace)
@@ -135,17 +135,24 @@ func TestTranslationPostgresWorkspacePolicyGuard(t *testing.T) {
 	send := func() error {
 		return messages.Create(context.Background(), &model.SupportMessage{WorkspaceID: workspace, ConversationID: conv.ID, SenderType: "user", SenderUserID: &actor, Content: "Hallo", MessageType: "reply", TranslationID: artifact.ID})
 	}
-	for _, settings := range []string{`{"translation_enabled":false}`, `{"translation_outgoing_enabled":false}`, `{"translation_customer_language":"fr"}`} {
-		if err := db.Model(installation).Update("settings", settings).Error; err != nil {
+
+	// Workspace defaults initialize new conversations; this existing thread is
+	// guarded by its own policy, including a manual destination correction.
+	for _, policy := range []struct {
+		on       bool
+		language string
+	}{{false, ""}, {true, "fr"}} {
+		if err := repo.SetLiveConversation(context.Background(), workspace, conv.ID, policy.on, policy.language); err != nil {
 			t.Fatal(err)
 		}
 		if err := send(); err == nil {
-			t.Fatalf("workspace policy allowed send: %s", settings)
+			t.Fatalf("conversation policy allowed send: %+v", policy)
 		}
 	}
-	if err := db.Model(installation).Update("settings", `{"translation_customer_language":"de"}`).Error; err != nil {
+	if err := repo.SetLiveConversation(context.Background(), workspace, conv.ID, true, "de"); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := send(); err != nil {
 		t.Fatal(err)
 	}

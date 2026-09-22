@@ -999,6 +999,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/follow-up/cancel", h.SupportInbox.CancelConversationFollowUp)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages", h.SupportInbox.ListConversationMessages)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/translation", h.SupportInbox.TranslationOptions)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/translation", h.SupportInbox.SetLiveTranslate)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/translation/messages", h.SupportInbox.CachedLiveTranslations)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/translation/sends", h.SupportInbox.QueueSupportSend)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/translation/sends", h.SupportInbox.PendingSupportSends)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/translation/sends/{send_id}", h.SupportInbox.RetrySupportSend)
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/translation/messages", h.SupportInbox.TranslateMessage)
 
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/message-pages", h.SupportInbox.ListConversationMessagePage)

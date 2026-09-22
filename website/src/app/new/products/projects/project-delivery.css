@@ -37,7 +37,7 @@
 .hp3 .pdl-guide>svg{flex:none}
 .hp3 .pdl-update[data-sent=true],.hp3 .pdl-work[data-active=true]{border-color:#52885e}
 .hp3 .pdl-update[data-sent=true] .pdl-update-heading>span{color:var(--on-dark-accent)}
-.hp3 .pdl-connector{position:relative;align-self:center;height:1px;background:#365b45;overflow:hidden}
+.hp3 .pdl-connector{position:relative;align-self:center;height:1px;background:rgba(196,216,204,.14);overflow:hidden}
 .hp3 .pdl-connector>i{position:absolute;inset:0;background:var(--on-dark-accent);transform:translateX(-100%);opacity:0}
 .hp3 .projects-delivery-art[data-playing=true] .pdl-connector[data-active=true]>i{opacity:1;animation:pdl-flow 1.6s ease-in-out infinite}
 .hp3 .projects-delivery-art[data-playing=true][data-phase="1"] .pdl-agent{animation:pdl-working 2s ease-in-out infinite}

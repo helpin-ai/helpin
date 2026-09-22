@@ -1,27 +1,67 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowRight, Check } from 'lucide-react';
-import { PLANS } from './pricing-data';
+import { ArrowRight, Building2, Check } from 'lucide-react';
+import { AI_ALLOWANCE, PLANS } from './pricing-data';
+import { DEMO_URL, GITHUB_URL } from '../new/_components/ui';
+
+const SELF_HOSTED_FEATURES = [
+  'Every module and Growth feature, no plan limits',
+  'Support, projects, CRM, meetings, docs, and automation',
+  'AI agents with your own provider keys',
+  'No Helpin AI or tool fees',
+  'Community help on GitHub',
+];
 
 export function PricingPlans() {
   const [annual, setAnnual] = useState(false);
   return <section id="cloud-plans" className="pricing-plans"><div className="wrap">
-    <div className="pricing-plan-heading"><div><span className="eyebrow">Managed hosting</span><h2>Choose your plan.<br />Bring your team.</h2><p className="pricing-note">Start with the connected workspace. Add more capacity and automation as your process grows.</p></div><div className="pricing-billing-control"><div className="pricing-billing" role="group" aria-label="Billing period"><button type="button" aria-pressed={!annual} onClick={() => setAnnual(false)}>Monthly</button><button type="button" aria-pressed={annual} onClick={() => setAnnual(true)}>Annually</button></div><span className="pricing-annual-saving">Save 20% with annual billing</span></div></div>
-    <div className="pricing-plan-grid">{PLANS.map(plan => <article className="pricing-plan" data-featured={plan.popular} key={plan.name} aria-labelledby={`plan-${plan.name.toLowerCase()}`}>
-      <div className="pricing-plan-top">
-        <header><h3 id={`plan-${plan.name.toLowerCase()}`}>{plan.name}</h3><span className="pricing-plan-position">{plan.popular ? 'Run more of your process with agents.' : 'Bring customer work together.'}</span></header>
-        <p className="pricing-plan-description">{plan.description}</p>
-        <div className="pricing-price" aria-live="polite" aria-atomic="true"><div className="pricing-price-amount"><span>$</span><strong>{annual ? plan.annual : plan.price}</strong><span>/ month</span></div><p>Per workspace · {annual ? `$${(plan.annual * 12).toLocaleString('en-US')} billed annually` : 'billed monthly'} · USD · Taxes extra</p></div>
-        <a className={`btn ${plan.popular ? 'btn-primary' : 'btn-secondary'}`} href={plan.href}>{plan.cta}<ArrowRight size={16} aria-hidden="true" /></a>
-        <p className="pricing-plan-trial">14-day Growth trial · No card needed</p>
+    <div className="pricing-plan-heading">
+      <h2>Same product. You choose who runs it.</h2>
+      <div className="pricing-billing" role="group" aria-label="Billing period">
+        <button type="button" aria-pressed={!annual} onClick={() => setAnnual(false)}>Monthly</button>
+        <button type="button" aria-pressed={annual} onClick={() => setAnnual(true)}>Annually <span>−20%</span></button>
       </div>
-      <div className="pricing-plan-details">
-        <dl className="pricing-plan-metrics"><div><dt>Teammates</dt><dd>{plan.seats}</dd></div><div><dt><a href="#ai-usage">Monthly AI allowance</a></dt><dd>{plan.aiUsage}</dd></div></dl>
-        <h4>{plan.popular ? 'Build on your existing workflow' : 'Your team’s starting point'}</h4>
-        <ul>{plan.features.filter(feature => feature !== 'Everything in Starter, plus:').map(feature => <li key={feature}><Check size={14} strokeWidth={1.6} aria-hidden="true" /><span>{feature}</span></li>)}</ul><p className="pricing-note">{plan.popular ? 'Turn the work you repeat into a process your team can oversee.' : 'Start with the work you need today. Keep its history ready for what comes next.'}</p>
-      </div>
-    </article>)}</div>
-    <div className="pricing-plan-footnote"><a href="#compare-plans">Compare plans in detail ↓<ArrowRight size={14} aria-hidden="true" /></a></div>
+    </div>
+
+    <div className="pricing-plan-grid">
+      <article id="self-hosted" className="pricing-plan" aria-labelledby="plan-self-hosted">
+        <h3 id="plan-self-hosted">Self-hosted</h3>
+        <p className="pricing-plan-description">The complete open-source product, on your servers.</p>
+        <div className="pricing-price"><div className="pricing-price-amount"><span>$</span><strong>0</strong><span>forever</span></div><p>AGPL-3.0 · You cover hosting and AI providers</p></div>
+        <a className="btn btn-secondary" href="/new/self-hosting">Read the self-hosting guide<ArrowRight size={16} aria-hidden="true" /></a>
+        <dl className="pricing-plan-metrics"><div><dt>Teammates</dt><dd>Unlimited</dd></div><div><dt>AI usage</dt><dd>Your provider keys</dd></div></dl>
+        <ul>{SELF_HOSTED_FEATURES.map(feature => <li key={feature}><Check size={14} strokeWidth={2} aria-hidden="true" /><span>{feature}</span></li>)}</ul>
+        <p className="pricing-plan-aside">Community 0.1 is in beta. <a href={GITHUB_URL}>View on GitHub</a></p>
+      </article>
+
+      {PLANS.map(plan => {
+        const price = annual ? plan.annual : plan.price;
+        const ai = AI_ALLOWANCE[plan.key][annual ? 'annual' : 'monthly'];
+        return <article className="pricing-plan" data-featured={plan.popular} key={plan.key} aria-labelledby={`plan-${plan.key}`}>
+          <h3 id={`plan-${plan.key}`}>{plan.name}</h3>
+          <p className="pricing-plan-description">{plan.description}</p>
+          <div className="pricing-price" aria-live="polite" aria-atomic="true">
+            <div className="pricing-price-amount"><span>$</span><strong>{price}</strong><span>/ month</span></div>
+            <p>Per workspace · {annual ? `$${(plan.annual * 12).toLocaleString('en-US')} billed yearly` : 'Billed monthly'}</p>
+          </div>
+          <a className={`btn ${plan.popular ? 'btn-primary' : 'btn-secondary'}`} href={plan.href}>{plan.cta}<ArrowRight size={16} aria-hidden="true" /></a>
+          <dl className="pricing-plan-metrics"><div><dt>Teammates</dt><dd>Unlimited</dd></div><div><dt><a href="#ai-usage">AI usage included</a></dt><dd>${ai} / month</dd></div></dl>
+          <h4>{plan.featuresHeading}</h4>
+          <ul>{plan.features.map(feature => <li key={feature}><Check size={14} strokeWidth={2} aria-hidden="true" /><span>{feature}</span></li>)}</ul>
+        </article>;
+      })}
+    </div>
+
+    <div className="pricing-plan-footnote">
+      <p>Self-hosting is free and complete. Cloud adds hosting, included AI, and support. Cloud plans start with a 14-day Growth trial, no card required. Prices in USD, taxes extra.</p>
+      <a href="#compare-plans">Compare Cloud plans<ArrowRight size={14} aria-hidden="true" /></a>
+    </div>
+
+    <div id="enterprise" className="pricing-enterprise-strip">
+      <Building2 size={20} aria-hidden="true" />
+      <p><strong>Enterprise</strong> A commercial license for teams that can’t use AGPL, your own AI provider keys on Cloud, deployment help, and support terms.</p>
+      <a className="btn-link" href={DEMO_URL} target="_blank" rel="noopener noreferrer">Talk to us<ArrowRight size={14} aria-hidden="true" /></a>
+    </div>
   </div></section>;
 }

@@ -14,16 +14,15 @@ function Step({children,at=0,className=''}:{children:ReactNode;at?:number;classN
 function Avatar({person}:{person:'maya'|'sam'}){return <img className="mt-avatar" src={`/new/avatars/${person}.webp`} width={28} height={28} alt=""/>;}
 function Task({phase}:{phase:number}) {
  return <div className="mt-action-preview">
-  <div className="mt-action-header"><div className="mt-action-top"><span><ListChecks size={15}/>Action item</span><span className="mt-action-status" data-complete={phase===3}>{phase===3?<><Check size={12}/>Accepted after review</>:'Pending review'}</span></div>
+  <div className="mt-action-header"><div className="mt-action-top"><span><ListChecks size={15}/>Action item</span><span className="mt-action-status" data-complete={phase===3}>{phase===3?<><Check size={12}/>Accepted</>:'Pending'}</span></div>
   <h4>Send the SSO setup guide and pilot checklist</h4>
   <div className="mt-action-owner"><Avatar person="sam"/><span>Owner: Sam Rivera</span><span>Due date: Not set</span></div>
   <div className="mt-action-evidence"><span><Quote size={12}/>Sam Rivera · Transcript · 28:14</span><blockquote>“I’ll take care of sending the setup guide and the checklist for the pilot.”</blockquote></div></div>
   <div className="mt-destination-title"><strong>Where should this work go?</strong><p>Choose where this follow-up enters project work.</p></div>
   <div className="mt-destination-fields" data-selected={phase>=1}><div><span>Team</span><strong>{phase>=1?'Customer Success':'Choose a team'}<ChevronDown size={13}/></strong></div><div><span>Status</span><strong><i/>{phase>=1?'To do':'Choose a state'}<ChevronDown size={13}/></strong></div></div>
   <div className="mt-task-source"><span>Source</span><strong>{MEETING_TITLE}</strong></div>
-  <div className="mt-action-review" data-reviewed={phase>=2}><Avatar person="sam"/><span>{phase>=2?'Reviewed by Sam':'Review the task destination'}</span><Check size={14}/></div>
   <div className="mt-action-footer" data-complete={phase===3}><span>{phase===3?<><Link2 size={13}/>CS-128 created · Meeting linked</>:<>Customer Success · Follow-up work</>}</span><span className="mt-create-action">{phase===3?<><Check size={13}/>Task created</>:'Create task'}</span></div>
-  <div className="mt-task-outcome"><CircleCheck size={15}/><span>{['Keep the commitment and its source together.','Destination selected. Ready for review.','Sam has reviewed the task and its destination.','Assigned to Sam, with the meeting attached.'][phase]}</span></div>
+  <div className="mt-task-outcome"><CircleCheck size={15}/><span>{['Keep the commitment and its source together.','Team and status selected.','Ready to create the task.','Assigned to Sam, with the meeting attached.'][phase]}</span></div>
  </div>;
 }
 function Followup({active,phase}:{active:boolean;phase:number}) {
@@ -36,7 +35,7 @@ function Context(){return <><div className="mt-customer"><span className="mt-com
   {Icon:ListChecks,label:'Task',title:'Share the setup guide',detail:'Sam Rivera · To do'},
 ].map(({Icon,label,title,detail},i)=><Step key={label} at={i*.8}><span className="mt-context-icon"><Icon size={16}/></span><div><span className="mt-mini">{label}</span><strong>{title}</strong><small>{detail}</small></div><Link2 size={13}/></Step>)}</div><Step at={3} className="mt-context-end"><Link2 size={14}/>One meeting. Connected to the customer and the work.</Step></>;}
 const TITLES:Record<Variant,string>={task:'Action items',followup:'Follow-up draft',context:'Customer history'};
-const DESCRIPTIONS:Record<Variant,string>={task:'Sam’s commitment to share an Okta setup guide is reviewed and created as a Customer Success task, assigned to Sam and linked to the source meeting.',followup:'A draft to Maya summarizes the admin-only pilot, setup guide, and security checklist. The email is ready for Sam’s review and has not been sent.',context:'The Northstar Labs customer record connects the SSO rollout meeting, Maya’s contact, the enterprise rollout deal, and Sam’s follow-up task.'};
+const DESCRIPTIONS:Record<Variant,string>={task:'Sam’s commitment to share an Okta setup guide is created as a Customer Success task, assigned to Sam and linked to the source meeting.',followup:'A draft to Maya summarizes the admin-only pilot, setup guide, and security checklist. The email is ready for Sam’s review and has not been sent.',context:'The Northstar Labs customer record connects the SSO rollout meeting, Maya’s contact, the enterprise rollout deal, and Sam’s follow-up task.'};
 export function MeetingScene({variant}:{variant:Variant}){
  const {container,active,phase,paused,setPaused}=useMeetingPlayback();
  const [copied,setCopied]=useState(false);

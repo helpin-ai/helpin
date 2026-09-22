@@ -34,23 +34,14 @@ function TranslationSettingsEditor({
   const [hydrated, setHydrated] = useState(false);
   const [draft, setDraft] = useState({
     translation_enabled: true,
-    translation_incoming_enabled: true,
-    translation_outgoing_enabled: true,
     default_agent_language: 'en',
-    translation_customer_language: '',
   });
   useEffect(() => {
     if (!query.data || hydrated) return;
     const settings = query.data.settings;
     setDraft({
       translation_enabled: settings.translation_enabled ?? true,
-      translation_incoming_enabled:
-        settings.translation_incoming_enabled ?? true,
-      translation_outgoing_enabled:
-        settings.translation_outgoing_enabled ?? true,
       default_agent_language: settings.default_agent_language || 'en',
-      translation_customer_language:
-        settings.translation_customer_language || '',
     });
     setHydrated(true);
   }, [query.data, hydrated]);
@@ -73,7 +64,7 @@ function TranslationSettingsEditor({
       );
     return <Skeleton className="h-64" />;
   }
-  const disabled = !editable || !draft.translation_enabled;
+  const disabled = !editable;
   return (
     <div className="space-y-4">
       {editable ? (
@@ -98,99 +89,11 @@ function TranslationSettingsEditor({
         </p>
       )}
       <Card>
-        <CardContent className="space-y-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <Label htmlFor="translation-enabled">Auto-translate</Label>
-              <p className="text-sm text-muted-foreground">
-                Applies to all teammates and support conversations in this
-                workspace.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Requires a configured AI provider. Without one, messages are
-                sent and displayed in their original language.
-              </p>
-            </div>
-            <Switch
-              id="translation-enabled"
-              checked={draft.translation_enabled}
-              disabled={!editable}
-              onCheckedChange={(value) =>
-                setDraft((d) => ({ ...d, translation_enabled: value }))
-              }
-            />
-          </div>
-          <div className="space-y-3 border-t border-quiet-divider pt-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <Label htmlFor="translation-incoming">
-                  Translate incoming messages
-                </Label>
-                <p className="text-sm text-muted-foreground">
-                  Show customer messages in the workspace reading language.
-                  Teammates can still view the original.
-                </p>
-              </div>
-              <Switch
-                id="translation-incoming"
-                checked={draft.translation_incoming_enabled}
-                disabled={disabled}
-                onCheckedChange={(value) =>
-                  setDraft((d) => ({
-                    ...d,
-                    translation_incoming_enabled: value,
-                  }))
-                }
-              />
-            </div>
-            <TranslationLanguagePicker
-              label="Reading language"
-              value={draft.default_agent_language}
-              languages={TRANSLATION_LANGUAGES}
-              disabled={disabled || !draft.translation_incoming_enabled}
-              onChange={(value) =>
-                setDraft((d) => ({ ...d, default_agent_language: value }))
-              }
-            />
-          </div>
-          <div className="space-y-3 border-t border-quiet-divider pt-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <Label htmlFor="translation-outgoing">Translate replies</Label>
-                <p className="text-sm text-muted-foreground">
-                  Translate teammate replies when sent. Internal notes stay in
-                  their original language.
-                </p>
-              </div>
-              <Switch
-                id="translation-outgoing"
-                checked={draft.translation_outgoing_enabled}
-                disabled={disabled}
-                onCheckedChange={(value) =>
-                  setDraft((d) => ({
-                    ...d,
-                    translation_outgoing_enabled: value,
-                  }))
-                }
-              />
-            </div>
-            <TranslationLanguagePicker
-              label="Customer language"
-              value={draft.translation_customer_language}
-              languages={TRANSLATION_LANGUAGES}
-              allowAuto
-              disabled={disabled || !draft.translation_outgoing_enabled}
-              onChange={(value) =>
-                setDraft((d) => ({
-                  ...d,
-                  translation_customer_language: value,
-                }))
-              }
-            />
-            <p className="text-xs text-muted-foreground">
-              Detect automatically uses each conversation’s customer language. A
-              selected language applies to every conversation.
-            </p>
+        <CardContent className="space-y-5">
+          <TranslationLanguagePicker label="Reading language" value={draft.default_agent_language} languages={TRANSLATION_LANGUAGES} disabled={disabled} onChange={value=>setDraft(d=>({...d,default_agent_language:value}))}/>
+          <div className="flex items-center justify-between gap-4 border-t border-border/50 pt-5">
+            <Label htmlFor="translation-enabled" title="Enable Live Translate for new conversations. Existing conversations keep their setting.">Live Translate on by default</Label>
+            <Switch id="translation-enabled" checked={draft.translation_enabled} disabled={disabled} onCheckedChange={value=>setDraft(d=>({...d,translation_enabled:value}))}/>
           </div>
         </CardContent>
       </Card>

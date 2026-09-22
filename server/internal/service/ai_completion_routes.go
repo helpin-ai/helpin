@@ -80,7 +80,8 @@ func NewAICompletionRouteRegistry(crmConfig CRMCompletionRouteConfig) AICompleti
 		}
 	}
 	policies := []AICompletionRoutePolicy{
-		{FeatureKey: BillingFeatureSupportTranslation, Primary: AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4-flash-0731", ServiceTier: defaultAICompletionServiceTier}, PreferRequestRoute: true, MaximumOutputTokens: 4000},
+		{FeatureKey: BillingFeatureSupportTranslation, OperationKey: "quality_review", Primary: AICompletionRoute{Provider: "openrouter", Model: "deepseek/deepseek-v4.1-flash", OpenRouterProvider: "coreweave/fp8", ServiceTier: defaultAICompletionServiceTier}, PreferRequestRoute: true, MaximumOutputTokens: 128},
+		{FeatureKey: BillingFeatureSupportTranslation, Primary: AICompletionRoute{Provider: "openrouter", Model: "openai/gpt-oss-120b", OpenRouterProvider: "cerebras/fp16", ServiceTier: defaultAICompletionServiceTier}, Fallbacks: []AICompletionRoute{{Provider: "openrouter", Model: "deepseek/deepseek-v4.1-flash", OpenRouterProvider: "coreweave/fp8", ServiceTier: defaultAICompletionServiceTier}}, MaximumOutputTokens: 4000},
 		common(BillingFeatureAIRouting, 400),
 		common(BillingFeatureCoverageGapAnalysis, 1800),
 		crm(BillingFeatureCRMSignalDetection, 4096),

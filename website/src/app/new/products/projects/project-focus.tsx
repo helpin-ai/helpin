@@ -66,7 +66,7 @@ export function ProjectFocus() {
             <div className="pf-composer"><span>Ask about the next step…</span><div><Plus size={14} /><small>Workspace context</small><span><ArrowUp size={14} /></span></div></div>
           </div>
         </div>
-        <div className="pf-bottom"><span><Check size={12} />Suggested next steps · No priorities changed</span><span>See the dependency, the owner, and the reason it matters.</span></div>
+        <div className="pf-bottom"><span><Check size={12} />Suggested next steps · No priorities changed</span><span>Board and list show the same tasks.</span></div>
       </div>
     </div>
   </div>;

@@ -146,7 +146,7 @@ function MessageContent({ message }: { message: Message }) {
     <div className={isEmail ? 'helpin-email-message-content' : undefined}>
       {visibleContent.trim().length > 0 && (
         <div
-          className="helpin-message-content"
+          className="helpin-message-content" dir="auto"
           dangerouslySetInnerHTML={{ __html: renderMarkdown(visibleContent) }}
         />
       )}

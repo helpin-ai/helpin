@@ -12,7 +12,7 @@ const DESCRIPTIONS: Record<Variant, string> = {
   context: 'Illustrative OrbitDesk workflow: a conversation, export guide, and linked task establish that Maya’s export stops at 10,000 of 18,400 rows. EXP-142 is in progress; the earlier smaller export did not meet the customer’s need.',
   coordination: 'Illustrative agent plan: review Maya’s export issue, run the coding agent’s investigation and the docs agent’s knowledge review in parallel, then combine both findings into a fix plan.',
   tools: 'Illustrative external MCP connection: issue lookup and issue search are selected for the agent. Issue editing is not selected. Ask Agent retrieves EXP-142’s in-progress status.',
-  coding: 'Illustrative coding workflow: EXP-142 links Maya’s report to a proposed pagination fix and a regression test. The changes are ready for Sam to review and have not been merged.',
+  coding: 'Illustrative coding workflow: EXP-142 links Maya’s report to a proposed pagination fix and a regression test. A pull request is open for review and has not been merged.',
   approval: 'Illustrative approval checkpoint: an agent requests approval to add findings to existing task EXP-142. Sam approves only that update. The customer message still awaits review.',
 };
 function Step({ children, at = 0, className = '' }: { children: ReactNode; at?: number; className?: string }) {
@@ -59,7 +59,7 @@ function Coding() {
     <div className="awa-code-task"><span>EXP-142</span><strong>Fix incomplete CSV exports</strong><small><MessageSquare size={12} />Maya’s conversation attached</small><p>Northstar needs all 18,400 contacts. Exporting a smaller selection is not a complete solution.</p><p>Retrieve the remaining pages before completing the export.</p></div>
     <Step at={.6} className="awa-code-file"><div><Code2 size={14} />export-contacts.ts<span>Proposed change</span></div><pre><code><span className="awa-code-remove">− return firstPage.rows;</span><span className="awa-code-add">+ const rows = [...firstPage.rows];</span><span className="awa-code-add">+ while (nextCursor) {'{'}</span><span className="awa-code-add">+   await appendNextPage(rows);</span><span className="awa-code-add">+ {'}'}</span><span className="awa-code-add">+ return rows;</span></code></pre></Step>
     <Step at={2} className="awa-code-test"><Check size={15} /><span>Regression test · Exports beyond 10,000 contacts</span></Step>
-    <Step at={2.5} className="awa-answer"><strong>Lens · Code reviewer</strong><h4>Check the result against the request.</h4><p>The proposed change retrieves the remaining pages. Review the full-export test and confirm behavior when a page request fails.</p></Step><Step at={3} className="awa-code-review"><GitPullRequest size={18} /><div><strong>Changes ready for review</strong><span>Assigned to Sam · Not merged</span></div><img src="/new/avatars/sam.webp" width={28} height={28} alt="" /></Step>
+    <Step at={2.5} className="awa-answer"><strong>Lens · Code reviewer</strong><h4>Check the result against the request.</h4><p>The proposed change retrieves the remaining pages. Review the full-export test and confirm behavior when a page request fails.</p></Step><Step at={3} className="awa-code-review"><GitPullRequest size={18} /><div><strong>Pull request open for review</strong><span>Not merged</span></div></Step>
   </>;
 }
 function Approval() {

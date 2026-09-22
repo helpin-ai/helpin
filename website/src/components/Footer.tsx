@@ -20,7 +20,7 @@ export function Footer() {
   const isPricing = pathname === '/pricing';
 
   // The new-site pages and pricing use the shared marketing footer.
-  if (pathname?.startsWith('/new') || pathname === '/pricing') return null;
+  if (pathname?.startsWith('/new') || pathname === '/pricing' || pathname === '/privacy' || pathname === '/terms') return null;
 
   return (
     <footer className="relative" style={{ backgroundImage: 'image-set(url(/images/footer-bg.webp) type("image/webp"), url(/images/footer-bg.jpg) type("image/jpeg"))', backgroundSize: 'cover', backgroundPosition: 'center bottom' }}>

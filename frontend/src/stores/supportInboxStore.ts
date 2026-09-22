@@ -169,6 +169,8 @@ interface SupportInboxState {
   activePanel: ActivePanel;
   // Drafts: conversationId → unsent textarea content
   drafts: Record<string, string>;
+  draftAttachmentCounts: Record<string, number>;
+  setDraftAttachmentCount: (conversationId: string, count: number) => void;
 
   // Actions
   setNavFilter: (filter: NavFilter) => void;
@@ -232,6 +234,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     editMailboxId: null,
     activePanel: 'list',
     drafts: persistedDrafts,
+    draftAttachmentCounts: {},
+    setDraftAttachmentCount: (id, count) => set(state => ({draftAttachmentCounts: {...state.draftAttachmentCounts, [id]: count}})),
 
     setNavFilter: (filter) => {
       const savedFilters = get().builtinViewFilters[supportInboxBuiltinViewKey(filter)];

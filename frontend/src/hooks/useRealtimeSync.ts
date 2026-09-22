@@ -640,6 +640,12 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     } else if (event.entity === 'support_teammate_presence') {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.teammatePresence(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.memberPresence(workspaceId) })
+    } else if (event.entity === 'support_translation') {
+      queryClient.invalidateQueries({ queryKey: ['support',workspaceId,'translation',event.entity_id] })
+      queryClient.invalidateQueries({ queryKey: ['support',workspaceId,'cached-translations',event.entity_id] })
+    } else if (event.entity === 'support_pending_send') {
+      queryClient.invalidateQueries({ queryKey: ['support',workspaceId,'pending-sends',event.parent_id] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId,event.parent_id!) })
     } else if (event.entity === 'support_conversation_message') {
       if (event.action === 'updated' && event.parent_id) {
         // Metadata updates (including visitor votes) are quiet refetches, not new replies.

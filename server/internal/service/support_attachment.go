@@ -378,3 +378,27 @@ func (s *SupportAttachmentService) DeleteUnsentWidget(ctx context.Context, id, s
 	}
 	return s.attachmentRepo.Delete(ctx, id)
 }
+
+// PendingReplyAttachments validates ownership before a private queued reply can
+// retain or display uploaded files. It does not attach them to a public message.
+func (s *SupportAttachmentService) PendingReplyAttachments(ctx context.Context, workspaceID, conversationID, userID string, ids []string) ([]model.SupportAttachmentPayload, error) {
+	result := make([]model.SupportAttachmentPayload, 0, len(ids))
+	for _, id := range ids {
+		a, err := s.attachmentRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if a == nil || a.WorkspaceID != workspaceID || (a.ConversationID != nil && *a.ConversationID != conversationID) || a.UploadedByID == nil || *a.UploadedByID != userID || !a.IsUploaded {
+			return nil, fmt.Errorf("attachment unavailable")
+		}
+		url := a.PublicURL
+		if s.s3Client != nil && a.StorageKey != "" {
+			url, err = s.s3Client.GeneratePresignedInlineGetURL(a.StorageKey)
+			if err != nil {
+				return nil, err
+			}
+		}
+		result = append(result, model.SupportAttachmentPayload{ID: a.ID, FileKey: a.StorageKey, FileName: a.FileName, FileType: a.ContentType, FileSize: a.FileSize, URL: url})
+	}
+	return result, nil
+}

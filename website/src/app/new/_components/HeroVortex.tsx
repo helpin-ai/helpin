@@ -98,8 +98,8 @@ export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: M
                 <stop stopColor="#0B7A4E" /><stop offset="50%" stopColor="#0F9D63" /><stop offset="100%" stopColor="#3FC48F" />
               </linearGradient>
               <linearGradient id={`${id}-sheen`} x1="0" y1="0" x2="1" y2="0.3">
-                <stop stopColor="#2AE79A" stopOpacity="0" /><stop offset="42%" stopColor="#2AE79A" stopOpacity="0" />
-                <stop offset="50%" stopColor="#74FFC4" /><stop offset="58%" stopColor="#2AE79A" stopOpacity="0" /><stop offset="100%" stopColor="#2AE79A" stopOpacity="0" />
+                <stop stopColor="#6FD3A5" stopOpacity="0" /><stop offset="42%" stopColor="#6FD3A5" stopOpacity="0" />
+                <stop offset="50%" stopColor="#CFF2E0" /><stop offset="58%" stopColor="#6FD3A5" stopOpacity="0" /><stop offset="100%" stopColor="#6FD3A5" stopOpacity="0" />
               </linearGradient>
             </defs>
             {ART[variant].map((bundle, bi) => (

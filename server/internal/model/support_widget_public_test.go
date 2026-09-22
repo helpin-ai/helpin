@@ -101,3 +101,12 @@ func TestPublicWidgetMetadataPreservesOnlyKnownAIProgress(t *testing.T) {
 		})
 	}
 }
+
+func TestWidgetProjectionRejectsPrivatePendingTranslation(t *testing.T) {
+	for _, state := range []string{"queued", "preparing", "translating", "sending", "failed"} {
+		message := &SupportMessage{ID: "pending", SenderType: "user", MessageType: "reply", Content: "Private original", PendingSend: state}
+		if PublicWidgetMessage(message) != nil {
+			t.Fatalf("widget received %s reply", state)
+		}
+	}
+}

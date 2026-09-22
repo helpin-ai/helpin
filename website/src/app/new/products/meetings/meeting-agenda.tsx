@@ -38,7 +38,7 @@ export function MeetingAgenda() {
   return <div className="meeting-agenda" ref={container} data-playing={active} data-phase={phase} role="region" aria-label="OrbitDesk upcoming meetings preview">
     <div className="ma-toolbar"><span><b className="mt-mark">O</b>OrbitDesk<span>/</span>Meetings</span><button type="button" className="ma-playback" aria-label={`${paused ? 'Play' : 'Pause'} meeting selection animation`} aria-pressed={paused} onClick={() => { setManual(null); setOverrides(null); setExpanded(true); setPaused(!paused); }}>{paused ? <Play size={12} /> : <Pause size={12} />}</button></div>
     <div className="ma-body">
-      <header className="ma-heading"><div><h3>Meetings</h3><p>Choose where Helpin joins you.</p></div><span className="ma-connected"><CalendarDays size={13} /><span>Calendar connected</span><Check size={12} /></span></header>
+      <header className="ma-heading"><div><h3>Meetings</h3><p>Choose where Helpin joins you.</p></div><span className="ma-connected"><CalendarDays size={13} /><span>Google Calendar connected</span><Check size={12} /></span></header>
       <div className="ma-section-title"><h4>Upcoming <span>4</span></h4><span>Today–25</span></div>
       <div className="ma-row" data-selected={choices.customer}>
         <div className="ma-row-copy"><div className="ma-meta"><img src="/new/meetings/google_meet.svg" width={13} height={13} alt="" />Google Meet<span>Today · 10:00 AM</span></div><strong>Northstar Labs · SSO rollout review</strong><p>2 external attendees · Ready for automatic joining</p></div>

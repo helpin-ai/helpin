@@ -149,7 +149,9 @@ func completeAI(ctx context.Context, provider llm.Provider, input AICompletionRe
 			FeatureKey: input.FeatureKey, OperationKey: input.OperationKey,
 			IdempotencyKey: fmt.Sprintf("%s:route:%d", input.IdempotencyKey, index), Metadata: input.Metadata,
 		})
-		response, err := provider.ChatCompletion(legacyCtx, chat)
+		attemptCtx, cancelAttempt := completionAttemptContext(legacyCtx, input.FeatureKey)
+		response, err := provider.ChatCompletion(attemptCtx, chat)
+		cancelAttempt()
 		if err == nil && response == nil {
 			err = fmt.Errorf("provider returned no response")
 		}
@@ -163,7 +165,7 @@ func completeAI(ctx context.Context, provider llm.Provider, input AICompletionRe
 			return response, nil
 		}
 		attemptErrors = append(attemptErrors, err)
-		retry := llm.IsRetryableProviderError(err) || input.RetryInvalidOutput
+		retry := llm.IsRetryableProviderError(err) || input.RetryInvalidOutput || (errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil)
 		if !retry || index == len(routes)-1 {
 			break
 		}
@@ -228,13 +230,19 @@ func (s *AICompletionService) completeAttempt(
 	}
 
 	attemptStart := time.Now()
-	response, providerErr := s.provider.ChatCompletion(ctx, chat)
+	attemptCtx, cancelAttempt := completionAttemptContext(ctx, input.FeatureKey)
+	response, providerErr := s.provider.ChatCompletion(attemptCtx, chat)
+	cancelAttempt()
 	attemptDuration := time.Since(attemptStart)
 	attemptOutcome := "provider_error"
 	var measured *aiusage.TokenTelemetry
 	defer func() {
 		if input.FeatureKey == BillingFeatureSupportTranslation {
-			s.metrics.TranslationAttempt("translation", route.Provider, route.Model, attemptOutcome, attemptDuration, measured, preflight.Route.Rates)
+			stage := "translation"
+			if input.OperationKey == "quality_review" {
+				stage = "sample_review"
+			}
+			s.metrics.TranslationAttempt(stage, route.Provider, route.Model, attemptOutcome, attemptDuration, measured, preflight.Route.Rates)
 		}
 	}()
 	if response != nil && measurementStatus(response.TokensUsed) == "actual" {
@@ -259,7 +267,7 @@ func (s *AICompletionService) completeAttempt(
 			}
 		}
 		s.finishCompletionAudit(settlementCtx, auditExecution, response, "llm_provider", providerErr)
-		return nil, llm.IsRetryableProviderError(providerErr), providerErr
+		return nil, llm.IsRetryableProviderError(providerErr) || (errors.Is(providerErr, context.DeadlineExceeded) && ctx.Err() == nil), providerErr
 	}
 
 	_, reconcileErr := s.usage.Reconcile(settlementCtx, CompletionUsage{
@@ -324,6 +332,10 @@ func (s *AICompletionService) finishCompletionAudit(ctx context.Context, executi
 func completionChatRequest(input llm.ChatRequest, route AICompletionRoute) (llm.ChatRequest, error) {
 	input.Provider = route.Provider
 	input.Model = route.Model
+	if route.Model == "deepseek/deepseek-v4.1-flash" && route.OpenRouterProvider == "coreweave/fp8" {
+		disabled := false
+		input.Reasoning = &llm.ReasoningConfig{Enabled: &disabled}
+	}
 	openRouterProvider := strings.TrimSpace(route.OpenRouterProvider)
 	if openRouterProvider == "" {
 		return input, nil
@@ -377,4 +389,11 @@ func isIncompleteFinishReason(reason string) bool {
 	default:
 		return false
 	}
+}
+
+func completionAttemptContext(ctx context.Context, feature string) (context.Context, context.CancelFunc) {
+	if feature == BillingFeatureSupportTranslation {
+		return context.WithTimeout(ctx, 12*time.Second)
+	}
+	return context.WithCancel(ctx)
 }

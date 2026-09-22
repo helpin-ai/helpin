@@ -4,6 +4,7 @@
 
 Implementation plans, progress notes, and audits. Dated documents record the state of a particular change; consult current engineering guides for present behavior.
 
+- [Support Live Translate revision](2026-09-22-support-live-translate.md)
 - [PM Team Mentions Implementation Plan](2026-03-17-pm-team-mentions-implementation.md)
 - [Sprint Automation Prompt Dismissal Implementation Plan](2026-03-17-sprint-automation-prompt-dismissal.md)
 - [Help Center Routing & Redirects Implementation Plan](2026-03-18-helpcenter-routing-redirects.md)

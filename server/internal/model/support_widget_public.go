@@ -58,7 +58,7 @@ type WidgetConversation struct {
 
 // PublicWidgetMessage converts a public message; nil means it must not be delivered.
 func PublicWidgetMessage(m *SupportMessage) *WidgetMessage {
-	if m == nil || !m.WidgetVisible() {
+	if m == nil || m.PendingSend != "" || m.PendingSendID != "" || !m.WidgetVisible() {
 		return nil
 	}
 	result := &WidgetMessage{

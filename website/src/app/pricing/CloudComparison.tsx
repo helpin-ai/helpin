@@ -51,20 +51,7 @@ export function CloudComparison() {
   return (
     <section id="compare-plans" className="pricing-comparison">
       <div className="wrap">
-        <SectionHead
-          eyebrow="The details behind your choice"
-          title="Choose the capacity you need."
-          lede="The key differences first. Open the full comparison for every feature and limit."
-        />
-        <table className="pricing-table pricing-key-differences">
-          <caption className="sr-only">Key differences between Starter and Growth</caption>
-          <colgroup><col className="pricing-feature-column" /><col /><col /></colgroup>
-          <thead><tr><th scope="col">At a glance</th><th scope="col">Starter</th><th scope="col">Growth</th></tr></thead>
-          <tbody>{ALL.flatMap(group => group.rows).filter(row => ['Teams', 'Contacts', 'Documents', 'Included AI usage', 'Custom agents', 'Automation flows'].includes(row.name)).map(row => <tr key={row.name}><th scope="row">{row.name}</th><Cell value={row.starter} plan="Starter" /><Cell value={row.growth} plan="Growth" /></tr>)}</tbody>
-        </table>
-        <details className="pricing-ai-charges pricing-full-comparison">
-          <summary><span><strong>Compare every feature</strong><small>All plan limits, controls, and shared capabilities.</small></span></summary>
-          <div>
+        <SectionHead eyebrow="Compare Cloud plans" title="What changes between Starter and Growth." />
         <table className="pricing-table">
           <caption className="sr-only">
             Starter and Growth Cloud limits and features. Checkmarks mean
@@ -77,26 +64,15 @@ export function CloudComparison() {
           </colgroup>
           <thead>
             <tr>
-              <th scope="col">
-                <span className="pricing-table-label">Compare plans</span>
-                <span className="pricing-table-description">
-                  Limits and capabilities
-                  <br />
-                  for your workspace
-                </span>
-              </th>
+              <th scope="col"><span className="sr-only">Feature</span></th>
               {PLANS.map((plan) => (
-                <th scope="col" key={plan.name} data-featured={plan.popular}>
+                <th scope="col" key={plan.key} data-featured={plan.popular}>
                   <span className="pricing-table-plan">{plan.name}</span>
-                  <span className="pricing-table-description">
-                    {plan.popular
-                      ? "Build repeatable workflows around it."
-                      : "Bring the work together."}
-                  </span>
+                  <span className="pricing-table-price">${plan.price} / month</span>
                   <a
                     className={`btn ${plan.popular ? "btn-primary" : "btn-secondary"}`}
                     href={plan.href}
-                    aria-label={`Start free with ${plan.name}`}
+                    aria-label={`Start free trial with ${plan.name}`}
                   >
                     Start free
                     <ArrowRight size={14} aria-hidden="true" />
@@ -122,8 +98,8 @@ export function CloudComparison() {
             </tbody>
           ))}
         </table>
-        <div className="pricing-shared">
-          <h3>The starting point stays connected.</h3><p className="pricing-shared-description">Use the shared inbox, project tools, customer records, meetings, and knowledge together. Build your process around the parts you need first.</p>
+        <details className="pricing-disclosure pricing-shared">
+          <summary>Included in both plans</summary>
           <dl>
             {SHARED.map((group) => (
               <div key={group.name}>
@@ -132,7 +108,7 @@ export function CloudComparison() {
                   <ul>
                     {group.rows.map((row) => (
                       <li key={row.name}>
-                        <Check size={13} strokeWidth={1.7} aria-hidden="true" />
+                        <Check size={13} strokeWidth={2} aria-hidden="true" />
                         <span>{row.name}</span>
                       </li>
                     ))}
@@ -141,13 +117,7 @@ export function CloudComparison() {
               </div>
             ))}
           </dl>
-        </div>
-          </div>
         </details>
-        <p className="pricing-note">
-          This comparison covers Cloud subscriptions; self-hosting is a separate deployment choice.{" "}
-          <a href="#self-hosted">Explore the self-hosted edition →</a>
-        </p>
       </div>
     </section>
   );

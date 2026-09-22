@@ -67,7 +67,7 @@ func estimatedTranslationTokens(text string) int {
 }
 
 // translationChunks preserves every byte and prefers paragraph/word boundaries.
-// Small chunks also keep original + translation within Jev's review budget.
+// Reserve output headroom for expansion in a 4,000-token response.
 func translationChunks(text string) []string {
 	var chunks []string
 	for len(text) > 0 {
@@ -79,7 +79,7 @@ func translationChunks(text string) []string {
 			} else {
 				other++
 			}
-			if next > 3200 || (ascii+3)/4+other*2 > 1000 {
+			if next > 12000 || (ascii+3)/4+other*2 > 1800 {
 				break
 			}
 			end = next

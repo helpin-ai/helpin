@@ -7,6 +7,8 @@ import (
 )
 
 type translationMetrics struct {
+	queue    *prometheus.GaugeVec
+	workflow *prometheus.HistogramVec
 	events   *prometheus.CounterVec
 	attempts *prometheus.CounterVec
 	duration *prometheus.HistogramVec
@@ -17,14 +19,16 @@ type translationMetrics struct {
 
 func newTranslationMetrics(registry *prometheus.Registry) *translationMetrics {
 	m := &translationMetrics{
+		queue:    prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "helpin_translation_queue_messages", Help: "Durable translation/send work by queue and state."}, []string{"queue", "state"}),
+		workflow: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "helpin_translation_workflow_seconds", Help: "Complete translation workflow duration.", Buckets: []float64{.1, .5, 1, 2, 5, 10, 25, 60, 120}}, []string{"purpose"}),
 		events:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "helpin_translation_events_total", Help: "Translation workflow outcomes; cache hits do not call a provider."}, []string{"direction", "outcome"}),
-		attempts: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "helpin_translation_provider_attempts_total", Help: "Actual translation and Jev review provider calls, including retries."}, []string{"stage", "provider", "model", "outcome"}),
+		attempts: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "helpin_translation_provider_attempts_total", Help: "Actual translation and sampled review provider calls, including retries."}, []string{"stage", "provider", "model", "outcome"}),
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "helpin_translation_provider_duration_seconds", Help: "Translation provider attempt latency.", Buckets: []float64{.1, .25, .5, 1, 2, 5, 10, 15, 25, 60}}, []string{"stage", "provider", "model"}),
 		tokens:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "helpin_translation_tokens_total", Help: "Provider-reported normalized tokens; kinds are disjoint."}, []string{"stage", "provider", "model", "kind"}),
 		cost:     prometheus.NewCounterVec(prometheus.CounterOpts{Name: "helpin_translation_estimated_provider_cost_usd_total", Help: "Estimated provider spend using immutable admission rates; excludes calls without rates, not customer charges."}, []string{"stage", "provider", "model"}),
 		coverage: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "helpin_translation_usage_measurements_total", Help: "Coverage of token and price measurements; missing prices are not zero cost."}, []string{"stage", "measurement"}),
 	}
-	registry.MustRegister(m.events, m.attempts, m.duration, m.tokens, m.cost, m.coverage)
+	registry.MustRegister(m.queue, m.workflow, m.events, m.attempts, m.duration, m.tokens, m.cost, m.coverage)
 	return m
 }
 
@@ -64,4 +68,15 @@ func (m *Metrics) TranslationAttempt(stage, provider, model, outcome string, ela
 	m.translation.coverage.WithLabelValues(stage, "price_available").Inc()
 	usd := (float64(n.UncachedInputTokens)*float64(rates.InputMicrousdPerMillion) + float64(n.CacheReadTokens)*float64(rates.CacheReadMicrousdPerMillion) + float64(n.CacheWriteTokens)*float64(rates.CacheWriteMicrousdPerMillion) + float64(n.OutputTokens+n.ReasoningTokens)*float64(rates.OutputMicrousdPerMillion)) / 1e12
 	m.translation.cost.WithLabelValues(stage, provider, model).Add(usd)
+}
+
+func (m *Metrics) TranslationQueue(queue, state string, count int64) {
+	if m != nil {
+		m.translation.queue.WithLabelValues(queue, state).Set(float64(count))
+	}
+}
+func (m *Metrics) TranslationWorkflow(purpose string, elapsed time.Duration) {
+	if m != nil {
+		m.translation.workflow.WithLabelValues(purpose).Observe(elapsed.Seconds())
+	}
 }

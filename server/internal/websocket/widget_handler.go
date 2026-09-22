@@ -295,6 +295,15 @@ func (h *WidgetHandler) handleSessionRestore(ctx context.Context, widgetKey, ori
 	var session *model.SupportWidgetSession
 	if err == nil {
 		session, err = h.service.GetWidgetSession(ctx, token)
+		if err == nil && session != nil {
+			if refresher, ok := h.service.(interface {
+				RefreshWidgetLocale(context.Context, *model.SupportWidgetSession, string) error
+			}); ok {
+				if localeErr := refresher.RefreshWidgetLocale(ctx, session, typed.Locale); localeErr != nil {
+					slog.WarnContext(ctx, "refresh widget locale failed")
+				}
+			}
+		}
 	}
 	if err != nil {
 		// Token invalid/expired/revoked — tell client to recreate

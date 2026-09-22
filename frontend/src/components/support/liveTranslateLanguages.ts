@@ -1,0 +1,2 @@
+const countries:Record<string,string>={en:'GB',es:'ES',fr:'FR',de:'DE',it:'IT',pt:'PT','pt-BR':'BR',nl:'NL',pl:'PL',uk:'UA',ru:'RU',tr:'TR',ar:'SA',he:'IL',hi:'IN',bn:'BD',ur:'PK',fa:'IR',ja:'JP',ko:'KR','zh-CN':'CN','zh-TW':'TW',vi:'VN',th:'TH',id:'ID',sv:'SE',da:'DK',no:'NO',fi:'FI',cs:'CZ',ro:'RO',el:'GR'};
+export function languageFlag(code:string) {const country=countries[code];return country?String.fromCodePoint(...[...country].map(c=>127397+c.charCodeAt(0))):'🌐';}

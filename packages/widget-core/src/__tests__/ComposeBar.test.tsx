@@ -9,6 +9,7 @@ describe('ComposeBar', () => {
     );
     const textarea = container.querySelector('.helpin-compose-input') as HTMLTextAreaElement;
     expect(textarea.placeholder).toBe('Type here...');
+    expect(textarea.getAttribute('dir')).toBe('auto');
   });
 
   it('uses default placeholder when not provided', () => {

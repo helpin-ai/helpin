@@ -851,6 +851,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadMutation = useUploadSupportAttachment(workspaceId, conversationId);
   const [pendingAttachments, setPendingAttachments] = useState<PendingSupportAttachment[]>([]);
+  useEffect(() => {
+    useSupportInboxStore.getState().setDraftAttachmentCount(conversationId, pendingAttachments.length);
+    return () => useSupportInboxStore.getState().setDraftAttachmentCount(conversationId, 0);
+  }, [conversationId, pendingAttachments.length]);
   const attachmentsPending = pendingAttachments.some((attachment) => attachment.status !== 'done' || !attachment.attachmentId);
 
   const uploadFiles = useCallback(async (files: File[]) => {
@@ -1445,11 +1449,15 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     const handleRestoreDraft = (event: Event) => {
       const detail = (event as CustomEvent<{
         conversationId?: string;
+        pendingSend?: boolean;
+        restored?: boolean;
         markdown?: string;
         attachments?: SupportAttachmentPayload[];
         deliveryMode?: SupportReplyDeliveryMode;
       }>).detail;
       if (detail?.conversationId !== conversationId) return;
+      if (detail.pendingSend && (getEditorMarkdown(editor).trim() || pendingAttachments.length>0)) return;
+      detail.restored=true;
       const markdown = detail.markdown ?? '';
       if (draftTimerRef.current) {
         clearTimeout(draftTimerRef.current);
@@ -1472,7 +1480,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailDeliveryEnable
     };
     window.addEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
     return () => window.removeEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
-  }, [workspaceId, conversationId, editor, sendTyping, setDraft, setReplyMode]);
+  }, [workspaceId, conversationId, editor, sendTyping, setDraft, setReplyMode, pendingAttachments.length]);
 
   // Force placeholder redecoration when mode changes
   useEffect(() => {

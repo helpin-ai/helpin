@@ -180,6 +180,16 @@
       "label": "GPT-5.5 Pro",
       "tier": "flagship",
       "enabled": false
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "gpt-oss-120b",
+      "label": "GPT-OSS 120B",
+      "aliases": [
+        "openai/gpt-oss-120b"
+      ],
+      "tier": "medium",
+      "enabled": true
     }
   ],
   "routes": [
@@ -421,6 +431,18 @@
       "cache_write_support": true,
       "context_window": 200000,
       "maximum_output": 128000,
+      "enabled": true
+    },
+    {
+      "provider": "openrouter",
+      "canonical_model": "gpt-oss-120b",
+      "route": "openai/gpt-oss-120b",
+      "service_tier": "standard",
+      "tier": "medium",
+      "cache_read_support": false,
+      "cache_write_support": false,
+      "context_window": 131072,
+      "maximum_output": 32768,
       "enabled": true
     }
   ],
