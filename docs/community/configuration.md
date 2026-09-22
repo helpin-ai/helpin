@@ -99,6 +99,40 @@ secret key and RPC secret. Keep them with backups of the entire `garage_data`
 volume, including metadata and object data. Changing env values does not rotate
 an existing Garage access key; use Garage's documented key management procedure.
 
+## GitHub App
+
+Helpin connects to GitHub through one GitHub App per installation. A workspace
+owner can create it from **Settings → Git Connections → Create GitHub App**. Helpin
+sends a [GitHub App manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest)
+to GitHub; after you confirm there (optionally under a GitHub organization), GitHub
+returns to `/api/github/app-manifest/callback` and Helpin stores the App. It is used
+at once, without a restart, by the API and the worker.
+
+- The manifest uses `APP_BASE_URL` for the App homepage, its webhook
+  (`/api/git/webhook`), and its setup and callback URLs, so `APP_BASE_URL` must be
+  the public origin GitHub can reach. The App is private and requests repository
+  contents (write), pull requests (write), checks (read), and metadata (read), with
+  `push`, `pull_request`, `release`, and `check_suite` events.
+- The private key, client secret, and webhook secret are encrypted with
+  `GIT_OAUTH_ENCRYPTION_KEY` (or `CRM_ENCRYPTION_KEY` when it is unset). The
+  button is unavailable without a valid key, and a lost key makes the stored App
+  unreadable.
+- Helpin refuses to replace an App that already exists. To start over, delete the
+  App on GitHub and the row in `github_app_credentials`.
+- Webhook deliveries must carry a valid `X-Hub-Signature-256` for the App's
+  webhook secret; unsigned or wrongly signed deliveries are rejected with 401.
+
+To pin an existing App instead, set `GITHUB_APP_ID`, `GITHUB_APP_SLUG`,
+`GITHUB_APP_PRIVATE_KEY` (PEM, escaped or base64-encoded PEM), and
+`GITHUB_APP_WEBHOOK_SECRET`; `GITHUB_APP_CLIENT_ID` and
+`GITHUB_APP_CLIENT_SECRET` are optional. When `GITHUB_APP_ID` and
+`GITHUB_APP_PRIVATE_KEY` are both set, these settings take precedence over a
+stored App and the create button is hidden. Without `GITHUB_APP_WEBHOOK_SECRET`,
+all GitHub webhooks are rejected. `GET /api/workspaces/{id}/github/app-status`
+reports `configured`, `source` (`env`, `database`, or `none`), `slug`,
+`install_url`, `webhook_configured`, and `manifest_available`, without secrets.
+Enterprise configures the App only through these settings.
+
 ## Authenticated request limits
 
 The API and public MCP use Redis counters shared across replicas. Defaults are

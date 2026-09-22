@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { GitHubAppCreateButton } from '@/components/git/GitHubAppCreateButton';
+import { useGitHubAppStatus } from '@/hooks/queries';
 import { gitRepoURL } from '@/lib/gitUrls';
 import { gitService } from '@/lib/services/gitService';
 import type { GitIntegration, GitIntegrationDetail, GitIntegrationWorkspaceUsage, GitRepository } from '@/lib/pmTypes';
@@ -59,6 +62,9 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
   const [commitAuthorEmail, setCommitAuthorEmail] = useState('');
   const [savingCommitIdentity, setSavingCommitIdentity] = useState(false);
 
+  const queryClient = useQueryClient();
+  const { data: githubAppStatus } = useGitHubAppStatus(workspaceId);
+  const githubAppMissing = githubAppStatus ? !githubAppStatus.configured : false;
   const hasGitHubIntegration = useMemo(() => integrations.some((item) => item.provider === 'github'), [integrations]);
   const hasGitLabIntegration = useMemo(() => integrations.some((item) => item.provider === 'gitlab'), [integrations]);
   const workspaceReposByIntegration = useMemo(() => {
@@ -101,6 +107,22 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
   useEffect(() => {
     void loadIntegrations();
   }, [loadIntegrations]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const manifestStatus = url.searchParams.get('github_app_manifest');
+    if (!manifestStatus) return;
+    const message = url.searchParams.get('github_message');
+    if (manifestStatus === 'created') {
+      toast.success(message || 'GitHub App created');
+    } else {
+      toast.error(message || 'GitHub App creation failed');
+    }
+    url.searchParams.delete('github_app_manifest');
+    url.searchParams.delete('github_message');
+    window.history.replaceState({}, '', `${url.pathname}${url.search ? url.search : ''}${url.hash}`);
+    void queryClient.invalidateQueries({ queryKey: ['git'] });
+  }, [queryClient]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -230,7 +252,9 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
         description="Organization provider access for repositories used across workspaces."
         actions={canManage ? (
           <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
-            {hasGitHubIntegration ? (
+            {githubAppMissing ? (
+              <GitHubAppCreateButton workspaceId={workspaceId} />
+            ) : hasGitHubIntegration ? (
               <Button
                 type="button"
                 variant="outline"
@@ -271,6 +295,13 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
         </div>
       ) : (
         <>
+          {githubAppMissing ? (
+            <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              {githubAppStatus?.manifest_available
+                ? 'No GitHub App is configured for this Helpin instance yet. A workspace owner can create one with Create GitHub App, then connect GitHub.'
+                : 'No GitHub App is configured for this Helpin instance. Set the GITHUB_APP_* server settings to connect GitHub.'}
+            </div>
+          ) : null}
           {setupError ? (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {setupError}

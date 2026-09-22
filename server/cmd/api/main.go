@@ -858,10 +858,11 @@ func main() {
 	supportInboxService.SetTriageService(supportInboxTriageService)
 
 	slog.Info("startup: initializing GitHub App client")
-	githubAppClient, err := githubapp.NewClient(cfg.GitHubAppID, cfg.GitHubAppPrivateKey)
+	githubAppConfig, err := newGitHubAppConfigService(db, cfg)
 	if err != nil {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
+	githubAppClient := githubapp.NewClientWithSource(githubAppConfig)
 	var temporalClient tclient.Client
 	temporalClient, err = tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
@@ -889,7 +890,8 @@ func main() {
 		cfg.JWTSecret,
 	).
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, pmEpicRepo).
-		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
+		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg)).
+		SetGitHubAppSource(githubAppConfig)
 	pmTaskService.SetGitService(gitService)
 	pmEpicService.SetGitService(gitService)
 	var agentRuntimeClient *service.AgentRuntimeClient
@@ -1825,6 +1827,7 @@ func main() {
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
 		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService, supportEmailLogRepo, supportEmailWebhookEventRepo, emailDiagnosticsConfig),
 		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
+		GitHubApp:           handler.NewGitHubAppHandler(githubAppConfig),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		PushDevice:          handler.NewPushDeviceHandler(pushDeviceService),

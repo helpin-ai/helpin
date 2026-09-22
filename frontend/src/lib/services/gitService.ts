@@ -3,6 +3,8 @@ import type {
   GitIntegration,
   GitIntegrationDetail,
   GitHubInstallURLResponse,
+  GitHubAppManifestResponse,
+  GitHubAppStatus,
   GitLabConnectTokenRequest,
   GitLabConnectResponse,
   GitBranch,
@@ -76,6 +78,10 @@ export const gitService = {
     api.del<{ status: string }>(`/organizations/${organizationId}/git/integrations/${integrationId}${orgQs(workspaceId)}`),
   syncOrgRepositories: (organizationId: string, integrationId: string) =>
     api.post<GitRepository[]>(`/organizations/${organizationId}/git/integrations/${integrationId}/sync`, {}),
+  getGitHubAppStatus: (workspaceId: string) =>
+    api.get<GitHubAppStatus>(`/workspaces/${workspaceId}/github/app-status`),
+  createGitHubAppManifest: (workspaceId: string, organization?: string) =>
+    api.post<GitHubAppManifestResponse>(`/workspaces/${workspaceId}/github/app-manifest`, organization ? { organization } : {}),
   getGitHubInstallURL: (workspaceId: string, options?: { forceInstall?: boolean }) =>
     api.get<GitHubInstallURLResponse>(`/git/github/install-url${qs(workspaceId)}${options?.forceInstall ? '&force_install=true' : ''}`),
   listIntegrations: (workspaceId: string) =>

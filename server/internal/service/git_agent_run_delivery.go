@@ -159,7 +159,7 @@ func delegatedRunDeliveryBranches(run *model.AgentRun, taskTarget *model.TaskDel
 func (s *GitService) ensureDelegatedRunPullRequest(ctx context.Context, integration *model.GitIntegration, repo *model.GitRepository, head, base, title, body string) (*AgentRunRepositoryDeliveryResult, error) {
 	switch strings.ToLower(strings.TrimSpace(integration.Provider)) {
 	case "github":
-		if s.githubApp == nil {
+		if !s.hasGitHubApp(ctx) {
 			return nil, fmt.Errorf("github app is not configured")
 		}
 		if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {

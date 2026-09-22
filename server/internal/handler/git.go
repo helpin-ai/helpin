@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -573,14 +574,33 @@ func (h *GitHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 				body,
 				r.Header.Get("X-Hub-Signature-256"),
 			)
+			if errors.Is(err, service.ErrGitHubWebhookUnknownInstallation) {
+				// Signed by the App but not (yet) linked to an organization,
+				// e.g. installation events that arrive before the setup callback.
+				writeJSON(recorder, http.StatusOK, map[string]string{"status": "ignored"})
+				return
+			}
+			if errors.Is(err, service.ErrGitHubWebhookSignature) {
+				writeError(recorder, http.StatusUnauthorized, "invalid github webhook signature")
+				return
+			}
 			if err != nil {
-				writeError(recorder, http.StatusUnauthorized, err.Error())
+				slog.ErrorContext(r.Context(), "resolve github webhook installation", "error", err)
+				writeError(recorder, http.StatusInternalServerError, "failed to resolve github installation")
 				return
 			}
 			integration = resolvedIntegration
 			if integration != nil {
 				resolvedIntegrationID = &integration.ID
 			}
+		} else if err := h.gitService.VerifyGitHubWebhookWithoutInstallation(
+			r.Context(),
+			r.URL.Query().Get("workspace_id"),
+			body,
+			r.Header.Get("X-Hub-Signature-256"),
+		); err != nil {
+			writeError(recorder, http.StatusUnauthorized, "invalid github webhook signature")
+			return
 		}
 
 		event := r.Header.Get("X-GitHub-Event")

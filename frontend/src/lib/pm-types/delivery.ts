@@ -184,6 +184,23 @@ export interface GitHubInstallURLResponse {
   integration_id?: string;
 }
 
+/** Instance GitHub App status (no secrets). */
+export interface GitHubAppStatus {
+  configured: boolean;
+  source: 'env' | 'database' | 'none';
+  slug: string;
+  install_url: string;
+  webhook_configured: boolean;
+  manifest_available: boolean;
+}
+
+/** GitHub App manifest to POST to `post_url` in a form field named `manifest`. */
+export interface GitHubAppManifestResponse {
+  manifest: Record<string, unknown>;
+  post_url: string;
+  state: string;
+}
+
 export type GitLabTokenAuthType = 'personal_token' | 'group_token' | 'project_token';
 
 export interface GitLabConnectTokenRequest {

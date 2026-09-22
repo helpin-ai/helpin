@@ -132,6 +132,11 @@ type Config struct {
 	GitHubAppID         string
 	GitHubAppSlug       string
 	GitHubAppPrivateKey string
+	// GITHUB_APP_WEBHOOK_SECRET is the App's webhook secret; deliveries are
+	// rejected without it. Client ID/secret are optional.
+	GitHubAppWebhookSecret string
+	GitHubAppClientID      string
+	GitHubAppClientSecret  string
 
 	// GitOAuthEncryptionKey encrypts stored git provider tokens (GitHub App + GitLab PAT) at rest.
 	GitOAuthEncryptionKey string
@@ -478,6 +483,9 @@ func Load() (*Config, error) {
 		GitHubAppID:                            os.Getenv("GITHUB_APP_ID"),
 		GitHubAppSlug:                          os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:                    os.Getenv("GITHUB_APP_PRIVATE_KEY"),
+		GitHubAppWebhookSecret:                 strings.TrimSpace(os.Getenv("GITHUB_APP_WEBHOOK_SECRET")),
+		GitHubAppClientID:                      strings.TrimSpace(os.Getenv("GITHUB_APP_CLIENT_ID")),
+		GitHubAppClientSecret:                  strings.TrimSpace(os.Getenv("GITHUB_APP_CLIENT_SECRET")),
 		GitOAuthEncryptionKey:                  strings.TrimSpace(os.Getenv("GIT_OAUTH_ENCRYPTION_KEY")),
 		SMTPHost:                               strings.TrimSpace(os.Getenv("SMTP_HOST")),
 		SMTPPort:                               smtpPort,

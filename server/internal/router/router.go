@@ -76,6 +76,7 @@ type Handlers struct {
 	SupportTag          *handler.SupportTagHandler
 	SupportInboxWidget  *handler.SupportInboxWidgetHandler
 	Git                 *handler.GitHandler
+	GitHubApp           *handler.GitHubAppHandler
 	Docs                *handler.DocsHandler
 	TLSAsk              *handler.TLSAskHandler
 	Notification        *handler.NotificationHandler
@@ -346,6 +347,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
+		if h.GitHubApp != nil {
+			r.Get("/github/app-manifest/callback", h.GitHubApp.ManifestCallback)
+		}
 		if h.PostmarkInbound != nil {
 			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
 			r.Post("/webhooks/postmark/open", h.PostmarkInbound.PostmarkOpen)
@@ -679,6 +683,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermWorkspaceUpdate)).Put("/setup/goals", h.Setup.UpdateGoals)
 					r.Patch("/setup/me", h.Setup.UpdatePreference)
 					r.Post("/setup/recommendations/{taskKey}/start", h.Setup.StartRecommendation)
+				}
+				if h.GitHubApp != nil {
+					r.With(requirePerm(authorization.PermSettingsRead)).Get("/github/app-status", h.GitHubApp.Status)
+					r.With(authorization.RequireOwner(authz)).Post("/github/app-manifest", h.GitHubApp.CreateManifest)
 				}
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Put("/members/{memberId}", h.Workspace.UpdateMember)
 				r.With(requirePerm(authorization.PermWorkspaceMembersManage)).Delete("/members/{memberId}", h.Workspace.RemoveMember)
