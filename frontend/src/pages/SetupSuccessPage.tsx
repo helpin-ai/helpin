@@ -7,6 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SampleDataCard } from '@/components/setup/SampleDataButton';
+import { SetupConnectionsSection } from '@/components/setup/SetupConnectionsSection';
 import { usePermissions, useSetup, useUpdateSetupGoals, useWorkspaceAccess } from '@/hooks/queries';
 import { resolveSetupAction } from '@/lib/setupActions';
 import { trackAnalyticsEvent } from '@/lib/analytics';
@@ -201,6 +203,14 @@ export function SetupSuccessPage() {
         </section>
 
         <div className="mt-14 space-y-14">
+          <SetupConnectionsSection
+            workspaceId={workspaceId}
+            slug={slug}
+            goals={view.goals}
+            canManage={has('workspace.update')}
+            isOwner={access?.membership?.role === 'owner'}
+          />
+          <SampleDataCard workspaceId={workspaceId} canManage={has('workspace.update')} />
           {view.journeys.map((journey) => (
             <JourneySection
               key={journey.key}

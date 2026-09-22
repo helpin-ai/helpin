@@ -192,6 +192,52 @@ func TestWorkspaceCapabilitiesUseEvidenceNotConfiguration(t *testing.T) {
 	}
 }
 
+// TestWorkspaceCapabilityPathsMatchFrontendRoutes keeps action paths in step
+// with the workspace settings routes the Setup guide links to.
+func TestWorkspaceCapabilityPathsMatchFrontendRoutes(t *testing.T) {
+	known := map[string]bool{
+		"settings/ai":              true, // workspace AI connections tab
+		"settings/chat-general":    true,
+		"settings/inboxes-routing": true,
+		"settings/git-connections": true,
+		"settings/repositories":    true,
+	}
+	untested := &model.AIConnection{ID: "c1", WorkspaceID: "ws", Status: "connected", Funding: "customer"}
+	profile := &model.AIProfile{Primary: model.AIProfileRoute{ConnectionID: "c1"}}
+	appConfigured := func(context.Context) bool { return true }
+	scenarios := []struct {
+		name     string
+		cfg      CapabilityConfig
+		evidence *fakeCapabilityEvidence
+		setup    fakeCapabilitySetup
+		ai       fakeCapabilityAI
+	}{
+		{"nothing set up", CapabilityConfig{AIConnectionsEnabled: true}, &fakeCapabilityEvidence{}, fakeCapabilitySetup{}, fakeCapabilityAI{}},
+		{"partially set up", CapabilityConfig{AIConnectionsEnabled: true, SupportEmailConfigured: true, GitHubAppConfigured: appConfigured},
+			&fakeCapabilityEvidence{installs: 1}, fakeCapabilitySetup{routes: 1}, fakeCapabilityAI{profile: profile, connection: untested}},
+		{"app installed", CapabilityConfig{AIConnectionsEnabled: true, GitHubAppConfigured: appConfigured},
+			&fakeCapabilityEvidence{github: true}, fakeCapabilitySetup{}, fakeCapabilityAI{}},
+	}
+	for _, tt := range scenarios {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.cfg.Modules = allModules()
+			svc := newCapabilityService(tt.cfg, tt.evidence, tt.setup, tt.ai)
+			response, err := svc.Workspace(context.Background(), "ws")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, c := range response.Capabilities {
+				if c.Action == nil || c.Action.Path == "" {
+					continue
+				}
+				if !known[c.Action.Path] {
+					t.Errorf("%s action path %q is not a workspace settings route", c.Key, c.Action.Path)
+				}
+			}
+		})
+	}
+}
+
 func TestEmailOutboundCapabilityFollowsLastTestForCurrentConfiguration(t *testing.T) {
 	failure := testEmailSendFailed
 	tests := []struct {

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { aiConnectionService } from '@/lib/services/aiConnectionService'
 import { queryKeys } from '@/lib/queryKeys'
-import { unwrap } from '@/lib/queryUtils'
+import { unwrap, unwrapRequired } from '@/lib/queryUtils'
+import { invalidateCapabilities } from './useCapabilities'
 
 function invalidateAI(queryClient: ReturnType<typeof useQueryClient>, workspaceId: string) {
   queryClient.invalidateQueries({ queryKey: queryKeys.ai.root(workspaceId) })
@@ -54,6 +55,22 @@ export function usePollAIConnection(workspaceId: string) {
   return useMutation({
     mutationFn: async (id: string) => unwrap(await aiConnectionService.poll(workspaceId, id)),
     onSuccess: () => invalidateAI(queryClient, workspaceId),
+  })
+}
+
+/**
+ * Runs a live completion through a connection. Settles by refreshing AI
+ * connections and workspace capabilities, which record the test result.
+ */
+export function useTestAIConnection(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ connectionId, model }: { connectionId: string; model?: string }) =>
+      unwrapRequired(await aiConnectionService.test(workspaceId, connectionId, model), 'AI connection test'),
+    onSettled: () => {
+      invalidateAI(queryClient, workspaceId)
+      invalidateCapabilities(queryClient, workspaceId)
+    },
   })
 }
 

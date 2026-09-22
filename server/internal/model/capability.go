@@ -42,7 +42,7 @@ const (
 )
 
 // CapabilityAction describes the next step that resolves a capability status.
-// Path is relative to the workspace route (for example "settings/ai-connections").
+// Path is relative to the workspace route (for example "settings/ai").
 type CapabilityAction struct {
 	Kind         string `json:"kind"`
 	Label        string `json:"label"`

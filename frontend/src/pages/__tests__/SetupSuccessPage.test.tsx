@@ -14,6 +14,12 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), error: vi.fn() } }));
 vi.mock('@/lib/analytics', () => ({ trackAnalyticsEvent: vi.fn() }));
 vi.mock('@/lib/services/setupService', () => ({ setupService: { startRecommendation: vi.fn() } }));
+vi.mock('@/components/setup/SetupConnectionsSection', () => ({
+  SetupConnectionsSection: ({ goals }: { goals: string[] }) => <section data-testid="connections" data-goals={goals.join(',')} />,
+}));
+vi.mock('@/components/setup/SampleDataButton', () => ({
+  SampleDataCard: () => <section data-testid="sample-data" />,
+}));
 vi.mock('@/stores/workspaceStore', () => ({
   useWorkspaceStore: (selector: (state: { currentWorkspace: typeof workspace }) => unknown) => selector({ currentWorkspace: workspace }),
 }));

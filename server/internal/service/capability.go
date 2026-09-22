@@ -161,7 +161,7 @@ func (s *CapabilityService) workspaceAIChat(ctx context.Context, workspaceID str
 	if !s.cfg.AIConnectionsEnabled {
 		return capability(key, model.CapabilityUnavailable, "AI connections are not enabled on this server.", nil), nil
 	}
-	connect := settingsAction("Connect an AI provider", "settings/ai-connections")
+	connect := settingsAction("Connect an AI provider", "settings/ai")
 	profile, err := s.ai.DefaultProfile(ctx, workspaceID)
 	if err != nil {
 		return model.Capability{}, err
@@ -186,7 +186,7 @@ func (s *CapabilityService) workspaceAIChat(ctx context.Context, workspaceID str
 	if connection.Funding == "managed" {
 		return capability(key, model.CapabilityReady, "AI is provided by the platform.", nil), nil
 	}
-	test := &model.CapabilityAction{Kind: model.CapabilityActionTestAIConnection, Label: "Test the connection", Path: "settings/ai-connections", ConnectionID: connection.ID}
+	test := &model.CapabilityAction{Kind: model.CapabilityActionTestAIConnection, Label: "Test the connection", Path: "settings/ai", ConnectionID: connection.ID}
 	if connection.LastVerifiedAt == nil {
 		return capability(key, model.CapabilityUnableToVerify, "The default AI connection has not been tested.", test), nil
 	}
