@@ -40,7 +40,8 @@ export function useBentoPlayback(duration = 6000, enabled = true) {
   }, [enabled, reducedMotion]);
 
   useEffect(() => {
-    if (!playing || !enabled) return;
+    // CSS-only scenes pass zero: visibility control without a React cycle timer.
+    if (!playing || !enabled || duration <= 0) return;
     // Let the completed scene settle briefly before replaying the sequence.
     const timer = setInterval(() => setCycle(value => value + 1), duration);
     return () => clearInterval(timer);

@@ -1,13 +1,13 @@
 'use client';
 
-import { useId, type CSSProperties } from 'react';
+import { useId } from 'react';
 import { useBentoPlayback } from './useBentoPlayback';
 import './hero-vortex.css';
 
 // Adapted from the teammate's VortexLines.jsx handoff (September 2026).
 // Source: https://storage.googleapis.com/vm-dev-screenshots/Helpin.ai%20Open%20Source%20Alternative.zip
-// Keep its bowed # geometry and staggered trails; wide translucent strokes
-// replace animated blur to avoid rerasterizing a large filtered SVG each frame.
+// Keep its bowed # geometry and staggered highlights. Only the outer transform
+// moves: animating SVG stroke dashes repaints this large canvas every frame.
 const CX = 700, CY = 350, LENGTH = 1100, SPREAD = 190, GAP = 185;
 const BUNDLES = [
   { axis: 'v', offset: -GAP }, { axis: 'v', offset: GAP },
@@ -62,7 +62,7 @@ const ART = { vortex: BUNDLES, flow: FLOW, connections: CONNECTIONS, orbit: ORBI
 
 export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: MotionVariant; tone?: 'light' | 'dark' }) {
   const id = useId().replace(/:/g, '');
-  const { container, playing } = useBentoPlayback(16_000);
+  const { container, playing } = useBentoPlayback(0);
 
   return (
     <div ref={container} className="hero-vortex" data-playing={playing} data-variant={variant} data-tone={tone}>
@@ -91,10 +91,7 @@ export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: M
                 </g>
                 <g stroke="#3FC48F" strokeWidth="1.6" strokeDasharray="80 680">
                   {bundle.lines.map((line, j) => (
-                    <path key={j} className="hero-vortex-trail" d={line.d} opacity={Math.min(0.95, line.opacity * 2.2)} style={{
-                      '--vortex-duration': `${5.5 + (j % 4) * 0.9}s`,
-                      '--vortex-delay': `${-(j * 0.7 + bi * 1.6)}s`,
-                    } as CSSProperties} />
+                    <path key={j} d={line.d} opacity={Math.min(0.95, line.opacity * 2.2)} strokeDashoffset={-(j * 80 + bi * 120)} />
                   ))}
                 </g>
               </g>
