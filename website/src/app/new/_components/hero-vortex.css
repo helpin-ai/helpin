@@ -52,3 +52,6 @@
   .hp3 :is(.record-motion, .section-motion) .hero-vortex-drift { width: 750px; height: 600px; margin-left: -375px; opacity: .14; }
   .hp3 :is(.record-motion, .section-motion) .hero-vortex-art { mask-image: linear-gradient(90deg, #000, transparent 22%, transparent 78%, #000); }
 }
+
+/* Keep footer artwork within the footer, including shorter desktop layouts. */
+.hp3 .pfoot.section-motion > .hero-vortex { height: 100%; }
