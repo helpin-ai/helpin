@@ -386,8 +386,8 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
           aria-label="Optional note"
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
-          placeholder={hasFindings ? 'Optional note about the selected or skipped findings' : 'Optional note for the agent'}
-          className={cn('min-h-[76px]', hasFindings && 'mt-4')}
+          placeholder="Add a note (optional)"
+          className={cn(hasFindings && 'mt-4')}
           disabled={isBusy}
         />
         <div className="mt-4 flex flex-wrap gap-2">
@@ -493,8 +493,8 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
           aria-label="Optional note"
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
-          placeholder="Optional note sent with your decision"
-          className={cn('min-h-[76px]', attachedPreview && 'mt-3')}
+          placeholder="Add a note (optional)"
+          className={cn(attachedPreview && 'mt-3')}
           disabled={isBusy}
         />
         <div
@@ -593,8 +593,8 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
           aria-label="Optional follow-up message"
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
-          placeholder="Optional follow-up message if you want the agent to revise after denying"
-          className="mt-4 min-h-[76px]"
+          placeholder="Add a follow-up (optional)"
+          className="mt-4"
           disabled={isBusy}
         />
         <div className="mt-4 flex flex-wrap gap-2">

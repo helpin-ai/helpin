@@ -439,7 +439,11 @@ export function QuietUnderlineInput({ className, ...props }: React.ComponentProp
 }
 
 export function QuietUnderlineTextarea({ className, ...props }: React.ComponentProps<typeof Textarea>) {
-  return <Textarea className={cn(quietUnderlineControlClassName, className)} {...props} />;
+  return <Textarea rows={1} className={cn(
+    quietUnderlineControlClassName,
+    'min-h-0 max-h-[calc(4lh+0.75rem+2px)] overflow-y-auto leading-5',
+    className,
+  )} {...props} />;
 }
 
 export function QuietSearchInput({

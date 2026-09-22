@@ -100,8 +100,7 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
             aria-label="Optional change request"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="What should the agent change? (optional)"
-            rows={2}
+            placeholder="What should change? (optional)"
           />
           <div className="flex items-center gap-2">
             <Button
