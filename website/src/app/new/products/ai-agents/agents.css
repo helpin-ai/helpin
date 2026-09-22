@@ -261,3 +261,5 @@
 .hp3 .agents-hero .hero-vortex-toggle { color: var(--on-dark-muted); background: var(--surface-dark); border-color: var(--art-dark-border); }
 .hp3 .agents-hero .hero-vortex-toggle:hover { color: var(--on-dark-accent); border-color: var(--on-dark-muted); }
 @media (max-width: 600px) { .hp3 .agents-hero .hero-vortex-drift { opacity: .25; } }
+
+.hp3 .agents-controls .agents-demo-caption { text-align: center; }
