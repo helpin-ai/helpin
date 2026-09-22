@@ -68,17 +68,17 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var admissionErr error
-	if len(r.Header.Values("Origin")) == 1 {
+	if len(r.Header.Values("Origin")) <= 1 {
 		admissionErr = h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{WidgetKey: widgetKey, SessionToken: legacyToken})
 	}
-	if len(r.Header.Values("Origin")) != 1 || admissionErr != nil {
+	if len(r.Header.Values("Origin")) > 1 || admissionErr != nil {
 		widgetorigin.LogRejection(ctx, r, admissionErr)
 		http.Error(w, "widget origin or credentials are not allowed", http.StatusForbidden)
 		return
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // exact installation origin checked above
+		InsecureSkipVerify: true, // installation origin policy checked above
 	})
 	if err != nil {
 		slog.Error("widget ws: accept error", "error", err)
@@ -125,10 +125,10 @@ func (h *WidgetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // serveLegacy handles legacy widget connections that pass session_token in the URL.
 func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, r *http.Request, sessionToken string) {
 	var admissionErr error
-	if len(r.Header.Values("Origin")) == 1 {
+	if len(r.Header.Values("Origin")) <= 1 {
 		admissionErr = h.service.AuthorizeWidgetOrigin(ctx, r.Header.Get("Origin"), widgetorigin.Reference{SessionToken: sessionToken})
 	}
-	if len(r.Header.Values("Origin")) != 1 || admissionErr != nil {
+	if len(r.Header.Values("Origin")) > 1 || admissionErr != nil {
 		widgetorigin.LogRejection(ctx, r, admissionErr)
 		http.Error(w, "widget origin or credentials are not allowed", http.StatusForbidden)
 		return
@@ -141,7 +141,7 @@ func (h *WidgetHandler) serveLegacy(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true, // exact installation origin checked above
+		InsecureSkipVerify: true, // installation origin policy checked above
 	})
 	if err != nil {
 		slog.Error("widget ws: accept error", "error", err)

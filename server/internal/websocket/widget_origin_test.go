@@ -51,10 +51,17 @@ func TestWidgetSocketRejectsOriginBeforeUpgrade(t *testing.T) {
 
 // Embedding the interface keeps the handshake test strict: unexpected service
 // operations panic rather than silently bypassing session admission.
-type tauriWidgetOriginService struct{ WidgetService }
+type tauriWidgetOriginService struct {
+	WidgetService
+	allowAll bool
+}
 
 func (s *tauriWidgetOriginService) AuthorizeWidgetOrigin(_ context.Context, origin string, _ widgetorigin.Reference) error {
-	if !widgetorigin.Allowed(origin, []string{"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}) {
+	origins := []string{"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
+	if s.allowAll {
+		origins = []string{"*"}
+	}
+	if !widgetorigin.Allowed(origin, origins) {
 		return &widgetorigin.DeniedError{InstallationID: "installation-one"}
 	}
 	return nil
@@ -71,10 +78,10 @@ func (s *tauriWidgetOriginService) TouchWidgetSessionActivity(context.Context, s
 
 func TestWidgetSocketAllowsTauriHandshake(t *testing.T) {
 	for _, query := range []string{"key=key", "session_token=legacy"} {
-		for _, origin := range []string{"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"} {
+		for _, origin := range []string{"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "", "null"} {
 			t.Run(query+"/"+origin, func(t *testing.T) {
 				done := make(chan struct{})
-				handler := NewWidgetHandler(NewHub(), &tauriWidgetOriginService{})
+				handler := NewWidgetHandler(NewHub(), &tauriWidgetOriginService{allowAll: origin == "" || origin == "null"})
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					defer close(done)
 					handler.ServeHTTP(w, r)
@@ -82,7 +89,11 @@ func TestWidgetSocketAllowsTauriHandshake(t *testing.T) {
 				defer srv.Close()
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				conn, resp, err := ws.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/widget/ws?"+query, &ws.DialOptions{HTTPHeader: http.Header{"Origin": []string{origin}}})
+				headers := http.Header{}
+				if origin != "" {
+					headers.Set("Origin", origin)
+				}
+				conn, resp, err := ws.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/widget/ws?"+query, &ws.DialOptions{HTTPHeader: headers})
 				if err != nil {
 					t.Fatalf("handshake failed: %v", err)
 				}
