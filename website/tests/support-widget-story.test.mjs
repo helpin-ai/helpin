@@ -11,7 +11,7 @@ describe('Support widget story', () => {
     assert.equal(checking.handedOff, false);
     assert.equal(checking.messages.at(-1).role, 'customer');
     const found = demoFrame(12500, timestamp);
-    assert.match(found.messages.at(-1).content, /Pagination stops after 10,000 rows/);
+    assert.match(found.messages.at(-1).content, /full export is still stopping at 10,000 rows/);
     assert.equal(found.handedOff, false);
     assert.equal(demoFrame(13000, timestamp).handedOff, true);
   });
@@ -25,12 +25,16 @@ describe('Support widget story', () => {
     const finished = demoFrame(3400, timestamp);
     assert.equal(finished.stream, null);
     assert.equal(finished.messages.at(-1).isStreaming, false);
-    assert.equal(finished.messages.at(-1).sources.length, 1);
+    assert.equal(finished.messages.at(-1).sources, undefined);
+    assert.match(finished.messages.at(-1).content, /earlier report: 10,000 contacts exported instead of 18,400/);
   });
   it('sends the follow-up from Helpin AI only after release and approval', () => {
     const approved = demoFrame(21000, timestamp);
     assert.match(approved.stage, /Fix released · Follow-up approved/);
     assert.equal(approved.messages.some(message => message.id === 'resolved'), false);
+    assert.equal(demoFrame(18999, timestamp).messages.some(message => message.id === 'released'), false);
+    assert.equal(approved.messages.at(-1).id, 'released');
+    assert.equal(approved.messages.at(-1).content, 'After the team confirms the release');
     const sending = demoFrame(23400, timestamp);
     assert.equal(sending.messages.at(-1).id, 'resolved');
     assert.equal(sending.messages.at(-1).role, 'ai');

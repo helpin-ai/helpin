@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, CheckCheck, FileSearch, LockKeyhole, Pause, Play, ShieldCheck, Sparkles } from 'lucide-react';
+import { Check, FileSearch, LockKeyhole, Pause, Play, ShieldCheck, Sparkles } from 'lucide-react';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
 import './support-identity.css';
 
-export function SupportIdentity() {
+export function SupportIdentity({ variant = 'support' }: { variant?: 'support' | 'developer' }) {
+  const developer = variant === 'developer';
   const { container, playing } = useBentoPlayback(17000);
   const [paused, setPaused] = useState(false);
   const [frame, setFrame] = useState(4);
@@ -30,33 +31,33 @@ export function SupportIdentity() {
   const verified = phase >= 1;
   const found = phase >= 2;
   const drafted = phase >= 3;
-  const sent = phase === 4;
+  const readyForReview = phase === 4;
 
   return (
     <div className="support-identity-art" ref={container} data-playing={active} data-phase={phase}>
       <div className="sia-toolbar"><span><i>O</i>OrbitDesk <span>· Illustrative workflow</span></span><button type="button" aria-label={paused ? 'Play identity and tools animation' : 'Pause identity and tools animation'} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{paused ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}</button></div>
-      <div role="img" aria-label="Example configured workflow: OrbitDesk signs Maya’s widget identity on its server and Helpin verifies the HMAC signature. The team asks Ask Agent to investigate her incomplete CSV export with a selected MCP log tool. The tool applies its own account access rules and returns a row-limit error. Ask Agent prepares a reply, which Sam reviews and sends to Maya.">
+      <div role="img" aria-label="Example configured workflow: OrbitDesk signs Maya’s widget identity on its server and Helpin verifies the HMAC signature. The team asks Ask Agent to investigate her incomplete CSV export with a selected MCP log tool. The tool applies its own account access rules and returns evidence that the remaining contacts were not retrieved. Ask Agent attaches the findings to the customer request and prepares a reply for review; it has not been sent.">
         <div aria-hidden="true">
           <div className="sia-customer">
-            <div className="sia-customer-top"><img src="/new/avatars/maya.webp" width={34} height={34} alt="" /><div><strong>Maya Chen</strong><span>Northstar Labs</span></div><span className="sia-verified" data-ready={verified}><ShieldCheck size={13} />{verified ? 'Verified' : 'Checking'}</span></div>
-            <p>“Why is my CSV export incomplete?”</p>
+            <div className="sia-customer-top"><img src="/new/avatars/maya.webp" width={34} height={34} alt="" /><div><strong>Maya Chen</strong><span>Northstar Labs</span></div><span className="sia-verified" data-ready={verified}><ShieldCheck size={13} />{verified ? (developer ? 'Verified by your backend' : 'Identity verified') : 'Checking'}</span></div>
+            <p>“{developer ? 'My export is still missing contacts. Can you check what happened?' : 'Can you check why our export is incomplete?'}”</p>
             <div className="sia-proof"><LockKeyhole size={12} /><span>Server-signed identity</span><span>HMAC</span></div>
           </div>
           <div className="sia-wire" data-active={phase === 1}><i /></div>
           <div className="sia-investigation" data-active={verified}>
-            <div className="sia-agent-heading"><img src="/brand/helpin-icon-white.svg" width={21} height={21} alt="" /><div><strong>Ask Agent</strong><span>Investigate Maya’s export</span></div><span className="sia-status">{found ? 'Finding ready' : verified ? 'Checking logs' : 'Ready'}</span></div>
-            <div className="sia-tool"><FileSearch size={17} /><div><strong>Look up export logs</strong><span>Your MCP server · Selected tool</span></div>{found ? <Check size={15} /> : <i className="sia-working" />}</div>
-            <div className="sia-result" data-ready={found}><span>EXPORT LOG · NORTHSTAR LABS</span><p>Export stopped at the row limit.</p><small>Account access enforced by your tool.</small></div>
+            <div className="sia-agent-heading"><img src="/brand/helpin-icon-white.svg" width={21} height={21} alt="" /><div><strong>Ask Agent</strong><span>{developer ? 'Investigate Maya’s reported export.' : 'Investigate the reported export'}</span></div><span className="sia-status">{found ? 'Finding ready' : verified ? 'Checking logs' : 'Ready'}</span></div>
+            <div className="sia-tool"><FileSearch size={17} /><div><strong>Account export logs</strong><span>Your MCP server · Selected tool</span></div>{found ? <Check size={15} /> : <i className="sia-working" />}</div>
+            <div className="sia-result" data-ready={found}><span>EXPORT LOG · NORTHSTAR LABS</span><p>{developer ? 'The export retrieved 10,000 contacts. The request for the remaining contacts did not complete.' : 'The export stopped before retrieving the remaining contacts.'}</p><small>{developer ? 'Northstar Labs access confirmed by the tool.' : 'Customer access checked by your tool'}</small></div>
           </div>
           <div className="sia-wire" data-active={phase === 3}><i /></div>
           <div className="sia-response" data-ready={drafted}>
-            <div className="sia-response-heading"><span><Sparkles size={13} />{sent ? 'Back to Maya' : 'Customer reply'}</span><span>{sent ? <CheckCheck size={13} /> : null}{sent ? 'Sent' : 'Draft'}</span></div>
-            <p>Your export hit the row limit. Try a smaller date range while we investigate.</p>
-            <div className="sia-review"><img src="/new/avatars/sam.webp" width={21} height={21} alt="" /><span>{sent ? 'Reviewed and sent by Sam' : 'Sam reviews before sending'}</span></div>
+            <div className="sia-response-heading"><span><Sparkles size={13} />Customer reply</span><span>{readyForReview ? <Check size={13} /> : null}{readyForReview ? 'Ready for review' : 'Draft'}</span></div>
+            <p>{developer ? 'Maya previously tried a smaller export, but still needs the full list. Attach this finding to EXP-142.' : 'Findings attached to the customer’s request'}</p>
+            <div className="sia-review"><img src="/new/avatars/sam.webp" width={21} height={21} alt="" /><span>{readyForReview ? (developer ? 'Draft prepared · Awaiting review' : 'Customer reply ready for review') : 'Preparing a reply for Sam’s review'}</span></div>
           </div>
         </div>
       </div>
-      <p className="sia-caption">Verified identity. Selected tools. A useful next step.</p>
+      <p className="sia-caption">{developer ? 'The agent gets what it needs to investigate—not unrestricted access.' : 'Verified identity. Limited access. An informed next step.'}</p>
     </div>
   );
 }

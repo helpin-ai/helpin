@@ -27,7 +27,7 @@ const COLUMNS = [
   ] },
 ];
 
-export function PreviewFooter() {
+export function PreviewFooter({ homepage = false }: { homepage?: boolean }) {
   return (
     <footer className="pfoot section-motion">
       <HeroVortex variant="converge" tone="dark" />
@@ -37,7 +37,7 @@ export function PreviewFooter() {
             <Link href="/new" className="logo" aria-label="Helpin homepage">
               <HelpinBrand variant="light-on-dark" />
             </Link>
-            <p>One customer history.<br />A workspace for your team<br />and agents.</p>
+            <p>One customer history.<br />{homepage ? "A shared workspace for your team and AI agents." : <>A workspace for your team<br />and agents.</>}</p>
           </div>
           <nav className="footer-nav" aria-label="Footer navigation">
             {COLUMNS.map((column) => (
@@ -68,6 +68,7 @@ export function PreviewFooter() {
             <a href="mailto:hello@helpin.ai" aria-label="Email Helpin"><Mail size={18} aria-hidden="true" /></a>
           </div>
         </div>
+        {homepage && <p className="footer-descriptor">Helpin — Support, projects, CRM, meetings, and docs. Connected by customer history. Powered by AI agents.</p>}
         <div className="footer-bottom">
           <nav className="footer-legal" aria-label="Legal and brand resources">
             <Link href="/new/branding">Branding</Link>

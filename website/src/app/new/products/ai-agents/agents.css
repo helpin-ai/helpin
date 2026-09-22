@@ -235,6 +235,22 @@
 }
 @media (prefers-reduced-motion: reduce) { .hp3 .agents-hero-roster a { transition: none; } }
 
+/* Copy captions remain secondary to the existing product demonstrations. */
+.agents-page .agents-supporting-note,.agents-page .agents-demo-caption{font-size:13px;line-height:1.6;color:var(--muted);margin-top:18px}
+.agents-hero .agents-demo-caption,.agents-demo-heading{text-align:center}
+.agents-demo-heading{font-size:18px;line-height:1.5;margin:0 0 24px}
+.agents-capability-grid .agents-demo-caption{padding:0 24px 18px;margin:0}
+.agents-capability-grid .agents-text-link{margin:0 24px 24px}
+.awa-code-task p{font-size:12px;line-height:1.6;font-weight:400;margin:12px 0 0;color:inherit}
+.awa-answer h4{font-size:13px;line-height:1.5;margin:8px 0}
+.awa-approval-request .awa-proposed-update{padding:12px;border-left:2px solid currentColor;font-size:12px;text-align:left}
+.awa-approval .awa-footnote{margin-top:16px;text-align:center}
+.hp3 .awa-coding .awa-answer{margin-top:18px;background:#193b2b;border-color:#31533f;color:#deeee2}
+.hp3 .awa-coding .awa-answer p{color:#bdd3c5}
+.hp3 .agents-page .agents-supporting-note,.hp3 .agents-page .agents-demo-caption{color:#687d70}
+.hp3 .agents-hero .agents-supporting-note,.hp3 .agents-hero .agents-demo-caption{color:#b3cbbc}
+.hp3 .agents-coding .agents-demo-caption{color:#b3cbbc}
+
 /* Shared vortex, softened for the dark Agents hero. */
 .hp3 .agents-page section.agents-hero { position: relative; isolation: isolate; }
 .hp3 .agents-hero .agents-breadcrumb,

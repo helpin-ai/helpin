@@ -1,5 +1,5 @@
 import { HeroVortex } from '../../_components/HeroVortex';
-import { Availability, CtaNote, DEMO_URL, FAQList } from '../../_components/ui';
+import { DEMO_URL, FAQList } from '../../_components/ui';
 import { previewMetadata } from '../../_components/preview-metadata';
 import Link from "next/link";
 import {
@@ -26,62 +26,62 @@ export const metadata = previewMetadata("CRM \u2014 Helpin", "/new/products/crm"
 const ESSENTIALS = [
   {
     Icon: Building2,
-    title: "Give every relationship a home.",
-    body: "Organize contacts and companies with owners, lifecycle stages, labels, and the records they belong to.",
+    title: "Organize your relationships.",
+    body: "Manage contacts and companies with owners, stages, and labels.",
   },
   {
     Icon: Mail,
-    title: "Keep the conversation close.",
-    body: "Connect Gmail and Google Calendar so email threads and meetings can sit alongside your customer records.",
+    title: "Keep email and meetings close.",
+    body: "Connect Gmail and Google Calendar to your customer records.",
   },
   {
     Icon: SlidersHorizontal,
-    title: "Track what matters to your team.",
-    body: "Add custom properties and configure pipeline stages to reflect how you sell and support customers.",
+    title: "Make it fit your process.",
+    body: "Add custom properties and configure your pipeline stages.",
   },
   {
     Icon: ListFilter,
-    title: "Find the accounts you need.",
-    body: "Search and filter contacts, companies, and deals. Switch between a pipeline board and a detailed deal list.",
+    title: "Find the right accounts.",
+    body: "Search and filter contacts, companies, and deals.",
   },
   {
     Icon: FileInput,
-    title: "Bring your existing relationships.",
-    body: "Import contacts, companies, and deals from CSV. Map columns to fields before processing your import.",
+    title: "Bring your existing data.",
+    body: "Import CSV files and map columns before processing.",
   },
   {
     Icon: Sparkles,
-    title: "Fill in the missing context.",
-    body: "Use enrichment to research customer and company details, with source links you can check.",
+    title: "Fill in missing details.",
+    body: "Research contacts and companies with source-linked enrichment.",
   },
 ];
 const FAQS = [
   [
     "What can I manage in Helpin CRM?",
-    "Contacts, companies, deals, renewals, conversations and meetings, with support and project work attached.",
+    "Contacts, companies, deals, and renewals, connected to the conversations and work behind each account. Your team can see the commercial relationship alongside support and delivery.",
     "/new/products/crm#crm-record"
   ],
   [
     "Can I manage renewals and expansion as well as new business?",
-    "Yes. Configure pipelines for new business, expansion or renewals, with owners, amounts and expected close dates.",
+    "Yes. Configure pipelines for each process, with owners, values, and expected close dates.",
     "/new/products/crm#crm-pipeline"
   ],
   [
     "Where do customer signals come from?",
-    "Helpin finds buying intent, objections and risks in conversations and connected customer activity. Check the evidence before choosing the next step.",
+    "Conversations and connected customer activity. Review the supporting evidence before acting.",
     "/new/products/crm#crm-signals"
   ],
   [
     "Will agents send messages or change deals without review?",
-    "Playbooks keep proposed messages, record changes and tasks behind your approval rules. Your team separately enables the workflow.",
+    "Agent actions follow your configured tool access and approval rules. Set which actions require review, and enable the workflows you intend to run.",
     "/new/products/crm#crm-follow-through"
   ],
   [
     "Can we bring our existing data and email?",
-    "Import contacts, companies and deals from CSV. Connect Gmail and Google Calendar to add customer conversations and events.",
+    "Yes. Import CSV records and connect Gmail and Google Calendar.",
     "/new/developers"
   ],
-  ["Can we self-host CRM?", "Yes. CRM is part of the open-source product. Run it on your own infrastructure or use Helpin Cloud.", "/new/self-hosting#whats-included"]
+  ["Can we self-host CRM?", "Yes. CRM is included in the open-source product. Your team operates the installation and covers hosting and provider costs. Enterprise features are licensed separately.", "/new/self-hosting#whats-included"]
 ] as const;
 
 export default function CRMPage() {
@@ -97,22 +97,22 @@ export default function CRMPage() {
               <span>CRM</span>
             </div>
             <div className="crm-hero-copy">
-              <Availability category="CRM" />
+              <span className="eyebrow">CRM for SaaS teams</span>
               <h1 id="crm-title">
-                A CRM that knows what
-                <span> support and engineering are doing.</span>
+                Move deals forward.{" "}
+                <span>With AI agents that know your customers.</span>
               </h1>
               <p className="lede">
-                Contacts, companies, deals and renewals — with the tickets, meetings and tasks behind each account attached. Ask Agent briefs you before every call.
+                Manage contacts, companies, and deals alongside the conversations and work behind them. AI agents help you prepare for calls, understand customer needs, and follow up with the history in view.
               </p>
-              <CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial />
+              <CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="crm-supporting-note">14-day cloud trial · No credit card required.</p>
             </div>
-            <CRMWorkspace />
+            <CRMWorkspace /><p className="crm-demo-caption">The people you work with. The relationships you’re building.</p>
             <div className="crm-outcomes">
               {[
-                ["01", "Know the account", "One history across teams."],
-                ["02", "Find the next step", "Evidence behind every signal."],
-                ["03", "Follow through", "An owner and work attached."],
+                ["01", "Know the account.", "See what your customer has asked, discussed, and agreed."],
+                ["02", "Find the next step.", "Understand what needs attention before deciding how to act."],
+                ["03", "Follow through.", "Give the next step an owner and keep the work connected."],
               ].map(([n, title, body]) => (
                 <div key={n}>
                   <span>{n}</span>
@@ -130,33 +130,29 @@ export default function CRMPage() {
           <div className="wrap">
             <div className="crm-centered">
               <SectionHead
-                eyebrow="One record, a shared starting point"
-                title="Get briefed before every call."
-                lede="The last email. The rollout decision. The support issue waiting on a fix. Keep them connected to the customer—and ask Ask Agent to bring you up to speed before the next call."
+                eyebrow="One account. A shared history."
+                title="Walk into the next call already up to speed."
+                lede="Bring the latest email, meeting decisions, support issues, and linked work into one view. Ask Agent to bring you up to speed before you speak—without asking every team for an update."
               />
             </div>
-            <CRMWorkspace mode="account" />
+            <CRMWorkspace mode="account" /><p className="crm-demo-caption">Know what the customer needs before deciding what to say.</p>
             <div className="crm-record-benefits">
               <article>
-                <h3>Get up to speed.</h3>
+                <h3>Catch up before the call.</h3>
                 <p>
-                  Read the customer summary and recent activity before the next
-                  call. See the history that explains the current situation.
+                  Start with the situation, not a search through old messages.
                 </p>
               </article>
               <article>
-                <h3>Keep the handoff intact.</h3>
+                <h3>Give the next teammate a starting point.</h3>
                 <p>
-                  Link the people, companies, deals, and tasks involved. Give
-                  sales, support, and product a shared starting point.
+                  Make the handoff about what happens next—not explaining everything again.
                 </p>
               </article>
               <article>
-                <h3>Follow the work.</h3>
+                <h3>Keep the relationship in view.</h3>
                 <p>
-                  Find the customer request behind a task and the deal it
-                  affects. Keep the relationship connected as the work
-                  progresses.
+                  Remember who is waiting and why the work matters.
                 </p>
               </article>
             </div>
@@ -167,16 +163,16 @@ export default function CRMPage() {
           <div className="wrap">
             <div className="crm-centered">
               <SectionHead
-                eyebrow="A pipeline you can act on"
-                title="See what’s holding up the deal."
-                lede="Track stages, owners, and close dates. Then look beyond the amount: the customer’s concern, the work in progress, and the next step that could move the relationship forward."
+                eyebrow="More than a deal stage"
+                title="See where the deal stands. Know what needs to happen next."
+                lede="Track the opportunity alongside the customer activity that explains it. Understand what is holding up the decision before choosing your next move."
               />
             </div>
-            <CRMPipeline />
+            <CRMPipeline /><p className="crm-demo-caption">The next move depends on the relationship—not just the pipeline stage.</p>
             <div className="crm-under-demo">
-              <span>Configurable pipelines & stages</span>
-              <span>Board & list views</span>
-              <span>Owners, amounts & close dates</span>
+              <span>Configurable stages</span>
+              <span>Board and list views</span>
+              <span>Owners, values, and close dates</span>
             </div>
           </div>
         </section>
@@ -185,9 +181,9 @@ export default function CRMPage() {
           <div className="wrap">
             <div className="crm-section-intro">
               <SectionHead
-                eyebrow="Know where to focus"
-                title="Find the customer signals worth acting on."
-                lede="Buying intent in a support reply. A concern ahead of renewal. A request to bring in another team. Surface the signal, check the evidence, and agree the next step."
+                eyebrow="Know when to reach out"
+                title="Spot the opportunity. Understand the concern."
+                lede="Find buying intent, renewal concerns, and expansion requests in customer activity. Check the original message before deciding what to do."
               />
               <span className="crm-small-label">
                 CUSTOMER EVIDENCE → NEXT ACTION
@@ -195,7 +191,7 @@ export default function CRMPage() {
             </div>
             <CRMSignals />
             <p className="crm-dark-note">
-              Your customer’s words stay attached to the recommendation.
+              A reason to investigate—not a conclusion to accept without checking.
             </p>
           </div>
         </section>
@@ -205,23 +201,23 @@ export default function CRMPage() {
           <div className="wrap">
             <div className="crm-centered cp-intro">
               <SectionHead
-                eyebrow="From a signal to a customer outcome"
-                title="Give every follow‑up an owner and a plan."
-                lede="Turn renewals, sales handoffs, and customer follow-ups into clear plans. Define the outcome, milestones, and owners, then let agents review progress and propose next steps for your team to approve."
+                eyebrow="From a signal to a plan"
+                title="Give customer follow‑ups a clear path forward."
+                lede="Define milestones, owners, and success criteria. Let agents review progress and propose next steps within your approval rules."
               />
               <Link className="crm-text-link" href="/new/products/ai-agents">
-                Meet the agents behind the work <ArrowRight size={16} />
+                Explore AI agents <ArrowRight size={16} />
               </Link>
             </div>
-            <CRMPlaybook />
+            <CRMPlaybook /><p className="crm-demo-caption">Resolve the concern. Confirm the outcome. Agree on what comes next.</p>
           </div>
         </section>
 
         <section className="crm-essentials crm-soft">
           <div className="wrap">
             <SectionHead
-              eyebrow="Also included"
-              title="The everyday CRM, covered."
+              eyebrow="The essentials, connected"
+              title="A CRM your team can work from every day."
             />
             <div className="crm-feature-grid">
               {ESSENTIALS.map(({ Icon, title, body }) => (
@@ -238,11 +234,11 @@ export default function CRMPage() {
         <section id="crm-faq">
           <div className="wrap crm-faq-grid">
             <SectionHead
-              eyebrow="Questions"
-              title="Get to know your CRM."
+              eyebrow="Before you bring your relationships over"
+              title="Get to know Helpin CRM."
             />
             <div className="crm-faqs">
-              <FAQList items={FAQS} className="faq-items" />
+              <FAQList items={FAQS} className="faq-items" /><Link className="crm-text-link" href="/new/self-hosting">Explore self-hosting<ArrowRight size={16} /></Link>
             </div>
           </div>
         </section>
@@ -253,18 +249,17 @@ export default function CRMPage() {
           <div className="wrap">
             <ConnectedWorkspace />
             <div className="final">
-              <span className="eyebrow">Keep the relationship moving</span>
-              <h2 id="crm-final-title">Every deal, with the story behind it.</h2>
+              <span className="eyebrow">Know the relationship. Make the next move.</span>
+              <h2 id="crm-final-title">Give every deal<br />the history it deserves.</h2>
               <p className="lede">
-                Bring the context, the people, and the work together to help it
-                happen.
+                Bring your customer records, conversations, and work together. Give your team and AI agents the context to prepare, follow up, and move the relationship forward.
               </p>
-              <CtaRow secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><CtaNote trial />
+              <CtaRow primaryLabel="Start free trial" secondaryHref={DEMO_URL} secondaryLabel="Book a demo" /><p className="crm-supporting-note">14-day cloud trial · No credit card required.</p>
             </div>
           </div>
         </section>
       </div>
-      <PreviewFooter />
+      <PreviewFooter homepage />
     </>
   );
 }

@@ -17,7 +17,7 @@ export const PAGE_SEO = {
       'Helpin connects projects, support, sales, and docs with AI agents that plan, build, triage, and follow up across every team.',
     canonicalPath: '/',
     imagePath: '/og/helpin-home-green.png',
-    imageAlt: 'Helpin — From customer question to shipped fix',
+    imageAlt: 'Helpin — AI agents that do more than answer.',
   },
   pricing: {
     title: 'Pricing — Open source and Helpin Cloud',
@@ -25,7 +25,7 @@ export const PAGE_SEO = {
       'Self-host the open-source product or choose Helpin Cloud with unlimited teammates and monthly AI usage. Compare plans, hosting and Enterprise licensing.',
     canonicalPath: '/pricing',
     imagePath: '/og/helpin-pricing-green.png',
-    imageAlt: 'Helpin pricing focuses on growth, not seat count',
+    imageAlt: 'Helpin pricing — One platform. Your whole team, connected.',
   },
   privacy: {
     title: 'Privacy Policy — Helpin',

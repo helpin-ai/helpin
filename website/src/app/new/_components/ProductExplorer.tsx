@@ -7,28 +7,28 @@ import { ProductPreview, type ProductPreviewName } from './product-previews';
 const AREAS = [
   {
     id: 'inbox', label: 'Support', href: '/new/products/customer-support',
-    title: 'Answer customers with agents that know their history.',
-    description: 'Draft replies from past conversations and product knowledge. Review the answer, add a note, or turn the request into a task.',
+    title: 'Answer the question without losing the story.',
+    description: 'Handle chat and email in one inbox. Let agents use past conversations and product knowledge to answer, investigate, or hand off—with the findings and customer request attached.',
   },
   {
     id: 'meetings', label: 'Meetings', href: '/new/products/meetings',
-    title: 'Turn meeting decisions into next steps.',
-    description: 'Record and transcribe customer calls. Work with agents to summarize decisions and turn action items into tasks.',
+    title: 'Keep the commitments, not just the recording.',
+    description: 'Capture calls, review summaries, and turn decisions into tasks and follow-ups. Keep the transcript linked so the next step stays grounded in what was actually agreed.',
   },
   {
     id: 'projects', label: 'Projects', href: '/new/products/projects',
-    title: 'Turn customer requests into planned work.',
-    description: 'Use agents to break requests into tasks and plan the next steps. Set priorities and owners, then connect the work to engineering.',
+    title: 'Plan roadmaps. Run sprints. Track delivery.',
+    description: 'Manage epics, tasks, dependencies, and objectives in one place. Let agents help break down the work while your team sets priorities, assigns owners, and keeps relevant customer requests attached.',
   },
   {
     id: 'crm', label: 'CRM', href: '/new/products/crm',
-    title: 'See the whole customer relationship.',
-    description: 'Explore contacts and companies, review their history, and connect the conversations and work behind each account.',
+    title: 'See the relationship behind the deal.',
+    description: 'Manage contacts, companies, and pipelines alongside their conversations and open work. Understand renewal concerns, spot buying signals, and prepare the next step with the supporting history in view.',
   },
   {
     id: 'knowledge', label: 'Knowledge', href: '/new/products/knowledge',
-    title: 'Give customers and agents answers they can use.',
-    description: 'Create help articles and internal docs alongside the work. Use agents to draft answers from repeated questions and update docs as the product changes.',
+    title: 'Turn recurring questions into useful answers.',
+    description: 'Publish help articles and internal docs. Use agents to draft guidance from recurring questions and prepare updates as your product changes—ready for your team to review.',
   },
 ] as const satisfies ReadonlyArray<{ id: ProductPreviewName; label: string; href: string; title: string; description: string }>;
 
@@ -189,7 +189,7 @@ export function ProductExplorer() {
       </div>
     </div>
     {AREAS.map((area, index) => <div className="px-panel" role="tabpanel" id={`product-panel-${area.id}`} aria-labelledby={`product-tab-${area.id}`} hidden={active !== index} tabIndex={0} key={area.id}>
-      <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.href}>Explore {area.id === 'inbox' ? 'customer support' : area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
+      <div className="px-copy"><h3>{area.title}</h3>{' '}<p>{area.description}</p><a href={area.href}>Explore {area.id === 'inbox' ? 'customer support' : area.id === 'crm' ? 'CRM' : area.label.toLowerCase()} <ArrowUpRight size={15} aria-hidden="true" /></a></div>
       <div className="px-stage">
         {(active === index || preloadPreviews) && <ProductPreview product={area.id} theme="light" />}
       </div>

@@ -1,0 +1,24 @@
+.hp3 .developers-page .developer-supporting-note,.hp3 .developers-page .developer-demo-caption{font-size:12px;line-height:1.75;color:var(--t3);margin-top:18px}
+.hp3 .developers-page .platform-dark .developer-demo-caption{color:var(--on-dark-muted)}
+.hp3 .developers-page .developer-demo-heading{font-size:17px;line-height:1.5;margin:0 0 20px;text-align:center}
+.hp3 .developers-page .developer-scene-heading{font-size:14px;line-height:1.6;margin:0 0 22px;color:inherit}
+.hp3 .developers-page .developer-code-heading{font-size:12px;font-weight:500;padding:20px 23px 0;line-height:1.6;color:#bdd3c5}
+.hp3 .developers-page .developer-card-link{display:flex;gap:8px;align-items:center;font-size:12px;line-height:1.5;margin-top:22px;color:var(--em)}
+.hp3 .developers-page #developer-interfaces .platform-micro{display:block;margin:0 0 12px;font-size:10px;line-height:1.6}
+.hp3 .developers-page .dev-source code{flex:none;font-size:10px}
+.hp3 .developers-page .dev-source div,.hp3 .developers-page .dev-hub div{min-width:0}
+.hp3 .developers-page .dev-source div>span,.hp3 .developers-page .dev-hub span{line-height:1.7}
+.hp3 .developers-page .dev-tool-connection div{flex:1;min-width:0}
+.hp3 .developers-page .dev-tool-connection strong{display:block;font-size:12px;font-weight:500}
+.hp3 .developers-page .dev-tool-connection div>span{display:block;font-size:10px;line-height:1.7;margin-top:5px}
+.hp3 .developers-page .developer-review-finding{border-top:1px solid var(--art-dark-border);padding-top:18px;margin-top:20px;font-size:12px;line-height:1.8;color:var(--on-dark-muted)}
+.hp3 .developers-page .developer-review-finding strong{display:block;font-size:10px;line-height:1.6;font-weight:500;color:var(--on-dark-accent);margin-top:14px}
+.hp3 .developers-page .event-workflow .developer-demo-caption{color:var(--on-dark-muted)}
+.hp3 .developers-page .workspace-api-heading{flex-wrap:wrap;line-height:1.6}
+.hp3 .developers-page .workspace-api-heading>svg{flex:none}
+.hp3 .developers-page .workspace-api-example>.developer-supporting-note{padding:0 23px 20px;margin:0}
+.hp3 .developers-page .sdk-demo-launcher{display:block;margin:0 0 14px;padding:9px 14px;background:var(--em);border:0;border-radius:7px;color:white;font-size:12px;line-height:1.5;cursor:pointer}
+.hp3 .developers-page .developer-access-note{font-size:12px;line-height:1.7;margin-top:18px;color:var(--t3)}
+.hp3 .developers-page .platform-dark .developer-access-note{color:var(--on-dark-muted)}
+.hp3 .developers-page .platform-resource-grid h3{line-height:1.4}
+@media(max-width:600px){.hp3 .developers-page .dev-source{flex-wrap:wrap}.hp3 .developers-page .dev-source div{flex:1}.hp3 .developers-page .dev-source code{margin-left:34px}.hp3 .developers-page .event-source{flex-wrap:wrap}.hp3 .developers-page .event-source>div{flex:1}.hp3 .developers-page .developer-interface-code code{font-size:10px}.hp3 .developers-page .workspace-api-heading>span{margin-left:25px}.hp3 .developers-page .sia-verified{font-size:8px;max-width:90px;white-space:normal;line-height:1.5}}
