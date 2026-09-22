@@ -25,3 +25,5 @@
 .hp3 .developers-page .developer-resource-links a{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:500;color:var(--em)}
 .hp3 .developers-page .developer-resource-links a:hover{text-decoration:underline}
 .hp3 .developers-page .developer-resource-links a:focus-visible{outline:2px solid var(--em);outline-offset:4px}
+
+.hp3 .developers-page #identity .sec-head{padding-bottom:24px}
