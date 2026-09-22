@@ -1,14 +1,14 @@
 'use client';
 
 import { useId, useState, type CSSProperties } from 'react';
-import { BookOpen, FilePlus2, MessageSquare, MousePointer2, Pause, Play, Plug, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { BookOpen, Link2, MessageSquare, MousePointer2, Pause, Play, Plug, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { useBentoPlayback } from '../../_components/useBentoPlayback';
 import './support-controls.css';
 
 const CONTROLS = [
-  { id: 'responses', title: 'Choose how AI responds.', caption: 'AI-first, internal-only or off', copy: 'Let agents answer customers, keep their help internal, or turn automatic replies off. Choose the mode that fits your team.', description: 'The support inbox has AI-first, Internal, and Off response modes. The selection moves from AI-first to Internal, keeping suggestions with the team.' },
-  { id: 'tools', title: 'Give support agents access to the tools they need.', caption: 'Selected knowledge and account tools', copy: 'Select the tools each agent can use, from workspace knowledge to selected tools in your connected services.', description: 'A support agent receives three selected tools: search knowledge, read conversations, and look up an issue through an external MCP connection.' },
-  { id: 'approvals', title: 'Review support actions before they run.', caption: 'A task awaiting your approval', copy: 'Configure agent approval settings so your team can review a requested action before it runs.', description: 'An agent proposes creating a task for Maya’s CSV export issue. Sam reviews the action and approves it; a green confirmation shows Approved by Sam.' },
+  { id: 'responses', title: 'Choose how customers hear from AI.', caption: 'AI-first, internal-only or off', copy: 'Enable direct replies, keep AI assistance internal, or switch automatic responses off.', description: 'The support inbox has AI-first, Internal, and Off response modes. The selection moves from AI-first to Internal, keeping suggestions with the team.' },
+  { id: 'tools', title: 'Limit access to the job.', caption: 'Selected knowledge and account tools', copy: 'Give each agent the selected workspace and external tools it needs.', description: 'A support agent receives three selected tools: search knowledge, read conversations, and look up an issue through an external MCP connection.' },
+  { id: 'approvals', title: 'Keep a review step where it matters.', caption: 'An update awaiting your approval', copy: 'Require approval for an agent’s actions before it proceeds.', description: 'An agent proposes attaching new findings to existing task EXP-142 for Maya’s CSV export issue. Sam reviews the action and approves it; a green confirmation shows Approved by Sam.' },
 ] as const;
 const delay = (seconds: number) => ({ '--sc-delay': `${seconds}s` }) as CSSProperties;
 function Icon({ glyph: Glyph, x, y, size = 18 }: { glyph: LucideIcon; x: number; y: number; size?: number }) { return <g transform={`translate(${x} ${y})`}><Glyph width={size} height={size} strokeWidth={1.6} /></g>; }
@@ -53,8 +53,8 @@ function Approvals({ id }: { id: string }) {
     <defs><clipPath id={`${id}-sam`}><circle cx={98} cy={304} r={10} /></clipPath></defs>
     <rect x={28} y={22} width={364} height={310} rx={14} className="sc-panel" />
     <rect x={47} y={40} width={30} height={30} rx={8} fill="#f7f0df" /><g className="sc-amber"><Icon glyph={ShieldCheck} x={53} y={46} /></g><text x={88} y={54} className="sc-title">Approval required</text><text x={88} y={72} className="sc-meta">Support agent · Proposed action</text><path d="M47 88 H373" className="sc-divider" />
-    <g className="sc-green"><Icon glyph={FilePlus2} x={48} y={106} /></g><text x={75} y={120} className="sc-body">Create an engineering task</text>
-    <rect x={47} y={139} width={326} height={78} rx={9} fill="#f5f7f6" stroke="#e5ece7" /><text x={61} y={163} className="sc-body">Investigate incomplete CSV exports</text><text x={61} y={186} className="sc-meta">Maya Chen · Northstar Labs</text><text x={61} y={204} className="sc-small sc-green">Original conversation attached</text>
+    <g className="sc-green"><Icon glyph={Link2} x={48} y={106} /></g><text x={75} y={120} className="sc-body">Attach findings to EXP-142</text>
+    <rect x={47} y={139} width={326} height={78} rx={9} fill="#f5f7f6" stroke="#e5ece7" /><text x={61} y={163} className="sc-body">Complete exports beyond 10,000 rows</text><text x={61} y={186} className="sc-meta">Maya Chen · Northstar Labs</text><text x={61} y={204} className="sc-small sc-green">Existing task · Conversation attached</text>
     <g className="sc-approval-pending"><rect x={103} y={238} width={102} height={33} rx={7} fill="#174b32" /><text x={154} y={259} textAnchor="middle" className="sc-button-text">Approve</text><rect x={215} y={238} width={102} height={33} rx={7} fill="#fff" stroke="#dce5df" /><text x={266} y={259} textAnchor="middle" className="sc-small">Cancel</text></g>
     <g className="sc-approved"><rect x={83} y={238} width={254} height={33} rx={7} fill="#e4f4e9" stroke="#b5d9c3" /><rect x={83} y={238} width={254} height={33} rx={7} className="sc-success-ring" /><circle cx={105} cy={255} r={10} fill="#17824f" /><g className="sc-white-tick"><Tick x={99} y={250} at={2.8} /></g><text x={125} y={259} className="sc-small sc-green">Approved by Sam</text></g>
     <path d="M47 285 H373" className="sc-divider" /><image href="/new/avatars/sam.webp" x={88} y={294} width={20} height={20} clipPath={`url(#${id}-sam)`} /><text x={118} y={308} className="sc-small">Sam Rivera · Your team stays in control</text>

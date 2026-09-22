@@ -24,7 +24,10 @@ install_helpin() {
   trap 'rm -rf -- "$temporary"' EXIT
   if [[ -z "$release" ]]; then
     api='https://api.github.com/repos/helpin-ai/helpin/releases?per_page=100'
-    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 60 "$api" > "$temporary/releases.json"
+    if ! curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 60 "$api" > "$temporary/releases.json"; then
+      echo 'Helpin: public Community releases are unavailable. Check network access and https://github.com/helpin-ai/helpin/releases. No CLI was installed.' >&2
+      return 1
+    fi
     # The unauthenticated API returns only published releases, newest first.
     # Community is a prerelease channel; GitHub /releases/latest excludes it.
     release=$(sed -nE 's/^[[:space:]]*"tag_name":[[:space:]]*"(community-v0\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?)",?[[:space:]]*$/\1/p' "$temporary/releases.json" | sed -n '1p')

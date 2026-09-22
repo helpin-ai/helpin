@@ -25,7 +25,10 @@ export default {
     'apps/admin': { entry: ['src/main.tsx'], project: ['src/**/*.{ts,tsx}'] },
     'apps/email-notice': {},
     'help-center': { entry: ['src/client.tsx', 'src/routes/**/*.{ts,tsx}'], project: ['src/**/*.{ts,tsx}'] },
-    website: {},
+    website: {
+      // Standalone maintenance scripts/tests and the palette shipped in the public brand kit.
+      entry: ['scripts/*.mjs', 'tests/*.test.mjs', 'public/brand/kit/helpin-palette.css'],
+    },
     'packages/sdk-js': {
       entry: ['src/index.ts', 'src/loader.ts', 'playwright*.config.ts', 'test/e2e/**/*.ts'],
       project: ['src/**/*.ts'],

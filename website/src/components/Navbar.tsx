@@ -26,7 +26,7 @@ export function Navbar() {
   }, []);
 
   // The new-site pages and pricing use the shared marketing navigation.
-  if (pathname?.startsWith('/new') || pathname === '/pricing') return null;
+  if (pathname?.startsWith('/new') || pathname === '/pricing' || pathname === '/privacy' || pathname === '/terms') return null;
 
   return (
     <header

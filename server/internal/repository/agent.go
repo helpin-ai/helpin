@@ -700,14 +700,18 @@ func (r *AgentRunRepository) ListDockRunsForActor(
 	return runs, nil
 }
 
-// ListActiveDockRunsForActor returns every active non-chat run owned by the actor.
+// ListActiveDockRunsForActor returns active runs, including current unarchived chats owned by the actor.
 func (r *AgentRunRepository) ListActiveDockRunsForActor(ctx context.Context, workspaceID, actorID string) ([]model.AgentRun, error) {
 	activeStatuses := []string{model.AgentRunStatusQueued, model.AgentRunStatusRunning, model.AgentRunStatusPaused}
 	var runs []model.AgentRun
 	if err := r.db.WithContext(ctx).
 		Select(_agentRunListColumns).
 		Where("workspace_id = ? AND triggered_by_user_id = ?", workspaceID, actorID).
-		Where("dock_chat_id IS NULL").
+		Where(`dock_chat_id IS NULL OR ((status <> ? OR pause_reason IN ?) AND EXISTS (
+			SELECT 1 FROM dock_chats chat WHERE chat.id = agent_runs.dock_chat_id
+			AND chat.workspace_id = agent_runs.workspace_id AND chat.user_id = ?
+			AND chat.active_run_id = agent_runs.id AND chat.archived_at IS NULL
+		))`, model.AgentRunStatusPaused, []string{model.AgentRunPauseReasonHumanInput, model.AgentRunPauseReasonHumanApproval, model.AgentRunPauseReasonAuthentication}, actorID).
 		Where("status IN ?", activeStatuses).
 		Order("updated_at DESC, created_at DESC").
 		Find(&runs).Error; err != nil {
@@ -970,6 +974,7 @@ func (r *AgentRunMessageRepository) ListDockChatTurnThroughMessage(
 		Model(&model.AgentRunMessage{}).
 		Select("COALESCE(MAX(dock_chat_sequence), 0) AS sequence").
 		Where("workspace_id = ? AND dock_chat_id = ? AND role = ? AND dock_chat_sequence < ? AND delivery_status <> ?", workspaceID, dockChatID, "user", *target.DockChatSequence, "failed").
+		Where("COALESCE(message_type, '') NOT IN ?", []string{"approval", "approval_request_resolution", "review_checkpoint_resolution"}).
 		Scan(&previous).Error; err != nil {
 		return nil, fmt.Errorf("find dock chat work boundary: %w", err)
 	}

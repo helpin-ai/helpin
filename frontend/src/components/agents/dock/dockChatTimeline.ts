@@ -48,6 +48,11 @@ function isConversationBoundary(message: CodingSessionTranscriptMessage): boolea
     || message.message_type === 'approval_request_resolution';
 }
 
+function isDecision(message: Pick<AgentRunMessage, 'message_type'>): boolean {
+  return message.message_type === 'approval' || message.message_type === 'approval_request_resolution'
+    || message.message_type === 'review_checkpoint_resolution';
+}
+
 /**
  * A retained snapshot may order completed work only when it fully represents
  * the durable current interval. Partial cumulative snapshots must not reorder
@@ -112,12 +117,12 @@ function reconcileWorkSummaries(messages: AgentRunMessage[]): AgentRunMessage[] 
     const finalID = summary.id.startsWith('work:') ? summary.id.slice(5) : summary.dock_work_summary.message_id;
     const target = ordered.find(message => message.id === summary.dock_work_summary?.message_id);
     const end = Math.max(sequence(summary), target ? sequence(target) : sequence(summary));
-    const boundary = findLastMatchingIndex(ordered.slice(0, index), message => message.role !== 'assistant');
+    const boundary = findLastMatchingIndex(ordered.slice(0, index), message => message.role !== 'assistant' && !isDecision(message));
     const summaryTime = timestamp(summary.created_at);
     const startTime = summaryTime === null ? null : summaryTime - summary.dock_work_summary.duration_ms;
     for (const message of ordered.slice(boundary + 1)) {
       if (sequence(message) > end) break;
-      if (message.role !== 'assistant' || message.dock_work_summary || message.id === finalID
+      if ((message.role !== 'assistant' && !isDecision(message)) || message.dock_work_summary || message.id === finalID
         || message.message_type === 'assistant_final' || message.message_type === 'status'
         || message.run_id !== summary.run_id || message.dock_chat_id !== summary.dock_chat_id) continue;
       // A page may start mid-turn. Without its user boundary, require proof

@@ -14,6 +14,16 @@ root = Path(__file__).resolve().parent.parent
 tag = os.environ.get('COMMUNITY_RELEASE_TAG', '')
 if not re.fullmatch(r'community-v0\.\d+\.\d+(?:-[a-z0-9.]+)?', tag):
     raise SystemExit('Invalid Community beta tag')
+# Release maintainers list only source versions whose full-stack upgrade and
+# recovery were exercised; an empty list means fresh installs only.
+upgrade_from = [item.strip() for item in os.environ.get('COMMUNITY_UPGRADE_FROM', '').split(',') if item.strip()]
+upgrade_evidence = os.environ.get('UPGRADE_EVIDENCE', '')
+if (len(upgrade_from) != len(set(upgrade_from)) or any(
+        not re.fullmatch(r'community-v0\.\d+\.\d+(?:-[a-z0-9.]+)?', item) or item == tag
+        for item in upgrade_from)):
+    raise SystemExit('Invalid or duplicate upgrade source release')
+if upgrade_from and not re.fullmatch(r'https://\S+', upgrade_evidence):
+    raise SystemExit('Tested upgrade sources require an HTTPS upgrade/recovery evidence record')
 license_files = ('LICENSE', 'LICENSE-AGPL-3.0', 'LICENSE-APACHE-2.0', 'ee/LICENSE')
 for name in license_files:
     if not (root / name).is_file() or not (root / name).read_text().strip():
@@ -93,7 +103,8 @@ with tempfile.TemporaryDirectory(prefix='community-bundle-') as temporary:
     (community / 'compose.yaml').write_text(re.sub(r'^    image: (.+)$', pinned, compose, flags=re.MULTILINE))
     metadata = {'tag': tag, 'source_revision': source_revision, 'runtime_revision': runtime_revision,
                 'public_host_evidence': evidence, 'architectures': ['amd64', 'arm64'],
-                'archive': f'helpin-{tag}.tar.gz', 'cli_assets': cli_assets}
+                'archive': f'helpin-{tag}.tar.gz', 'cli_assets': cli_assets,
+                'upgrade_from': upgrade_from, 'upgrade_evidence': upgrade_evidence}
     (artifacts / 'release.json').write_text(json.dumps(metadata, indent=2) + '\n')
     (bundle / 'release-evidence/release.json').write_text(json.dumps(metadata, indent=2) + '\n')
     # The archive is self-contained: no source-only relative documentation links.

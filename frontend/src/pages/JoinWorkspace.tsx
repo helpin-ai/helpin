@@ -93,7 +93,7 @@ export default function JoinWorkspace() {
       <PublicPageShell>
         <Card className="w-full">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Invalid Invitation</CardTitle>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">Invalid Invitation</CardTitle>
             <CardDescription>{message}</CardDescription>
           </CardHeader>
           <CardFooter className="justify-center">
@@ -113,7 +113,7 @@ export default function JoinWorkspace() {
         <PublicPageShell>
           <Card className="w-full">
             <CardHeader className="text-center">
-              <CardTitle className="text-2xl">Sign In To Join {info.workspace_name}</CardTitle>
+              <CardTitle role="heading" aria-level={1} className="text-2xl">Sign In To Join {info.workspace_name}</CardTitle>
               <CardDescription>
                 {info.invited_by_name} invited <span className="font-medium text-foreground">{info.email}</span> to join as <Badge variant="secondary" className="ml-1">{info.role}</Badge>
               </CardDescription>
@@ -171,7 +171,7 @@ export default function JoinWorkspace() {
       <PublicPageShell>
         <Card className="w-full">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Join {info.workspace_name}</CardTitle>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">Join {info.workspace_name}</CardTitle>
             <CardDescription>
               {info.invited_by_name} invited you to join as <Badge variant="secondary" className="ml-1">{info.role}</Badge>
             </CardDescription>
@@ -232,7 +232,7 @@ export default function JoinWorkspace() {
       <PublicPageShell>
         <Card className="w-full">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Switch Account To Join</CardTitle>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">Switch Account To Join</CardTitle>
             <CardDescription>
               {info.invited_by_name} invited <span className="font-medium text-foreground">{info.email}</span> to join as <Badge variant="secondary" className="ml-1">{info.role}</Badge>
             </CardDescription>
@@ -259,7 +259,7 @@ export default function JoinWorkspace() {
     <PublicPageShell>
       <Card className="w-full">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Join {info.workspace_name}</CardTitle>
+          <CardTitle role="heading" aria-level={1} className="text-2xl">Join {info.workspace_name}</CardTitle>
           <CardDescription>
             {info.invited_by_name} invited you to join as <Badge variant="secondary" className="ml-1">{info.role}</Badge>
           </CardDescription>

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { ArrowLeft02Icon, ArrowRight01Icon, Search01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
@@ -435,6 +436,14 @@ export const quietUnderlineControlClassName =
 
 export function QuietUnderlineInput({ className, ...props }: React.ComponentProps<typeof Input>) {
   return <Input variant="plain" className={cn(quietUnderlineControlClassName, className)} {...props} />;
+}
+
+export function QuietUnderlineTextarea({ className, ...props }: React.ComponentProps<typeof Textarea>) {
+  return <Textarea rows={1} className={cn(
+    quietUnderlineControlClassName,
+    'min-h-0 max-h-[calc(4lh+0.75rem+2px)] overflow-y-auto leading-5',
+    className,
+  )} {...props} />;
 }
 
 export function QuietSearchInput({

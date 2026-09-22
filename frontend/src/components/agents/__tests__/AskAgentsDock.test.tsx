@@ -320,6 +320,34 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it.each(['icon', 'attention', 'notification'])('opens an off-page Ask Agent approval through its %s', async (entry) => {
+    const run = { ...DOCK_RUN.run, id: 'ask-run', dock_chat_id: 'older-chat', target_type: 'workspace', target_info: undefined };
+    const chat = { ...CHAT, id: 'older-chat', title: 'Earlier investigation', active_run_id: run.id };
+    mocks.listRuns.mockResolvedValue({ data: { runs: [{ ...DOCK_RUN, run }], attention_count: 1 }, error: null });
+    mocks.getChat.mockImplementation(async (_workspaceId, chatId) => ({ data: chatId === chat.id ? chatDetail({ chat, run }) : chatDetail(), error: null }));
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [{
+      id: 'ask-approval', interaction_kind: 'approval_request', status: 'pending',
+      request_schema_version: '1', request_payload: { title: 'Approve earlier investigation' },
+    }] }, error: null });
+    await renderDock();
+    const icon = document.body.querySelector<HTMLButtonElement>('[aria-label="Open Ask Agent conversation, Approve"]');
+    expect(icon).not.toBeNull();
+    expect(icon?.querySelector('[data-agent-dock-trigger-status-dot]')?.getAttribute('style')).toContain('217, 119, 6');
+    expect(document.body.querySelector('[aria-label="1 agent need your attention"]')).not.toBeNull();
+    await act(async () => {
+      if (entry === 'notification') window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { chatId: chat.id } }));
+      else if (entry === 'attention') document.body.querySelector<HTMLButtonElement>('[aria-label="1 agent need your attention"]')?.click();
+      else icon?.click();
+    });
+    await waitForText('Approve earlier investigation');
+    expect(useDockStore.getState().activeChatId).toBe(chat.id);
+    expect(useDockStore.getState().tab).toBe('chats');
+    expect(mocks.getChat).toHaveBeenCalledWith('ws-1', chat.id, expect.any(AbortSignal));
+    expect(mocks.getRunSnapshot).not.toHaveBeenCalled();
+    expect(document.body.querySelector('[data-dock-interaction-overlay]')?.textContent).toContain('Approve earlier investigation');
+  });
+
   it('keeps the first message visible while a newly created chat starts its run', async () => {
     const createdChat = { ...CHAT, id: 'chat-new', title: '', active_run_id: null };
     let resolveSend: ((value: { data: DockChatDetail; error: null }) => void) | undefined;
@@ -1930,6 +1958,24 @@ describe('AskAgentsDock', () => {
     );
   });
 
+  it('overlays user questions while keeping the composer in the background', async () => {
+    const run = { id: 'run-1', status: 'paused', pause_reason: 'human_input' } as never;
+    mocks.getChat.mockResolvedValue({ data: chatDetail({ chat: { ...CHAT, active_run_id: 'run-1' }, run }), error: null });
+    mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [{
+      id: 'question-1', interaction_kind: 'request_user_input', status: 'pending',
+      request_schema_version: '1', title: 'Choose a project',
+      request_payload: { questions: [{ id: 'project', question: 'Which project should I use?', options: [{ label: 'Helpin', description: 'Main project' }] }] },
+    }] }, error: null });
+
+    await renderDock();
+    await waitForText('Which project should I use?');
+    const overlay = document.body.querySelector('[data-dock-interaction-overlay]');
+    expect(overlay?.textContent).toContain('Which project should I use?');
+    expect(document.body.querySelector('[data-agent-dock-chat-scroll]')?.contains(overlay)).toBe(false);
+    expect(dockTextarea()?.disabled).toBe(true);
+    expect(dockTextarea()?.closest('[data-dock-interaction-background]')?.hasAttribute('inert')).toBe(true);
+  });
+
   it('renders the approval card from the interactions fallback when events are empty', async () => {
     const run = { id: 'run-1', status: 'paused', pause_reason: 'human_approval' } as never;
     mocks.getChat.mockResolvedValue({
@@ -1971,16 +2017,12 @@ describe('AskAgentsDock', () => {
       await Promise.resolve();
     });
 
-    const approvalNotice = Array.from(document.body.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent?.includes('Agent needs your approval'),
-    );
-    expect(approvalNotice).not.toBeUndefined();
-    await act(async () => {
-      approvalNotice?.click();
-      await Promise.resolve();
-    });
-
-    expect(scrollContainer?.scrollTop).toBe(1_000);
+    const overlay = document.body.querySelector('[data-dock-interaction-overlay]');
+    expect(overlay?.textContent).toContain('Confirm fallback launch');
+    expect(scrollContainer?.contains(overlay)).toBe(false);
+    expect(scrollContainer?.scrollTop).toBe(200);
+    expect(dockTextarea()).not.toBeNull();
+    expect(scrollContainer?.closest('[data-dock-interaction-background]')?.hasAttribute('inert')).toBe(true);
     expect(document.body.textContent).not.toContain('Agent needs your approval');
 
     const approve = Array.from(document.body.querySelectorAll('button')).find(

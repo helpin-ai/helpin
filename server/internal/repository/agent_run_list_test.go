@@ -381,6 +381,9 @@ func TestAgentRunListPagination(t *testing.T) {
 func openAgentRunListTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := openAgentVersionColumnCompatDB(t)
+	if err := db.Exec(`CREATE TABLE dock_chats (id TEXT PRIMARY KEY, workspace_id TEXT, user_id TEXT, active_run_id TEXT, archived_at DATETIME)`).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Exec(`ALTER TABLE agent_runs ADD COLUMN agent_version_id TEXT`).Error; err != nil {
 		t.Fatalf("add agent_version_id column: %v", err)
 	}

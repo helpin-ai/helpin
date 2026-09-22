@@ -45,9 +45,15 @@ func Normalize(raw string) (string, error) {
 	return u.Scheme + "://" + host, nil
 }
 
-// Allowed requires an exact origin match. Empty lists and missing/null origins
-// deny access; neither same-origin requests nor identity report mode bypass it.
+// Allowed requires an exact match unless the installation explicitly opts into
+// all origins with "*". That policy also admits missing and opaque origins.
+// Empty lists still deny access.
 func Allowed(origin string, allowlist []string) bool {
+	for _, entry := range allowlist {
+		if entry == "*" {
+			return true
+		}
+	}
 	normalized, err := Normalize(origin)
 	if err != nil {
 		return false

@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { QuietUnderlineTextarea } from '@/components/design-system/quiet';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import type {
   CodingSessionApprovalRequestPayload,
@@ -382,11 +382,12 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
             </div>
           </div>
         ) : null}
-        <Textarea
+        <QuietUnderlineTextarea
+          aria-label="Optional note"
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
-          placeholder={hasFindings ? 'Optional note about the selected or skipped findings' : 'Optional note for the agent'}
-          className={cn('min-h-[76px]', hasFindings && 'mt-4')}
+          placeholder="Add a note (optional)"
+          className={cn(hasFindings && 'mt-4')}
           disabled={isBusy}
         />
         <div className="mt-4 flex flex-wrap gap-2">
@@ -488,14 +489,12 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
           expanded={approvalPreviewExpanded}
           onExpandedChange={setApprovalPreviewExpanded}
         />
-        <Textarea
+        <QuietUnderlineTextarea
+          aria-label="Optional note"
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
-          placeholder="Optional note sent with your decision"
-          className={cn(
-            'min-h-[76px] focus-visible:border-ring/70 focus-visible:ring-2 focus-visible:ring-ring/15',
-            attachedPreview && 'mt-3',
-          )}
+          placeholder="Add a note (optional)"
+          className={cn(attachedPreview && 'mt-3')}
           disabled={isBusy}
         />
         <div
@@ -590,11 +589,12 @@ function CodingInteractionCardContent({ interaction, acting, onResolve, compact 
         title={interaction.title ?? runtimeApproval.title}
       >
         <CommandApprovalDetails command={runtimeApproval.command} reason={runtimeApproval.reason} grantRoot={runtimeApproval.grantRoot} cwd={runtimeApproval.cwd} compact={compact} />
-        <Textarea
+        <QuietUnderlineTextarea
+          aria-label="Optional follow-up message"
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
-          placeholder="Optional follow-up message if you want the agent to revise after denying"
-          className="mt-4 min-h-[76px] focus-visible:border-ring/70 focus-visible:ring-2 focus-visible:ring-ring/15"
+          placeholder="Add a follow-up (optional)"
+          className="mt-4"
           disabled={isBusy}
         />
         <div className="mt-4 flex flex-wrap gap-2">

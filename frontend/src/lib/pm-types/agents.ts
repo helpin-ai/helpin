@@ -148,6 +148,7 @@ export interface AgentRun {
   agent_id: string;
   task_id?: string;
   conversation_id?: string;
+  dock_chat_id?: string | null;
   target_type: AgentTargetType;
   target_id: string;
   runtime_kind: AgentRuntimeKind;

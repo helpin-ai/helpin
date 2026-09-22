@@ -170,3 +170,17 @@
 /* Agent settings section and long hero eyebrow. */
 .hp3 .support-controls-section .sec-head { max-width: 720px; }
 .hp3 .support-hero .eyebrow svg { flex: none; }
+
+/* Captions keep the illustrative workflow separate from live product actions. */
+.hp3 .support-page .support-demo-caption { margin: 18px 0 0; font-size: 12px; line-height: 1.8; color: var(--t3); text-align: center; }
+.hp3 .support-page .support-demo-heading { margin: 0 0 18px; font-size: 14px; font-weight: 500; line-height: 1.6; color: var(--t2); }
+
+/* Leave room for the previous attempt and investigation in the inbox transcript. */
+.hp3 #support-inbox .swi-shell { height: 710px; }
+@container support-workspace (max-width:1050px) { .hp3 #support-inbox .swi-shell { height: 750px; } }
+@container support-workspace (max-width:520px) { .hp3 #support-inbox .swi-shell { height: 865px; } }
+@container support-workspace (max-width:290px) { .hp3 #support-inbox .swi-shell { height: 965px; } }
+@media(max-width:600px) { .hp3 #support-connected .swi-agent-step { margin-top: 13px; } }
+
+/* Identity now lives in the controls section; details link to Developers. */
+.hp3 .support-controls-link { margin-top: 32px; text-align: center; }

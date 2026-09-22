@@ -1,6 +1,6 @@
 /* Embedded sizing belongs here; the demos retain their own UI and playback. */
 .hp3 .product-preview { --preview-height: var(--px-preview-height, 580px); min-width: 0; }
-.hp3 .product-preview-viewport { height: var(--preview-height); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #b7c8bf transparent; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.hp3 .product-preview-viewport { height: var(--preview-height); overflow: auto; overscroll-behavior: auto; scrollbar-width: thin; scrollbar-color: #b7c8bf transparent; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
 .hp3 .product-preview-canvas { --preview-font-step: 1px; container: product-preview / inline-size; width: 100%; height: var(--preview-height); transform-origin: top left; }
 .hp3 .product-preview-viewport[data-fitted="true"] { overflow: clip; overscroll-behavior-y: auto; }
 .hp3 .product-preview-viewport:focus-visible { outline: 2px solid var(--em); outline-offset: 3px; }

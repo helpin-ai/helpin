@@ -544,8 +544,8 @@ describe('CodingInteractionCard', () => {
     typeTextarea('Looks good. Keep the scope narrow.');
 
     const noteInput = container.querySelector('textarea');
-    expect(noteInput?.className).toContain('focus-visible:border-ring/70');
-    expect(noteInput?.className).toContain('focus-visible:ring-ring/15');
+    expect(noteInput?.className).toContain('focus-visible:border-quiet-text-primary');
+    expect(noteInput?.className).toContain('focus-visible:ring-0');
 
     const approvalActions = container.querySelector('[data-coding-session-approval-actions]');
     expect(approvalActions?.className).toContain('mt-5');
@@ -598,7 +598,7 @@ describe('CodingInteractionCard', () => {
     }));
 
     const textarea = container.querySelector('textarea');
-    expect(textarea?.className).toContain('focus-visible:border-ring/70');
+    expect(textarea?.className).toContain('focus-visible:border-quiet-text-primary');
 
     const declineButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Decline');
     const cancelButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Cancel turn');

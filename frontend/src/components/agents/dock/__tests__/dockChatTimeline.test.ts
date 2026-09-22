@@ -352,6 +352,17 @@ describe('hasAuthoritativeDockRuntimeTimeline', () => {
 });
 
 describe('mergeMessagePages', () => {
+  it('replaces the entire approved turn with its summary without resurrecting decisions from older pages', () => {
+    const user = persisted(1, 'Check the data.', '2026-09-18T12:00:00Z');
+    const progress = { ...persisted(2, 'Searching.', '2026-09-18T12:00:01Z'), message_type: 'assistant_progress' };
+    const approval = { ...persisted(3, 'Approved. Continue.', '2026-09-18T12:00:02Z'), message_type: 'approval_request_resolution' };
+    const answer = { ...persisted(4, 'The findings.', '2026-09-18T12:00:03Z'), message_type: 'assistant_final' };
+    const summary = { ...answer, id: `work:${answer.id}`, message_type: 'status', content: '',
+      dock_work_summary: { message_id: answer.id, duration_ms: 3000, activity_count: 2 } };
+    expect(mergeMessagePages([user, progress, approval], [summary, answer]).map(message => message.id)).toEqual([user.id, summary.id, answer.id]);
+    expect(mergeMessagePages([summary, answer], [user, progress, approval]).map(message => message.id)).toEqual([user.id, summary.id, answer.id]);
+  });
+
   it('replaces streamed progress and late tool metadata with one completed summary without touching other turns', () => {
     const user = persisted(43, 'Add a paragraph.', '2026-09-18T12:59:29Z');
     const progress = { ...persisted(44, 'I will add a paragraph.', '2026-09-18T12:59:33Z'), message_type: 'assistant_progress' };

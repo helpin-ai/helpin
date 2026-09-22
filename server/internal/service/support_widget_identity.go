@@ -123,6 +123,9 @@ func normalizeAllowedOrigins(origins []string) ([]string, error) {
 	seen := make(map[string]struct{}, len(origins))
 	for _, raw := range origins {
 		origin, err := widgetorigin.Normalize(strings.TrimSpace(raw))
+		if strings.TrimSpace(raw) == "*" {
+			origin, err = "*", nil
+		}
 		if err != nil {
 			return nil, fmt.Errorf("invalid allowed origin: %w", err)
 		}

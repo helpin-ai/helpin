@@ -236,6 +236,7 @@
 .hp3 .footer-socials a:hover { background: #1b3b2e; color: #f0f6f2; }
 .hp3 .footer-open { display: inline-flex; align-items: center; gap: 10px; color: #bcebcf; font-size: 13px; }
 .hp3 .footer-bottom { display: flex; align-items: center; flex-wrap: wrap; gap: 18px 28px; border-top: 1px solid #23392e; padding-top: 24px; font-size: 12px; color: #92a89d; }
+.hp3 .footer-descriptor { margin: 0 0 24px; max-width: 680px; font-size: 12px; line-height: 1.8; color: #92a89d; }
 .hp3 .footer-legal { display: flex; flex-wrap: wrap; gap: 20px; }
 .hp3 .footer-license { margin-left: auto; }
 @media (max-width: 1100px) {
@@ -416,6 +417,10 @@
 .hp3 section.hero { padding-block: 52px 64px; }
 .hp3 .hero-inner { gap: 18px; max-width: 760px; }
 .hp3 .hero h1 { font-size: clamp(2.4rem, 4.4vw, 3.5rem); }
+/* Give the homepage introduction room above the copy and before the workflow. */
+.hp3 section.homepage-hero { padding-top: clamp(96px, 11.12vw, 160px); }
+.hp3 .homepage-hero .hero-inner { max-width: 1040px; }
+.hp3 .homepage-hero .hero-workflow { margin-top: clamp(96px, 11.12vw, 160px); }
 .hp3 .hero h1 > span { display: block; text-wrap: balance; }
 .hp3 .hero .lede { font-size: 18px; max-width: 54ch; }
 .hp3 .hero-workflow { margin: 72px 0 0; position: relative; z-index: 1; }
@@ -693,6 +698,7 @@
 .hp3 .developer-features article { padding: 26px; border: 1px solid var(--border); border-radius: 16px; background: #fafcfb; }
 .hp3 .developer-feature-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; background: #eaf4ee; border: 1px solid #dcece2; color: var(--em); border-radius: 11px; margin-bottom: 22px; }
 .hp3 .developer-features p { margin-bottom: 20px; }
+.hp3 .developer-features .developer-availability { font-size: 12px; color: var(--em); }
 .hp3 .developer-features a { display: block; width: fit-content; font-size: 13px; margin-top: 8px; }
 @media (max-width: 960px) {
   .hp3 .self-host-intro { grid-template-columns: 1fr; gap: 24px; }
@@ -714,6 +720,7 @@
 }
 @media (prefers-reduced-motion: reduce) { .hp3 .hosting-art[data-playing="true"] .hosting-flow { animation: none; } }
 /* 06 control */
+.hp3 #control > .wrap { max-width: 1200px; }
 .hp3 .control-screenshot { margin: 0 0 48px; }
 .hp3 .control-screenshot a { display: block; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 16px 48px rgba(19,21,20,.07); }
 .hp3 .control-screenshot a:focus-visible { outline: 2px solid var(--em); outline-offset: 5px; }

@@ -313,7 +313,7 @@ function RecordDetail({
                     <div className="cw-summary-context">
                       <div>
                         <small>Next step</small>
-                        <p>Confirm the export fix with engineering.</p>
+                        <p>Confirm the release status with engineering and prepare Maya’s update.</p>
                         <span>
                           <CRMAvatar size={20} />
                           Sam Rivera
@@ -340,7 +340,7 @@ function RecordDetail({
                   </span>
                   <strong>
                     {primary
-                      ? "Renewal depends on the export workflow"
+                      ? "Renewal concern"
                       : "Keep the next conversation in view"}
                   </strong>
                   <p>
@@ -348,7 +348,7 @@ function RecordDetail({
                       ? "Maya needs a clear update before discussing the next term."
                       : "Review the customer’s requirements with the account owner."}
                   </p>
-                  <small>Needs review · {contact.owner}</small>
+                  <small>Needs attention · {contact.owner}</small>
                 </div>
                 <div className="cw-activity-heading">
                   Activity{" "}
@@ -363,8 +363,7 @@ function RecordDetail({
                       <span>
                         <strong>Renewal planning</strong>
                         <p>
-                          “Can you confirm the export fix before we discuss next
-                          year?”
+                          “Before we discuss renewing, can you confirm when full exports will work?”
                         </p>
                         <small>Maya Chen · Email · 18m ago</small>
                       </span>
@@ -372,10 +371,9 @@ function RecordDetail({
                     <div>
                       <Video size={15} />
                       <span>
-                        <strong>Rollout & renewal review</strong>
+                        <strong>Rollout review</strong>
                         <p>
-                          Complete exports are required for the wider team
-                          rollout.
+                          Complete exports are a requirement for Northstar’s wider rollout.
                         </p>
                         <small>Meeting · Today · 32 minutes</small>
                       </span>
@@ -385,8 +383,7 @@ function RecordDetail({
                       <span>
                         <strong>EXP-142 · Fix incomplete CSV exports</strong>
                         <p>
-                          Engineering review in progress. Sam owns the
-                          follow-up.
+                          EXP-142 is marked In review. Release status has not yet been confirmed.
                         </p>
                         <small>Linked task · In review</small>
                       </span>
@@ -412,8 +409,7 @@ function RecordDetail({
                     <h4>EXP-142 · Fix incomplete CSV exports</h4>
                     <span className="cw-review-state">In review</span>
                     <p>
-                      Exports stop at 10,000 rows when filters are applied. The
-                      pagination fix is ready for engineering review.
+                      The full export stops at 10,000 rows. EXP-142 is marked In review. Release status has not yet been confirmed.
                     </p>
                     <div>
                       <CRMAvatar />
@@ -425,9 +421,7 @@ function RecordDetail({
                     <Mail size={24} />
                     <h4>Renewal planning</h4>
                     <p>
-                      Hi Sam, can you confirm the export fix before we discuss
-                      next year? We need complete exports for the wider team
-                      rollout.
+                      Before we discuss renewing, can you confirm when full exports will work?
                     </p>
                     <div>
                       <CRMAvatar person="maya" />
@@ -437,11 +431,9 @@ function RecordDetail({
                 ) : tab === "Meetings" ? (
                   <>
                     <Video size={24} />
-                    <h4>Rollout & renewal review</h4>
+                    <h4>Rollout review</h4>
                     <p>
-                      Decision: validate the complete CSV export before adding
-                      the wider team. Sam will confirm the engineering review
-                      and prepare a customer update.
+                      Complete exports are a requirement for Northstar’s wider rollout. Sam will confirm the release status and prepare a customer update.
                     </p>
                     <div>Today · 32 minutes · 3 participants</div>
                   </>
@@ -450,7 +442,7 @@ function RecordDetail({
                     <Flag size={24} />
                     <h4>Northstar Labs · Annual renewal</h4>
                     <strong className="cw-deal-value">$42,000</strong>
-                    <p>Renewals pipeline · Review · Expected close Nov 23</p>
+                    <p>Renewals pipeline · Review · Expected close October 30, 2026</p>
                     <div>
                       <CRMAvatar />
                       Sam Rivera · Owner
@@ -470,7 +462,7 @@ function RecordDetail({
                     <p>
                       {tab === "Calls"
                         ? "Maya confirmed that complete exports are needed before the wider rollout."
-                        : "Confirm EXP-142 with engineering, then prepare the customer update. Sam owns the next step."}
+                        : "Confirm the release status with engineering, then prepare the customer update. Sam owns the next step."}
                     </p>
                     <div>Sam Rivera · Today</div>
                   </>
@@ -479,8 +471,7 @@ function RecordDetail({
                     <MessageSquare size={24} />
                     <h4>CSV export stops early</h4>
                     <p>
-                      “Our CSV export stops at 10,000 rows when filters are
-                      applied.”
+                      “Our full export is still stopping at 10,000 rows.”
                     </p>
                     <div>
                       <CRMAvatar person="maya" />
@@ -573,21 +564,21 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
     <div
       className="cw-agent"
       role="img"
-      aria-label="Ask Agent reviews Maya’s renewal email, the Northstar deal, and linked task EXP-142, then recommends confirming the export fix before drafting a customer update. No deal is changed and no message is sent."
+      aria-label="Ask Agent reviews Maya’s renewal email, the Northstar deal, and linked task EXP-142, then recommends confirming the release status before drafting a customer update. EXP-142 is marked In review; release is not confirmed. No deal is changed and no message is sent."
     >
       <div aria-hidden="true">
         <header>
           <CRMMark />
           <span>
             <strong>Ask Agent</strong>
-            <small>Northstar account brief</small>
+            <small>Your account brief</small>
           </span>
           <MoreHorizontal size={16} />
         </header>
         <div className="cw-agent-chat">
           <div className="cw-agent-question">
             <CRMAvatar />
-            <p>What should I know before Maya’s renewal call?</p>
+            <p>What should I cover on Maya’s renewal call?</p>
           </div>
           <div className="cw-agent-label">
             <CRMMark />
@@ -596,8 +587,11 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
           <div className="cw-agent-sources">
             <span data-ready={phase >= 1}>
               <Mail size={13} />
-              Renewal email
+              Customer email
               <Check size={12} />
+            </span>
+            <span data-ready={phase >= 1}>
+              <Video size={13} />Rollout review<Check size={12} />
             </span>
             <span data-ready={phase >= 2}>
               <ListChecks size={13} />
@@ -612,8 +606,8 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
           <div className="cw-agent-result" data-ready={phase === 3}>
             <CRMAvatar />
             <span>
-              Next step for Sam
-              <small>Confirm the fix, then prepare the update.</small>
+              For Sam: confirm the release status.
+              <small>Then prepare Maya’s update.</small>
             </span>
           </div>
         </div>
@@ -622,7 +616,7 @@ function AccountAgent({ active, phase }: { active: boolean; phase: number }) {
             <Link2 size={11} />
             Maya Chen · Northstar Labs
           </span>
-          <p>Ask a follow-up…</p>
+          <p>Ask about this account…</p>
           <div>
             <span>Workspace context</span>
             <ArrowUp size={14} />
@@ -735,7 +729,7 @@ export function CRMWorkspace({
                     }}
                   />
                 </label>
-                <details className="cw-filter-menu">
+                {view === "contacts" && <details className="cw-filter-menu">
                   <summary>
                     <CRMIcon name="FilterHorizontalIcon" size={14} />
                     Filters
@@ -760,7 +754,7 @@ export function CRMWorkspace({
                       </select>
                     </label>
                   </div>
-                </details>
+                </details>}
                 <div className="cw-table-tools">
                   <label className="cw-groupby">
                     <CRMIcon name="UserGroupIcon" size={14} />

@@ -253,6 +253,16 @@ func (r *NotificationRepository) MarkAsRead(ctx context.Context, id, recipientID
 		}).Error
 }
 
+// HasAttentionInteraction also covers older pending interactions when a run has
+// multiple simultaneous questions and snapshots replay them in sequence.
+func (r *NotificationRepository) HasAttentionInteraction(ctx context.Context, notificationID, interactionID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.NotificationEvent{}).
+		Where("notification_id = ? AND metadata ->> 'interaction_id' = ?", notificationID, interactionID).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // MarkEntityCategoryAsRead marks unread notifications as read for a specific entity/category pair.
 func (r *NotificationRepository) MarkEntityCategoryAsRead(ctx context.Context, recipientID, workspaceID, entityType, entityID, category string) error {
 	now := time.Now()
@@ -267,15 +277,16 @@ func (r *NotificationRepository) MarkEntityCategoryAsRead(ctx context.Context, r
 
 // MarkEntityEventTypeAsReadForWorkspace marks unread notifications as read for
 // a specific entity+event pair across all recipients in a workspace.
-func (r *NotificationRepository) MarkEntityEventTypeAsReadForWorkspace(ctx context.Context, workspaceID, entityType, entityID, eventType string) error {
+func (r *NotificationRepository) MarkEntityEventTypeAsReadForWorkspace(ctx context.Context, workspaceID, entityType, entityID, eventType string) (bool, error) {
 	now := time.Now()
-	return r.db.WithContext(ctx).Model(&model.Notification{}).
+	result := r.db.WithContext(ctx).Model(&model.Notification{}).
 		Where("workspace_id = ? AND entity_type = ? AND entity_id = ? AND event_type = ? AND status IN ('unread', 'email_only')",
 			workspaceID, entityType, entityID, eventType).
 		Updates(map[string]interface{}{
 			"status":  gorm.Expr("CASE WHEN status = ? THEN ? ELSE ? END", "email_only", "email_only_handled", "read"),
 			"read_at": now,
-		}).Error
+		})
+	return result.RowsAffected > 0, result.Error
 }
 
 // MarkAllAsRead marks all unread notifications as read for a user.

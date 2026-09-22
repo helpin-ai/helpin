@@ -1,4 +1,5 @@
 import hashlib
+import io
 import importlib.util
 import json
 from pathlib import Path
@@ -14,6 +15,12 @@ spec.loader.exec_module(promotion)
 
 class PromotionTest(unittest.TestCase):
     def setUp(self):
+        public = patch.object(promotion, 'assert_public_repository')
+        public.start()
+        self.addCleanup(public.stop)
+        assets = patch.object(promotion, 'verify_public_assets')
+        assets.start()
+        self.addCleanup(assets.stop)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -77,6 +84,34 @@ class PromotionTest(unittest.TestCase):
                 self.assertIn(str(self.root / self.metadata['archive']), command)
                 self.assertEqual(command[command.index('--target') + 1], 'a' * 40)
                 self.assertIn(str(self.root / 'helpin-linux-arm64.sha256'), command)
+
+
+class PublicDistributionTest(unittest.TestCase):
+    def test_private_or_unreachable_repository_is_rejected(self):
+        with patch.object(promotion.urllib.request, 'urlopen', side_effect=OSError('HTTP 404')):
+            with self.assertRaisesRegex(ValueError, 'Public release downloads'):
+                promotion.assert_public_repository('helpin-ai/helpin')
+        for value in ({'private': True, 'full_name': 'helpin-ai/helpin'}, {'private': False, 'full_name': 'someone/else'}):
+            with patch.object(promotion.urllib.request, 'urlopen', return_value=io.BytesIO(json.dumps(value).encode())):
+                with self.assertRaises(ValueError):
+                    promotion.assert_public_repository('helpin-ai/helpin')
+
+    def test_public_repository_uses_anonymous_request(self):
+        with patch.object(promotion.urllib.request, 'urlopen', return_value=io.BytesIO(b'{"private":false,"full_name":"helpin-ai/helpin"}')) as call:
+            promotion.assert_public_repository('helpin-ai/helpin')
+            self.assertEqual(call.call_args.args, ('https://api.github.com/repos/helpin-ai/helpin',))
+
+    def test_public_assets_are_downloaded_and_verified(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metadata = {'tag': 'community-v0.2.0', 'archive': 'bundle.tar.gz', 'cli_assets': {'helpin-linux-amd64': 'fixture'}}
+            for name in ('bundle.tar.gz', 'bundle.tar.gz.sha256', 'release.json', 'helpin-linux-amd64', 'helpin-linux-amd64.sha256'):
+                (root / name).write_bytes(name.encode())
+            with patch.object(promotion.urllib.request, 'urlopen', side_effect=lambda url, **kw: io.BytesIO(url.rsplit('/', 1)[1].encode())):
+                promotion.verify_public_assets(root, metadata, 'helpin-ai/helpin')
+            with patch.object(promotion.urllib.request, 'urlopen', return_value=io.BytesIO(b'corrupt')):
+                with self.assertRaisesRegex(ValueError, 'checksum'):
+                    promotion.verify_public_assets(root, metadata, 'helpin-ai/helpin')
 
 
 if __name__ == '__main__':

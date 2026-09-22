@@ -45,6 +45,17 @@ afterEach(() => {
 });
 
 describe('shared roster request ordering and recovery', () => {
+  it('refreshes the collapsed run indicators when a known chat gains attention', async () => {
+    mocks.listChats.mockResolvedValue({ data: { chats: [{ ...chat('first'), active_run_id: 'ask-run' }] }, error: null });
+    await act(async () => root.render(<Harness />));
+    mocks.listRuns.mockClear();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('coding_session_event-created', { detail: { parent_id: 'ask-run', data: { type: 'interaction.created' } } }));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(mocks.listRuns).toHaveBeenCalledTimes(1);
+  });
+
   it('does not reset loaded transcripts or refetch lists when another dock mounts later', async () => {
     await act(async () => root.render(<Harness />));
     useDockStore.getState().setDraft('chat:first', 'Unsent text');

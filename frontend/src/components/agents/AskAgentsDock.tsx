@@ -120,6 +120,7 @@ export function AskAgentsDock({
     refreshRuns, refreshChats, loadMoreRuns, loadMoreChats, updateChatRunStatus, invalidateChats,
   } = useDockRoster(workspaceId, currentUserId, active, active && (embedded || !collapsed));
   const sharedChatLink = useSharedChatLink(workspaceId, !embedded, !chatsLoading);
+  const openChatLink = sharedChatLink.open;
   const [hiddenByModal, setHiddenByModal] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [chatScrollRequest, setChatScrollRequest] = useState(0);
@@ -161,6 +162,7 @@ export function AskAgentsDock({
     const groupDelta = groupOrder[leftPresentation.group] - groupOrder[rightPresentation.group];
     return groupDelta || Date.parse(right.last_activity_at) - Date.parse(left.last_activity_at);
   }), [runs]);
+  const standaloneRuns = useMemo(() => orderedRuns.filter(summary => !summary.run.dock_chat_id), [orderedRuns]);
   const attentionRuns = useMemo(() => orderedRuns.filter((summary) => (
     presentDockRun(summary.run.status, summary.run.pause_reason, summary.attention_kind).group === 'needs_you'
   )), [orderedRuns]);
@@ -173,7 +175,7 @@ export function AskAgentsDock({
       || summary.run.status === 'queued'
       || summary.run.status === 'running';
   }), [orderedRuns]);
-  const activeRun = orderedRuns.find((summary) => summary.run.id === activeRunId) ?? null;
+  const activeRun = standaloneRuns.find((summary) => summary.run.id === activeRunId) ?? null;
   // Keep untouched drafts out of the global roster. An empty support-linked
   // row can still be selected from its support conversation, but it should not
   // appear as an "Untitled chat" in the user's general Ask history.
@@ -272,9 +274,9 @@ export function AskAgentsDock({
   useEffect(() => {
     if (runsLoading) return;
     const current = useDockStore.getState().activeRunId;
-    if (current && orderedRuns.some((summary) => summary.run.id === current)) return;
-    setActiveRunId(orderedRuns[0]?.run.id ?? null);
-  }, [orderedRuns, runsLoading, setActiveRunId]);
+    if (current && standaloneRuns.some((summary) => summary.run.id === current)) return;
+    setActiveRunId(standaloneRuns[0]?.run.id ?? null);
+  }, [standaloneRuns, runsLoading, setActiveRunId]);
 
   useEffect(() => {
     if (embedded || chatsLoading || draftChat || sharedChatLink.pending || sharedChatLink.error) return;
@@ -512,6 +514,8 @@ export function AskAgentsDock({
         return;
       }
       if (detail.chatId) {
+        setDraftChat(false);
+        openChatLink(detail.chatId);
         setActiveChatId(detail.chatId);
         openDock('chats', 'composer');
       } else {
@@ -522,7 +526,7 @@ export function AskAgentsDock({
     };
     window.addEventListener('helpin:ask-agents', onAsk);
     return () => window.removeEventListener('helpin:ask-agents', onAsk);
-  }, [embedded, newChat, openDock, setActiveChatId, setActiveRunId]);
+  }, [embedded, newChat, openDock, openChatLink, setActiveChatId, setActiveRunId]);
 
   useEffect(() => {
     const compute = () => {
@@ -653,7 +657,7 @@ export function AskAgentsDock({
             <DockRoster
               workspaceId={workspaceId}
               tab={tab}
-              runs={orderedRuns}
+              runs={standaloneRuns}
               chats={visibleChats}
               selectedRunId={activeRunId}
               selectedChatId={activeChatId}
@@ -664,7 +668,7 @@ export function AskAgentsDock({
               onTabChange={(next) => {
                 focusTargetRef.current = 'selection';
                 setTab(next);
-                if (next === 'agents' && !activeRunId) setActiveRunId(orderedRuns[0]?.run.id ?? null);
+                if (next === 'agents' && !activeRunId) setActiveRunId(standaloneRuns[0]?.run.id ?? null);
                 if (next === 'chats') {
                   if (!activeChatId) setActiveChatId(visibleChats[0]?.id ?? null);
                   setChatScrollRequest((request) => request + 1);
@@ -768,11 +772,24 @@ export function AskAgentsDock({
           askAgentState={askAgentState}
           onAsk={(source) => openDock('chats', 'composer', source)}
           onRun={(runId, source) => {
+            const chatId = orderedRuns.find(summary => summary.run.id === runId)?.run.dock_chat_id;
+            if (chatId) {
+              setDraftChat(false);
+              openChatLink(chatId);
+              openDock('chats', 'header', source);
+              return;
+            }
             setActiveRunId(runId);
             openDock('agents', 'selection', source);
           }}
           onAttention={(source) => {
             const firstAttention = attentionRuns[0] ?? orderedRuns[0];
+            if (firstAttention?.run.dock_chat_id) {
+              setDraftChat(false);
+              openChatLink(firstAttention.run.dock_chat_id);
+              openDock('chats', 'header', source);
+              return;
+            }
             if (firstAttention) setActiveRunId(firstAttention.run.id);
             openDock('agents', 'selection', source);
           }}
@@ -1128,7 +1145,11 @@ function DockTrigger({
                   className="agent-dock-stack-item relative -ms-1.5 flex h-8 w-8 items-center justify-center rounded-[10px] leading-none outline-none first:ms-0 hover:z-[1] focus-visible:z-[2] focus-visible:ring-2 focus-visible:ring-[#a855f7]/45"
                 >
                   <span className="relative flex h-[26px] w-[26px] shrink-0 leading-none">
-                    <AgentAvatar name={summary.agent.name} presetKey={summary.agent.preset_key} iconKey={summary.agent.icon_key} className="h-[26px] w-[26px] rounded-[9px] border-0 shadow-[0_0_0_2px_#fffefa] dark:shadow-[0_0_0_2px_#242320]" />
+                    {summary.run.dock_chat_id ? (
+                      <AskAgentAvatar state={deriveAskAgentAvatarState({ run: summary.run })} plateStyle="feather" className="h-[26px] w-[26px]" />
+                    ) : (
+                      <AgentAvatar name={summary.agent.name} presetKey={summary.agent.preset_key} iconKey={summary.agent.icon_key} className="h-[26px] w-[26px] rounded-[9px] border-0 shadow-[0_0_0_2px_#fffefa] dark:shadow-[0_0_0_2px_#242320]" />
+                    )}
                     <span
                       className="absolute -bottom-0.5 -end-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#fffefa] dark:border-[#242320]"
                       style={{ backgroundColor: presentation.dot }}

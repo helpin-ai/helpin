@@ -1,160 +1,86 @@
-import {
-  ArrowRight,
-  Cloud,
-  KeyRound,
-  UserRound,
-  Server,
-  RefreshCw,
-  SlidersHorizontal,
-  ReceiptText,
-} from "lucide-react";
-import { AI_PRICING } from "@/generated/aiPricing";
-import { GITHUB_URL, SectionHead } from "../new/_components/ui";
+import { Cloud, Gauge, KeyRound } from 'lucide-react';
+import { AI_PRICING } from '@/generated/aiPricing';
+import { GITHUB_URL, SectionHead } from '../new/_components/ui';
+import { AI_ALLOWANCE } from './pricing-data';
+
+const PROVIDERS = [
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'anthropic', name: 'Anthropic' },
+  { id: 'openrouter', name: 'OpenRouter' },
+];
+
+const usd = (microusd: number) => new Intl.NumberFormat('en-US', {
+  style: 'currency', currency: 'USD', maximumFractionDigits: 4,
+}).format(microusd / 1_000_000);
+
+const modelsFor = (tier: string) => [...new Set(AI_PRICING.models.filter(model => model.tier === tier && model.enabled).map(model => model.label))];
 
 export function AIUsage() {
   return (
     <section id="ai-usage" className="pricing-ai-section">
       <div className="wrap">
         <SectionHead
-          eyebrow="AI, on your terms"
-          title="Choose the model. Choose how you pay for it."
-          lede="Frontier models for demanding work, efficient models for everyday tasks. Use the AI included in your Cloud plan, connect the provider accounts your team already pays for, or both."
+          eyebrow="AI usage"
+          title="AI usage is included in every Cloud plan."
+          lede="No provider accounts or API keys to manage. Each plan comes with a monthly allowance, and you decide whether usage can go beyond it."
         />
-        <div
-          className="pricing-ai-providers"
-          aria-label="Supported provider connections"
-        >
-          {[
-            { id: "openai", name: "OpenAI" },
-            { id: "anthropic", name: "Anthropic" },
-            { id: "openrouter", name: "OpenRouter" },
-          ].map((provider) => (
-            <span key={provider.id}>
-              <img
-                src={`/new/providers/${provider.id}.svg`}
-                width={21}
-                height={21}
-                alt=""
-              />
-              {provider.name}
-            </span>
-          ))}
-          <span>
-            <Server size={20} strokeWidth={1.5} aria-hidden="true" />
-            Compatible endpoints
-          </span>
-        </div>
         <div className="pricing-ai-routes">
           <article>
-            <span className="pricing-ai-route-icon">
-              <Cloud size={21} strokeWidth={1.5} aria-hidden="true" />
-            </span>
-            <span className="pricing-ai-route-label">MANAGED BY HELPIN</span>
-            <h3>Start with included AI.</h3>
-            <p>
-              Cloud plans include a monthly AI allowance. Routine work uses a
-              little, advanced agent work uses more, and workspace settings
-              always show a simple percentage used.
-            </p>
-            <span className="pricing-ai-route-footer">
-              Included with Starter and Growth
-            </span>
-          </article>
-          <article>
-            <span className="pricing-ai-route-icon">
-              <KeyRound size={21} strokeWidth={1.5} aria-hidden="true" />
-            </span>
-            <span className="pricing-ai-route-label">MANAGED BY YOUR TEAM</span>
-            <h3>Bring your own API keys.</h3>
-            <p>
-              Connect the OpenAI, Anthropic or OpenRouter accounts your team
-              manages, or an approved compatible endpoint. Shared connections
-              power team workflows and unattended agent runs.
-            </p>
-            <span className="pricing-ai-route-footer">
-              Enabled per workspace on Cloud
-            </span>
-          </article>
-          <article>
-            <span className="pricing-ai-route-icon">
-              <UserRound size={21} strokeWidth={1.5} aria-hidden="true" />
-            </span>
-            <span className="pricing-ai-route-label">PERSONAL TO YOU</span>
-            <h3>Use your own subscription.</h3>
-            <p>
-              Where enabled, connect your ChatGPT subscription for runs you
-              start yourself. Personal connections never power shared workspace
-              automation.
-            </p>
-            <span className="pricing-ai-route-footer">
-              Personal use · ChatGPT
-            </span>
-          </article>
-        </div>
-        <div className="pricing-ai-models">
-          <div className="pricing-ai-models-heading">
+            <Cloud size={20} strokeWidth={1.75} aria-hidden="true" />
             <div>
-              <h3>Match the model to the work.</h3>
-              <p>
-                Four standard profiles, from routine answers to complex agent
-                work.
-              </p>
+              <h3>Included allowance</h3>
+              <p>Starter includes ${AI_ALLOWANCE.starter.monthly} of AI usage a month and Growth includes ${AI_ALLOWANCE.growth.monthly} (${AI_ALLOWANCE.starter.annual} and ${AI_ALLOWANCE.growth.annual} on annual billing). The allowance resets monthly and doesn’t carry over.</p>
             </div>
-            <a href={`${GITHUB_URL}/blob/develop/docs/ai-connections.md`}>
-              How model connections work
-              <ArrowRight size={14} aria-hidden="true" />
-            </a>
-          </div>
-          <div className="pricing-ai-tiers">
-            {AI_PRICING.tiers.map((tier, index) => (
-              <article key={tier.key}>
-                <div>
-                  <span className="pricing-ai-tier-bars" aria-hidden="true">
-                    {[0, 1, 2, 3].map((i) => (
-                      <i
-                        key={i}
-                        data-active={i <= index}
-                        style={{ height: `${7 + i * 4}px` }}
-                      />
-                    ))}
-                  </span>
-                  <h4>{tier.label}</h4>
-                </div>
-                <p>{tier.description}.</p>
-              </article>
-            ))}
-          </div>
+            <span>Billed by Helpin</span>
+          </article>
+          <article>
+            <Gauge size={20} strokeWidth={1.75} aria-hidden="true" />
+            <div>
+              <h3>When the allowance runs out</h3>
+              <p>Overage is off by default, so new AI work is declined until the allowance renews. Work already running keeps what it reserved. On an active paid plan, you can turn on metered overage at the same rates.</p>
+            </div>
+            <span>Optional, billed monthly</span>
+          </article>
+          <article>
+            <KeyRound size={20} strokeWidth={1.75} aria-hidden="true" />
+            <div>
+              <h3>Your own provider keys</h3>
+              <p>Self-hosted teams connect their own provider and pay it directly, with no Helpin AI fees. On Cloud, your own keys are available with Enterprise.</p>
+              <ul className="pricing-ai-providers" aria-label="Supported providers">
+                {PROVIDERS.map(provider => <li key={provider.id}><img src={`/new/providers/${provider.id}.svg`} width={16} height={16} alt="" />{provider.name}</li>)}
+                <li>Compatible endpoints</li>
+              </ul>
+            </div>
+            <span>Self-hosted · Enterprise on Cloud</span>
+          </article>
         </div>
-        <div className="pricing-ai-billing">
-          <h3>Know what you’re paying for.</h3>
+
+        <details className="pricing-disclosure" id="ai-usage-charges">
+          <summary>Models and token rates</summary>
           <div>
-            {[
-              {
-                Icon: RefreshCw,
-                title: "A fresh allowance every month.",
-                text: "Cloud allowances reset on your renewal date each month, on monthly and annual plans alike. Unused allowance does not roll over.",
-              },
-              {
-                Icon: SlidersHorizontal,
-                title: "Extra usage is your call.",
-                text: "Turn on extra usage when you need it. Only the work beyond your allowance is metered, with no prepaid blocks.",
-              },
-              {
-                Icon: ReceiptText,
-                title: "Your keys, your provider\u2019s bill.",
-                text: "With your own keys, the model provider bills you directly. On Helpin Cloud, a flat per-token platform fee and any paid tools are charged separately. Self-hosted Community has no Helpin token or tool fees.",
-              },
-            ].map(({ Icon, title, text }) => (
-              <article key={title}>
-                <Icon size={17} strokeWidth={1.5} aria-hidden="true" />
-                <div>
-                  <h4>{title}</h4>
-                  <p>{text}</p>
-                </div>
-              </article>
-            ))}
+            <div className="pricing-rate-scroll" tabIndex={0} role="region" aria-label="Managed AI token rates">
+              <table>
+                <caption>USD per million tokens, effective {AI_PRICING.effective_date}</caption>
+                <thead><tr><th scope="col">Profile</th><th scope="col">Models</th><th scope="col">Input</th><th scope="col">Cache read</th><th scope="col">Cache write</th><th scope="col">Output / reasoning</th></tr></thead>
+                <tbody>{AI_PRICING.tiers.map(tier => <tr key={tier.key}>
+                  <th scope="row">{tier.label}<small>{tier.description}</small></th>
+                  <td className="pricing-rate-models">{modelsFor(tier.key).join(', ')}</td>
+                  <td>{usd(tier.rates.input_microusd_per_million)}</td>
+                  <td>{usd(tier.rates.cache_read_microusd_per_million)}</td>
+                  <td>{usd(tier.rates.cache_write_microusd_per_million)}</td>
+                  <td>{usd(tier.rates.output_microusd_per_million)}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+            <dl className="pricing-rate-notes">
+              <div><dt>How usage is charged</dt><dd>Tokens × the profile’s rate ÷ 1,000,000. Reasoning tokens are charged at the output rate. Charges come out of your monthly allowance.</dd></div>
+              <div><dt>Overage</dt><dd>Opt-in on active paid plans, not during the trial. Billed monthly at the same rates, rounded to the cent. No prepaid blocks.</dd></div>
+              <div><dt>Tracking usage</dt><dd>Billing settings show how much of the allowance is used and reserved, and when it resets.</dd></div>
+              <div><dt>Trial</dt><dd>The 14-day Growth trial includes ${AI_ALLOWANCE.trial} of AI usage in total.</dd></div>
+            </dl>
+            <a className="btn-link" href={`${GITHUB_URL}/blob/develop/docs/ai-connections.md`}>AI connection guide →</a>
           </div>
-        </div>
+        </details>
       </div>
     </section>
   );

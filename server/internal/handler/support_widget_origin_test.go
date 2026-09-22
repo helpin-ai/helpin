@@ -37,7 +37,7 @@ func TestWidgetOriginMiddleware(t *testing.T) {
 		{"message", "POST", "/messages", `{"session_token":"token","content":"hello"}`, "https://site.example", "", 200, widgetorigin.Reference{SessionToken: "token"}},
 		{"attachment", "PATCH", "/attachments/one", `{}`, "https://site.example", "token", 200, widgetorigin.Reference{SessionToken: "token"}},
 		{"denied origin", "POST", "/session", `{"widget_key":"key"}`, "https://other.example", "", 403, widgetorigin.Reference{WidgetKey: "key"}},
-		{"no origin", "GET", "/config?widget_key=key", "", "", "", 403, widgetorigin.Reference{}},
+		{"no origin", "GET", "/config?widget_key=key", "", "", "", 403, widgetorigin.Reference{WidgetKey: "key"}},
 		{"mixed tokens", "POST", "/messages?session_token=other", `{"session_token":"token"}`, "https://site.example", "", 400, widgetorigin.Reference{}},
 		{"duplicate keys", "GET", "/config?widget_key=key&widget_key=other", "", "https://site.example", "", 400, widgetorigin.Reference{}},
 		{"malformed body", "POST", "/messages", `{`, "https://site.example", "", 400, widgetorigin.Reference{}},
@@ -152,6 +152,39 @@ func TestWidgetOriginTauriCORS(t *testing.T) {
 			}
 			if got := w.Header().Get("Access-Control-Allow-Origin"); got != "tauri://localhost" && got != "*" {
 				t.Fatalf("CORS origin %q", got)
+			}
+		})
+	}
+}
+
+func TestWidgetOriginAllowAll(t *testing.T) {
+	for _, origin := range []string{"", "null", "https://other.example"} {
+		t.Run(origin, func(t *testing.T) {
+			auth := testWidgetOriginAuthorizer(func(_ context.Context, value string, ref widgetorigin.Reference) error {
+				if ref.WidgetKey != "key" || !widgetorigin.Allowed(value, []string{"*"}) {
+					return fmt.Errorf("denied")
+				}
+				return nil
+			})
+			h := requireWidgetOrigin(auth, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }))
+			r := httptest.NewRequest("GET", "/config?widget_key=key", nil)
+			if origin != "" {
+				r.Header.Set("Origin", origin)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != 200 {
+				t.Fatalf("status %d", w.Code)
+			}
+			if w.Header().Get("Access-Control-Allow-Origin") != origin {
+				t.Fatal("incorrect CORS origin")
+			}
+			r.Header.Add("Origin", "https://one.example")
+			r.Header.Add("Origin", "https://two.example")
+			w = httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != 403 {
+				t.Fatal("multiple origin headers accepted")
 			}
 		})
 	}

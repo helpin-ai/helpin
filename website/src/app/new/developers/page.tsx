@@ -1,76 +1,79 @@
-import { CtaRow, CtaNote } from '../_components/ui';
+import { HeroVortex } from '../_components/HeroVortex';
+import { CtaRow } from '../_components/ui';
 import { previewMetadata } from '../_components/preview-metadata';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Bot, Braces, Code2, KeyRound, MessagesSquare, Plug, Terminal, Webhook } from 'lucide-react';
+import { ArrowRight, BookOpen, Braces, KeyRound, MessagesSquare, Plug, Terminal, Webhook } from 'lucide-react';
 import { PreviewNav } from '../_components/PreviewNav';
 import { PreviewFooter } from '../_components/PreviewFooter';
-import { GITHUB_URL, GithubIcon, SectionHead } from '../_components/ui';
+import { SectionHead } from '../_components/ui';
 import { DeveloperHeroScene, EventScene, MCPScene, SDKExplorer } from '../_components/platform/PlatformScenes';
 import { DocLink, PlatformBreadcrumb, PlatformClosing, PlatformFAQ, REPO } from '../_components/platform/PlatformParts';
-import { WorkspaceAPIExample } from '../_components/platform/PlatformProof';
-import { DeveloperInterfaces } from '../_components/platform/DeveloperInterfaces';
 import { SupportIdentity } from '../products/customer-support/support-identity';
 import '../_components/platform/platform.css';
 import '../_components/platform/platform-polish.css';
+import './developers-copy.css';
 
 export const metadata = previewMetadata("Developers \u2014 Helpin", "/new/developers");
 const FAQS = [
   [
     "Where should I start?",
-    "Use the SDK for customer chat, public MCP for AI clients working with Helpin, and external MCP for Helpin agents using your tools.",
-    "/new/developers#developer-interfaces"
+    "Use an SDK to put support inside your product. Use MCP to connect AI clients and integrations to your workspace, or to give Helpin agents tools from other systems."
+  ],
+  [
+    "Which SDK should I use?",
+    "@helpin-ai/sdk-js for any web app, @helpin-ai/react for React, @helpin-ai/nextjs for Next.js, and @helpin-ai/vue for Vue 3 and Nuxt. Install the framework package alongside @helpin-ai/sdk-js."
   ],
   [
     "Can I use the SDK with self-hosted Helpin?",
-    "Yes. Use your installation’s public widget URL and allow your website origin in workspace settings.",
-    "https://github.com/helpin-ai/helpin/blob/develop/docs/community/widget-identity.md"
+    "Yes. Set host to your installation’s public widget URL and add your site to the permitted website origins."
+  ],
+  [
+    "Is my widget key also an API credential?",
+    "No. The widget key is public and only identifies your widget. Integrations reach your workspace through MCP, with OAuth or a scoped service token, and identity signing uses a separate server secret."
+  ],
+  [
+    "How does Helpin verify a customer?",
+    "Your backend signs an identity proof with HMAC-SHA256, and Helpin checks it when the widget identifies the customer. Turn on “Require server-signed identities” to reject unsigned identities; until then, they’re accepted as unverified. Verification doesn’t grant access to connected tools."
   ],
   [
     "What is the difference between the two MCP connections?",
-    "Public MCP lets an external AI client access selected Helpin capabilities. External MCP gives a Helpin agent selected tools from another server.",
-    "https://github.com/helpin-ai/helpin/blob/develop/docs/public-mcp-server.md"
+    "Public MCP lets an external AI client or integration work with Helpin. External MCP lets a Helpin agent use tools from another system."
   ],
   [
-    "Can a webhook start agent work?",
-    "Yes, where Automation is on. Events are checked against your rules; matching ones start the agent you chose.",
-    "https://github.com/helpin-ai/helpin/blob/develop/docs/agents-and-automation.md"
+    "Is MCP available in every workspace?",
+    "Both connections are in controlled beta. A workspace manager turns on public MCP; external MCP servers must first be enabled for the deployment. What each connection can do depends on granted scopes, user permissions, and enabled modules."
   ],
-  ["Which SDKs are available in the codebase?", "JavaScript, React, Next.js and Vue packages are available. Check each package’s README for setup and published versions.", "https://github.com/helpin-ai/helpin/tree/develop/packages"],
-  ["Is the widget key also a workspace API credential?", "No. The public widget key identifies your widget; workspace APIs and MCP connections use separate authentication and permissions.", "https://github.com/helpin-ai/helpin/blob/develop/docs/community/widget-identity.md"],
-  ["How is customer identity verified?", "After login, your server signs a short-lived identity proof for the SDK. Helpin checks it separately from the public widget key.", "https://github.com/helpin-ai/helpin/blob/develop/docs/community/widget-identity.md"],
-  ["Is public MCP enabled everywhere?", "Public MCP is in controlled beta and must be enabled for the environment and workspace. Tools are limited by granted scopes, user permissions and enabled modules.", "https://github.com/helpin-ai/helpin/blob/develop/docs/public-mcp-server.md"]
+  [
+    "Which events can start agent work?",
+    "GitHub and GitLab repository events, such as a pull request opened, merged, or closed, or a review requested, plus workspace events and schedules. A matching automation rule starts the selected agent with its tools and approvals. Outbound webhooks aren’t available yet."
+  ]
 ] as const;
 export default function DevelopersPage(){return <><PreviewNav/><div className="platform-page developers-page">
- <section className="platform-hero"><div className="wrap"><PlatformBreadcrumb label="Developers"/><div className="platform-hero-grid"><div className="platform-hero-copy"><span className="eyebrow">Support SDKs, workspace APIs and AI tools</span><h1>Add Helpin to your app. <span>Connect it to your AI tools.</span></h1><p className="lede">Drop support chat into your product with the SDK. Use Helpin from Claude or Cursor over MCP. Give Helpin agents tools from your own systems. Build on the workspace API.</p><CtaRow /><CtaNote /><div className="platform-hero-points"><span><Braces size={14}/>APIs & SDKs</span><span><Plug size={14}/>MCP</span><span><Webhook size={14}/>Events & workflows</span></div></div><div><DeveloperHeroScene/></div></div></div></section>
- <nav className="platform-page-nav" aria-label="On this page"><div className="wrap"><strong>Developers</strong><a href="#sdk">SDKs</a><a href="#mcp">MCP</a><a href="#api">Workspace API</a><a href="#webhooks">Events & workflows</a><a href="#developer-resources">Resources</a></div></nav>
+ <section className="platform-hero motion-hero"><HeroVortex variant="connections" tone="dark" /><div className="wrap"><PlatformBreadcrumb label="Developers"/><div className="platform-hero-grid"><div className="platform-hero-copy"><span className="eyebrow">SDKs, MCP, and events for AI agents</span><h1>Connect your product. <span>Give AI agents the tools to act.</span></h1><p className="lede">Bring support into your app, identify the customer behind each conversation, and give agents access to the tools behind the work.</p><CtaRow primaryLabel="Start free trial" /><p className="developer-supporting-note">Open source · Self-host free, or let us run it</p></div><div><DeveloperHeroScene/><p className="developer-demo-caption">Your app starts the conversation. Agents work with the tools you connect.</p></div></div></div></section>
+ <nav className="platform-page-nav" aria-label="On this page"><div className="wrap"><strong>Developers</strong><a href="#sdk">SDKs</a><a href="#identity">Identity</a><a href="#mcp">MCP</a><a href="#webhooks">Events & automation</a><a href="#developer-resources">Resources</a></div></nav>
 
- <section id="developer-interfaces"><div className="wrap"><SectionHead eyebrow="Build with Helpin" title="Four ways to connect the work." /><div className="platform-resource-grid">{[
-  {Icon:Terminal,title:'Helpin CLI',body:'Install, inspect and manage your own instance.',href:'/new/self-hosting#cli'},
-  {Icon:Braces,title:'APIs & SDKs',body:'Add support chat and connect your customer data.',href:'#sdk'},
-  {Icon:Plug,title:'MCP, both ways',body:'Use Helpin from an AI client or connect external tools to agents.',href:'#mcp'},
-  {Icon:Webhook,title:'Webhooks & triggers',body:'Start configured workflows from product and engineering events.',href:'#webhooks'},
- ].map(({Icon,title,body,href})=><a key={title} href={href}><Icon size={22}/><h3>{title}</h3><p>{body}</p><ArrowRight size={16}/></a>)}</div></div></section>
- <section id="identity" className="platform-soft"><div className="wrap platform-split"><div><SectionHead eyebrow="Identity & tools" title="Verified customers, scoped access." lede="Sign customer identities on your backend with HMAC, then let agents use selected logs and account tools over MCP. Identity verification and tool authorization are separate controls." />
- <div className="platform-faqs"><details><summary>How does HMAC identity verification work?</summary><p>Your backend signs a short-lived customer identity proof with a server-side secret. Helpin validates it when the widget identifies the customer. <a href={`${REPO}/docs/community/widget-identity.md`}>Identity setup →</a></p></details>
- <details><summary>Does verified identity grant access to connected tools?</summary><p>No. Select agent tools and approvals separately, and enforce customer access in your tool server. <a href={`${REPO}/docs/external-mcp-servers.md`}>Tool access guide →</a></p></details></div>
- </div><SupportIdentity /></div></section>
- <section id="sdk"><div className="wrap"><div className="platform-centered"><SectionHead eyebrow="Meet customers inside your product" title="Bring the conversation into your app." lede="Open a conversation from your own UI. Identify the customer, carry their company context, and connect them to your support team."/></div><SDKExplorer/><div className="platform-sdk-links"><a href={`${GITHUB_URL}/tree/develop/packages/sdk-js`} target="_blank" rel="noopener noreferrer">JavaScript<ArrowRight size={13}/></a><a href={`${GITHUB_URL}/tree/develop/packages/react`} target="_blank" rel="noopener noreferrer">React<ArrowRight size={13}/></a><a href={`${GITHUB_URL}/tree/develop/packages/nextjs`} target="_blank" rel="noopener noreferrer">Next.js<ArrowRight size={13}/></a><a href={`${GITHUB_URL}/tree/develop/packages/vue`} target="_blank" rel="noopener noreferrer">Vue<ArrowRight size={13}/></a></div><div className="platform-feature-grid platform-sdk-features">{[
-  {Icon:MessagesSquare,title:'Choose where the conversation starts.',body:'Use your own launcher, start a conversation with an opening message, or bring an existing conversation back into view.'},
-  {Icon:KeyRound,title:'Connect the person behind the session.',body:'Identify the customer and associate company context. Use a server-signed proof when upgrading to a verified identity.'},
-  {Icon:BookOpen,title:'Put an answer within reach.',body:'Open help articles in the widget and connect support with your product’s existing navigation and help entry points.'},
+ <section id="developer-interfaces"><div className="wrap"><SectionHead eyebrow="Choose your starting point" title="Four ways to build on Helpin." /><div className="platform-resource-grid">{[
+  {Icon:Terminal,label:'Helpin CLI',title:'Run your own workspace.',body:'Install Helpin, check the services, and inspect logs from the terminal.',href:'/new/self-hosting#cli',link:'Explore the CLI'},
+  {Icon:Braces,label:'SDKs',title:'Bring Helpin into your product.',body:'Add support chat to your app and identify the customer behind each conversation.',href:'#sdk',link:'Explore the SDKs'},
+  {Icon:Plug,label:'MCP connections',title:'Connect the tools around the work.',body:'Connect AI clients and integrations to Helpin, or give Helpin agents tools from another system.',href:'#mcp',link:'Explore MCP'},
+  {Icon:Webhook,label:'Events & automation',title:'Start work when something changes.',body:'Start agent work from GitHub and GitLab events, workspace changes, or a schedule.',href:'#webhooks',link:'Explore events and automation'},
+ ].map(({Icon,label,title,body,href,link})=><a key={title} href={href}><Icon size={22}/><span className="platform-micro">{label}</span><h3>{title}</h3><p>{body}</p><span className="developer-card-link">{link}<ArrowRight size={16}/></span></a>)}</div>
+ <div id="developer-resources" className="developer-resource-links" role="navigation" aria-label="Developer resources">
+  <a href={`${REPO}/docs/community/cli.md`} target="_blank" rel="noopener noreferrer">CLI setup guide<ArrowRight size={15}/></a>
+  <a href={`${REPO}/CONTRIBUTING.md`} target="_blank" rel="noopener noreferrer">Contributing<ArrowRight size={15}/></a>
+  <Link href="/new/self-hosting">Explore self-hosting<ArrowRight size={15}/></Link>
+ </div></div></section>
+ <section id="sdk"><div className="wrap"><div className="platform-centered"><SectionHead eyebrow="Support inside your product" title="Put help where customers need it." lede="Start a conversation from your own interface. Associate it with the signed-in customer and their company, then keep the exchange in Helpin."/></div><SDKExplorer/><div className="platform-sdk-links"><a href="https://www.npmjs.com/package/@helpin-ai/sdk-js" target="_blank" rel="noopener noreferrer">JavaScript<ArrowRight size={13}/></a><a href="https://www.npmjs.com/package/@helpin-ai/react" target="_blank" rel="noopener noreferrer">React<ArrowRight size={13}/></a><a href="https://www.npmjs.com/package/@helpin-ai/nextjs" target="_blank" rel="noopener noreferrer">Next.js<ArrowRight size={13}/></a><a href="https://www.npmjs.com/package/@helpin-ai/vue" target="_blank" rel="noopener noreferrer">Vue<ArrowRight size={13}/></a></div><div className="platform-feature-grid platform-sdk-features">{[
+  {Icon:MessagesSquare,title:'Start from your own interface.',body:'Use a custom launcher, prepare an opening message, or reopen an existing conversation.'},
+  {Icon:KeyRound,title:'Connect the person and company.',body:'Identify signed-in customers so the conversation has a clear account context.'},
+  {Icon:BookOpen,title:'Open the relevant guide.',body:'Bring an article into the widget from your product’s help menu or interface.'},
  ].map(({Icon,title,body})=><article key={title}><Icon size={23}/><h3>{title}</h3><p>{body}</p></article>)}</div></div></section>
- <section id="mcp" className="platform-dark"><div className="wrap"><div className="platform-centered"><SectionHead eyebrow="Connect your AI tools" title="MCP in both directions." lede="Use Helpin context in an external AI client, or bring another system’s tools to a Helpin agent. Each connection gets the access you choose."/></div><div className="platform-mcp-grid"><article><div className="platform-mcp-copy"><span className="platform-micro">YOUR AI CLIENT → HELPIN</span><h3>Bring Helpin into your AI client.</h3><p>Search permitted workspace context, read docs, and perform supported actions through a workspace-bound MCP connection.</p></div><MCPScene direction="inbound"/><DocLink href={`${REPO}/docs/public-mcp-server.md`}>Public MCP setup</DocLink><p className="platform-beta-note">Controlled beta · Requires environment and workspace enablement.</p></article><article><div className="platform-mcp-copy"><span className="platform-micro">HELPIN AGENT → YOUR TOOLS</span><h3>Bring external tools to your agents.</h3><p>Connect an external server, review its tools, and select what each agent can use. Installing a server doesn’t grant every agent access.</p></div><MCPScene direction="outbound"/><DocLink href={`${REPO}/docs/external-mcp-servers.md`}>External MCP setup</DocLink><p className="platform-beta-note">Selected tools · Agent permissions · Action approval policy.</p></article></div></div></section>
- <section id="api"><div className="wrap platform-split"><div><SectionHead eyebrow="Build on the workspace" title="The workspace API." lede="Read and work with the records behind your customer workflows. Requests use Helpin authentication and the same resource permissions as the product." secondaryLede="Start with the authenticated workspace API. Inspect the routes and handlers for the operations your integration needs."/><DocLink href={`${REPO}/server/internal/router/router.go`}>Explore the API routes</DocLink></div><WorkspaceAPIExample/></div></section>
- <section id="webhooks"><div className="wrap platform-split"><div><SectionHead eyebrow="Connect events to the next action" title="Turn an event into agent work." lede="A repository update can start a review. A matching rule can launch an agent. Keep the trigger, the work, and the result connected." secondaryLede="Inspect trigger activity separately from agent runs, including events that were skipped."/><DocLink href={`${REPO}/docs/agents-and-automation.md`}>Read about agents and automation</DocLink><p className="platform-availability">Requires Automation and the relevant event integration to be enabled.</p></div><EventScene/></div></section>
- <section id="developer-resources" className="developer-resources-green"><div className="wrap"><div className="developer-resources-intro"><SectionHead eyebrow="Go straight to the implementation" title="Pick your starting point." lede="Bring support into your app, connect your AI tools, or run Helpin yourself. Find the code and guides for what you want to build."/><DeveloperInterfaces/></div><div className="platform-resource-grid">{[
-  {Icon:Code2,title:'JavaScript SDK',body:'Installation, identity, widget commands, and configuration.',href:`${GITHUB_URL}/tree/develop/packages/sdk-js`},
-  {Icon:KeyRound,title:'Widget identity',body:'Server-signed customer identity and verification.',href:`${REPO}/docs/community/widget-identity.md`},
-  {Icon:Plug,title:'MCP server',body:'Client setup, scopes, toolsets, and service accounts.',href:`${REPO}/docs/public-mcp-server.md`},
-  {Icon:Bot,title:'External MCP',body:'Tool discovery, agent access, and connection management.',href:`${REPO}/docs/external-mcp-servers.md`},
-  {Icon:Terminal,title:'Helpin CLI',body:'Install, configure, inspect, and operate an instance.',href:`${REPO}/docs/community/cli.md`},
-  {Icon:GitIcon,title:'Contributing',body:'Explore the source and contribute to the product.',href:`${REPO}/CONTRIBUTING.md`},
- ].map(({Icon,title,body,href})=><a key={title} href={href} target="_blank" rel="noopener noreferrer"><Icon size={22}/><h3>{title}</h3><p>{body}</p><ArrowRight size={16}/></a>)}</div><div className="platform-self-host-link" role="region" aria-labelledby="developer-self-host-title"><Terminal size={22} aria-hidden="true"/><div><h3 id="developer-self-host-title">Run the workspace you’re building on.</h3><p>Explore Docker Compose deployment, the CLI, and self-hosting configuration.</p></div><Link className="platform-text-link" href="/new/self-hosting">Explore self-hosting<ArrowRight size={15}/></Link></div></div></section>
- <section id="developer-faq"><div className="wrap platform-faq-grid"><SectionHead eyebrow="Questions" title="Choose the right interface for the job."/><PlatformFAQ items={FAQS}/></div></section>
- <PlatformClosing id="developers-final-title" title="Build on the customer history your team already uses." description="Connect your application, your tools, and the work your team does next."/>
- </div><PreviewFooter/></>;}
-function GitIcon({size}:{size?:number}){return <GithubIcon size={size}/>}
+ <section id="identity" className="platform-soft"><div className="wrap platform-split"><div><SectionHead eyebrow="Know who’s asking" title="Identify the customer. Control what agents can access." lede="Verify the person behind the conversation, then let agents investigate through selected tools. Customer identity and permission to access data are separate controls." />
+ <div className="platform-faqs"><details><summary>How does identity verification work?</summary><p>Your backend signs an identity proof with HMAC-SHA256. Helpin validates the proof when the widget identifies the customer. Keep the signing secret on your server, and turn on “Require server-signed identities” to reject unsigned ones. <a href={`${REPO}/docs/community/widget-identity.md`}>Set up customer identity →</a></p></details>
+ <details><summary>Does verification unlock access to customer data?</summary><p>No. You choose the agent’s tools and approval rules separately. Your connected tool server must also enforce which customer’s data it can return. <a href={`${REPO}/docs/external-mcp-servers.md`}>Configure tool access →</a></p></details></div>
+ </div><div><h3 className="developer-demo-heading">An investigation with defined access.</h3><SupportIdentity variant="developer" /></div></div></section>
+ <section id="mcp" className="platform-dark section-motion"><HeroVortex variant="converge" tone="dark" /><div className="wrap"><div className="platform-centered"><SectionHead eyebrow="Connect your AI tools · Controlled beta" title="Bring Helpin to your AI tools. Bring your tools to Helpin." lede="AI clients and integrations work with Helpin through OAuth or a scoped service token. Helpin agents can use tools from other MCP servers."/></div><div className="platform-mcp-grid"><article><div className="platform-mcp-copy"><h3>Use Helpin from your AI client.</h3><p>Let an authorized AI client or integration search your docs and use the workspace capabilities you grant. A workspace manager turns it on.</p></div><MCPScene direction="inbound"/><DocLink href={`${REPO}/docs/public-mcp-server.md`}>Set up public MCP</DocLink></article><article><div className="platform-mcp-copy"><h3>Give agents a way to check the facts.</h3><p>Connect an external MCP server and select the tools each agent can use, with approvals where required. The deployment must enable external servers first.</p></div><MCPScene direction="outbound"/><DocLink href={`${REPO}/docs/external-mcp-servers.md`}>Connect an external tool server</DocLink></article></div></div></section>
+ <section id="webhooks"><div className="wrap platform-split"><div><SectionHead eyebrow="From an event to the next step" title="Start the right work when something changes." lede="Connect GitHub and GitLab events, workspace changes, and schedules to agent workflows. A matching rule starts the job with the agent’s selected tools, instructions, and approvals." secondaryLede="Inspect trigger activity, including skipped events, separately from agent runs."/><Link className="platform-text-link" href="/new/products/ai-agents#agent-controls">Explore agents and automation<ArrowRight size={15}/></Link></div><EventScene/></div></section>
+ <section id="developer-faq"><div className="wrap platform-faq-grid"><SectionHead eyebrow="Before you connect" title="Choose the right interface."/><PlatformFAQ items={FAQS}/></div></section>
+ <PlatformClosing id="developers-final-title" eyebrow="Start building" title="Put support in your product. Give your agents the right tools." description="Start a free Cloud trial, or self-host the open-source edition and build against your own installation." primaryLabel="Start free trial" supportingLine="Open source · Self-host free, or let us run it"/>
+ </div><PreviewFooter homepage/></>;}

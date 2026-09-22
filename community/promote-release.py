@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
+import urllib.request
 
 
 def validate(directory, run, repository):
@@ -46,9 +48,43 @@ def validate(directory, run, repository):
     return metadata, archive, checksum
 
 
+def assert_public_repository(repository):
+    """Use no GitHub token: installers must work for unauthenticated operators."""
+    try:
+        with urllib.request.urlopen(f'https://api.github.com/repos/{repository}', timeout=30) as response:
+            metadata = json.load(response)
+    except (OSError, ValueError) as error:
+        raise ValueError('Public release downloads are unavailable; publish an approved public repository before releasing the installer') from error
+    if metadata.get('private') is not False or metadata.get('full_name', '').lower() != repository.lower():
+        raise ValueError('Installer requires the intended repository to be publicly readable')
+
+
+def verify_public_assets(directory, metadata, repository):
+    names = [metadata['archive'], metadata['archive'] + '.sha256', 'release.json']
+    names += list(metadata['cli_assets'])
+    names += [name + '.sha256' for name in metadata['cli_assets']]
+    for name in names:
+        expected = hashlib.sha256((directory / name).read_bytes()).hexdigest()
+        url = f"https://github.com/{repository}/releases/download/{metadata['tag']}/{name}"
+        for attempt in range(4):
+            try:
+                digest = hashlib.sha256()
+                with urllib.request.urlopen(url, timeout=60) as response:
+                    while chunk := response.read(1024 * 1024):
+                        digest.update(chunk)
+                if digest.hexdigest() != expected:
+                    raise ValueError(f'Public asset checksum mismatch: {name}')
+                break
+            except OSError as error:
+                if attempt == 3:
+                    raise ValueError(f'Release was created, but public download failed: {name}; repair access before announcing it') from error
+                time.sleep(3)
+
+
 def assert_unpublished(tag, repository):
     if not re.fullmatch(r'community-v0\.\d+\.\d+(?:-[a-z0-9.]+)?', tag):
         raise ValueError('Invalid candidate tag')
+    assert_public_repository(repository)
     # A tag can already point at another commit even without a release. Refuse
     # both cases. gh release create also fails if a release is created concurrently.
     for endpoint in (f'repos/{repository}/releases/tags/{tag}', f'repos/{repository}/git/ref/tags/{tag}'):
@@ -82,6 +118,7 @@ def promote(directory, run_id, repository):
     subprocess.run(['gh', 'release', 'create', tag, str(archive), str(checksum), str(directory / 'release.json'), *cli_files,
                     '--repo', repository, '--target', metadata['source_revision'], '--prerelease',
                     '--title', f'Helpin {tag}', '--notes-file', str(notes)], check=True)
+    verify_public_assets(directory, metadata, repository)
 
 
 if __name__ == '__main__':

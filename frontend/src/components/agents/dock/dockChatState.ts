@@ -24,19 +24,6 @@ export function isDockTranscriptStreaming(run: DockRunLike | null): boolean {
   return run?.status === 'queued' || run?.status === 'running';
 }
 
-/** Interaction kinds answered through structured cards, not the composer. */
-const STRUCTURED_INTERACTION_KINDS = new Set([
-  'approval_request',
-  'review_checkpoint',
-  'permissions_approval',
-  'command_execution_approval',
-  'file_change_approval',
-]);
-
-export function isStructuredInteractionKind(kind: string | undefined): boolean {
-  return !!kind && STRUCTURED_INTERACTION_KINDS.has(kind);
-}
-
 /**
  * Composer state for a dock chat. Mirrors the coding-session composer matrix
  * with the dock-specific cases: a chat with no backing run yet (the first
@@ -55,7 +42,7 @@ export function resolveDockComposerState(
     return { visible: true, enabled: true, placeholder: 'Ask anything, or tell an agent what to do' };
   }
   if (hasStructuredInteraction) {
-    return { visible: false, enabled: false, placeholder: '' };
+    return { visible: true, enabled: false, placeholder: 'Respond to the agent above' };
   }
   switch (run.status) {
     case 'completed':

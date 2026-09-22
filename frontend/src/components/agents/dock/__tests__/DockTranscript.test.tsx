@@ -821,6 +821,26 @@ describe('DockTranscript', () => {
     });
 
     expect(container.textContent).toContain('Bob Smith approved');
+    expect(container.querySelector('[data-dock-decision="approved"]')).not.toBeNull();
+    expect(container.querySelector('[data-message-sender]')).toBeNull();
+  });
+
+  it.each(['approval', 'approval_request_resolution'])('renders %s as an activity decision without a synthetic user message', (messageType) => {
+    act(() => {
+      root.render(<DockTranscript
+        stream={streamWithMessages([
+          userMessage('real-user', 'Approved. Continue.', 1),
+          { ...userMessage('decision', 'Approved. Continue.', 2, 'user-2'), message_type: messageType },
+        ])}
+        active={false}
+        workspaceId="ws-1"
+      />);
+    });
+
+    const decision = container.querySelector('[data-dock-decision="approved"]');
+    expect(decision?.textContent).toBe('Bob Smith approved');
+    expect(container.textContent?.match(/Approved\. Continue\./g)).toHaveLength(1);
+    expect(container.querySelectorAll('[data-message-sender]')).toHaveLength(1);
   });
 
   it('groups adjacent successful calls without timing and keeps failures separate', () => {
@@ -946,6 +966,58 @@ describe('explicit turn delivery in the rendered dock', () => {
 });
 
 describe('Timeline view', () => {
+  it('keeps repeated approvals inside one stable activity until the final response and next user turn', () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    const messages = [userMessage('request', 'Check the official data.', 1),
+      { ...assistantMessage('progress', 'Checking the official source.', 2), message_type: 'assistant_progress' }];
+    const render = (active = true) => act(() => root.render(<DockTranscript stream={streamWithMessages(messages)} active={active} compactAssistantProgress workspaceId="ws-1" />));
+    render();
+    const activity = container.querySelector('[data-dock-activity-timeline]');
+    for (let i = 0; i < 5; i++) {
+      messages.push({ ...userMessage(`approval-${i}`, i === 2 ? 'Approved.\nOnly use official data.' : 'Approved. Continue.', 3, 'user-2'),
+        message_type: i % 2 ? 'approval_request_resolution' : 'approval' });
+      messages.push({ ...assistantMessage(`progress-${i}`, `Continuing step ${i}.`, 4), message_type: 'assistant_progress' });
+      render();
+      expect(container.querySelectorAll('[data-dock-activity-timeline]')).toHaveLength(1);
+      expect(container.querySelector('[data-dock-activity-timeline]')).toBe(activity);
+    }
+    expect(activity?.querySelectorAll('[data-dock-decision="approved"]')).toHaveLength(5);
+    expect(activity?.textContent).toContain('Bob Smith approved');
+    expect(activity?.querySelector('details')?.textContent).toContain('Only use official data.');
+    expect(container.querySelectorAll('[data-message-sender]')).toHaveLength(1);
+    messages.push({ ...assistantMessage('answer', 'Here are the findings.', 5), message_type: 'assistant_final' });
+    render(false);
+    expect(container.querySelectorAll('[data-dock-activity-timeline]')).toHaveLength(1);
+    expect(container.textContent).toContain('Here are the findings.');
+    expect(activity?.textContent).not.toContain('Here are the findings.');
+    act(() => activity?.querySelector<HTMLButtonElement>('button')?.click());
+    expect(activity?.querySelectorAll('[data-dock-decision="approved"]')).toHaveLength(5);
+    messages.push(userMessage('followup', 'Compare the next dataset.', 6),
+      { ...assistantMessage('next-progress', 'Checking the next dataset.', 7), message_type: 'assistant_progress' });
+    render();
+    expect(container.querySelectorAll('[data-dock-activity-timeline]')).toHaveLength(2);
+  });
+
+  it('loads saved approvals inside the completed activity with their attribution and notes', async () => {
+    useDockStore.setState({ transcriptView: 'timeline' });
+    mocks.getMessageWorkDetail.mockResolvedValue({ data: { messages: [
+      { id: 'saved-progress', workspace_id: 'ws-1', run_id: 'run-1', role: 'assistant', message_type: 'assistant_progress', content: 'Checking the source.', sequence_no: 1, created_at: '2026-08-06T00:00:01Z' },
+      { id: 'saved-approval', workspace_id: 'ws-1', run_id: 'run-1', role: 'user', message_type: 'approval_request_resolution', content: 'Approved.\nKeep the source link.', actor_user_id: 'user-2', sequence_no: 2, created_at: '2026-08-06T00:00:02Z' },
+    ] }, error: null });
+    const summary = { ...assistantMessage('work:saved-answer', '', 3), message_type: 'status',
+      dock_work_summary: { message_id: 'saved-answer', duration_ms: 3000, activity_count: 2 } };
+    act(() => root.render(<DockTranscript stream={streamWithMessages([summary,
+      { ...assistantMessage('saved-answer', 'The findings.', 4), message_type: 'assistant_final' }])}
+      active={false} compactAssistantProgress workspaceId="ws-1" chatId="chat-1" />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-dock-work-disclosure] button')?.click());
+    const history = container.querySelector('[aria-label="Activity steps"]');
+    expect(history?.textContent).toContain('Checking the source.');
+    expect(history?.textContent).toContain('Bob Smith approved');
+    expect(history?.querySelector('details')?.textContent).toContain('Keep the source link.');
+    expect(container.querySelectorAll('[data-dock-work-disclosure]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-message-sender]')).toHaveLength(0);
+  });
+
   it.each([
     ['awaiting_user_message', 'Activity'],
     ['human_input', 'Needs your input'],

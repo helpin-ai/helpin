@@ -1,7 +1,6 @@
 import Link from 'next/link';
 
 export const DEMO_URL = 'https://cal.com/helpin-ai/30min';
-export const INCLUDED_URL = '/new/self-hosting#whats-included';
 export const SIGNUP_URL = 'https://app.helpin.ai/register';
 export const GITHUB_URL = 'https://github.com/helpin-ai/helpin';
 
@@ -13,28 +12,7 @@ export function GithubIcon({ size = 16 }: { size?: number }) {
   );
 }
 
-export function Frame({ crumb, label, children, className = '' }: { crumb: string; label: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`frame ${className}`} aria-label={label}>
-      <div className="frame-bar">
-        <i /><i /><i />
-        <span className="crumb">{crumb}</span>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-export function Chip({ tone, children }: { tone?: 'em' | 'am'; children: React.ReactNode }) {
-  return (
-    <span className={`chip ${tone ?? ''}`}>
-      <i />
-      {children}
-    </span>
-  );
-}
-
-export function SectionHead({ eyebrow, title, lede, secondaryLede, tight }: { eyebrow: string; title: string; lede?: string; secondaryLede?: string; tight?: boolean }) {
+export function SectionHead({ eyebrow, title, lede, secondaryLede, tight }: { eyebrow: string; title: React.ReactNode; lede?: string; secondaryLede?: string; tight?: boolean }) {
   return (
     <div className="sec-head" style={tight ? { marginBottom: 28 } : undefined}>
       <span className="eyebrow">{eyebrow}</span>
@@ -45,11 +23,11 @@ export function SectionHead({ eyebrow, title, lede, secondaryLede, tight }: { ey
   );
 }
 
-export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on GitHub', primaryLabel = 'Start free' }: { secondaryHref?: string; secondaryLabel?: string; primaryLabel?: string }) {
+export function CtaRow({ secondaryHref = GITHUB_URL, secondaryLabel = 'View on GitHub', primaryLabel = 'Start free', primaryHref = SIGNUP_URL }: { primaryHref?: string; secondaryHref?: string; secondaryLabel?: string; primaryLabel?: string }) {
   const external = secondaryHref.startsWith('http');
   return (
     <div className="cta-row">
-      <Link className="btn btn-primary" href={SIGNUP_URL}>{primaryLabel} →</Link>
+      <Link className="btn btn-primary" href={primaryHref}>{primaryLabel} →</Link>
       <a className="btn btn-secondary" href={secondaryHref} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined}>
         {secondaryLabel === 'View on GitHub' ? <GithubIcon /> : null}
         {secondaryLabel} →
@@ -63,7 +41,7 @@ export function Availability({ category }: { category: string }) {
   return <span className="eyebrow">{category}</span>;
 }
 export function CtaNote({ trial = false, support = false }: { trial?: boolean; support?: boolean }) {
-  return <p className="cta-note">{trial ? `14-day cloud trial · No card${support ? ' · Or self-host free' : ''}` : 'Open source · Run it yourself or use our cloud'}</p>;
+  return <p className="cta-note">{trial ? `14-day free trial · No card required${support ? ' · Or self-host free' : ''}` : 'Open source · Self-host free, or let us run it'}</p>;
 }
 export type FAQItem = readonly [question: string, answer: string, href?: string, label?: string];
 export function FAQList({ items, className }: { items: readonly FAQItem[]; className: string }) {

@@ -8,7 +8,7 @@ import { Loading01Icon } from '@/lib/icons';
 import { DockInput } from './DockInput';
 import { DockTranscript } from './DockTranscript';
 import { PendingInteractionCard } from './PendingInteractionCard';
-import { ApprovalAttentionBanner } from './ApprovalAttentionBanner';
+import { DockInteractionLayer } from './DockInteractionLayer';
 import { ScrollToLatestButton } from '@/components/agents/transcript';
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { dockChatService } from '@/lib/services/dockChatService';
@@ -122,13 +122,9 @@ export function DockRunView({
   useEffect(() => {
     const node = scrollRef.current;
     if (node && autoFollowRef.current) node.scrollTop = node.scrollHeight;
-  }, [streamState, pendingInteraction, fallbackInteraction, sendError]);
+  }, [streamState, sendError]);
 
   const interaction = pendingInteraction ?? fallbackInteraction;
-  const needsApproval = (
-    (effectiveRun.status === 'paused' && effectiveRun.pause_reason === 'human_approval')
-    || interaction?.interaction_kind.includes('approval') === true
-  );
   const resolveInteraction = useCallback(async (
     interactionId: string,
     payload: { response_payload: Record<string, unknown>; followup_message?: string },
@@ -199,7 +195,19 @@ export function DockRunView({
   const cancellationPending = stopping || effectiveRun.execution_stage === 'cancelling';
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <DockInteractionLayer
+      active={active}
+      interactionId={interaction?.interaction_id}
+      prompt={interaction && (
+        <PendingInteractionCard
+          workspaceId={workspaceId}
+          runId={run.id}
+          interaction={interaction}
+          resolve={resolveInteraction}
+          onResolved={onRunChanged}
+        />
+      )}
+    >
       <div className="relative min-h-0 flex-1">
         <div ref={scrollRef} className={`${activityStyles.activityHost} absolute inset-0 overflow-y-auto px-5 py-3 sm:px-6`}>
           {loading && !streamState ? (
@@ -235,17 +243,6 @@ export function DockRunView({
  {typeof run.input?.model_connection_id === 'string' && <AIConnectionPicker workspaceId={workspaceId} locked value={{ model_connection_id: run.input.model_connection_id, model_name: typeof run.input.model_name === 'string' ? run.input.model_name : undefined }} onChange={() => {}} />}
  </div>
           ) : null}
-          {interaction ? (
-            <div className="mt-3">
-              <PendingInteractionCard
-                workspaceId={workspaceId}
-                runId={run.id}
-                interaction={interaction}
-                resolve={resolveInteraction}
-                onResolved={onRunChanged}
-              />
-            </div>
-          ) : null}
           {sendError ? (
             <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs text-destructive">
               <span className="min-w-0 break-words">{sendError}</span>
@@ -261,10 +258,7 @@ export function DockRunView({
         {!atBottom ? <ScrollToLatestButton onClick={scrollToLatest} /> : null}
       </div>
       {currentPlan && (!hasWorkPlanOrigin(currentPlan) || !streamState || !dockWorkPlans(streamState).some(plan => plan.origin?.event_id === currentPlan.origin?.event_id)) && <div className="max-h-48 shrink-0 overflow-y-auto px-5" data-current-work-plan><CodingPlanPanel plan={currentPlan} runStatus={effectiveRun.status} title="Current work plan" defaultOpen={false} /></div>}
-      {needsApproval && !atBottom ? (
-        <ApprovalAttentionBanner onReview={scrollToLatest} />
-      ) : null}
-      {(composerEnabled || canStop || effectiveRun.status === 'running' || effectiveRun.status === 'queued') ? (
+      {(composerEnabled || canStop || effectiveRun.status === 'paused' || effectiveRun.status === 'running' || effectiveRun.status === 'queued') ? (
         <div className="border-t border-[#f1efea] dark:border-[#302f2b]">
           <DockInput
             mode="conversation"
@@ -280,6 +274,6 @@ export function DockRunView({
           />
         </div>
       ) : null}
-    </div>
+    </DockInteractionLayer>
   );
 }

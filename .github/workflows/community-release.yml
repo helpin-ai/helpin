@@ -15,6 +15,14 @@ on:
         description: HTTPS link to the reviewed external-host acceptance record
         type: string
         required: true
+      upgrade_from:
+        description: Comma-separated source release tags tested for full-stack upgrade and recovery (optional)
+        type: string
+        default: ''
+      upgrade_evidence:
+        description: HTTPS record of full-stack upgrade and recovery for those source tags
+        type: string
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -129,6 +137,8 @@ jobs:
     env:
       COMMUNITY_RELEASE_TAG: ${{ inputs.tag }}
       PUBLIC_HOST_EVIDENCE: ${{ inputs.public_host_evidence }}
+      COMMUNITY_UPGRADE_FROM: ${{ inputs.upgrade_from }}
+      UPGRADE_EVIDENCE: ${{ inputs.upgrade_evidence }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
