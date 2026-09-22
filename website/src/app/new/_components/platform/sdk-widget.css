@@ -7,7 +7,7 @@
 .hp3 .sdk-widget-mount .helpin-chat-window{position:relative;inset:auto;width:100%;max-width:none;height:100%;max-height:none;border:0;border-radius:0;box-shadow:none;z-index:auto;transform:none;transition:none;opacity:1}
 .hp3 .sdk-widget-mount .helpin-conversation-back,.hp3 .sdk-widget-mount .helpin-conversation-header-actions{display:none}
 .hp3 .sdk-widget-mount .helpin-conversation-thread{min-height:0}
-.hp3 .sdk-widget-mount .helpin-message-list{scroll-behavior:auto;overscroll-behavior:contain}
+.hp3 .sdk-widget-mount .helpin-message-list{scroll-behavior:auto;overscroll-behavior:auto}
 .hp3 .sdk-widget-mount .helpin-message-content,.hp3 .sdk-widget-mount .helpin-compose-input{font-size:12px;line-height:1.65}
 .hp3 .sdk-widget-mount .helpin-message-content p{margin:0}
 .hp3 .sdk-widget-fallback{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;height:100%;padding:30px;text-align:center;color:#48725a}

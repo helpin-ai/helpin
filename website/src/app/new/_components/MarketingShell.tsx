@@ -1,6 +1,7 @@
 import { Instrument_Sans, JetBrains_Mono } from 'next/font/google';
 import { ScrollReveal } from './ScrollReveal';
 import '../new.css';
+import './preview-scrolling.css';
 
 const instrumentSans = Instrument_Sans({
   subsets: ['latin'],

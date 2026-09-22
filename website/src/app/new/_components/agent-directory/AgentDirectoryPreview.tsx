@@ -217,7 +217,7 @@ export function AgentDirectoryPreview() {
     document.getElementById(`${id}-tab-${next}`)?.focus();
   }
   return (
-    <div className="adp" aria-label="OrbitDesk agents workspace preview">
+    <div className="adp" role="region" tabIndex={0} aria-label="OrbitDesk agents workspace preview">
       <div className="adp-frame">
         <aside className="adp-sidebar preview-sidebar" aria-label="Workspace navigation">
           <div className="adp-brand">
