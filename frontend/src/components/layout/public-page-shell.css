@@ -88,10 +88,9 @@
   background: #090909;
   isolation: isolate;
 }
-.public-page-brand-heading, .public-page-brand-footer { position: relative; z-index: 1; }
+.public-page-brand-heading { position: relative; z-index: 1; }
 .public-page-eyebrow { color: #a3a3a3; font-size: 12px; margin-bottom: 22px; }
 .public-page-brand h2 { font-size: clamp(34px, 3.7vw, 56px); font-weight: 500; line-height: 1.12; letter-spacing: -0.045em; }
-.public-page-brand-footer { display: flex; justify-content: space-between; gap: 16px; padding-top: 24px; padding-right: 96px; border-top: 1px solid #ffffff20; color: #a3a3a3; font-size: 12px; pointer-events: none; }
 @media (min-width: 1600px) { .public-page-main { padding-inline: 64px; } }
 @media (max-width: 1100px) {
   .public-page-main { padding-inline: 24px; }

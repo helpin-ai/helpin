@@ -27,7 +27,6 @@ export function PublicPageShell({ children }: PublicPageShellProps) {
           <h2>Good work<br />happens together.</h2>
         </div>
         <PublicPageVortex />
-        <div className="public-page-brand-footer"><span>A shared space for your team.</span></div>
       </aside>
     </div>
   );
