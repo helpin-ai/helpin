@@ -148,7 +148,7 @@ export function AIUsage() {
               },
             ].map(({ Icon, title, text }) => (
               <article key={title}>
-                <Icon size={17} strokeWidth={1.5} aria-hidden="true" />
+                <span className="pricing-ai-billing-icon"><Icon size={20} strokeWidth={1.5} aria-hidden="true" /></span>
                 <div>
                   <h4>{title}</h4>
                   <p>{text}</p>
@@ -158,7 +158,7 @@ export function AIUsage() {
           </div>
         </div>
         <details className="pricing-ai-charges" id="ai-usage-charges">
-          <summary>Review AI usage and charges →</summary>
+          <summary><span><strong>Review AI usage and charges</strong><small>Monthly allowances, token rates, and overage.</small></span></summary>
           <div>
             <h3>Your included allowance</h3>
             <p>The allowance is a USD-valued budget for Helpin AI charges, not a fixed number of messages or runs. It is included in your subscription. Unlimited teammates does not mean unlimited AI usage.</p>
