@@ -72,6 +72,12 @@ func lifecycleFixture(t *testing.T) (*app, string, *bytes.Buffer, *[]string) {
 	put(t, filepath.Join(root, "community/apps.json"), "{}")
 	put(t, filepath.Join(root, "community/compose.yaml"), "fixture")
 	put(t, filepath.Join(root, "release-evidence/release.json"), `{"tag":"community-v0.1.0"}`)
+	// macOS temporary directories can have symlinked parents (for example /var).
+	// Exercise backup with the canonical installation path it requires.
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var events []string
 	a.output = func(dir string, args ...string) ([]byte, error) {
 		text := strings.Join(args, " ")
@@ -107,6 +113,29 @@ func lifecycleFixture(t *testing.T) (*app, string, *bytes.Buffer, *[]string) {
 	}
 	return a, root, out, &events
 }
+func TestBackupRejectsSymlinkedInstallationBeforeDocker(t *testing.T) {
+	a, root, _, _ := lifecycleFixture(t)
+	alias := filepath.Join(t.TempDir(), "installation-link")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	a.output = func(string, ...string) ([]byte, error) {
+		t.Fatal("Docker queried before canonical-path validation")
+		return nil, nil
+	}
+	a.run = func(string, ...string) error {
+		t.Fatal("Docker mutated before canonical-path validation")
+		return nil
+	}
+	a.stream = func(string, io.Reader, io.Writer, ...string) error {
+		t.Fatal("snapshot started before canonical-path validation")
+		return nil
+	}
+	if _, err := a.backup(options{dir: alias}, true); err == nil || !strings.Contains(err.Error(), "canonical installation path") {
+		t.Fatalf("expected canonical-path rejection, got %v", err)
+	}
+}
+
 func TestBackupRestorePreservesKeysAndSeparatesVolumes(t *testing.T) {
 	a, root, _, events := lifecycleFixture(t)
 	backup, err := a.backup(options{dir: root}, true)
