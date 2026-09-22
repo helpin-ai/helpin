@@ -48,15 +48,17 @@ func requireWidgetOrigin(authorizer widgetOriginAuthorizer, next http.Handler, p
 			}
 		}
 		var admissionErr error
-		if count == 1 {
+		if count <= 1 {
 			admissionErr = authorizer.AuthorizeWidgetOrigin(r.Context(), origin, ref)
 		}
-		if count != 1 || admissionErr != nil {
+		if count > 1 || admissionErr != nil {
 			widgetorigin.LogRejection(r.Context(), r, admissionErr)
 			writeError(w, http.StatusForbidden, "Widget access denied. Add your site's origin in widget settings.")
 			return
 		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		}
 		w.Header().Add("Vary", "Origin, Sec-Fetch-Site, Sec-Fetch-Mode")
 		if r.Method != http.MethodGet || ref.SessionToken != "" {
 			w.Header().Set("Cache-Control", "no-store")

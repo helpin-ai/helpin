@@ -90,6 +90,19 @@ func TestAuthorizeWidgetOrigin(t *testing.T) {
 	if touched != 0 {
 		t.Fatal("authorization touched sessions")
 	}
+	if err := db.Exec(`UPDATE support_widget_installations SET allowed_origins = '{"*"}' WHERE id = 'one'`).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, origin := range []string{"", "null", "https://other.example"} {
+		if err := svc.AuthorizeWidgetOrigin(context.Background(), origin, widgetorigin.Reference{WidgetKey: "key-one", SessionToken: "valid"}); err != nil {
+			t.Fatalf("allow-all rejected %q: %v", origin, err)
+		}
+		for _, token := range []string{"expired", "revoked", "other"} {
+			if err := svc.AuthorizeWidgetOrigin(context.Background(), origin, widgetorigin.Reference{WidgetKey: "key-one", SessionToken: token}); err == nil {
+				t.Fatalf("allow-all bypassed credentials for %s", token)
+			}
+		}
+	}
 	if err := db.Exec(`UPDATE support_widget_installations SET allowed_origins = '{}' WHERE id = 'one'`).Error; err != nil {
 		t.Fatal(err)
 	}

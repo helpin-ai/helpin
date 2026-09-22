@@ -44,4 +44,28 @@ describe('widget origin settings', () => {
       expect(mocks.save).toHaveBeenCalledWith({ allowed_origins: ['https://site.example', 'tauri://localhost'], identity_verification_mode: 'report_only' });
     } finally { await act(async () => root.unmount()); container.remove(); }
   });
+  it('saves allow-all and restores restrictions when unchecked', async () => {
+    const installation = { allowed_origins: ['https://site.example'], identity_verification_mode: 'enforced' } as unknown as SupportInstallationResponse;
+    const container = document.createElement('div'); document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => root.render(<WidgetOriginSettings workspaceId="ws" installation={installation} />));
+      const checkbox = container.querySelector<HTMLButtonElement>('[role="checkbox"]')!;
+      const textarea = container.querySelector('textarea')!;
+      const save = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save origin settings')!;
+      await act(async () => checkbox.click());
+      expect(textarea.disabled).toBe(true);
+      await act(async () => save().click());
+      expect(mocks.save).toHaveBeenLastCalledWith({ allowed_origins: ['*', 'https://site.example'], identity_verification_mode: 'enforced' });
+      const updated = { ...installation, allowed_origins: ['*', 'https://site.example'] };
+      await act(async () => root.render(<WidgetOriginSettings workspaceId="ws" installation={updated} />));
+      expect(checkbox.getAttribute('aria-checked')).toBe('true');
+      expect(textarea.value).toBe('https://site.example');
+      await act(async () => checkbox.click());
+      expect(textarea.disabled).toBe(false);
+      await act(async () => save().click());
+      expect(mocks.save).toHaveBeenLastCalledWith({ allowed_origins: ['https://site.example'], identity_verification_mode: 'enforced' });
+    } finally { await act(async () => root.unmount()); container.remove(); }
+  });
+
 });
