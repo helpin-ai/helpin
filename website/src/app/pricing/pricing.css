@@ -70,8 +70,6 @@
 .hp3 .pricing-ai-providers { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 12px 0 0; padding: 0; list-style: none; }
 .hp3 .pricing-ai-providers li { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: var(--t2); }
 .hp3 .pricing-ai-providers img { object-fit: contain; }
-.hp3 .pricing-ai-note { margin-top: 20px; font-size: 14px; line-height: 1.65; color: var(--t2); }
-.hp3 .pricing-ai-note strong { color: var(--ink); font-weight: 600; }
 
 /* Disclosures: rates and the shared-feature list */
 .hp3 .pricing-disclosure { margin-top: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }

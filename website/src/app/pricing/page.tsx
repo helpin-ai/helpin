@@ -8,7 +8,7 @@ import { AIUsage, CloudComparison, PricingFAQ } from './PricingSections';
 
 export default function PricingPage() {
   return <div className="pricing-page">
-    <section className="pricing-hero"><HeroVortex variant="orbit" tone="dark" /><div className="wrap"><div className="pricing-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} aria-hidden="true" /><span>Pricing</span></div><h1>Every module. Every teammate.<br /><span>One price per workspace.</span></h1><p className="lede">Support, projects, CRM, meetings, knowledge, and AI agents in one workspace, with no per-seat fees.</p></div></section>
+    <section className="pricing-hero"><HeroVortex variant="orbit" tone="dark" /><div className="wrap"><div className="pricing-breadcrumb"><Link href="/new">Helpin</Link><ChevronRight size={12} aria-hidden="true" /><span>Pricing</span></div><h1>Every module. Every teammate.<br /><span>One price per workspace.</span></h1><p className="lede">Self-host the complete open-source product for free, or let us run it with AI included. No per-seat fees on any plan.</p></div></section>
     <PricingPlans />
     <AIUsage />
     <CloudComparison />
