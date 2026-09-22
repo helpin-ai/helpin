@@ -58,7 +58,7 @@ export default function Demo() {
       <PublicPageShell>
         <Card className="w-full">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Demo not available</CardTitle>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">Demo not available</CardTitle>
             <CardDescription>This server does not host a public demo workspace.</CardDescription>
           </CardHeader>
           <CardFooter className="justify-center">
@@ -75,7 +75,7 @@ export default function Demo() {
     <PublicPageShell>
       <Card className="w-full">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Explore the live demo</CardTitle>
+          <CardTitle role="heading" aria-level={1} className="text-2xl">Explore the live demo</CardTitle>
           <CardDescription>
             You will be signed in as a read-only viewer of a public demo workspace. Everything in it is visible to
             other visitors, and nothing can be changed.

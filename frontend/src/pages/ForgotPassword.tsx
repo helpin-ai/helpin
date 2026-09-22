@@ -39,7 +39,7 @@ export default function ForgotPassword() {
       <PublicPageShell>
         <Card className="w-full">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">Check your email</CardTitle>
+            <CardTitle role="heading" aria-level={1} className="text-2xl">Check your email</CardTitle>
             <CardDescription>
               If an account with <strong>{submittedEmail}</strong> exists, we've sent a password reset link.
             </CardDescription>
@@ -64,7 +64,7 @@ export default function ForgotPassword() {
     <PublicPageShell>
       <Card className="w-full">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Forgot your password?</CardTitle>
+          <CardTitle role="heading" aria-level={1} className="text-2xl">Forgot your password?</CardTitle>
           <CardDescription>Enter your email and we'll send you a reset link</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
