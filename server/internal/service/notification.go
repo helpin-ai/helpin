@@ -27,10 +27,14 @@ type notificationWSData struct {
 	RecipientID  string `json:"recipient_id,omitempty"`
 	EntityType   string `json:"entity_type,omitempty"`
 	ParentTaskID string `json:"parent_task_id,omitempty"`
+	DockChatID   string `json:"dock_chat_id,omitempty"`
+	RunID        string `json:"run_id,omitempty"`
 }
 
 func buildNotificationWSData(recipientID string, event model.NotificationEventInput, priority string) json.RawMessage {
 	parentTaskID, _ := event.Metadata["task_id"].(string)
+	dockChatID, _ := event.Metadata["dock_chat_id"].(string)
+	runID, _ := event.Metadata["run_id"].(string)
 	payload := notificationWSData{
 		EventType:    event.EventType,
 		Category:     event.Category,
@@ -38,6 +42,8 @@ func buildNotificationWSData(recipientID string, event model.NotificationEventIn
 		RecipientID:  recipientID,
 		EntityType:   event.EntityType,
 		ParentTaskID: parentTaskID,
+		DockChatID:   dockChatID,
+		RunID:        runID,
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -288,6 +294,23 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 		if err != nil {
 			log.ErrorContext(ctx, "failed to check existing notification", "error", err)
 		}
+		// Replayed runtime snapshots must not resurrect a read alert or increment
+		// its count for the same pending interaction.
+		if existing != nil && event.Category == model.NotifCategoryAgentAttention {
+			interactionID, _ := event.Metadata["interaction_id"].(string)
+			if interactionID != "" {
+				if existing.Metadata["interaction_id"] == interactionID {
+					continue
+				}
+				seen, err := s.notifRepo.HasAttentionInteraction(ctx, existing.ID, interactionID)
+				if err != nil {
+					return fmt.Errorf("check attention replay: %w", err)
+				}
+				if seen {
+					continue
+				}
+			}
+		}
 
 		actorID := &event.ActorID
 		if event.ActorID == "" {
@@ -345,12 +368,13 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 			// Push only notifications visible in the inbox.
 			if shouldNotify {
 				s.wsPublisher.Publish(ws.Event{
-					Action:      "updated",
-					Entity:      "notification",
-					EntityID:    existing.ID,
-					WorkspaceID: event.WorkspaceID,
-					ActorID:     event.ActorID,
-					Data:        buildNotificationWSData(recipientID, event, priority),
+					Action:       "updated",
+					Entity:       "notification",
+					EntityID:     existing.ID,
+					TargetUserID: recipientID,
+					WorkspaceID:  event.WorkspaceID,
+					ActorID:      event.ActorID,
+					Data:         buildNotificationWSData(recipientID, event, priority),
 				})
 			}
 		} else {
@@ -397,12 +421,13 @@ func (s *NotificationService) Emit(ctx context.Context, event model.Notification
 			// Push only notifications visible in the inbox.
 			if shouldNotify {
 				s.wsPublisher.Publish(ws.Event{
-					Action:      "created",
-					Entity:      "notification",
-					EntityID:    notif.ID,
-					WorkspaceID: event.WorkspaceID,
-					ActorID:     event.ActorID,
-					Data:        buildNotificationWSData(recipientID, event, priority),
+					Action:       "created",
+					Entity:       "notification",
+					EntityID:     notif.ID,
+					TargetUserID: recipientID,
+					WorkspaceID:  event.WorkspaceID,
+					ActorID:      event.ActorID,
+					Data:         buildNotificationWSData(recipientID, event, priority),
 				})
 			}
 		}
@@ -417,7 +442,15 @@ func (s *NotificationService) MarkAgentAttentionResolved(ctx context.Context, wo
 	if s == nil || s.notifRepo == nil {
 		return nil
 	}
-	return s.notifRepo.MarkEntityEventTypeAsReadForWorkspace(ctx, workspaceID, "agent_run", runID, taskAgentAttentionRequiredEventType)
+	changed, err := s.notifRepo.MarkEntityEventTypeAsReadForWorkspace(ctx, workspaceID, "agent_run", runID, taskAgentAttentionRequiredEventType)
+	if err != nil {
+		return err
+	}
+	// Only invalidate the inbox; no private chat details belong in this broadcast.
+	if changed {
+		s.wsPublisher.Publish(ws.Event{Action: "updated", Entity: "notification", WorkspaceID: workspaceID})
+	}
+	return nil
 }
 
 func (s *NotificationService) createEventAndDeliveries(

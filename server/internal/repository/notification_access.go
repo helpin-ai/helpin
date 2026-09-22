@@ -9,6 +9,27 @@ import (
 	"gorm.io/gorm"
 )
 
+// AgentRunNotificationAccess checks the real chat relationship, never metadata.
+// Private chats remain owner-only even for administrators. Existing standalone
+// runs still require the caller's ordinary module and resource access checks.
+func (r *NotificationRepository) AgentRunNotificationAccess(ctx context.Context, actor *authorization.Actor, runID string) (standalone, allowed bool, err error) {
+	var row struct {
+		DockChatID *string
+		OwnerID    *string
+	}
+	err = r.db.WithContext(ctx).Table("agent_runs AS run").
+		Select("run.dock_chat_id, chat.user_id AS owner_id").
+		Joins("LEFT JOIN dock_chats chat ON chat.id = run.dock_chat_id AND chat.workspace_id = run.workspace_id AND chat.archived_at IS NULL").
+		Where("run.workspace_id = ? AND run.id = ?", actor.WorkspaceID, runID).Take(&row).Error
+	if err == gorm.ErrRecordNotFound {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return row.DockChatID == nil, row.OwnerID != nil && *row.OwnerID == actor.UserID, nil
+}
+
 // CanReadNotificationResource mirrors the resource's current workspace/team/mailbox scope.
 // Stored routing hints never grant access to an existing resource that has since moved.
 func (r *NotificationRepository) CanReadNotificationResource(ctx context.Context, actor *authorization.Actor, event model.NotificationEventInput) (bool, error) {

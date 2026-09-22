@@ -13,6 +13,40 @@ import (
 
 type notificationAccessFunc func(context.Context, string, model.NotificationEventInput) (bool, error)
 
+func TestAskAgentNotificationAccessIsOwnerScopedWithoutAutomation(t *testing.T) {
+	db := newNotificationServiceTestDB(t)
+	for _, stmt := range []string{
+		`CREATE TABLE agent_runs (id TEXT, workspace_id TEXT, dock_chat_id TEXT)`,
+		`CREATE TABLE dock_chats (id TEXT, workspace_id TEXT, user_id TEXT, archived_at DATETIME)`,
+		`INSERT INTO agent_runs VALUES ('run','ws','chat')`,
+		`INSERT INTO dock_chats VALUES ('chat','ws','owner',NULL)`,
+	} {
+		mustExecNotificationService(t, db, stmt)
+	}
+	members := &notificationAuditMembers{status: "active", role: "member"}
+	policy := NewNotificationAccessPolicy(authorization.NewAuthzService(db, members, &notificationAuditModules{}), repository.NewNotificationRepository(db))
+	event := model.NotificationEventInput{WorkspaceID: "ws", EntityType: "agent_run", EntityID: "run", Metadata: model.JSONB{"dock_chat_id": "forged-chat", "task_id": "forged-task"}}
+	check := func(user string, want bool) {
+		t.Helper()
+		allowed, err := policy.CanReceive(context.Background(), user, event)
+		if err != nil || allowed != want {
+			t.Fatalf("user %s: allowed=%v err=%v, want %v", user, allowed, err, want)
+		}
+	}
+	check("owner", true)
+	check("other", false)
+	members.role = "admin"
+	check("other", false)
+	event.WorkspaceID = "elsewhere"
+	check("owner", false)
+	event.WorkspaceID = "ws"
+	members.status = "revoked"
+	check("owner", false)
+	members.status = "active"
+	mustExecNotificationService(t, db, `UPDATE dock_chats SET archived_at = CURRENT_TIMESTAMP`)
+	check("owner", false)
+}
+
 func (f notificationAccessFunc) CanReceive(ctx context.Context, user string, event model.NotificationEventInput) (bool, error) {
 	return f(ctx, user, event)
 }

@@ -36,6 +36,9 @@ vi.mock('@/lib/services/pmTaskService', () => ({
 
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { useRealtimeSync } from '../useRealtimeSync'
+import { toast } from 'sonner'
+
+vi.mock('sonner', () => ({ toast: vi.fn() }))
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -87,6 +90,30 @@ describe('useRealtimeSync task ordering events', () => {
   afterEach(() => {
     vi.useRealTimers()
     captured.onEvent = null
+  })
+
+  it('opens Ask Agent from attention toasts and ignores other recipients and resolution updates', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const container = document.createElement('div')
+    const root = createRoot(container)
+    act(() => root.render(<QueryClientProvider client={client}><Harness workspaceId="ws-1" /></QueryClientProvider>))
+    const onOpen = vi.fn()
+    window.addEventListener('helpin:ask-agents', onOpen)
+    const event = { entity: 'notification', action: 'created', workspace_id: 'ws-1', data: { event_type: 'task.agent_attention_required', recipient_id: 'user-1', dock_chat_id: 'chat-1', run_id: 'run-1' } }
+    act(() => captured.onEvent?.(event))
+    expect(toast).toHaveBeenCalledTimes(1)
+    const options = vi.mocked(toast).mock.calls[0][1]
+    expect(options?.action).toMatchObject({ label: 'Open chat' })
+    const action = options?.action as { onClick: () => void }
+    action.onClick()
+    expect(onOpen.mock.calls[0][0].detail).toEqual({ chatId: 'chat-1' })
+    act(() => captured.onEvent?.({ ...event, action: 'updated' }))
+    expect(toast).toHaveBeenCalledTimes(2) // A new interaction on the same run updates the inbox row.
+    act(() => captured.onEvent?.({ ...event, data: { ...event.data, recipient_id: 'other' } }))
+    act(() => captured.onEvent?.({ entity: 'notification', action: 'updated', workspace_id: 'ws-1' }))
+    expect(toast).toHaveBeenCalledTimes(2)
+    window.removeEventListener('helpin:ask-agents', onOpen)
+    act(() => root.unmount())
   })
 
   it('refreshes the board for moved task events instead of hydrating a single task', async () => {

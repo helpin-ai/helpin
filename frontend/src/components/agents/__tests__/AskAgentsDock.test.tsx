@@ -320,6 +320,34 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
 }
 
 describe('AskAgentsDock', () => {
+  it.each(['icon', 'attention', 'notification'])('opens an off-page Ask Agent approval through its %s', async (entry) => {
+    const run = { ...DOCK_RUN.run, id: 'ask-run', dock_chat_id: 'older-chat', target_type: 'workspace', target_info: undefined };
+    const chat = { ...CHAT, id: 'older-chat', title: 'Earlier investigation', active_run_id: run.id };
+    mocks.listRuns.mockResolvedValue({ data: { runs: [{ ...DOCK_RUN, run }], attention_count: 1 }, error: null });
+    mocks.getChat.mockImplementation(async (_workspaceId, chatId) => ({ data: chatId === chat.id ? chatDetail({ chat, run }) : chatDetail(), error: null }));
+    mocks.getChatRun.mockResolvedValue({ data: run, error: null });
+    mocks.listChatRunInteractions.mockResolvedValue({ data: { interactions: [{
+      id: 'ask-approval', interaction_kind: 'approval_request', status: 'pending',
+      request_schema_version: '1', request_payload: { title: 'Approve earlier investigation' },
+    }] }, error: null });
+    await renderDock();
+    const icon = document.body.querySelector<HTMLButtonElement>('[aria-label="Open Ask Agent conversation, Approve"]');
+    expect(icon).not.toBeNull();
+    expect(icon?.querySelector('[data-agent-dock-trigger-status-dot]')?.getAttribute('style')).toContain('217, 119, 6');
+    expect(document.body.querySelector('[aria-label="1 agent need your attention"]')).not.toBeNull();
+    await act(async () => {
+      if (entry === 'notification') window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { chatId: chat.id } }));
+      else if (entry === 'attention') document.body.querySelector<HTMLButtonElement>('[aria-label="1 agent need your attention"]')?.click();
+      else icon?.click();
+    });
+    await waitForText('Approve earlier investigation');
+    expect(useDockStore.getState().activeChatId).toBe(chat.id);
+    expect(useDockStore.getState().tab).toBe('chats');
+    expect(mocks.getChat).toHaveBeenCalledWith('ws-1', chat.id, expect.any(AbortSignal));
+    expect(mocks.getRunSnapshot).not.toHaveBeenCalled();
+    expect(document.body.querySelector('[data-dock-interaction-overlay]')?.textContent).toContain('Approve earlier investigation');
+  });
+
   it('keeps the first message visible while a newly created chat starts its run', async () => {
     const createdChat = { ...CHAT, id: 'chat-new', title: '', active_run_id: null };
     let resolveSend: ((value: { data: DockChatDetail; error: null }) => void) | undefined;

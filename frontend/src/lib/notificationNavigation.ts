@@ -6,6 +6,14 @@ function stringMetadataField(notification: Notification, key: string): string | 
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+export function getNotificationDockTarget(notification: Notification): { chatId: string } | { runId: string } | null {
+  if (notification.entity_type !== 'agent_run') return null
+  const chatId = stringMetadataField(notification, 'dock_chat_id')
+  if (chatId) return { chatId }
+  if (getNotificationTaskRunTarget(notification)) return null
+  return { runId: stringMetadataField(notification, 'run_id') ?? notification.entity_id }
+}
+
 export function getNotificationTaskRunTarget(notification: Notification): { taskId: string; runId?: string } | null {
   if (notification.entity_type === 'task') {
     return {

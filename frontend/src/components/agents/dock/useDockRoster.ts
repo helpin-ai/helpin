@@ -136,7 +136,7 @@ class DockRosterOwner {
           const knownChat = useDockStore.getState().chats.some((chat) => chat.active_run_id === id);
           const knownRun = this.state.runs.some((summary) => summary.run.id === id);
           if (knownChat) this.pending.add('chats');
-          if (knownRun) this.pending.add('runs');
+          if (knownRun || (detail.update_kind === 'lifecycle' && (knownChat || detail.dock_chat_id || detail.data.dock_chat_id))) this.pending.add('runs');
           if (!knownChat && !knownRun) this.pending.add(detail.dock_chat_id || detail.data.dock_chat_id ? 'chats' : 'runs');
         } else { this.pending.add('runs'); this.pending.add('chats'); }
       }
@@ -180,7 +180,7 @@ class DockRosterOwner {
       const knownChat = useDockStore.getState().chats.some((chat) => chat.active_run_id === id);
       const knownRun = this.state.runs.some((summary) => summary.run.id === id);
       if (knownChat) this.schedule('chats');
-      if (knownRun) this.schedule('runs');
+      if (knownRun || (knownChat && /interaction|session\./.test(type))) this.schedule('runs');
       if (!knownChat && !knownRun) this.schedule('runs', 'chats');
     };
     const recover = () => {
