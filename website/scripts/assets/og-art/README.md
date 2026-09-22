@@ -1,19 +1,24 @@
 # OG card artwork
 
-Text-free artwork panels for the website's social preview cards. `scripts/generate-og-images.mjs`
-draws all text (Instrument Sans) and places the matching panel on the right 440px of each card.
-A card without an artwork file falls back to its drawn visual.
+Text-free artwork for the website's social preview cards. `scripts/generate-og-images.mjs`
+draws all text (Instrument Sans) on a near-black canvas and places the matching artwork on the
+right 480px of each card, fading its left edge into the canvas. A card without an artwork file
+falls back to its drawn visual. Pricing and the legal cards use drawn visuals only.
+
+Style: quiet and monochrome, in the spirit of Linear's marketing. Flat near-black background
+(`#0A0B0B`), charcoal UI panels with hairline borders, gray placeholder bars, and one small
+emerald accent. No glow, gradients, grain or decorative lines.
 
 - Model: `gpt-image-2.5-sunburst`, 1024x1536, medium quality (September 2026)
 - Prompts: `STYLE` and `SUBJECTS` in `scripts/generate-og-art.py`
-- Stored as JPEG, 660x945 (the 440x630 panel at 1.5x), centre-cropped, quality 82
+- Stored as JPEG, 720x945 (the 480x630 area at 1.5x), centre-cropped, quality 86
 
 ## Regenerate a panel
 
 1. `OPENAI_API_KEY=... python3 scripts/generate-og-art.py <slug>` writes options to `og-art-options/`.
-2. Review the options and pick one. It must contain no text.
-3. Crop and compress it to `scripts/assets/og-art/<slug>.jpg` at 660x945. For example, with sharp:
-   `sharp(src).resize(660, 945, { fit: 'cover' }).jpeg({ quality: 82, mozjpeg: true })`.
+2. Review the options and pick one. It must contain no text, and its background must stay flat.
+3. Crop and compress it to `scripts/assets/og-art/<slug>.jpg` at 720x945. For example, with sharp:
+   `sharp(src).resize(720, 945, { fit: 'cover' }).jpeg({ quality: 86, mozjpeg: true })`.
 4. `HELPIN_OG_VARIANT=<slug> pnpm generate:og`, then check the card in `public/og/`.
-
-The pricing panel is a background only; its text is drawn by `pricingVisual(true)`.
+5. If the card's content changed, bump `VERSION` in `generate-og-images.mjs` and the matching paths in
+   `src/lib/metadata.ts`, `src/app/new/_components/preview-metadata.ts` and `tests/seo-metadata.test.mjs`.

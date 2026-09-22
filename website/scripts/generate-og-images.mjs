@@ -9,6 +9,17 @@ const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = resolve(websiteRoot, '..');
 const mark = await readFile(resolve(websiteRoot, 'public/brand/helpin-icon-ink-128.png'));
 const markSrc = `data:image/png;base64,${mark.toString('base64')}`;
+const markWhite = await readFile(resolve(websiteRoot, 'public/brand/helpin-icon-white-128.png'));
+const markWhiteSrc = `data:image/png;base64,${markWhite.toString('base64')}`;
+
+// Website cards use a quiet, monochrome dark theme (near-black, white type, green only as a small accent).
+// App cards in frontend/public/og keep the light theme.
+const DARK = {
+  canvas: '#0A0B0B',
+  ink: '#F1F4F2',
+  muted: '#9AA39E',
+  eyebrow: '#8A938E',
+};
 
 const COLORS = {
   canvas: '#FFFFFF',
@@ -22,7 +33,7 @@ const COLORS = {
 
 // Bump when card content changes so social platforms fetch the new image instead of a cached one.
 // Update the matching paths in src/lib/metadata.ts and src/app/new/_components/preview-metadata.ts.
-const VERSION = 'v3';
+const VERSION = 'v4';
 
 const variants = [
   {
@@ -46,7 +57,6 @@ const variants = [
     headline: ['Every module.', 'Every teammate.', 'One price.'],
     support: 'Self-host free, or let us run it with AI included.',
     visual: 'pricing',
-    art: 'pricing',
   },
   {
     output: resolve(websiteRoot, `public/og/helpin-privacy-green-${VERSION}.png`),
@@ -83,7 +93,7 @@ const productCards = [
   ['customer-support', 'CUSTOMER SUPPORT', ['AI agents that', 'know the history.'], 'No per-seat or per-resolution fees.'],
   ['projects', 'PROJECTS', ['Plan the work.', 'Build with AI agents', 'that know why.'], 'Roadmaps, sprints and objectives in one workspace.'],
   ['crm', 'CRM', ['Every deal, with', 'the whole customer', 'history.'], 'Contacts, companies and deals, with signals and playbooks.'],
-  ['meetings', 'MEETINGS', ['Meeting notes that', 'become tracked work.'], 'Google Meet, Zoom, Teams and Webex, linked to the customer.'],
+  ['meetings', 'MEETINGS', ['Meeting notes that', 'become tracked work.'], 'Meet, Zoom, Teams and Webex calls, linked to the customer.'],
   ['knowledge', 'KNOWLEDGE', ['Better docs for', 'your customers.'], 'Better answers from your AI agents.'],
   ['ai-agents', 'AI AGENTS', ['AI agents that turn', 'customer history', 'into action.'], 'Your team sets the tools, permissions and approvals.'],
   ['developers', 'FOR DEVELOPERS', ['Connect your product.'], 'Give AI agents the tools to act, with SDKs, MCP and events.'],
@@ -97,7 +107,8 @@ for (const [slug, eyebrow, headline, support] of productCards) {
 // Page artwork: text-free panels generated once with gpt-image-2.5-sunburst and committed,
 // so builds stay offline and deterministic. Prompts and steps: scripts/assets/og-art/README.md.
 // A variant without an art file falls back to its drawn visual.
-const ART_WIDTH = 440;
+const ART_WIDTH = 480;
+for (const variant of variants) variant.dark = variant.output.startsWith(websiteRoot);
 for (const variant of variants.filter((item) => item.art)) {
   try {
     const art = await readFile(resolve(websiteRoot, `scripts/assets/og-art/${variant.art}.jpg`));
@@ -113,13 +124,13 @@ const fonts = await Promise.all([400, 600, 700].map(async weight => ({
   data: await readFile(resolve(websiteRoot, `scripts/assets/instrument-sans/${weight}.ttf`)),
 })));
 
-function brand() {
+function brand(dark) {
   return h('div', {
     style: { display: 'flex', alignItems: 'center', gap: 10 },
   },
-  h('img', { src: markSrc, width: 48, height: 48, alt: '' }),
+  h('img', { src: dark ? markWhiteSrc : markSrc, width: 48, height: 48, alt: '' }),
   h('div', {
-    style: { display: 'flex', fontSize: 36, fontWeight: 700, letterSpacing: '-1.5px', color: COLORS.ink },
+    style: { display: 'flex', fontSize: 36, fontWeight: 700, letterSpacing: '-1.5px', color: dark ? DARK.ink : COLORS.ink },
   }, 'Helpin'));
 }
 
@@ -137,19 +148,18 @@ const PRODUCT_STEPS = {
 function connectedVisual(variant) {
   const slug = variant.output.split('helpin-').at(-1).replace(`-green-${VERSION}.png`, '');
   const [label, steps] = PRODUCT_STEPS[slug] ?? ['ONE CUSTOMER HISTORY', [['Customer question', 'Docs, history and connected tools'], ['A task. A fix.', 'Your team and agents at work'], ['Customer follow-up', 'The conversation stays attached']]];
-  return h('div', { style: { display: 'flex', flexDirection: 'column', width: 360, flexShrink: 0, padding: '28px', borderRadius: 20, background: '#0B2119', border: '1px solid #365B47' } },
-    h('div', { style: { display: 'flex', color: '#9CDBB3', fontSize: 14, letterSpacing: '2px', marginBottom: 22 } }, label),
-    ...steps.map(([title, detail], index) => h('div', { key: title, style: { display: 'flex', flexDirection: 'column', padding: '19px 18px', marginTop: index ? 12 : 0, borderRadius: 10, background: '#193A2B', border: '1px solid #365B47' } },
-      h('div', { style: { display: 'flex', gap: 12, alignItems: 'center', color: '#EDF5EF', fontSize: 21, fontWeight: 600 } }, h('span', {style: {color: '#9CDBB3', fontSize: 13}}, String(index + 1).padStart(2, '0')), title),
-      h('div', { style: { display: 'flex', color: '#B2C6BA', fontSize: 14, marginTop: 8 } }, detail))))
+  // Neutral charcoal panel; green only on the step numbers.
+  return h('div', { style: { display: 'flex', flexDirection: 'column', width: 360, flexShrink: 0, padding: '28px', borderRadius: 16, background: '#131615', border: '1px solid #2A2E2C' } },
+    h('div', { style: { display: 'flex', color: DARK.eyebrow, fontSize: 14, letterSpacing: '2px', marginBottom: 22 } }, label),
+    ...steps.map(([title, detail], index) => h('div', { key: title, style: { display: 'flex', flexDirection: 'column', padding: '19px 18px', marginTop: index ? 12 : 0, borderRadius: 10, background: '#1A1D1C', border: '1px solid #2A2E2C' } },
+      h('div', { style: { display: 'flex', gap: 12, alignItems: 'center', color: DARK.ink, fontSize: 21, fontWeight: 600 } }, h('span', {style: {color: '#3FA27A', fontSize: 13}}, String(index + 1).padStart(2, '0')), title),
+      h('div', { style: { display: 'flex', color: DARK.muted, fontSize: 14, marginTop: 8 } }, detail))))
 }
 
-function pricingVisual(onArt = false) {
-  const [headline, label, detail] = onArt ? ['#9CDBB3', '#EDF5EF', '#B2C6BA'] : [COLORS.accent, COLORS.ink, COLORS.muted];
+function pricingVisual(dark = false) {
+  const [headline, label, detail] = dark ? [DARK.ink, DARK.muted, DARK.eyebrow] : [COLORS.accent, COLORS.ink, COLORS.muted];
   return h('div', {
-    style: onArt
-      ? { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: ART_WIDTH, height: 630, paddingBottom: 120 }
-      : { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 360, flexShrink: 0 },
+    style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 360, flexShrink: 0 },
   },
   h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: headline, fontWeight: 700, letterSpacing: '-2px' } }, 'NO SEAT'),
   h('div', { style: { display: 'flex', fontSize: 72, lineHeight: 0.95, color: headline, fontWeight: 700, letterSpacing: '-2px' } }, 'LIMITS'),
@@ -157,26 +167,29 @@ function pricingVisual(onArt = false) {
   h('div', { style: { display: 'flex', marginTop: 12, fontSize: 20, color: detail } }, 'On every plan, and free to self-host'));
 }
 
-function legalVisual(kind) {
+function legalVisual(kind, dark = false) {
+  const [paper, border, line, badge, badgeText] = dark
+    ? ['#131615', '#2A2E2C', '#3A403D', '#1A1D1C', '#3FA27A']
+    : [COLORS.white, COLORS.line, COLORS.line, COLORS.accentSoft, COLORS.accent];
   return h('div', {
     style: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 390, height: 360 },
   },
   h('div', {
     style: {
       display: 'flex', flexDirection: 'column', width: 230, height: 292, padding: '42px 34px', gap: 24,
-      background: COLORS.white, border: `2px solid ${COLORS.line}`, borderRadius: 8,
-      boxShadow: '0 20px 60px rgba(32,29,25,0.08)',
+      background: paper, border: `${dark ? 1 : 2}px solid ${border}`, borderRadius: 8,
+      boxShadow: dark ? 'none' : '0 20px 60px rgba(32,29,25,0.08)',
     },
   },
   h('div', { style: { display: 'flex', width: 60, height: 8, background: COLORS.accent, borderRadius: 4 } }),
-  h('div', { style: { display: 'flex', width: 158, height: 5, background: COLORS.line, borderRadius: 3 } }),
-  h('div', { style: { display: 'flex', width: 132, height: 5, background: COLORS.line, borderRadius: 3 } }),
-  h('div', { style: { display: 'flex', width: 150, height: 5, background: COLORS.line, borderRadius: 3 } }),
+  h('div', { style: { display: 'flex', width: 158, height: 5, background: line, borderRadius: 3 } }),
+  h('div', { style: { display: 'flex', width: 132, height: 5, background: line, borderRadius: 3 } }),
+  h('div', { style: { display: 'flex', width: 150, height: 5, background: line, borderRadius: 3 } }),
   h('div', {
     style: {
       display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end', marginTop: 18,
-      width: 58, height: 58, borderRadius: 29, background: COLORS.accentSoft, color: COLORS.accent,
-      fontSize: kind === 'privacy' ? 26 : 20, fontWeight: 700,
+      width: 58, height: 58, borderRadius: 29, background: badge, color: badgeText,
+      border: dark ? `1px solid ${border}` : 'none', fontSize: kind === 'privacy' ? 26 : 20, fontWeight: 700,
     },
   }, kind === 'privacy' ? 'OK' : 'TOS')));
 }
@@ -228,38 +241,49 @@ function documentVisual() {
 
 function visual(type, variant) {
   if (type === 'connected') return connectedVisual(variant);
-  if (type === 'pricing') return pricingVisual();
-  if (type === 'privacy' || type === 'terms') return legalVisual(type);
+  if (type === 'pricing') return pricingVisual(variant.dark);
+  if (type === 'privacy' || type === 'terms') return legalVisual(type, variant.dark);
   if (type === 'app') return appVisual();
   return documentVisual();
 }
 
 function image(variant) {
+  const dark = variant.dark;
+  const background = dark
+    ? { backgroundColor: DARK.canvas }
+    : {
+      backgroundColor: COLORS.canvas,
+      backgroundImage: 'linear-gradient(rgba(15,122,80,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(15,122,80,0.04) 1px, transparent 1px)',
+      backgroundSize: '32px 32px',
+    };
   return h('div', {
     style: {
       display: 'flex', position: 'relative', width: '100%', height: '100%', padding: '66px 72px',
-      overflow: 'hidden', color: COLORS.ink, fontFamily: 'Instrument Sans', backgroundColor: COLORS.canvas,
-      backgroundImage: 'linear-gradient(rgba(15,122,80,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(15,122,80,0.04) 1px, transparent 1px)',
-      backgroundSize: '32px 32px',
+      overflow: 'hidden', color: dark ? DARK.ink : COLORS.ink, fontFamily: 'Instrument Sans', ...background,
     },
   },
+  ...(variant.artSrc ? [
+    h('img', {
+      src: variant.artSrc, width: ART_WIDTH, height: 630, alt: '',
+      style: { position: 'absolute', right: 0, top: 0, width: ART_WIDTH, height: 630, objectFit: 'cover' },
+    }),
+    // Blend the artwork into the canvas instead of showing a hard panel edge.
+    h('div', { style: { display: 'flex', position: 'absolute', right: ART_WIDTH - 90, top: 0, width: 90, height: 630, backgroundImage: `linear-gradient(90deg, ${DARK.canvas}, rgba(10,11,11,0))` } }),
+  ] : []),
+  // One soft light from above across the whole card, artwork included, so there is no visible seam.
+  ...(dark ? [h('div', { style: { display: 'flex', position: 'absolute', left: 0, top: 0, width: 1200, height: 630, backgroundImage: 'radial-gradient(ellipse 900px 420px at 30% -10%, rgba(255,255,255,0.06), rgba(255,255,255,0))' } })] : []),
   h('div', {
     style: { display: 'flex', position: 'absolute', left: 72, top: 58 },
-  }, brand()),
-  ...(variant.artSrc ? [h('img', {
-    src: variant.artSrc, width: ART_WIDTH, height: 630, alt: '',
-    style: { position: 'absolute', right: 0, top: 0, width: ART_WIDTH, height: 630, objectFit: 'cover' },
-  })] : []),
-  ...(variant.artSrc && variant.visual === 'pricing' ? [h('div', { style: { display: 'flex', position: 'absolute', right: 0, top: 0 } }, pricingVisual(true))] : []),
+  }, brand(dark)),
   h('div', {
-    style: { display: 'flex', position: 'absolute', left: 72, right: variant.artSrc ? ART_WIDTH + 56 : 72, top: 148, bottom: 58, alignItems: 'center', justifyContent: 'space-between' },
+    style: { display: 'flex', position: 'absolute', left: 72, right: variant.artSrc ? ART_WIDTH + 24 : 72, top: 148, bottom: 58, alignItems: 'center', justifyContent: 'space-between' },
   },
-  h('div', { style: { display: 'flex', flexDirection: 'column', width: 620, flexShrink: 0 } },
-    h('div', { style: { display: 'flex', marginBottom: 22, fontSize: 17, fontWeight: 700, letterSpacing: '2.4px', color: COLORS.accent } }, variant.eyebrow),
+  h('div', { style: { display: 'flex', flexDirection: 'column', width: variant.artSrc ? 600 : 620, flexShrink: 0 } },
+    h('div', { style: { display: 'flex', marginBottom: 22, fontSize: 17, fontWeight: 700, letterSpacing: '2.4px', color: dark ? DARK.eyebrow : COLORS.accent } }, variant.eyebrow),
     h('div', { style: { display: 'flex', flexDirection: 'column', fontSize: 56, lineHeight: 1.08, fontWeight: 600, letterSpacing: '-1.8px' } },
       ...variant.headline.map((line) => h('div', { key: line, style: { display: 'flex' } }, line)),
     ),
-    h('div', { style: { display: 'flex', marginTop: 26, fontSize: 21, lineHeight: 1.5, color: COLORS.muted } }, variant.support),
+    h('div', { style: { display: 'flex', marginTop: 26, fontSize: 21, lineHeight: 1.5, color: dark ? DARK.muted : COLORS.muted } }, variant.support),
   ),
   ...(variant.artSrc ? [] : [visual(variant.visual, variant)])),
   h('div', { style: { display: 'flex', position: 'absolute', left: 72, bottom: 34, width: 70, height: 5, borderRadius: 3, background: COLORS.accent } }));

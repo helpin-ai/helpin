@@ -12,29 +12,30 @@ Options are written to og-art-options/<slug>-<i>.png (git-ignored scratch output
 import argparse, base64, json, os, sys, urllib.error, urllib.request
 
 STYLE = (
-    "A premium, restrained editorial illustration for a software brand, vertical composition. "
-    "Deep forest-green background (#0B2119) with a subtle lighter green radial glow. "
-    "Fine flowing line bundles in mint green (#9CDBB3) and emerald (#0F7A50), like smooth streamlines in a vortex, "
-    "curving gently through the frame with soft luminous highlights. "
-    "{subject} "
-    "UI elements are minimal frosted-glass cards with rounded corners, thin mint outlines, and blank horizontal bars instead of any writing. "
-    "Generous negative space, calm and precise, high-end SaaS brand aesthetic, subtle film grain. "
-    "Absolutely no text, no letters, no numbers, no words, no logos, no watermarks, no people, no faces."
+    "A refined, minimal product illustration for a B2B software brand, in the restrained style of Linear's marketing site. "
+    "Vertical composition on a completely flat, uniform near-black background (#0A0B0B) that reaches every edge "
+    "with no vignette, no gradients, no glow, no texture, no grain, no noise. "
+    "{subject} The UI is large and fills about 80 percent of the frame width, centered vertically. "
+    "UI elements are crisp, precise charcoal panels (#1A1D1C) with 1px hairline borders (#343937), small rounded corners, "
+    "and clear mid-gray placeholder bars (#6B736F) instead of any writing, with enough contrast to read at small sizes. Strictly monochrome grays, "
+    "with one restrained emerald accent (#0F7A50) used on a single small element only. "
+    "Perfect alignment, generous empty space, calm, confident and corporate. "
+    "Absolutely no text, no letters, no numbers, no words, no logos, no watermarks, no people, no faces, "
+    "no flowing lines, no light rays, no particles, no sparkles."
 )
 
 SUBJECTS = {
-    'home': "Many thin flowing lines from all edges converge into one softly glowing core in the middle of the frame, suggesting a single shared customer history.",
-    'pricing': "Only flowing line bundles, no cards or objects: a calm wave of lines sweeps across the lower third and the top edge, leaving a large, empty, softly lit dark area in the middle of the frame.",
-    'product': "Six small frosted-glass tiles float in a loose ring, each connected by a fine glowing line to a single bright core at the center.",
-    'customer-support': "A vertical stack of three blank chat bubbles follows a glowing path that ends at a small circular checkmark badge, suggesting a request that was resolved.",
-    'projects': "Three slim kanban columns of blank task cards; one glowing line runs from a small chat bubble at the top into one highlighted card, linking a customer request to the work.",
-    'crm': "A left-to-right sequence of four rounded pipeline stages with small deal cards moving through them, and a soft pulse ring radiating from the most advanced card.",
-    'meetings': "A smooth audio waveform on the upper part of the frame flows downward and transforms into a neat stack of three blank task cards.",
-    'knowledge': "A layered stack of blank document pages, with a soft vertical beam of light passing through them like a search highlighting one page.",
-    'ai-agents': "Eight small glowing orbs travel on elegant elliptical orbits around one brighter central core, like coordinated specialists.",
-    'developers': "A frosted-glass terminal window with blank lines of code, a pair of curly-brace shapes floating nearby, and a small plug connector linked by a glowing line.",
-    'self-hosting': "A compact server block inside a dashed rounded boundary, with a few fine lines reaching out past the boundary to small optional nodes outside it.",
-    'branding': "A single elegant vortex of flowing mint lines spiraling around a calm, softly glowing center.",
+    'home': "A single clean panel in the center shows one customer record: a small avatar circle at the top and a short vertical timeline of four rows beneath it, with thin connector lines to three smaller cards around it labeled only with placeholder bars.",
+    'product': "Six small, evenly spaced square tiles arranged in a neat two-by-three grid, each with one simple line icon and a placeholder bar; one tile has the emerald accent.",
+    'customer-support': "A conversation panel with three message rows, alternating left and right, and a small resolved status pill at the bottom with an emerald checkmark.",
+    'projects': "A clean board with three columns of task cards; one card in the middle column is highlighted with an emerald left edge.",
+    'crm': "A horizontal pipeline of four stage columns with a few deal cards in each; the rightmost column's top card carries the emerald accent.",
+    'meetings': "A meeting panel with a thin monochrome audio waveform at the top and, beneath it, a short list of three action-item rows with checkboxes, one checked in emerald.",
+    'knowledge': "A document panel with a title bar and several paragraph lines, a small search field above it, and one highlighted paragraph marked with a thin emerald bar.",
+    'ai-agents': "A small central panel connected by thin straight gray lines to six smaller agent panels arranged evenly around it; one connection is emerald.",
+    'developers': "A terminal-style panel with a title bar and several lines of placeholder code, beside a small card showing a pair of curly braces as a simple line icon; the cursor is emerald.",
+    'self-hosting': "A single server icon inside a dashed rounded rectangle, with three thin gray lines leading out to small optional service tiles outside the boundary; the server's status dot is emerald.",
+    'branding': "A tidy brand board: a row of four color swatch tiles (near-black, charcoal, light gray and one emerald), and beneath it a larger type-specimen panel showing only placeholder bars of different weights.",
 }
 
 
