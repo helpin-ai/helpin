@@ -155,7 +155,7 @@
 .hp3 .ps-bar-two { width: 25%; margin-left: 33%; color: #8d7138; background: #f5eddb; border-color: #e8d9b8; }
 .hp3 .ps-bar-three { width: 29%; margin-left: 53%; background: #e9edf3; border-color: #d8e0eb; color: #6c7e96; }
 .hp3 .ps-roadmap-note { display: flex; align-items: center; gap: 7px; margin-top: 22px; color: #72917c; font-size: 10px; }
-.hp3 .ps-agents { background: radial-gradient(ellipse at 90% 0%,#1d432e,#081b16 75%); border-color: #2d4b37; color: #e0eee4; }
+.hp3 .ps-agents { background: radial-gradient(ellipse at 90% 0%,#172a21,var(--surface-deep) 75%); border-color: #2d4b37; color: #e0eee4; }
 .hp3 .ps-agents .ps-toolbar { color: #afc9b8; }
 .hp3 .ps-agents .ps-toolbar button { background: #234c33; border-color: #53765d; color: #d1e8d8; }
 .hp3 .ps-agent-task h3 { font-size: 19px; line-height: 1.4; margin-top: 7px; text-wrap: initial; }
