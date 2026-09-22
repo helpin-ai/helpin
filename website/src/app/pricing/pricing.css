@@ -197,6 +197,8 @@
 
 /* Model choice and usage: quiet surfaces, explicit connection and billing details. */
 .hp3 .pricing-ai-section { background: var(--bg2); }
+.hp3 .pricing-ai-section > .wrap > .sec-head { margin-inline: auto; text-align: center; }
+.hp3 .pricing-ai-section > .wrap > .sec-head .lede { margin-inline: auto; }
 .hp3 .pricing-ai-section>.wrap,.hp3 .pricing-comparison>.wrap { max-width: 1120px; }
 .hp3 .pricing-ai-providers { display: flex; justify-content: center; flex-wrap: wrap; gap: 20px 36px; margin: -12px 0 46px; }
 .hp3 .pricing-ai-providers>span { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; color: var(--t2); }
@@ -352,3 +354,43 @@
 .hp3 .pricing-rate-scroll th,.hp3 .pricing-rate-scroll td { padding: 12px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
 .hp3 .pricing-ai-charges summary:focus-visible,.hp3 .pricing-rate-scroll:focus-visible { outline: 2px solid var(--em); outline-offset: 3px; }
 @media(max-width:850px) { .hp3 .pricing-enterprise-visual { grid-column: auto; grid-row: auto; } }
+
+/* Pricing focuses on choosing a plan; supporting detail opens on demand. */
+.hp3 .pricing-hero { padding-bottom: 40px; }
+.hp3 .pricing-breadcrumb { margin-bottom: 28px; }
+.hp3 .pricing-hosting-options { padding-block: 0 64px; border-top: 0; }
+.hp3 .pricing-hosting-options > .wrap { max-width: 1120px; }
+.hp3 .pricing-hosting-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px; }
+.hp3 .pricing-hosting-grid > article { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 32px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg2); scroll-margin-top: 90px; }
+.hp3 .pricing-hosting-grid > article > svg { color: var(--em); }
+.hp3 .pricing-hosting-grid h2 { font-size: 25px; line-height: 1.25; letter-spacing: -.025em; }
+.hp3 .pricing-hosting-grid p { font-size: 15px; line-height: 1.75; color: var(--t2); }
+.hp3 .pricing-hosting-grid .pricing-links { margin-top: auto; padding-top: 8px; }
+.hp3 .pricing-hosting-grid .btn-link { display: inline-flex; align-items: center; gap: 6px; }
+.hp3 .pricing-ai-routes > article { padding: 24px; }
+.hp3 .pricing-ai-route-icon { margin-bottom: 16px; }
+.hp3 .pricing-ai-routes p { margin-bottom: 16px; }
+.hp3 .pricing-usage-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 24px; margin-block: 28px; }
+.hp3 .pricing-usage-summary p { font-size: 13px; line-height: 1.8; color: var(--t2); }
+.hp3 .pricing-usage-summary strong { display: block; color: var(--ink); font-weight: 550; }
+.hp3 .pricing-ai-charges .pricing-ai-models { margin-top: 24px; }
+.hp3 .pricing-key-differences thead th { position: static; padding-block: 18px; font-size: 16px; font-weight: 550; }
+.hp3 .pricing-full-comparison > div { padding-top: 24px; }
+.hp3 .pricing-final { background: var(--bg2); padding-block: 56px; }
+.hp3 .pricing-final > .wrap { max-width: 1120px; display: flex; align-items: center; justify-content: space-between; gap: 32px; }
+.hp3 .pricing-final h2 { font-size: clamp(1.6rem,3vw,2rem); line-height: 1.25; margin-bottom: 12px; }
+.hp3 .pricing-final .cta-row { flex-shrink: 0; margin: 0; }
+.hp3 .pricing-final .lede { font-size: 15px; }
+.hp3 .pricing-final .lede a { color: var(--em); text-decoration: underline; text-underline-offset: 3px; }
+@media(max-width:850px) {
+  .hp3 .pricing-final > .wrap { flex-direction: column; align-items: flex-start; }
+}
+@media(max-width:600px) {
+  .hp3 .pricing-hosting-grid,.hp3 .pricing-usage-summary { grid-template-columns: 1fr; }
+  .hp3 .pricing-hosting-grid > article { padding: 24px; }
+  .hp3 .pricing-usage-summary { gap: 16px; }
+  .hp3 .pricing-full-comparison > div { padding-inline: 10px; }
+  .hp3 .pricing-ai-charges > summary { padding-inline: 20px; }
+  .hp3 .pricing-key-differences thead th { font-size: 13px; }
+  .hp3 .pricing-final .cta-row { flex-wrap: wrap; }
+}
