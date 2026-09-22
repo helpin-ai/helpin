@@ -160,7 +160,7 @@ export function PreviewNav() {
 
           <p className="nav-section-label">Products</p>
           <div className="nav-mobile-products">{PRODUCTS.map(item => <ProductLink item={item} key={item.label} />)}</div>
-          <AskAgentMenuCard/><Link className="nav-mobile-overview" href="/new/product">Explore the platform<ArrowRight size={14} /></Link>
+          <AskAgentMenuCard/>
           <div className="nav-mobile-resources"><Link href="/pricing">Pricing<ArrowRight size={13} /></Link>
             <Link href="/new/developers"><Braces size={17} />Developers<ArrowRight size={13} /></Link>
             <Link href="/new/self-hosting"><Server size={17} />Open source & self-hosting<ArrowRight size={13} /></Link>
