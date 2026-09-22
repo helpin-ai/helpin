@@ -2,9 +2,10 @@
    Flattened selectors (no CSS nesting) for broad browser support. When the direction is approved,
    these tokens replace the coral/serif set in globals.css. */
 .hp3 { --ink: #131514; --t2: #4F5A55; --t3: #66716C; --border: #E4E9E6; --border-2: #CFD6D2; --bg: #FFFFFF; --bg2: #F6F8F7; --em: #0F7A50; --em-h: #0B6340; --em-t: #E7F4ED; --amber: #8A6400; --amber-bg: #FFFBEC; --amber-b: #F0E2B0; --note: #FBF1DF; --note-ink: #7A4B00; --note-b: #E9CF9A; --sans: var(--font-hp3-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; --mono: var(--font-hp3-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased; min-height: 100vh; }
-/* Shared dark marketing/art surfaces, sampled from Support and AI Agents.
-   Keep product status/tag colors semantic; these tokens govern the surface. */
-.hp3 { --surface-dark: #090909; --art-dark: #0B2119; --art-dark-soft: #112D20; --art-dark-raised: #193A2B; --art-dark-border: #BCE2CB26; --on-dark: #EDF5EF; --on-dark-muted: #B2C6BA; --on-dark-accent: #9CDBB3; }
+/* Shared dark marketing/art surfaces. Near-black charcoal with only a trace of green in the hue;
+   green itself is reserved for accents, the vortex, and soft glows. Keep product status/tag colors
+   semantic; these tokens govern the surface. */
+.hp3 { --surface-dark: #090909; --surface-deep: #0A0F0D; --art-dark: #0E1412; --art-dark-soft: #131B18; --art-dark-raised: #1A2420; --art-dark-border: #C4D8CC1F; --on-dark: #EDF3EF; --on-dark-muted: #AEBDB5; --on-dark-accent: #9CDBB3; }
 
 .hp3 *, .hp3 *::before, .hp3 *::after { box-sizing: border-box; }
 .hp3 a { color: inherit; text-decoration: none; }
@@ -212,7 +213,7 @@
 }
 
 /* Spacious, dark footer shared by the preview pages. */
-.hp3 .pfoot { --grid-step: 64px; position: relative; isolation: isolate; background: #081b16; color: #a4b8af; padding: 72px 0 26px; font-size: 14px; }
+.hp3 .pfoot { --grid-step: 64px; position: relative; isolation: isolate; background: var(--surface-deep); color: #a4b8af; padding: 72px 0 26px; font-size: 14px; }
 .hp3 .pfoot::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: linear-gradient(rgba(139,222,176,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(139,222,176,.035) 1px, transparent 1px); background-size: var(--grid-step) var(--grid-step); background-position: center top; mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 65%, transparent); }
 @media (max-width: 600px) {
   .hp3 .pfoot { --grid-step: 48px; }
@@ -953,7 +954,7 @@
 
 .hp3 #product > .wrap { max-width: 1280px; }
 /* Ask Agent gets its own deep-green section after the product walkthrough. */
-.hp3 .ask-agent-section { position: relative; isolation: isolate; overflow: hidden; background: #081e17; color: #f2f8f4; border-top: 0; scroll-margin-top: 60px; }
+.hp3 .ask-agent-section { position: relative; isolation: isolate; overflow: hidden; background: var(--surface-deep); color: #f2f8f4; border-top: 0; scroll-margin-top: 60px; }
 .hp3 .ask-agent-section::before { content: ''; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 0%, rgba(63,191,131,.15), transparent 65%); }
 .hp3 .ask-agent-section > .wrap { max-width: 1200px; }
 .hp3 .ask-agent-intro { display: grid; gap: 22px; max-width: 760px; margin: 0 auto 56px; text-align: center; }

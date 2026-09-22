@@ -15,7 +15,7 @@
 .hp3 .ops-scene { height: 324px; color: #d6e5dc; font-size: 11px; }
 .hp3 .ops-scene strong { font-weight: 500; }
 .hp3 .ops-scene svg { flex: none; }
-.hp3 .ops-source, .hp3 .ops-route-request, .hp3 .ops-tagged-request { border: 1px solid #a2cbb82b; border-radius: 7px; background: #193a2b; padding: 12px; }
+.hp3 .ops-source, .hp3 .ops-route-request, .hp3 .ops-tagged-request { border: 1px solid #a2cbb82b; border-radius: 7px; background: var(--art-dark-raised); padding: 12px; }
 .hp3 .ops-source > span, .hp3 .ops-route-request div > span, .hp3 .ops-tagged-request > span { display: block; color: #9cbaaa; font-family: var(--mono); font-size: 8px; letter-spacing: .05em; margin-bottom: 6px; }
 .hp3 .ops-source > div { display: flex; align-items: center; gap: 9px; }
 .hp3 .ops-source strong { font-size: 11px; overflow-wrap: anywhere; min-width: 0; }
@@ -24,7 +24,7 @@
 .hp3 .ops-delivery-caption { position: absolute; left: calc(50% + 20px); font-size: 9px; color: #94b29f; }
 .hp3 .ops-delivery > svg { position: absolute; bottom: 0; color: #8fd3a6; }
 .hp3 .ops-envelope { opacity: 0; display: grid; place-items: center; background: #214d35; border: 1px solid #8ed2a2; width: 26px; height: 22px; border-radius: 5px; color: #b6e6c5; z-index: 1; }
-.hp3 .ops-mailbox { border: 1px solid #98c7ad40; border-radius: 7px; background: #112d20; overflow: hidden; }
+.hp3 .ops-mailbox { border: 1px solid #98c7ad40; border-radius: 7px; background: var(--art-dark-soft); overflow: hidden; }
 .hp3 .ops-mailbox-heading { display: flex; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid #c2e6d11f; color: #c7e6d0; }
 .hp3 .ops-mailbox-heading > span { margin-left: auto; font-size: 9px; color: #94b5a1; }
 .hp3 .ops-mail-row { display: flex; align-items: center; gap: 8px; padding: 11px 10px; }
@@ -48,7 +48,7 @@
 .hp3 .ops-destinations .ops-billing { color: #d0efd9; background: #2a553b; border-color: #88c59d80; }
 .hp3 .ops-owner-link { height: 24px; display: flex; justify-content: center; }
 .hp3 .ops-owner-link > span { width: 1px; background: #88c59d80; }
-.hp3 .ops-owner { display: flex; align-items: center; gap: 9px; padding: 10px; border: 1px solid #a2cbb82b; border-radius: 7px; background: #193a2b; }
+.hp3 .ops-owner { display: flex; align-items: center; gap: 9px; padding: 10px; border: 1px solid #a2cbb82b; border-radius: 7px; background: var(--art-dark-raised); }
 .hp3 .ops-owner img { border-radius: 50%; }
 .hp3 .ops-owner strong { display: block; font-size: 11px; }
 .hp3 .ops-owner div > span { display: block; font-size: 9px; margin-top: 3px; color: #9eb9a9; }
