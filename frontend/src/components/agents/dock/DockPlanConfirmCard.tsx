@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { QuietUnderlineTextarea } from '@/components/design-system/quiet';
 import type { DockPlanConfirmPayload, DockPlanConfirmStep } from '@/lib/dockTypes';
 
 interface DockPlanConfirmCardProps {
@@ -94,12 +95,12 @@ export function DockPlanConfirmCard({ payload, onDecision }: DockPlanConfirmCard
       )}
       {rejecting ? (
         <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
-          <textarea
+          <QuietUnderlineTextarea
             autoFocus
+            aria-label="Optional change request"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="What should the agent change? (optional)"
-            className="w-full resize-none rounded-md border border-border bg-background px-2 py-1.5 text-sm"
             rows={2}
           />
           <div className="flex items-center gap-2">
