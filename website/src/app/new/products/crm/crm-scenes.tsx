@@ -581,7 +581,7 @@ const SIGNALS = [
     context: "Daniel has asked for pricing and named a decision window. Requirements and purchasing approval still need confirmation.",
     action: "Aisha confirms the scope and prepares a proposal.",
     owner: "Aisha Patel", ownerAvatar: "aisha",
-    evidence: "Customer message attached", tag: "Buying intent", status: "Needs review",
+    evidence: "Customer message attached", tag: "Buying intent", status: "Needs attention",
   },
   {
     label: "Renewal risk", Icon: ShieldCheck,
@@ -591,7 +591,7 @@ const SIGNALS = [
     context: "Maya wants an update before discussing the next term. The linked export task is still in review.",
     action: "Sam checks the release status and prepares an update.",
     owner: "Sam Rivera", ownerAvatar: "sam",
-    evidence: "Customer message and linked work attached", tag: "Renewal concern", status: "Follow-up needed",
+    evidence: "Customer message and linked work attached", tag: "Renewal concern", status: "Follow-up due",
   },
   {
     label: "Expansion", Icon: Building2,
@@ -601,7 +601,7 @@ const SIGNALS = [
     context: "There is interest from another team. The number of users, timing, and requirements still need to be discussed.",
     action: "Sam arranges a call to understand the team’s needs.",
     owner: "Sam Rivera", ownerAvatar: "sam",
-    evidence: "Customer conversation attached", tag: "Expansion interest", status: "Needs review",
+    evidence: "Customer conversation attached", tag: "Expansion interest", status: "Needs attention",
   },
 ];
 

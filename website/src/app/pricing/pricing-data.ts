@@ -142,7 +142,7 @@ export const FAQS = [
   },
   {
     q: 'Can we use Helpin without a Cloud plan?',
-    a: 'Yes. The open-source Community edition is free to self-host, with every module and no plan limits. Support, docs, and AI agents are on by default, and projects, CRM, and automation can be turned on in configuration. Your team runs the infrastructure and pays for it, along with any AI providers you connect.',
+    a: 'Yes. The open-source Community edition (0.1 beta) is free to self-host, with every module and no plan limits: support, projects, CRM, meetings, docs, automation, and AI agents. Coding agents aren’t part of Community 0.1 yet. Your team runs the infrastructure and pays for it, along with any AI providers you connect.',
   },
   {
     q: 'What’s the difference between open source and Enterprise?',

@@ -348,7 +348,7 @@ function RecordDetail({
                       ? "Maya needs a clear update before discussing the next term."
                       : "Review the customer’s requirements with the account owner."}
                   </p>
-                  <small>Needs review · {contact.owner}</small>
+                  <small>Needs attention · {contact.owner}</small>
                 </div>
                 <div className="cw-activity-heading">
                   Activity{" "}
@@ -729,7 +729,7 @@ export function CRMWorkspace({
                     }}
                   />
                 </label>
-                <details className="cw-filter-menu">
+                {view === "contacts" && <details className="cw-filter-menu">
                   <summary>
                     <CRMIcon name="FilterHorizontalIcon" size={14} />
                     Filters
@@ -754,7 +754,7 @@ export function CRMWorkspace({
                       </select>
                     </label>
                   </div>
-                </details>
+                </details>}
                 <div className="cw-table-tools">
                   <label className="cw-groupby">
                     <CRMIcon name="UserGroupIcon" size={14} />

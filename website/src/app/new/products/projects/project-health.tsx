@@ -37,7 +37,7 @@ export function ProjectHealth() {
           <span className="pob-micro pob-task-label">SELECTED TASKS</span>
           <div className="pob-task-list">{epic.tasks.map(task => <div key={task.key}><span className="pob-task-dot" data-done={task.state === 'Done'}>{task.state === 'Done' && <Check size={9} aria-hidden="true" />}</span><span><small>{task.key}</small><strong>{task.name}</strong></span><span>{task.state}</span></div>)}</div>
         </div>
-        <div className="pob-plan-footer"><Target size={13} aria-hidden="true" />Different pieces of work. A shared definition of success.</div>
+        <div className="pob-plan-footer"><Target size={13} aria-hidden="true" />3 epics, one objective.</div>
       </div>
     </article>
     <article className="pob-card pob-measure">
@@ -45,7 +45,7 @@ export function ProjectHealth() {
       <div className="pob-demo pob-measure-demo">
         <p className="pob-recorded-note">Example: later progress review</p><div className="pob-metrics"><div><span>Delivery progress</span><strong>{Math.round(done / total * 100)}<small>%</small></strong><progress value={done} max={total} aria-label={done + ' of ' + total + ' linked tasks completed'} /><p>{done} of {total} linked tasks completed</p></div><div><span>Outcome progress</span><strong>25<small>%</small></strong><progress value={2} max={8} aria-label="2 of 8 pilot accounts completed setup" /><p>2 of 8 pilot accounts completed setup</p></div></div>
         <div className="pob-health-update"><span>Recorded health</span><span className="pob-health pob-amber"><i />At risk</span></div>
-        <p className="pob-recorded-note">Outcome progress updated by the team.</p><p className="pob-recorded-note">The feature is available. Most pilot accounts still need to complete setup.</p>
+        <p className="pob-recorded-note">The feature is available. Most pilot accounts still need to complete setup.</p>
       </div>
     </article>
   </div>;
