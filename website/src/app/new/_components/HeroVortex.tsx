@@ -1,7 +1,6 @@
 'use client';
 
-import { useId, useState, type CSSProperties } from 'react';
-import { Pause, Play } from 'lucide-react';
+import { useId, type CSSProperties } from 'react';
 import { useBentoPlayback } from './useBentoPlayback';
 import './hero-vortex.css';
 
@@ -63,8 +62,7 @@ const ART = { vortex: BUNDLES, flow: FLOW, connections: CONNECTIONS, orbit: ORBI
 
 export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: MotionVariant; tone?: 'light' | 'dark' }) {
   const id = useId().replace(/:/g, '');
-  const [paused, setPaused] = useState(false);
-  const { container, playing, reducedMotion } = useBentoPlayback(16_000, !paused);
+  const { container, playing } = useBentoPlayback(16_000);
 
   return (
     <div ref={container} className="hero-vortex" data-playing={playing} data-variant={variant} data-tone={tone}>
@@ -104,12 +102,6 @@ export function HeroVortex({ variant = 'vortex', tone = 'light' }: { variant?: M
           </svg>
         </div>
       </div>
-      <button className="hero-vortex-toggle" type="button" hidden={reducedMotion}
-        onClick={() => setPaused(value => !value)}
-        aria-label={paused ? 'Play background animation' : 'Pause background animation'}
-        title={paused ? 'Play background animation' : 'Pause background animation'}>
-        {paused ? <Play size={14} aria-hidden="true" /> : <Pause size={14} aria-hidden="true" />}
-      </button>
     </div>
   );
 }
