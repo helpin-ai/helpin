@@ -44,7 +44,7 @@ export default function VerifyEmail() {
               <Loading01Icon className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
             <div className="space-y-1">
-              <CardTitle className="text-2xl">Verifying your email...</CardTitle>
+              <CardTitle role="heading" aria-level={1} className="text-2xl">Verifying your email...</CardTitle>
               <CardDescription>Please wait while we verify your email address.</CardDescription>
             </div>
           </CardHeader>
@@ -53,13 +53,13 @@ export default function VerifyEmail() {
         {status === 'success' && (
           <>
             <CardHeader className="text-center">
-              <CardTitle className="text-2xl">Email verified</CardTitle>
+              <CardTitle role="heading" aria-level={1} className="text-2xl">Email verified</CardTitle>
               <CardDescription>Your email has been verified successfully.</CardDescription>
             </CardHeader>
             <CardFooter className="flex flex-col gap-4 mt-4">
-              <Link to={user ? '/workspaces' : '/login'} className="w-full">
-                <Button className="w-full">{user ? 'Continue' : 'Continue to sign in'}</Button>
-              </Link>
+              <Button asChild className="w-full">
+                <Link to={user ? '/workspaces' : '/login'}>{user ? 'Continue' : 'Continue to sign in'}</Link>
+              </Button>
             </CardFooter>
           </>
         )}
@@ -67,13 +67,13 @@ export default function VerifyEmail() {
         {status === 'error' && (
           <>
             <CardHeader className="text-center">
-              <CardTitle className="text-2xl">Verification failed</CardTitle>
+              <CardTitle role="heading" aria-level={1} className="text-2xl">Verification failed</CardTitle>
               <CardDescription>{errorMessage || 'This verification link is invalid or has expired.'}</CardDescription>
             </CardHeader>
             <CardFooter className="flex flex-col gap-4 mt-4">
-              <Link to="/login" className="w-full">
-                <Button variant="outline" className="w-full">Back to sign in</Button>
-              </Link>
+              <Button asChild variant="outline" className="w-full">
+                <Link to="/login">Back to sign in</Link>
+              </Button>
             </CardFooter>
           </>
         )}
